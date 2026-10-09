@@ -4,6 +4,7 @@ import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { handoffPromptId } from '../prompts/render';
 import type { LoadedConfig } from './load';
+import { formsAfter } from '../core/app/next';
 import { DEFAULT_ACTION_LEVEL, readRule } from './policyFile';
 import { ruleKey } from './schema/policy';
 import { closest, type DataPath } from './problems';
@@ -194,13 +195,16 @@ export function checkWarnings(c: Omit<FormCheckInput, 'promptExists'>, customRul
         }
       }
       // Defence in depth: the write the form makes names every rule the check holds the caller to.
-      const calls = form.calls ?? [];
+      // A form with next writes in the forms after it (a screen, then its booking): their calls count.
+      const after = formsAfter(config.forms.forms, id);
+      const calls = [...new Set([...(form.calls ?? []), ...after.flatMap((f) => config.forms.forms[f]!.calls ?? [])])];
       if (calls.length === 0) return;
       const written = new Set(calls.flatMap((tool) => (Object.hasOwn(actions, tool) ? actions[tool]!.rules.map(ruleKey) : [])));
+      const who = after.length === 0 ? 'the form calls' : `the form and the forms after it (${after.join(', ')}) call`;
       action.rules.forEach((entry, j) => {
         const key = ruleKey(entry);
         if (key === null || key === 'identity' || written.has(key)) return;
-        report('policy.yaml', ['actions', check.action, 'rules', j], `check "${check.action}" holds form "${id}" to "${key}", which no action the form calls (${calls.join(', ')}) runs, so the write would not hold what the check held`, `add "${key}" to the rules of the action the form writes with, so the completion still refuses what the check refused`);
+        report('policy.yaml', ['actions', check.action, 'rules', j], `check "${check.action}" holds form "${id}" to "${key}", which no action ${who} (${calls.join(', ')}) runs, so the write would not hold what the check held`, `add "${key}" to the rules of the action the form writes with, so the completion still refuses what the check refused`);
       });
     });
   }

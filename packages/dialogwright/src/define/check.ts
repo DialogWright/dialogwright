@@ -386,17 +386,31 @@ function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<strin
  * the designer is told which one the call follows.
  */
 function listenWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  /** The forms that list `id`, when every one says its slots do not listen before it is open; else null. */
+  const waiting = (id: string): { names: string; one: boolean; byDefault: boolean } | null => {
+    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
+    if (forms.length === 0 || forms.some(([, form]) => form.listenBeforeEntered ?? form.internal !== true)) return null;
+    return { names: forms.map(([form]) => `"${form}"`).join(', '), one: forms.length === 1, byDefault: forms.some(([, form]) => form.listenBeforeEntered === undefined) };
+  };
+  const says = (w: { names: string; one: boolean; byDefault: boolean }): string => `${w.one ? 'the form' : 'every form'} that lists it (${w.names}) says its slots do not listen before it is open (listenBeforeEntered: false${w.byDefault ? ', the default for an internal form' : ''})`;
+  const carried = config.app.carrySlots ?? [];
   for (const [id, spec] of Object.entries(slots)) {
     const listen = spec?.listen;
     if (listen === undefined || listen === 'form') continue;
-    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
-    if (forms.length === 0 || forms.some(([, form]) => form.listenBeforeEntered ?? form.internal !== true)) continue;
-    const names = forms.map(([form]) => `"${form}"`).join(', ');
-    const message = `the slot "${id}" says listen: ${listen}, but ${forms.length === 1 ? 'the form' : 'every form'} that lists it (${names}) says its slots do not listen before it is open (listenBeforeEntered: false${forms.some(([, form]) => form.listenBeforeEntered === undefined) ? ', the default for an internal form' : ''}); the slot's own listen wins`;
+    const w = waiting(id);
+    if (w === null) continue;
+    const message = `the slot "${id}" says listen: ${listen}, but ${says(w)}; the slot's own listen wins`;
     const fix = 'nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open';
     if (config.slots !== null && Object.hasOwn(config.slots, id)) report(SLOTS_FILE, [id, 'listen'], message, fix);
     else report(codeFile, ['slots', id, 'listen'], message, fix);
   }
+  // A slot app.yaml carries listens for the call (listen: call's shorthand), whatever its forms say.
+  carried.forEach((id, i) => {
+    if (slots[id]?.listen !== undefined) return;
+    const w = waiting(id);
+    if (w === null) return;
+    report('app.yaml', ['carrySlots', i], `the slot "${id}" is carried (carrySlots), which listens for the whole call, but ${says(w)}; carrySlots wins`, 'nothing to do if that is meant; otherwise take the slot out of carrySlots, so it is asked once its form is open');
+  });
 }
 
 /**

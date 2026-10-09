@@ -149,8 +149,25 @@ describe('the warning: a slot whose listen says otherwise than every form that l
     expect(warnings).toEqual(['slots.yaml:29:11  town.listen  the slot "town" says listen: up-front, but every form that lists it ("screen_home", "book_visit") says its slots do not listen before it is open (listenBeforeEntered: false, the default for an internal form); the slot\'s own listen wins  ->  nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open']);
   });
 
+  it('a slot app.yaml carries, which only the internal booking lists', async () => {
+    const { warnings } = await checked(folder({ 'app.yaml': (t) => `${t}\ncarrySlots: [visitDay]\n` }));
+    expect(warnings).toEqual([expect.stringContaining('app.yaml:')]);
+    expect(warnings[0]).toContain('carrySlots[0]  the slot "visitDay" is carried (carrySlots), which listens for the whole call, but the form that lists it ("book_visit") says its slots do not listen before it is open (listenBeforeEntered: false, the default for an internal form); carrySlots wins  ->  nothing to do if that is meant; otherwise take the slot out of carrySlots, so it is asked once its form is open');
+  });
+
   it('none for a slot the screen lists, which listens up front', async () => {
     const { warnings } = await checked(folder({ 'slots.yaml': replace('town:\n  type: choice\n', 'town:\n  type: choice\n  listen: anywhere\n') }));
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('a screen\'s checks against the writes of the forms after it', () => {
+  it('none for the variant: the booking\'s write names every rule the screen\'s checks hold', async () => {
+    expect((await checked(folder())).warnings).toEqual([]);
+  });
+
+  it('warns when the booking\'s write does not name a rule the screen checks', async () => {
+    const { warnings } = await checked(folder({ 'policy.yaml': replace('      - oneOf: { field: town, values: [millbrook, cedar_falls, ashford, riverton], reason: out-of-area }\n      - confirmed:', '      - confirmed:') }));
+    expect(warnings).toEqual([expect.stringContaining('check "checkArea" holds form "screen_home" to "oneOf: town", which no action the form and the forms after it (book_visit) call (bookVisit) runs, so the write would not hold what the check held')]);
   });
 });
