@@ -76,8 +76,8 @@ export function sessionConditionFacts(app: App, s: Session, clock: ConditionCloc
     predicate: (name) => {
       const p = predicates !== undefined && Object.hasOwn(predicates, name) ? predicates[name] : undefined;
       if (typeof p !== 'function') return false;
-      const ctx: PredicateContext = { s: structuredClone(s), nowMs: clock.nowMs, todayIso: clock.todayIso };
       try {
+        const ctx: PredicateContext = { s: structuredClone(s), nowMs: clock.nowMs, todayIso: clock.todayIso };
         return p(ctx) === true;
       } catch {
         return false;
@@ -156,6 +156,10 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
     (rules as RouteRule[]).forEach((rule, i) => {
       const here = [...at, i];
       const last = i === rules.length - 1;
+      if (typeof rule !== 'object' || rule === null) {
+        add(here, 'is not a rule ({ when, outcome } or the else)', 'write { when: [Condition, ...], outcome: { then, ... } }, or { when: [], outcome, else: true } last');
+        return;
+      }
       const after = rules.length - 1 - i;
       if (rule.else === true && !last) add(here, `is the else, and ${after === 1 ? '1 rule follows' : `${after} rules follow`} it, which ${after === 1 ? 'is' : 'are'} never taken`, 'move the else to the end, after every rule');
       if (last && rule.else !== true) add(here, 'is the last rule, and the point ends with no else', 'add - else: continue (or another outcome) after it, for a call no rule takes');

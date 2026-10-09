@@ -290,3 +290,18 @@ describe('a seeded corpus call', () => {
     expect(run.result.session.identityRouted).toBe(true);
   });
 });
+
+describe('review fixes', () => {
+  it('a predicate whose session cannot be copied is false, not a failed turn', () => {
+    const s = newSession('p', 0, VOICE_RELAY, undefined, routedApp.id);
+    (s.facts as unknown as Record<string, unknown>).fn = () => 1;
+    const app = { ...routedApp, predicates: { any: () => true } } as App;
+    expect(conditionHolds({ kind: 'named', predicate: 'any' }, sessionConditionFacts(app, s, { nowMs: 0, todayIso: TODAY }))).toBe(false);
+  });
+
+  it('a rule list with a hole is reported, not thrown on', async () => {
+    const { routeProblems, conditionWorldOf } = await import('./routes');
+    const problems = routeProblems({ start: [null as never, { when: [], outcome: { then: 'continue' }, else: true }] }, { ...conditionWorldOf(routedApp), locales: ['en-US'] });
+    expect(problems.map((p) => p.message)).toContain('is not a rule ({ when, outcome } or the else)');
+  });
+});

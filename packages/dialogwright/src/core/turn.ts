@@ -2523,6 +2523,8 @@ function afterIdentityRoute(s: Session, io: TurnIO, said: Ack[]): Decision | nul
     said.push(...routeSay(s, o));
     return null;
   }
+  // The form entered now is no longer waiting in the queue; the caller's own request waits first.
+  if (o.then === 'form') s.queued = s.queued.filter((f) => f !== o.form);
   if (o.then === 'form' && s.form !== null && !s.queued.includes(s.form)) s.queued.unshift(s.form);
   return actOn(s, s.form, routeEnding(s, o, [...said]), io);
 }
