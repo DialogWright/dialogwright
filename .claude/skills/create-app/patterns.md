@@ -1505,6 +1505,32 @@ audit:
 - The policy card has the "What is recorded" table: read it against the worksheet.
 - Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, `callerNumber`, a custom rule's own id).
 
+## A tool's reply said to the caller: `check`
+
+**When:** every tool whose reply a line says (a reference, a balance, a time, a day, a name) or a later call is made from. The reply comes from a downstream system and is not trusted: a record someone could write to may hold a sentence with instructions in it. `check` says what the reply must look like; one that does not fit is never used, and the caller goes to a person.
+
+```ts
+// src/app.ts
+import { replyShape as r, type ToolDef } from 'dialogwright';
+
+export const TOOLS: Record<string, ToolDef> = {
+  bookService: {
+    params: ['service'],
+    run(call, sys, { tc }) { /* ... */ return { value: { when }, summary: `booked ${ref}`, ref }; },
+    check: r.object({ when: r.isoDate() }),                         // the day is said
+  },
+  readBalance: {
+    params: ['accountId'],
+    run(call) { /* ... */ },
+    check: r.nullable(r.object({ balance: r.amount(), due: r.isoDate() })),
+  },
+};
+```
+
+- Name every field a line says or a call is made from: `object` checks only those it names. `text()` is a short phrase (an item, a street, a first name), never a sentence; `code()` a reference such as `OT401`; `digits(n)`, `amount()`, `isoDate()`, `number()`, `oneOf([...])` the rest.
+- The adversarial suite (on in every scaffold) answers each tool with instructions in place of each text field of its reply: a `nothing-said` or `threw` failure on `hostile-reply/<tool>/field` names the field that needs a check.
+- The identity tools' principal is the engine's to check: a first name that is not one, or a phone's last four that are not four digits, goes to a person.
+
 ## Values with no slot type
 
 | Value | Do this | And log |

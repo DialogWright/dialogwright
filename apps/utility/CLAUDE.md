@@ -22,6 +22,7 @@ pnpm --filter @dialogwright/example-utility typecheck
 pnpm --filter @dialogwright/example-utility test
 pnpm --filter @dialogwright/example-utility regress      # the stub regression: prints "no changes", then a summary
 pnpm --filter @dialogwright/example-utility regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
+pnpm --filter @dialogwright/example-utility regress --adversarial <id>  # one case of the adversarial suite, turn by turn
 pnpm --filter @dialogwright/example-utility regress --client recorded   # the replay of the recorded cassette
 ```
 
@@ -35,5 +36,6 @@ Run `pnpm check`, then this app's typecheck, tests, `regress` (expects `no chang
 
 - Never put policy in tool code. Tools do the work; the gate decides, from `policy.yaml`, whether they may run.
 - Never let a model write a regulated line. Every line a caller hears is in `prompts.yaml`, word for word.
+- The regression runs the adversarial suite (app.yaml's `testing: { adversarial: on }`): a `FAIL adversarial` case is a finding to fix in the app (a tool's `check` of its reply, the policy, a hook) or the engine, never by changing the case or turning the suite off. Every tool whose reply a line says checks it (`check`). Until the next recording, the recorded replay lists the suite's cases as not yet recorded.
 - Fictional data only: invented names, the 555 phone range.
 - `policy.yaml` and `identity.yaml` belong to compliance. Change them only when asked to, with the reason in the commit message, and expect review.

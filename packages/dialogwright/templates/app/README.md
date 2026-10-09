@@ -51,6 +51,8 @@ Nothing here needs an API key. The engine's stub clients stand in for the decisi
 
 The baseline that came with this folder is the example's. When your own app is built, make its first baseline once, with `regress --update`, and read the whole diff against what you expect. From then on, never regenerate it: a changed output is a finding to explain, not noise to overwrite.
 
+The regression also runs the adversarial suite (app.yaml's `testing: { adversarial: on }`): hostile calls the engine generates from this app (announced injections, callers claiming a relationship they have not proven, requests the line does not handle, codes said aloud or never sent, and every tool replying with instructions in its reply), each held to properties over its run, never to the baseline. It prints `adversarial N/N cases hold`, or a `FAIL adversarial <id>` line naming each property that did not hold; `regress --adversarial <id>` shows a case turn by turn. A failed case is a finding about the app: a reply's field said or a turn that threw on `hostile-reply/<tool>/field` wants a `check` on that tool (as `bookService` has); never turn the suite off to pass. Against a recording, a case not yet recorded is listed as such and fails nothing.
+
 ## Recording against the real model
 
 The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API (a few cents for an app this size), so it is a deliberate local step for the app's owner, and never part of CI.

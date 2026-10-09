@@ -35,6 +35,7 @@ npm run typecheck
 npm test
 npx dialogwright regress                  # the stub regression: prints "no changes", then a summary
 npx dialogwright regress --scenario <id>  # one scripted call, turn by turn (--corpus <id>: one corpus line)
+npx dialogwright regress --adversarial <id>  # one case of the adversarial suite, turn by turn
 ```
 
 The check prints one line per problem, `file:line:column  path  message  ->  fix`. Act on the fix text.
@@ -58,6 +59,8 @@ Run the check, the type check, the tests and the regression. Never regenerate th
 - Import only from `'dialogwright'`, `'dialogwright/testing'` (tests), `'dialogwright/slot-kit'` (a slot type of your own) and `'dialogwright/policy'`. Nothing else of the package is supported.
 - Every YAML file starts with `# yaml-language-server: $schema=node_modules/dialogwright/schemas/<kind>.schema.json`: keep the line when you add a file.
 - Every tool lists the `params` its calls carry, and `policy.yaml` declares under `audit` how each is recorded. A rule of your own is written with `defineRule`, with an example the gate allows and one it refuses.
+- The regression runs the adversarial suite (app.yaml's `testing: { adversarial: on }`; keep it on). A `FAIL adversarial` case is a finding: fix the app (a tool's `check` of its reply, the policy, a hook), never the case, and never turn the suite off to pass.
+- Every tool whose reply a line says, or a call is made from, checks the reply (`check`, written with `replyShape`): a downstream system's reply is not trusted.
 - Fictional data only: invented names, the 555 phone range.
 - Never commit a key, and never put one in a file other than the git-ignored `.env`.
 {{^identity}}
