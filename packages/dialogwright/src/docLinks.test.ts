@@ -20,8 +20,8 @@ import { packagePathOf } from './define/shipped';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
-/** Every Markdown page git tracks or would (not what it ignores, such as the package's shipped copies). */
-const PAGES = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', '*.md'], { cwd: ROOT, encoding: 'utf8' })
+/** Every Markdown page git tracks or would (not what it ignores, such as the package's shipped copies), and llms.txt. */
+const PAGES = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', '*.md', 'llms.txt'], { cwd: ROOT, encoding: 'utf8' })
   .split('\n')
   .filter((f) => f !== '' && existsSync(join(ROOT, f)));
 
@@ -93,7 +93,7 @@ function targetOf(page: string, path: string): string | null {
 
 describe('the Markdown pages', () => {
   it('are read, the guide\'s chapters among them', () => {
-    for (const page of ['README.md', 'docs/README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', 'docs/first-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
+    for (const page of ['README.md', 'llms.txt', 'docs/README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', 'docs/first-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
   });
 
   it('link only to files that exist, and to anchors their pages have', () => {

@@ -3,13 +3,13 @@
 // old page is kept as a list of pointers: one line for each heading it had, with that heading's anchor
 // (`<a id="...">`) and a link to the chapter and anchor where the section is now. This script reads
 // that list and rewrites every link in this repository that still names the old page (a Markdown link
-// in a .md file, an href in a site page) to the new place: `authoring-an-app.md#appyaml` becomes
-// `guide/02-the-files-one-by-one.md#appyaml`, keeping whatever led to docs/ before it (a relative
-// path, `{{root}}/docs/` in a template, `node_modules/dialogwright/docs/`, the repository's GitHub
-// URL), and a link with no anchor goes to the guide's contents, `guide/README.md`. A link to an
+// in a .md file or llms.txt, an href in a site page) to the new place: `authoring-an-app.md#appyaml`
+// becomes `guide/02-the-files-one-by-one.md#appyaml`, keeping whatever led to docs/ before it (a
+// relative path, `{{root}}/docs/` in a template, `node_modules/dialogwright/docs/`, the repository's
+// GitHub URL), and a link with no anchor goes to the guide's contents, `guide/README.md`. A link to an
 // anchor the old page never had is a problem it reports and leaves as it is.
 //
-// It was run once, when the guide was split; run again it changes nothing (src/guideLinks.test.ts in
+// It was run once, when the guide was split; run again it changes nothing (src/docLinks.test.ts in
 // the engine holds that, so a new link to the old page fails the tests and this script fixes it).
 // Text that names the page in code (a comment, a message) is not a link and is not touched.
 //
@@ -80,9 +80,9 @@ export function relinkText(text, file, pointers) {
   return { text: out, changes };
 }
 
-/** The pages this script reads: every .md and .html file git tracks or would (not what it ignores), but the old page itself. */
+/** The pages this script reads: every .md and .html file git tracks or would (not what it ignores), and llms.txt (Markdown by another name), but the old page itself. */
 export function pagesOf(root) {
-  return execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', '*.md', '*.html'], { cwd: root, encoding: 'utf8' })
+  return execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', '*.md', '*.html', 'llms.txt'], { cwd: root, encoding: 'utf8' })
     .split('\n')
     .filter((f) => f !== '' && f !== OLD_PAGE);
 }

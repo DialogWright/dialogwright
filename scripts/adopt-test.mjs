@@ -8,7 +8,9 @@
 //      project of its own, naming the packed dialogwright as its dependency;
 //   2. installs the project with npm (third-party packages come from the registry), and the packed
 //      @dialogwright/kb-author and @dialogwright/widget beside it;
-//   3. runs what the project's README says: the check, the type check, the tests and the stub
+//   3. checks that the project's README, CLAUDE.md and skill link only to pages it has (the guide's
+//      chapters in node_modules/dialogwright/docs among them), and runs what its README says: the
+//      check, the type check, the tests and the stub
 //      regression, all green, then the three read-back commands, which change nothing; and checks
 //      that the engine's internals are not exported, that kb-author's command runs and that the
 //      widget's script is there.
@@ -20,7 +22,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -164,8 +166,60 @@ async function startSmoke(dir, port) {
   check(!left && !listening, 'every process start began has exited, and nothing listens on the port');
 }
 
+/**
+ * Every relative link of the project's own pages (README.md, CLAUDE.md and the copied skill) to a file
+ * that exists in the installed project, the guide's chapters under node_modules/dialogwright/docs among
+ * them, and to a heading (or an `<a id>`) the page it names has: how many it read, and `[page, link]` for
+ * each that does not.
+ */
+function brokenLinks(dir) {
+  const slug = (h) => h.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+  const prose = (text) => {
+    let fenced = false;
+    return text.split('\n').filter((line) => {
+      if (/^\s*```/.test(line)) fenced = !fenced;
+      return !fenced && !/^\s*```/.test(line);
+    });
+  };
+  const anchors = (file) => {
+    const seen = new Map();
+    const out = new Set();
+    for (const line of prose(readFileSync(file, 'utf8'))) {
+      const m = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+      if (m) {
+        const base = slug(m[1]);
+        const n = seen.get(base) ?? 0;
+        seen.set(base, n + 1);
+        out.add(n === 0 ? base : `${base}-${n}`);
+      }
+      for (const a of line.matchAll(/<a\s+id="([^"]+)"/g)) out.add(a[1]);
+    }
+    return out;
+  };
+  const skill = join(dir, '.claude', 'skills', 'create-app');
+  const pages = [join(dir, 'README.md'), join(dir, 'CLAUDE.md'), ...readdirSync(skill).filter((f) => f.endsWith('.md')).map((f) => join(skill, f))];
+  const broken = [];
+  let count = 0;
+  for (const page of pages) {
+    for (const line of prose(readFileSync(page, 'utf8'))) {
+      for (const m of line.replace(/`[^`]*`/g, '').matchAll(/\]\(([^)\s]+)\)/g)) {
+        const link = m[1];
+        if (/^[a-z][a-z0-9+.-]*:/i.test(link)) continue;
+        count += 1;
+        const [path, anchor] = link.split('#');
+        const target = path === '' ? page : join(dirname(page), path);
+        if (!existsSync(target)) broken.push([page.slice(dir.length + 1), link]);
+        else if (anchor && target.endsWith('.md') && !anchors(target).has(anchor)) broken.push([page.slice(dir.length + 1), link]);
+      }
+    }
+  }
+  return { count, broken };
+}
+
 /** The README's commands, in a project, all green; then the read back, the internals and the other two packages. */
 async function exercise(dir) {
+  const { count, broken } = brokenLinks(dir);
+  check(count > 50 && broken.length === 0, `the project's README, CLAUDE.md and skill link only to pages it has (${count} links), the installed guide's chapters among them${broken.length > 0 ? `: ${broken.slice(0, 5).map(([p, l]) => `${p} -> ${l}`).join(', ')}` : ''}`);
   const checked = run('npx', ['dialogwright', 'check'], dir);
   check(checked.trim().endsWith(': ok'), `npx dialogwright check: ${checked.trim().split('\n').at(-1)}`);
   run('npm', ['run', 'typecheck'], dir);
