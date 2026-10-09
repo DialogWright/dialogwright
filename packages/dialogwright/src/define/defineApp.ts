@@ -35,6 +35,7 @@ import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { handoffDataProblems } from '../handoff/data';
 import { whenFrom } from '../core/conditions';
+import type { HoursConfig } from '../core/hours';
 import { transferProblems, type TransferProblem, type TransferWorld } from '../core/transfer';
 
 /**
@@ -979,6 +980,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'callData', a.callData === undefined ? undefined : Object.fromEntries(Object.entries(a.callData).map(([k, v]) => [k, v.redact !== undefined ? { from: v.from, redact: v.redact } : { from: v.from }])));
   put(app, 'startParameters', a.startParameters === undefined ? undefined : { ...a.startParameters });
   put(app, 'transfer', a.transfer === undefined ? undefined : transferOf(a.transfer));
+  put(app, 'hours', a.hours === undefined ? undefined : hoursOf(a.hours));
   put(app, 'callerOffer', code.callerOffer);
   put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);
@@ -1002,6 +1004,19 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;
+}
+
+/** app.yaml's hours as App.hours carries them: each part only when written. */
+function hoursOf(h: NonNullable<AppYaml['hours']>): HoursConfig {
+  const weekly = (w: Readonly<Record<string, readonly string[]>>): Record<string, string[]> => Object.fromEntries(Object.entries(w).map(([k, v]) => [k, [...v]]));
+  return {
+    timezone: h.timezone,
+    weekly: weekly(h.weekly),
+    ...(h.closed !== undefined ? { closed: [...h.closed] } : {}),
+    ...(h.schedules !== undefined ? {
+      schedules: Object.fromEntries(Object.entries(h.schedules).map(([name, s]) => [name, { ...(s.timezone !== undefined ? { timezone: s.timezone } : {}), weekly: weekly(s.weekly), ...(s.closed !== undefined ? { closed: [...s.closed] } : {}) }])),
+    } : {}),
+  };
 }
 
 /** app.yaml's callerNumber as App.callerNumber carries it: `called` only when true. */

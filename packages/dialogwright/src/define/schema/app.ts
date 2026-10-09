@@ -7,10 +7,11 @@ import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/c
 import { ENV_REFERENCE } from '../../core/app/envReference';
 import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
+import { hoursProblems } from '../../core/hours';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, hours, onStart, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -428,6 +429,43 @@ const transfer = z
   })
   .describe('Where a handoff goes and what goes with it: ordered targets on the handoff\'s reason, the form and the call data, each an environment variable holding an E.164 number or a sip: URI, and the SIP headers (or a web chat\'s data) sent with it. Without it, every handoff dials HANDOFF_NUMBER and sends nothing more.');
 
+/** A weekly schedule: day names or ranges to lists of HH:MM-HH:MM. */
+const weekly = z
+  .record(z.string(), z.array(z.string()))
+  .describe('The days the line is open and when: each key a day (mon, tue, wed, thu, fri, sat, sun) or a range of two (mon-fri; fri-mon goes round the week), each value a list of HH:MM-HH:MM ranges in 24-hour time. A range whose end is before its start runs overnight into the next day; 24:00 ends a range at midnight. A day no key names is closed.');
+const closedDates = z
+  .array(z.string())
+  .describe('Dates the line is closed all day, YYYY-MM-DD (holidays). A date closes the hours that start on it: a range the day before that runs overnight runs to its end.');
+
+const namedSchedule = z
+  .strictObject({
+    timezone: z.string().optional().describe('An IANA time zone; default the default schedule\'s.'),
+    weekly,
+    closed: closedDates.optional().describe('Dates this schedule is closed, YYYY-MM-DD; default the default schedule\'s (write [] for none).'),
+  })
+  .describe('A schedule of its own (a department\'s), read by a condition that names it: { hours: open, schedule: <name> }.');
+
+const hours = z
+  .strictObject({
+    timezone: z.string().describe('The IANA time zone the hours are kept in, for example America/New_York. Daylight saving is the zone\'s.'),
+    weekly,
+    closed: closedDates.optional(),
+    schedules: z.record(z.string(), namedSchedule).optional().describe('Schedules by name, where the app needs more than one (a billing desk, a night line), each read by { hours: open, schedule: <name> }.'),
+  })
+  // The time zone, the days, the ranges and the dates are core/hours.ts's to read, said once.
+  .check(checkAlways((value, ctx) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+    for (const p of hoursProblems(value as never)) ctx.addIssue({ code: 'custom', path: [...p.path], message: p.message, params: { fix: p.fix } });
+  }))
+  .describe('Business hours: when the line is open, read by the hours condition of a route (routes.yaml) or a transfer target ({ hours: closed }, { hours: open, schedule: billing }), at the time of the call. Default: none, and an hours condition never holds.');
+
+const onStart = z
+  .strictObject({
+    calls: unique(identifier(), 'action')
+      .optional()
+      .describe('The actions (policy.yaml) the start hook calls through the gate, as a form\'s calls: so `pnpm check` knows they are reached. Default: none.'),
+  })
+  .describe('The app\'s start hook (code.onStart in its code): run once as every call or chat starts, before the call-start lookup and the start routes, through the gate like any app call. It may read the call data, the number called and the clock, and write the facts a route or a line reads. Written here exactly when the code has one.');
 
 export const appSchema = z
   .strictObject({
@@ -486,6 +524,8 @@ export const appSchema = z
       .optional()
       .describe('Custom parameters the server writes into every start document, by name, each value the environment variable that holds it (env.<NAME>), read as the server starts; it refuses to start when one is unset. For a call placed from the app\'s own systems through the carrier, which hands them back on the setup. Default: none.'),
     transfer: transfer.optional(),
+    hours: hours.optional(),
+    onStart: onStart.optional(),
     fixtures: z
       .strictObject({
         dir: matching(

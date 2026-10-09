@@ -12,6 +12,7 @@ import type { AuditDraft } from '../../audit/types';
 import type { GateDecision, GateLookups, Level, Party, Principal, RuleContext, RuleOutcome, ToolCall } from '../../gate/types';
 import type { CompiledPolicy } from '../../gate/compiled';
 import type { Condition } from '../conditions';
+import type { HoursConfig } from '../hours';
 
 /** Engine id types: plain strings. An app defines which values exist; the engine never hard-codes them. */
 export type SlotId = string;
@@ -278,9 +279,91 @@ export interface AppContext {
    * A call through the gate, recorded like every other; `value` is null unless the gate allowed it.
    * `redacted` names the fields of the value the policy withheld from the caller (policy.yaml
    * `redact:`, each now null), present only when it withheld any.
+   *
+   * With `{ failSoft: true }` a tool that throws as it runs fails the call, not the turn: the call is
+   * recorded as allowed with a summary that says it failed (nothing of the error), the side effects it
+   * queued are dropped, and the result is `{ decision, value: null, failed: true }`, so the hook treats
+   * a failed dip as "no data", as the call-start lookup does. Without it, a throw goes up to the turn,
+   * as it always has.
    */
-  callTool(call: ToolCall): { decision: GateDecision; value: unknown; redacted?: readonly string[] };
+  callTool(call: ToolCall, opts?: CallToolOptions): AppToolResult;
 }
+
+/** How an app hook's call is made (AppContext.callTool). */
+export interface CallToolOptions {
+  /** A tool that throws fails the call, not the turn (`failed: true`). Default false. */
+  readonly failSoft?: boolean;
+}
+
+/** What an app hook's call through the gate gives back (AppContext.callTool). */
+export interface AppToolResult {
+  decision: GateDecision;
+  value: unknown;
+  redacted?: readonly string[];
+  /** The gate allowed the call and the tool threw, made with `failSoft`; absent on every other call. */
+  failed?: true;
+}
+
+/**
+ * What a route does (routes.yaml, App.routes): piece 1's Outcome but `skip` (a slot's), and two of its
+ * own. Each says its line first, where it has one:
+ * - `continue`: the call goes on as if no route were written;
+ * - `locale`: the call switches to `locale` (one of the app's), as the language intent does, then goes on;
+ * - `end`, `handoff`, `form`, `anything-else`: as a check's outcome (`anything-else` never at `start`).
+ */
+export type RouteOutcome =
+  | Exclude<Outcome, { readonly then: 'skip' }>
+  | { readonly then: 'continue'; readonly say?: string }
+  | { readonly then: 'locale'; readonly say?: string; readonly locale: string };
+
+/** What a route's `then` may be, in the order the docs list them. */
+export const ROUTE_THEN = ['continue', 'locale', 'end', 'handoff', 'form', 'anything-else'] as const;
+
+/** The points a route decides at: once before the greeting, once when the caller first reaches level 1, and when a form completes as said. */
+export const ROUTE_POINTS = ['start', 'afterIdentity', 'afterForm'] as const;
+export type RoutePoint = (typeof ROUTE_POINTS)[number];
+
+/** The thens a point takes: `anything-else` asks "anything else?", which nothing has been asked of at `start`. */
+export const ROUTE_THEN_AT: Readonly<Record<RoutePoint, readonly RouteOutcome['then'][]>> = {
+  start: ['continue', 'locale', 'end', 'handoff', 'form'],
+  afterIdentity: ROUTE_THEN,
+  afterForm: ROUTE_THEN,
+};
+
+/**
+ * One route (routes.yaml): taken when every condition of `when` holds (core/conditions.ts). The last
+ * rule of a point is its `else`, with no conditions, taken when no rule before it is.
+ */
+export interface RouteRule {
+  readonly when: readonly Condition[];
+  readonly outcome: RouteOutcome;
+  /** This is the point's `else`, its last rule. */
+  readonly else?: true;
+}
+
+/**
+ * The app's routes (routes.yaml): ordered rules at each of three points, the first whose conditions all
+ * hold taken, and an `else` last. Routes are not a state machine: intents, priority intents and the
+ * agent intent still decide every turn; routes decide only at their points.
+ */
+export interface Routes {
+  /** Once, as the call starts: after onStart and the call-start lookup, before the greeting. */
+  readonly start?: readonly RouteRule[];
+  /** Once, the first time the caller reaches level 1: after the identity step's own line, before the form that asked for it goes on. */
+  readonly afterIdentity?: readonly RouteRule[];
+  /** By form: when that form completes as said, before its `next`. */
+  readonly afterForm?: Readonly<Record<FormId, readonly RouteRule[]>>;
+}
+
+/** What a predicate (App.predicates) is given: the session, read-only, and the turn's clock. */
+export interface PredicateContext {
+  readonly s: Readonly<Session>;
+  readonly nowMs: number;
+  readonly todayIso: string;
+}
+
+/** A condition the app writes in code (routes.yaml's `{ named: <id> }`): true or false, given the session, read-only. */
+export type Predicate = (ctx: PredicateContext) => boolean;
 
 /** A form's entry hook: an AppContext with the turn's acks so far. */
 export interface EntryContext extends AppContext {
@@ -1154,6 +1237,34 @@ export interface App {
    * HANDOFF_NUMBER, as before.
    */
   transfer?: TransferConfig;
+  /**
+   * Business hours (app.yaml's `hours`, core/hours.ts): the default schedule and schedules by name,
+   * read by the `hours` condition of a route or a transfer target at the turn's clock. Without it, an
+   * hours condition never holds.
+   */
+  hours?: HoursConfig;
+  /**
+   * The routes (routes.yaml, core/routes.ts): ordered rules at call start, after identity and after a
+   * form, each going on, switching the language, saying a line, ending, handing off or entering a form.
+   * Without it, nothing is decided at those points, as before.
+   */
+  routes?: Routes;
+  /**
+   * The app's own conditions, by name (routes.yaml's and transfer's `{ named: <id> }`): each given the
+   * session read-only and the clock, and returning true or false. One that throws is false. Without it,
+   * none.
+   */
+  predicates?: Readonly<Record<string, Predicate>>;
+  /**
+   * Runs once as every call or chat starts (`session.start`), before the call-start lookup and the start
+   * routes: it may read the call data (callDataOf), the number called (calledOf), the clock (ctx.tc),
+   * write the facts, and call tools through the gate (ctx.callTool; with `failSoft`, a failed dip is no
+   * data). One that throws leaves the facts as they were, drops the side effects it queued, and the call
+   * goes on. Without it, nothing runs, as before.
+   */
+  onStart?(ctx: AppContext): void;
+  /** The actions the start hook calls (app.yaml's `onStart.calls`), so they are reached. Without it, none. */
+  startCalls?: readonly ToolName[];
   /**
    * Whether the number the caller is calling from may be offered for `slot` (a slot's
    * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and

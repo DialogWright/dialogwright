@@ -1,5 +1,5 @@
 import type { App, CallDataKey, FormId, SlotId, TransferConfig, TransferSend } from './app/types';
-import { allHold, alwaysHolds, conditionProblems, type Condition, type ConditionFacts } from './conditions';
+import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, type Condition, type ConditionFacts, type ConditionWorld } from './conditions';
 import { envVariableOf } from './app/envReference';
 import { callDataSourceOf, recordedCallData, redactionOf, writableValue } from '../channel/callData';
 import { floorByName } from '../channel/maskByName';
@@ -188,13 +188,9 @@ export interface TransferProblem {
   readonly unknownSlot?: string;
 }
 
-/** What the app has that a transfer names. */
-export interface TransferWorld {
-  readonly forms: readonly FormId[];
-  readonly slots: readonly SlotId[];
+/** What the app has that a transfer names: what its conditions may name (ConditionWorld), and its call data keys. */
+export interface TransferWorld extends Omit<ConditionWorld, 'at' | 'callData'> {
   readonly callData?: Readonly<Record<string, CallDataKey>>;
-  /** Whether a handoff for `reason` has its line (handoff_<reason>); absent, not asked (validateApp). */
-  readonly hasReasonLine?: (reason: string) => boolean;
 }
 
 /** A misspelling of a reference that would be sent as a constant. */
@@ -257,17 +253,11 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
       const path = [...at, 'when', j];
       const shape = conditionProblems(c);
       if (shape.length > 0) {
-        for (const problem of shape) add(path, `${problem}`, 'write a Condition (core/conditions.ts): { kind: \'reason\', reasons: [...] }, { kind: \'form\', forms: [...] } or { kind: \'callData\', key, test: { is } | { in } | { notIn } | { present } }');
+        for (const problem of shape) add(path, `${problem}`, `write a Condition (core/conditions.ts): ${CONDITION_SHAPES}`);
         return;
       }
-      if (c.kind === 'form') {
-        for (const form of c.forms) if (!world.forms.includes(form)) add([...path, 'form'], `form "${form}" is not defined`, `name one of ${world.forms.join(', ')}`);
-      } else if (c.kind === 'callData') {
-        if (!Object.hasOwn(keys, c.key)) add([...path, 'callData'], `callData key "${c.key}" is not defined`, `add "${c.key}" under callData in app.yaml, or name one of ${Object.keys(keys).join(', ') || 'its keys'}`);
-      } else if (world.hasReasonLine !== undefined) {
-        for (const reason of c.reasons) {
-          if (!world.hasReasonLine(reason)) add([...path, 'reason'], `no handoff has the reason "${reason}" (prompts.yaml has no handoff_${reason.replace(/-/g, '_')}), so this condition never holds`, `name a reason the app hands off for, or add its line handoff_${reason.replace(/-/g, '_')}`, { warning: true });
-        }
+      for (const p of conditionRefProblems(c, { ...world, at: 'handoff' })) {
+        add([...path, p.key], p.message, p.fix, { ...(p.warning ? { warning: true as const } : {}), ...(p.unknownSlot !== undefined ? { unknownSlot: p.unknownSlot } : {}) });
       }
     });
   };

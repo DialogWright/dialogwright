@@ -1041,8 +1041,66 @@
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
+                      "fact": {
+                        "description": "A value in the session's facts (what the app's code keeps), by its name or a dotted path to a nested one (account.tier), tested by is, in, notIn or present beside it. A fact that is not set (or null) fails is, in and notIn, and holds present: false; one that is a list or a record is present and equals no value.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+                      },
+                      "slot": {
+                        "description": "A slot's value as the call holds it (a form's slot, or one carried), tested by is, in, notIn or present beside it. An empty slot fails is, in and notIn, and holds present: false.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "level": {
+                        "description": "Holds when the caller is verified to at least this level: 1 (identity.yaml's factors) or 2 (the one-time code too).",
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "const": 1
+                          },
+                          {
+                            "type": "number",
+                            "const": 2
+                          }
+                        ]
+                      },
+                      "hours": {
+                        "description": "Holds when app.yaml's hours are open, or closed, at the time of the call; with schedule, a named schedule's (hours.schedules). An app with no such hours holds neither.",
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "closed"
+                        ]
+                      },
+                      "schedule": {
+                        "description": "For hours: a schedule named under app.yaml's hours.schedules, in place of the default.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "called": {
+                        "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                          },
+                          {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                            }
+                          }
+                        ]
+                      },
+                      "named": {
+                        "description": "Holds when the app's predicate of this name (code.predicates) returns true, given the session, read-only: for anything the other conditions cannot say.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
                       "is": {
-                        "description": "For callData: holds when the value is this one.",
+                        "description": "For callData, fact or slot: holds when the value is this one.",
                         "type": [
                           "string",
                           "number",
@@ -1050,7 +1108,7 @@
                         ]
                       },
                       "in": {
-                        "description": "For callData: holds when the value is one of these.",
+                        "description": "For callData, fact or slot: holds when the value is one of these.",
                         "minItems": 1,
                         "type": "array",
                         "items": {
@@ -1062,7 +1120,7 @@
                         }
                       },
                       "notIn": {
-                        "description": "For callData: holds when the call has the key and its value is none of these.",
+                        "description": "For callData, fact or slot: holds when there is a value and it is none of these.",
                         "minItems": 1,
                         "type": "array",
                         "items": {
@@ -1074,12 +1132,12 @@
                         }
                       },
                       "present": {
-                        "description": "For callData: true holds when the call came with the key, false when it came without it.",
+                        "description": "For callData, fact or slot: true holds when there is a value, false when there is none.",
                         "type": "boolean"
                       }
                     },
                     "additionalProperties": false,
-                    "description": "One condition: a subject (reason, form or callData) and, for callData, one test (is, in, notIn or present)."
+                    "description": "One condition: a subject (reason, form, callData, fact, slot, level, hours, called or named) and, for callData, fact and slot, one test (is, in, notIn or present)."
                   },
                   {
                     "minItems": 1,
@@ -1126,8 +1184,66 @@
                           "type": "string",
                           "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                         },
+                        "fact": {
+                          "description": "A value in the session's facts (what the app's code keeps), by its name or a dotted path to a nested one (account.tier), tested by is, in, notIn or present beside it. A fact that is not set (or null) fails is, in and notIn, and holds present: false; one that is a list or a record is present and equals no value.",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+                        },
+                        "slot": {
+                          "description": "A slot's value as the call holds it (a form's slot, or one carried), tested by is, in, notIn or present beside it. An empty slot fails is, in and notIn, and holds present: false.",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
+                        "level": {
+                          "description": "Holds when the caller is verified to at least this level: 1 (identity.yaml's factors) or 2 (the one-time code too).",
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "const": 1
+                            },
+                            {
+                              "type": "number",
+                              "const": 2
+                            }
+                          ]
+                        },
+                        "hours": {
+                          "description": "Holds when app.yaml's hours are open, or closed, at the time of the call; with schedule, a named schedule's (hours.schedules). An app with no such hours holds neither.",
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "closed"
+                          ]
+                        },
+                        "schedule": {
+                          "description": "For hours: a schedule named under app.yaml's hours.schedules, in place of the default.",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
+                        "called": {
+                          "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                              }
+                            }
+                          ]
+                        },
+                        "named": {
+                          "description": "Holds when the app's predicate of this name (code.predicates) returns true, given the session, read-only: for anything the other conditions cannot say.",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
                         "is": {
-                          "description": "For callData: holds when the value is this one.",
+                          "description": "For callData, fact or slot: holds when the value is this one.",
                           "type": [
                             "string",
                             "number",
@@ -1135,7 +1251,7 @@
                           ]
                         },
                         "in": {
-                          "description": "For callData: holds when the value is one of these.",
+                          "description": "For callData, fact or slot: holds when the value is one of these.",
                           "minItems": 1,
                           "type": "array",
                           "items": {
@@ -1147,7 +1263,7 @@
                           }
                         },
                         "notIn": {
-                          "description": "For callData: holds when the call has the key and its value is none of these.",
+                          "description": "For callData, fact or slot: holds when there is a value and it is none of these.",
                           "minItems": 1,
                           "type": "array",
                           "items": {
@@ -1159,12 +1275,12 @@
                           }
                         },
                         "present": {
-                          "description": "For callData: true holds when the call came with the key, false when it came without it.",
+                          "description": "For callData, fact or slot: true holds when there is a value, false when there is none.",
                           "type": "boolean"
                         }
                       },
                       "additionalProperties": false,
-                      "description": "One condition: a subject (reason, form or callData) and, for callData, one test (is, in, notIn or present)."
+                      "description": "One condition: a subject (reason, form, callData, fact, slot, level, hours, called or named) and, for callData, fact and slot, one test (is, in, notIn or present)."
                     }
                   }
                 ]
@@ -1255,6 +1371,97 @@
       ],
       "additionalProperties": false,
       "description": "Where a handoff goes and what goes with it: ordered targets on the handoff's reason, the form and the call data, each an environment variable holding an E.164 number or a sip: URI, and the SIP headers (or a web chat's data) sent with it. Without it, every handoff dials HANDOFF_NUMBER and sends nothing more."
+    },
+    "hours": {
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "type": "string",
+          "description": "The IANA time zone the hours are kept in, for example America/New_York. Daylight saving is the zone's."
+        },
+        "weekly": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "The days the line is open and when: each key a day (mon, tue, wed, thu, fri, sat, sun) or a range of two (mon-fri; fri-mon goes round the week), each value a list of HH:MM-HH:MM ranges in 24-hour time. A range whose end is before its start runs overnight into the next day; 24:00 ends a range at midnight. A day no key names is closed."
+        },
+        "closed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Dates the line is closed all day, YYYY-MM-DD (holidays). A date closes the hours that start on it: a range the day before that runs overnight runs to its end."
+        },
+        "schedules": {
+          "description": "Schedules by name, where the app needs more than one (a billing desk, a night line), each read by { hours: open, schedule: <name> }.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "timezone": {
+                "description": "An IANA time zone; default the default schedule's.",
+                "type": "string"
+              },
+              "weekly": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "description": "The days the line is open and when: each key a day (mon, tue, wed, thu, fri, sat, sun) or a range of two (mon-fri; fri-mon goes round the week), each value a list of HH:MM-HH:MM ranges in 24-hour time. A range whose end is before its start runs overnight into the next day; 24:00 ends a range at midnight. A day no key names is closed."
+              },
+              "closed": {
+                "description": "Dates this schedule is closed, YYYY-MM-DD; default the default schedule's (write [] for none).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "weekly"
+            ],
+            "additionalProperties": false,
+            "description": "A schedule of its own (a department's), read by a condition that names it: { hours: open, schedule: <name> }."
+          }
+        }
+      },
+      "required": [
+        "timezone",
+        "weekly"
+      ],
+      "additionalProperties": false,
+      "description": "Business hours: when the line is open, read by the hours condition of a route (routes.yaml) or a transfer target ({ hours: closed }, { hours: open, schedule: billing }), at the time of the call. Default: none, and an hours condition never holds."
+    },
+    "onStart": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "description": "The actions (policy.yaml) the start hook calls through the gate, as a form's calls: so `pnpm check` knows they are reached. Default: none.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "The app's start hook (code.onStart in its code): run once as every call or chat starts, before the call-start lookup and the start routes, through the gate like any app call. It may read the call data, the number called and the clock, and write the facts a route or a line reads. Written here exactly when the code has one."
     },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",

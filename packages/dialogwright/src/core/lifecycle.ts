@@ -206,6 +206,8 @@ export interface ToolOutcome {
   decision: GateDecision;
   value: unknown;
   redacted?: readonly string[];
+  /** The tool threw, on a call made with `failSoft`; absent on every other call. */
+  failed?: true;
 }
 
 const IGNORE: Decision = { kind: 'ignore' };
@@ -323,7 +325,7 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     if (opts.failSoft !== true) throw err;
     out.effects.length = effectsBefore;
     out.gateEvents.push({ decision, summary: TOOL_FAILED_SUMMARY });
-    return { decision, value: null };
+    return { decision, value: null, failed: true };
   }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
@@ -732,7 +734,7 @@ export function takeSummaryHash(s: Session, form: FormId): void {
  * callTool bound to them. The only way an app's code reaches a tool.
  */
 export function appContext(s: Session, tc: TurnContext, out: TurnOut): AppContext {
-  return { s, tc, out, callTool: (call) => callTool(s, call, tc, out) };
+  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { failSoft: true } : {}) };
 }
 
 /** A completion's context: an AppContext with the turn's acks so far, and refusal bound to them. */
