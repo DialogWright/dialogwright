@@ -23,9 +23,9 @@ function settings(text: string): string {
   return path;
 }
 
-function regress(args: string[], envFile = settings('')): { code: number | null; stdout: string; stderr: string } {
+function regress(args: string[], envFile = settings(''), launcher = 'src/testing/testkit/regress.ts'): { code: number | null; stdout: string; stderr: string } {
   const env = Object.fromEntries(Object.entries(withShortTmp()).filter(([key]) => !key.startsWith('VITEST') && key !== 'FORCE_COLOR' && !/^(JEV_|TYPESAFE_|OPENROUTER_|AI_GATEWAY_)/.test(key)));
-  const r = spawnSync(process.execPath, [TSX, 'src/testing/testkit/regress.ts', ...args], {
+  const r = spawnSync(process.execPath, [TSX, launcher, ...args], {
     cwd: PACKAGE_DIR,
     env: { ...env, NO_COLOR: '1', ENV_FILE: envFile },
     encoding: 'utf8',
@@ -90,5 +90,41 @@ describe('regress against a cassette', () => {
     expect(run.stderr).not.toContain('settings from');
     expect(run.stdout).not.toContain('to triage');
     expect(regress(['--corpus', 'tk-01'], file).stdout).not.toContain('model answers');
+  });
+});
+
+describe('regress with the adversarial suite (app.yaml testing.adversarial)', () => {
+  const ON = 'src/testing/testkit/regressAdversarial.ts';
+
+  it('an app that does not turn it on runs as before: no word of it', () => {
+    const run = regress([]);
+    expect(run.code, run.stdout + run.stderr).toBe(0);
+    expect(run.stdout).not.toContain('adversarial');
+  });
+
+  it('on the stub, it runs after the baseline and holds every case', () => {
+    const run = regress([], settings(''), ON);
+    expect(run.code, run.stdout + run.stderr).toBe(0);
+    expect(run.stdout).toContain('no changes');
+    expect(run.stdout).toMatch(/\nadversarial (\d+)\/\1 cases hold, \d+ not run {2}\(injection \d+\/\d+, relationship \d+\/\d+, off-scope \d+\/\d+, spoken-code \d+\/\d+, hostile-reply \d+\/\d+\)\n/);
+    expect(run.stdout).not.toContain('FAIL');
+  });
+
+  it('against a recording that has none of its answers, lists its cases as not yet recorded, failing none', () => {
+    const run = regress(['--client', 'recorded'], settings(''), ON);
+    expect(run.stdout).toMatch(/\nadversarial \d+\/\d+ cases hold, \d+ not yet recorded/);
+    expect(run.stdout).toContain("not yet recorded (they are recorded with the app's next --client record): injection/open/ignore-instructions/correct/en");
+    expect(run.stdout).not.toContain('FAIL adversarial');
+  });
+
+  it('--adversarial <id> shows the cases it starts, turn by turn, whether or not the app turns the suite on', () => {
+    const run = regress(['--adversarial', 'injection/open/ignore-instructions/correct']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain('adversarial injection/open/ignore-instructions/correct/en');
+    expect(run.stdout).toContain('screen: quarantined');
+    expect(run.stdout).toMatch(/\n {2}hold\n/);
+    const wrong = regress(['--adversarial', 'injection/opne']);
+    expect(wrong.code).toBe(1);
+    expect(wrong.stderr).toContain('no adversarial case "injection/opne"; did you mean');
   });
 });

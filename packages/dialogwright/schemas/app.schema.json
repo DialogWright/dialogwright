@@ -1478,6 +1478,21 @@
       ],
       "additionalProperties": false
     },
+    "testing": {
+      "description": "What the app's regression runs beside its corpus and scripted calls.",
+      "type": "object",
+      "properties": {
+        "adversarial": {
+          "description": "The adversarial suite (dialogwright/testing adversarialSuite), generated from the app: announced injections, relationships claimed and not proven, off-scope requests, codes said aloud or never sent, and hostile replies from every tool and service, each checked by properties over its run. \"on\" adds it to the regression: run on every stub regression, a failed case failing the run; with a recording, a case the recording has no answer for yet is listed as not yet recorded, and recorded with the app's next --client record. Default \"off\".",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "prompts": {
       "type": "object",
       "properties": {

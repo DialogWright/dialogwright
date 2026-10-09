@@ -11,7 +11,7 @@ import { hoursProblems } from '../../core/hours';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, hours, onStart, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, hours, onStart, fixtures, testing, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -536,6 +536,17 @@ export const appSchema = z
       })
       .optional()
       .describe("Where the app's regression fixtures live, for the harness, the stubs and the clients that read them."),
+    testing: z
+      .strictObject({
+        adversarial: z
+          .enum(['on', 'off'])
+          .optional()
+          .describe(
+            'The adversarial suite (dialogwright/testing adversarialSuite), generated from the app: announced injections, relationships claimed and not proven, off-scope requests, codes said aloud or never sent, and hostile replies from every tool and service, each checked by properties over its run. "on" adds it to the regression: run on every stub regression, a failed case failing the run; with a recording, a case the recording has no answer for yet is listed as not yet recorded, and recorded with the app\'s next --client record. Default "off".',
+          ),
+      })
+      .optional()
+      .describe("What the app's regression runs beside its corpus and scripted calls."),
     prompts: promptSettings.optional(),
   })
   .describe('app.yaml: who the app is and how it presents itself.');

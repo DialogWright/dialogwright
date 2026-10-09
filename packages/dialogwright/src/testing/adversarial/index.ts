@@ -5,7 +5,7 @@
  */
 export { adversarialSuite } from './generate';
 export type { AdversarialSuiteOptions } from './generate';
-export { runAdversarialSuite, outcomeClassOf } from './run';
+export { runAdversarialSuite, outcomeClassOf, PERCEIVED } from './run';
 export type { AdversarialReport, AdversarialRunOptions, CaseCall, CaseResult, CaseStatus } from './run';
 export { formatAdversarialReport, adversarialTranscript } from './print';
 export { HOSTILE_TEXT, HOSTILE_MARKERS, saysHostile } from './hostile';

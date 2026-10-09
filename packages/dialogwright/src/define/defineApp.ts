@@ -1031,6 +1031,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'portal', code.portal);
   put(app, 'testing', code.testing);
   put(app, 'fixtures', a.fixtures);
+  put(app, 'adversarial', a.testing?.adversarial === 'on' ? true : undefined);
   // The knowledge base, with the code's retriever when it gives one, else the engine's default:
   // hybrid when kb.yaml names an embedder whose index and weights are there, else keywords alone.
   // A default that fell back to keywords although kb.yaml names an embedder is said, with the fix (../kb/fallback.ts).

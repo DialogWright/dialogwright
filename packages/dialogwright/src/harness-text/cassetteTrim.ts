@@ -11,6 +11,8 @@ import { loadScenarios } from './runner';
 import { runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
 import { loadHarnessEnv } from '../server/envFile';
+import { defaultAppId, getApp } from '../core/app/registry';
+import { adversarialRun } from './regress';
 
 /**
  * The cassette trim: replay the whole regression run from the cassette, note every request it
@@ -51,6 +53,12 @@ async function run(): Promise<void> {
     onCorpus: (_done, _total, _entry, record) => count(record),
     onScenario: (_done, _total, _scenario, records) => records.forEach(count),
   });
+  // The adversarial suite's cases, for an app that runs it (app.yaml testing.adversarial): the answers
+  // its recorded cases use are kept too. A case not yet recorded is no miss here: it is recorded with
+  // the app's next recording, and the trim keeps what is there.
+  if (getApp(defaultAppId()).adversarial === true) {
+    await adversarialRun('recorded', client, { ...DEFAULT_THRESHOLDS }, screen, loadCorpus(defaultCorpusFile()), loadScenarios(scenariosDir()));
+  }
   if (misses > 0) {
     console.error(`${path}: ${misses} requests missed; re-record the cassette (run the regression with --client record) before trimming. Nothing written.`);
     process.exitCode = 1;

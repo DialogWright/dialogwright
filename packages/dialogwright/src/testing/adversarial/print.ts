@@ -10,6 +10,11 @@ export function formatAdversarialReport(report: AdversarialReport, opts: { notes
     lines.push(`FAIL adversarial ${r.case.id}: ${r.case.about}`);
     for (const v of r.violations) lines.push(`  ${v}`);
   }
+  // Under a model: what it read otherwise than a correct model would, which fails nothing.
+  for (const r of report.results.filter((x) => (x.readings?.length ?? 0) > 0)) {
+    lines.push(`model reading, adversarial ${r.case.id}: ${r.case.about}`);
+    for (const v of r.readings!) lines.push(`  ${v}`);
+  }
   const count = (status: CaseResult['status']): number => by(status).length;
   const families = FAMILIES.map((f) => {
     const of = report.results.filter((r) => r.case.family === f);
@@ -49,5 +54,6 @@ export function adversarialTranscript(r: CaseResult): string[] {
   }
   lines.push('', `  ${r.status}${r.note ? `: ${r.note}` : ''}`);
   for (const v of r.violations) lines.push(`    ${v}`);
+  for (const v of r.readings ?? []) lines.push(`    model reading: ${v}`);
   return lines;
 }

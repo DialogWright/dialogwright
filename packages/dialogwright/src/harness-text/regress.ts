@@ -17,6 +17,11 @@ import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
 import { emptyRunAll, runAll } from './runAll';
 import { parseScreenMode } from '../core/screen';
 import { loadHarnessEnv } from '../server/envFile';
+import { defaultAppId, getApp } from '../core/app/registry';
+import type { JevClient } from '../jev/types';
+import type { Thresholds } from '../core/thresholds';
+import type { ScreenMode } from '../core/screen';
+import { adversarialSuite, adversarialTranscript, formatAdversarialReport, runAdversarialSuite, type AdversarialReport } from '../testing/adversarial/index';
 
 /**
  * Whether a run on this client refuses a spoken step whose words no corpus line has: only the
@@ -46,6 +51,9 @@ async function run(argv?: readonly string[]): Promise<void> {
       // With --corpus or --scenario: the outcomes alone, as JSON in the baseline's own shape (the
       // lines of fixtures/expected/corpus.json or scenarios.json), so an entry can be added by hand.
       json: { type: 'boolean', default: false },
+      // A transcript of the adversarial suite's cases whose ids start with this, turn by turn, with
+      // their properties' verdict (testing/adversarial), whether or not app.yaml turns the suite on.
+      adversarial: { type: 'string', multiple: true, default: [] },
     },
   });
   const kind = args.client ?? 'stub';
@@ -79,8 +87,9 @@ async function run(argv?: readonly string[]): Promise<void> {
     ].join('\n'));
   }
   const picked = { scenarios: args.scenario ?? [], corpus: args.corpus ?? [] };
-  if (args.update && picked.scenarios.length + picked.corpus.length > 0) {
-    console.error('--update records the whole baseline; it cannot be given with --scenario or --corpus');
+  const cases = args.adversarial ?? [];
+  if (args.update && picked.scenarios.length + picked.corpus.length + cases.length > 0) {
+    console.error('--update records the whole baseline; it cannot be given with --scenario, --corpus or --adversarial');
     process.exitCode = 1;
     return;
   }
@@ -115,6 +124,12 @@ async function run(argv?: readonly string[]): Promise<void> {
   }
   if (picked.scenarios.length + picked.corpus.length > 0) {
     process.exitCode = await transcripts(picked, corpus, scenarioDefs, opts, readBaseline(), kind);
+    if (cases.length === 0) return;
+  }
+  if (cases.length > 0) {
+    const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases);
+    for (const r of report.results) console.log([...adversarialTranscript(r), ''].join('\n'));
+    if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
     return;
   }
 
@@ -179,6 +194,15 @@ async function run(argv?: readonly string[]): Promise<void> {
     const allowedKind = corpusDiff.allowed.length > 0 ? 'drift' : scenarioDiff.allowed.length > 0 ? 'cosmetic drift' : null;
     if (lines.length === 0 && failing.length === 0) console.log(allowedKind ? `no changes beyond the allowed ${allowedKind} above` : 'no changes');
     else process.exitCode = 1;
+    // The adversarial suite, for an app that turns it on (app.yaml testing.adversarial): its own
+    // cases, held to their properties, never to the baseline. A failed case fails the run; with a
+    // recording, a case it has no answers for yet is listed as not yet recorded.
+    if (getApp(defaultAppId()).adversarial === true) {
+      const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs);
+      console.log('');
+      for (const l of formatAdversarialReport(report)) console.log(l);
+      if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
+    }
   } finally {
     // Diffed here rather than reused from above so an aborted run still reports what it ran:
     // ids it never reached simply read as removed. Wrapped so a failure in here (e.g. a
@@ -210,6 +234,41 @@ async function run(argv?: readonly string[]): Promise<void> {
       console.error(`summary unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+}
+
+/**
+ * The adversarial suite for the registered app, run as this regression runs (testing/adversarial):
+ * on the stubs, each case answered from its own labels and the app's scripted calls from its corpus
+ * (the heuristic stub reads words its own way, so it runs as a model does); against a model or its
+ * cassette, with the run's client, a recording's misses listed as not yet recorded. `only`: the cases
+ * whose ids start with one of these (an id that matches none is an error, with the nearest).
+ */
+export async function adversarialRun(
+  kind: string,
+  client: JevClient,
+  thresholds: Thresholds,
+  screen: ScreenMode,
+  corpus: readonly CorpusEntry[],
+  scenarios: readonly Scenario[],
+  only?: readonly string[],
+): Promise<AdversarialReport> {
+  const app = getApp(defaultAppId());
+  const delegates = [...corpus.flatMap((e) => (e.as ? [e.as] : [])), ...scenarios.flatMap((s) => (s.as && s.as !== 'web' ? [s.as] : []))];
+  const suite = adversarialSuite(app, { delegates });
+  const cases = only === undefined ? suite.cases : only.flatMap((prefix) => {
+    const found = suite.cases.filter((c) => c.id.startsWith(prefix));
+    if (found.length > 0) return found;
+    // The nearest of the ids cut to the length asked, so a prefix with a slip finds what it meant.
+    const near = closest(prefix, [...new Set(suite.cases.map((c) => c.id.slice(0, prefix.length)))]);
+    throw new Error(`no adversarial case "${prefix}"${near ? `; did you mean "${near}"?` : ''}`);
+  });
+  return runAdversarialSuite({ ...suite, cases }, {
+    thresholds,
+    todayIso: REGRESS_TODAY,
+    screen,
+    perceiver: kind === 'stub' ? { stub: true, corpus } : { stub: false, client, recorded: kind === 'recorded' },
+    scenarios,
+  });
 }
 
 /** The ids asked for, or the problem with one that is not there (with the nearest id). */

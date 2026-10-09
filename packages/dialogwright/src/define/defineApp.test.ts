@@ -213,6 +213,24 @@ describe('defineApp: what silence after "anything else?" gets (app.yaml anything
   });
 });
 
+describe('defineApp: the adversarial suite with the regression (app.yaml testing.adversarial)', () => {
+  const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
+  const withLines = (lines: string): string => read('app.yaml').replace('carrySlots: [branch]', `carrySlots: [branch]\n${lines}`);
+
+  it('leaves it off the App unless it is on, and puts it on when it is', () => {
+    expect('adversarial' in libraryApp).toBe(false);
+    expect(defineApp(folder({ 'app.yaml': withLines('testing:\n  adversarial: on') }), libraryCode).adversarial).toBe(true);
+    expect('adversarial' in defineApp(folder({ 'app.yaml': withLines('testing:\n  adversarial: off') }), libraryCode)).toBe(false);
+    expect('adversarial' in defineApp(folder({ 'app.yaml': withLines('testing: {}') }), libraryCode)).toBe(false);
+  });
+
+  it('refuses a value it does not have, naming the two it has', () => {
+    expect(problems(libraryCode, folder({ 'app.yaml': withLines('testing:\n  adversarial: yes') }))).toEqual([
+      'app.yaml:29:16  testing.adversarial  "adversarial" is "yes", which is not allowed here; it must be one of "on", "off"  ->  use one of "on", "off"',
+    ]);
+  });
+});
+
 describe('defineApp: what an unsure intent gets (app.yaml unsureIntent, intents.yaml unsure)', () => {
   const read = (file: string): string => readFileSync(join(LIBRARY_DIR, file), 'utf8');
   const withIntent = (intent: string, line: string): string => read('intents.yaml').replace(`  ${intent}:\n`, `  ${intent}:\n    ${line}\n`);
