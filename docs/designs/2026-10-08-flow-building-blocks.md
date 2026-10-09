@@ -153,3 +153,12 @@ accountId:
 2. Should `routes` live in app.yaml or in their own `routes.yaml`? A separate file is proposed, as policy and forms each have theirs.
 3. Should transfer targets be chosen by reason only, or also by form and by `callData` (for example, a VIP queue)?
 4. Which carrier first for headers on transfer: Twilio or Telnyx?
+
+## Decisions (the maintainer, 2026-10-08)
+
+1. **Route points:** the three proposed (call start, after identity, after a form). "After a slot fills" stays the job of form checks.
+2. **Where routes live:** their own `routes.yaml`.
+3. **Transfer targets:** chosen by the handoff reason, by the form the caller was in, and by `callData` (for example a VIP queue). The order of precedence is part of the build's design: likely the most specific first (`callData`, then form, then reason, then `default`), and the app may write them as ordered rules like routes.
+4. **Data sent with a transfer:** Twilio and Telnyx together, one shared shape with both adapters in one pass.
+
+Order of building is as suggested above: per-slot retries first, then `callData` with transfer targets and data, then `routes` with `hours` and `onStart`.
