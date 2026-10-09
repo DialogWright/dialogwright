@@ -163,13 +163,13 @@ describe('the Twilio voice provider', () => {
 
   it('ends a call with the documents Twilio receives today', () => {
     expect(twilioProvider.hangupDocument()).toBe(`${HEAD}<Response><Hangup/></Response>`);
-    expect(twilioProvider.dialDocument('+15555550199')).toBe(`${HEAD}<Response><Dial>+15555550199</Dial></Response>`);
-    expect(twilioProvider.apologizeAndDialDocument('+15555550199')).toBe(
+    expect(twilioProvider.dialDocument({ to: '+15555550199' })).toBe(`${HEAD}<Response><Dial>+15555550199</Dial></Response>`);
+    expect(twilioProvider.apologizeAndDialDocument({ to: '+15555550199' })).toBe(
       `${HEAD}<Response><Say>Sorry, we lost the connection. Let me get someone to help you.</Say><Dial>+15555550199</Dial></Response>`,
     );
     expect(hangupTwiml()).toBe(twilioProvider.hangupDocument());
-    expect(dialTwiml('+15555550199')).toBe(twilioProvider.dialDocument('+15555550199'));
-    expect(apologizeAndDialTwiml('+15555550199')).toBe(twilioProvider.apologizeAndDialDocument('+15555550199'));
+    expect(dialTwiml('+15555550199')).toBe(twilioProvider.dialDocument({ to: '+15555550199' }));
+    expect(apologizeAndDialTwiml('+15555550199')).toBe(twilioProvider.apologizeAndDialDocument({ to: '+15555550199' }));
     expect(twilioProvider.contentType).toBe('text/xml');
     expect(twilioProvider.id).toBe('twilio');
   });

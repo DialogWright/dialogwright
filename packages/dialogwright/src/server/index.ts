@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
+import { transferTargetsFrom } from './transfer';
 import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
 import { createRequestHandler, type HttpDeps } from './http';
@@ -251,6 +252,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // app.yaml's startParameters, read from the environment now: an unset one stops the server here, with the fix.
   const startParameters = startParametersFrom(app, overrides.env ?? process.env);
   if (Object.keys(startParameters).length > 0) log(`start parameters: ${Object.keys(startParameters).join(', ')}`);
+  // app.yaml's transfer targets, read from the environment now: one unset, or neither a number nor a sip: URI, stops the server here.
+  const transfer = transferTargetsFrom(app, overrides.env ?? process.env, config.handoffNumber);
+  if (transfer) log(`transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
   let draining = false;
   /** Set once the drain's wait is over (or close() has begun): a live call's reconnect goes to the handoff number. */
   let closing = false;
@@ -302,6 +306,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
+    ...(transfer ? { transfer } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
     draining: () => draining,
     closing: () => closing,
@@ -335,6 +340,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(config.resumeAfterPauseMs !== undefined ? { resumeAfterPauseMs: config.resumeAfterPauseMs } : {}),
       ...(config.resumeIntoReplyMs !== undefined ? { resumeIntoReplyMs: config.resumeIntoReplyMs } : {}),
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
+      ...(transfer ? { transfer } : {}),
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.

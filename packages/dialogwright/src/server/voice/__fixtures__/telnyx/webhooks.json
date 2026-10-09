@@ -71,5 +71,9 @@
     "source": "ASSUMED until a live check (docs/live-checks.md): CallSessionId, a field of the TeXML voice webhook seen on a live call (2026-10-05), echoed as a <Parameter> child, which Telnyx documents coming back in the setup's customParameters",
     "param": "customer_id",
     "webhookField": "CallSessionId"
+  },
+  "dial": {
+    "source": "ASSUMED until a live check (docs/live-checks.md): Telnyx's TeXML <Dial><Sip> page documents the SIP URI and its attributes but not custom headers; the headers are appended to the URI as Twilio's TwiML documents; address fictional",
+    "sip": "sip:desk@pbx.example.com"
   }
 }

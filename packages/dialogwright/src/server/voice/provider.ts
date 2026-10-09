@@ -10,6 +10,9 @@ import type { BargeIn } from '../../channel/voiceProviders';
  */
 
 import type { Recognition } from '../../core/app/types';
+import type { DialTarget } from './dial';
+
+export type { DialTarget } from './dial';
 
 /** A webhook as it arrived: its path with query, headers lower-cased, and the raw body. */
 export interface WebhookRequest {
@@ -128,10 +131,16 @@ export interface VoiceProvider {
   parse(req: WebhookRequest): CallbackParams | null;
   /** The document that connects the call to the relay at `wss://<host>/conversation/<id>?token=`. */
   startDocument(o: StartDocumentOptions): string;
-  dialDocument(number: string): string;
+  /**
+   * The document that puts the call through to `target`: a number, or a `sip:` URI with the SIP headers
+   * it carries (server/voice/dial.ts dialVerb writes both carriers'). A target took a bare number
+   * before transfer targets: a carrier adapter of one's own now takes `{ to }` (and `headers`, written
+   * only for a `sip:` URI).
+   */
+  dialDocument(target: DialTarget): string;
   hangupDocument(): string;
-  /** Said when the relay cannot be reconnected, before the call goes to a person. */
-  apologizeAndDialDocument(number: string): string;
+  /** Said when the relay cannot be reconnected, before the call goes to a person (`target`, as dialDocument's). */
+  apologizeAndDialDocument(target: DialTarget): string;
   /** The response content type of every document. */
   readonly contentType: string;
   /**

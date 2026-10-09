@@ -132,6 +132,25 @@ describe('pnpm diagnose', () => {
       expect(JSON.stringify(results)).not.toContain('support-east');
     });
 
+    it('holds a transfer target to an E.164 number or a sip: URI, warns of a 555 one, and never says the value', async () => {
+      const yaml = 'id: lines\ntransfer:\n  targets:\n    - when: { reason: emergency }\n      to: env.DESK_SIP\n    - when: { reason: security }\n      to: env.SECURITY_LINE\n    - when: { reason: frustrated }\n      to: env.BAD_LINE\n  default: env.MAIN_LINE\n';
+      const dir = appDir(yaml);
+      const env = { ...goodEnv(dir), DESK_SIP: 'sip:agents@contact.example.net', SECURITY_LINE: '+15555550123', BAD_LINE: 'desk', MAIN_LINE: '+442079460123' };
+      const results = (await runDoctor({ env, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(results).toEqual([
+        { id: 'variables', status: 'ok', message: "app.yaml's transfer.targets.0.to reads DESK_SIP: set, a SIP address" },
+        { id: 'variables', status: 'warn', message: "app.yaml's transfer.targets.1.to reads SECURITY_LINE: a 555 number, so calls handed off there will go nowhere", fix: 'set SECURITY_LINE to a phone a person answers' },
+        {
+          id: 'variables', status: 'fail',
+          message: "app.yaml's transfer.targets.2.to reads BAD_LINE: set, but it is neither an E.164 number (+15551234567) nor a sip: URI (sip:desk@pbx.example.com): the server will not start",
+          fix: 'set BAD_LINE to an E.164 number like +15551234567 or a sip: URI like sip:desk@pbx.example.com',
+        },
+        { id: 'variables', status: 'ok', message: "app.yaml's transfer.default reads MAIN_LINE: set, a phone number" },
+      ]);
+      expect(JSON.stringify(results)).not.toContain('contact.example.net');
+      expect(JSON.stringify(results)).not.toContain('2079460123');
+    });
+
     it('says nothing for an app.yaml that names none, or no app; and skips one it cannot read', async () => {
       const plain = appDir('id: lines\n');
       const quiet = await runDoctor({ env: goodEnv(plain), cwd: plain, appDir: plain, offline: true }, deps());

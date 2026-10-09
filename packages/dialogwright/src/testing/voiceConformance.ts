@@ -34,6 +34,14 @@ export interface CallDataFixture {
   webhookField?: string;
 }
 
+/** Where a carrier documents a transfer to a SIP address with headers, and the address the check dials. */
+export interface DialFixture {
+  /** The doc URL, `captured <date>`, or `ASSUMED: ...` when the carrier does not document it. */
+  source: string;
+  /** A SIP address the check puts a call through to. Default `sip:desk@pbx.example.com`. */
+  sip?: string;
+}
+
 export interface VoiceFixtures {
   frames: readonly FrameFixture[];
   /** The webhook that answers a call (POST /voice/<id>). */
@@ -47,6 +55,8 @@ export interface VoiceFixtures {
    * of the voice webhook that is not its call id.
    */
   callData?: CallDataFixture;
+  /** A transfer to a SIP address with headers (app.yaml's transfer); absent, the check dials the default address. */
+  dial?: DialFixture;
   /** Other forms the carrier may send the same webhooks in, each read as `expect` says. */
   alternatives?: readonly WebhookFixture[];
   /** Signs a webhook the way the carrier does, with a key or token made in the test; never a stored secret. */
@@ -185,9 +195,28 @@ export function voiceConformanceChecks(provider: VoiceProvider, fx: VoiceFixture
       name: 'ends a call with a hangup, and dials the handoff number',
       run() {
         if (!provider.hangupDocument().includes('<Hangup/>')) fail(`hangup document: ${provider.hangupDocument()}`);
-        if (!provider.dialDocument('+15555550199').includes('+15555550199')) fail(`dial document: ${provider.dialDocument('+15555550199')}`);
-        if (!provider.apologizeAndDialDocument('+15555550199').includes('+15555550199')) fail('apologize-and-dial document does not dial');
+        if (!provider.dialDocument({ to: '+15555550199' }).includes('+15555550199')) fail(`dial document: ${provider.dialDocument({ to: '+15555550199' })}`);
+        if (!provider.apologizeAndDialDocument({ to: '+15555550199' }).includes('+15555550199')) fail('apologize-and-dial document does not dial');
         if (!/^[a-z]+\/[a-z+.-]+$/.test(provider.contentType)) fail(`content type: ${provider.contentType}`);
+      },
+    },
+    {
+      // A transfer target (app.yaml's transfer): a SIP address carries the headers, each value encoded and
+      // the document escaped; a phone number carries none. fx.dial says where the carrier documents it.
+      name: 'puts a call through to a SIP address with its headers, and to a number without them',
+      run() {
+        const sip = fx.dial?.sip ?? 'sip:desk@pbx.example.com';
+        const headers = { 'X-Account-Ref': 'AC 55&01<34>', 'User-to-User': '3a2b' };
+        for (const doc of [provider.dialDocument({ to: sip, headers }), provider.apologizeAndDialDocument({ to: sip, headers })]) {
+          if (!doc.includes(escapeXml(sip))) fail(`a SIP target's document does not dial ${sip}: ${doc}`);
+          for (const [name, value] of Object.entries(headers)) {
+            if (!doc.includes(`${name}=${escapeXml(encodeURIComponent(value))}`)) fail(`a SIP target's document lacks the header ${name}, its value encoded: ${doc}`);
+          }
+          if (doc.includes('<34>') || doc.includes('55&01')) fail(`a SIP target's document does not encode and escape a header's value: ${doc}`);
+        }
+        const number = provider.dialDocument({ to: '+15555550199', headers });
+        if (!number.includes('+15555550199')) fail(`dial document: ${number}`);
+        if (Object.keys(headers).some((name) => number.includes(name))) fail(`a phone number's document carries headers, which no carrier takes: ${number}`);
       },
     },
   ];

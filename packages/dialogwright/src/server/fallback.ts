@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escapeXml, xmlResponse } from './voice/xml';
+import { dialVerb } from './voice/dial';
 import { twilioProvider } from './voice/twilio';
 import { telnyxProvider } from './voice/telnyx';
 import type { VoiceProvider } from './voice/provider';
@@ -37,9 +38,10 @@ const E164 = /^\+[1-9]\d{1,14}$/;
 /** The fallback document: the carrier's apology and dial to `number`, or `message` said instead of the apology. */
 export function fallbackDocument(provider: 'twilio' | 'telnyx', number: string, message?: string): string {
   const p = PROVIDERS[provider]!;
-  if (message === undefined) return p.apologizeAndDialDocument(number);
+  // A number given on the command line: the server is not there to choose a transfer target.
+  if (message === undefined) return p.apologizeAndDialDocument({ to: number });
   // Both carriers' documents are the same shape: a Say, then a Dial (voice/twilio.ts, voice/telnyx.ts).
-  return xmlResponse(`<Say>${escapeXml(message)}</Say><Dial>${escapeXml(number)}</Dial>`);
+  return xmlResponse(`<Say>${escapeXml(message)}</Say>${dialVerb({ to: number })}`);
 }
 
 export const FALLBACK_USAGE = 'usage: pnpm fallback --provider <twilio|telnyx> --number <E.164> [--message "..."] --out <file> [--force]';

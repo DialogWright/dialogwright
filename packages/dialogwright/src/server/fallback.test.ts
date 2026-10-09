@@ -33,8 +33,8 @@ async function run(argv: string[], invokedFrom = temp()): Promise<{ code: number
 
 describe('the fallback document', () => {
   it("is each carrier's own apology and dial to the number, word for word, by default", () => {
-    expect(fallbackDocument('twilio', '+15555550123')).toBe(twilioProvider.apologizeAndDialDocument('+15555550123'));
-    expect(fallbackDocument('telnyx', '+15555550123')).toBe(telnyxProvider.apologizeAndDialDocument('+15555550123'));
+    expect(fallbackDocument('twilio', '+15555550123')).toBe(twilioProvider.apologizeAndDialDocument({ to: '+15555550123' }));
+    expect(fallbackDocument('telnyx', '+15555550123')).toBe(telnyxProvider.apologizeAndDialDocument({ to: '+15555550123' }));
     expect(fallbackDocument('twilio', '+15555550123')).toBe(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, we lost the connection. Let me get someone to help you.</Say><Dial>+15555550123</Dial></Response>',
     );

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
+import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import type { Recognition } from '../../core/app/types';
 
@@ -129,8 +130,8 @@ export const twilioProvider: VoiceProvider = {
     validateTwilioSignature(`https://${publicHost}${req.url}`, formFields(req.rawBody), req.headers['x-twilio-signature'], secret),
   parse,
   startDocument: (o) => twilioConnectDocument(o, TWILIO_PATHS),
-  dialDocument: (n) => xmlResponse(`<Dial>${escapeXml(n)}</Dial>`),
+  dialDocument: (target) => xmlResponse(dialVerb(target)),
   hangupDocument: () => xmlResponse('<Hangup/>'),
-  apologizeAndDialDocument: (n) =>
-    xmlResponse(`<Say>Sorry, we lost the connection. Let me get someone to help you.</Say><Dial>${escapeXml(n)}</Dial>`),
+  apologizeAndDialDocument: (target) =>
+    xmlResponse(`<Say>Sorry, we lost the connection. Let me get someone to help you.</Say>${dialVerb(target)}`),
 };

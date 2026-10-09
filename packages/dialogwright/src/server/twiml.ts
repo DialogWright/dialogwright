@@ -30,8 +30,9 @@ export function connectRelayTwiml(o: ConnectOptions): string {
   return twilioConnectDocument(o, { socket: '/conversation', action: '/cr-action' });
 }
 
+/** The dial document to a number (the legacy name; a transfer target is VoiceProvider.dialDocument's DialTarget). */
 export function dialTwiml(number: string): string {
-  return twilioProvider.dialDocument(number);
+  return twilioProvider.dialDocument({ to: number });
 }
 
 export function hangupTwiml(): string {
@@ -39,5 +40,5 @@ export function hangupTwiml(): string {
 }
 
 export function apologizeAndDialTwiml(number: string): string {
-  return twilioProvider.apologizeAndDialDocument(number);
+  return twilioProvider.apologizeAndDialDocument({ to: number });
 }

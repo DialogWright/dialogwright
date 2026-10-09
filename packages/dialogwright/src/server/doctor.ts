@@ -1,3 +1,5 @@
+import { targetValueProblem } from './transfer';
+import { isSipTarget } from './voice/dial';
 import { accessSync, constants, existsSync, readFileSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -23,7 +25,8 @@ import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } 
  *      sends a browser with no cookie to the sign-in page (302) and the console's data answers 401;
  *   4. each enabled carrier's secret has the right shape, and signatures are checked;
  *   5. the model: which one and from where, and its key variable set (no request is made); a stub is a warning;
- *   6. HANDOFF_NUMBER is not a 555 number;
+ *   6. HANDOFF_NUMBER is not a 555 number; and each variable app.yaml names (env.<NAME>) is set, said by its
+ *      length, never its value; a transfer target's holds an E.164 number or a sip: URI, and not a 555 number;
  *   7. the trace and audit folders can be written, and 8. there is more than a gigabyte free;
  *   9. this machine's clock is within a minute of another machine's: the Date that the carrier's API host
  *      (or else the model provider's) answers a HEAD with. Not PUBLIC_HOST's: through a tunnel that is
@@ -356,10 +359,20 @@ export function variableChecks(appDir: string, env: Env): CheckResult[] {
     const value = env[variable];
     const where = `app.yaml's ${path} reads ${variable}`;
     if (value === undefined || value.trim() === '') return { id: 'variables', status: 'fail', message: `${where}, which is not set: the server will not start`, fix: `set ${variable} in the settings file` };
+    // A transfer target: an E.164 number or a sip: URI, as the server holds it (server/transfer.ts); a 555 number warned of, as HANDOFF_NUMBER is.
+    if (path.startsWith('transfer.')) return targetCheck(where, variable, value.trim());
     if (value.length > CALL_DATA_VALUE_MAX) return { id: 'variables', status: 'fail', message: `${where}: set, ${value.length} characters, more than the ${CALL_DATA_VALUE_MAX} a custom parameter takes`, fix: `shorten ${variable}` };
     if (!writableValue(value)) return { id: 'variables', status: 'fail', message: `${where}: set, ${value.length} characters, with a control character a start document cannot carry`, fix: `write ${variable} on one line, with no tab or other control character` };
     return { id: 'variables', status: 'ok', message: `${where}: set, ${value.length} characters` };
   });
+}
+
+/** One transfer target's variable: what kind of target it holds, never the value itself. */
+function targetCheck(where: string, variable: string, value: string): CheckResult {
+  const problem = targetValueProblem(value);
+  if (problem !== null) return { id: 'variables', status: 'fail', message: `${where}: set, but it ${problem}: the server will not start`, fix: `set ${variable} to an E.164 number like +15551234567 or a sip: URI like sip:desk@pbx.example.com` };
+  if (FICTIONAL.test(value)) return { id: 'variables', status: 'warn', message: `${where}: a 555 number, so calls handed off there will go nowhere`, fix: `set ${variable} to a phone a person answers` };
+  return { id: 'variables', status: 'ok', message: `${where}: set, ${isSipTarget(value) ? 'a SIP address' : 'a phone number'}` };
 }
 
 function realOf(dir: string): string {

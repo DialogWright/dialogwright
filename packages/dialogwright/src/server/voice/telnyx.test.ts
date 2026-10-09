@@ -139,8 +139,8 @@ describe('the Telnyx voice provider', () => {
 
   it('ends a call with TeXML hangup and dial documents', () => {
     expect(telnyxProvider.hangupDocument()).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
-    expect(telnyxProvider.dialDocument('+15555550199')).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Dial>+15555550199</Dial></Response>');
-    expect(telnyxProvider.apologizeAndDialDocument('+15555550199')).toContain('<Say>Sorry, we lost the connection.');
+    expect(telnyxProvider.dialDocument({ to: '+15555550199' })).toBe('<?xml version="1.0" encoding="UTF-8"?><Response><Dial>+15555550199</Dial></Response>');
+    expect(telnyxProvider.apologizeAndDialDocument({ to: '+15555550199' })).toContain('<Say>Sorry, we lost the connection.');
   });
 
   it('pauses before it connects when asked (a planned restart: the restarted server takes the socket), and not otherwise', () => {

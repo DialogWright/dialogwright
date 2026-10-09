@@ -21,6 +21,7 @@ import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
+import { maskTarget, targetNumber, type ServerTransfer } from './transfer';
 import { deliveryFactOf, interruptFact } from './dashboard/delivery';
 import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
@@ -1133,6 +1134,11 @@ export interface AdapterDeps {
   /** For the masked number on a handoff event. */
   handoffNumber?: string;
   /**
+   * The app's transfer targets (server/transfer.ts): a handoff event shows the chosen target's number (or
+   * SIP host) masked. Absent or null, HANDOFF_NUMBER's, as before.
+   */
+  transfer?: ServerTransfer | null;
+  /**
    * Where each of the app's downstream services (App.services) is reached, by name. A service with no
    * url is not running, and a request to it is answered at once with no result.
    */
@@ -1448,7 +1454,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // restart after the caller heard a question resumes at that question.
     await deps.store.persist(entry.callSid);
     if (run.result.decision.kind === 'handoff') {
-      publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number: maskNumber(deps.handoffNumber) });
+      // The number the server dials for the target the engine chose (its transfer), masked; HANDOFF_NUMBER's without one.
+      const chosen = run.result.decision.transfer;
+      const number = chosen !== undefined && deps.transfer ? maskTarget(targetNumber(deps.transfer, deps.handoffNumber ?? '', chosen.target)) : maskNumber(deps.handoffNumber);
+      publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number });
       fireHandoffSummary(deps, entry);
     }
     if (ending) publish(deps, { type: 'ended', callSid: entry.callSid, at: Date.now(), reason: kind === 'complete' ? 'completed' : 'handoff' });

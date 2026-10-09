@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { runVoiceProviderConformance, voiceConformanceChecks, type CallDataFixture, type FrameFixture, type WebhookFixture } from '../../testing/voiceConformance';
+import { runVoiceProviderConformance, voiceConformanceChecks, type CallDataFixture, type DialFixture, type FrameFixture, type WebhookFixture } from '../../testing/voiceConformance';
 import { computeTwilioSignature, twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { formFields } from './xml';
@@ -13,7 +13,7 @@ const frames = (id: string): FrameFixture[] =>
     .filter(Boolean)
     .map((l) => JSON.parse(l) as FrameFixture);
 
-const hooks = (id: string): { voice: WebhookFixture; action: WebhookFixture; alternatives?: WebhookFixture[]; callData?: CallDataFixture } =>
+const hooks = (id: string): { voice: WebhookFixture; action: WebhookFixture; alternatives?: WebhookFixture[]; callData?: CallDataFixture; dial?: DialFixture } =>
   JSON.parse(readFileSync(new URL(`./__fixtures__/${id}/webhooks.json`, import.meta.url), 'utf8'));
 
 // Twilio signs with the account's auth token; this one is made up for the test.

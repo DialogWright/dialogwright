@@ -163,7 +163,9 @@ function makeConfig(extra: Record<string, string> = {}) {
 async function start(extra: Record<string, string> = {}, overrides: Omit<ServerOverrides, 'log'> = {}) {
   const config = makeConfig(extra);
   const logs: string[] = [];
-  running = await startServer(config, { host: '127.0.0.1', client: stub, log: (line) => logs.push(line), ...overrides });
+  // The callback fixture's transfer targets (app.yaml's transfer), which the server reads as it starts.
+  const env = overrides.env ?? { ...process.env, PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15555550111', SECURITY_DESK: '+15555550112' };
+  running = await startServer(config, { host: '127.0.0.1', client: stub, log: (line) => logs.push(line), ...overrides, env });
   return { config, logs, url: `ws://127.0.0.1:${running.port}/chat` };
 }
 
@@ -850,5 +852,26 @@ describe('app.yaml startParameters at server start', () => {
     const { logs } = await start({}, { env: { CALLBACK_LINE: 'support-east' } });
     expect(logs).toContain('start parameters: line');
     expect(logs.join('\n')).not.toContain('support-east');
+  });
+});
+
+describe('app.yaml transfer at server start', () => {
+  beforeAll(() => {
+    resetAppsForTest();
+    registerApp({ ...libraryApp, transfer: { targets: [{ when: [{ kind: 'reason', reasons: ['live-agent'] }], to: 'env.DESK_LINE' }], default: 'env.HANDOFF_NUMBER' } });
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('refuses to start when a target it names is unset, or neither a number nor a sip: URI, with the fix', async () => {
+    await expect(start({}, { env: {} })).rejects.toThrow("app.yaml's transfer names DESK_LINE, which is not set: set DESK_LINE in the app's .env to an E.164 number or a sip: URI");
+    await expect(start({}, { env: { DESK_LINE: 'front desk' } })).rejects.toThrow('DESK_LINE (a transfer target in app.yaml) is neither an E.164 number');
+  });
+
+  it('starts, and names the targets, never their numbers, when they are set', async () => {
+    const { logs } = await start({}, { env: { DESK_LINE: 'sip:desk@pbx.example.com' } });
+    expect(logs).toContain('transfer targets: DESK_LINE, HANDOFF_NUMBER; default HANDOFF_NUMBER');
+    expect(logs.join('\n')).not.toContain('pbx.example.com');
   });
 });

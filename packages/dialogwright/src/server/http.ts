@@ -14,7 +14,8 @@ import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
 import { ConsoleAuth } from './console/auth';
-import type { CallbackParams, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
+import type { CallbackParams, DialTarget, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
+import { defaultTarget, dialPlan, parseHandoff, type PostedHandoff, type ServerTransfer } from './transfer';
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
@@ -66,6 +67,12 @@ export interface HttpDeps {
    * environment as the server starts: config.ts startParametersFrom). Absent or empty, none, as before.
    */
   startParameters?: Readonly<Record<string, string>>;
+  /**
+   * The app's transfer targets as the server read them (server/transfer.ts transferTargetsFrom): a posted
+   * handoff dials the target it names, and a call put through with no decision the default. Absent or
+   * null, every call goes to HANDOFF_NUMBER, as before.
+   */
+  transfer?: ServerTransfer | null;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
@@ -209,13 +216,27 @@ function isBlank(raw: string | undefined): boolean {
   return raw === undefined || raw.trim() === '';
 }
 
-function parseHandoff(raw: string): { reasonCode: string } {
-  try {
-    const v = JSON.parse(raw) as { reasonCode?: unknown };
-    return { reasonCode: typeof v.reasonCode === 'string' ? v.reasonCode : 'unknown' };
-  } catch {
-    return { reasonCode: 'unknown' };
-  }
+/** Where a call put through with no handoff decision goes: the app's transfer default, HANDOFF_NUMBER without one. */
+function fallbackTarget(deps: HttpDeps): DialTarget {
+  return defaultTarget(deps.transfer ?? null, deps.config.handoffNumber);
+}
+
+/**
+ * The document that puts a posted handoff through (server/transfer.ts dialPlan), and its note. For an app
+ * with transfer, the frame log (written before the call's entry ends) and the note say which target, and
+ * which headers went and which did not (a phone number carries none); an app without transfer's note is
+ * as it was.
+ */
+function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, handoff: PostedHandoff, apologize = false): { document: string; note: string } {
+  const plan = dialPlan(deps.transfer ?? null, deps.config.handoffNumber, handoff);
+  const document = apologize ? provider.apologizeAndDialDocument(plan.target) : provider.dialDocument(plan.target);
+  if (!deps.transfer) return { document, note: `dial:${handoff.reasonCode}` };
+  deps.store.get(callSid)?.frames.write('log', {
+    transfer: { target: plan.variable, ...(plan.sent.length > 0 ? { sent: [...plan.sent] } : {}), ...(plan.dropped.length > 0 ? { dropped: [...plan.dropped], why: plan.why } : {}) },
+  });
+  const dropped = plan.dropped.length === 0 ? ''
+    : ` (headers left out: ${plan.dropped.join(', ')}: ${plan.why === 'number' ? 'a phone number carries none' : plan.why === 'size' ? 'over the 1024 characters a transfer carries' : 'not ones app.yaml sends'})`;
+  return { document, note: `dial:${handoff.reasonCode} to ${plan.variable}${dropped}` };
 }
 
 /**
@@ -329,7 +350,7 @@ function decideUnreadable(
 ): { document: string; note: string } {
   if (!wantsReconnect(params)) return decideAction(deps, provider, params, start);
   deps.tokens.revoke(params.callId);
-  return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'dial:unreadable' };
+  return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:unreadable' };
 }
 
 /**
@@ -358,10 +379,16 @@ export function decideAction(
   const handoffData = params.handoffData;
   if (!isBlank(handoffData)) {
     const handoff = parseHandoff(handoffData!);
+    if (handoff.reasonCode === 'completed') {
+      deps.store.end(callSid);
+      deps.tokens.revoke(callSid);
+      return { document: provider.hangupDocument(), note: 'completed' };
+    }
+    // The target the engine chose (by its variable's name) and its headers, written to the frame log before the call's entry ends.
+    const dialed = dialHandoff(deps, provider, callSid, handoff);
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    if (handoff.reasonCode === 'completed') return { document: provider.hangupDocument(), note: 'completed' };
-    return { document: provider.dialDocument(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
+    return dialed;
   }
 
   // (b) No handoff: an ordinary caller hangup (or any status that isn't a live call, in the
@@ -405,7 +432,7 @@ export function decideAction(
     if (deps.closing?.() && !deps.store.durable) {
       deps.store.end(callSid);
       deps.tokens.revoke(callSid);
-      return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'dial:closing' };
+      return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:closing' };
     }
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
@@ -425,7 +452,7 @@ export function decideAction(
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    return { document: provider.apologizeAndDialDocument(deps.config.handoffNumber), note: 'gave-up' };
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'gave-up' };
   }
   // A transfer whose `end` was held for its line to play (END_AFTER_PLAYBACK, server/adapter.ts) and never
   // sent: the socket closed first with the caller still on the line. The call has ended, but the
@@ -437,7 +464,7 @@ export function decideAction(
       // Owed once: a second callback for the call hangs up.
       entry.heldHandoffData = null;
       deps.tokens.revoke(callSid);
-      return { document: provider.dialDocument(deps.config.handoffNumber), note: `dial:${handoff.reasonCode}` };
+      return dialHandoff(deps, provider, callSid, handoff);
     }
   }
   return { document: provider.hangupDocument(), note: 'hangup' };
@@ -529,7 +556,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         if (deps.draining?.()) {
           // A server about to stop starts no call it may not finish: the caller is put through to a person.
           deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}: draining: new call sent to handoff`);
-          reply(res, 200, provider.contentType, provider.dialDocument(deps.config.handoffNumber));
+          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps)));
           return;
         }
         const token = deps.tokens.mint(params.callId, provider.id);

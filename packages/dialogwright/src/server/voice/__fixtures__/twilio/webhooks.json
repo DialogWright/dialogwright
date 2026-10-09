@@ -31,5 +31,9 @@
     "source": "https://www.twilio.com/docs/voice/twiml/connect/conversationrelay (a <Parameter> child comes back in the setup's customParameters) and https://www.twilio.com/docs/usage/webhooks/voice-webhooks (ForwardedFrom, a field of the call's webhook); values fictional",
     "param": "callReference",
     "webhookField": "ForwardedFrom"
+  },
+  "dial": {
+    "source": "https://www.twilio.com/docs/voice/twiml/sip: headers appended to the <Sip> URI as URI parameters (x- names, and User-to-User without the prefix), the headers under 1024 characters; address fictional",
+    "sip": "sip:desk@pbx.example.com"
   }
 }

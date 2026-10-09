@@ -1,4 +1,5 @@
 import type { CallbackParams, PlaybackEvent, StartDocumentOptions, VoiceProvider, WebhookRequest } from './provider';
+import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
 
@@ -256,8 +257,8 @@ export const telnyxProvider: VoiceProvider = {
     ),
   parse,
   startDocument,
-  dialDocument: (n) => xmlResponse(`<Dial>${escapeXml(n)}</Dial>`),
+  dialDocument: (target) => xmlResponse(dialVerb(target)),
   hangupDocument: () => xmlResponse('<Hangup/>'),
-  apologizeAndDialDocument: (n) =>
-    xmlResponse(`<Say>Sorry, we lost the connection. Let me get someone to help you.</Say><Dial>${escapeXml(n)}</Dial>`),
+  apologizeAndDialDocument: (target) =>
+    xmlResponse(`<Say>Sorry, we lost the connection. Let me get someone to help you.</Say>${dialVerb(target)}`),
 };
