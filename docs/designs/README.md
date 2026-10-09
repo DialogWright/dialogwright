@@ -16,6 +16,7 @@ These are the design documents for engine features. Each one sets out the proble
 - [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md): the build of the flow building blocks' first piece: `attempts`, retry lines per attempt, and `onMaxAttempts` on any slot.
 - [2026-10-09-call-data-and-transfers.md](2026-10-09-call-data-and-transfers.md): the build of the flow building blocks' second piece: `callData` from the carrier and the chat page, and transfer targets chosen by ordered rules, with data sent with the transfer.
 - [2026-10-09-routes.md](2026-10-09-routes.md): the build of the flow building blocks' third piece: `routes.yaml` at call start, after identity and after a form, business hours, and the start hook.
+- [2026-10-09-phase10-adoption.md](2026-10-09-phase10-adoption.md): Phase 10's build: DialogWright outside this repository (a build, one command line, a project of one's own, the adoption test), the adversarial suite every app inherits, and the adopter's documents.
 - [2026-10-08-decisions.md](2026-10-08-decisions.md): the maintainer's decisions on the designs above, and the principles behind them.
 
 The [authoring guide](../authoring-an-app.md) is the reference for how a feature works today. Where a design and the guide differ, the guide is right. The create-app skill's pattern notes are in [.claude/skills/create-app/patterns.md](../../.claude/skills/create-app/patterns.md); the trial a design cites is in [docs/trials](../trials/README.md).
