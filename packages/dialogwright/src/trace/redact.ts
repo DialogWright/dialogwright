@@ -6,6 +6,7 @@ import { recordedValue, spokenValuesScrubber, type Scrub } from '../core/recordi
 import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
+import { transferSources } from '../core/transfer';
 import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
 
 /**
@@ -31,7 +32,7 @@ import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCal
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData'] }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData']; readonly transfer?: App['transfer'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -148,6 +149,33 @@ export function maskCollectedSlot(app: Slots, slot: string, v: string): string {
   return redactCollected(app, { [slot]: v }, 'length')[slot]!;
 }
 
+/**
+ * What a transfer sends (its SIP headers, or a chat's data, app.yaml's transfer.send), as a record keeps
+ * it: a value sent from a slot is masked as the record masks that slot (redactCollected), whichever rule
+ * sent it. A name the app sends from more than one slot is written `•`; one sent from a slot in one rule
+ * and a constant in another is masked as the slot is, so a record is never less strict than the slot.
+ * Every other value (the reason, the form, a constant, a call data key already sent as its redact
+ * records it) is as sent.
+ */
+export function redactSent(app: Slots, part: 'headers' | 'chat', values: unknown, mode: StatementMode): unknown {
+  if (!isObject(values) || app === null || app.transfer === undefined) return values;
+  const sources = transferSources(app.transfer, part);
+  const out: Record<string, unknown> = {};
+  for (const [name, v] of Object.entries(values)) {
+    const slots = [...new Set((sources.get(part === 'headers' ? name.toLowerCase() : name) ?? []).flatMap((s) => (s.kind === 'slot' ? [s.slot] : [])))];
+    if (typeof v !== 'string' || slots.length === 0) out[name] = v;
+    else if (slots.length === 1) out[name] = redactCollected(app, { [slots[0]!]: v }, mode)[slots[0]!];
+    else out[name] = '•';
+  }
+  return out;
+}
+
+/** A transfer choice's or action's headers and data (core/transfer.ts), as a record keeps them (redactSent). */
+function redactTransferParts<T extends Record<string, unknown>>(app: Slots, o: T, mode: StatementMode): T {
+  if (!('headers' in o) && !('data' in o)) return o;
+  return { ...o, ...('headers' in o ? { headers: redactSent(app, 'headers', o.headers, mode) } : {}), ...('data' in o ? { data: redactSent(app, 'chat', o.data, mode) } : {}) };
+}
+
 /** A prompt's variables by slot name: a summary is handed every slot's display, spoken or not. */
 function redactVars(app: Slots, vars: unknown, mode: StatementMode): unknown {
   return isObject(vars) ? redactCollected(app, vars as Record<string, string>, mode) : vars;
@@ -160,6 +188,7 @@ function redactDecision(app: Slots, d: TraceRecord['decision'], mode: StatementM
   if ('vars' in d) out.vars = redactVars(app, d.vars, mode);
   if ('acks' in d && Array.isArray(d.acks)) out.acks = d.acks.map((a) => (isObject(a) ? { ...a, vars: redactVars(app, a.vars, mode) } : a));
   if ('slots' in d) out.slots = redactVars(app, d.slots, mode);
+  if ('transfer' in d && isObject(d.transfer)) out.transfer = redactTransferParts(app, d.transfer, mode);
   return out as TraceRecord['decision'];
 }
 
@@ -167,8 +196,12 @@ function redactDecision(app: Slots, d: TraceRecord['decision'], mode: StatementM
 export function redactHandoffData(data: string, mode: StatementMode, app: Slots = defaultAppOrNull()): string {
   try {
     const parsed: unknown = JSON.parse(data);
-    if (!isObject(parsed) || !isObject(parsed.slots)) return data;
-    return JSON.stringify({ ...parsed, slots: redactCollected(app, parsed.slots as Record<string, string>, mode) });
+    if (!isObject(parsed) || (!isObject(parsed.slots) && !isObject(parsed.headers))) return data;
+    return JSON.stringify({
+      ...parsed,
+      ...(isObject(parsed.slots) ? { slots: redactCollected(app, parsed.slots as Record<string, string>, mode) } : {}),
+      ...(isObject(parsed.headers) ? { headers: redactSent(app, 'headers', parsed.headers, mode) } : {}),
+    });
   } catch {
     return data;
   }
@@ -379,7 +412,7 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   // A transfer hands over what the call collected, identity slots included.
   if (Array.isArray(record.actions)) {
     out.actions = record.actions.map((a) => {
-      if (isObject(a) && a.type === 'transfer' && isObject(a.slots)) return { ...a, slots: redactCollected(app, a.slots, mode) };
+      if (isObject(a) && a.type === 'transfer' && isObject(a.slots)) return redactTransferParts(app, { ...a, slots: redactCollected(app, a.slots, mode) }, mode);
       return scrub === null ? a : (scrubSay(a, scrub) as typeof a);
     });
   }

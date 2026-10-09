@@ -8,6 +8,9 @@ import { isAnonymous } from '../gate/types';
 import type { Ack } from './fia';
 import type { Session } from './session';
 import { slotLocaleOf } from './locale';
+import { chooseTransfer, type TransferChoice } from './transfer';
+import { callDataOf } from './callData';
+import { handoffDataSlots } from '../handoff/data';
 
 export interface PromptDecision {
   kind: 'prompt';
@@ -60,6 +63,12 @@ export interface HandoffDecision {
    * Absent otherwise, so every other app's handoff is as it was.
    */
   unconfirmed?: SlotId[];
+  /**
+   * Where the transfer goes and what goes with it (app.yaml's `transfer`, core/transfer.ts): the
+   * target's variable (never the number), the rule taken, and the headers and chat data resolved. Only
+   * for an app with `transfer`; absent otherwise, so every other app's handoff is as it was.
+   */
+  transfer?: TransferChoice;
 }
 
 export type Decision =
@@ -106,6 +115,16 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
   }
   const decision: HandoffDecision = { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
   if (handoffUnconfirmedOf(app) !== 'send') decision.unconfirmed = unconfirmedSlots(s);
+  // The transfer target, chosen on the reason, the form the caller is in (or, with none open, the last
+  // one completed) and the call data; a slot it sends goes as the handoff data sends it.
+  if (app.transfer !== undefined) {
+    decision.transfer = chooseTransfer(app, {
+      reason,
+      form: s.form ?? s.completed.at(-1) ?? null,
+      callData: callDataOf(s),
+      slots: handoffDataSlots(app, slots, decision.unconfirmed),
+    });
+  }
   return decision;
 }
 

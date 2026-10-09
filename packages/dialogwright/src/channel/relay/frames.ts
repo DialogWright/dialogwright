@@ -148,6 +148,8 @@ export function endFrame(
   queued: readonly string[] = [],
   slots: Record<string, string> = {},
   unconfirmed: readonly string[] = [],
+  target?: string,
+  headers: Readonly<Record<string, string>> = {},
 ): EndFrame {
   return {
     type: 'end',
@@ -156,9 +158,14 @@ export function endFrame(
       ...(completed.length ? { completed } : {}),
       ...(queued.length ? { queued } : {}),
       ...(Object.keys(slots).length ? { slots } : {}),
-      // The slots above the caller never confirmed (HandoffData.unconfirmed `mark`); the carrier posts
-      // the data back, and the server reads only reasonCode from it.
+      // The slots above the caller never confirmed (HandoffData.unconfirmed `mark`).
       ...(unconfirmed.length ? { unconfirmed } : {}),
+      // Where the call goes (the variable holding the number, app.yaml's transfer) and the SIP headers
+      // for it: only for an app with `transfer`. The carrier posts the data back, and the server reads
+      // reasonCode, target and headers from it (server/transfer.ts), dialing a target only when it is
+      // one the app's transfer names, and sending only headers it names.
+      ...(target !== undefined ? { target } : {}),
+      ...(Object.keys(headers).length ? { headers } : {}),
     }),
   };
 }

@@ -59,7 +59,12 @@ export type ChatErrorCode = 'bad_message' | 'too_long' | 'not_allowed' | 'sign_i
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }
   | { type: 'say'; text: string; lang: string }
-  | { type: 'transfer'; reason: string }
+  /**
+   * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
+   * `transfer.send.chat`), for the page's own handover; absent unless the app writes it, so a client
+   * that reads only `reason` is unchanged (the wire stays version 1).
+   */
+  | { type: 'transfer'; reason: string; data?: Record<string, string> }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }
@@ -116,7 +121,7 @@ export function actionsToChatMessages(actions: readonly Action[], defaultLang: s
         return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang }];
       }
       case 'transfer':
-        return [{ type: 'transfer', reason: a.reason }];
+        return [a.data !== undefined ? { type: 'transfer', reason: a.reason, data: { ...a.data } } : { type: 'transfer', reason: a.reason }];
       case 'end':
         return [{ type: 'end' }];
       case 'set_language':

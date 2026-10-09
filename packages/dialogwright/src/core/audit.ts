@@ -181,6 +181,12 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
     // or leaves them out (HandoffData.unconfirmed): the note can say what to check with the caller.
     const detail: AuditDraft['detail'] = { reason: decision.reason, completed: [...decision.completed], queued: [...decision.queued] };
     if (decision.unconfirmed !== undefined) detail.unconfirmed = [...decision.unconfirmed];
+    // Where it went (the variable holding the number, never the number) and what went with it, by name
+    // only, never a value: the headers on a call, the data on a chat. Only for an app with `transfer`.
+    if (decision.transfer !== undefined) {
+      detail.target = decision.transfer.target;
+      detail.sent = Object.keys((after.caps.speech ? decision.transfer.headers : decision.transfer.data) ?? {});
+    }
     drafts.push({ type: 'handoff', detail });
     drafts.push({ type: 'call_ended', detail: { reason: 'handoff', completed: [...decision.completed] } });
   } else if (decision.kind === 'complete') {

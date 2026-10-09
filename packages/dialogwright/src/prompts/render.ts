@@ -142,7 +142,7 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       return [
         ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
         say(decision.promptId, {}, false),
-        transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed)),
+        transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed), decision.transfer),
       ];
   }
 }

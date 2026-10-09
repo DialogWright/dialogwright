@@ -20,7 +20,26 @@ export interface End { type: 'end'; completed: string[] }
  * the slots of `slots` the caller never confirmed, only for an app whose handoff data marks them
  * (HandoffData.unconfirmed `mark`); absent otherwise.
  */
-export interface Transfer { type: 'transfer'; reason: string; completed: string[]; queued: string[]; slots: Record<string, string>; unconfirmed?: string[] }
+export interface Transfer {
+  type: 'transfer';
+  reason: string;
+  completed: string[];
+  queued: string[];
+  slots: Record<string, string>;
+  unconfirmed?: string[];
+  /**
+   * The environment variable holding where the call goes (app.yaml's `transfer`, core/transfer.ts), never
+   * the number: the server dials its value. Absent for an app without `transfer`, which dials HANDOFF_NUMBER.
+   */
+  target?: string;
+  /** The SIP headers to send with it, by name; absent when there are none. */
+  headers?: Record<string, string>;
+  /** What a chat's transfer message carries (app.yaml's `transfer.send.chat`); absent when there is none. */
+  data?: Record<string, string>;
+}
+
+/** What a transfer action adds for an app with `transfer`: its target, and what goes with it. */
+export interface TransferExtras { target: string; headers?: Readonly<Record<string, string>>; data?: Readonly<Record<string, string>> }
 /** Play key tones on the line (none produced yet; the relay can send them). */
 export interface SendDigits { type: 'send_digits'; digits: string }
 /** Switch speech and recognition language (none produced yet; the relay can send it). */
@@ -34,9 +53,14 @@ export function sayAction(parts: SayPart[], interruptible: boolean, lang?: strin
 export function endAction(completed: readonly string[] = []): End {
   return { type: 'end', completed: [...completed] };
 }
-export function transferAction(reason: string, completed: readonly string[] = [], queued: readonly string[] = [], slots: Record<string, string> = {}, unconfirmed?: readonly string[]): Transfer {
+export function transferAction(reason: string, completed: readonly string[] = [], queued: readonly string[] = [], slots: Record<string, string> = {}, unconfirmed?: readonly string[], extras?: TransferExtras): Transfer {
   const transfer: Transfer = { type: 'transfer', reason, completed: [...completed], queued: [...queued], slots: { ...slots } };
   if (unconfirmed !== undefined) transfer.unconfirmed = [...unconfirmed];
+  if (extras !== undefined) {
+    transfer.target = extras.target;
+    if (extras.headers !== undefined) transfer.headers = { ...extras.headers };
+    if (extras.data !== undefined) transfer.data = { ...extras.data };
+  }
   return transfer;
 }
 
