@@ -57,7 +57,7 @@ The regression also runs the adversarial suite (app.yaml's `testing: { adversari
 
 The stub answers from the corpus labels. A cassette holds the real decision model's answers, recorded once and replayed offline, so a run shows how a real model does on this app's calls. Recording calls the paid perception API (a few cents for an app this size), so it is a deliberate local step for the app's owner, and never part of CI.
 
-1. Put the key in this folder's `.env` (it is git-ignored). At the repository root, `pnpm configure --app {{name}}` asks for it and writes the file; or copy `.env.example` to `.env` here and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). `regress` reads this folder's `.env` itself: there is nothing to load into the shell.
+1. Put the key in this folder's `.env` (it is git-ignored). At the repository root, `pnpm configure --app {{name}} --mode model` asks for the model and its key (no phone line yet) and writes the file; or copy `.env.example` to `.env` here and put your TypeSafe API key in it as `TYPESAFE_API_KEY` (or a key from OpenRouter or the Vercel AI Gateway, or a compatible endpoint's, with `JEV_PROVIDER`: `.env.example` lists them). `regress` reads this folder's `.env` itself: there is nothing to load into the shell.
 2. Record, at the repository root, with this one command:
 
    ```sh

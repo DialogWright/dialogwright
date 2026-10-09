@@ -155,6 +155,71 @@ describe('pnpm configure, answering its questions', () => {
   });
 });
 
+describe('pnpm configure, a decision model and no phone line (to record the app)', () => {
+  it('asks for the model and its key with the echo off, writes the laptop with the model in place of the examples, and prints the recording command', async () => {
+    const w = workspace();
+    // a model, no phone line; TypeSafe and its key; the handoff number's default
+    const prompt = scripted(['3', '1', MODEL_KEY, '']);
+    const o = io(w.root, prompt);
+    expect(await runSetup([], o)).toBe(0);
+    const file = join(w.dir('alpha'), '.env');
+    expect(mode(file)).toBe(0o600);
+    const env = settings(file);
+    expect(env).toMatchObject({ PUBLIC_HOST: 'localhost', HANDOFF_NUMBER: '+15555550123', JEV_CLIENT: 'jev', JEV_PROVIDER: 'typesafe', TYPESAFE_API_KEY: MODEL_KEY, CHAT: 'on' });
+    // No carrier of its own: the laptop's placeholder, which nothing public ever checks.
+    expect(env.TWILIO_AUTH_TOKEN).toBe('not-used-on-a-laptop');
+    expect(env.TELNYX_PUBLIC_KEY).toBeUndefined();
+    expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([expect.stringContaining('TypeSafe key')]);
+    // The model's question offers no "none": this mode is for a model.
+    expect(o.lines.some((l) => l.includes('none for now'))).toBe(false);
+    const said = o.lines.join('\n');
+    expect(said).not.toContain(MODEL_KEY);
+    expect(said).toContain('TYPESAFE_API_KEY set');
+    expect(said).toContain('config loads');
+    expect(said).toContain('pnpm --filter @example/alpha regress --client record --threshold JEV_TIMEOUT_MS=15000');
+    expect(said).toContain('pnpm --filter @example/alpha regress --client recorded');
+    expect(said).not.toContain('--client heuristic');
+  });
+
+  it('takes --mode model with flags alone, the key from its variable, and refuses --model none', async () => {
+    const w = workspace();
+    const run = async (argv: string[], env: Record<string, string> = {}) => {
+      const o = io(w.root, null, env);
+      const code = await runSetup(argv, o);
+      return { code, said: o.lines.join('\n') };
+    };
+    const base = ['--app', 'alpha', '--mode', 'model', '--non-interactive'];
+    expect(await run(base)).toEqual({ code: 2, said: expect.stringContaining('--model is needed with --non-interactive (typesafe, openrouter, vercel, custom)') });
+    expect(await run([...base, '--model', 'none'])).toEqual({ code: 2, said: expect.stringContaining('--model none goes with --mode try or phone') });
+    expect(await run([...base, '--model', 'openrouter'])).toEqual({ code: 2, said: expect.stringContaining('OPENROUTER_API_KEY is needed in the environment with --non-interactive (a key is never a flag)') });
+    const ok = await run([...base, '--model', 'openrouter'], { OPENROUTER_API_KEY: MODEL_KEY });
+    expect(ok.code).toBe(0);
+    expect(settings(join(w.dir('alpha'), '.env'))).toMatchObject({ JEV_CLIENT: 'jev', JEV_PROVIDER: 'openrouter', OPENROUTER_API_KEY: MODEL_KEY, PUBLIC_HOST: 'localhost' });
+    expect(ok.said).not.toContain(MODEL_KEY);
+  });
+
+  it('keeps the model key of the .env it replaces when a phone line is added with --force and the same provider, and asks for another provider\'s', async () => {
+    const w = workspace();
+    const file = join(w.dir('alpha'), '.env');
+    expect(await runSetup(['--app', 'alpha', '--mode', 'model', '--model', 'typesafe', '--non-interactive'], io(w.root, null, { TYPESAFE_API_KEY: MODEL_KEY }))).toBe(0);
+    const phone = ['--app', 'alpha', '--mode', 'phone', '--carrier', 'twilio', '--handoff', '+15555550123', '--non-interactive', '--force'];
+    const same = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
+    expect(await runSetup([...phone, '--model', 'typesafe'], same)).toBe(0);
+    expect(settings(file)).toMatchObject({ VOICE_PROVIDERS: 'twilio', TWILIO_AUTH_TOKEN: TWILIO_TOKEN, JEV_PROVIDER: 'typesafe', TYPESAFE_API_KEY: MODEL_KEY });
+    expect(same.lines.join('\n')).toContain(`TYPESAFE_API_KEY kept from the .env it replaces (${MODEL_KEY.length} chars)`);
+    expect(same.lines.join('\n')).not.toContain(MODEL_KEY);
+    // Another provider's key is not in the old file: it is needed, as ever.
+    const other = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
+    expect(await runSetup([...phone, '--model', 'openrouter'], other)).toBe(2);
+    expect(other.lines.join('\n')).toContain('OPENROUTER_API_KEY is needed in the environment');
+    // Asked at a terminal, the kept key is not asked for again.
+    const prompt = scripted(['2', '2', TWILIO_TOKEN, '1', '+15555550123']);
+    expect(await runSetup(['--force'], io(w.root, prompt))).toBe(0);
+    expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([expect.stringContaining('Twilio auth token')]);
+    expect(settings(file).TYPESAFE_API_KEY).toBe(MODEL_KEY);
+  });
+});
+
 describe('pnpm configure with flags alone', () => {
   it('takes every answer from a flag, and each key from the environment variable of its name, never from a flag', async () => {
     const w = workspace(['alpha', 'beta']);

@@ -3,6 +3,7 @@ import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 import { carrierSteps } from './carrierSteps';
 import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
@@ -13,12 +14,16 @@ import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList,
 /**
  * `pnpm configure`: the first hour's settings, asked for and written. It asks, in order: which app; to
  * try it on this computer with no keys (the web chat and the console, the app understanding by its own
- * examples) or as a phone line; for a phone line, the carrier and its secret, and the decision model and
- * its key; and the number a call goes to for a person. It writes `<app>/.env`, readable by its owner
- * alone (mode 600), and never over an existing one without --force; runs `pnpm diagnose --offline` on
- * it; and says what to run next and where to paste the webhook in the carrier's console.
+ * examples), as a phone line, or on this computer with a decision model and no phone line (to record
+ * the app against the model: the laptop's settings, with the model in place of the examples); for a
+ * phone line, the carrier and its secret; for a phone line or a model, the decision model and its key;
+ * and the number a call goes to for a person. It writes `<app>/.env`, readable by its owner alone (mode
+ * 600), and never over an existing one without --force (which keeps a model's key the old file holds
+ * when the same provider is chosen, so a phone line added after a recording does not ask for it
+ * again); runs `pnpm diagnose --offline` on it; and says what to run next (the recording command, for
+ * a model) and where to paste the webhook in the carrier's console.
  *
- * Every question is also a flag, for a script: --app, --mode try|phone, --carrier telnyx|twilio,
+ * Every question is also a flag, for a script: --app, --mode try|model|phone, --carrier telnyx|twilio,
  * --model typesafe|openrouter|vercel|custom|none (custom: --base-url, --model-id), --handoff,
  * --public-host, --port, --force and --non-interactive. A key is never a flag (a flag is kept in the
  * shell's history and shown by ps): it comes from the environment variable of its own name
@@ -87,7 +92,7 @@ export function linePrompt(input: NodeJS.ReadableStream & { isTTY?: boolean }, o
   };
 }
 
-type Mode = 'try' | 'phone';
+type Mode = 'try' | 'model' | 'phone';
 type Carrier = 'telnyx' | 'twilio';
 type Model = 'typesafe' | 'openrouter' | 'vercel' | 'custom' | 'none';
 
@@ -106,16 +111,18 @@ interface Flags {
 }
 
 export const SETUP_USAGE = [
-  'usage: pnpm configure [--app <name>] [--mode try|phone] [--carrier telnyx|twilio]',
+  'usage: pnpm configure [--app <name>] [--mode try|model|phone] [--carrier telnyx|twilio]',
   '         [--model typesafe|openrouter|vercel|custom|none] [--base-url <url> --model-id <id>]',
   '         [--handoff <E.164>] [--public-host <host>] [--port <n>] [--force] [--non-interactive]',
-  '  a key is never a flag: it is read from the environment variable of its name, or asked for with the echo off',
+  '  --mode try: this computer, no keys; model: this computer with a decision model\'s key (to record the app), no phone line; phone: a phone line',
+  '  a key is never a flag: it is read from the environment variable of its name, or asked for with the echo off;',
+  '  with --force, a model\'s key the replaced .env holds is kept when the same provider is chosen',
 ].join('\n');
 
 /** A refusal of the command line: exit 2, with the message. */
 class UsageError extends Error {}
 
-const MODES = ['try', 'phone'] as const;
+const MODES = ['try', 'model', 'phone'] as const;
 const CARRIERS = ['telnyx', 'twilio'] as const;
 const MODELS = ['typesafe', 'openrouter', 'vercel', 'custom', 'none'] as const;
 
@@ -251,8 +258,11 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     }
     throw new Error('no choice made');
   };
-  /** A secret from the environment variable of its name, else asked for with the echo off, checked each time. */
-  const secret = async (variable: string, question: string, check: (v: string) => string | null, optional = false): Promise<string> => {
+  /**
+   * A secret from the environment variable of its name, else (with `keep`) the one the .env being
+   * replaced holds under that name, else asked for with the echo off, checked each time.
+   */
+  const secret = async (variable: string, question: string, check: (v: string) => string | null, optional = false, keep = false): Promise<string> => {
     const fromEnv = io.env[variable]?.trim();
     if (fromEnv) {
       const problem = check(fromEnv);
@@ -262,6 +272,11 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
       }
       if (!interactive) throw new UsageError(`${variable} in the environment will not do: ${problem}`);
       out(`${variable} in the environment will not do (${problem}); asking instead`);
+    }
+    const kept = keep ? previous[variable]?.trim() : undefined;
+    if (kept && check(kept) === null) {
+      out(`${variable} kept from the .env it replaces (${kept.length} chars)`);
+      return kept;
     }
     if (!interactive) {
       if (optional) return '';
@@ -296,6 +311,40 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     throw new Error(`no ${what} that will do`);
   };
 
+  /** The decision model and its key, as settings lines; `allowNone` offers none (the app's examples). */
+  const askModel = async (allowNone: boolean): Promise<Section['lines']> => {
+    const model: Model = flags.model ?? (!interactive ? (() => { throw need('--model', (allowNone ? MODELS : MODELS.filter((m) => m !== 'none')).join(', ')); })() : await choose('Which decision model understands the callers?', [
+      { value: 'typesafe', label: 'TypeSafe (Jev), with a TYPESAFE_API_KEY' },
+      { value: 'openrouter', label: 'OpenRouter, with an OPENROUTER_API_KEY' },
+      { value: 'vercel', label: 'the Vercel AI Gateway, with an AI_GATEWAY_API_KEY' },
+      { value: 'custom', label: 'a compatible endpoint, such as a model on this machine (its URL and model; a key only if it asks)' },
+      ...(allowNone ? [{ value: 'none' as const, label: 'none for now: the app understands by its own examples' }] : []),
+    ]));
+    if (model === 'none' && !allowNone) throw new UsageError('--model none goes with --mode try or phone: --mode model is for a decision model');
+    const modelLines: Section['lines'] = [];
+    if (model === 'none') modelLines.push({ name: 'JEV_CLIENT', value: 'heuristic' });
+    else if (model === 'custom') {
+      const checkCustom = (base: string, id: string) => {
+        try {
+          resolveJevProvider({ JEV_PROVIDER: 'custom', JEV_BASE_URL: base, JEV_MODEL: id });
+          return null;
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      };
+      const modelId = await answer(flags.modelId, '--model-id', "the endpoint's model", 'The model to ask (JEV_MODEL):', (v) => (v.trim() ? null : 'a model is needed'));
+      const base = await answer(flags.baseUrl, '--base-url', "the endpoint's URL", 'Its base URL (https, or http on this machine, like http://localhost:8000):', (v) => checkCustom(v, modelId));
+      const key = await secret('JEV_API_KEY', 'Its key, if it asks for one (Enter for none; not shown as you type):', () => null, true);
+      modelLines.push({ name: 'JEV_CLIENT', value: 'jev' }, { name: 'JEV_PROVIDER', value: 'custom' }, { name: 'JEV_BASE_URL', value: base }, { name: 'JEV_MODEL', value: modelId });
+      if (key) modelLines.push({ name: 'JEV_API_KEY', value: key, secret: true });
+    } else {
+      const k = MODEL_KEY[model];
+      const key = await secret(k.variable, `${k.label} key (not shown as you type):`, () => null, false, true);
+      modelLines.push({ name: 'JEV_CLIENT', value: 'jev' }, { name: 'JEV_PROVIDER', value: model }, { name: k.variable, value: key, secret: true });
+    }
+    return modelLines;
+  };
+
   // Which app.
   const apps = workspaceApps(root);
   if (apps.length === 0) {
@@ -323,18 +372,28 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     out(`${file} exists: ${runCommand(root)} configure --force replaces it (keep a copy of its keys first)`);
     return 1;
   }
+  // What the file being replaced holds: a model's key in it is kept when the same provider is chosen.
+  let previous: Record<string, string | undefined> = {};
+  try {
+    if (existsSync(file)) previous = parseEnv(readFileSync(file, 'utf8'));
+  } catch {
+    previous = {};
+  }
 
   // How to try it.
   const mode: Mode = flags.mode ?? (flags.carrier !== undefined ? 'phone' : !interactive ? 'try' : await choose('How do you want to try it?', [
     { value: 'try', label: 'on this computer, with no keys: the web chat and the console, the app understanding by its own examples' },
     { value: 'phone', label: 'as a phone line: a carrier (Telnyx or Twilio), a decision model, and a tunnel (no account for a quick one)' },
+    { value: 'model', label: "on this computer, with a decision model's key and no phone line yet: record the app against the model; the web chat and the console understand by it" },
   ]));
   const port = flags.port ?? '3000';
   if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new UsageError(`--port must be a port number, got "${port}"`);
   const sections: Section[] = [];
   const checkHandoff = (v: string) => (E164.test(v) ? null : `HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${v}"`);
 
-  if (mode === 'try') {
+  if (mode === 'try' || mode === 'model') {
+    // With a model (to record the app against it): its key, and the model understands the chat and the console too.
+    const modelLines: Section['lines'] = mode === 'model' ? await askModel(false) : [{ name: 'JEV_CLIENT', value: 'heuristic' }];
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', `The number a call goes to for a person (E.164; Enter for ${TRY_HANDOFF}, which goes nowhere):`, checkHandoff, TRY_HANDOFF);
     // This repository's widget build, or, in a project of its own, the installed package's.
     const widget = existsSync(join(root, 'packages', 'widget')) ? join(root, 'packages', 'widget', 'dist', 'dialogwright-widget.js') : join(app.dir, DEFAULT_WIDGET_FILE);
@@ -357,7 +416,9 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
         ],
       },
       { comment: ['Where a call goes when the caller wants a person (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
-      { comment: ['No model: the app understands by its own labelled examples and keywords. Enough to walk every path.'], lines: [{ name: 'JEV_CLIENT', value: 'heuristic' }] },
+      mode === 'model'
+        ? { comment: ['The decision model, which reads what callers say. The regression records the app against it (regress --client record).'], lines: modelLines }
+        : { comment: ['No model: the app understands by its own labelled examples and keywords. Enough to walk every path.'], lines: modelLines },
       {
         comment: ["The engine's web chat, for pages on this computer.", ...(signIn ? ['A chat signs in with mock:<id>, which only a laptop allows.'] : [])],
         lines: [
@@ -378,35 +439,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     ]));
     const c = CARRIER_SECRET[carrier];
     const carrierSecret = await secret(c.variable, c.question, c.check);
-    // The model, and its key.
-    const model: Model = flags.model ?? (!interactive ? (() => { throw need('--model', MODELS.join(', ')); })() : await choose('Which decision model understands the callers?', [
-      { value: 'typesafe', label: 'TypeSafe (Jev), with a TYPESAFE_API_KEY' },
-      { value: 'openrouter', label: 'OpenRouter, with an OPENROUTER_API_KEY' },
-      { value: 'vercel', label: 'the Vercel AI Gateway, with an AI_GATEWAY_API_KEY' },
-      { value: 'custom', label: 'a compatible endpoint, such as a model on this machine (its URL and model; a key only if it asks)' },
-      { value: 'none', label: 'none for now: the app understands by its own examples' },
-    ]));
-    const modelLines: Section['lines'] = [];
-    if (model === 'none') modelLines.push({ name: 'JEV_CLIENT', value: 'heuristic' });
-    else if (model === 'custom') {
-      const checkCustom = (base: string, id: string) => {
-        try {
-          resolveJevProvider({ JEV_PROVIDER: 'custom', JEV_BASE_URL: base, JEV_MODEL: id });
-          return null;
-        } catch (e) {
-          return e instanceof Error ? e.message : String(e);
-        }
-      };
-      const modelId = await answer(flags.modelId, '--model-id', "the endpoint's model", 'The model to ask (JEV_MODEL):', (v) => (v.trim() ? null : 'a model is needed'));
-      const base = await answer(flags.baseUrl, '--base-url', "the endpoint's URL", 'Its base URL (https, or http on this machine, like http://localhost:8000):', (v) => checkCustom(v, modelId));
-      const key = await secret('JEV_API_KEY', 'Its key, if it asks for one (Enter for none; not shown as you type):', () => null, true);
-      modelLines.push({ name: 'JEV_CLIENT', value: 'jev' }, { name: 'JEV_PROVIDER', value: 'custom' }, { name: 'JEV_BASE_URL', value: base }, { name: 'JEV_MODEL', value: modelId });
-      if (key) modelLines.push({ name: 'JEV_API_KEY', value: key, secret: true });
-    } else {
-      const k = MODEL_KEY[model];
-      const key = await secret(k.variable, `${k.label} key (not shown as you type):`, () => null);
-      modelLines.push({ name: 'JEV_CLIENT', value: 'jev' }, { name: 'JEV_PROVIDER', value: model }, { name: k.variable, value: key, secret: true });
-    }
+    const modelLines = await askModel(true);
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', 'The number a call goes to when the caller wants a person (E.164, like +15551234567):', checkHandoff);
     sections.push(
       {
@@ -452,7 +485,11 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   out('Next:');
   out(`  ${hint.command('start')}`);
   out(`  then open http://localhost:${port}/dashboard, the console (on this machine only), to watch each call and chat.`);
-  out(`  To type to the app: ${hint.script('cli')} --client heuristic`);
+  if (mode === 'model') {
+    out(`  To record the app against the model (a paid API, a few cents for a small app): ${hint.script('regress')} --client record --threshold JEV_TIMEOUT_MS=15000`);
+    out(`  then replay it offline, as often as you like: ${hint.script('regress')} --client recorded`);
+  }
+  if (mode === 'try') out(`  To type to the app: ${hint.script('cli')} --client heuristic`);
   out(`  An app with a chat page (the utility example's is http://localhost:${port}/chat-demo) shows the widget there.`);
   out(`  For a phone line, run ${runCommand(root)} configure --force again and choose one.`);
   return 0;
