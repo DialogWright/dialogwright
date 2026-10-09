@@ -1,6 +1,6 @@
 # Per-slot retries: the build (flow building blocks, piece 1)
 
-Date: 2026-10-09. Status: **build plan; being built.** Source: [2026-10-08-flow-building-blocks.md](2026-10-08-flow-building-blocks.md), section 6, and the maintainer's decisions at its end. Pieces 2 (`callData` with transfer targets and data) and 3 (`routes.yaml` with `hours` and `onStart`) get their own build notes when this one is merged, since piece 3 reuses the outcome this one introduces.
+Date: 2026-10-09. Status: **built** (the decisions made while building it are under [As built](#as-built), at the end). Source: [2026-10-08-flow-building-blocks.md](2026-10-08-flow-building-blocks.md), section 6, and the maintainer's decisions at its end. Pieces 2 (`callData` with transfer targets and data) and 3 (`routes.yaml` with `hours` and `onStart`) get their own build notes when this one is merged, since piece 3 reuses the outcome this one introduces.
 
 ## What a slot gets
 
@@ -67,3 +67,19 @@ Each task is test first: a failing test, the code, the test passing, a commit. T
 ## Done when
 
 `pnpm check`, `pnpm -r typecheck`, `pnpm -r test`, the testkit's regression, and the clinic's and the utility's stub and recorded regressions are all green, the clinic's and the utility's unchanged, and the work is fast-forwarded onto local `main`.
+
+## As built
+
+Where the build had to choose, it chose the option that keeps an app that uses none of the keys exactly as it was, and refuses only what is broken.
+
+1. **`form` never names a form that lists the slot.** A slot may be in several forms, and its outcome is the same in each, so "not the form the slot is in" is read as "not any form that lists it": that form would ask it again and run out there again. `pnpm check` and validateApp refuse it.
+2. **What becomes of the slot that ran out.** `handoff` and `end` leave it as it was, so a handoff hands over exactly what it did before. `skip` empties it and marks it declined, keeping its attempts. `anything-else` and `form` empty it, attempts and all, so a slot kept past the form (an identity factor, a carried slot) is asked afresh later rather than running out at its first miss.
+3. **Entering a form by an outcome.** After `say`, the form entered is bridged into with `bridge_next` and its label, as `next` does, and the slots both forms list are kept. Unlike `next`, nothing of the form left carries: it did not complete, so its checks' passes are not the new form's and the new form is reached through nothing (`Session.reachedThrough`). A check's `form_stopped` audit row names the form entered as `next`. An internal form an outcome enters is reached, for validateApp, `pnpm check` and the app map ("After `book_visit` (an outcome)").
+4. **The short forms are `handoff` and `skip` only.** `end`, `anything-else` and `form` need a line or a form, so they are written out; `onMaxAttempts: end` is refused with the long form as its fix.
+5. **The trace's slot_exhausted event** is the record's `slotExhausted` field (a trace record is one turn), written only for a slot with retries of its own (`attempts` or `onMaxAttempts`), so every other app's trace is as it was. The console's attempt line reads the slot's own N from the console metadata (`ConsoleMeta.slotAttempts`).
+6. **The retry lines.** A numbered line may start at 1 (`ask_<slot>_retry1`, the first re-ask). At the keypad rung of a slot with no keypad (or on a chat), a missed answer takes the numbered retry line too, and a silence there falls back to what it said before: `no_input` then `ask_<slot>_retry`. A slot's own reason for a miss (`retryPromptId`) still wins over a numbered line, a window is still asked for its rest, and the caller-ID match question is still asked again as it was. An unanswered read-back that falls back to a re-ask takes the retry line for its failure.
+7. **The warning for a check that reads a slot that may be skipped** covers a slot whose `callerNumber` skips (`onNo` or `ifNone: skip`) as well as `onMaxAttempts`.
+8. **The app map** draws a handoff that has its own `reason` or `say` too, since it goes somewhere the default does not; only the bare default is left undrawn.
+9. **A slot asked with no form open** (an identity factor at the greeting) that runs out with `skip` or `anything-else` asks "anything else?"; with `form`, the form is entered. `skip` on a factor is refused anyway.
+10. **Where it lives.** The outcome constants (`OUTCOME_THEN`, `CHECK_THEN`, the short forms, the attempts range) are in `core/slots/types.ts`, so the engine's validateApp needs nothing from `define/`; the zod schemas in `define/schema/outcome.ts` read them. The executor is `actOn` in `core/turn.ts`, with `slotRunsOut` for a slot and `endByCheck` for a check; `core/outcome.ts` has the slot's attempts, its outcome, the retry lines and the ending an outcome makes.
+11. **The fixture.** The screened fixture's town, when it cannot be made out, goes to an internal form, the office's call (`then: form`), whose call time is nice to have (`attempts: 2`, skipped). It has no stub baseline (`fixtures/expected`), so its two new scripted calls are held to their own expectations only, and no baseline was written or edited.

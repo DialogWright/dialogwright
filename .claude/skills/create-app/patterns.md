@@ -1031,6 +1031,53 @@ getFees: {
 - A scripted call's keypad step is `{ "dtmf": "55501234" }`.
 - **The keypad menu** (`menu:` in intents.yaml) listens only once it has been offered: on a call with a keypad (a phone call, never the chat), the second missed answer to "what can I help you with" (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the next turn's keys are menu keys. A third miss goes to a person (`max-attempts`). A key pressed before that, at the greeting for instance, is ignored and the caller hears nothing. After an informational key the menu is offered again, so it keeps listening. A scripted call for a menu key misses twice first, with two silences: `[{ "silence": true }, { "silence": true }, { "dtmf": "4" }]`. A silence is a miss with no model call, so no recording can change the path. Do not open with words: a filler like "um" is read as addressed to the line at about the threshold, so on a recording it is sometimes ignored rather than missed and the menu is never offered (seen on three apps' first recordings), and any word the model reads can move a call whose subject is the keypad. (The clinic's and the utility's older calls open with "okay"; keep theirs as they are, since changing them re-keys their cassettes.)
 
+## A caller who cannot give it: `attempts` and `onMaxAttempts`
+
+**When:** the paragraph says a detail is nice to have ("ask how they heard of us, if they know"), or what happens to a caller who cannot give an answer ("after a few tries, take a message", "if they can't find their member number, send them to member services"). Otherwise leave both out: three tries, then a person, as every slot does.
+
+```yaml
+# slots.yaml
+referral:
+  type: choice
+  options:
+    friend: a friend
+    online: online
+    other: somewhere else
+  text:
+    instructions: Read asr.text. How did the caller hear of the business?
+  attempts: 2                                    # asked, asked again, then skipped
+  onMaxAttempts: { say: referral_skipped, then: skip }
+memberId:
+  type: digits
+  noun: member
+  length: 9
+  keypad: true
+  attempts: 4                                    # three spoken tries, then the keypad, then the outcome
+  onMaxAttempts: { then: handoff, reason: member-services }
+```
+
+```yaml
+# prompts.yaml, under prompts: (every locale)
+  referral_skipped:
+    text: No problem.
+    interruptible: false
+  handoff_member_services:
+    text: Let me put you through to member services, who can look it up.
+    interruptible: false
+  ask_memberId_retry2:                           # optional: the second re-ask, in place of ask_memberId_retry
+    text: Your member number is on the front of your card, nine digits. What is it?
+    interruptible: true
+  ask_memberId_noinput:                          # optional: a silence, said in place of "I didn't hear anything" and the question
+    text: Sorry, I didn't hear anything. What's your member number?
+    interruptible: true
+```
+
+- **`skip` is for what the business can do without.** The slot is left empty and the form goes on; the completion sees no value, so the code that writes must cope with none. `pnpm check` refuses `skip` on an identity factor and on a slot the form's summary names as `{<slot>}` (read it back from a line of its own, as for [a text offer](#texting-the-caller-onno-ifnone-and-the-callernumber-rule)), and warns when a check reads it (the check would never run).
+- **`form` sends the caller to another form**, internal or an intent, that does not list the slot: "if they can't say which plan, help them choose one" is `{ say: plan_help, then: form, form: choose_plan }`. The slots both forms list are kept, as `next` keeps them. A form's check can go to a form the same way (`then: form` on its outcome).
+- **`end` and `anything-else`** need a `say`: "I'm sorry, I need your member number to go on. Please call back with your card." then the call ends.
+- **The ladder**: with `attempts: N`, failures 1 to N-2 re-ask, failure N-1 is the keypad rung where the slot has `keypad: true` (a re-ask on a chat), failure N runs the outcome. Misses, silences, an unanswered read-back and a second no to a read-back all count.
+- **Scripted calls**: one that misses the slot as many times as its attempts, then expects the outcome (the other form's first question or its end, the next question for a skip, the line for an end); a corpus line with the slot `prompted` and no label is a miss.
+
 ## A callback number: `callerNumber`
 
 **When:** "take their name and a good callback number", or any number the form cannot finish without (where to send a one-time code). On a phone call the carrier already knows the number, so the line offers it instead of asking for ten digits. It is a required offer: the defaults, `onNo: ask` and `ifNone: ask`, ask the slot's own question after a no or with no number to offer.

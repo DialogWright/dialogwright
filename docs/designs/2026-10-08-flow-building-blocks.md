@@ -1,6 +1,6 @@
 # Flow building blocks: the classic IVR toolkit in DialogWright terms (design, for review)
 
-Date: 2026-10-08. Status: **proposal for the maintainer to review; nothing here is built.** Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
+Date: 2026-10-08. Status: **reviewed (the maintainer's decisions are at the end); being built.** Piece 1, per-slot retries (section 6), is built: its build plan and the decisions made building it are [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md). The rest is not built yet. Engine: DialogWright local `main`. Source: the principle in [2026-10-08-decisions.md](2026-10-08-decisions.md): "we read in data, we process forms, nothing is limited by the framework".
 
 ## At a glance
 
@@ -121,7 +121,7 @@ afterForm:
 
 ## 6. Collect: per-slot retries
 
-Proposed keys, not built (a `text` block, so the doc-block test does not read it as slots.yaml):
+Built, as [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md) records it (without the `_nomatch` name: `ask_<slot>_retry` is that line), and documented in [When a slot runs out](../authoring-an-app.md#when-a-slot-runs-out-attempts-and-onmaxattempts). The proposal as it was written (a `text` block, so the doc-block test does not read it as slots.yaml):
 
 ```text
 # slots.yaml
