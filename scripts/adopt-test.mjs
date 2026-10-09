@@ -173,6 +173,7 @@ async function exercise(dir) {
   check(/Test Files\s+2 passed/.test(tests) && !/failed|skipped/.test(tests.split('Test Files')[1] ?? ''), 'npm test: every test file passed');
   const regress = run('npm', ['run', 'regress'], dir);
   check(regress.includes('no changes') && /scenarios\s+(\d+)\/\1 pass expectation,\s+\1\/\1 match expected/.test(regress), 'npm run regress: no changes, every scripted call passes');
+  check(/\nadversarial (\d+)\/\1 cases hold {2}\(/.test(regress) && !regress.includes('FAIL adversarial'), 'npm run regress: the adversarial suite runs, every case holds');
   const pages = ['policy.matrix', 'POLICY.md', 'APP-MAP.md'];
   const before = pages.map((p) => readFileSync(join(dir, p), 'utf8'));
   for (const command of ['policy:matrix', 'policy:card', 'app:diagram']) {
