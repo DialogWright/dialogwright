@@ -7,7 +7,9 @@ describe('replyShape', () => {
   it('text: a short phrase, never a sentence, a colon or a line break', () => {
     const text = r.text();
     for (const ok of ['a box of books', '14 Birch Lane', '200 Heron Row, unit 3', "Mary-Ann O'Neil", 'José', 'unit #3', 'P.O.Box 12', 'Dr Chen']) expect(text(ok), ok).toBe(true);
-    for (const bad of [HOSTILE, 'one. two', 'a: b', 'a\nb', '', '  ', 'a  b', 1, null, 'call now!']) expect(text(bad), String(bad)).toBe(false);
+    // A word of letters may end in one period, an abbreviation's.
+    for (const ok of ['12 Main St.', 'Apt. 4B', 'Ma. Cristina', 'Dr. Chen']) expect(text(ok), ok).toBe(true);
+    for (const bad of [HOSTILE, 'a: b', 'a\nb', '', '  ', 'a  b', 1, null, 'call now!', 'Main St..', '4B.', 'what?']) expect(text(bad), String(bad)).toBe(false);
     expect(r.text({ words: 2 })('three words here')).toBe(false);
     expect(r.text({ chars: 5 })('sixsix')).toBe(false);
   });
@@ -18,12 +20,18 @@ describe('replyShape', () => {
     expect(r.digits({ min: 3, max: 5 })('12345')).toBe(true);
     expect(r.digits()(HOSTILE)).toBe(false);
     expect(r.code()('OT401')).toBe(true);
+    expect(r.code()('A-1001')).toBe(true);
     expect(r.code()('OT 401')).toBe(false);
+    expect(r.code()('-A1')).toBe(false);
+    expect(r.code()('A--1')).toBe(false);
     expect(r.isoDate()('2026-09-21')).toBe(true);
     expect(r.isoDate()('2026-02-30')).toBe(false);
     expect(r.isoDate()(HOSTILE)).toBe(false);
     expect(r.amount()('240.00')).toBe(true);
     expect(r.amount()('240.001')).toBe(false);
+    expect(r.amount()('-12.50')).toBe(false);
+    expect(r.amount({ credit: true })('-12.50')).toBe(true);
+    expect(r.amount({ credit: true })('--1')).toBe(false);
     expect(r.number({ min: 0 })(26)).toBe(true);
     expect(r.number({ min: 0 })(-1)).toBe(false);
     expect(r.number()(Number.NaN)).toBe(false);

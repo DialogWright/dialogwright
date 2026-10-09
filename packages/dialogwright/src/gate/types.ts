@@ -55,10 +55,12 @@ export function isParty(p: unknown): p is Party {
 
 /**
  * A first name as the engine's own lines say it (identity_verified, signin_thanks, a chat's greeting):
- * words of letters of any script, joined inside a word by an apostrophe, a hyphen or a period, a word
- * ending in a period or not, one space between words; empty for none.
+ * words of letters of any script, joined inside a word by an apostrophe, a hyphen, a period, a middle
+ * dot (Gal·la) or a zero-width joiner or non-joiner (as Persian and Indic names are written), a word
+ * ending in a period or not, one space between words; empty for none. Spaces around and between words
+ * are collapsed first.
  */
-const NAME_WORD = String.raw`[\p{L}\p{M}]+(?:['’.-][\p{L}\p{M}]+)*\.?`;
+const NAME_WORD = String.raw`[\p{L}\p{M}]+(?:['’.\u00B7\u200C\u200D-][\p{L}\p{M}]+)*\.?`;
 const SAYABLE_NAME = new RegExp(`^(?:${NAME_WORD}(?: ${NAME_WORD})*)?$`, 'u');
 
 /**
@@ -69,8 +71,9 @@ const SAYABLE_NAME = new RegExp(`^(?:${NAME_WORD}(?: ${NAME_WORD})*)?$`, 'u');
  * is not believed, and the caller goes to a person.
  */
 export function sayableParty(p: Party): boolean {
-  const first = p.first;
-  if (typeof first !== 'string' || first.length > 40 || first.split(' ').length > 4 || !SAYABLE_NAME.test(first)) return false;
+  if (typeof p.first !== 'string') return false;
+  const first = p.first.trim().replace(/\s+/g, ' ');
+  if (first.length > 40 || first.split(' ').length > 4 || !SAYABLE_NAME.test(first)) return false;
   const last4 = p.contact?.phoneLast4;
   return last4 === undefined || last4 === '' || /^\d{4}$/.test(last4);
 }

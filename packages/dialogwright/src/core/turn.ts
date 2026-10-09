@@ -15,8 +15,9 @@ import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type RouteNoted, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
@@ -2161,6 +2162,22 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
   }
 }
 
+/**
+ * The turn's decision once its replies are known: where a reply did not pass its tool's check this
+ * turn (TurnOut.unchecked), a handoff with the reason `result-unchecked`, said by `handoff_result_unchecked`
+ * where the app has it, else `handoff_needs_human`, and carrying what failed (a write that ran, and the
+ * record it made) to the person who takes the call; the decision as it was otherwise. Nothing the app's
+ * code built from the null value is said: the handoff has no acks of its own.
+ */
+function uncheckedHandoff(s: Session, decision: Decision, unchecked: readonly UncheckedReply[] | undefined): Decision {
+  if (unchecked === undefined || unchecked.length === 0) return decision;
+  if (decision.kind === 'handoff' && decision.reason === RESULT_UNCHECKED) return decision;
+  const app = appOf(s);
+  const handed = handoff(s, RESULT_UNCHECKED, []);
+  const own = Object.hasOwn(app.prompts.manifest, handed.promptId);
+  return { ...handed, ...(own ? {} : { promptId: handoffPromptId('needs-human') }), unchecked: [...unchecked] };
+}
+
 /** The purpose the call-start lookup is made with (app.yaml's `callerNumber.lookup`): a gate decision and the audit say what it was. */
 export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
 
@@ -2635,6 +2652,13 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
+  // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
+  // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
+  const settle = (decision: Decision, label: string): Decision => {
+    const settled = uncheckedHandoff(s, decision, io.out.unchecked);
+    bookkeep(s, settled, label);
+    return settled;
+  };
   if (s.ended) return { ...base(), decision: { kind: 'ignore' }, actions: [] };
   // A completion has handed work to a downstream service (e.g. a report just filed, its number
   // said); the service's answer is what comes next. Until it does, nothing the caller says or keys can
@@ -2667,8 +2691,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // switch, or the call ended, handed off or put into a form in its place.
       const started = startRoute(s, io);
       if (started.decision !== undefined) {
-        bookkeep(s, started.decision, 'setup');
-        return { ...base(), decision: started.decision, actions: act(started.decision) };
+        const decision = settle(started.decision, 'setup');
+        return { ...base(), decision, actions: act(decision) };
       }
       // The caller-ID question at the greeting (identity.yaml's callerId, ask: greeting), with a match
       // now; else the consent to text for the whole call (app.yaml's textConsent); else a slot that
@@ -2676,8 +2700,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // open question, in that order. A proposal not made here is made at its slot; consent not asked
       // here is not asked, and each slot it covers asks its own offer.
       const greeted = callerMatchAtGreeting(s, io) ?? textConsentAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
-      const decision = started.acks.length > 0 ? { ...greeted, acks: [...started.acks, ...greeted.acks] } : greeted;
-      bookkeep(s, decision, 'setup');
+      const decided = started.acks.length > 0 ? { ...greeted, acks: [...started.acks, ...greeted.acks] } : greeted;
+      const decision = settle(decided, 'setup');
       return { ...base(), decision, actions: act(decision) };
     }
     case 'user.key': {
@@ -2691,8 +2715,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // is part of the state the model is sent.
       const label = now === null ? `dtmf:${event.digit}` : `dtmf:${now}`;
       const { decision: handled, rows } = handleDtmf(s, event.digit, io);
-      const decision = readSummary(s, handled, io);
-      bookkeep(s, decision, label);
+      const decided = readSummary(s, handled, io);
+      const decision = settle(decided, label);
       return { ...base(), rows, decision, actions: act(decision) };
     }
     case 'user.interrupt':
@@ -2709,8 +2733,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       s.pendingService = null;
       // The answer is untrusted: the app checks it and speaks only its own approved lines.
       const ack = onResult(appContext(s, tc, io.out), event.service, event.result);
-      const decision = readSummary(s, s.form ? finishForm(s, s.form, [ack], io) : prompt('anything_else', 'intent', {}, [ack]), io);
-      bookkeep(s, decision, 'service_result');
+      const decided = readSummary(s, s.form ? finishForm(s, s.form, [ack], io) : prompt('anything_else', 'intent', {}, [ack]), io);
+      const decision = settle(decided, 'service_result');
       return { ...base(), decision, actions: act(decision) };
     }
     case 'auth.signed_in': {
@@ -2739,13 +2763,13 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The waiting request goes back to the gate as new: its entry call is built again, from the
       // customer now signed in, rather than replayed from before.
       s.stepUp = null;
-      const decision = readSummary(s, parked ? continueForm(s, io, acks, null) : (afterIdentityRoute(s, io, acks) ?? prompt('signin_ready', 'intent', {}, acks)), io);
-      bookkeep(s, decision, 'signed_in');
+      const decided = readSummary(s, parked ? continueForm(s, io, acks, null) : (afterIdentityRoute(s, io, acks) ?? prompt('signin_ready', 'intent', {}, acks)), io);
+      const decision = settle(decided, 'signed_in');
       return { ...base(), decision, actions: act(decision) };
     }
     case 'user.silence': {
-      const decision = readSummary(s, handleSilence(s, io), io);
-      bookkeep(s, decision, 'silence');
+      const decided = readSummary(s, handleSilence(s, io), io);
+      const decision = settle(decided, 'silence');
       // Silence resolves whatever was prompted; a stale barge-in marker does not carry into
       // the next turn, same as a real one.
       s.lastInterrupt = null;
@@ -2760,14 +2784,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const screened: GateRow[] = screen ? [screenRow(screen, tc.thresholds)] : [];
       // Quarantine does not wait on perception: its answers are discarded whether or not they came.
       if (screen?.fired) {
-        const decision = readSummary(s, quarantine(s), io);
-        bookkeep(s, decision, 'screen');
+        const decided = readSummary(s, quarantine(s), io);
+        const decision = settle(decided, 'screen');
         s.lastInterrupt = null;
         return { ...base(), turnState, rows: screened, decision, actions: act(decision), quarantined: true };
       }
       if (error || answers === null) {
-        const decision = handleFailure(s);
-        bookkeep(s, decision, 'error');
+        const decided = handleFailure(s);
+        const decision = settle(decided, 'error');
         // The turn state above already reported the barge-in, failed ask or not.
         s.lastInterrupt = null;
         return { ...base(), turnState, rows: screened, decision, actions: act(decision) };
@@ -2781,9 +2805,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const rung = frustrationOf(verdict);
       if (rung !== undefined) s.frustratedTurns += 1;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
-      const decision = readSummary(s, escalate(s, resolved, rung), io);
+      const decided = readSummary(s, escalate(s, resolved, rung), io);
       rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds));
-      bookkeep(s, decision, verdict.kind);
+      const decision = settle(decided, verdict.kind);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;
       return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: act(decision) };

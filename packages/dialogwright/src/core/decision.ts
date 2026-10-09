@@ -44,6 +44,12 @@ export interface CompleteDecision {
 export interface HandoffDecision {
   kind: 'handoff';
   reason: string;
+  /**
+   * The replies that did not pass their tool's check this turn (core/lifecycle.ts UncheckedReply), for a
+   * handoff with the reason `result-unchecked`: the tool, whether it wrote (the write ran and is not
+   * undone), and the record it made where it named a plain reference. Absent on every other handoff.
+   */
+  unchecked?: readonly { readonly tool: string; readonly wrote: boolean; readonly ref?: string }[];
   promptId: string;
   acks: Ack[];
   completed: FormId[];

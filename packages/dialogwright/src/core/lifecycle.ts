@@ -3,7 +3,7 @@ import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { AppContext, Completion, CompletionContext, FormId, Refused, SlotId, VerifyOutcome } from './app/types';
+import type { App, AppContext, Completion, CompletionContext, FormId, Refused, SlotId, ToolName, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
 import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack } from './fia';
@@ -93,6 +93,12 @@ export interface TurnOut {
   effects: Effect[];
   /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
   stopped?: FormStopped;
+  /**
+   * The replies that did not pass their tool's check this turn (ToolDef.check), in order: the turn ends
+   * in a handoff with the reason `result-unchecked` (core/turn.ts). A call made with `failSoft` (the
+   * call-start lookup among them) is not among them: its reply is taken as no data. Absent on every other turn.
+   */
+  unchecked?: UncheckedReply[];
   /**
    * The slot that ran out of attempts this turn, and what followed (core/outcome.ts), for the trace's
    * slot_exhausted event: only for a slot with retries of its own (SlotSpec.attempts or onMaxAttempts),
@@ -261,7 +267,7 @@ function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code
   // A tool that writes is given its write's key (core/idempotency.ts); any other is called as it always was.
   const ran = def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out, code, idempotencyKey: idempotencyKey(s, call) } : { s, tc, out, code });
   // A test's stand-in for the systems' answer (Tools.answers); never set on a call.
-  return tc.tools.answers ? tc.tools.answers(call.tool, ran) : ran;
+  return tc.tools.answers ? tc.tools.answers(call, ran, s.principal) : ran;
 }
 
 /**
@@ -307,6 +313,28 @@ export const RESULT_UNCHECKED = 'result-unchecked';
 
 /** The summary recorded for a call whose reply did not pass its tool's check: nothing of the reply, nor of the summary it came with. */
 export const RESULT_UNCHECKED_SUMMARY = "result not used: it did not pass the tool's check";
+
+/**
+ * The summary recorded for a write (a tool that is idempotent, or whose action has a `confirmed` rule)
+ * whose reply did not pass its check: the write ran downstream and is not undone, only its reply is not
+ * used. The record it made is recorded beside it (GateEvent.ref) when the tool named one that is a
+ * plain reference (UNCHECKED_REF), so the person who takes the call can find it rather than make it again.
+ */
+export const RESULT_UNCHECKED_WRITE_SUMMARY = "write ran, reply unchecked: the write was made and is not undone; its reply did not pass the tool's check and is not used";
+
+/** A record's id a write whose reply failed its check may still be recorded by: letters and digits, with a hyphen between, at most 40 characters. */
+const UNCHECKED_REF = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+
+/**
+ * A reply that did not pass its tool's check this turn (callTool), for the turn to end in a handoff
+ * (core/turn.ts) whatever the app's code did with the null value it was given: the tool, whether it
+ * wrote (the write ran and is not undone), and the record it made, where it named a plain reference.
+ */
+export interface UncheckedReply {
+  readonly tool: ToolName;
+  readonly wrote: boolean;
+  readonly ref?: string;
+}
 
 /** The summary recorded for a call made with `failSoft` whose tool threw: the error itself is never recorded. */
 export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
@@ -369,7 +397,16 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   const check = toolOf(appOf(s), call.tool).check;
   if (check !== undefined && !passesCheck(check, ran.value)) {
     out.effects.length = effectsBefore;
-    out.gateEvents.push({ decision, summary: RESULT_UNCHECKED_SUMMARY });
+    // A write ran downstream and is not undone: it is recorded as such, with the record it made where
+    // that is a plain reference, masked as the call is.
+    const wrote = writes(appOf(s), call.tool);
+    const scrub = scrubberOf(decision);
+    const named = wrote && typeof ran.ref === 'string' && ran.ref.length <= 40 && UNCHECKED_REF.test(ran.ref) ? ran.ref : undefined;
+    const ref = named !== undefined && scrub ? scrub(named) : named;
+    out.gateEvents.push(ref === undefined ? { decision, summary: wrote ? RESULT_UNCHECKED_WRITE_SUMMARY : RESULT_UNCHECKED_SUMMARY } : { decision, summary: RESULT_UNCHECKED_WRITE_SUMMARY, ref });
+    // A call made with failSoft (the call-start lookup) takes it as no data, as a tool that failed.
+    if (opts.failSoft === true) return { decision, value: null, failed: true };
+    (out.unchecked ??= []).push(ref === undefined ? { tool: call.tool, wrote } : { tool: call.tool, wrote, ref });
     return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNCHECKED }, value: null };
   }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
@@ -394,6 +431,11 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   const ref = scrub && typeof ran.ref === 'string' ? scrub(ran.ref) : ran.ref;
   out.gateEvents.push(ref === undefined ? { decision, summary } : { decision, summary, ref });
   return redacted ? { decision, value, redacted: fields } : { decision, value };
+}
+
+/** Whether a tool writes: it is idempotent (a write that must not be done twice), or its action has a `confirmed` rule. */
+export function writes(app: App, tool: ToolName): boolean {
+  return app.tools[tool]?.idempotent === true || gateOf(app).source.actions[tool]?.rules.some((r) => r.rule === 'confirmed') === true;
 }
 
 /** Whether `value` passes a tool's check; a check that throws on it fails it. */

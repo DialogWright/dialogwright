@@ -1,5 +1,6 @@
 import type { SessionEvent } from '../channel/events';
 import { DEFAULT_CODE_LENGTH } from './app/lookup';
+import { SPANISH } from './extract/lexicon';
 import type { Session } from './session';
 
 /**
@@ -36,8 +37,6 @@ const WORD_DIGITS: Readonly<Record<string, number>> = {
   ten: 2, eleven: 2, twelve: 2, thirteen: 2, fourteen: 2, fifteen: 2, sixteen: 2, seventeen: 2, eighteen: 2, nineteen: 2,
   twenty: 2, thirty: 2, forty: 2, fifty: 2, sixty: 2, seventy: 2, eighty: 2, ninety: 2,
   hundred: 0, thousand: 0,
-  // Spanish, digit by digit: a code said aloud in a Spanish call is masked as an English one is.
-  cero: 1, uno: 1, una: 1, dos: 1, tres: 1, cuatro: 1, cinco: 1, seis: 1, siete: 1, ocho: 1, nueve: 1,
 };
 
 /** The words a recognizer writes for a digit it heard ("to" for two, "for" for four): counted only in runs of MIN_DIGITS or more. */
@@ -46,12 +45,29 @@ const SOUND_ALIKE: Readonly<Record<string, number>> = { won: 1, to: 1, too: 1, f
 /** "double five", "triple two": the multiplier's extra digits, on top of the digit that follows. */
 const REPEAT: Readonly<Record<string, number>> = { double: 1, triple: 2 };
 
-const TOKEN = /\d+|[a-z]+/gi;
+const TOKEN = /\d+|[\p{L}\p{M}]+/gu;
+
+/**
+ * How many digits a Spanish number word stands for, as the engine reads Spanish numbers
+ * (extract/lexicon.ts SPANISH), accents folded: a unit one, a teen or a ten two, a hundred one (it
+ * opens a group the rest adds into: over-masking is the safe side), "mil" none. Null for any other word.
+ */
+function spanishDigits(token: string): number | null {
+  const w = SPANISH.fold(token.toLowerCase());
+  if (w in SPANISH.units) return 1;
+  if (w in SPANISH.teens || w in SPANISH.tens) return 2;
+  if (w in SPANISH.hundreds) return 1;
+  if (w in SPANISH.multipliers) return 0;
+  return null;
+}
+
+/** The words that join two number words of one number: English "and", Spanish "y". */
+const JOINERS: ReadonlySet<string> = new Set(['and', SPANISH.joiner]);
 
 function digitsOf(token: string, soundAlike: boolean): number | null {
   if (/^\d+$/.test(token)) return token.length;
   const w = token.toLowerCase();
-  return (Object.hasOwn(WORD_DIGITS, w) ? WORD_DIGITS[w] : undefined) ?? (soundAlike && Object.hasOwn(SOUND_ALIKE, w) ? SOUND_ALIKE[w] : undefined) ?? (Object.hasOwn(REPEAT, w) ? REPEAT[w] : undefined) ?? null;
+  return (Object.hasOwn(WORD_DIGITS, w) ? WORD_DIGITS[w] : undefined) ?? (soundAlike && Object.hasOwn(SOUND_ALIKE, w) ? SOUND_ALIKE[w] : undefined) ?? (Object.hasOwn(REPEAT, w) ? REPEAT[w] : undefined) ?? spanishDigits(token);
 }
 
 /**
@@ -76,7 +92,7 @@ export function maskSpokenCode(text: string, minDigits: number = MIN_DIGITS): { 
       if (t.n === null) {
         // "and" joins two number words; anything else ends the run.
         const next = tokens[j + 1];
-        if (t.s.toLowerCase() === 'and' && next && next.n !== null && /^[\s,.-]*$/.test(text.slice(tokens[j - 1]!.end, t.start))) { j++; continue; }
+        if (JOINERS.has(t.s.toLowerCase()) && next && next.n !== null && /^[\s,.-]*$/.test(text.slice(tokens[j - 1]!.end, t.start))) { j++; continue; }
         break;
       }
       if (j > i && !/^[\s,.-]*$/.test(text.slice(tokens[j - 1]!.end, t.start))) break;

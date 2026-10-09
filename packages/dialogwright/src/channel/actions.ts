@@ -36,6 +36,12 @@ export interface Transfer {
   headers?: Record<string, string>;
   /** What a chat's transfer message carries (app.yaml's `transfer.send.chat`); absent when there is none. */
   data?: Record<string, string>;
+  /**
+   * For a handoff with the reason `result-unchecked`: each reply that did not pass its tool's check,
+   * with whether the tool wrote (the write ran downstream and is not undone) and the record it made, so
+   * the person who takes the call finds it rather than makes it again. Absent on every other transfer.
+   */
+  unchecked?: { tool: string; wrote: boolean; ref?: string }[];
 }
 
 /** What a transfer action adds for an app with `transfer`: its target, and what goes with it. */

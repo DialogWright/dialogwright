@@ -139,10 +139,12 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       // by default no identity factor, and a redacted slot only masked.
       // With `unconfirmed: omit` a value never confirmed is left out; with `mark` the transfer names it.
       const slots = handoffDataSlots(app, decision.slots, decision.unconfirmed);
+      const transfer = transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed), decision.transfer);
+      if (decision.unchecked !== undefined) transfer.unchecked = decision.unchecked.map((u) => ({ ...u }));
       return [
         ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
         say(decision.promptId, {}, false),
-        transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed), decision.transfer),
+        transfer,
       ];
   }
 }

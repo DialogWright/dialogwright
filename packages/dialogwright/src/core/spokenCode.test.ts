@@ -21,6 +21,10 @@ describe('maskSpokenCode', () => {
     ['el código es cuatro dos cuatro dos cuatro dos', `el código es ${CODE_MASK}`],
     ['cero uno, dos tres', CODE_MASK],
     ['es nueve ocho siete seis cinco una', `es ${CODE_MASK}`],
+    // Spanish numbers as a caller groups them, accents and all: the words the engine reads numbers with.
+    ['es cuarenta y dos diecisiete ochenta y uno', `es ${CODE_MASK}`],
+    ['veintidós, treinta y cinco, dieciséis', CODE_MASK],
+    ['el código es cuatrocientos ochenta y dos novecientos dieciséis', `el código es ${CODE_MASK}`],
   ])('masks %j', (said, masked) => {
     expect(maskSpokenCode(said)).toEqual({ text: masked, masked: true });
   });
