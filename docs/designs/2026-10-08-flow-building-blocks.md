@@ -121,7 +121,9 @@ afterForm:
 
 ## 6. Collect: per-slot retries
 
-```yaml
+Proposed keys, not built (a `text` block, so the doc-block test does not read it as slots.yaml):
+
+```text
 # slots.yaml
 accountId:
   type: digits
