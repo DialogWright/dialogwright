@@ -26,3 +26,12 @@ forms:
     summaryPromptId: null
     hooks: [complete]
     calls: []
+  # Reached only when the town cannot be made out (slots.yaml town's onMaxAttempts): the visit is set
+  # aside, and the office calls back, at the time the caller gives or, with none, when it can.
+  office_call:
+    internal: true
+    label: arrange a call from our office
+    slots: [callTime]
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []

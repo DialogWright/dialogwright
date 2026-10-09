@@ -254,7 +254,9 @@ describe('listenBeforeEntered: which slots fill before their form is open', () =
       for (const [id, spec] of Object.entries(a.slots)) {
         const factor = a.identity?.factorSlots.includes(id) === true;
         const carried = a.carrySlots?.includes(id) === true;
-        expect(listenOf(a, id)).toBe(factor ? null : carried ? 'call' : (spec.listen ?? 'up-front'));
+        // The screened fixture's callTime is listed only by its internal form (office_call), which says false by default.
+        const internalOnly = a === screenedApp && id === 'callTime';
+        expect(listenOf(a, id), id).toBe(factor ? null : carried ? 'call' : internalOnly ? 'form' : (spec.listen ?? 'up-front'));
       }
     }
   });

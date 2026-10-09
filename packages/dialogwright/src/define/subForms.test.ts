@@ -58,13 +58,18 @@ describe('the two-form variant', () => {
 
   it('the console names the internal form by its own label, under the app\'s', () => {
     const app = defineApp(folder({ 'app.yaml': replace('    book_visit: Book a visit\n', '') }), screenedCode);
-    expect(consoleMetaOf(app).formLabels).toEqual({ book_visit: 'book your visit', urgent: 'Something urgent' });
-    expect(consoleMetaOf(defineApp(folder(), screenedCode)).formLabels).toEqual({ book_visit: 'Book a visit', urgent: 'Something urgent' });
-    expect(consoleMetaOf(screenedApp).formLabels).toEqual({ book_visit: 'Book a visit', urgent: 'Something urgent' });
+    const office = { office_call: 'arrange a call from our office' };
+    expect(consoleMetaOf(app).formLabels).toEqual({ book_visit: 'book your visit', ...office, urgent: 'Something urgent' });
+    expect(consoleMetaOf(defineApp(folder(), screenedCode)).formLabels).toEqual({ book_visit: 'Book a visit', ...office, urgent: 'Something urgent' });
+    expect(consoleMetaOf(screenedApp).formLabels).toEqual({ book_visit: 'Book a visit', ...office, urgent: 'Something urgent' });
   });
 
-  it('leaves the fixture as it was: no form of it has next, internal, label or listenBeforeEntered', () => {
-    for (const form of Object.values(screenedApp.forms)) for (const key of ['next', 'internal', 'label', 'listenBeforeEntered']) expect(form).not.toHaveProperty(key);
+  it('leaves the fixture as it was: no form of it has next or listenBeforeEntered, and only the office\'s call (reached by the town\'s onMaxAttempts) is internal', () => {
+    for (const [id, form] of Object.entries(screenedApp.forms)) {
+      for (const key of ['next', 'listenBeforeEntered']) expect(form).not.toHaveProperty(key);
+      if (id === 'office_call') expect(form).toMatchObject({ internal: true, label: 'arrange a call from our office' });
+      else for (const key of ['internal', 'label']) expect(form).not.toHaveProperty(key);
+    }
   });
 });
 
@@ -81,7 +86,7 @@ describe('the refusals', () => {
 
   it('an internal form no next reaches', async () => {
     const { problems } = await checked(folder({ 'forms.yaml': (t) => `${t}  spare:\n    internal: true\n    label: look at something else\n    slots: [visitDay]\n    summaryPromptId: null\n    calls: []\n    next: book_visit\n` }));
-    expect(problems).toContain('forms.yaml:40:15  forms.spare.internal  form "spare" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it  ->  add "next: spare" to the form that comes before it, or "then: form, form: spare" to a check\'s outcome or a slot\'s onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml');
+    expect(problems).toContain('forms.yaml:47:15  forms.spare.internal  form "spare" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it  ->  add "next: spare" to the form that comes before it, or "then: form, form: spare" to a check\'s outcome or a slot\'s onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml');
   });
 
   it('an internal form with an intent', async () => {
@@ -138,7 +143,7 @@ describe('the warning: a slot whose listen says otherwise than every form that l
   it('a slot only the internal booking lists, with listen: anywhere', async () => {
     const { problems, warnings } = await checked(folder({ 'slots.yaml': replace('visitDay:\n  type: choice\n', 'visitDay:\n  type: choice\n  listen: anywhere\n') }));
     expect(problems).toEqual([]);
-    expect(warnings).toEqual(['slots.yaml:55:11  visitDay.listen  the slot "visitDay" says listen: anywhere, but the form that lists it ("book_visit") says its slots do not listen before it is open (listenBeforeEntered: false, the default for an internal form); the slot\'s own listen wins  ->  nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open']);
+    expect(warnings).toEqual(['slots.yaml:58:11  visitDay.listen  the slot "visitDay" says listen: anywhere, but the form that lists it ("book_visit") says its slots do not listen before it is open (listenBeforeEntered: false, the default for an internal form); the slot\'s own listen wins  ->  nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open']);
   });
 
   it('a slot of the screen and the booking, with listen: up-front, once the screen says false too', async () => {

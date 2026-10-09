@@ -42,6 +42,8 @@ flowchart LR
     s_visitDay["visitDay<br/>type: choice"]
     s_timeOfDay["timeOfDay<br/>type: choice"]
   end
+  x_town>"When it runs out<br/>say town_unclear, form office_call"]
+  s_town -.->|"runs out"| x_town
   intent --> slots
   summary[/"Summary read back for a yes<br/>confirm_book_visit"/]
   slots --> summary
@@ -78,6 +80,23 @@ flowchart LR
     none["no slots"]
   end
   intent --> slots
+  done["Completes without calling an action"]
+  slots --> done
+```
+
+## Arrange a call from our office
+
+After `book_visit` (an outcome): the internal form `office_call`, its slots, the summary, the action and its rules.
+
+```mermaid
+flowchart LR
+  after("After<br/>book_visit, as an outcome: Book a visit")
+  after --> slots
+  subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
+    s_callTime["callTime<br/>type: choice"]
+  end
+  x_callTime>"When it runs out, after 2 attempts<br/>say call_time_any, skip"]
+  s_callTime -.->|"runs out"| x_callTime
   done["Completes without calling an action"]
   slots --> done
 ```

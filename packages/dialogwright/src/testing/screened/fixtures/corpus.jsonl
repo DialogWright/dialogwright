@@ -25,3 +25,6 @@
 {"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
 {"id":"no-01","text":"hello","intent":"none","context":"no_form"}
 {"id":"dn-01","text":"that's all, thanks","intent":"done","context":"anything_else"}
+{"id":"tw-03","text":"I'm not sure what the town is called","intent":"none","context":"book_visit","prompted":"town"}
+{"id":"ct-01","text":"the afternoon is best","intent":"none","context":"office_call","prompted":"callTime","labels":{"callTime":"afternoon"}}
+{"id":"ct-02","text":"whenever really","intent":"none","context":"office_call","prompted":"callTime"}

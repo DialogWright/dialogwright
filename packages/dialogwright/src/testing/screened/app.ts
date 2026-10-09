@@ -16,7 +16,9 @@ import { ANONYMOUS, defineApp, handoff, type AppCode, type Completion, type Comp
  * (`urgent`), which takes the turn before any check runs; what the same words say of the booking's
  * answers corrects them first (`correctsForm`), so "water is coming through the wall right now" at the
  * read-back hands the office "right away", and the handoff names the values the caller never
- * confirmed (app.yaml `handoff.data.unconfirmed: mark`). All names and places are made up.
+ * confirmed (app.yaml `handoff.data.unconfirmed: mark`). A town the line cannot make out after three
+ * tries sets the visit aside for a call from the office (the town's `onMaxAttempts` enters the internal
+ * form office_call), whose time is nice to have: two tries, then skipped. All names and places are made up.
  */
 
 /** The folder this app's YAML is in. */
@@ -65,6 +67,17 @@ function completeVisit(c: CompletionContext): Completion {
   return { kind: 'end', promptId: 'visit_booked', vars: { visitDay: s.slots.visitDay?.display ?? '', timeOfDay: s.slots.timeOfDay?.display ?? '' }, acks };
 }
 
+/**
+ * The office will call about a town the line could not make out (forms.yaml office_call, reached by
+ * the town's onMaxAttempts): at the time the caller gave, or, the time skipped (its onMaxAttempts),
+ * when it can. Nothing is booked.
+ */
+function completeOfficeCall(c: CompletionContext): Completion {
+  const time = c.s.slots.callTime;
+  if (time?.value == null) return { kind: 'end', promptId: 'office_will_call_soon', vars: {}, acks: c.acks };
+  return { kind: 'end', promptId: 'office_will_call', vars: { callTime: time.display ?? time.value }, acks: c.acks };
+}
+
 /** The app's TypeScript parts. */
 export const screenedCode: AppCode = {
   slots: {},
@@ -74,6 +87,8 @@ export const screenedCode: AppCode = {
     book_visit: { confirmedParams: visitParams, complete: completeVisit },
     // Something urgent, said as a request: straight to the office.
     urgent: { complete: (c) => ({ kind: 'decision', decision: handoff(c.s, 'urgent', c.acks) }) },
+    // A town the line could not make out: the office calls back, at the time given or, skipped, when it can.
+    office_call: { complete: completeOfficeCall },
   },
   testing: {
     heuristics: { intents: [['urgent', /\b(pouring|flooding|right now|emergency)\b/], ['book_visit', /\b(visit|leak|crack|draft|look at)\b/]] },
@@ -86,6 +101,7 @@ export const screenedCode: AppCode = {
         howUrgent: { value: 'routine', display: 'whenever suits' },
         visitDay: { value: 'monday', display: 'Monday' },
         timeOfDay: { value: 'morning', display: 'the morning' },
+        callTime: { value: 'afternoon', display: 'the afternoon' },
       },
       anythingElse: () => ({ form: 'book_visit' }),
     },

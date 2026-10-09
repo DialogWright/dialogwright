@@ -36,6 +36,9 @@ town:
       means: A town that is not Millbrook, Cedar Falls, Ashford or Riverton
   text:
     instructions: Read asr.text. Which town is the home in?
+  # A town the line cannot make out after three tries is the office's to settle: the visit is set
+  # aside and the caller is asked when the office may call (the internal form office_call).
+  onMaxAttempts: { say: town_unclear, then: form, form: office_call }
 howUrgent:
   type: choice
   options:
@@ -65,3 +68,14 @@ timeOfDay:
     afternoon: the afternoon
   text:
     instructions: Read asr.text. Does the caller want the morning or the afternoon?
+# When the office may call about a town the line could not make out (office_call). Nice to have: two
+# tries, then the office calls when it can, and the slot is left empty.
+callTime:
+  type: choice
+  options:
+    morning: the morning
+    afternoon: the afternoon
+  text:
+    instructions: Read asr.text. Does the caller want the office to call in the morning or the afternoon?
+  attempts: 2
+  onMaxAttempts: { say: call_time_any, then: skip }

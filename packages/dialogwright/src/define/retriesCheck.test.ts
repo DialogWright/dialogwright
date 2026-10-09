@@ -50,23 +50,23 @@ const addPrompts = (lines: Record<string, string>) => (t: string): string => `${
 describe('check passes what is well made', () => {
   it('attempts, a skip on a slot no summary names, a form there is, a handoff with its line', async () => {
     expect(await checked({
-      'slots.yaml': (t) => onSlot('howUrgent', '  attempts: 4\n')(onSlot('ownership', '  onMaxAttempts: { then: handoff, reason: owner-unclear }\n')(onSlot('town', '  onMaxAttempts: { say: town_unclear, then: form, form: urgent }\n')(t))),
-      'prompts.yaml': addPrompts({ town_unclear: 'Sorry, I could not make out the town.', handoff_owner_unclear: 'Let me get someone to help.' }),
+      'slots.yaml': (t) => onSlot('howUrgent', '  attempts: 4\n')(onSlot('ownership', '  onMaxAttempts: { then: handoff, reason: owner-unclear }\n')(onSlot('problem', '  onMaxAttempts: { say: problem_unclear, then: form, form: urgent }\n')(t))),
+      'prompts.yaml': addPrompts({ problem_unclear: 'Sorry, I could not make out the problem.', handoff_owner_unclear: 'Let me get someone to help.' }),
     })).toEqual({ problems: [], warnings: [] });
   });
 });
 
 describe('check refuses a broken outcome', () => {
   it('a form that is not in forms.yaml, with the closest offered', async () => {
-    const { problems } = await checked({ 'slots.yaml': onSlot('town', '  onMaxAttempts: { then: form, form: urgnt }\n') });
+    const { problems } = await checked({ 'slots.yaml': onSlot('problem', '  onMaxAttempts: { then: form, form: urgnt }\n') });
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('town.onMaxAttempts.form');
-    expect(problems[0]).toContain('the slot "town" goes, when it runs out of attempts, to "urgnt", which is not a form in forms.yaml');
+    expect(problems[0]).toContain('problem.onMaxAttempts.form');
+    expect(problems[0]).toContain('the slot "problem" goes, when it runs out of attempts, to "urgnt", which is not a form in forms.yaml');
     expect(problems[0]).toContain('"urgent"');
   });
 
   it('a form that asks the slot itself', async () => {
-    const { problems } = await checked({ 'slots.yaml': onSlot('town', '  onMaxAttempts: { then: form, form: book_visit }\n') });
+    const { problems } = await checked({ 'slots.yaml': onSlot('problem', '  onMaxAttempts: { then: form, form: book_visit }\n') });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('to the form "book_visit", which asks it too');
   });
@@ -86,19 +86,19 @@ describe('check refuses a broken outcome', () => {
   });
 
   it('skip on a slot its form\'s summary names', async () => {
-    const { problems } = await checked({ 'slots.yaml': onSlot('town', '  onMaxAttempts: skip\n') });
+    const { problems } = await checked({ 'slots.yaml': onSlot('problem', '  onMaxAttempts: skip\n') });
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('the summary of the form "book_visit" names {town}, but the slot may be left empty (its onMaxAttempts skips it)');
+    expect(problems[0]).toContain('the summary of the form "book_visit" names {problem}, but the slot may be left empty (its onMaxAttempts skips it)');
   });
 
   it('a code slot\'s attempts and onMaxAttempts out of shape', async () => {
-    const town: SlotSpec = { ...(screenedApp.slots.town as SlotSpec), attempts: 0, onMaxAttempts: 'end' as never };
-    const code: AppCode = { ...screenedCode, slots: { town } };
-    const asCode = (t: string): string => t.slice(0, t.indexOf('town:\n')) + 'town:\n  type: code\n' + t.slice(t.indexOf('howUrgent:\n'));
+    const problem: SlotSpec = { ...(screenedApp.slots.problem as SlotSpec), attempts: 0, onMaxAttempts: 'end' as never };
+    const code: AppCode = { ...screenedCode, slots: { problem } };
+    const asCode = (t: string): string => t.slice(0, t.indexOf('problem:\n')) + 'problem:\n  type: code\n' + t.slice(t.indexOf('ownership:\n'));
     const { problems } = await checked({ 'slots.yaml': asCode }, code);
     expect(problems).toHaveLength(2);
-    expect(problems.join('\n')).toContain('the slot "town" says attempts: 0, which must be at least 1');
-    expect(problems.join('\n')).toContain('the slot "town" says onMaxAttempts: "end": "end" is written out, with what it needs (the line said)');
+    expect(problems.join('\n')).toContain('the slot "problem" says attempts: 0, which must be at least 1');
+    expect(problems.join('\n')).toContain('the slot "problem" says onMaxAttempts: "end": "end" is written out, with what it needs (the line said)');
   });
 
   it('skip on an identity factor', async () => {
@@ -141,21 +141,22 @@ describe('check warns, never refuses', () => {
 });
 
 describe('validateApp', () => {
-  const withTown = (slot: Partial<SlotSpec>): App => ({ ...screenedApp, id: 'retries-validate', slots: { ...screenedApp.slots, town: { ...(screenedApp.slots.town as SlotSpec), ...slot } } });
+  /** The fixture with its problem slot changed (its town already goes to the office's call). */
+  const withProblem = (slot: Partial<SlotSpec>): App => ({ ...screenedApp, id: 'retries-validate', slots: { ...screenedApp.slots, problem: { ...(screenedApp.slots.problem as SlotSpec), ...slot } } });
 
   it('passes an app with retries well made', () => {
-    expect(() => validateApp(withTown({ attempts: 4, onMaxAttempts: { then: 'form', form: 'urgent' } }))).not.toThrow();
-    expect(() => validateApp(withTown({ onMaxAttempts: 'skip' }))).not.toThrow();
+    expect(() => validateApp(withProblem({ attempts: 4, onMaxAttempts: { then: 'form', form: 'urgent' } }))).not.toThrow();
+    expect(() => validateApp(withProblem({ onMaxAttempts: 'skip' }))).not.toThrow();
   });
 
   it('refuses attempts out of range, an outcome of no known shape, and one to a form there is not or that asks the slot', () => {
-    expect(() => validateApp(withTown({ attempts: 0 }))).toThrow('slot "town" says attempts: 0, which is not a whole number from 1 to 10');
-    expect(() => validateApp(withTown({ attempts: 11 }))).toThrow('not a whole number from 1 to 10');
-    expect(() => validateApp(withTown({ onMaxAttempts: 'end' as never }))).toThrow('slot "town" says onMaxAttempts: "end"');
-    expect(() => validateApp(withTown({ onMaxAttempts: { then: 'end' } }))).toThrow('slot "town" ends with end when it runs out of attempts and says no line');
-    expect(() => validateApp(withTown({ onMaxAttempts: { then: 'form', form: 'nowhere' } }))).toThrow('to the unknown form "nowhere"');
-    expect(() => validateApp(withTown({ onMaxAttempts: { then: 'form', form: 'book_visit' } }))).toThrow('to the form "book_visit", which asks it too');
-    expect(() => validateApp(withTown({ onMaxAttempts: { then: 'skip', reason: 'x' } }))).toThrow('names a handoff reason for an outcome that does not hand off');
+    expect(() => validateApp(withProblem({ attempts: 0 }))).toThrow('slot "problem" says attempts: 0, which is not a whole number from 1 to 10');
+    expect(() => validateApp(withProblem({ attempts: 11 }))).toThrow('not a whole number from 1 to 10');
+    expect(() => validateApp(withProblem({ onMaxAttempts: 'end' as never }))).toThrow('slot "problem" says onMaxAttempts: "end"');
+    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'end' } }))).toThrow('slot "problem" ends with end when it runs out of attempts and says no line');
+    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'form', form: 'nowhere' } }))).toThrow('to the unknown form "nowhere"');
+    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'form', form: 'book_visit' } }))).toThrow('to the form "book_visit", which asks it too');
+    expect(() => validateApp(withProblem({ onMaxAttempts: { then: 'skip', reason: 'x' } }))).toThrow('names a handoff reason for an outcome that does not hand off');
   });
 
   it('refuses a check\'s outcome to a form there is not, or its own', () => {
@@ -167,10 +168,10 @@ describe('validateApp', () => {
   });
 
   it('an internal form an outcome enters is reached', () => {
-    const forms = { ...screenedApp.forms, office_call: { slots: ['visitDay'], summaryPromptId: null, internal: true, label: 'arrange a call', complete: () => ({ kind: 'said' as const, acks: [] }) } };
-    const app = (slot: Partial<SlotSpec>): App => ({ ...withTown(slot), forms });
-    expect(() => validateApp(app({}))).toThrow('internal form "office_call" is reached by no form\'s next, and no outcome enters it');
-    expect(() => validateApp(app({ onMaxAttempts: { then: 'form', form: 'office_call' } }))).not.toThrow();
+    const forms = { ...screenedApp.forms, front_desk: { slots: ['visitDay'], summaryPromptId: null, internal: true, label: 'talk to the desk', complete: () => ({ kind: 'said' as const, acks: [] }) } };
+    const app = (slot: Partial<SlotSpec>): App => ({ ...withProblem(slot), forms });
+    expect(() => validateApp(app({}))).toThrow('internal form "front_desk" is reached by no form\'s next, and no outcome enters it');
+    expect(() => validateApp(app({ onMaxAttempts: { then: 'form', form: 'front_desk' } }))).not.toThrow();
   });
 
   it('refuses skip on an identity factor', () => {

@@ -216,6 +216,8 @@ describe('the fixture\'s scripted calls', () => {
     expect(scenarios.map((s) => s.id)).toEqual([
       'renter-ends-before-the-town', 'out-of-area', 'one-breath-qualifies', 'day-and-time-up-front-kept', 'one-breath-renter', 'urgent-mid-qualify-priority',
       'urgent-by-the-check', 'urgent-at-the-summary-corrects', 'summary-correction-disqualifies', 'summary-yes-but-renting', 'summary-correction-requalifies',
+      // A slot's retries (design 2026-10-09-per-slot-retries): the town that runs out goes to the office's call, whose time is skipped.
+      'town-unclear-office-calls', 'call-time-skipped',
     ]);
   });
   for (const scenario of scenarios) {

@@ -39,6 +39,8 @@ flowchart LR
     s_ownership["ownership<br/>type: choice"]
     s_town["town<br/>type: choice"]
   end
+  x_town>"When it runs out<br/>say town_unclear, form office_call"]
+  s_town -.->|"runs out"| x_town
   intent --> slots
   c_checkOwner{{"Check<br/>check the caller owns the home<br/>level 0: anonymous<br/>not-owner: say decline_renter, end"}}
   s_ownership -.->|"checked"| c_checkOwner
@@ -73,6 +75,8 @@ flowchart LR
     s_visitDay["visitDay<br/>type: choice"]
     s_timeOfDay["timeOfDay<br/>type: choice"]
   end
+  x_town>"When it runs out<br/>say town_unclear, form office_call"]
+  s_town -.->|"runs out"| x_town
   summary[/"Summary read back for a yes<br/>confirm_book_visit"/]
   slots --> summary
   c_checkUrgency{{"Check<br/>send something urgent to the office<br/>level 0: anonymous<br/>urgent: handoff urgent"}}
@@ -100,6 +104,23 @@ flowchart LR
     none["no slots"]
   end
   intent --> slots
+  done["Completes without calling an action"]
+  slots --> done
+```
+
+## Arrange a call from our office
+
+After `screen_home` (an outcome), `book_visit` (an outcome): the internal form `office_call`, its slots, the summary, the action and its rules.
+
+```mermaid
+flowchart LR
+  after("After<br/>screen_home, as an outcome: book a free visit<br/>book_visit, as an outcome: Book a visit")
+  after --> slots
+  subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
+    s_callTime["callTime<br/>type: choice"]
+  end
+  x_callTime>"When it runs out, after 2 attempts<br/>say call_time_any, skip"]
+  s_callTime -.->|"runs out"| x_callTime
   done["Completes without calling an action"]
   slots --> done
 ```

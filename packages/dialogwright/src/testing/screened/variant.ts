@@ -101,6 +101,13 @@ export const NEXT_FORMS = [
   '    summaryPromptId: null',
   '    hooks: [complete]',
   '    calls: []',
+  '  office_call:',
+  '    internal: true',
+  '    label: arrange a call from our office',
+  '    slots: [callTime]',
+  '    summaryPromptId: null',
+  '    hooks: [complete]',
+  '    calls: []',
   '',
 ].join('\n');
 

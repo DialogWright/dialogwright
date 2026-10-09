@@ -13,6 +13,7 @@ import { mockCodeVerifier } from './tools';
 import type { AnswerMap } from '../jev/types';
 import { screenedApp } from '../testing/screened/app';
 import { attemptsOf } from './outcome';
+import { slotOutcomeForm } from './app/next';
 import { join } from 'node:path';
 import { runScenario, type ScenarioStep } from '../harness-text/runner';
 import { loadCorpus } from '../jev/corpus';
@@ -34,19 +35,23 @@ const TOWN_KEYS: SlotSpec['dtmf'] = { length: 1, parse: (d) => (d === '1' ? { va
 
 /** The screened fixture with the town slot changed by `slot` and `lines` added to its prompts. */
 function variant(id: string, slot: Partial<SlotSpec>, lines: Record<string, string> = {}): App {
-  const town: SlotSpec = { ...(screenedApp.slots.town as SlotSpec), ...slot };
+  const town: SlotSpec = { ...(screenedApp.slots.town as SlotSpec), onMaxAttempts: undefined, ...slot };
   const added = Object.fromEntries(Object.entries(lines).map(([k, text]) => [k, { text, interruptible: true }]));
-  return { ...screenedApp, id, slots: { ...screenedApp.slots, town }, prompts: { ...screenedApp.prompts, manifest: { ...screenedApp.prompts.manifest, ...added } } };
+  // The office's call is reached only by the fixture's own town outcome: a town without it leaves it out.
+  const forms = Object.fromEntries(Object.entries(screenedApp.forms).filter(([form]) => form !== 'office_call' || slotOutcomeForm(town.onMaxAttempts) === 'office_call'));
+  return { ...screenedApp, id, slots: { ...screenedApp.slots, town }, forms, prompts: { ...screenedApp.prompts, manifest: { ...screenedApp.prompts.manifest, ...added } } };
 }
 const KEYPAD_LINE = { ask_town_dtmf: 'Press 1 for Millbrook.' };
+/** The fixture with the town on the engine's own ladder: its onMaxAttempts (the office's call) left out. */
+const plain = variant('screened-plain', {});
 
-let current: App = screenedApp;
+let current: App = plain;
 function use(a: App): void {
   resetAppsForTest();
   registerApp(a);
   current = a;
 }
-beforeEach(() => use(screenedApp));
+beforeEach(() => use(plain));
 
 const tc = (): TurnContext => ({ nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { ...current.systems(), codes: mockCodeVerifier } });
 
@@ -91,8 +96,8 @@ const said = (t: TurnResult): string => (t.decision.kind === 'prompt' ? t.decisi
 describe('attemptsOf', () => {
   it('is the slot\'s own, else the thresholds\' MAX_ATTEMPTS', () => {
     const t = { ...DEFAULT_THRESHOLDS };
-    expect(attemptsOf(screenedApp, 'town', t)).toBe(3);
-    expect(attemptsOf(screenedApp, 'town', { ...t, MAX_ATTEMPTS: 5 })).toBe(5);
+    expect(attemptsOf(plain, 'town', t)).toBe(3);
+    expect(attemptsOf(plain, 'town', { ...t, MAX_ATTEMPTS: 5 })).toBe(5);
     expect(attemptsOf(variant('x', { attempts: 4 }), 'town', { ...t, MAX_ATTEMPTS: 5 })).toBe(4);
   });
 });
@@ -362,13 +367,13 @@ describe('what follows when a slot runs out (decisions 2 and 4)', () => {
     const t = say(atTown(), 'hmm', MISS);
     expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'town-unknown', promptId: 'handoff_town_unknown' });
     expect(t.exhausted).toEqual({ slot: 'town', attempts: 1, outcome: 'handoff' });
-    use(screenedApp);
+    use(plain);
     let s = atTown();
     s = say(s, 'hmm', MISS).session;
     s = say(s, 'hmm', MISS).session;
-    const plain = say(s, 'hmm', MISS);
-    expect(plain.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts', promptId: 'handoff_max_attempts' });
-    expect('exhausted' in plain).toBe(false);
+    const byDefault = say(s, 'hmm', MISS);
+    expect(byDefault.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts', promptId: 'handoff_max_attempts' });
+    expect('exhausted' in byDefault).toBe(false);
   });
 
   describe('an offer of the caller\'s number', () => {
@@ -405,9 +410,9 @@ describe('what follows when a slot runs out (decisions 2 and 4)', () => {
 
 describe('a check\'s outcome goes to a form the same way (decision 5)', () => {
   it('then: form: the form stops, the other is entered, and the audit names it', () => {
-    const forms = screenedApp.forms;
+    const forms = plain.forms;
     const checks = forms.book_visit!.checks!.map((c) => (c.action === 'checkArea' ? { ...c, on: { 'out-of-area': { say: 'decline_out_of_area', then: 'form' as const, form: 'urgent' } } } : c));
-    use({ ...screenedApp, id: 'check-form', forms: { ...forms, book_visit: { ...forms.book_visit!, checks } } });
+    use({ ...plain, id: 'check-form', forms: { ...forms, book_visit: { ...forms.book_visit!, checks } } });
     const t = say(atTown(), 'Lakeview', { town: one('elsewhere') });
     expect(t.stopped).toEqual({ form: 'book_visit', action: 'checkArea', reason: 'out-of-area', then: 'form', next: 'urgent' });
     expect(t.audit.find((d) => d.type === 'form_stopped')?.detail).toEqual({ form: 'book_visit', action: 'checkArea', reason: 'out-of-area', then: 'form', next: 'urgent' });

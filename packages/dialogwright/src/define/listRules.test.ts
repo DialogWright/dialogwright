@@ -86,6 +86,7 @@ describe('policy.yaml: the list rules checked', () => {
       howUrgent: ['routine', 'soon', 'urgent'],
       visitDay: ['monday', 'wednesday', 'saturday'],
       timeOfDay: ['morning', 'afternoon'],
+      callTime: ['morning', 'afternoon'],
     });
     expect(screenedApp.slots.town).toMatchObject({ type: choiceType.type });
     expect(slotChoicesOf({ a: null, b: { type: 'choice' }, c: { type: 'choice', config: { options: [] } }, d: { type: 'text', config: { options: { x: {} } } } })).toEqual({});

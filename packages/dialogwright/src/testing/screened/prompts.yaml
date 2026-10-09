@@ -149,6 +149,29 @@ prompts:
     text: Good news, we work in {town}, and the visit is free.
     interruptible: false
 
+  # A town the line cannot make out: the office calls back about it (the internal form office_call)
+  town_unclear:
+    text: Sorry, I couldn't make out the town.
+    interruptible: false
+  ask_callTime:
+    text: When should our office call you, in the morning or the afternoon?
+    interruptible: true
+  ask_callTime_retry:
+    text: Sorry, the morning or the afternoon?
+    interruptible: true
+  ask_callTime_noinput:
+    text: Sorry, I didn't hear anything. Should our office call in the morning or the afternoon?
+    interruptible: true
+  call_time_any:
+    text: No matter, they'll call when they can.
+    interruptible: false
+  office_will_call:
+    text: Thanks. Someone from our office will call you in {callTime} to sort out the town.
+    interruptible: false
+  office_will_call_soon:
+    text: Thanks. Someone from our office will call you soon to sort out the town.
+    interruptible: false
+
   # The form: the summary read back for a yes, and the line the booking says
   confirm_book_visit:
     text: A free visit about {problem} in {town}, on {visitDay} in {timeOfDay}. Shall I book it?

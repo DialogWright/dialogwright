@@ -167,5 +167,41 @@
       "slots": { "town": "ashford" },
       "gate": "bookVisit:ALLOW"
     }
+  },
+  {
+    "id": "town-unclear-office-calls",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "the afternoon is best" }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "office_will_call",
+      "form": "office_call",
+      "slots": { "callTime": "afternoon" },
+      "gate": "checkOwner:ALLOW"
+    }
+  },
+  {
+    "id": "call-time-skipped",
+    "steps": [
+      { "say": "there's water in my basement" },
+      { "say": "yes, I own it" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "I'm not sure what the town is called" },
+      { "say": "whenever really" },
+      { "silence": true }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "office_will_call_soon",
+      "form": "office_call",
+      "gate": "checkOwner:ALLOW"
+    }
   }
 ]
