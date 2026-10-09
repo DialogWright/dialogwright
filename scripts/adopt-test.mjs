@@ -90,7 +90,7 @@ for (const name of PACKAGES) {
 
 // What the packed engine carries, and how a project reaches it.
 const listing = run('tar', ['-tzf', tarball.dialogwright], base, { quiet: true }).split('\n');
-for (const file of ['package/bin/dialogwright.mjs', 'package/dist/index.js', 'package/dist/index.d.ts', 'package/dist/testing/index.js', 'package/dist/server/dashboard/page.html', 'package/dist/slots/digits/examples.yaml', 'package/schemas/app.schema.json', 'package/templates/standalone/gitignore', 'package/templates/app/.env.example', 'package/docs/authoring-an-app.md', 'package/docs/guide/README.md', 'package/docs/guide/15-the-adversarial-suite.md', 'package/skills/create-app/SKILL.md']) {
+for (const file of ['package/bin/dialogwright.mjs', 'package/dist/index.js', 'package/dist/index.d.ts', 'package/dist/testing/index.js', 'package/dist/server/dashboard/page.html', 'package/dist/slots/digits/examples.yaml', 'package/schemas/app.schema.json', 'package/templates/standalone/gitignore', 'package/templates/app/.env.example', 'package/docs/authoring-an-app.md', 'package/docs/guide/README.md', 'package/docs/guide/15-the-adversarial-suite.md', 'package/docs/first-app.md', 'package/skills/create-app/SKILL.md']) {
   check(listing.includes(file), `the packed dialogwright has ${file.slice('package/'.length)}`);
 }
 check(!listing.some((f) => f.startsWith('package/src/')), 'the packed dialogwright has no src/');

@@ -93,7 +93,7 @@ function targetOf(page: string, path: string): string | null {
 
 describe('the Markdown pages', () => {
   it('are read, the guide\'s chapters among them', () => {
-    for (const page of ['README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
+    for (const page of ['README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', 'docs/first-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
   });
 
   it('link only to files that exist, and to anchors their pages have', () => {
@@ -118,6 +118,7 @@ describe('the Markdown pages', () => {
   it('carry the shipped pages a standalone template names', () => {
     expect(packagePathOf('docs/guide/README.md')).toBe('docs/guide/README.md');
     expect(packagePathOf('docs/authoring-an-app.md')).toBe('docs/authoring-an-app.md');
+    expect(packagePathOf('docs/first-app.md')).toBe('docs/first-app.md');
   });
 });
 
@@ -169,5 +170,22 @@ describe('the authoring guide in chapters', () => {
     expect(() => moved('[x](authoring-an-app.md#no-such-section)', 'docs/design.md')).toThrow(/never had/);
     expect(() => moved('[x](elsewhere/authoring-an-app.md)', 'docs/design.md')).toThrow(/not docs\/authoring-an-app.md/);
     expect(moved('[a pattern](patterns.md#known-gaps) and `docs/authoring-an-app.md`', '.claude/skills/create-app/SKILL.md')).toBe('[a pattern](patterns.md#known-gaps) and `docs/authoring-an-app.md`');
+  });
+});
+
+describe('your first app (docs/first-app.md)', () => {
+  const page = read(join(ROOT, 'docs/first-app.md'));
+  const paragraph = /^> (Build a phone assistant for .+)$/m.exec(page)?.[1];
+
+  it('gives the assistant the paragraph it shows, word for word, with the skill, and says it is being tried', () => {
+    expect(paragraph).toBeDefined();
+    const prompt = /```text\n([\s\S]*?)```/.exec(page)?.[1] ?? '';
+    expect(prompt).toContain('.claude/skills/create-app/SKILL.md');
+    expect(prompt).toContain(`\n${paragraph}\n`);
+    expect(page).toMatch(/^> \*\*Being tried\.\*\*/m);
+  });
+
+  it('names a business no one has: an invented one, as every app here does', () => {
+    expect(paragraph).toMatch(/^Build a phone assistant for Example [A-Z]/);
   });
 });
