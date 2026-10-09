@@ -334,6 +334,18 @@ describe('the widget', () => {
   });
 });
 
+describe('the page\'s context', () => {
+  it('goes to the client, a key or value the chat cannot take left out with a warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { f, w } = mount({ context: { page: '/orders/1042', 'a key': 'x', n: 42 as unknown as string }, startOpen: true });
+    expect(f.made[0]!.context).toEqual({ page: '/orders/1042' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('context "a key" is left out'));
+    w.destroy();
+    const plain = mount({ startOpen: true });
+    expect(plain.f.made[0]).not.toHaveProperty('context');
+  });
+});
+
 describe('options from the script tag', () => {
   // Parsed, not added to the page (which would load it).
   const script = (attrs: string) => {
@@ -347,6 +359,13 @@ describe('options from the script tag', () => {
       endpoint: 'wss://x/chat', locale: 'es', startOpen: true, position: 'inline', container: '#help', strings: { send: 'Enviar' },
     });
     expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-start-open="false"'))).toEqual({ endpoint: 'wss://x/chat', startOpen: false });
+  });
+
+  it('reads data-context as the page\'s context, and sends none, with a warning, for one it cannot read', () => {
+    expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-context=\'{"page":"/orders/1042"}\''))).toEqual({ endpoint: 'wss://x/chat', context: { page: '/orders/1042' } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-context="[1]"'))).toEqual({ endpoint: 'wss://x/chat' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('data-context must be a JSON object of strings'));
   });
 
   it('falls back to the default, with a warning, for a position or words it cannot read', () => {

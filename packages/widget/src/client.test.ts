@@ -3,6 +3,8 @@ import WebSocket from 'ws';
 import {
   CHAT_PROTOCOL_VERSION as ENGINE_VERSION,
   CHAT_TEXT_MAX as ENGINE_TEXT_MAX,
+  CHAT_CONTEXT_KEYS as ENGINE_CONTEXT_KEYS,
+  CHAT_CONTEXT_VALUE_MAX as ENGINE_CONTEXT_VALUE_MAX,
   type ChatErrorCode as EngineErrorCode,
   type ClientMessage as EngineClientMessage,
   type ServerMessage as EngineServerMessage,
@@ -11,7 +13,7 @@ import {
 import { libraryApp } from 'dialogwright/define/fixture/app';
 import { testkitApp } from 'dialogwright/testing/testkit/index';
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions } from './client';
-import { CHAT_PROTOCOL_VERSION, CHAT_TEXT_MAX, isLocaleTag, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
+import { CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_PROTOCOL_VERSION, CHAT_TEXT_MAX, contextOf, isLocaleTag, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
 import { startTestServer, TEST_ORIGIN, type TestServer } from './testServer';
 
 let server: TestServer | null = null;
@@ -297,6 +299,14 @@ describe('the chat client', () => {
   it('speaks the engine\'s protocol: its copy of the wire is the engine\'s', () => {
     expect(CHAT_PROTOCOL_VERSION).toBe(ENGINE_VERSION);
     expect(CHAT_TEXT_MAX).toBe(ENGINE_TEXT_MAX);
+    expect(CHAT_CONTEXT_KEYS).toBe(ENGINE_CONTEXT_KEYS);
+    expect(CHAT_CONTEXT_VALUE_MAX).toBe(ENGINE_CONTEXT_VALUE_MAX);
+    // The context the widget sends is one a start may carry.
+    const warn = (): void => {};
+    for (const raw of [{ page: '/orders' }, { 'utm.source': 'mail-2', page: 'x'.repeat(500) }, { 'a key': 'x', page: '/p' }, { page: 'x'.repeat(501) }, Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${i}`, 'v']))]) {
+      const context = contextOf(raw, warn);
+      expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, ...(context ? { context } : {}) })).ok).toBe(true);
+    }
     // Checked by the type checker (pnpm typecheck): a message added to one side and not the other fails it.
     expectTypeOf<ServerMessage>().toEqualTypeOf<EngineServerMessage>();
     expectTypeOf<ClientMessage>().toEqualTypeOf<EngineClientMessage>();
@@ -363,6 +373,22 @@ describe('the chat client, its messages in order', () => {
   const R1 = 'a'.repeat(32);
   const R2 = 'b'.repeat(32);
   const R3 = 'c'.repeat(32);
+
+  it('sends the page\'s context on every start, a resume\'s too, and none when it has none', async () => {
+    const t = fake({ context: { page: '/orders/1042' } });
+    const one = await t.next(1);
+    one.open();
+    expect(one.sent).toEqual([{ type: 'start', v: 1, context: { page: '/orders/1042' } }]);
+    one.say(ready(R1));
+    one.drop();
+    const two = await t.next(2);
+    two.open();
+    expect(two.sent).toEqual([{ type: 'start', v: 1, resume: R1, context: { page: '/orders/1042' } }]);
+    const none = fake({ context: {} });
+    const s = await none.next(1);
+    s.open();
+    expect(s.sent).toEqual([{ type: 'start', v: 1 }]);
+  });
 
   it('after a restart, holds what was typed until the new chat is signed in, and never sends sign_in', async () => {
     const t = fake({ getToken: async () => 'mock:55501234' });

@@ -14,7 +14,8 @@ export const mount = mountWidget;
 
 /**
  * The options a `<script data-endpoint=...>` tag sets: data-endpoint, data-locale, data-title,
- * data-position, data-container, data-start-open, and data-strings (JSON). What cannot be read is
+ * data-position, data-container, data-start-open, data-strings (JSON) and data-context (JSON, the
+ * page's own data an app's callData may read). What cannot be read is
  * left out, with a warning, so the default applies. Code-only options (getToken, onTransfer) need
  * `DialogWright.mount`.
  */
@@ -39,6 +40,15 @@ export function optionsFromScript(script: HTMLScriptElement): WidgetOptions {
       o.strings = parsed as Record<string, string>;
     } catch {
       console.warn('DialogWright widget: data-strings must be a JSON object of words, like {"send":"Enviar"}; using the defaults');
+    }
+  }
+  if (d.context !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(d.context);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not an object');
+      o.context = parsed as Record<string, string>;
+    } catch {
+      console.warn('DialogWright widget: data-context must be a JSON object of strings, like {"page":"/orders"}; sending none');
     }
   }
   return o;

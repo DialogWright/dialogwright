@@ -14,8 +14,40 @@ export function isLocaleTag(tag: string): boolean {
   return tag.length <= 35 && /^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$/.test(tag);
 }
 
+/** The most keys a start's `context` may have, and the longest value: a start with more is refused. */
+export const CHAT_CONTEXT_KEYS = 50;
+export const CHAT_CONTEXT_VALUE_MAX = 500;
+/** A context key as the engine takes one (its CONTEXT_KEY): letters, digits, underscores, hyphens and dots, at most 64. */
+const CONTEXT_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
+
+/**
+ * The page's context as a start may carry it (the data an app's callData reads as chat.<key>): each
+ * string under a key the engine takes, the first CHAT_CONTEXT_KEYS of them; anything else is left out,
+ * with a warning, so the start is never refused for it. Undefined when nothing is left.
+ */
+export function contextOf(raw: unknown, warn: (m: string) => void): Record<string, string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    warn('DialogWright widget: context must be an object of strings, like {"page":"/orders"}; sending none');
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Object.keys(out).length >= CHAT_CONTEXT_KEYS) {
+      warn(`DialogWright widget: context has more than ${CHAT_CONTEXT_KEYS} keys; the rest are left out`);
+      break;
+    }
+    if (!CONTEXT_KEY.test(key) || typeof value !== 'string' || value.length > CHAT_CONTEXT_VALUE_MAX) {
+      warn(`DialogWright widget: context "${key}" is left out: a key of letters, digits, underscores, hyphens and dots, and a string of at most ${CHAT_CONTEXT_VALUE_MAX} characters`);
+      continue;
+    }
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export type ClientMessage =
-  | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string }
+  | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string; context?: Record<string, string> }
   | { type: 'text'; text: string }
   | { type: 'sign_in'; token: string }
   | { type: 'ping' };

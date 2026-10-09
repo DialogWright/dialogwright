@@ -45,6 +45,11 @@ export interface ChatClientOptions {
   /** The language to ask for (a BCP 47 tag); the server matches it to one of the app's, and `ready` names that one. */
   locale?: string;
   /**
+   * The page's own data, sent on each start (strings by key; protocol.ts contextOf says which): the app
+   * keeps only the keys its callData names (`chat.<key>`). A resume changes nothing the chat kept.
+   */
+  context?: Readonly<Record<string, string>>;
+  /**
    * The site's sign-in token (from its identity provider), or null for none. Asked for when a chat
    * starts, whenever the site calls `signIn()`, and on each reconnect of a chat that is signed in (a
    * resume keeps the sign-in it had; the token is for the new chat that starts if it has ended).
@@ -187,6 +192,7 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
     socket.onopen = () => {
       const start: ClientMessage = { type: 'start', v: CHAT_PROTOCOL_VERSION };
       if (o.locale) start.locale = o.locale;
+      if (o.context && Object.keys(o.context).length > 0) start.context = { ...o.context };
       if (t) start.token = t;
       if (resume !== null) start.resume = resume;
       sendRaw(start);

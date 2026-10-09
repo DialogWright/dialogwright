@@ -1,5 +1,5 @@
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions, type ConnectionState } from './client';
-import { CHAT_TEXT_MAX, isLocaleTag } from './protocol';
+import { CHAT_TEXT_MAX, contextOf, isLocaleTag } from './protocol';
 import { stringsOf, type StringKey, type WidgetStrings } from './strings';
 import { STYLES } from './styles';
 
@@ -12,6 +12,12 @@ export interface WidgetOptions {
   endpoint: string;
   /** The language to ask for. Default: the page's `<html lang>`, else none (the app's default). */
   locale?: string;
+  /**
+   * The page's own data, sent as the chat starts (strings by key, for example `{ page: '/orders' }`):
+   * the app keeps only the keys its callData names (`chat.<key>`). A key or value the chat cannot
+   * take is left out, with a warning. Default: none.
+   */
+  context?: Readonly<Record<string, string>>;
   /** The panel's heading. Default: strings.title. */
   title?: string;
   /** Any of the widget's words (strings.ts), replacing the English defaults. */
@@ -133,6 +139,8 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     ? localeOf(options.locale, 'locale')
     : localeOf(document.documentElement.getAttribute('lang') ?? undefined, 'the page\'s lang');
 
+  const context = contextOf(options.context, warn);
+
   const host = el('dialogwright-chat' as 'div', { 'data-position': position });
   const root = host.attachShadow({ mode: 'open' });
   root.appendChild(el('style', {}, STYLES));
@@ -249,6 +257,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
       endpoint,
       onEvent,
       ...(locale ? { locale } : {}),
+      ...(context ? { context } : {}),
       ...(options.getToken ? { getToken: options.getToken } : {}),
       ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}),
       ...(options.maxReconnects !== undefined ? { maxReconnects: options.maxReconnects } : {}),
