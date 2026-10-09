@@ -196,3 +196,58 @@ describe('the read-backs by the slot\'s attempts', () => {
     expect(said(say(t.session, 'no', NO))).toBe('handoff:max-attempts');
   });
 });
+
+describe('the retry lines (decision 3)', () => {
+  /** What each of `n` silences at the town's question says: its prompt, after its acks. */
+  function silences(n: number, channel: Channel = VOICE_RELAY): string[] {
+    let s = atTown(channel);
+    const out: string[] = [];
+    for (let i = 0; i < n && !s.ended; i++) {
+      const t = resolve(s, silenceEvent(), null, tc());
+      const acks = 'acks' in t.decision ? t.decision.acks.map((a) => a.promptId) : [];
+      out.push([...acks, said(t)].join(' + '));
+      s = t.session;
+    }
+    return out;
+  }
+
+  it('a miss: ask_<slot>_retry<k> where the app has it, else ask_<slot>_retry', () => {
+    use(variant('town-retry2', { attempts: 4 }, { ask_town_retry2: 'Sorry, I still did not catch the town.' }));
+    expect(misses(4)).toEqual(['ask_town_retry', 'ask_town_retry2', 'ask_town_retry', 'handoff:max-attempts']);
+    use(variant('town-retry-all', { attempts: 4 }, { ask_town_retry1: 'One.', ask_town_retry2: 'Two.', ask_town_retry3: 'Three.' }));
+    expect(misses(4)).toEqual(['ask_town_retry1', 'ask_town_retry2', 'ask_town_retry3', 'handoff:max-attempts']);
+  });
+
+  it('the keypad rung is ask_<slot>_dtmf whatever numbered lines there are', () => {
+    use(variant('town-retry-keys', { dtmf: TOWN_KEYS }, { ...KEYPAD_LINE, ask_town_retry2: 'Two.', ask_town_noinput2: 'Two, quietly.' }));
+    expect(misses(3)).toEqual(['ask_town_retry', 'ask_town_dtmf', 'handoff:max-attempts']);
+    expect(silences(2)).toEqual(['no_input + ask_town', 'no_input + ask_town_dtmf']);
+    // On a chat, with no keypad, the keypad rung is a re-ask, which takes the numbered line.
+    expect(misses(3, WEB_CHAT)).toEqual(['ask_town_retry', 'ask_town_retry2', 'handoff:max-attempts']);
+    expect(silences(2, WEB_CHAT)).toEqual(['no_input + ask_town', 'ask_town_noinput2']);
+  });
+
+  it('a silence: ask_<slot>_noinput<k>, else ask_<slot>_noinput, else the no-input line and the question', () => {
+    expect(silences(3)).toEqual(['no_input + ask_town', 'no_input + ask_town_retry', 'no_input + handoff:max-attempts']);
+    use(variant('town-noinput', { attempts: 4 }, { ask_town_noinput: 'Sorry, I did not hear anything. Which town is the home in?' }));
+    expect(silences(4)).toEqual(['ask_town_noinput', 'ask_town_noinput', 'ask_town_noinput', 'no_input + handoff:max-attempts']);
+    use(variant('town-noinput2', { attempts: 4 }, { ask_town_noinput: 'Quiet.', ask_town_noinput2: 'Quiet, twice.' }));
+    expect(silences(4)).toEqual(['ask_town_noinput', 'ask_town_noinput2', 'ask_town_noinput', 'no_input + handoff:max-attempts']);
+    use(variant('town-noinput2-only', { attempts: 4 }, { ask_town_noinput2: 'Quiet, twice.' }));
+    expect(silences(3)).toEqual(['no_input + ask_town', 'ask_town_noinput2', 'no_input + ask_town_retry']);
+  });
+
+  it('a miss never takes a no-input line, nor a silence a retry line it would not have said', () => {
+    use(variant('town-noinput-miss', { attempts: 4 }, { ask_town_noinput: 'Quiet.', ask_town_retry2: 'Two.' }));
+    expect(misses(3)).toEqual(['ask_town_retry', 'ask_town_retry2', 'ask_town_retry']);
+    expect(silences(3)).toEqual(['ask_town_noinput', 'ask_town_noinput', 'ask_town_noinput']);
+  });
+
+  it('a slot narrowed to a part of a value is asked for the rest, whatever numbered lines there are', () => {
+    use(variant('town-window', { attempts: 4, partialPromptId: 'ask_town_part' }, { ask_town_part: 'Which part of town?', ask_town_retry1: 'One.', ask_town_noinput1: 'Quiet.' }));
+    const s = atTown();
+    s.slots.town!.window = { kind: 'part' };
+    expect(said(say(s, 'hmm', MISS))).toBe('ask_town_part');
+    expect(said(resolve(s, silenceEvent(), null, tc()))).toBe('ask_town_part');
+  });
+});

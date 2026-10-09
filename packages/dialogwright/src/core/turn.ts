@@ -18,7 +18,7 @@ import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation,
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
-import { attemptsOf } from './outcome';
+import { attemptsOf, noInputLineOf, retryLineOf } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
@@ -641,12 +641,20 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   // "next week. Which day works for you?" is what the caller failed to answer.
   const window = s.slots[target]!.window;
   if (step === 'open' && window) return askSlot(s, target, window, acks);
+  // A slot with no keypad rung stays on the retry text through the dtmf rung too.
+  const toDtmf = step === 'dtmf' && slotSpecOf(io.app, target).dtmf !== undefined;
+  // A silence re-asked: the slot's own no-input line for this failure, where the app has one, is the
+  // whole turn, in place of the no-input line and the question (outcome.ts noInputLineOf). Not where
+  // the question was the caller-ID match's, which is asked again as it was (askedAgain).
+  if (plain && !toDtmf && !callerMatchAgain(s)) {
+    const quiet = noInputLineOf(io.app, target, attempts);
+    if (quiet !== null) return prompt(quiet, target, {}, acks.filter((a) => a !== NO_INPUT_ACK));
+  }
   if (step === 'open' && plain) return askedAgain(s, target, acks);
   // The slot said why the answer could not be its value, and the generic retry would misstate it.
   if (step === 'open' && retryPromptId !== null) return prompt(retryPromptId, target, {}, acks);
-  // A slot with no keypad rung stays on the retry text through the dtmf rung too.
-  const toDtmf = step === 'dtmf' && slotSpecOf(io.app, target).dtmf !== undefined;
-  return prompt(toDtmf ? `ask_${target}_dtmf` : `ask_${target}_retry`, target, {}, acks);
+  // A missed answer: the slot's retry line for this failure (outcome.ts retryLineOf).
+  return prompt(toDtmf ? `ask_${target}_dtmf` : retryLineOf(io.app, target, attempts), target, {}, acks);
 }
 
 const ACK_FRUSTRATION: Ack = { promptId: 'ack_frustration', vars: {} };
@@ -867,7 +875,7 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
       // The caller's number offered and never answered, or a library slot's read-back (readBackNo
       // `ask`): the slot's own ladder from here, its keypad where it has one, else its retry.
       const spec = slotSpecOf(io.app, pc.slot);
-      if ((pc.offered || spec.readBackNo === 'ask') && spec.dtmf === undefined) return prompt(`ask_${pc.slot}_retry`, pc.slot, {}, acks);
+      if ((pc.offered || spec.readBackNo === 'ask') && spec.dtmf === undefined) return prompt(retryLineOf(io.app, pc.slot, attempts), pc.slot, {}, acks);
       return prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, acks);
     }
     return slotConfirmPrompt(pc, acks);
@@ -2305,8 +2313,13 @@ const CALLER_DECLINED_PROMPT = 'identity_caller_declined';
  * match still standing), else the slot's own.
  */
 function askedAgain(s: Session, slot: SlotId, acks: Ack[]): PromptDecision {
-  if (s.lastPromptId === CALLER_MATCH_PROMPT && callerMatchAsked(s)) return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
+  if (callerMatchAgain(s)) return prompt(CALLER_MATCH_PROMPT, slot, {}, acks);
   return askSlot(s, slot, null, acks);
+}
+
+/** Whether the question the caller was on is the caller-ID match's, still asked (askedAgain asks it again). */
+function callerMatchAgain(s: Session): boolean {
+  return s.lastPromptId === CALLER_MATCH_PROMPT && callerMatchAsked(s);
 }
 
 /**
