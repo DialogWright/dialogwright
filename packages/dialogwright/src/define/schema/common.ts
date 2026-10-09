@@ -89,5 +89,5 @@ export function unique<T extends z.ZodType<string>>(item: T, what: string) {
 export const textMap = (key: z.ZodType<string> = name()) => z.record(key, text());
 
 /** The kinds of file an app folder holds; each has a schema (./index.ts) and a JSON Schema (../../../schemas). */
-export const FILE_KINDS = ['app', 'intents', 'forms', 'prompts', 'policy', 'identity'] as const;
+export const FILE_KINDS = ['app', 'intents', 'forms', 'prompts', 'policy', 'identity', 'routes'] as const;
 export type FileKind = (typeof FILE_KINDS)[number];

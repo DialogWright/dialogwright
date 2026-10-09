@@ -12,8 +12,10 @@ import { intentsSchema } from './intents';
 import { policySchema } from './policy';
 import { promptsSchema } from './prompts';
 import { localeSlotsSchema, SLOTS_FILE, slotsSchema } from './slots';
+import { routesSchema } from './routes';
 
-export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, slotsSchema };
+export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, routesSchema, slotsSchema };
+export type { RoutesYaml, RouteRuleYaml } from './routes';
 export { FILE_KINDS, fixForPattern, type FileKind } from './common';
 export type { AppYaml, ConsoleFactYaml } from './app';
 export type { FormHook, FormYaml, FormsYaml } from './forms';
@@ -34,13 +36,14 @@ export const SCHEMAS = {
   prompts: promptsSchema,
   policy: policySchema,
   identity: identitySchema,
+  routes: routesSchema,
 } as const satisfies Record<FileKind, z.ZodType>;
 
 /** The file each kind is read from, in the app folder. */
 export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries(FILE_KINDS.map((kind) => [kind, `${kind}.yaml`])) as Record<FileKind, string>;
 
-/** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one). */
+/** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one), and so is routes.yaml (an app without it routes nothing). */
 export const REQUIRED_KINDS: readonly FileKind[] = ['app', 'intents', 'forms', 'prompts', 'policy'];
 
-/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the six kinds, then the optional slots.yaml. */
+/** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml. */
 export const FOLDER_FILES: readonly string[] = [...Object.values(FILE_NAMES), SLOTS_FILE];

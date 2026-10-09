@@ -13,6 +13,9 @@ import type { TransferWorld } from './transfer';
  * them; core/turn.ts acts on the outcome taken.
  */
 
+/** The handoff reason of a route that hands off without naming one. */
+export const ROUTE_HANDOFF_REASON = 'needs-human';
+
 /** What the records say of a route taken: the point, the form (afterForm), the rule, what followed, and the subjects it read (never their values). */
 export interface RouteTaken {
   readonly point: RoutePoint;
@@ -120,7 +123,7 @@ export interface RouteProblem {
 }
 
 /** What else the routes' checks need to know of the app. */
-export interface RouteWorld extends Omit<ConditionWorld, 'at'> {
+export interface RouteWorld extends TransferWorld {
   /** The locales the app speaks, the default first. */
   readonly locales: readonly string[];
   /** Whether the app's default locale has a line; absent, lines are not checked (check.ts checks them in every locale). */
@@ -148,7 +151,8 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
     (rules as RouteRule[]).forEach((rule, i) => {
       const here = [...at, i];
       const last = i === rules.length - 1;
-      if (rule.else === true && !last) add(here, `is the else, and ${rules.length - 1 - i} rule${rules.length - 1 - i === 1 ? '' : 's'} follow it, which are never taken`, 'move the else to the end, after every rule');
+      const after = rules.length - 1 - i;
+      if (rule.else === true && !last) add(here, `is the else, and ${after === 1 ? '1 rule follows' : `${after} rules follow`} it, which ${after === 1 ? 'is' : 'are'} never taken`, 'move the else to the end, after every rule');
       if (last && rule.else !== true) add(here, 'is the last rule, and the point ends with no else', 'add - else: continue (or another outcome) after it, for a call no rule takes');
       if (rule.else !== true) {
         if (!Array.isArray(rule.when)) add([...here, 'when'], 'is not a list of conditions', `write when: [Condition, ...] (core/conditions.ts): ${CONDITION_SHAPES}`);

@@ -3,7 +3,10 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, transferYamlProblems, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, routeWorldOf, routeYamlProblems, transferYamlProblems, type AppCode } from './defineApp';
+import type { RouteRuleYaml } from './schema/index';
+import { ROUTE_HANDOFF_REASON } from '../core/routes';
+import type { RoutePoint } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
@@ -205,6 +208,11 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     needs.push({ id: CONSENT_PROMPT, why: 'it asks consent to text for the whole call (app.yaml textConsent), by the last four digits of the number calling', vars: ['last4'] });
     needs.push({ id: 'greet_after_offer', why: 'the consent to text for the whole call is settled, and it asks the open question' });
   }
+  // A start route that enters a form says the welcome first, the greeting's line before a proposal.
+  const startRules = config.routes?.start ?? [];
+  if (startRules.some((r) => (r.else !== undefined && r.else !== 'continue' ? r.else.then : r.then) === 'form')) {
+    needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a start route (routes.yaml) enters a form as the call opens, said in place of the greeting before the form\'s first question' });
+  }
   for (const reason of personReasons(config.policy)) {
     needs.push({ id: handoffPromptId(reason), why: `a role's access to a tool is "person" (a role rule in policy.yaml) and the call goes to a person for the reason "${reason}"` });
   }
@@ -332,6 +340,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     });
+    routeWarnings(config, found.code, Object.keys(code.slots ?? {}), (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    });
   }
   textConsentWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
@@ -395,12 +407,50 @@ function transferWarnings(config: LoadedConfig, report: (file: string, path: Dat
   if (transfer === undefined) return;
   const prompts = config.prompts[config.defaultLocale] ?? {};
   const world = {
-    forms: Object.keys(config.forms.forms),
-    slots: Object.keys(config.slots ?? {}),
-    ...(config.app.callData !== undefined ? { callData: config.app.callData } : {}),
+    ...routeWorldOf(config, Object.keys(config.slots ?? {}), null),
     hasReasonLine: (reason: string) => Object.hasOwn(prompts, handoffPromptId(reason)),
   };
   for (const p of transferYamlProblems(transfer, world)) if (p.warning) report('app.yaml', p.path, p.message, p.fix);
+}
+
+/** The level a form needs before it can go on: its entry's purpose, and the levels of the actions it calls and checks. */
+function formNeed(config: LoadedConfig, form: string): number {
+  const actions = config.policy.actions;
+  const levelOf = (tool: string): number => (Object.hasOwn(actions, tool) ? (actions[tool]!.level ?? DEFAULT_ACTION_LEVEL) : 0);
+  const def = config.forms.forms[form];
+  if (def === undefined) return 0;
+  return Math.max(provenLevel(config, form), ...(def.calls ?? []).map(levelOf), ...(def.checks ?? []).map((c) => levelOf(c.action)));
+}
+
+/**
+ * The warnings for routes.yaml (core/routes.ts), never refusals: a rule after one that always holds; a
+ * fact the code's facts do not start with (a hook may add it); and a route into a form that needs an
+ * identity level the point cannot have reached (start: none; afterIdentity: level 1), where the form
+ * will ask for it.
+ */
+function routeWarnings(config: LoadedConfig, code: AppCode | undefined, slots: readonly string[], report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const routes = config.routes;
+  if (routes === null) return;
+  let facts: string[] | null = null;
+  try {
+    const initial = code?.facts?.initial();
+    if (typeof initial === 'object' && initial !== null && !Array.isArray(initial)) facts = Object.keys(initial);
+  } catch {
+    facts = null;
+  }
+  const predicates = typeof code?.predicates === 'object' && code.predicates !== null ? Object.keys(code.predicates) : null;
+  for (const p of routeYamlProblems(routes, { ...routeWorldOf(config, slots, predicates), facts })) if (p.warning) report('routes.yaml', p.path, p.message, p.fix);
+  const reached: [RoutePoint, readonly RouteRuleYaml[] | undefined, number][] = [['start', routes.start, 0], ['afterIdentity', routes.afterIdentity, 1]];
+  for (const [point, rules, level] of reached) {
+    (rules ?? []).forEach((rule, i) => {
+      const written = rule.else !== undefined ? (rule.else === 'continue' ? null : rule.else) : rule;
+      if (written?.then !== 'form' || written.form === undefined || !Object.hasOwn(config.forms.forms, written.form)) return;
+      const need = formNeed(config, written.form);
+      if (need <= level) return;
+      const path: DataPath = rule.else !== undefined ? [point, i, 'else', 'form'] : [point, i, 'form'];
+      report('routes.yaml', path, `the route enters "${written.form}", which needs identity level ${need}, and at ${point} the caller is at level ${level}: the form will ask for it first`, 'nothing to do if that is meant; otherwise route to it after identity (afterIdentity), or to a form the caller can use now');
+    });
+  }
 }
 
 /**
@@ -776,12 +826,33 @@ function referencesOf(config: LoadedConfig): Reference[] {
   // The lines a library slot says when it runs out of attempts (slots.yaml onMaxAttempts): its `say`,
   // and its handoff's line for a reason of its own.
   for (const ref of slotOutcomeReferences(config)) refs.push(ref);
+  // The lines a route says (routes.yaml): its `say`, and its handoff's line.
+  for (const ref of routeReferences(config)) refs.push(ref);
   // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own) and an intent's passage.
   for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);
   if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {
     if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['prompts', 'greetings', which] });
+  }
+  return refs;
+}
+
+/** The lines routes say (routes.yaml): each rule's `say` and its handoff's line (handoff_<reason>, needs-human by default), an else's too. */
+function routeReferences(config: LoadedConfig): Reference[] {
+  const refs: Reference[] = [];
+  const lists: [DataPath, readonly RouteRuleYaml[]][] = [];
+  if (config.routes?.start) lists.push([['start'], config.routes.start]);
+  if (config.routes?.afterIdentity) lists.push([['afterIdentity'], config.routes.afterIdentity]);
+  for (const [form, rules] of Object.entries(config.routes?.afterForm ?? {})) lists.push([['afterForm', form], rules]);
+  for (const [at, rules] of lists) {
+    rules.forEach((rule, i) => {
+      const written = rule.else !== undefined ? (rule.else === 'continue' ? null : rule.else) : rule;
+      const base: DataPath = rule.else !== undefined ? [...at, i, 'else'] : [...at, i];
+      if (written === null) return;
+      if (written.say !== undefined) refs.push({ id: written.say, file: 'routes.yaml', path: [...base, 'say'] });
+      if (written.then === 'handoff') refs.push({ id: handoffPromptId(written.reason ?? ROUTE_HANDOFF_REASON), file: 'routes.yaml', path: [...base, written.reason !== undefined ? 'reason' : 'then'] });
+    });
   }
   return refs;
 }

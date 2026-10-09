@@ -206,7 +206,7 @@ describe('validateApp', () => {
   it('an internal form an outcome enters is reached', () => {
     const forms = { ...screenedApp.forms, front_desk: { slots: ['visitDay'], summaryPromptId: null, internal: true, label: 'talk to the desk', complete: () => ({ kind: 'said' as const, acks: [] }) } };
     const app = (slot: Partial<SlotSpec>): App => ({ ...withProblem(slot), forms });
-    expect(() => validateApp(app({}))).toThrow('internal form "front_desk" is reached by no form\'s next, and no outcome enters it');
+    expect(() => validateApp(app({}))).toThrow('internal form "front_desk" is reached by no form\'s next, and no outcome or route enters it');
     expect(() => validateApp(app({ onMaxAttempts: { then: 'form', form: 'front_desk' } }))).not.toThrow();
   });
 

@@ -5,7 +5,7 @@ import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape'
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
   FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
-  type AppYaml, type FileKind, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
+  type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
   type PromptsYaml, type SlotsYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
@@ -29,6 +29,7 @@ export type { Problem } from './problems';
  *
  *   app.yaml  intents.yaml  forms.yaml  prompts.yaml  policy.yaml     required
  *   identity.yaml                                                     optional (no file: the app verifies no one)
+ *   routes.yaml                                                       optional (no file: nothing is routed)
  *   slots.yaml                                                        optional (no file: every slot is the code's)
  *   locale/<tag>/prompts.yaml                                         the prompts of another locale
  *   locale/<tag>/slots.yaml                                           optional: its wording for the library slots
@@ -49,6 +50,8 @@ export interface LoadedConfig {
   policy: PolicyYaml;
   /** Null when the folder has no identity.yaml: the app verifies no one. */
   identity: IdentityYaml | null;
+  /** routes.yaml; null when the folder has none: nothing is routed. */
+  routes: RoutesYaml | null;
   /**
    * slots.yaml as parsed: each slot's `type` and options, in the file's order (the order of
    * `App.slots`). Null when the folder has no slots.yaml: every slot is the code's. Only the outer
@@ -129,6 +132,7 @@ const STARTS_WITH: Record<Kind, string> = {
   prompts: 'the "prompts:" map',
   policy: '"actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
   identity: '"principals:", "levels:" and "attempts:"',
+  routes: 'a point and its rules, for example "start: [{ when: { hours: closed }, say: after_hours, then: end }, { else: continue }]"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
 };
@@ -192,7 +196,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     return null;
   }
 
-  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; slots: SlotsYaml }> = {};
+  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; routes: RoutesYaml; slots: SlotsYaml }> = {};
   const top = listTopLevel(root.real);
   for (const kind of [...(Object.keys(FILE_NAMES) as FileKind[]), 'slots' as const]) {
     const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
@@ -270,6 +274,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     forms: valid.forms,
     policy: valid.policy,
     identity: valid.identity ?? null,
+    routes: valid.routes ?? null,
     slots: valid.slots ?? null,
     defaultLocale,
     prompts,

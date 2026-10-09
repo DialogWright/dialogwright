@@ -94,9 +94,9 @@ describe('configuration hashes: the loader', () => {
     for (const hash of [base.app, ...Object.values(base.files)]) expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(base.files['policy.yaml']).toBe(contentHash(parse(readFileSync(join(LIBRARY_DIR, 'policy.yaml'), 'utf8'))));
     expect(base.app).toBe(combinedConfigHash(base.files));
-    // identity.yaml, when there is one, is hashed too (the valid loader fixture has one, and locale/fr)
+    // identity.yaml and routes.yaml, when there are, are hashed too (the valid loader fixture has both, and locale/fr)
     expect(Object.keys(hashesOf(join(__dirname, '__fixtures__', 'valid')).files)).toEqual([
-      'app.yaml', 'forms.yaml', 'identity.yaml', 'intents.yaml', 'locale/fr/prompts.yaml', 'policy.yaml', 'prompts.yaml',
+      'app.yaml', 'forms.yaml', 'identity.yaml', 'intents.yaml', 'locale/fr/prompts.yaml', 'policy.yaml', 'prompts.yaml', 'routes.yaml',
     ]);
   });
 

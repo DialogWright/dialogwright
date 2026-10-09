@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../../../schemas/routes.schema.json
+# What the call does at its start, after identity and after a form: ordered rules, an else last.
+start:
+  - when: { hours: closed }
+    say: after_hours
+    then: end
+  - when: [{ callData: queue, is: spanish }]
+    then: locale
+    locale: es
+  - else: continue
+afterIdentity:
+  - when: { fact: pastDue, is: true }
+    then: form
+    form: billing
+  - else: continue
+afterForm:
+  schedule_new:
+    - when: { slot: provider, is: urgent }
+      then: handoff
+      reason: urgent
+    - else: { say: ack_done, then: anything-else }

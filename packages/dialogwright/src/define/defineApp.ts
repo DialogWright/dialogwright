@@ -1,6 +1,7 @@
 import type {
   App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse, TransferConfig, TransferSend,
+  RouteOutcome, RouteRule, Routes,
 } from '../core/app/types';
 import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -36,6 +37,8 @@ import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { handoffDataProblems } from '../handoff/data';
 import { whenFrom } from '../core/conditions';
 import type { HoursConfig } from '../core/hours';
+import { formsEnteredByRoutes, routeProblems, type RouteProblem, type RouteWorld } from '../core/routes';
+import type { RouteRuleYaml, RoutesYaml } from './schema/index';
 import { transferProblems, type TransferProblem, type TransferWorld } from '../core/transfer';
 
 /**
@@ -100,6 +103,10 @@ export interface AppCode {
   callerState?: App['callerState'];
   /** Whether the caller's number may be offered for a slot (App.callerOffer). */
   callerOffer?: App['callerOffer'];
+  /** The start hook (App.onStart): written exactly when app.yaml has `onStart`. */
+  onStart?: App['onStart'];
+  /** The app's own conditions, by the name routes.yaml and transfer's `{ named: <id> }` give them (App.predicates). */
+  predicates?: App['predicates'];
   blockPromptId?: App['blockPromptId'];
   onServiceResult?: App['onServiceResult'];
   testing?: App['testing'];
@@ -383,7 +390,8 @@ export function crossLink(
       // An internal form is no intent: it is reached only by another form's next.
       if (intent) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, so it is no intent, but intents.yaml has an intent "${id}"`, `delete "${id}:" from intents.yaml (the form is reached by another form's next), or delete "internal: true" to make the form an intent`);
       const outcomes = slotOutcomesOf(linked.slots);
-      if (formsLeadingTo(forms, id).length === 0 && formsEnteringByOutcome(forms, outcomes, id).length === 0 && factorsEnteringByOutcome(config.identity?.levels[1].factors ?? [], outcomes, id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or "then: form, form: ${id}" to a check's outcome or a slot's onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml`);
+      const byRoute = config.routes !== null && formsEnteredByRoutes(routesOf(config.routes)).has(id);
+      if (!byRoute && formsLeadingTo(forms, id).length === 0 && formsEnteringByOutcome(forms, outcomes, id).length === 0 && factorsEnteringByOutcome(config.identity?.levels[1].factors ?? [], outcomes, id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it and no outcome or route enters it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or "then: form, form: ${id}" to a check's outcome, a slot's onMaxAttempts or a route, or delete "internal: true" and give it an intent in intents.yaml`);
     } else if (!intent) {
       yaml('forms.yaml', ['forms', id], `form "${id}" has no intent in intents.yaml`, `add "${id}:" under intents in intents.yaml with kind: form, its criteria and its label`);
     } else if (intent.kind !== 'form') {
@@ -457,8 +465,10 @@ export function crossLink(
   const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
   // A check no form names is formChecks.ts's to report, in its own words.
   // The call-start lookup (app.yaml's callerNumber.lookup) is reached at call start, by no form.
+  // So are the actions the start hook calls (app.yaml's onStart.calls).
   const startLookup = config.app.callerNumber?.lookup;
-  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true && t !== startLookup), forms, flow)) {
+  const startCalls = new Set(config.app.onStart?.calls ?? []);
+  for (const tool of unreachedActions(Object.keys(policy.actions).filter((t) => policy.actions[t]!.check !== true && t !== startLookup && !startCalls.has(t)), forms, flow)) {
     yaml('policy.yaml', ['actions', tool], `action "${tool}" is reached by no form: no form's calls list it, and the identity flow does not call it`, `add "${tool}" to the calls of the form whose hooks call it in forms.yaml, or delete the action from policy.yaml and the tool from ${inCode('tools', tool)}`, true);
   }
 
@@ -560,13 +570,36 @@ export function crossLink(
 
   // Where a handoff goes and what goes with it (transfer): the forms, call data keys and slots it names
   // are the app's, and no secret key is sent (core/transfer.ts). Its warnings are check's (checkWarnings).
+  const predicateNames = typeof code.predicates === 'object' && code.predicates !== null ? Object.keys(code.predicates) : [];
+  const conditionWorld = routeWorldOf(config, slots, predicateNames);
   if (app.transfer !== undefined) {
-    for (const p of transferYamlProblems(app.transfer, { forms: Object.keys(forms), slots, ...(app.callData !== undefined ? { callData: app.callData } : {}) })) {
+    for (const p of transferYamlProblems(app.transfer, { ...conditionWorld, ...(app.callData !== undefined ? { callData: app.callData } : {}) })) {
       if (p.warning) continue;
       if (p.unknownSlot !== undefined) slotExists('app.yaml', p.path, p.unknownSlot);
       else yaml('app.yaml', p.path, p.message, p.fix);
     }
   }
+
+  // The app's own conditions (code.predicates), each a function, named by routes.yaml and transfer's { named }.
+  for (const [id, fn] of Object.entries(code.predicates ?? {})) {
+    if (typeof fn !== 'function') inTs(['predicates', id], `the predicate "${id}" is not a function`, `make ${inCode('predicates', id)} a function ({ s }) => true or false`);
+  }
+  // routes.yaml (core/routes.ts): what each rule names is the app's, each point ends with its else, each
+  // then is one its point takes. Its warnings are check's (check.ts routeWarnings).
+  if (config.routes !== null) {
+    for (const p of routeYamlProblems(config.routes, conditionWorld)) {
+      if (p.warning) continue;
+      if (p.unknownSlot !== undefined) slotExists('routes.yaml', p.path, p.unknownSlot);
+      else yaml('routes.yaml', p.path, p.message, p.fix);
+    }
+  }
+  // The start hook: app.yaml's onStart exactly when the code writes one, and the actions it calls are the code's tools and the policy's actions.
+  if (app.onStart !== undefined && typeof code.onStart !== 'function') yaml('app.yaml', ['onStart'], 'app.yaml has onStart, and the code has no start hook', `add onStart(ctx) to ${inCode('onStart')}, or delete onStart from app.yaml`, true);
+  if (app.onStart === undefined && code.onStart !== undefined) inTs(['onStart'], 'the code has a start hook, and app.yaml has no onStart, so its calls are not declared', 'add "onStart: { calls: [the actions it calls] }" to app.yaml ("onStart: {}" for none), or delete the hook');
+  app.onStart?.calls?.forEach((tool, i) => {
+    if (!tools.includes(tool)) yaml('app.yaml', ['onStart', 'calls', i], `onStart calls "${tool}", which is not a tool in the code`, `${renameHint(tool, tools)}add it to the app's tools in ${inCode('tools', tool)}, or delete it from this list`);
+    else if (!has(policy.actions, tool)) yaml('app.yaml', ['onStart', 'calls', i], `onStart calls "${tool}", which policy.yaml has no action for`, `add "${tool}:" under actions in policy.yaml with its level and rules`);
+  });
 
   // Where each slot listens (SlotSpec.listen): written in slots.yaml for a library slot, on the
   // spec for the code's. An identity factor listens as identity.yaml says, so it takes none; a slot
@@ -981,6 +1014,10 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'startParameters', a.startParameters === undefined ? undefined : { ...a.startParameters });
   put(app, 'transfer', a.transfer === undefined ? undefined : transferOf(a.transfer));
   put(app, 'hours', a.hours === undefined ? undefined : hoursOf(a.hours));
+  put(app, 'routes', config.routes === null ? undefined : routesOf(config.routes));
+  put(app, 'predicates', code.predicates);
+  put(app, 'onStart', code.onStart);
+  put(app, 'startCalls', a.onStart?.calls !== undefined && a.onStart.calls.length > 0 ? [...a.onStart.calls] : undefined);
   put(app, 'callerOffer', code.callerOffer);
   put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);
@@ -1004,6 +1041,72 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
   app.configHashes = config.hashes;
   return app as App;
+}
+
+/** One route as routes.yaml writes it, in the engine's shape: its `when` a list of conditions, its outcome made one (outcomeFrom's shape). */
+function routeRuleOf(r: RouteRuleYaml): RouteRule {
+  if (r.else !== undefined) return { when: [], outcome: r.else === 'continue' ? { then: 'continue' } : routeOutcomeOf(r.else), else: true };
+  return { when: whenFrom(r.when), outcome: routeOutcomeOf(r as RouteOutcomeYaml) };
+}
+
+type RouteOutcomeYaml = { say?: string; then: RouteOutcome['then']; reason?: string; form?: string; locale?: string };
+
+/** A route's outcome as written, as the engine's RouteOutcome: only a handoff keeps a reason, only form a form, only locale a locale; `say` first. */
+function routeOutcomeOf(o: RouteOutcomeYaml): RouteOutcome {
+  const say = o.say !== undefined ? { say: o.say } : {};
+  switch (o.then) {
+    case 'locale':
+      return { ...say, then: 'locale', locale: o.locale ?? '' };
+    case 'continue':
+      return { ...say, then: 'continue' };
+    default:
+      return outcomeFrom({ ...o, then: o.then }) as RouteOutcome;
+  }
+}
+
+/** routes.yaml in the engine's shape (App.routes): each point only when written. */
+export function routesOf(r: RoutesYaml): Routes {
+  return {
+    ...(r.start !== undefined ? { start: r.start.map(routeRuleOf) } : {}),
+    ...(r.afterIdentity !== undefined ? { afterIdentity: r.afterIdentity.map(routeRuleOf) } : {}),
+    ...(r.afterForm !== undefined ? { afterForm: Object.fromEntries(Object.entries(r.afterForm).map(([form, rules]) => [form, rules.map(routeRuleOf)])) } : {}),
+  };
+}
+
+const OUTCOME_KEYS: ReadonlySet<unknown> = new Set(['say', 'then', 'reason', 'form', 'locale']);
+
+/**
+ * The problems of routes.yaml (core/routes.ts routeProblems), each at its path in the file: a rule's
+ * `when` written as one condition has no index of its own there, and an else's outcome is under `else`.
+ */
+export function routeYamlProblems(r: RoutesYaml, world: RouteWorld): (RouteProblem & { path: DataPath })[] {
+  return routeProblems(routesOf(r), world).map((p) => {
+    const path = [...p.path];
+    const at = path[0] === 'afterForm' ? 2 : 1;
+    const list = path[0] === 'afterForm' ? r.afterForm?.[String(path[1])] : path[0] === 'start' ? r.start : path[0] === 'afterIdentity' ? r.afterIdentity : undefined;
+    const rule = typeof path[at] === 'number' ? list?.[path[at] as number] : undefined;
+    if (rule !== undefined) {
+      if (path[at + 1] === 'when' && !Array.isArray(rule.when)) path.splice(at + 2, 1);
+      if (rule.else !== undefined && OUTCOME_KEYS.has(path[at + 1])) path.splice(at + 1, rule.else === 'continue' ? path.length : 0, 'else');
+    }
+    return { ...p, path: path as DataPath };
+  });
+}
+
+/** What the routes may name, from the folder and its code: the slots linked, the predicates the code writes. */
+export function routeWorldOf(config: LoadedConfig, slots: readonly string[], predicates: readonly string[] | null): RouteWorld {
+  const prompts = config.prompts[config.defaultLocale] ?? {};
+  return {
+    forms: Object.keys(config.forms.forms),
+    slots,
+    ...(config.app.callData !== undefined ? { callData: config.app.callData } : {}),
+    facts: null,
+    hours: config.app.hours === undefined ? null : { schedules: Object.keys(config.app.hours.schedules ?? {}) },
+    predicates,
+    calledKept: config.app.callerNumber?.called === true,
+    locales: [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)],
+    hasLine: (id) => Object.hasOwn(prompts, id),
+  };
 }
 
 /** app.yaml's hours as App.hours carries them: each part only when written. */

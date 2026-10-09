@@ -86,7 +86,7 @@ describe('the refusals', () => {
 
   it('an internal form no next reaches', async () => {
     const { problems } = await checked(folder({ 'forms.yaml': (t) => `${t}  spare:\n    internal: true\n    label: look at something else\n    slots: [visitDay]\n    summaryPromptId: null\n    calls: []\n    next: book_visit\n` }));
-    expect(problems).toContain('forms.yaml:47:15  forms.spare.internal  form "spare" is internal, and no form goes on to it and no outcome enters it, so nothing can reach it  ->  add "next: spare" to the form that comes before it, or "then: form, form: spare" to a check\'s outcome or a slot\'s onMaxAttempts, or delete "internal: true" and give it an intent in intents.yaml');
+    expect(problems).toContain('forms.yaml:47:15  forms.spare.internal  form "spare" is internal, and no form goes on to it and no outcome or route enters it, so nothing can reach it  ->  add "next: spare" to the form that comes before it, or "then: form, form: spare" to a check\'s outcome, a slot\'s onMaxAttempts or a route, or delete "internal: true" and give it an intent in intents.yaml');
   });
 
   it('an internal form with an intent', async () => {

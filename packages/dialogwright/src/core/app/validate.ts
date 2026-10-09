@@ -19,7 +19,7 @@ import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { handoffDataProblems } from '../../handoff/data';
 import { transferProblems } from '../transfer';
 import { hoursProblems } from '../hours';
-import { conditionWorldOf } from '../routes';
+import { conditionWorldOf, formsEnteredByRoutes, routeProblems } from '../routes';
 import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 import { envVariableOf } from './envReference';
 
@@ -264,7 +264,7 @@ export function validateApp(app: App): void {
       if (Object.hasOwn(app.intents, id)) fail(`form "${id}" is internal, but there is an intent "${id}": an internal form is no intent`);
       if (form.label === undefined || form.label === '') fail(`internal form "${id}" has no label`);
       const outcomes = slotOutcomesOf(app.slots);
-      if (formsLeadingTo(app.forms, id).length === 0 && formsEnteringByOutcome(app.forms, outcomes, id).length === 0 && factorsEnteringByOutcome(app.identity?.factorSlots ?? [], outcomes, id).length === 0) fail(`internal form "${id}" is reached by no form's next, and no outcome enters it`);
+      if (!formsEnteredByRoutes(app.routes).has(id) && formsLeadingTo(app.forms, id).length === 0 && formsEnteringByOutcome(app.forms, outcomes, id).length === 0 && factorsEnteringByOutcome(app.identity?.factorSlots ?? [], outcomes, id).length === 0) fail(`internal form "${id}" is reached by no form's next, and no outcome or route enters it`);
     } else if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') {
       fail(`form "${id}" has no form intent`);
     }
@@ -402,6 +402,12 @@ export function validateApp(app: App): void {
   }
   // Business hours (app.yaml's hours, core/hours.ts): a zone, days, ranges and dates the engine can read.
   for (const p of hoursProblems(app.hours)) fail(`hours: ${p.message} (hours${p.path.map((x) => `.${x}`).join('')}): ${p.fix}`);
+  // Routes (routes.yaml, core/routes.ts): the same refusals `check` makes of the folder's.
+  const routeWorld = { ...conditionWorldOf(app), locales: speaks, hasLine: (id: string) => Object.hasOwn(app.prompts.manifest, id) };
+  for (const p of routeProblems(app.routes, routeWorld)) if (!p.warning) fail(`routes: ${p.message} (routes.${p.path.join('.')}): ${p.fix}`);
+  for (const [id, fn] of Object.entries(app.predicates ?? {})) if (typeof fn !== 'function') fail(`predicate "${id}" is not a function`);
+  if (app.onStart !== undefined && typeof app.onStart !== 'function') fail('onStart is not a function');
+  for (const tool of app.startCalls ?? []) if (!Object.hasOwn(app.tools, tool)) fail(`onStart calls "${tool}", which is not a tool`);
   const seenLinks = new Set<string>();
   for (const { id } of app.console?.links ?? []) {
     if (typeof id !== 'string' || !LINK_ID.test(id)) fail(`console link id "${String(id)}" is not a lowercase word`);
