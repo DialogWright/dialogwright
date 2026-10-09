@@ -1,4 +1,4 @@
-import type { AppContext, GateDecision, GateLookups, ToolCall, ToolDef } from 'dialogwright';
+import { replyShape as r, type AppContext, type GateDecision, type GateLookups, type ReplyCheck, type ToolCall, type ToolDef } from 'dialogwright';
 import { DemoDirectory, type AppointmentDirectory, type Booking } from './directory';
 
 /** What each tool returns when the gate allows it. */
@@ -53,9 +53,19 @@ type Run<T extends ClinicTool> = (p: ToolCall['params'], sys: ClinicSystems, ctx
  * A tool and the params its calls carry (ToolDef.params): what `check` holds to being recorded as
  * declared, each a slot with a redact setting or a param policy.yaml's `audit:` names.
  */
-function tool<T extends ClinicTool>(params: readonly string[], run: Run<T>): ToolDef {
-  return { params, run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx) };
+function tool<T extends ClinicTool>(params: readonly string[], run: Run<T>, check: ReplyCheck): ToolDef {
+  return { params, run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx), check };
 }
+
+/**
+ * What the scheduling system's replies must look like (ToolDef.check), where the summary reads them
+ * back or a write is made from them: a time on the clock ("8:30 AM"), a day (2026-09-22), a
+ * reference. A reply that does not fit is never used, and the caller goes to the front desk: the
+ * system's text is never said, whatever it holds (the adversarial suite answers each tool with
+ * instructions in it to show it).
+ */
+const CLOCK: ReplyCheck = (v) => typeof v === 'string' && /^(?:[1-9]|1[0-2]):[0-5]\d [AP]M$/.test(v);
+const BOOKING = r.object({ date: r.isoDate(), time: CLOCK });
 
 /** What every write carries, in the order the confirmed rule takes its hash over: who, with whom, and when. */
 const WRITE_PARAMS = ['name', 'dob', 'provider', 'date', 'time'] as const;
@@ -65,7 +75,7 @@ function write(kind: ScheduleChange['kind'], done: string): ToolDef {
   return tool(WRITE_PARAMS, (p, sys) => {
     const ref = sys.record({ kind, provider: p.provider ?? '', date: p.date ?? '', time: p.time ?? '' });
     return { value: { ref }, summary: `${done} ${ref}`, ref };
-  });
+  }, r.object({ ref: r.code() }));
 }
 
 /**
@@ -77,11 +87,11 @@ export const CLINIC_TOOLS: { readonly [T in ClinicTool]: ToolDef } = {
   findAppointment: tool<'findAppointment'>(['name', 'dob', 'provider'], (p, sys, { tc }) => {
     const found = sys.directory(tc.todayIso).find(p.name ?? '', p.dob ?? '', p.provider ?? '');
     return { value: found, summary: found ? 'appointment found' : 'no appointment' };
-  }),
+  }, r.nullable(BOOKING)),
   listOpenings: tool<'listOpenings'>(['provider', 'date'], (p, sys, { tc }) => {
     const times = sys.directory(tc.todayIso).openings(p.provider ?? '', p.date ?? '');
     return { value: times, summary: `${times.length} opening${times.length === 1 ? '' : 's'}` };
-  }),
+  }, r.list(CLOCK)),
   bookAppointment: write('book', 'booked'),
   moveAppointment: write('move', 'moved'),
   cancelAppointment: write('cancel', 'cancelled'),

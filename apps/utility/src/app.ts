@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import {
-  defineApp, describeDay, handoff, kbAnswerTool, localeOf,
+  defineApp, describeDay, handoff, kbAnswerTool, localeOf, replyShape as r,
   type AppCode, type Completion, type CompletionContext, type Party, type Principal, type Session, type ToolDef, type VerifyOutcome,
 } from 'dialogwright';
 import { ACCOUNTS, MANAGERS, accountOf, amountDue } from './data';
@@ -86,6 +86,11 @@ export function scopeOf(p: Principal): readonly string[] {
  * covers the account number and the date of birth). The two confirmed writes send every field of the
  * one confirmed list, '' for the ones they do not have. The one-time code is no param: the engine
  * hands it to verifyCode and never records it.
+ *
+ * A reply comes from the billing and outage systems and is not trusted: each tool whose reply a line
+ * says (a reference, an amount, a day, a first name) checks its shape (`check`), and a reply that
+ * does not fit is never used: the caller goes to a person. The adversarial suite (app.yaml
+ * testing.adversarial) finds a field that needs one by answering each tool with instructions in it.
  */
 export const TOOLS: Record<string, ToolDef> = {
   // Checks the factors: the account number and the date of birth. A match is the customer at level 1.
@@ -105,6 +110,7 @@ export const TOOLS: Record<string, ToolDef> = {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { phoneLast4: account.phoneLast4 } : null, summary: account ? `texted ...${account.phoneLast4}` : 'no phone' };
     },
+    check: r.nullable(r.object({ phoneLast4: r.digits(4) })),
   },
   // Checks the one-time code with the engine's verifier (a mock in tests: an even last digit passes).
   verifyCode: {
@@ -123,6 +129,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.outages.push({ ref, place: call.params.place ?? '', symptom: call.params.symptom ?? '' });
       return { value: { ref }, summary: `filed ${ref}`, ref };
     },
+    // The reference is said to the caller.
+    check: r.object({ ref: r.code() }),
   },
   // The account, for the entry call of the balance and the arrangement forms.
   findAccount: {
@@ -131,6 +139,7 @@ export const TOOLS: Record<string, ToolDef> = {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { first: account.first } : null, summary: account ? 'account found' : 'no account' };
     },
+    check: r.nullable(r.object({ first: r.text({ words: 4, chars: 40 }) })),
   },
   // The balance and the due date.
   readBalance: {
@@ -139,6 +148,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { balance: account.balance, due: account.due } : null, summary: account ? 'balance read' : 'no account' };
     },
+    // The balance and the due date are said to the caller.
+    check: r.nullable(r.object({ balance: r.amount(), due: r.isoDate() })),
   },
   // Answers a general question: the approved passage in force today for the topic the caller chose
   // (kb/). Every answer is for every caller, so it reads none of the caller's facts.
@@ -153,6 +164,8 @@ export const TOOLS: Record<string, ToolDef> = {
       if (outage === null) return { value: { lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' };
       return { value: { lastOutageDay: describeDay(outage.day, localeOf(s)), lastOutageHours: outage.hours }, summary: 'last outage read' };
     },
+    // Both are said in the account line after an outage credit answer.
+    check: r.object({ lastOutageDay: r.nullable(r.text({ words: 6 })), lastOutageHours: r.nullable(r.number({ min: 0, max: 24 * 365 })) }),
   },
   // Sets up the arrangement: the total split into the installments, the first on the day given.
   setUpPlan: {
@@ -164,6 +177,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.arrangements.push({ ref, accountId: call.params.accountId ?? '', installments, firstDate: call.params.firstDate ?? '' });
       return { value: { ref, each: installments[0] }, summary: `arranged ${ref}`, ref };
     },
+    // The reference and each payment's amount are said to the caller.
+    check: r.object({ ref: r.code(), each: r.amount() }),
   },
 };
 

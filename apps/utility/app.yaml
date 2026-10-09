@@ -44,3 +44,10 @@ wording:
 # The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.
 fixtures:
   dir: fixtures
+
+# The adversarial suite (dialogwright/testing adversarialSuite) runs with the regression: injections,
+# relationships claimed and not proven, off-scope requests, codes said aloud or never sent, and hostile
+# replies from every tool, each checked by properties over its run. Stub only until the next recording:
+# a recorded run lists its cases as not yet recorded.
+testing:
+  adversarial: on

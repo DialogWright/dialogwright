@@ -115,3 +115,10 @@ carrySlots: [name, dob, memberId]
 # The regression fixtures (corpus, scenarios, baseline, cassette), relative to this package.
 fixtures:
   dir: fixtures
+
+# The adversarial suite (dialogwright/testing adversarialSuite) runs with the regression: injections,
+# off-scope requests and hostile replies from every tool, each checked by properties over its run (the
+# clinic verifies no one, so it has no relationship to claim and no code). Stub only until the next
+# recording: a recorded run lists its cases as not yet recorded.
+testing:
+  adversarial: on
