@@ -941,6 +941,52 @@
       "additionalProperties": false,
       "description": "Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller's number is kept and the app's callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller's number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is."
     },
+    "callData": {
+      "description": "The data a call or chat came with that the app may read, by key: a custom parameter of the setup, a field of the setup frame or of the answer webhook, or the web chat's page context. Only the keys named here are kept, each recorded as its redact says; app code reads them with callDataOf(s), and the model never sees them unless callerState passes one. Default: none.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Where the value comes from: param.<name>, a custom parameter of the call's setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame the wire keeps (forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId); webhook.<field>, a field of the carrier's answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message's context."
+          },
+          "redact": {
+            "description": "How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask.",
+            "type": "string",
+            "enum": [
+              "last4",
+              "mask",
+              "length",
+              "secret",
+              "keep"
+            ]
+          }
+        },
+        "required": [
+          "from"
+        ],
+        "additionalProperties": false,
+        "description": "One piece of data the call or chat came with, kept for the app's code (callDataOf(s)). A key whose source sent nothing is absent."
+      }
+    },
+    "startParameters": {
+      "description": "Custom parameters the server writes into every start document, by name, each value the environment variable that holds it (env.<NAME>), read as the server starts; it refuses to start when one is unset. For a call placed from the app's own systems through the carrier, which hands them back on the setup. Default: none.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^env\\.[A-Z][A-Z0-9_]*$"
+      }
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",

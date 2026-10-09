@@ -19,7 +19,7 @@ function str(v: unknown): v is string {
  * The optional setup fields a carrier documents, kept as they arrive: Twilio's, then the call ids
  * Telnyx adds (callControlId, callSessionId, callLegId). Anything else on a setup is dropped.
  */
-const SETUP_EXTRAS = [
+export const SETUP_EXTRAS = [
   'accountSid', 'parentCallSid', 'forwardedFrom', 'callType', 'callerName', 'direction', 'callStatus',
   'callControlId', 'callSessionId', 'callLegId',
 ] as const;

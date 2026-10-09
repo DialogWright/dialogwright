@@ -3,10 +3,11 @@ import { checkAlways, identifier, localeTag, matching, name, text, textMap, uniq
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
+import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -369,6 +370,26 @@ const textConsent = z
   })
   .describe('Consent to text for the whole call: asked once, on a call, right after the greeting (greeting_offer, then consent_texts with {last4}, then greet_after_offer), when the caller\'s number is kept and the app\'s callerOffer allows the first slot it covers. A yes is recorded as a consent row (scope: call); the slots it covers then use the caller\'s number without asking again. Never asked on a chat. Before a proposal at the greeting, after the caller-ID question at the greeting. Default: none, and every text offer is asked where it is.');
 
+/** One key of callData: where its value comes from, and how it is recorded. */
+const callDataKey = z
+  .strictObject({
+    from: text()
+      .check(checkAlways((value, ctx) => {
+        if (typeof value !== 'string' || value === '') return;
+        const problem = callDataSourceProblem(value);
+        if (problem !== null) ctx.addIssue({ code: 'custom', message: problem.message, params: { fix: problem.fix } });
+      }))
+      .describe('Where the value comes from: param.<name>, a custom parameter of the call\'s setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame the wire keeps (forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId); webhook.<field>, a field of the carrier\'s answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message\'s context.'),
+    redact: z
+      .enum(['last4', 'mask', 'length', 'secret', 'keep'])
+      .optional()
+      .describe('How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask.'),
+  })
+  .describe('One piece of data the call or chat came with, kept for the app\'s code (callDataOf(s)). A key whose source sent nothing is absent.');
+
+/** startParameters: a custom parameter's value, the environment variable that holds it. */
+const ENV_VALUE = /^env\.[A-Z][A-Z0-9_]*$/;
+
 export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
@@ -410,6 +431,21 @@ export const appSchema = z
       ),
     callerNumber: callerNumber.optional(),
     textConsent: textConsent.optional(),
+    callData: z
+      .record(identifier(), callDataKey)
+      .optional()
+      .describe('The data a call or chat came with that the app may read, by key: a custom parameter of the setup, a field of the setup frame or of the answer webhook, or the web chat\'s page context. Only the keys named here are kept, each recorded as its redact says; app code reads them with callDataOf(s), and the model never sees them unless callerState passes one. Default: none.'),
+    startParameters: z
+      .record(identifier(), matching(ENV_VALUE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s environment (.env); a value is never written in YAML'))
+      .check(checkAlways((value, ctx) => {
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+        for (const name of Object.keys(value)) {
+          if (name === 'locale') ctx.addIssue({ code: 'custom', path: [name], message: 'the custom parameter "locale" is the engine\'s own (the language a call starts in)', params: { fix: 'rename the parameter' } });
+          else if (name.startsWith(WEBHOOK_PARAMETER_PREFIX)) ctx.addIssue({ code: 'custom', path: [name], message: `custom parameters named "${WEBHOOK_PARAMETER_PREFIX}..." are the server's echoes of webhook fields (callData's webhook.<field>)`, params: { fix: 'rename the parameter' } });
+        }
+      }))
+      .optional()
+      .describe('Custom parameters the server writes into every start document, by name, each value the environment variable that holds it (env.<NAME>), read as the server starts; it refuses to start when one is unset. For a call placed from the app\'s own systems through the carrier, which hands them back on the setup. Default: none.'),
     fixtures: z
       .strictObject({
         dir: matching(

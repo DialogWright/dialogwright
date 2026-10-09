@@ -20,5 +20,16 @@ console:
 wording:
   addressee: the Example Callbacks line
 
+# The data a call or chat comes with that the app reads (callDataOf in app.ts). A call put through
+# from the site's "call me" page carries its queue and the visitor's account reference as custom
+# parameters; the line reads the queue to say when the callback comes. Each is recorded as its
+# redact says (default mask).
+callData:
+  queue: { from: param.queue, redact: keep }
+  accountRef: { from: param.accountRef, redact: last4 }
+  forwardedFrom: { from: setup.forwardedFrom, redact: last4 }
+  referral: { from: webhook.SipHeader_X-Referral }
+  page: { from: chat.page, redact: keep }
+
 fixtures:
   dir: src/testing/callback/fixtures

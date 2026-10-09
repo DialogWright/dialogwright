@@ -670,6 +670,23 @@ export interface CallerNumberUse {
 }
 
 /**
+ * One key of app.yaml's `callData` (App.callData): where its value comes from, and how it is recorded.
+ * `from` is a source, carrier-neutral (channel/callData.ts):
+ * - `param.<name>`: a custom parameter of the relay's setup (Twilio `<Parameter>`, Telnyx custom parameter);
+ * - `setup.<field>`: a field of the setup frame the wire keeps (forwardedFrom, callerName, callType, direction, the call ids);
+ * - `webhook.<field>`: a field of the carrier's answer webhook, which the server echoes into the start
+ *   document as the custom parameter `dw_<key>`, so it arrives with the setup;
+ * - `chat.<key>`: a key of the web chat `start` message's `context`.
+ * `redact` is how the value is recorded in the trace, the console, the frame log and the audit, as a
+ * policy.yaml `audit:` param is (AuditMask); default `mask`, so a key nobody thought about is never
+ * written whole.
+ */
+export interface CallDataKey {
+  readonly from: string;
+  readonly redact?: AuditMask;
+}
+
+/**
  * Consent to text for the whole call (app.yaml's `textConsent`): asked once, on a call, right after
  * the greeting (`consent_texts`, with `{last4}`). Granted, each slot in `covers` (each offers the
  * number the caller is calling from, SlotSpec.callerNumber) is filled with that number, confirmed, with
@@ -1073,6 +1090,21 @@ export interface App {
    */
   callerNumber?: CallerNumberUse;
   /**
+   * The data a call or chat came with that the app may read (app.yaml's `callData`), by key: a
+   * carrier's custom parameter, a field of the setup or of the answer webhook, or the web chat's page
+   * context (CallDataKey). Only the keys named here are kept (Session.callData), each only when its
+   * source sent a value; app code reads them with `callDataOf(s)`. The model never sees them unless
+   * callerState passes one. Without it, nothing is kept, as before.
+   */
+  callData?: Readonly<Record<string, CallDataKey>>;
+  /**
+   * Custom parameters the server writes into every start document (app.yaml's `startParameters`), by
+   * parameter name: each value names an environment variable (`env.NAME`) the server reads as it
+   * starts, never a value written in YAML. For a call placed from the app's own systems through the
+   * carrier, which hands them back as the setup's custom parameters. Without it, none.
+   */
+  startParameters?: Readonly<Record<string, string>>;
+  /**
    * Whether the number the caller is calling from may be offered for `slot` (a slot's
    * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and
    * the call has a number that fits it), once per slot per form. False makes no offer, and the slot
@@ -1356,6 +1388,11 @@ export interface TestingHooks {
      * makes the lookup through the gate with it, as a call would. Without it, such an entry throws.
      */
     callerNumber?: string;
+    /**
+     * The call data every seeded corpus call comes with, by the app's callData keys (SessionStart.callData),
+     * as a call's channel would read it. Without it, a seeded call comes with none.
+     */
+    callData?: Readonly<Record<string, string>>;
   };
   /** The heuristic stub's domain answers (src/jev/heuristicStub.ts; the building blocks are src/jev/heuristicKit.ts). */
   heuristics?: {

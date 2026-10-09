@@ -932,6 +932,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
   put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
+  put(app, 'callData', a.callData === undefined ? undefined : Object.fromEntries(Object.entries(a.callData).map(([k, v]) => [k, v.redact !== undefined ? { from: v.from, redact: v.redact } : { from: v.from }])));
+  put(app, 'startParameters', a.startParameters === undefined ? undefined : { ...a.startParameters });
   put(app, 'callerOffer', code.callerOffer);
   put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);

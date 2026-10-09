@@ -17,6 +17,7 @@ import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../..
 import { pronounceProblems } from '../../channel/pronounce';
 import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { handoffDataProblems } from '../../handoff/data';
+import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -390,6 +391,7 @@ export function validateApp(app: App): void {
     }
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
+  for (const problem of callDataProblems(app)) fail(problem);
   const seenLinks = new Set<string>();
   for (const { id } of app.console?.links ?? []) {
     if (typeof id !== 'string' || !LINK_ID.test(id)) fail(`console link id "${String(id)}" is not a lowercase word`);
@@ -440,3 +442,32 @@ export function validateApp(app: App): void {
   }
 }
 
+
+/** A key or parameter name: a plain word, as an app's ids are. */
+const CALL_DATA_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+/**
+ * What is wrong with App.callData and App.startParameters (app.yaml's, which the schema holds to the
+ * same rules; an app written in code meets them here): a key with no source or one the engine does not
+ * read, a key or parameter name that is not a plain word, a redaction that is not one of the masks, a
+ * parameter that is not `env.<NAME>` or that takes a name the engine writes itself.
+ */
+export function callDataProblems(app: Pick<App, 'callData' | 'startParameters'>): string[] {
+  const out: string[] = [];
+  for (const [key, def] of Object.entries(app.callData ?? {})) {
+    if (!CALL_DATA_NAME.test(key)) out.push(`callData key "${key}" is not a plain word (letters, digits and underscores, starting with a letter)`);
+    if (typeof def?.from !== 'string' || def.from === '') {
+      out.push(`callData key "${key}" has no from`);
+      continue;
+    }
+    const problem = callDataSourceProblem(def.from);
+    if (problem !== null) out.push(`callData key "${key}": ${problem.message}`);
+    if (def.redact !== undefined && !(AUDIT_MASKS as readonly string[]).includes(def.redact)) out.push(`callData key "${key}" redact "${String(def.redact)}" is not one of ${AUDIT_MASKS.join(', ')}`);
+  }
+  for (const [name, value] of Object.entries(app.startParameters ?? {})) {
+    if (!CALL_DATA_NAME.test(name)) out.push(`startParameters name "${name}" is not a plain word (letters, digits and underscores, starting with a letter)`);
+    if (name === 'locale' || name.startsWith(WEBHOOK_PARAMETER_PREFIX)) out.push(`startParameters name "${name}" is one the engine writes itself`);
+    if (typeof value !== 'string' || !/^env\.[A-Z][A-Z0-9_]*$/.test(value)) out.push(`startParameters "${name}" is not env.<NAME>`);
+  }
+  return out;
+}
