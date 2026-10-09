@@ -187,13 +187,17 @@ export function readSummary(c: SummaryContext): SummaryRead | null {
   const date = s.slots.date?.value ?? null;
   f.existing = null;
   if (EXISTING_FORMS.includes(form) && name && dob && provider) {
-    f.existing = callClinic(c, { tool: 'findAppointment', params: { name, dob, provider } }).value;
+    // A refused lookup, or a reply that did not pass its check, finds nothing here: the hook reads only
+    // what the gate allowed, and the engine ends a turn whose reply failed its check with a person.
+    const found = callClinic(c, { tool: 'findAppointment', params: { name, dob, provider } });
+    f.existing = found.decision.verdict === 'ALLOW' ? found.value : null;
   }
   const acks: Ack[] = [];
   if (!SCHEDULING_FORMS.includes(form) || !provider || !date) {
     f.offer = null;
   } else if (f.offer === null || f.offer.provider !== provider || f.offer.date !== date) {
-    const times = callClinic(c, { tool: 'listOpenings', params: { provider, date } }).value ?? [];
+    const listed = callClinic(c, { tool: 'listOpenings', params: { provider, date } });
+    const times = listed.decision.verdict === 'ALLOW' ? listed.value ?? [] : [];
     const built = buildOffer(provider, date, times, f.daypart);
     f.offer = built.offer;
     const at = offeredTime(built.offer);

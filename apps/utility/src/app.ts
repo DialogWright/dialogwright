@@ -43,8 +43,12 @@ export class Systems {
 /** The number of installments each `count` option means. */
 const COUNTS: Readonly<Record<string, number>> = { two: 2, three: 3, four: 4, six: 6 };
 
-/** A plain decimal ("240.00") as it is said: "$240.00". */
-export const money = (amount: string): string => `$${amount}`;
+/** A plain decimal ("240.00") as it is said: "$240.00"; a credit ("-12.50") as "a credit of $12.50". */
+export const money = (amount: string): string => (amount.startsWith('-') ? `a credit of $${amount.slice(1)}` : `$${amount}`);
+
+/** A day as describeDay says it in English ("Wednesday, September 2"): the form the account line's day must have. */
+const DAY_SAID = (v: unknown): boolean => typeof v === 'string'
+  && /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (?:January|February|March|April|May|June|July|August|September|October|November|December) (?:[1-9]|[12]\d|3[01])$/.test(v);
 
 /** A plain decimal split into `n` installments, in cents, the last taking any remainder. */
 export function splitInto(total: string, n: number): string[] {
@@ -102,6 +106,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const value: VerifyOutcome = principal ? { ok: true, principal } : { ok: false };
       return { value, summary: principal ? 'verified' : 'no match' };
     },
+    // A match names the account every later call is made for: its id has the account number's form.
+    check: r.any(r.object({ ok: r.oneOf([false]) }), r.object({ ok: r.oneOf([true]), principal: r.object({ id: r.digits(8) }) })),
   },
   // Texts a one-time code to the phone on the account.
   sendCode: {
@@ -148,8 +154,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const account = accountOf(call.params.accountId ?? '');
       return { value: account ? { balance: account.balance, due: account.due } : null, summary: account ? 'balance read' : 'no account' };
     },
-    // The balance and the due date are said to the caller.
-    check: r.nullable(r.object({ balance: r.amount(), due: r.isoDate() })),
+    // The balance (a credit is a negative one) and the due date are said to the caller.
+    check: r.nullable(r.object({ balance: r.amount({ credit: true }), due: r.isoDate() })),
   },
   // Answers a general question: the approved passage in force today for the topic the caller chose
   // (kb/). Every answer is for every caller, so it reads none of the caller's facts.
@@ -164,8 +170,9 @@ export const TOOLS: Record<string, ToolDef> = {
       if (outage === null) return { value: { lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' };
       return { value: { lastOutageDay: describeDay(outage.day, localeOf(s)), lastOutageHours: outage.hours }, summary: 'last outage read' };
     },
-    // Both are said in the account line after an outage credit answer.
-    check: r.object({ lastOutageDay: r.nullable(r.text({ words: 6 })), lastOutageHours: r.nullable(r.number({ min: 0, max: 24 * 365 })) }),
+    // Both are said in the account line after an outage credit answer: a day as the line says one
+    // ("Wednesday, September 2"), and a number of hours.
+    check: r.object({ lastOutageDay: r.nullable(DAY_SAID), lastOutageHours: r.nullable(r.number({ min: 0, max: 24 * 365 })) }),
   },
   // Sets up the arrangement: the total split into the installments, the first on the day given.
   setUpPlan: {

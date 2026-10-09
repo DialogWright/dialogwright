@@ -65,6 +65,12 @@ export const TOOLS: Record<string, ToolDef> = {
         : { ok: false };
       return { value, summary: account ? 'verified' : 'no match' };
     },
+    // A match names the account every later call is made for: its id has the account number's form
+    // (a closed form, not text: a check bounds a field's shape, it does not detect instructions).
+    check: replyShape.any(
+      replyShape.object({ ok: replyShape.oneOf([false]) }),
+      replyShape.object({ ok: replyShape.oneOf([true]), principal: replyShape.object({ id: replyShape.digits(8) }) }),
+    ),
   },
   // The form's entry call: a read that needs level 1, which is what asks an unverified caller for the factors.
   findAccount: {

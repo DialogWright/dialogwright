@@ -53,18 +53,18 @@ type Run<T extends ClinicTool> = (p: ToolCall['params'], sys: ClinicSystems, ctx
  * A tool and the params its calls carry (ToolDef.params): what `check` holds to being recorded as
  * declared, each a slot with a redact setting or a param policy.yaml's `audit:` names.
  */
-function tool<T extends ClinicTool>(params: readonly string[], run: Run<T>, check: ReplyCheck): ToolDef {
-  return { params, run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx), check };
+function tool<T extends ClinicTool>(params: readonly string[], run: Run<T>, check?: ReplyCheck): ToolDef {
+  return { params, run: (call, sys, ctx) => run(call.params, sys as ClinicSystems, ctx), ...(check !== undefined ? { check } : {}) };
 }
 
 /**
  * What the scheduling system's replies must look like (ToolDef.check), where the summary reads them
- * back or a write is made from them: a time on the clock ("8:30 AM"), a day (2026-09-22), a
- * reference. A reply that does not fit is never used, and the caller goes to the front desk: the
- * system's text is never said, whatever it holds (the adversarial suite answers each tool with
- * instructions in it to show it).
+ * back or a write is made from them: a time on the clock ("8:30 AM", "2:30pm", or 24-hour "14:30") and
+ * a day (2026-09-22), each a closed form. A reply that does not fit is never used, and the caller goes
+ * to the front desk. The writes' replies are never said or read (their reference is the audit's), so
+ * they need no check.
  */
-const CLOCK: ReplyCheck = (v) => typeof v === 'string' && /^(?:[1-9]|1[0-2]):[0-5]\d [AP]M$/.test(v);
+const CLOCK: ReplyCheck = (v) => typeof v === 'string' && /^(?:(?:0?[1-9]|1[0-2]):[0-5]\d ?[AaPp][Mm]|(?:[01]?\d|2[0-3]):[0-5]\d)$/.test(v);
 const BOOKING = r.object({ date: r.isoDate(), time: CLOCK });
 
 /** What every write carries, in the order the confirmed rule takes its hash over: who, with whom, and when. */
@@ -75,7 +75,7 @@ function write(kind: ScheduleChange['kind'], done: string): ToolDef {
   return tool(WRITE_PARAMS, (p, sys) => {
     const ref = sys.record({ kind, provider: p.provider ?? '', date: p.date ?? '', time: p.time ?? '' });
     return { value: { ref }, summary: `${done} ${ref}`, ref };
-  }, r.object({ ref: r.code() }));
+  });
 }
 
 /**
