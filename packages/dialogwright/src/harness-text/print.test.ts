@@ -78,4 +78,10 @@ describe('formatSlots', () => {
   it('returns an empty string when no slot is filled', () => {
     expect(formatSlots(slots({}))).toBe('');
   });
+
+  it('prints a transfer\'s target and headers as the end frame carries them, for an app with transfer', () => {
+    const handoff = { kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent', acks: [], completed: [], queued: [], slots: {} } satisfies Decision;
+    expect(formatDecision(handoff, [transferAction('live-agent', [], [], {}, undefined, { target: 'DESK_LINE', headers: { 'X-Reason': 'live-agent' } })]))
+      .toBe('decision: handoff handoff_live_agent (live-agent)\n  [end] {"reasonCode":"live-agent","target":"DESK_LINE","headers":{"X-Reason":"live-agent"}}');
+  });
 });

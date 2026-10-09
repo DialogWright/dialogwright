@@ -87,6 +87,14 @@ export function parseHandoff(raw: string): PostedHandoff {
   }
 }
 
+/**
+ * Why a posted header was not sent: the target is a phone number, which carries none (`number`); it
+ * would take the headers past the carrier's limit (`size`); the app's transfer does not send that name
+ * (`unknown`); its value cannot be written into a dial document (`value`: a control character, a lone
+ * surrogate); it is a name already sent in another case (`duplicate`).
+ */
+export type DropWhy = 'number' | 'size' | 'unknown' | 'value' | 'duplicate';
+
 /** Where a handoff is put through, and what of its headers went and what did not. */
 export interface DialPlan {
   readonly target: DialTarget;
@@ -94,32 +102,87 @@ export interface DialPlan {
   readonly variable: string;
   /** The headers sent, by name. */
   readonly sent: readonly string[];
-  /** The headers left out, by name: every one for a phone number (`number`), those over the limit (`size`), or those the app does not send (`unknown`). */
-  readonly dropped: readonly string[];
-  readonly why?: 'number' | 'size' | 'unknown';
+  /** The headers left out, each with why: only names that are header names (HEADER_NAME), so a record never holds a forged one. */
+  readonly dropped: readonly { readonly name: string; readonly why: DropWhy }[];
+  /** How many posted names were no header name at all: counted, never written anywhere. */
+  readonly notHeaders: number;
 }
 
 /**
  * Where a posted handoff is put through: its target's value when the target is one the app's transfer
- * names, else HANDOFF_NUMBER (a target the app does not name, or an app without transfer); with the
- * headers the app sends, as many as the target carries (server/voice/dial.ts fitHeaders).
+ * names; the app's default when it names none (an end the engine made with no choice, such as a saved
+ * call the server cannot read); HANDOFF_NUMBER for a target the app does not have, and for an app
+ * without transfer. With the headers the app sends, as many as the target carries (server/voice/dial.ts
+ * fitHeaders).
  */
 export function dialPlan(transfer: ServerTransfer | null, handoffNumber: string, posted: PostedHandoff): DialPlan {
-  const variable = transfer !== null && posted.target !== undefined && transfer.numbers.has(posted.target) ? posted.target : HANDOFF_VARIABLE;
-  const to = variable === HANDOFF_VARIABLE ? handoffNumber : transfer!.numbers.get(variable)!;
+  const variable = transfer === null ? HANDOFF_VARIABLE
+    : posted.target === undefined ? transfer.defaultVariable
+    : transfer.numbers.has(posted.target) ? posted.target : HANDOFF_VARIABLE;
+  const to = variable === HANDOFF_VARIABLE || transfer === null ? handoffNumber : (transfer.numbers.get(variable) ?? handoffNumber);
   const offered = transfer === null ? {} : (posted.headers ?? {});
   const named: Record<string, string> = {};
-  const unknown: string[] = [];
+  const dropped: { name: string; why: DropWhy }[] = [];
+  const lower = new Set<string>();
+  let notHeaders = 0;
   for (const [name, value] of Object.entries(offered)) {
-    if (HEADER_NAME.test(name) && transfer!.headerNames.has(name.toLowerCase()) && writableValue(value)) named[name] = value;
-    else unknown.push(name);
+    if (!HEADER_NAME.test(name)) notHeaders += 1;
+    else if (!transfer!.headerNames.has(name.toLowerCase())) dropped.push({ name, why: 'unknown' });
+    else if (lower.has(name.toLowerCase())) dropped.push({ name, why: 'duplicate' });
+    else if (!writableValue(value)) dropped.push({ name, why: 'value' });
+    else {
+      named[name] = value;
+      lower.add(name.toLowerCase());
+    }
   }
   const fit = fitHeaders(to, named);
   const sent = Object.keys(fit.kept);
   const target: DialTarget = sent.length > 0 ? { to, headers: fit.kept } : { to };
-  if (fit.dropped.length > 0) return { target, variable, sent, dropped: [...fit.dropped, ...unknown], why: fit.why! };
-  if (unknown.length > 0) return { target, variable, sent, dropped: unknown, why: 'unknown' };
-  return { target, variable, sent, dropped: [] };
+  return { target, variable, sent, dropped: [...fit.dropped.map((name) => ({ name, why: fit.why! })), ...dropped], notHeaders };
+}
+
+/** The most dropped header names a log line or the frame log lists; the rest are counted. */
+export const DROPPED_SHOWN = 10;
+
+const DROP_WORDS: Readonly<Record<DropWhy, string>> = {
+  number: 'a phone number carries none',
+  size: 'over the 1024 characters a transfer carries',
+  unknown: 'not ones app.yaml sends',
+  value: 'a value a dial document cannot carry',
+  duplicate: 'a name already sent in another case',
+};
+
+/**
+ * The headers a plan left out, for the server's log line: grouped by why, at most DROPPED_SHOWN names,
+ * the rest and the names that are no header name counted. Empty when none was left out.
+ */
+export function describeDropped(plan: DialPlan): string {
+  const parts: string[] = [];
+  let shown = 0;
+  let more = 0;
+  for (const why of Object.keys(DROP_WORDS) as DropWhy[]) {
+    const names = plan.dropped.filter((d) => d.why === why).map((d) => d.name);
+    if (names.length === 0) continue;
+    const listed = names.slice(0, Math.max(0, DROPPED_SHOWN - shown));
+    shown += listed.length;
+    more += names.length - listed.length;
+    if (listed.length > 0) parts.push(`${listed.join(', ')}: ${DROP_WORDS[why]}`);
+  }
+  if (more > 0) parts.push(`and ${more} more`);
+  if (plan.notHeaders > 0) parts.push(`and ${plan.notHeaders} more not header names`);
+  return parts.join('; ');
+}
+
+/** The plan as the frame log writes it: the target, the names sent, at most DROPPED_SHOWN dropped with why, and counts of the rest. */
+export function recordedPlan(plan: DialPlan): Record<string, unknown> {
+  const dropped = plan.dropped.slice(0, DROPPED_SHOWN).map((d) => ({ name: d.name, why: d.why }));
+  return {
+    target: plan.variable,
+    ...(plan.sent.length > 0 ? { sent: [...plan.sent] } : {}),
+    ...(dropped.length > 0 ? { dropped } : {}),
+    ...(plan.dropped.length > DROPPED_SHOWN ? { moreDropped: plan.dropped.length - DROPPED_SHOWN } : {}),
+    ...(plan.notHeaders > 0 ? { notHeaders: plan.notHeaders } : {}),
+  };
 }
 
 /** Where a call put through with no handoff decision goes: the app's default (HANDOFF_NUMBER without transfer), with no headers. */

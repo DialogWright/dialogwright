@@ -1,6 +1,9 @@
 import type { CorpusEntry } from '../jev/corpus';
 import type { Session } from '../core/session';
 import type { GateEvent } from '../core/lifecycle';
+import type { Transfer } from '../channel/actions';
+import { redactSent } from '../trace/redact';
+import { appOf } from '../core/app/registry';
 import { WEB_VISITOR, spokenText, type Scenario, type ScenarioRun, type ScenarioStep, type TurnRun } from './runner';
 import { rankProbabilities, type Answer, type Question } from '../jev/types';
 
@@ -61,6 +64,18 @@ function decisionOf(run: TurnRun): string {
   }
 }
 
+/** A transfer in one line: its target, the rule taken (or the default), and its headers and chat data as recorded. */
+function transferLine(run: TurnRun, t: Transfer): string {
+  const app = appOf(run.result.session);
+  const d = run.result.decision;
+  const rule = d.kind === 'handoff' && d.transfer !== undefined ? (d.transfer.rule === null ? 'the default' : `rule ${d.transfer.rule + 1}`) : '';
+  const pairs = (part: 'headers' | 'chat', values: Readonly<Record<string, string>> | undefined): string =>
+    Object.entries((redactSent(app, part, values ?? {}, 'length') as Record<string, string>)).map(([k, v]) => `${k}=${v}`).join(', ');
+  const headers = pairs('headers', t.headers);
+  const data = pairs('chat', t.data);
+  return [`${t.target}${rule !== '' ? ` (${rule})` : ''}`, ...(headers !== '' ? [`headers ${headers}`] : []), ...(data !== '' ? [`data ${data}`] : [])].join('   ');
+}
+
 /** The lines for one turn, indented under its step. */
 function turnLines(run: TurnRun, indent: string): string[] {
   const d = run.result.decision;
@@ -70,6 +85,9 @@ function turnLines(run: TurnRun, indent: string): string[] {
   if (acks.length > 0) lines.push(`${indent}   acks   ${acks.join(', ')}`);
   const said = spokenText(run.result);
   if (said !== '') lines.push(`${indent}   says   ${JSON.stringify(said)}`);
+  // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.
+  const transfer = run.result.actions.find((a) => a.type === 'transfer');
+  if (transfer?.type === 'transfer' && transfer.target !== undefined) lines.push(`${indent}   transfer ${transferLine(run, transfer)}`);
   lines.push(`${indent}   form   ${s.form ?? '-'}   level ${s.principal.level}   slots ${slotsOf(s)}`);
   for (const event of run.result.gateEvents) lines.push(`${indent}   gate   ${describeGate(event)}`);
   return lines;

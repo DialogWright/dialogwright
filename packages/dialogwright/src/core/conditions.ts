@@ -6,10 +6,11 @@ import type { FormId } from './app/types';
  * list always holds). Written once, here, for every place that chooses by condition: app.yaml's transfer
  * targets now (core/transfer.ts), and routes.yaml's points later, whose conditions (a fact, a slot, the
  * caller's identity level, business hours, the number called, a named predicate in code) are added as
- * kinds of this union, read by the same evaluator, with the same value tests.
+ * kinds: a row of CONDITION_KINDS (which owns the shape rules for YAML and for an app built in code
+ * alike), a case of the Condition union, and a case in conditionHolds and describeCondition.
  *
  * In YAML a condition names its subject by its key, with a value test beside it where the subject has
- * a value (define/schema/condition.ts reads it into this shape):
+ * a value (define/schema/condition.ts holds it to this, conditionFrom reads it into the engine's shape):
  * - `{ reason: emergency }` or `{ reason: [emergency, security] }`: the handoff's reason is one of these;
  * - `{ form: payment }` or `{ form: [billing_question, payment] }`: the form the caller is in (or, with
  *   none open, the last one completed on the call) is one of these;
@@ -38,22 +39,37 @@ export type Condition =
   | { readonly kind: 'form'; readonly forms: readonly FormId[] }
   | { readonly kind: 'callData'; readonly key: string; readonly test: ValueTest };
 
+/**
+ * Each kind of condition, by the key YAML names it with (which is its `kind`): the one place its shape is
+ * said. `names`: YAML writes one name or a list, the engine keeps the list in `field`. `key`: YAML names
+ * one key, the engine keeps it in `key`, beside one value test (`is`, `in`, `notIn` or `present`).
+ * `words` is what the messages call it.
+ */
+export const CONDITION_KINDS = {
+  reason: { value: 'names', field: 'reasons', words: 'a reason condition' },
+  form: { value: 'names', field: 'forms', words: 'a form condition' },
+  callData: { value: 'key', words: 'a callData condition' },
+} as const satisfies Record<Condition['kind'], { value: 'names'; field: string; words: string } | { value: 'key'; words: string }>;
+
 /** The subjects a condition may name, by the key YAML writes them under. */
-export const CONDITION_SUBJECTS = ['reason', 'form', 'callData'] as const;
-export type ConditionSubject = (typeof CONDITION_SUBJECTS)[number];
+export const CONDITION_SUBJECTS = Object.keys(CONDITION_KINDS) as readonly Condition['kind'][];
+export type ConditionSubject = Condition['kind'];
 
 /** The subjects that take a value test beside them (`is`, `in`, `notIn`, `present`). */
-export const TESTED_SUBJECTS: readonly ConditionSubject[] = ['callData'];
+export const TESTED_SUBJECTS: readonly ConditionSubject[] = CONDITION_SUBJECTS.filter((k) => CONDITION_KINDS[k].value === 'key');
 
 /**
- * What the conditions are judged against at the point a choice is made. A subject the point does not
- * have (absent here) holds no condition on it: a `reason` condition never holds where there is no
- * handoff reason.
+ * What the conditions are judged against at the point a choice is made. A subject with one value per
+ * point (the reason, the form) holds no condition where the point has none: a `reason` condition never
+ * holds where there is no handoff reason, nor a `form` condition with no form. Call data is a set of
+ * keys: a point that has none reads every key as absent, so `present: false` holds there and every
+ * other test fails, as on a call that came with none.
  */
 export interface ConditionFacts {
   readonly reason?: string;
   /** The form the condition reads (see `form` above); null when there is none. */
   readonly form?: FormId | null;
+  /** The call data (callDataOf); absent, none: every key absent. */
   readonly callData?: Readonly<Record<string, string>>;
 }
 
@@ -113,22 +129,48 @@ export function describeWhen(when: readonly Condition[]): string {
 }
 
 /**
- * Whether a `when` holds whatever the call: an empty one, or one whose every condition does (a
- * `present` test on both sides of the same key never comes up alone, so only the empty list counts).
- * A rule after one that always holds is never reached (`pnpm check` warns).
+ * Whether a `when` holds whatever the call: an empty one (a rule written with no `when`). A rule after
+ * one that always holds is never reached (`pnpm check` warns).
  */
 export function alwaysHolds(when: readonly Condition[]): boolean {
   return when.length === 0;
 }
 
+/** One thing wrong with a condition's shape as YAML writes it, at its path within the condition, with its fix. */
+export interface ConditionIssue {
+  readonly path: readonly string[];
+  readonly message: string;
+  readonly fix: string;
+}
+
 /**
- * A condition as YAML writes it (define/schema/condition.ts has held it to one subject and, for a
- * tested subject, one test) in the engine's shape. Throws on a shape the schema refuses, so an app
- * written in code meets the same rules (conditionProblems says what is wrong without throwing).
+ * What is wrong with the shape of a condition as YAML writes it, read from CONDITION_KINDS: no subject,
+ * two, a test on a subject that takes none, none or two on one that takes one. The types of the values
+ * are the schema's own fields (define/schema/condition.ts, whose check reports these).
+ */
+export function yamlConditionIssues(raw: unknown): ConditionIssue[] {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return [{ path: [], message: 'is not a condition', fix: 'write { reason: ... }, { form: ... } or { callData: <key>, is: ... }' }];
+  const o = raw as Record<string, unknown>;
+  const subjects = CONDITION_SUBJECTS.filter((s) => o[s] !== undefined);
+  const tests = VALUE_TESTS.filter((t) => o[t] !== undefined);
+  if (subjects.length === 0) return [{ path: [], message: 'names no subject', fix: `write one of ${CONDITION_SUBJECTS.join(', ')} (for example { reason: emergency }, or { callData: queue, is: vip })` }];
+  if (subjects.length > 1) return [{ path: [], message: `names ${subjects.join(' and ')}, and a condition has one subject`, fix: `write a list of conditions, which all hold: [${subjects.map((s) => `{ ${s}: ... }`).join(', ')}]` }];
+  const subject = subjects[0]!;
+  if (CONDITION_KINDS[subject].value === 'names') {
+    return tests.map((t) => ({ path: [t], message: `${subject} takes no ${t}: it lists its values itself`, fix: `delete "${t}", and write the values as ${subject}: [a, b]` }));
+  }
+  if (tests.length === 0) return [{ path: [], message: `${subject} needs a test beside it`, fix: 'add one of is: <value>, in: [values], notIn: [values] or present: true' }];
+  if (tests.length > 1) return [{ path: [tests[1]!], message: `${subject} takes one test, and this has ${tests.join(' and ')}`, fix: 'keep one; for two tests write a list of conditions, which all hold' }];
+  return [];
+}
+
+/**
+ * A condition as YAML writes it (define/schema/condition.ts has held it to the schema) in the engine's
+ * shape. Throws on a shape yamlConditionIssues refuses.
  */
 export function conditionFrom(raw: Readonly<Record<string, unknown>>): Condition {
-  const problem = conditionProblems(raw)[0];
-  if (problem !== undefined) throw new Error(`condition ${JSON.stringify(raw)}: ${problem}`);
+  const issue = yamlConditionIssues(raw)[0];
+  if (issue !== undefined) throw new Error(`condition ${JSON.stringify(raw)}: ${issue.message}`);
   if (raw.reason !== undefined) return { kind: 'reason', reasons: listOf(raw.reason) };
   if (raw.form !== undefined) return { kind: 'form', forms: listOf(raw.form) };
   return { kind: 'callData', key: raw.callData as string, test: testOf(raw) };
@@ -152,37 +194,31 @@ function testOf(raw: Readonly<Record<string, unknown>>): ValueTest {
 }
 
 const isScalar = (v: unknown): v is ConditionValue => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+const isNameList = (v: unknown): boolean => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string' && x !== '');
 
 /**
- * What is wrong with a condition as written (YAML's shape), each as a sentence with no fix; empty when
- * it is one. Shared by the schema (which adds the fixes) and conditionFrom.
+ * What is wrong with a condition in the engine's shape (Condition: an app built in code, or anything
+ * validateApp is handed), each a sentence in the engine's terms; empty when it is one. Read from
+ * CONDITION_KINDS, so a new kind is checked by its row.
  */
-export function conditionProblems(raw: unknown): string[] {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return ['is not a condition: write { reason: ... }, { form: ... } or { callData: <key>, is: ... }'];
-  const o = raw as Record<string, unknown>;
-  const out: string[] = [];
-  const subjects = CONDITION_SUBJECTS.filter((s) => o[s] !== undefined);
-  const tests = VALUE_TESTS.filter((t) => o[t] !== undefined);
-  const unknown = Object.keys(o).filter((k) => !(CONDITION_SUBJECTS as readonly string[]).includes(k) && !(VALUE_TESTS as readonly string[]).includes(k));
-  for (const k of unknown) out.push(`"${k}" is not a subject or a test of a condition`);
-  if (subjects.length === 0) out.push(`names no subject: write one of ${CONDITION_SUBJECTS.join(', ')}`);
-  if (subjects.length > 1) out.push(`names ${subjects.join(' and ')}: a condition has one subject (write a list of conditions, which all hold)`);
-  const subject = subjects[0];
-  if (subject === undefined || subjects.length > 1) return out;
-  const tested = TESTED_SUBJECTS.includes(subject);
-  if (!tested && tests.length > 0) out.push(`${subject} takes no ${tests.join(' or ')}: it names its values itself`);
-  if (tested && tests.length === 0) out.push(`${subject} needs a test: is, in, notIn or present`);
-  if (tested && tests.length > 1) out.push(`${subject} takes one test, and this has ${tests.join(' and ')}`);
-  const value = o[subject];
-  if (subject === 'reason' || subject === 'form') {
-    const list = Array.isArray(value) ? value : [value];
-    if (list.length === 0) out.push(`${subject} lists nothing`);
-    if (list.some((v) => typeof v !== 'string' || v === '')) out.push(`${subject} must be a name or a list of names`);
-  } else if (typeof value !== 'string' || value === '') out.push(`${subject} must name a key`);
-  if (o.is !== undefined && !isScalar(o.is)) out.push('is must be one value');
-  for (const t of ['in', 'notIn'] as const) {
-    if (o[t] !== undefined && (!Array.isArray(o[t]) || (o[t] as unknown[]).length === 0 || !(o[t] as unknown[]).every(isScalar))) out.push(`${t} must be a list of values`);
+export function conditionProblems(c: unknown): string[] {
+  if (typeof c !== 'object' || c === null || Array.isArray(c)) return ['is not a condition object ({ kind, ... })'];
+  const o = c as Record<string, unknown>;
+  if (typeof o.kind !== 'string' || !Object.hasOwn(CONDITION_KINDS, o.kind)) return [`has kind ${JSON.stringify(o.kind)}, which is not one of ${CONDITION_SUBJECTS.join(', ')}`];
+  const spec = CONDITION_KINDS[o.kind as Condition['kind']];
+  if (spec.value === 'names') {
+    return isNameList(o[spec.field]) ? [] : [`is ${spec.words} whose ${spec.field} is not a list of one or more names`];
   }
-  if (o.present !== undefined && typeof o.present !== 'boolean') out.push('present must be true or false');
+  const out: string[] = [];
+  if (typeof o.key !== 'string' || o.key === '') out.push(`is ${spec.words} with no key`);
+  const test = o.test;
+  if (typeof test !== 'object' || test === null || Array.isArray(test)) return [...out, `is ${spec.words} with no test ({ is }, { in }, { notIn } or { present })`];
+  const t = test as Record<string, unknown>;
+  const named = VALUE_TESTS.filter((n) => t[n] !== undefined);
+  if (named.length !== 1) return [...out, `is ${spec.words} whose test has ${named.length === 0 ? 'none' : named.join(' and ')} of is, in, notIn and present, and takes exactly one`];
+  const n = named[0]!;
+  if (n === 'is' && !isScalar(t.is)) out.push(`is ${spec.words} whose test's is is not one value`);
+  if ((n === 'in' || n === 'notIn') && !(Array.isArray(t[n]) && (t[n] as unknown[]).length > 0 && (t[n] as unknown[]).every(isScalar))) out.push(`is ${spec.words} whose test's ${n} is not a list of one or more values`);
+  if (n === 'present' && typeof t.present !== 'boolean') out.push(`is ${spec.words} whose test's present is not true or false`);
   return out;
 }

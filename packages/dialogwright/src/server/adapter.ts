@@ -1621,8 +1621,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
     // planned restart's handover answered its carrier's callback there, so its socket comes here with no
     // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
-    // person (the carrier's callback with that handoff dials HANDOFF_NUMBER), never begun again as a new
-    // call. With the memory store there is never one to load.
+    // person (the carrier's callback with that handoff, which names no target, dials the app's transfer
+    // default, HANDOFF_NUMBER for an app without one: server/transfer.ts dialPlan), never begun again as a
+    // new call. With the memory store there is never one to load.
     if (deps.store.get(callId) === undefined && deps.store.durable) {
       const loaded = await deps.store.restore(callId, ctx.provider);
       if (loaded === 'unreadable') {

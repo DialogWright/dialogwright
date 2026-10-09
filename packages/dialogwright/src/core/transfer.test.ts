@@ -64,7 +64,11 @@ describe('the value grammar', () => {
     expect(sendOf(t, 0).headers).toEqual({ 'X-Account-Ref': 'callData.accountRef', 'X-Reason': 'reason', 'X-Form': 'form', 'X-About': 'slot.reason', 'X-Source': 'ivr', 'X-Queue': 'callData.queue' });
     expect(sendOf(t, null).headers).not.toHaveProperty('X-Queue');
     expect(sendOf({ ...t, send: { headers: { 'X-Priority': '3' } } }, 2).headers).toEqual({ 'X-Priority': '1' });
-    expect(transferVariables(t)).toEqual(['PRIORITY_LINE', 'CALLBACK_DESK', 'SECURITY_DESK', 'HANDOFF_NUMBER']);
+    // A header's name is not case-sensitive: a rule's own replaces the top-level one, as the rule spells it, where it stood.
+    expect(sendOf({ targets: [{ when: [], to: 'env.X', send: { headers: { 'x-reason': 'own' } } }], default: 'env.Y', send: { headers: { 'X-Reason': 'reason', 'X-Source': 'ivr' } } }, 0).headers)
+      .toEqual({ 'x-reason': 'own', 'X-Source': 'ivr' });
+    expect(Object.keys(sendOf({ targets: [{ when: [], to: 'env.X', send: { headers: { 'x-reason': 'own' } } }], default: 'env.Y', send: { headers: { 'X-Reason': 'reason', 'X-Source': 'ivr' } } }, 0).headers!)).toEqual(['x-reason', 'X-Source']);
+    expect(transferVariables(t)).toEqual(['PRIORITY_LINE', 'CALLBACK_DESK', 'SECURITY_DESK', 'MAIN_LINE']);
     expect([...transferHeaderNames(t)]).toEqual(['x-account-ref', 'x-reason', 'x-form', 'x-about', 'x-source', 'x-queue', 'x-priority']);
   });
 
@@ -88,8 +92,8 @@ describe('the choice, in the app\'s order', () => {
     const s = session({ form: 'request_callback' });
     expect(handoff(s, 'max-attempts').transfer).toMatchObject({ target: 'CALLBACK_DESK', rule: 1, headers: { 'X-Reason': 'max-attempts', 'X-Form': 'request_callback', 'X-Source': 'ivr' } });
     // One condition alone does not take the rule.
-    expect(handoff(session({ form: 'request_callback' }), 'live-agent').transfer).toMatchObject({ target: 'HANDOFF_NUMBER', rule: null });
-    expect(handoff(session(), 'max-attempts').transfer).toMatchObject({ target: 'HANDOFF_NUMBER', rule: null });
+    expect(handoff(session({ form: 'request_callback' }), 'live-agent').transfer).toMatchObject({ target: 'MAIN_LINE', rule: null });
+    expect(handoff(session(), 'max-attempts').transfer).toMatchObject({ target: 'MAIN_LINE', rule: null });
   });
 
   it('reads the last form completed when none is open', () => {
@@ -98,7 +102,7 @@ describe('the choice, in the app\'s order', () => {
 
   it('security goes to the security desk with its own header; anything else to the default', () => {
     expect(handoff(session(), 'security').transfer).toEqual({ target: 'SECURITY_DESK', rule: 2, headers: { 'X-Reason': 'security', 'X-Source': 'ivr', 'X-Priority': '1' }, data: { reason: 'security' } });
-    expect(handoff(session(), 'live-agent').transfer).toEqual({ target: 'HANDOFF_NUMBER', rule: null, headers: { 'X-Reason': 'live-agent', 'X-Source': 'ivr' }, data: { reason: 'live-agent' } });
+    expect(handoff(session(), 'live-agent').transfer).toEqual({ target: 'MAIN_LINE', rule: null, headers: { 'X-Reason': 'live-agent', 'X-Source': 'ivr' }, data: { reason: 'live-agent' } });
   });
 
   it('a slot goes as the handoff data sends it: left out when the data leaves it out', () => {
@@ -141,10 +145,10 @@ describe('the records', () => {
     const input = { before: s, after: s, event: speechEvent('x'), gateEvents: [], kb: null, screen: null, quarantined: false };
     expect(auditDrafts({ ...input, decision: handoff(s, 'live-agent') })[0]).toEqual({
       type: 'handoff',
-      detail: { reason: 'live-agent', completed: [], queued: [], target: 'PRIORITY_LINE', sent: ['X-Account-Ref', 'X-Reason', 'X-Source', 'X-Queue'] },
+      detail: { reason: 'live-agent', completed: [], queued: [], target: 'PRIORITY_LINE', headers: ['X-Account-Ref', 'X-Reason', 'X-Source', 'X-Queue'] },
     });
     const chat = session({ callData: { page: '/orders/1042' } }, WEB_CHAT);
-    expect(auditDrafts({ ...input, before: chat, after: chat, decision: handoff(chat, 'live-agent') })[0]?.detail).toMatchObject({ target: 'HANDOFF_NUMBER', sent: ['reason', 'page'] });
+    expect(auditDrafts({ ...input, before: chat, after: chat, decision: handoff(chat, 'live-agent') })[0]?.detail).toEqual({ reason: 'live-agent', completed: [], queued: [], target: 'MAIN_LINE', data: ['reason', 'page'] });
   });
 
   it('a record masks a header sent from a redacted slot as it masks the slot', () => {

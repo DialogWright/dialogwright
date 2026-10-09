@@ -1,5 +1,5 @@
 import type { App, CallDataKey, FormId, SlotId, TransferConfig, TransferSend } from './app/types';
-import { allHold, alwaysHolds, conditionProblems, CONDITION_SUBJECTS, type Condition, type ConditionFacts } from './conditions';
+import { allHold, alwaysHolds, conditionProblems, type Condition, type ConditionFacts } from './conditions';
 import { envVariableOf } from './app/envReference';
 import { callDataSourceOf, recordedCallData, redactionOf, writableValue } from '../channel/callData';
 import { floorByName } from '../channel/maskByName';
@@ -63,7 +63,18 @@ export interface TransferChoice {
 export function sendOf(transfer: TransferConfig, rule: number | null): TransferSend {
   const own = rule === null ? undefined : transfer.targets[rule]?.send;
   const top = transfer.send;
-  const headers = { ...(top?.headers ?? {}), ...(own?.headers ?? {}) };
+  // A SIP header's name is not case-sensitive: a rule's `x-reason` replaces the top-level `X-Reason`
+  // (written as the rule spells it, where the top-level one stood), never sent beside it.
+  const headers: Record<string, string> = { ...(top?.headers ?? {}) };
+  for (const [name, value] of Object.entries(own?.headers ?? {})) {
+    const same = Object.keys(headers).find((n) => n.toLowerCase() === name.toLowerCase());
+    if (same === undefined || same === name) headers[name] = value;
+    else {
+      const merged = Object.entries(headers).map(([n, v]): [string, string] => (n === same ? [name, value] : [n, v]));
+      for (const n of Object.keys(headers)) delete headers[n];
+      Object.assign(headers, Object.fromEntries(merged));
+    }
+  }
   const chat = { ...(top?.chat ?? {}), ...(own?.chat ?? {}) };
   return { ...(Object.keys(headers).length > 0 ? { headers } : {}), ...(Object.keys(chat).length > 0 ? { chat } : {}) };
 }
@@ -209,8 +220,13 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
   };
   const sendProblems = (send: TransferSend | undefined, at: readonly (string | number)[]): void => {
     for (const part of ['headers', 'chat'] as const) {
+      const seen = new Map<string, string>();
       for (const [name, raw] of Object.entries(send?.[part] ?? {})) {
         const path = [...at, 'send', part, name];
+        // SIP header names are not case-sensitive: two that differ only in case would be one header sent twice.
+        const twin = part === 'headers' ? seen.get(name.toLowerCase()) : undefined;
+        if (twin !== undefined) add(path, `"${name}" is the header "${twin}" again: header names are not case-sensitive`, `keep one of "${twin}" and "${name}"`);
+        if (part === 'headers') seen.set(name.toLowerCase(), name);
         if (part === 'headers' && !HEADER_NAME.test(name)) add(path, `"${name}" is not a header a transfer may send`, 'name an X- header (X-Account-Ref) or User-to-User: the headers every carrier documents for a transfer to a SIP address');
         if (part === 'headers' && RESERVED_HEADER.test(name)) add(path, `"${name}" is a header Telnyx reserves for itself (X-Telnyx...)`, 'choose another X- name', { warning: true });
         if (part === 'chat' && !CHAT_DATA_KEY.test(name)) add(path, `"${name}" is not a plain word`, 'name the key with letters, digits and underscores, starting with a letter');
@@ -222,6 +238,10 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
         if (v.kind === 'callData') {
           if (!Object.hasOwn(keys, v.key)) add(path, `callData key "${v.key}" is not defined`, `add "${v.key}" under callData in app.yaml, or name one of ${Object.keys(keys).join(', ') || 'its keys'}`);
           else if (redactionOf(keys[v.key]) === 'secret') add(path, `callData key "${v.key}" is secret, so it is never sent`, 'take it out of send, or give the key another redact (it is sent as that records it)');
+          else if (redactionOf(keys[v.key]) === 'mask' || redactionOf(keys[v.key]) === 'length') {
+            const how = redactionOf(keys[v.key]);
+            add(path, `callData key "${v.key}" is recorded by ${how === 'mask' ? 'mask (the default)' : 'length'}, so this can only ever send ${how === 'mask' ? '•' : 'its length (<9 chars>)'}`, `give the key redact: keep (or last4) if the person taking the call needs the value, or take it out of send`, { warning: true });
+          }
         } else if (v.kind === 'slot') {
           if (!world.slots.includes(v.slot)) add(path, `slot "${v.slot}" is not defined`, 'name one of the app\'s slots', { unknownSlot: v.slot });
         } else if (v.kind === 'constant') {
@@ -235,8 +255,9 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
   const conditionsOf = (when: readonly Condition[], at: readonly (string | number)[]): void => {
     when.forEach((c, j) => {
       const path = [...at, 'when', j];
-      if (typeof c !== 'object' || c === null || !(CONDITION_SUBJECTS as readonly string[]).includes((c as { kind?: unknown }).kind as string)) {
-        add(path, `is not a condition (${conditionProblems(c).join('; ')})`, 'write { kind: reason | form | callData, ... } (core/conditions.ts Condition)');
+      const shape = conditionProblems(c);
+      if (shape.length > 0) {
+        for (const problem of shape) add(path, `${problem}`, 'write a Condition (core/conditions.ts): { kind: \'reason\', reasons: [...] }, { kind: \'form\', forms: [...] } or { kind: \'callData\', key, test: { is } | { in } | { notIn } | { present } }');
         return;
       }
       if (c.kind === 'form') {
@@ -254,10 +275,11 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
   let always: number | null = null;
   (Array.isArray(transfer.targets) ? transfer.targets : []).forEach((rule, i) => {
     envRef(['targets', i, 'to'], rule.to);
-    conditionsOf(rule.when ?? [], ['targets', i]);
+    if (rule.when !== undefined && !Array.isArray(rule.when)) add(['targets', i, 'when'], 'is not a list of conditions', 'write when: [Condition, ...] (core/conditions.ts)');
+    else conditionsOf(rule.when ?? [], ['targets', i]);
     sendProblems(rule.send, ['targets', i]);
     if (always !== null) add(['targets', i], `is never taken: rule ${always + 1} before it always holds`, 'move it above that rule, or give that rule a when', { warning: true });
-    else if (alwaysHolds(rule.when ?? [])) always = i;
+    else if (Array.isArray(rule.when ?? []) && alwaysHolds(rule.when ?? [])) always = i;
   });
   envRef(['default'], transfer.default);
   sendProblems(transfer.send, []);

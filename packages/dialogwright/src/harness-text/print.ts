@@ -4,6 +4,8 @@ import type { GateRow } from '../core/gates';
 import type { Decision } from '../core/decision';
 import type { Action } from '../channel/actions';
 import { endFrame } from '../channel/relay/frames';
+import { redactSent } from '../trace/redact';
+import { defaultAppOrNull } from '../core/app/registry';
 import type { Metrics } from './metrics';
 import type { SlotState } from '../core/session';
 import type { SlotId } from '../core/app/types';
@@ -64,10 +66,16 @@ function actionLines(a: Action): string[] {
   switch (a.type) {
     case 'say': return a.parts.map((p) => ('text' in p ? `  > ${p.text}` : '  [play]'));
     case 'end': return [`  [end] ${endFrame('completed', a.completed).handoffData}`];
-    case 'transfer': return [`  [end] ${endFrame(a.reason, a.completed, a.queued, a.slots, a.unconfirmed).handoffData}`];
+    // An app with transfer: its target and headers, as the end frame carries them, each header value as a record keeps it.
+    case 'transfer': return [`  [end] ${endFrame(a.reason, a.completed, a.queued, a.slots, a.unconfirmed, a.target, recordedHeaders(a.headers)).handoffData}`];
     case 'send_digits': return ['  [sendDigits]'];
     case 'set_language': return ['  [language]'];
   }
+}
+
+/** A transfer's headers as a record keeps them (trace/redact.ts redactSent: a value sent from a redacted slot masked); none, none. */
+function recordedHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> | undefined {
+  return headers === undefined ? undefined : (redactSent(defaultAppOrNull(), 'headers', headers, 'length') as Record<string, string>);
 }
 
 export function formatMetrics(m: Metrics): string {

@@ -42,7 +42,7 @@
       "decision": "handoff",
       "reason": "live-agent",
       "transfer": {
-        "target": "HANDOFF_NUMBER",
+        "target": "MAIN_LINE",
         "headers": { "X-Reason": "live-agent", "X-Source": "ivr" },
         "data": { "reason": "live-agent" }
       }
@@ -59,7 +59,7 @@
       "decision": "handoff",
       "reason": "live-agent",
       "transfer": {
-        "target": "HANDOFF_NUMBER",
+        "target": "MAIN_LINE",
         "data": { "reason": "live-agent", "page": "/orders/1042" }
       }
     }

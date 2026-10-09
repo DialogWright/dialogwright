@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, name } from './common';
-import { CONDITION_SUBJECTS, TESTED_SUBJECTS, VALUE_TESTS } from '../../core/conditions';
+import { yamlConditionIssues } from '../../core/conditions';
 
 /**
  * A condition as YAML writes it (core/conditions.ts reads it into the engine's shape and judges it):
@@ -30,26 +30,10 @@ export const conditionSchema = z
     notIn: values.optional().describe('For callData: holds when the call has the key and its value is none of these.'),
     present: z.boolean().optional().describe('For callData: true holds when the call came with the key, false when it came without it.'),
   })
+  // The shape rules (one subject, and one test for a subject with a value) are core/conditions.ts's, said once.
   .check(checkAlways((value, ctx) => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
-    const o = value as Record<string, unknown>;
-    const subjects = CONDITION_SUBJECTS.filter((s) => o[s] !== undefined);
-    const tests = VALUE_TESTS.filter((t) => o[t] !== undefined);
-    if (subjects.length === 0) {
-      ctx.addIssue({ code: 'custom', path: [], message: 'names no subject', params: { fix: `write one of ${CONDITION_SUBJECTS.join(', ')} (for example { reason: emergency }, or { callData: queue, is: vip })` } });
-      return;
-    }
-    if (subjects.length > 1) {
-      ctx.addIssue({ code: 'custom', path: [], message: `names ${subjects.join(' and ')}, and a condition has one subject`, params: { fix: `write a list of conditions, which all hold: [${subjects.map((s) => `{ ${s}: ... }`).join(', ')}]` } });
-      return;
-    }
-    const subject = subjects[0]!;
-    if (!TESTED_SUBJECTS.includes(subject)) {
-      for (const t of tests) ctx.addIssue({ code: 'custom', path: [t], message: `${subject} takes no ${t}: it lists its values itself`, params: { fix: `delete "${t}", and write the values as ${subject}: [a, b]` } });
-      return;
-    }
-    if (tests.length === 0) ctx.addIssue({ code: 'custom', path: [], message: `${subject} needs a test beside it`, params: { fix: 'add one of is: <value>, in: [values], notIn: [values] or present: true' } });
-    if (tests.length > 1) ctx.addIssue({ code: 'custom', path: [tests[1]!], message: `${subject} takes one test, and this has ${tests.join(' and ')}`, params: { fix: 'keep one; for two tests write a list of conditions, which all hold' } });
+    for (const issue of yamlConditionIssues(value)) ctx.addIssue({ code: 'custom', path: [...issue.path], message: issue.message, params: { fix: issue.fix } });
   }))
   .describe('One condition: a subject (reason, form or callData) and, for callData, one test (is, in, notIn or present).');
 

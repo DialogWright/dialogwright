@@ -164,7 +164,7 @@ async function start(extra: Record<string, string> = {}, overrides: Omit<ServerO
   const config = makeConfig(extra);
   const logs: string[] = [];
   // The callback fixture's transfer targets (app.yaml's transfer), which the server reads as it starts.
-  const env = overrides.env ?? { ...process.env, PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15555550111', SECURITY_DESK: '+15555550112' };
+  const env = overrides.env ?? { ...process.env, PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15555550111', SECURITY_DESK: '+15555550112', MAIN_LINE: '+15555550100' };
   running = await startServer(config, { host: '127.0.0.1', client: stub, log: (line) => logs.push(line), ...overrides, env });
   return { config, logs, url: `ws://127.0.0.1:${running.port}/chat` };
 }

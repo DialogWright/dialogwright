@@ -24,7 +24,7 @@ describe('the callback fixture\'s pages', () => {
   it('the app map draws the transfer targets in order, the default last', () => {
     const map = appMapText(callbackApp);
     expect(map).toContain('## Where a handoff goes');
-    const order = ['PRIORITY_LINE', 'CALLBACK_DESK', 'SECURITY_DESK', 'default HANDOFF_NUMBER'].map((t) => map.indexOf(t));
+    const order = ['PRIORITY_LINE', 'CALLBACK_DESK', 'SECURITY_DESK', 'default MAIN_LINE'].map((t) => map.indexOf(t));
     expect(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]!))).toBe(true);
     expect(map).toContain('w_1{"the form is request_callback and the reason is max-attempts"}');
   });

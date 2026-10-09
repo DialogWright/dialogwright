@@ -7,6 +7,9 @@ import { REGRESS_TODAY } from './baseline';
 import { loadScenarios, runCorpusEntry, runScenario, type RunOptions } from './runner';
 import { corpusTranscript, describeStep, modelAnswerLines, scenarioTranscript } from './transcript';
 import { JevClientError } from '../jev/types';
+import { join } from 'node:path';
+import { registerApp, resetAppsForTest } from '../core/app/registry';
+import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
 
 useTestkit();
 
@@ -35,6 +38,23 @@ describe('the regression transcript', () => {
     expect(lines.some((l) => l.startsWith('          says   "Thank you, you\'re verified.'))).toBe(true);
     expect(lines.at(-1)).toBe('  pass');
     expect(lines.at(-2)).toMatch(/^ {2}expect decision=prompt, promptId=anything_else, /);
+  });
+
+  it('a transfer: its target, the rule taken and what goes with it, each value as recorded; none for an app without transfer', async () => {
+    resetAppsForTest();
+    registerApp(callbackApp);
+    try {
+      const fixtures = join(CALLBACK_DIR, 'fixtures');
+      const thresholds = buildThresholds([]);
+      const opts = { client: buildClient('stub', join(fixtures, 'corpus.jsonl'), thresholds), thresholds, todayIso: REGRESS_TODAY, now: () => 0 };
+      const scenario = loadScenarios(join(fixtures, 'scenarios')).find((s) => s.id === 'transfer-priority')!;
+      const lines = scenarioTranscript(scenario, await runScenario(scenario, opts));
+      expect(lines).toContain('          transfer PRIORITY_LINE (rule 1)   headers X-Account-Ref=...1234, X-Reason=live-agent, X-Source=ivr, X-Queue=priority   data reason=live-agent');
+    } finally {
+      useTestkit();
+    }
+    const plain = loadScenarios(scenariosDir()).find((s) => s.id === 'track-other-customers-parcel')!;
+    expect(scenarioTranscript(plain, await runScenario(plain, options())).some((l) => l.includes('transfer '))).toBe(false);
   });
 
   it('a call that misses its expectation says what it missed', async () => {

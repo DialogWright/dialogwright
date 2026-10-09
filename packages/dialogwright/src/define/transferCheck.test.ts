@@ -50,7 +50,7 @@ describe('the fixture', () => {
         { when: [{ kind: 'form', forms: ['request_callback'] }, { kind: 'reason', reasons: ['max-attempts'] }], to: 'env.CALLBACK_DESK' },
         { when: [{ kind: 'reason', reasons: ['security'] }], to: 'env.SECURITY_DESK', send: { headers: { 'X-Priority': '1' } } },
       ],
-      default: 'env.HANDOFF_NUMBER',
+      default: 'env.MAIN_LINE',
       send: {
         headers: { 'X-Account-Ref': 'callData.accountRef', 'X-Reason': 'reason', 'X-Form': 'form', 'X-About': 'slot.reason', 'X-Source': 'ivr' },
         chat: { reason: 'reason', page: 'callData.page' },
@@ -92,9 +92,18 @@ describe('app.yaml transfer: refusals', () => {
     expect(header.problems).toHaveLength(1);
     expect(header.problems[0]).toContain('is not a header a transfer may send');
     expect((await resultOf(replace('X-Source: ivr', 'User-to-User: callData.accountRef'))).problems).toEqual([]);
-    const missing = await resultOf(replace('  default: env.HANDOFF_NUMBER\n', ''));
+    const missing = await resultOf(replace('  default: env.MAIN_LINE\n', ''));
     expect(missing.problems).toHaveLength(1);
     expect(missing.problems[0]).toContain('transfer.default');
+  });
+
+  it('refuses two header names that differ only in case, within one send: one header sent twice', async () => {
+    const r = await resultOf(replace('X-Source: ivr', 'X-Source: ivr\n      x-source: web'));
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain('transfer.send.headers.x-source');
+    expect(r.problems[0]).toContain('"x-source" is the header "X-Source" again: header names are not case-sensitive');
+    // Across a rule's send and the top-level one, the rule's replaces it (core/transfer.ts sendOf): no refusal.
+    expect((await resultOf(replace('headers: { X-Priority: "1" }', 'headers: { X-Priority: "1", x-reason: security }'))).problems).toEqual([]);
   });
 
   it('refuses a condition with two subjects, or a test on one that takes none', async () => {
@@ -120,6 +129,16 @@ describe('app.yaml transfer: warnings, never refusals', () => {
     expect(r.warnings).toHaveLength(1);
     expect(r.warnings[0]).toContain('transfer.targets[3]');
     expect(r.warnings[0]).toContain('is never taken: rule 3 before it always holds');
+  });
+
+  it('warns of a header or a chat value naming a call data key recorded by mask or length: it can only ever send the mask', async () => {
+    const masked = await resultOf(replace('X-Source: ivr', 'X-Referral: callData.referral'));
+    expect(masked.problems).toEqual([]);
+    expect(masked.warnings).toHaveLength(1);
+    expect(masked.warnings[0]).toContain('callData key "referral" is recorded by mask (the default), so this can only ever send •');
+    const length = await resultOf((t) => replace('chat: { reason: reason, page: callData.page }', 'chat: { reason: reason, ref: callData.accountRef }')(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: length }')(t)));
+    expect(length.problems).toEqual([]);
+    expect(length.warnings.join('\n')).toContain('callData key "accountRef" is recorded by length, so this can only ever send its length');
   });
 
   it('warns of a constant that looks like a misspelled reference, and of a header Telnyx reserves', async () => {
@@ -161,6 +180,11 @@ describe('the schema and validateApp', () => {
     expect(() => validateApp(form)).toThrow('transfer: form "nope" is not defined (transfer.targets.0.when.0.form)');
     const header = { ...callbackApp, transfer: { targets: [], default: 'env.HANDOFF_NUMBER', send: { headers: { Accept: 'reason' } } } };
     expect(() => validateApp(header)).toThrow('"Accept" is not a header a transfer may send');
+    // A malformed test in the engine's shape is refused here, not at the first handoff it would crash.
+    const test = { ...callbackApp, transfer: { targets: [{ when: [{ kind: 'callData', key: 'queue', test: {} } as never], to: 'env.X' }], default: 'env.MAIN_LINE' } };
+    expect(() => validateApp(test)).toThrow('transfer: is a callData condition whose test has none of is, in, notIn and present, and takes exactly one (transfer.targets.0.when.0)');
+    const notList = { ...callbackApp, transfer: { targets: [{ when: { kind: 'reason', reasons: ['x'] } as never, to: 'env.X' }], default: 'env.MAIN_LINE' } };
+    expect(() => validateApp(notList)).toThrow('transfer: is not a list of conditions (transfer.targets.0.when)');
     expect(() => validateApp(callbackApp)).not.toThrow();
   });
 });

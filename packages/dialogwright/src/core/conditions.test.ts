@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allHold, alwaysHolds, conditionFrom, conditionHolds, conditionProblems, describeWhen, valueHolds, whenFrom, type Condition } from './conditions';
+import { allHold, alwaysHolds, conditionFrom, conditionHolds, conditionProblems, CONDITION_KINDS, describeWhen, valueHolds, whenFrom, yamlConditionIssues, type Condition } from './conditions';
 import { conditionSchema, whenSchema } from '../define/schema/condition';
 
 /**
@@ -74,14 +74,32 @@ describe('conditions', () => {
     expect(describeWhen([])).toBe('always');
   });
 
-  it('refuses a condition with no subject, two subjects, a missing or extra test, or a test on a subject that takes none', () => {
-    expect(conditionProblems({})).toEqual(['names no subject: write one of reason, form, callData']);
-    expect(conditionProblems({ reason: 'x', form: 'y' })[0]).toContain('one subject');
-    expect(conditionProblems({ callData: 'queue' })).toEqual(['callData needs a test: is, in, notIn or present']);
-    expect(conditionProblems({ callData: 'queue', is: 'a', in: ['b'] })).toEqual(['callData takes one test, and this has is and in']);
-    expect(conditionProblems({ reason: 'x', is: 'y' })).toEqual(['reason takes no is: it names its values itself']);
-    expect(conditionProblems({ callData: 'q', in: [] })).toEqual(['in must be a list of values']);
-    expect(() => conditionFrom({ callData: 'queue' })).toThrow('callData needs a test');
+  it('YAML: refuses a condition with no subject, two subjects, a missing or extra test, or a test on a subject that takes none', () => {
+    const messages = (raw: unknown) => yamlConditionIssues(raw).map((i) => `${i.path.join('.')}: ${i.message}`);
+    expect(messages({})).toEqual([': names no subject']);
+    expect(messages({ reason: 'x', form: 'y' })).toEqual([': names reason and form, and a condition has one subject']);
+    expect(messages({ callData: 'queue' })).toEqual([': callData needs a test beside it']);
+    expect(messages({ callData: 'queue', is: 'a', in: ['b'] })).toEqual(['in: callData takes one test, and this has is and in']);
+    expect(messages({ reason: 'x', is: 'y' })).toEqual(['is: reason takes no is: it lists its values itself']);
+    expect(() => conditionFrom({ callData: 'queue' })).toThrow('callData needs a test beside it');
+  });
+
+  it('the engine\'s shape (an app built in code): a kind it has, its list or its key, and exactly one test, said in the engine\'s terms', () => {
+    expect(conditionProblems({ kind: 'callData', key: 'tier', test: { notIn: ['basic'] } })).toEqual([]);
+    expect(conditionProblems({ kind: 'reason', reasons: ['emergency'] })).toEqual([]);
+    expect(conditionProblems({ kind: 'callData', key: 'tier', test: {} })).toEqual(['is a callData condition whose test has none of is, in, notIn and present, and takes exactly one']);
+    expect(conditionProblems({ kind: 'callData', key: 'tier', test: { is: 'a', present: true } })).toEqual(['is a callData condition whose test has is and present of is, in, notIn and present, and takes exactly one']);
+    expect(conditionProblems({ kind: 'callData', test: { in: [] } })).toEqual(['is a callData condition with no key', 'is a callData condition whose test\'s in is not a list of one or more values']);
+    expect(conditionProblems({ kind: 'callData', key: 'tier' })).toEqual(['is a callData condition with no test ({ is }, { in }, { notIn } or { present })']);
+    expect(conditionProblems({ kind: 'form', forms: [] })).toEqual(['is a form condition whose forms is not a list of one or more names']);
+    expect(conditionProblems({ kind: 'reason', reason: 'x' })).toEqual(['is a reason condition whose reasons is not a list of one or more names']);
+    expect(conditionProblems({ kind: 'hours' })).toEqual(['has kind "hours", which is not one of reason, form, callData']);
+    expect(Object.keys(CONDITION_KINDS)).toEqual(['reason', 'form', 'callData']);
+  });
+
+  it('a point with no call data reads every key as absent: present: false holds, every other test fails', () => {
+    expect(conditionHolds({ kind: 'callData', key: 'tier', test: { present: false } }, {})).toBe(true);
+    expect(conditionHolds({ kind: 'callData', key: 'tier', test: { notIn: ['basic'] } }, {})).toBe(false);
   });
 });
 

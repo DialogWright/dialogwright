@@ -66,7 +66,7 @@ flowchart TD
   w_1 -->|"no"| w_2
   t_2[["SECURITY_DESK<br/>headers X-Account-Ref, X-Reason, X-Form, X-About, X-Source, X-Priority<br/>chat reason, page"]]
   w_2 -->|"yes"| t_2
-  fallback[["default HANDOFF_NUMBER<br/>headers X-Account-Ref, X-Reason, X-Form, X-About, X-Source<br/>chat reason, page"]]
+  fallback[["default MAIN_LINE<br/>headers X-Account-Ref, X-Reason, X-Form, X-About, X-Source<br/>chat reason, page"]]
   w_2 -->|"no"| fallback
 ```
 

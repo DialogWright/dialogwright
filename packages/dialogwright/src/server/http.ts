@@ -15,7 +15,7 @@ import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
 import { ConsoleAuth } from './console/auth';
 import type { CallbackParams, DialTarget, RelayLanguage, StartDocumentOptions, VoiceProvider, WebhookRequest } from './voice/provider';
-import { defaultTarget, dialPlan, parseHandoff, type PostedHandoff, type ServerTransfer } from './transfer';
+import { defaultTarget, describeDropped, dialPlan, parseHandoff, recordedPlan, type PostedHandoff, type ServerTransfer } from './transfer';
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
@@ -231,11 +231,10 @@ function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, h
   const plan = dialPlan(deps.transfer ?? null, deps.config.handoffNumber, handoff);
   const document = apologize ? provider.apologizeAndDialDocument(plan.target) : provider.dialDocument(plan.target);
   if (!deps.transfer) return { document, note: `dial:${handoff.reasonCode}` };
-  deps.store.get(callSid)?.frames.write('log', {
-    transfer: { target: plan.variable, ...(plan.sent.length > 0 ? { sent: [...plan.sent] } : {}), ...(plan.dropped.length > 0 ? { dropped: [...plan.dropped], why: plan.why } : {}) },
-  });
-  const dropped = plan.dropped.length === 0 ? ''
-    : ` (headers left out: ${plan.dropped.join(', ')}: ${plan.why === 'number' ? 'a phone number carries none' : plan.why === 'size' ? 'over the 1024 characters a transfer carries' : 'not ones app.yaml sends'})`;
+  deps.store.get(callSid)?.frames.write('log', { transfer: recordedPlan(plan) });
+  // Only header names (HEADER_NAME) are written, at most DROPPED_SHOWN: a name posted back can never forge a log line.
+  const left = describeDropped(plan);
+  const dropped = left === '' ? '' : ` (headers left out: ${left})`;
   return { document, note: `dial:${handoff.reasonCode} to ${plan.variable}${dropped}` };
 }
 

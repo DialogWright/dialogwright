@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { callbackApp } from '../testing/callback/app';
-import { defaultTarget, dialPlan, maskTarget, parseHandoff, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
+import { defaultTarget, describeDropped, dialPlan, maskTarget, parseHandoff, recordedPlan, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { dialVerb, fitHeaders, SIP_HEADERS_MAX, sipUriWithHeaders } from './voice/dial';
 import { decideAction, type HttpDeps } from './http';
 import { twilioProvider } from './voice/twilio';
@@ -29,7 +29,7 @@ import { useTestkit } from '../testing/apps';
 useTestkit();
 
 const HANDOFF = '+15551234567';
-const ENV = { PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15555550111', SECURITY_DESK: 'sip:security@pbx.example.com;transport=tls' };
+const ENV = { PRIORITY_LINE: 'sip:priority@pbx.example.com', CALLBACK_DESK: '+15555550111', SECURITY_DESK: 'sip:security@pbx.example.com;transport=tls', MAIN_LINE: '+15555550100' };
 
 function transfer(): ServerTransfer {
   return transferTargetsFrom(callbackApp, ENV, HANDOFF)!;
@@ -38,8 +38,10 @@ function transfer(): ServerTransfer {
 describe('the targets, read as the server starts', () => {
   it('reads each variable the transfer names, HANDOFF_NUMBER from the config', () => {
     const t = transfer();
-    expect([...t.numbers]).toEqual([['PRIORITY_LINE', ENV.PRIORITY_LINE], ['CALLBACK_DESK', ENV.CALLBACK_DESK], ['SECURITY_DESK', ENV.SECURITY_DESK], ['HANDOFF_NUMBER', HANDOFF]]);
-    expect(t.defaultVariable).toBe('HANDOFF_NUMBER');
+    expect([...t.numbers]).toEqual([['PRIORITY_LINE', ENV.PRIORITY_LINE], ['CALLBACK_DESK', ENV.CALLBACK_DESK], ['SECURITY_DESK', ENV.SECURITY_DESK], ['MAIN_LINE', ENV.MAIN_LINE]]);
+    expect(t.defaultVariable).toBe('MAIN_LINE');
+    // HANDOFF_NUMBER is the server's own, from the config, whatever names it.
+    expect(transferTargetsFrom({ transfer: { targets: [], default: 'env.HANDOFF_NUMBER' } }, {}, HANDOFF)!.numbers.get('HANDOFF_NUMBER')).toBe(HANDOFF);
     expect(transferTargetsFrom({}, {}, HANDOFF)).toBeNull();
   });
 
@@ -60,23 +62,55 @@ describe('a posted handoff', () => {
   it('dials the target it names with the headers the app sends, and HANDOFF_NUMBER for a name the app does not have', () => {
     const t = transfer();
     const plan = dialPlan(t, HANDOFF, { reasonCode: 'live-agent', target: 'PRIORITY_LINE', headers: { 'X-Queue': 'priority', 'X-Reason': 'live-agent', 'X-Injected': 'x', Accept: 'y' } });
+    // Accept is no header name a transfer sends at all: counted, never named.
     expect(plan).toEqual({
       target: { to: ENV.PRIORITY_LINE, headers: { 'X-Queue': 'priority', 'X-Reason': 'live-agent' } },
-      variable: 'PRIORITY_LINE', sent: ['X-Queue', 'X-Reason'], dropped: ['X-Injected', 'Accept'], why: 'unknown',
+      variable: 'PRIORITY_LINE', sent: ['X-Queue', 'X-Reason'], dropped: [{ name: 'X-Injected', why: 'unknown' }], notHeaders: 1,
     });
     expect(dialPlan(t, HANDOFF, { reasonCode: 'live-agent', target: 'SOMEWHERE_ELSE' }).target).toEqual({ to: HANDOFF });
     // An app without transfer dials HANDOFF_NUMBER whatever the data says, and sends nothing more.
-    expect(dialPlan(null, HANDOFF, { reasonCode: 'live-agent', target: 'PRIORITY_LINE', headers: { 'X-Queue': 'p' } })).toEqual({ target: { to: HANDOFF }, variable: 'HANDOFF_NUMBER', sent: [], dropped: [] });
+    expect(dialPlan(null, HANDOFF, { reasonCode: 'live-agent', target: 'PRIORITY_LINE', headers: { 'X-Queue': 'p' } })).toEqual({ target: { to: HANDOFF }, variable: 'HANDOFF_NUMBER', sent: [], dropped: [], notHeaders: 0 });
+    expect(dialPlan(null, HANDOFF, { reasonCode: 'unreadable' }).target).toEqual({ to: HANDOFF });
+  });
+
+  it('a handoff that names no target (a saved call the server cannot read, ended on its socket) goes to the default, not HANDOFF_NUMBER', () => {
+    // The fixture's default is MAIN_LINE, another variable than HANDOFF_NUMBER, so the two cannot be mistaken.
+    expect(dialPlan(transfer(), HANDOFF, parseHandoff('{"reasonCode":"unreadable"}'))).toEqual({ target: { to: ENV.MAIN_LINE }, variable: 'MAIN_LINE', sent: [], dropped: [], notHeaders: 0 });
+    expect(dialPlan(transfer(), HANDOFF, parseHandoff('{"reasonCode":"x","target":"ANTHROPIC_API_KEY"}')).target).toEqual({ to: HANDOFF });
+  });
+
+  it('names only header names in what it left out, with why: a forged name is counted, never written', () => {
+    const t = transferTargetsFrom({ transfer: { targets: [{ when: [], to: 'env.SIP_DESK', send: { headers: { 'X-Reason': 'reason' } } }], default: 'env.MAIN_LINE' } }, { SIP_DESK: 'sip:desk@pbx.example.com', MAIN_LINE: '+15555550100' }, HANDOFF)!;
+    const posted = parseHandoff(JSON.stringify({ reasonCode: 'x', target: 'SIP_DESK', headers: { 'X-Reason': 'a&b', 'x-reason': 'dup', 'X-Other': 'no', 'X-Reason\r\nVia': 'z', 'X-Reason\n': 'z' } }));
+    const plan = dialPlan(t, HANDOFF, posted);
+    expect(plan.target).toEqual({ to: 'sip:desk@pbx.example.com', headers: { 'X-Reason': 'a&b' } });
+    expect(plan.dropped).toEqual([{ name: 'x-reason', why: 'duplicate' }, { name: 'X-Other', why: 'unknown' }]);
+    expect(plan.notHeaders).toBe(2);
+    expect(describeDropped(plan)).toBe('X-Other: not ones app.yaml sends; x-reason: a name already sent in another case; and 2 more not header names');
+    expect(JSON.stringify(recordedPlan(plan))).not.toContain('Via');
+    // A value a dial document cannot carry (a lone surrogate, which encodeURIComponent would throw on) has its own why.
+    const lone = dialPlan(t, HANDOFF, parseHandoff('{"reasonCode":"x","target":"SIP_DESK","headers":{"X-Reason":"\\ud800"}}'));
+    expect(lone.dropped).toEqual([{ name: 'X-Reason', why: 'value' }]);
+    expect(describeDropped(lone)).toBe('X-Reason: a value a dial document cannot carry');
+  });
+
+  it('lists at most ten dropped names, and counts the rest', () => {
+    const headers = Object.fromEntries(Array.from({ length: 14 }, (_, i) => [`X-H${i}`, 'v']));
+    const plan = dialPlan(transfer(), HANDOFF, { reasonCode: 'x', target: 'CALLBACK_DESK', headers });
+    expect(plan.dropped).toHaveLength(14);
+    expect(describeDropped(plan)).toBe(`${Array.from({ length: 10 }, (_, i) => `X-H${i}`).join(', ')}: not ones app.yaml sends; and 4 more`);
+    expect(recordedPlan(plan)).toMatchObject({ target: 'CALLBACK_DESK', moreDropped: 4 });
+    expect((recordedPlan(plan).dropped as unknown[]).length).toBe(10);
   });
 
   it('leaves the headers out for a phone number, which carries none', () => {
     expect(dialPlan(transfer(), HANDOFF, { reasonCode: 'max-attempts', target: 'CALLBACK_DESK', headers: { 'X-Reason': 'max-attempts' } })).toEqual({
-      target: { to: ENV.CALLBACK_DESK }, variable: 'CALLBACK_DESK', sent: [], dropped: ['X-Reason'], why: 'number',
+      target: { to: ENV.CALLBACK_DESK }, variable: 'CALLBACK_DESK', sent: [], dropped: [{ name: 'X-Reason', why: 'number' }], notHeaders: 0,
     });
   });
 
   it('a call with no decision goes to the default; the console sees a target masked', () => {
-    expect(defaultTarget(transfer(), HANDOFF)).toEqual({ to: HANDOFF });
+    expect(defaultTarget(transfer(), HANDOFF)).toEqual({ to: ENV.MAIN_LINE });
     expect(defaultTarget(null, HANDOFF)).toEqual({ to: HANDOFF });
     expect(maskTarget(ENV.SECURITY_DESK)).toBe('sip:…@pbx.example.com');
     expect(maskTarget('+15555550111')).toBe('…0111');
@@ -137,7 +171,7 @@ describe('decideAction', () => {
     const r = decideAction(d, telnyxProvider, { callId: 'CA2', raw: {}, handoffData: JSON.stringify({ reasonCode: 'max-attempts', target: 'CALLBACK_DESK', headers: { 'X-Reason': 'max-attempts' } }) });
     expect(r.document).toContain(`<Dial>${ENV.CALLBACK_DESK}</Dial>`);
     expect(r.note).toBe('dial:max-attempts to CALLBACK_DESK (headers left out: X-Reason: a phone number carries none)');
-    expect(readFileSync(join(d.dir, 'CA2.frames.jsonl'), 'utf8')).toContain('"transfer":{"target":"CALLBACK_DESK","dropped":["X-Reason"],"why":"number"}');
+    expect(readFileSync(join(d.dir, 'CA2.frames.jsonl'), 'utf8')).toContain('"transfer":{"target":"CALLBACK_DESK","dropped":[{"name":"X-Reason","why":"number"}]}');
   });
 
   it('an app without transfer dials HANDOFF_NUMBER as before, its note unchanged', () => {
@@ -147,10 +181,18 @@ describe('decideAction', () => {
   });
 
   it('a call put through with no decision (gave up after reconnects) goes to the default', () => {
-    const d = { ...deps(true), transfer: transferTargetsFrom({ transfer: { ...callbackApp.transfer!, default: 'env.MAIN_LINE' } }, { ...ENV, MAIN_LINE: 'sip:main@pbx.example.com' }, HANDOFF) };
+    const d = { ...deps(true), transfer: transferTargetsFrom(callbackApp, { ...ENV, MAIN_LINE: 'sip:main@pbx.example.com' }, HANDOFF) };
     d.store.create('CA4', { send: () => {}, close: () => {} });
     const r = decideAction(d, twilioProvider, { callId: 'CA4', raw: {}, callStatus: 'in-progress', live: true, sessionStatus: 'failed' });
     expect(r.note).toBe('gave-up');
     expect(r.document).toContain('<Dial><Sip>sip:main@pbx.example.com</Sip></Dial>');
+  });
+
+  it('a saved call the server cannot read, whose socket ended it with no target, goes to the default', () => {
+    // server/adapter.ts ends such a call with endFrame('unreadable'), which names no target; its callback dials the default.
+    const d = deps(true);
+    const r = decideAction(d, twilioProvider, { callId: 'CA5', raw: {}, handoffData: '{"reasonCode":"unreadable"}' });
+    expect(r.document).toContain(`<Dial>${ENV.MAIN_LINE}</Dial>`);
+    expect(r.note).toBe('dial:unreadable to MAIN_LINE');
   });
 });
