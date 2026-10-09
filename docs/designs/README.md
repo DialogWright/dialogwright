@@ -19,4 +19,4 @@ These are the design documents for engine features. Each one sets out the proble
 - [2026-10-09-phase10-adoption.md](2026-10-09-phase10-adoption.md): Phase 10's build: DialogWright outside this repository (a build, one command line, a project of one's own, the adoption test), the adversarial suite every app inherits, and the adopter's documents.
 - [2026-10-08-decisions.md](2026-10-08-decisions.md): the maintainer's decisions on the designs above, and the principles behind them.
 
-The [authoring guide](../authoring-an-app.md) is the reference for how a feature works today. Where a design and the guide differ, the guide is right. The create-app skill's pattern notes are in [.claude/skills/create-app/patterns.md](../../.claude/skills/create-app/patterns.md); the trial a design cites is in [docs/trials](../trials/README.md).
+The [authoring guide](../guide/README.md) is the reference for how a feature works today. Where a design and the guide differ, the guide is right. The create-app skill's pattern notes are in [.claude/skills/create-app/patterns.md](../../.claude/skills/create-app/patterns.md); the trial a design cites is in [docs/trials](../trials/README.md).

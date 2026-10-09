@@ -144,8 +144,8 @@ describe('the policy and identity YAML in the docs', () => {
 
   it('is found in the authoring guide and the design, in both kinds', () => {
     const where = (kind: Kind) => new Set(blocks.filter((b) => b.kind === kind).map((b) => b.where.split(':')[0]));
-    for (const file of ['docs/authoring-an-app.md', 'docs/design.md', '.claude/skills/create-app/patterns.md']) expect(where('policy'), file).toContain(file);
-    for (const file of ['docs/authoring-an-app.md', '.claude/skills/create-app/patterns.md']) expect(where('identity'), file).toContain(file);
+    for (const file of ['docs/guide/03-policy-and-identity.md', 'docs/design.md', '.claude/skills/create-app/patterns.md']) expect(where('policy'), file).toContain(file);
+    for (const file of ['docs/guide/03-policy-and-identity.md', '.claude/skills/create-app/patterns.md']) expect(where('identity'), file).toContain(file);
     expect(blocks.filter((b) => b.kind === 'policy').length).toBeGreaterThanOrEqual(8);
     expect(blocks.filter((b) => b.kind === 'identity').length).toBeGreaterThanOrEqual(2);
   });

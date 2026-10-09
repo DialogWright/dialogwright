@@ -1,6 +1,6 @@
 # Example Power & Light: notes for AI coding assistants
 
-Example Power & Light is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and [docs/authoring-an-app.md](../../docs/authoring-an-app.md) before changing the folder. It takes outage reports (anyone), reads balances (verified customers, and property managers for their buildings), sets up payment arrangements (customers with a one-time code; a property manager's request goes to a person) and answers general questions from approved passages of its knowledge base (`kb/`). `DESIGN.md` is its design worksheet: read it before changing the app, and keep it current.
+Example Power & Light is a DialogWright app: a voice and chat agent whose dialog and policy are YAML and whose tools and form hooks are TypeScript. Read the repository's root `CLAUDE.md` first for the rules, and [docs/guide/](../../docs/guide/README.md) before changing the folder. It takes outage reports (anyone), reads balances (verified customers, and property managers for their buildings), sets up payment arrangements (customers with a one-time code; a property manager's request goes to a person) and answers general questions from approved passages of its knowledge base (`kb/`). `DESIGN.md` is its design worksheet: read it before changing the app, and keep it current.
 
 ## The folder
 

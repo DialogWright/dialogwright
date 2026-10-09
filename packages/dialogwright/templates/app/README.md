@@ -22,7 +22,7 @@ src/data.ts     the fixture data behind the stub tool
 fixtures/       the corpus, the scripted calls and the stub baseline
 ```
 
-What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/authoring-an-app.md]({{root}}/docs/authoring-an-app.md), and the slot types are in [docs/slots]({{root}}/docs/slots/README.md).
+What is data is YAML, and what runs is TypeScript. Policy is never in a tool: the gate decides, from `policy.yaml`, whether a tool may run. The guide to every file is [docs/guide/]({{root}}/docs/guide/README.md), and the slot types are in [docs/slots]({{root}}/docs/slots/README.md).
 
 ## Commands
 

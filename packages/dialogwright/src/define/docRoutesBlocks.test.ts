@@ -45,7 +45,7 @@ describe('the routes.yaml in the docs', () => {
   const blocks = docFiles().flatMap(blocksOf);
 
   it('is found in the authoring guide and the create-app skill', () => {
-    expect(blocks.some((b) => b.where.startsWith('docs/authoring-an-app.md:'))).toBe(true);
+    expect(blocks.some((b) => b.where.startsWith('docs/guide/02-the-files-one-by-one.md:'))).toBe(true);
     expect(blocks.some((b) => b.where.startsWith('.claude/skills/create-app/'))).toBe(true);
   });
 

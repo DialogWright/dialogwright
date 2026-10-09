@@ -358,7 +358,7 @@ function createAppCommand(args: readonly string[], io: Io): number {
       [`pnpm ${filter} test`, `pnpm ${filter} typecheck`, `pnpm ${filter} regress    (the stub regression: "no changes")`],
       [
         `Read ${join(shown, 'README.md')} and ${join(shown, 'CLAUDE.md')}, then replace the example intent, form, slot and tool with your own, running ${check} after each change.`,
-        'The folder guide is docs/authoring-an-app.md; the slot types are in docs/slots/README.md.',
+        'The folder guide is docs/guide/README.md; the slot types are in docs/slots/README.md.',
         'The scaffold ships the example\'s baseline (fixtures/expected). Make your own app\'s first baseline once, with regress --update, and review it; never regenerate it after that.',
       ],
     );
@@ -389,7 +389,7 @@ function standaloneCommand(o: { name: string; identity: boolean; from: string; d
       [
         'Read README.md and CLAUDE.md, then replace the example intent, form, slot and tool with your own, running npx dialogwright check after each change.',
         'To build it from a paragraph describing your line, give the paragraph to an AI coding assistant and point it at .claude/skills/create-app/SKILL.md.',
-        'The guide is node_modules/dialogwright/docs/authoring-an-app.md once it is installed.',
+        'The guide is node_modules/dialogwright/docs/guide/README.md once it is installed.',
       ],
     ];
     steps.forEach((lines, i) => lines.forEach((line, j) => io.out(`  ${j === 0 ? `${i + 1}.` : '  '} ${line}`)));

@@ -62,7 +62,7 @@ describe('the slots YAML in the docs', () => {
   it('is found in the guides, the design, the library\'s READMEs and every type\'s page', () => {
     const files = new Set(blocks.map((b) => b.where.split(':')[0]));
     expect(blocks.length).toBeGreaterThan(30);
-    for (const file of ['docs/design.md', 'docs/authoring-an-app.md', 'docs/slots/README.md', 'packages/dialogwright/src/slots/choice/README.md', 'docs/slots/choice.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
+    for (const file of ['docs/design.md', 'docs/guide/05-writing-a-slot.md', 'docs/slots/README.md', 'packages/dialogwright/src/slots/choice/README.md', 'docs/slots/choice.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
   });
 
   it('builds, every block of it, as written', () => {

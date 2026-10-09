@@ -5,7 +5,7 @@
 # slots named under `factors` are asked, in this order, when an action needs the level (a form's
 # entry call asks for it; see src/app.ts), and `verify` is the tool that checks them (each factor's
 # slot id is also the name of the tool's param that carries its value). A ladder of one rung has no
-# level 2; add one with a one-time code (see docs/authoring-an-app.md, identity.yaml) when an action
+# level 2; add one with a one-time code (see docs/guide/02-the-files-one-by-one.md, identity.yaml) when an action
 # needs more than the factors.
 principals:
   subject: customer

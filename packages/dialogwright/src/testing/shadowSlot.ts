@@ -32,7 +32,7 @@ import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } f
  * (`shadowSlot` in a test over a grid of answers; `withShadowSlots(app, [librarySlot])` over a whole
  * regression or replay). When nothing differs on the grids and on every recorded call, the library
  * slot can replace the hand-written one; freeze the old file as a test-only oracle for the grid
- * tests, as the testkit and the clinic did (docs/authoring-an-app.md, "Porting a slot to a library type").
+ * tests, as the testkit and the clinic did (docs/guide/05-writing-a-slot.md, "Porting a slot to a library type").
  *
  * A regression launcher can turn it on for a whole run with `shadowFromEnv(app, candidates)`: with
  * DIALOGWRIGHT_SHADOW unset the app is returned as it is, so a run without the flag is the run it

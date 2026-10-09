@@ -4,7 +4,7 @@
 
 Read before changing anything:
 
-- The authoring guide, [node_modules/dialogwright/docs/authoring-an-app.md](node_modules/dialogwright/docs/authoring-an-app.md): the folder, each file with an example, policy and identity, what stays in TypeScript, the check's messages, locales, the knowledge base, the channels and running it. The slot types are in [node_modules/dialogwright/docs/slots/](node_modules/dialogwright/docs/slots/README.md).
+- The authoring guide, [node_modules/dialogwright/docs/guide/](node_modules/dialogwright/docs/guide/README.md): the folder, each file with an example, policy and identity, what stays in TypeScript, the check's messages, locales, the knowledge base, the channels and running it. The slot types are in [node_modules/dialogwright/docs/slots/](node_modules/dialogwright/docs/slots/README.md).
 - To build the app from a description (a paragraph of what callers can do), follow the create-app skill, [.claude/skills/create-app/SKILL.md](.claude/skills/create-app/SKILL.md): a worksheet, the mapping onto slot types, policy and identity, the corpus and scenarios, and the checks until green. This folder is already scaffolded: skip the skill's scaffold step and work in this folder, where the skill says `apps/<name>`.
 - `node_modules/dialogwright/README.md`: what the package carries. Never edit anything under `node_modules`.
 

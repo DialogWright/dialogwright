@@ -23,6 +23,6 @@ The project is one app folder with its own `README.md` and `CLAUDE.md`, and the 
 - The entries an app imports: `'dialogwright'`, `'dialogwright/testing'` (its tests), `'dialogwright/slot-kit'` (a slot type of its own), `'dialogwright/policy'` (the gate and the policy's compilers), and `'dialogwright/kb/onnx'` (an optional retriever).
 - The `dialogwright` command: `check`, `create-app`, `regress`, `policy:matrix`, `policy:card`, `app:diagram`, `configure`, `start`, `diagnose`, `service`, `fallback`, `console:link`, `audit:verify` and the knowledge base's `kb:*`. `npx dialogwright help` lists them.
 - The JSON Schemas of an app folder's YAML files (`node_modules/dialogwright/schemas`), which each file names on its first line so an editor completes and checks it.
-- The authoring guide (`docs/authoring-an-app.md`), the slot types' pages (`docs/slots/`) and the create-app skill (`skills/create-app/`).
+- The authoring guide (`docs/guide/`, a chapter per section, with `docs/authoring-an-app.md`, the page it was, as a list of pointers to them), the slot types' pages (`docs/slots/`) and the create-app skill (`skills/create-app/`).
 
 The source, the example apps and the design are at [github.com/DialogWright/dialogwright](https://github.com/DialogWright/dialogwright). Requires Node 22.19 or later.

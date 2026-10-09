@@ -3,13 +3,14 @@ import { posix } from 'node:path';
 /**
  * The pages of this repository the `dialogwright` package carries beside its code, so a project of
  * its own (`dialogwright create-app --standalone`, `npm create dialogwright`) can point an assistant
- * at them: the authoring guide, the slot types' pages and the create-app skill. The package's build
- * (scripts/shipDocs.ts) copies them in; their links to pages the package does not carry become links
- * to the repository on GitHub.
+ * at them: the authoring guide (its chapters, and the page it was, kept as pointers to them), the
+ * slot types' pages and the create-app skill. The package's build (scripts/shipDocs.ts) copies them
+ * in; their links to pages the package does not carry become links to the repository on GitHub.
  */
 
 /** Each shipped page or folder: its path in this repository, and its path in the package. */
 export const SHIPPED: readonly (readonly [repo: string, pkg: string])[] = [
+  ['docs/guide/', 'docs/guide/'],
   ['docs/authoring-an-app.md', 'docs/authoring-an-app.md'],
   ['docs/slots/', 'docs/slots/'],
   ['.claude/skills/create-app/', 'skills/create-app/'],

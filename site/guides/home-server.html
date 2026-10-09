@@ -111,7 +111,7 @@ pnpm start --app utility</code></pre>
           Or talk to the clinic example in a text console, with no server at all:
           <code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code>. To build your own app, run
           <code>pnpm create-app myline</code> and read
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a>.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a>.
         </p>
       </section>
 
@@ -518,8 +518,8 @@ TIMEZONE=America/Chicago</code></pre>
         <p>
           The server checks every variable at startup and refuses to start, naming the one that is missing or malformed. The full
           list, with each default and when to change it, is the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md#1412-the-options">options table</a>
-          (and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md#131-the-options">the channels'</a>);
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#1412-the-options">options table</a>
+          (and <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md#131-the-options">the channels'</a>);
           the commented <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/.env.example"><code>.env.example</code></a>
           lists them too. <a href="#by-hand">Section 12</a> has a whole settings file written by hand.
         </p>
@@ -806,7 +806,7 @@ systemctl --user disable --now myline  # stop, and keep it stopped</code></pre>
           <dd>A call that resumes may run a write again (a report filed just before the crash, confirmed again after it). Each write
             carries a key that is the same for the same confirmed write, which your systems use to answer a repeat with what they did
             the first time
-            (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md#1413-writes-that-are-never-done-twice">how a tool uses it</a>).</dd>
+            (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#1413-writes-that-are-never-done-twice">how a tool uses it</a>).</dd>
         </dl>
 
         <h3 id="fallback">When the server is down: the carrier's fallback</h3>
@@ -1091,7 +1091,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ivr.example.com/dashboard   # 4
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#8-production-architecture-and-laptop-mode">Production architecture, in the design</a>
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md#14-running-it">Every option, in the authoring guide</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#14-running-it">Every option, in the authoring guide</a>
           <a href="scaling.html">Scaling out</a>
         </p>
       </section>
@@ -1138,7 +1138,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ivr.example.com/dashboard   # 4
           <h2>Docs</h2>
           <ul>
             <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
-            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/authoring-an-app.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
             <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
             <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
           </ul>

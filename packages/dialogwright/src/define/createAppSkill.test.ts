@@ -72,7 +72,7 @@ describe('the create-app skill', () => {
   });
 
   it('is where the root CLAUDE.md, llms.txt and the authoring guide send an assistant', () => {
-    for (const doc of ['CLAUDE.md', 'llms.txt', 'docs/authoring-an-app.md']) {
+    for (const doc of ['CLAUDE.md', 'llms.txt', 'docs/guide/README.md']) {
       const text = read(join(ROOT, doc));
       expect(text, doc).toContain('.claude/skills/create-app/SKILL.md');
       expect(text, doc).not.toMatch(/create-app skill[^.]*forthcoming/);

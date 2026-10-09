@@ -539,7 +539,7 @@ describe('turn', () => {
       // "Where is parcel 7201, and book a delivery window for tomorrow morning": the opener routes to
       // tracking and queues the window. The turn fills only the form it opens, so tomorrow morning is
       // dropped and the window's form asks the day again when it is bridged into. Deliberately not
-      // built yet (docs/authoring-an-app.md, "Where a slot listens"); a change here is a design change.
+      // built yet (docs/guide/05-writing-a-slot.md, "Where a slot listens"); a change here is a design change.
       const opener = say(started(), 'where is parcel 7201, and can i book a delivery window for tomorrow morning', {
         intent: intent('track_parcel'), secondIntent: choice({ delivery_window: 0.9, none: 0.1 }), parcelChoice: choice({ parcel_7201: 0.9, none: 0.1 }), ...TOMORROW_MORNING,
       });

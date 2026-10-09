@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,8 +32,13 @@ import type { KbKind } from './schema';
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const read = (file: string): string => readFileSync(join(ROOT, file), 'utf8');
 
+/** The authoring guide's chapters (docs/guide/), in order. */
+const GUIDE = readdirSync(join(ROOT, 'docs/guide')).filter((f) => f.endsWith('.md')).sort().map((f) => `docs/guide/${f}`);
+/** The guide's chapter on the knowledge base. */
+const KB_CHAPTER = 'docs/guide/12-the-knowledge-base.md';
+
 /** The markdown files whose kb examples an author copies. */
-const FILES = ['docs/authoring-an-app.md', 'docs/design.md', 'README.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'docs/slots/README.md', '.claude/skills/create-app/SKILL.md', '.claude/skills/create-app/patterns.md', '.claude/skills/create-app/worksheet.md'];
+const FILES = [...GUIDE, 'docs/design.md', 'README.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'docs/slots/README.md', '.claude/skills/create-app/SKILL.md', '.claude/skills/create-app/patterns.md', '.claude/skills/create-app/worksheet.md'];
 
 interface Block {
   where: string;
@@ -57,12 +62,11 @@ function blocksOf(file: string, text: string = read(file), from = 0): Block[] {
   return out;
 }
 
-/** The guide's section 12, with the line it starts on. */
+/** The guide's section 12, its chapter, with the line it starts on. */
 function section12(): { text: string; from: number } {
-  const guide = read('docs/authoring-an-app.md');
-  const at = guide.indexOf('\n## 12. The knowledge base');
-  expect(at, 'the authoring guide has a section 12, "The knowledge base"').toBeGreaterThan(0);
-  return { text: guide.slice(at), from: guide.slice(0, at).split('\n').length };
+  const chapter = read(KB_CHAPTER);
+  expect(chapter.startsWith('# 12. The knowledge base\n'), 'the authoring guide has a section 12, "The knowledge base"').toBe(true);
+  return { text: chapter, from: 0 };
 }
 
 /** The kind of kb file a path names, or null when it is not one the loader knows. */
@@ -87,9 +91,9 @@ afterAll(() => {
 
 describe('the knowledge base files in the docs', () => {
   it('are in the authoring guide, one of each kind of file', () => {
-    const kinds = new Set(blocksOf('docs/authoring-an-app.md', section12().text, section12().from).filter((b) => b.path !== null).map((b) => (b.path === 'kb/approvals.jsonl' ? 'log' : kbKindOf(b.path!))));
+    const kinds = new Set(blocksOf(KB_CHAPTER, section12().text, section12().from).filter((b) => b.path !== null).map((b) => (b.path === 'kb/approvals.jsonl' ? 'log' : kbKindOf(b.path!))));
     for (const kind of ['kbSettings', 'kbTopics', 'kbLocaleTopics', 'kbPassage', 'kbSource', 'kbPending', 'rejected']) expect(kinds, kind).toContain(kind);
-    expect(blocksOf('docs/authoring-an-app.md', section12().text, section12().from).some((b) => b.lang === 'jsonl')).toBe(true);
+    expect(blocksOf(KB_CHAPTER, section12().text, section12().from).some((b) => b.lang === 'jsonl')).toBe(true);
   });
 
   it('read, every block, as the file they name', () => {
@@ -123,7 +127,7 @@ describe('the knowledge base files in the docs', () => {
 
 describe('the guide\'s example knowledge base', () => {
   const { text, from } = section12();
-  const blocks = blocksOf('docs/authoring-an-app.md', text, from);
+  const blocks = blocksOf(KB_CHAPTER, text, from);
   const dir = mkdtempSync(join(tmpdir(), 'dialogwright-doc-kb-'));
   scratch.push(dir);
   const kbDir = join(dir, 'kb');
@@ -186,7 +190,7 @@ describe('the guide\'s example knowledge base', () => {
 
 describe('the other examples of section 12', () => {
   const { text, from } = section12();
-  const blocks = blocksOf('docs/authoring-an-app.md', text, from);
+  const blocks = blocksOf(KB_CHAPTER, text, from);
 
   it('hold forms, intents and prompts to their schemas', () => {
     const schemas = { 'forms.yaml': formsSchema, 'intents.yaml': intentsSchema, 'prompts.yaml': promptsSchema } as const;
@@ -225,8 +229,8 @@ describe('the other examples of section 12', () => {
 
 describe('where the docs say the knowledge base is', () => {
   it('has the guide\'s section 12 in its contents, and the other docs name its commands', () => {
-    const guide = read('docs/authoring-an-app.md');
-    expect(guide).toContain('12. [The knowledge base](#12-the-knowledge-base)');
+    const guide = read('docs/guide/README.md');
+    expect(guide).toContain('12. [The knowledge base](12-the-knowledge-base.md)');
     for (const file of ['README.md', 'llms.txt', 'CLAUDE.md']) {
       const doc = read(file);
       for (const command of ['kb:ingest', 'kb:draft', 'kb:review', 'kb:approve']) expect(doc, `${file} ${command}`).toContain(command);

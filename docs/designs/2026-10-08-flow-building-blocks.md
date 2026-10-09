@@ -127,7 +127,7 @@ afterForm:
 
 ## 6. Collect: per-slot retries
 
-Built, as [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md) records it (without the `_nomatch` name: `ask_<slot>_retry` is that line), and documented in [When a slot runs out](../authoring-an-app.md#when-a-slot-runs-out-attempts-and-onmaxattempts). The proposal as it was written (a `text` block, so the doc-block test does not read it as slots.yaml):
+Built, as [2026-10-09-per-slot-retries.md](2026-10-09-per-slot-retries.md) records it (without the `_nomatch` name: `ask_<slot>_retry` is that line), and documented in [When a slot runs out](../guide/05-writing-a-slot.md#when-a-slot-runs-out-attempts-and-onmaxattempts). The proposal as it was written (a `text` block, so the doc-block test does not read it as slots.yaml):
 
 ```text
 # slots.yaml

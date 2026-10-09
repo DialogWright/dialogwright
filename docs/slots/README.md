@@ -23,7 +23,7 @@ note:
   say: your note
 ```
 
-Each type has a page with every option, its default, the default question text, the outcomes it can give, the lines it needs in `prompts.yaml`, and starter examples. The pages are generated from the types themselves, so they cannot drift from the options. For how slots fit into an app, read section 5 of the [authoring guide](../authoring-an-app.md#5-writing-a-slot).
+Each type has a page with every option, its default, the default question text, the outcomes it can give, the lines it needs in `prompts.yaml`, and starter examples. The pages are generated from the types themselves, so they cannot drift from the options. For how slots fit into an app, read section 5 of the [authoring guide](../guide/05-writing-a-slot.md#5-writing-a-slot).
 
 ## The types
 
@@ -36,7 +36,7 @@ Each type has a page with every option, its default, the default question text, 
 | [`name`](name.md) | The caller's own name | The caller says who they are. `exclude` lists words that never belong to the caller's name, such as the names of people discussed on the call. |
 | [`record`](record.md) | One of the app's own records, found by a tool and chosen by what the caller says of it | The list differs from caller to caller: their parcels, orders or bookings. The slot takes the record's key, never anything the model wrote. |
 | [`text`](text.md) | The caller's own words, kept as said | The value is free text no list holds and no code can check: a description, a note, a reason. A summary reads it back by a stand-in. With `pick`, the value is the part of the words the model chooses among those code split them into. |
-| [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. The answer is never the slot's: its value is a topic id, and the form's completion finds the approved passage and says it word for word ([the knowledge base](../authoring-an-app.md#12-the-knowledge-base)). |
+| [`topic`](topic.md) | Which of the knowledge base's topics the caller asks about | The app answers general questions from approved passages. The app's retriever nominates a few topics for the caller's words, the question offers only those, and a turn that nominates none asks nothing. The answer is never the slot's: its value is a topic id, and the form's completion finds the approved passage and says it word for word ([the knowledge base](../guide/12-the-knowledge-base.md#12-the-knowledge-base)). |
 
 When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or contribute a type: see [Adding a slot type](../../CONTRIBUTING.md#adding-a-slot-type).
 
@@ -47,7 +47,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 - One of a short list you write in the YAML: `choice`. One of a list a tool returns for this caller: `record`.
 - The caller's own name: `name`. A name picked from a list (a provider, a branch): `choice`.
 - Anything said in the caller's own words: `text`. If the words can be checked, use the type made for them.
-- A general question the app answers from its knowledge base: `topic`, which needs the app's knowledge (a `kb/` folder and a retriever; [the guide's section 12](../authoring-an-app.md#12-the-knowledge-base) says how a form answers from it). It chooses among a few topics a retriever nominated for this turn, so it has no list to write; use `choice` for a fixed list the caller picks from as part of a task.
+- A general question the app answers from its knowledge base: `topic`, which needs the app's knowledge (a `kb/` folder and a retriever; [the guide's section 12](../guide/12-the-knowledge-base.md#12-the-knowledge-base) says how a form answers from it). It chooses among a few topics a retriever nominated for this turn, so it has no list to write; use `choice` for a fixed list the caller picks from as part of a task.
 
 ### Defaults for sensitive values
 
@@ -63,15 +63,15 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 
 ### Where a slot listens
 
-Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept, on a turn that opens no form or opens one that has the slot; not on a turn that opens a different form) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../authoring-an-app.md#where-a-slot-listens-listen).
+Every slot takes `listen:` beside its type's options, so each page lists it: `up-front` (the default: asked outside a form, and a value kept only when the turn enters a form that has the slot), `form` (asked only while its form is open), `anywhere` (a value said outside a form is kept, on a turn that opens no form or opens one that has the slot; not on a turn that opens a different form) or `call` (kept for the whole call, as app.yaml's `carrySlots` keeps it). An identity factor takes none. Any value but the default changes what the model is sent on some turns, so it re-keys a recorded cassette there. When to choose each is in section 5 of the [authoring guide](../guide/05-writing-a-slot.md#where-a-slot-listens-listen).
 
 ### When a slot runs out
 
-Every slot also takes `attempts:` (1 to 10; default the engine's `MAX_ATTEMPTS`, 3) and `onMaxAttempts:` beside its type's options, so each page lists them: how many failed answers it takes (a miss, a silence, an unanswered read-back), and what follows when it runs out: `handoff` (the default, to a person), `skip` (left empty, the form goes on; never on an identity factor or a slot the summary names), or an outcome written out, `{ say, then, reason, form }`, that ends the call, says "anything else?", hands off with a reason of its own or enters another form. Each re-ask may have its own line (`ask_<slot>_retry2`, `ask_<slot>_noinput`), falling back to `ask_<slot>_retry`. Neither changes what the model is sent. See [When a slot runs out](../authoring-an-app.md#when-a-slot-runs-out-attempts-and-onmaxattempts) in the authoring guide.
+Every slot also takes `attempts:` (1 to 10; default the engine's `MAX_ATTEMPTS`, 3) and `onMaxAttempts:` beside its type's options, so each page lists them: how many failed answers it takes (a miss, a silence, an unanswered read-back), and what follows when it runs out: `handoff` (the default, to a person), `skip` (left empty, the form goes on; never on an identity factor or a slot the summary names), or an outcome written out, `{ say, then, reason, form }`, that ends the call, says "anything else?", hands off with a reason of its own or enters another form. Each re-ask may have its own line (`ask_<slot>_retry2`, `ask_<slot>_noinput`), falling back to `ask_<slot>_retry`. Neither changes what the model is sent. See [When a slot runs out](../guide/05-writing-a-slot.md#when-a-slot-runs-out-attempts-and-onmaxattempts) in the authoring guide.
 
 ### Proposing a value
 
-Every slot also takes `offer: facts` beside its type's options: when the form would ask the slot and the app's facts have a value for it (`facts.offers` in the code, from what the call-start lookup found), the line proposes it as a yes or no (`offer_<slot>`, with the value as `{<slot>}`) in place of the question. A yes fills that slot and nothing else, never who the caller is; a no asks the slot's question. It needs app.yaml's `callerNumber` with a `lookup`, and is never on an identity factor. It changes what the model is sent on the offer turns, so it re-keys a recorded cassette there. See [Proposing a value from a lookup](../authoring-an-app.md#proposing-a-value-from-a-lookup-offer-facts) in the authoring guide.
+Every slot also takes `offer: facts` beside its type's options: when the form would ask the slot and the app's facts have a value for it (`facts.offers` in the code, from what the call-start lookup found), the line proposes it as a yes or no (`offer_<slot>`, with the value as `{<slot>}`) in place of the question. A yes fills that slot and nothing else, never who the caller is; a no asks the slot's question. It needs app.yaml's `callerNumber` with a `lookup`, and is never on an identity factor. It changes what the model is sent on the offer turns, so it re-keys a recorded cassette there. See [Proposing a value from a lookup](../guide/05-writing-a-slot.md#proposing-a-value-from-a-lookup-offer-facts) in the authoring guide.
 
 ### Locales
 

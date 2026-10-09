@@ -112,7 +112,7 @@ export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>): string[] 
 
 describe('the app.yaml and intents.yaml in the docs', () => {
   const blocks = docFiles().flatMap(blocksOf);
-  const guide = (kind: Kind) => blocks.filter((b) => b.kind === kind && b.where.startsWith('docs/authoring-an-app.md:'));
+  const guide = (kind: Kind) => blocks.filter((b) => b.kind === kind && b.where.startsWith('docs/guide/'));
 
   it('is found in the authoring guide, the phone\'s languages and a language switch among them', () => {
     expect(guide('app').length).toBeGreaterThanOrEqual(2);

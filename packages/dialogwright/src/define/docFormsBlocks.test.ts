@@ -73,7 +73,7 @@ describe('the forms.yaml in the docs and the skill', () => {
 
   it('is found in the authoring guide and the create-app skill', () => {
     const files = new Set(blocks.map((b) => b.where.split(':')[0]));
-    for (const file of ['docs/authoring-an-app.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
+    for (const file of ['docs/guide/02-the-files-one-by-one.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
     expect(blocks.length).toBeGreaterThanOrEqual(10);
   });
 
