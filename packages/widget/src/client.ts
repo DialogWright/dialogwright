@@ -1,4 +1,4 @@
-import { CHAT_PROTOCOL_VERSION, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
+import { CHAT_PROTOCOL_VERSION, contextOf, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
 
 /**
  * The widget without a page: the chat client. It opens the socket, starts the chat (or resumes it
@@ -45,8 +45,9 @@ export interface ChatClientOptions {
   /** The language to ask for (a BCP 47 tag); the server matches it to one of the app's, and `ready` names that one. */
   locale?: string;
   /**
-   * The page's own data, sent on each start (strings by key; protocol.ts contextOf says which): the app
-   * keeps only the keys its callData names (`chat.<key>`). A resume changes nothing the chat kept.
+   * The page's own data, sent on each start (strings by key; protocol.ts contextOf says which, and a
+   * key or value it cannot take is left out with a warning): the app keeps only the keys its callData
+   * names (`chat.<key>`). A resume changes nothing the chat kept.
    */
   context?: Readonly<Record<string, string>>;
   /**
@@ -108,6 +109,8 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
   const open = o.socket ?? ((url: string) => new WebSocket(url));
   const backoff = o.backoffMs !== undefined && o.backoffMs.length > 0 ? o.backoffMs : DEFAULT_BACKOFF_MS;
   const maxReconnects = o.maxReconnects ?? DEFAULT_MAX_RECONNECTS;
+  // A key or value the chat cannot take is left out here, with a warning, so a start is never refused for it.
+  const context = contextOf(o.context, (m) => console.warn(m));
   let ws: WebSocket | null = null;
   /** The token the latest `ready` gave, to resume with. */
   let resume: string | null = null;
@@ -192,7 +195,7 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
     socket.onopen = () => {
       const start: ClientMessage = { type: 'start', v: CHAT_PROTOCOL_VERSION };
       if (o.locale) start.locale = o.locale;
-      if (o.context && Object.keys(o.context).length > 0) start.context = { ...o.context };
+      if (context) start.context = { ...context };
       if (t) start.token = t;
       if (resume !== null) start.resume = resume;
       sendRaw(start);
