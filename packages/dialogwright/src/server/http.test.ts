@@ -423,6 +423,52 @@ describe('a call\'s languages (voice.numbers, voice.locales)', () => {
   });
 });
 
+describe('call data in the start document (app.yaml callData webhook keys, startParameters)', () => {
+  const app: App = { ...libraryApp, callData: { referral: { from: 'webhook.SipHeader_X-Referral' }, forwarded: { from: 'webhook.ForwardedFrom', redact: 'last4' }, queue: { from: 'param.queue' } } };
+
+  it('echoes each answer webhook field a callData key names as dw_<key>, and only those', async () => {
+    const base = await listen({ ...deps(), app });
+    for (const path of ['/voice/twilio', '/voice']) {
+      const r = await post(base, path, { CallSid: 'CA1', From: '+15555550100', 'SipHeader_X-Referral': 'partner-7', ForwardedFrom: '+15555550102', queue: 'priority' });
+      expect(r.text).toContain('<ConversationRelay ');
+      expect(r.text).toContain('<Parameter name="dw_referral" value="partner-7"/><Parameter name="dw_forwarded" value="+15555550102"/></ConversationRelay>');
+      // A param. key is the setup's own, never read from the webhook.
+      expect(r.text).not.toContain('dw_queue');
+    }
+  });
+
+  it('escapes an echoed value, and writes nothing for a field the webhook did not carry', async () => {
+    const base = await listen({ ...deps(), app });
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA1', 'SipHeader_X-Referral': 'a"<b>&c' })).text).toContain('<Parameter name="dw_referral" value="a&quot;&lt;b&gt;&amp;c"/>');
+    const none = await post(base, '/voice/twilio', { CallSid: 'CA2' });
+    expect(none.text).not.toContain('dw_');
+    expect(none.text).toContain('<Parameter name="locale" value="en-US"/></ConversationRelay>');
+  });
+
+  it('writes the app\'s start parameters on every document, after the locale', async () => {
+    const withLanguages = await listen({ ...deps(), app: { ...bilingual, callData: app.callData }, startParameters: { line: 'support-east' } });
+    const r = await post(withLanguages, '/voice/twilio', { CallSid: 'CA1', To: SPANISH_NUMBER, 'SipHeader_X-Referral': 'partner-7' });
+    expect(r.text).toContain('<Parameter name="locale" value="es"/><Parameter name="line" value="support-east"/><Parameter name="dw_referral" value="partner-7"/></ConversationRelay>');
+  });
+
+  it('writes the same echoes on a reconnect, from what the session kept', async () => {
+    const d = { ...deps(), app };
+    const base = await listen(d);
+    d.store.create('CA1', { send: () => {}, close: () => {} }).session.callData = { referral: 'partner-7', queue: 'priority' };
+    const r = await post(base, '/cr-action/twilio', { CallSid: 'CA1', CallStatus: 'in-progress', SessionStatus: 'failed' });
+    expect(r.text).toContain('<Parameter name="dw_referral" value="partner-7"/></ConversationRelay>');
+  });
+
+  it('writes the documents it wrote before for an app that names neither, and for a webhook that carries no named field', async () => {
+    const before = await listen({ ...deps(), app: libraryApp });
+    const plain = (await post(before, '/voice/twilio', { CallSid: 'CA1', 'SipHeader_X-Referral': 'partner-7' })).text.replace(/token=[0-9a-f]+/, '');
+    expect(plain).toContain('<Parameter name="locale" value="en-US"/></ConversationRelay>');
+    await new Promise<void>((r) => server!.close(() => r()));
+    const after = await listen({ ...deps(), app });
+    expect((await post(after, '/voice/twilio', { CallSid: 'CA1', 'SipHeader_X-Other': 'x' })).text.replace(/token=[0-9a-f]+/, '')).toBe(plain);
+  });
+});
+
 describe('Telnyx webhooks', () => {
   // A key pair made here: Telnyx signs with the private half, the server is configured with the public one.
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');

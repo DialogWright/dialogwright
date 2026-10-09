@@ -1,5 +1,6 @@
 import { DEFAULT_LANG } from '../events';
 import type { InboundFrame, OutboundFrame, SetupFrame } from './frames';
+import { SETUP_EXTRAS } from '../callData';
 
 type Obj = Record<string, unknown>;
 
@@ -15,14 +16,6 @@ function str(v: unknown): v is string {
   return typeof v === 'string' && v.length <= MAX_TEXT_LENGTH;
 }
 
-/**
- * The optional setup fields a carrier documents, kept as they arrive: Twilio's, then the call ids
- * Telnyx adds (callControlId, callSessionId, callLegId). Anything else on a setup is dropped.
- */
-export const SETUP_EXTRAS = [
-  'accountSid', 'parentCallSid', 'forwardedFrom', 'callType', 'callerName', 'direction', 'callStatus',
-  'callControlId', 'callSessionId', 'callLegId',
-] as const;
 
 /** Parse one ConversationRelay message. Returns null for anything not in the documented set. */
 export function parseInbound(raw: string): InboundFrame | null {

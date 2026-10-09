@@ -9,6 +9,7 @@ import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest } from './dashboard/routes';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
+import { recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
 import type { AuditSink } from '../run/turn';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
@@ -60,6 +61,11 @@ export interface HttpDeps {
    * handed over. Absent, never.
    */
   handover?: () => { readonly pauseS: number; answered(callId: string): void } | null;
+  /**
+   * The custom parameters every start document carries (app.yaml's `startParameters`, read from the
+   * environment as the server starts: config.ts startParametersFrom). Absent or empty, none, as before.
+   */
+  startParameters?: Readonly<Record<string, string>>;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
@@ -247,7 +253,16 @@ export function startLocale(app: App, to: string | undefined): string | undefine
  *   recognizer that does not hear a language is worse than the carrier's default for it.
  * The provider writes each where no other language inherits it (voice/xml.ts placeLanguages).
  */
-function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
+function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string, echoes: Readonly<Record<string, string>> = {}): StartDocumentOptions {
+  const options = languageOptions(deps, provider, token, locale);
+  // The app's own parameters (startParameters) and the answer webhook's fields its callData names
+  // (dw_<key>), after the locale: an app with neither has the document it had.
+  const extra = { ...(deps.startParameters ?? {}), ...echoes };
+  return Object.keys(extra).length === 0 ? options : { ...options, parameters: { ...(options.parameters ?? {}), ...extra } };
+}
+
+/** The start document's options before the app's own parameters (connectOptions). */
+function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
   const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
@@ -403,7 +418,8 @@ export function decideAction(
       // A planned restart: the carrier waits before it connects, so its socket reaches the restarted server
       // (which loads the call at setup) and not this one, which turns sockets away until it stops listening.
       const handover = deps.closing?.() && deps.store.durable ? (deps.handover?.() ?? null) : null;
-      const options = connectOptions(deps, provider, token, locale);
+      // The webhook is not sent again: the fields the first document echoed are written from what the session kept.
+      const options = connectOptions(deps, provider, token, locale, webhookParametersOfKept(deps.app?.callData, entry.session.callData));
       const document = start(handover !== null ? { ...options, pauseS: handover.pauseS } : options);
       return { document, note: `reconnect:${entry.reconnects}${handover !== null ? ` after ${handover.pauseS} s` : ''}` };
     }
@@ -518,7 +534,8 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         }
         const token = deps.tokens.mint(params.callId, provider.id);
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
-        const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined);
+        // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they come back with the setup.
+        const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined, webhookParameters(deps.app?.callData, params.raw));
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
@@ -531,7 +548,8 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const loaded = callback.callId ? await deps.store.restore(callback.callId, provider.id) : 'none';
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
-      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...callback.raw }));
+      // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
+      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(deps.app?.callData, callback.raw) }));
       const start = legacy ? connectRelayTwiml : undefined;
       const { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);

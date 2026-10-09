@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { loadConfig, describeConfig, consoleExposure, publicBase, recognitionFor } from './config';
+import { loadConfig, describeConfig, consoleExposure, publicBase, recognitionFor, startParametersFrom } from './config';
 import { defaultTimeZone } from '../run/clock';
 
 /** A Telnyx public key as Telnyx shows it: 32 bytes, base64. Made up; nothing signs with it. */
@@ -402,5 +402,19 @@ describe('the widget file (WIDGET)', () => {
 
   it('says what is wrong, in the usual words', () => {
     expect(() => loadConfig({ ...base, WIDGET: 'yes' })).toThrow('WIDGET must be on or off, got "yes"');
+  });
+});
+
+describe('startParametersFrom (app.yaml startParameters)', () => {
+  it('reads each from the variable it names, and none for an app without them', () => {
+    expect(startParametersFrom({ startParameters: { line: 'env.LINE', site: 'env.SITE' } }, { LINE: 'support-east', SITE: 'north' })).toEqual({ line: 'support-east', site: 'north' });
+    expect(startParametersFrom({}, { LINE: 'x' })).toEqual({});
+    expect(startParametersFrom(undefined, {})).toEqual({});
+  });
+
+  it('refuses an unset or empty variable, and one longer than a custom parameter takes, with the fix', () => {
+    expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, {})).toThrow('set LINE in the app\'s .env, or delete "line" from startParameters');
+    expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: ' ' })).toThrow('LINE, which is not set');
+    expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: 'x'.repeat(501) })).toThrow('a custom parameter is at most 500');
   });
 });

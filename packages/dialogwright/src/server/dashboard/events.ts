@@ -6,6 +6,9 @@ import type { FrameLogLine } from '../frameLog';
 import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
 import { SHORT_MASK } from '../../gate/principal';
+import { defaultAppOrNull } from '../../core/app/registry';
+import type { CallDataKey } from '../../core/app/types';
+import { recordedCustomParameters, UNNAMED_PARAMETER } from '../../channel/callData';
 
 interface Base { callSid: string; at: number }
 
@@ -123,6 +126,24 @@ export function redactDeep(value: unknown, depth = 0): unknown {
   return out;
 }
 
+/** The app's call data keys (App.callData), by which a setup's custom parameters are recorded. */
+type CallDataSpec = Readonly<Record<string, CallDataKey>> | undefined;
+
+/**
+ * A setup frame as the frame log writes it (and the console shows it): masked by key as every frame is
+ * (redactDeep), and its custom parameters as channel/callData.ts recordedCustomParameters says: `locale`
+ * as sent, one an app's callData key reads by that key's `redact`, a carrier's copy of a number
+ * (`telnyx_call_from`, `telnyx_call_to`) to its last four as before, and every other one
+ * UNNAMED_PARAMETER. Before callData they were written as sent. Idempotent.
+ */
+export function redactSetupFrame(frame: unknown, spec: CallDataSpec): unknown {
+  const out = redactDeep(frame);
+  const params = typeof frame === 'object' && frame !== null ? (frame as { customParameters?: unknown }).customParameters : undefined;
+  if (typeof out !== 'object' || out === null || typeof params !== 'object' || params === null || Array.isArray(params)) return out;
+  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? maskNumber(v) : UNNAMED_PARAMETER));
+  return { ...(out as Record<string, unknown>), customParameters };
+}
+
 /**
  * The dashboard route is unauthenticated, and a session start's event carries the raw setup
  * frame's details (its `provider`: the caller's whole number, city, account id and custom parameters). Only `event` is walked by key: it is the one inbound
@@ -135,6 +156,13 @@ export function redactRecord(record: TraceRecord): TraceRecord {
   const slots = redactRecordSlots(record, 'keep');
   // Whom a passage answered (the caller's facts) only as policy.yaml's audit: declares each fact.
   const kb = slots.kb ? { kb: consoleKbSource(slots.kb) } : {};
+  // The call data the app names is already masked by each key's own redact (redactRecordSlots): its
+  // keys are the app's words, not the carrier's, so the masking by key name below is not for them.
+  const event = slots.event;
+  if (event.type === 'session.start' && event.callData !== undefined) {
+    const { callData, ...rest } = event;
+    return { ...slots, ...kb, event: { ...(redactDeep(rest) as typeof rest), callData } };
+  }
   return { ...slots, ...kb, event: redactDeep(slots.event) as TraceRecord['event'] };
 }
 
@@ -144,7 +172,9 @@ export function redactRecord(record: TraceRecord): TraceRecord {
  * carries no `type` and spells the caller's number four different ways.
  */
 export function redactFrameLine(line: FrameLogLine): FrameLogLine {
-  const msg = redactDeep(line.msg);
+  // A setup's custom parameters as the frame log writes them now; one written before callData had them as sent.
+  const setup = typeof line.msg === 'object' && line.msg !== null && (line.msg as { type?: unknown }).type === 'setup';
+  const msg = setup ? redactSetupFrame(line.msg, defaultAppOrNull()?.callData) : redactDeep(line.msg);
   // The `end` frame's handoff data carries what the call collected, identity slots included.
   if (typeof msg === 'object' && msg !== null && (msg as { type?: unknown }).type === 'end') {
     const end = msg as { handoffData?: unknown };

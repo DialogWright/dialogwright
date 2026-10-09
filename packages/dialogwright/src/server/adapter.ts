@@ -6,7 +6,8 @@ import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } f
 import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
-import { keyEvents, serviceResultEvent, silenceEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { callDataFrom } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
@@ -19,7 +20,7 @@ import type { Session } from '../core/session';
 import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { CallTokens } from './tokens';
 import type { DashboardBus } from './dashboard/bus';
-import { maskNumber, redactDeep, type DashboardEvent } from './dashboard/events';
+import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
 import { deliveryFactOf, interruptFact } from './dashboard/delivery';
 import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
@@ -1625,7 +1626,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     if (existing) {
       // Masked at write time, not only when the dashboard reads it back: the setup frame carries
       // the caller's whole number, and the file on disk must never hold it either.
-      existing.frames.write('in', redactDeep(parsed));
+      existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
       if (existing.ended) {
         deps.log(`${callId}: setup for an ended call, closing`);
         socket.close(1000, 'call ended');
@@ -1679,7 +1680,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       return;
     }
     const entry = deps.store.create(callId, socket, ctx.provider);
-    entry.frames.write('in', redactDeep(parsed));
+    // Its custom parameters too: only those the app's callData keys keep are written as they came.
+    entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
     const caller = setupCallerOf(ctx.provider, parsed);
     // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
     // which joins where this call does by it; a log without the line is one that never joined.
@@ -1713,7 +1715,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // it or that keeps it for its code, and the number called only for an app that keeps it
     // (core/callerNumber.ts); every other app's start event is as it was.
     const called = usesCalledNumber(appOf(entry.session)) ? setupCalledOf(ctx.provider, parsed) : null;
-    const start = withCalledNumber(withCallerNumber(frameToEvent(parsed), offers ? caller : null), called);
+    // The data the call came with that the app names (app.yaml's callData, channel/callData.ts): its
+    // custom parameters, setup fields and the answer webhook's fields echoed as dw_<key>. None for
+    // every other app, whose start event is as it was.
+    const setup = frameToEvent(parsed);
+    const data = setup.type === 'session.start' ? callDataFrom(appOf(entry.session).callData, setup.provider) : {};
+    const start = withCallData(withCalledNumber(withCallerNumber(setup, offers ? caller : null), called), data);
     await enqueueUnsettled(deps, callId, async (e) => {
       await turn(deps, e, start);
     });

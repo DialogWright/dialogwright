@@ -1,6 +1,5 @@
 import type { AuditMask, CallDataKey } from '../core/app/types';
 import { SHORT_MASK, maskId } from '../gate/principal';
-import { SETUP_EXTRAS } from './relay/wire';
 
 /**
  * The data a call or chat came with, read by name (app.yaml's `callData`, App.callData). Carrier-neutral
@@ -27,7 +26,18 @@ export interface CallDataSource {
   readonly name: string;
 }
 
-/** The setup fields a key may read (`setup.<field>`): the call ids, and the optional fields the wire keeps (channel/relay/wire.ts SETUP_EXTRAS). */
+/**
+ * The optional setup fields a carrier documents, which the relay wire keeps as they arrive
+ * (channel/relay/wire.ts parseInbound): Twilio's, then the call ids Telnyx adds (callControlId,
+ * callSessionId, callLegId). Anything else on a setup is dropped. Here, outside the relay, because
+ * call data names them too (`setup.<field>`).
+ */
+export const SETUP_EXTRAS = [
+  'accountSid', 'parentCallSid', 'forwardedFrom', 'callType', 'callerName', 'direction', 'callStatus',
+  'callControlId', 'callSessionId', 'callLegId',
+] as const;
+
+/** The setup fields a key may read (`setup.<field>`): the call ids, and the optional fields the wire keeps (SETUP_EXTRAS). */
 export const SETUP_FIELDS: readonly string[] = ['callSid', 'sessionId', ...SETUP_EXTRAS];
 
 /** The prefix of the custom parameter the server echoes a webhook field as: `dw_<key>`. */
@@ -187,16 +197,22 @@ export const UNNAMED_PARAMETER = 'redacted';
  * stricter (any key that does not keep it).
  */
 export function parameterRedactions(spec: Readonly<Record<string, CallDataKey>> | undefined): Map<string, AuditMask> {
+  return namesRead(spec, (key, source) => (source.kind === 'param' ? source.name : source.kind === 'webhook' ? webhookParameterName(key) : null));
+}
+
+/** The masks from the strictest (left out) to the least (as it is): a name two keys read is recorded by the stricter. */
+const STRICTNESS: readonly AuditMask[] = ['secret', 'mask', 'length', 'last4', 'keep'];
+
+/** Each name the app's keys read (as `nameOf` gives it for a key and its source; null for none), with the stricter key's redaction. */
+function namesRead(spec: Readonly<Record<string, CallDataKey>> | undefined, nameOf: (key: string, source: CallDataSource) => string | null): Map<string, AuditMask> {
   const out = new Map<string, AuditMask>();
-  if (spec === undefined) return out;
-  const order: readonly AuditMask[] = ['secret', 'mask', 'length', 'last4', 'keep'];
-  for (const [key, def] of Object.entries(spec)) {
+  for (const [key, def] of Object.entries(spec ?? {})) {
     const source = callDataSourceOf(def.from);
-    const name = source?.kind === 'param' ? source.name : source?.kind === 'webhook' ? webhookParameterName(key) : null;
+    const name = source === null ? null : nameOf(key, source);
     if (name === null) continue;
     const how = redactionOf(def);
     const had = out.get(name);
-    out.set(name, had === undefined || order.indexOf(how) < order.indexOf(had) ? how : had);
+    out.set(name, had === undefined || STRICTNESS.indexOf(how) < STRICTNESS.indexOf(had) ? how : had);
   }
   return out;
 }
@@ -227,6 +243,45 @@ export function recordedCustomParameters(
     }
     const shown = recordedCallData(how, v);
     if (shown !== null) out[name] = shown;
+  }
+  return out;
+}
+
+/**
+ * A web chat's `context` as the frame log writes it: a key a `chat.` key of the app's reads as that
+ * key's redaction says (a `secret` one left out), every other one as UNNAMED_PARAMETER.
+ */
+export function recordedContext(spec: Readonly<Record<string, CallDataKey>> | undefined, context: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const named = namesRead(spec, (_key, source) => (source.kind === 'chat' ? source.name : null));
+  const out: Record<string, unknown> = {};
+  for (const [name, v] of Object.entries(context)) {
+    const how = named.get(name);
+    if (typeof v !== 'string') continue;
+    if (how === undefined) out[name] = UNNAMED_PARAMETER;
+    else {
+      const shown = recordedCallData(how, v);
+      if (shown !== null) out[name] = shown;
+    }
+  }
+  return out;
+}
+
+/**
+ * A carrier's webhook fields as the frame log writes them: each field a `webhook.` key of the app's
+ * reads as that key's redaction says (a `secret` one left out); every other field as it is, for the
+ * frame log's own masking by name (server/dashboard/events.ts redactDeep) to do as it always has.
+ */
+export function recordedWebhookFields(spec: Readonly<Record<string, CallDataKey>> | undefined, raw: Readonly<Record<string, string>>): Record<string, string> {
+  const named = namesRead(spec, (_key, source) => (source.kind === 'webhook' ? source.name : null));
+  if (named.size === 0) return { ...raw };
+  const out: Record<string, string> = {};
+  for (const [name, v] of Object.entries(raw)) {
+    const how = named.get(name);
+    if (how === undefined) out[name] = v;
+    else {
+      const shown = recordedCallData(how, v);
+      if (shown !== null) out[name] = shown;
+    }
   }
   return out;
 }

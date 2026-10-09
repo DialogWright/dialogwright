@@ -388,6 +388,25 @@ export const DEFAULT_WIDGET_FILE = 'node_modules/@dialogwright/widget/dist/dialo
 
 export type Env = Record<string, string | undefined>;
 
+/**
+ * The custom parameters the server writes into every start document (app.yaml's `startParameters`,
+ * App.startParameters), each read from the environment variable it names (`env.NAME`). Throws, with
+ * the fix, when one is unset or empty, or longer than a custom parameter may be: a document without
+ * it would start calls the app's own systems cannot recognize. Empty for an app without any, so its
+ * documents are as they were.
+ */
+export function startParametersFrom(app: { readonly startParameters?: Readonly<Record<string, string>> } | undefined, env: Env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, ref] of Object.entries(app?.startParameters ?? {})) {
+    const variable = ref.replace(/^env\./, '');
+    const value = env[variable];
+    if (value === undefined || value.trim() === '') throw new Error(`app.yaml's startParameters "${name}" reads ${variable}, which is not set: set ${variable} in the app's .env, or delete "${name}" from startParameters`);
+    if (value.length > 500) throw new Error(`${variable} (app.yaml's startParameters "${name}") is ${value.length} characters long, and a custom parameter is at most 500: shorten it`);
+    out[name] = value;
+  }
+  return out;
+}
+
 function required(env: Env, name: string): string {
   const v = env[name]?.trim();
   if (!v) throw new Error(`missing required environment variable ${name}`);

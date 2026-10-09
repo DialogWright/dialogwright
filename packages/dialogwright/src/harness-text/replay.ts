@@ -5,12 +5,16 @@ import { newSession, type Session } from '../core/session';
 import { CODE_DIGIT, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
 import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
-import { serviceResultEvent, keyEvents, silenceEvent, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, keyEvents, silenceEvent, withCallData, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
+import { callDataFrom, callDataSourceOf, redactionOf } from '../channel/callData';
 import { standInCallerNumber } from '../core/callerNumber';
 import { SHORT_MASK } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
+
+/** The setup fields the frame log masks by name whatever the app (server/dashboard/events.ts redactDeep). */
+const MASKED_SETUP_FIELDS: readonly string[] = ['forwardedFrom', 'callerName'];
 
 export interface ReplayResult {
   runs: TurnRun[];
@@ -342,6 +346,21 @@ export async function replayFrameLog(
         const standIn = standInCallerNumber(appOf(session), last4);
         if (standIn !== undefined) event = withCallerNumber(event, standIn);
         else skipped.push(`line ${lineNumber}: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer`);
+      }
+      // The call data the app names, read from the setup as the adapter read it (channel/callData.ts).
+      // The frame log writes each custom parameter a key reads as the key's redact says, and the setup's
+      // forwardedFrom and callerName masked as it always has, so such a value stands in as it was
+      // recorded ("•", "...1234", "…0102"), as the log keeps no more of it; a setup field the log keeps
+      // (the call ids, callType, direction) is as it came.
+      const spec = appOf(session).callData;
+      if (spec !== undefined && event.type === 'session.start') {
+        const data = callDataFrom(spec, event.provider);
+        event = withCallData(event, data);
+        const standIns = Object.keys(data).filter((key) => {
+          const source = callDataSourceOf(spec[key]!.from);
+          return source?.kind === 'setup' ? MASKED_SETUP_FIELDS.includes(source.name) : redactionOf(spec[key]) !== 'keep';
+        });
+        if (standIns.length > 0) skipped.push(`line ${lineNumber}: call data ${standIns.join(', ')} recorded by redact, so the replay stands in what the log holds`);
       }
     }
     if (!session) {

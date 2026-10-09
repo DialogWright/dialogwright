@@ -6,6 +6,7 @@ import { recordedValue, spokenValuesScrubber, type Scrub } from '../core/recordi
 import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
+import { parameterRedactions, recordedCallData, recordedCallDataMap } from '../channel/callData';
 
 /**
  * The redacted slots as a trace record may carry them, by each slot's SlotSpec.redact
@@ -30,7 +31,7 @@ import type { TraceRecord } from './types';
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber'] }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -346,6 +347,23 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
       : start.provider;
     const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
     if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
+  }
+  // The call data the app names (SessionStart.callData), each key as its redact says, in the trace
+  // file and on the console alike; and the setup's own copies of the custom parameters the keys read
+  // (`param.<name>`, a webhook field's echo `param.dw_<key>`) the same. A setup field is the call's
+  // own record (its ids, its type) and the provider details keep it as they always have.
+  if (isObject(out.event) && out.event.type === 'session.start' && app?.callData !== undefined) {
+    const start = out.event;
+    const named = parameterRedactions(app.callData);
+    const provider = isObject(start.provider)
+      ? Object.fromEntries(Object.entries(start.provider).flatMap(([k, v]) => {
+        const how = k.startsWith('param.') ? named.get(k.slice('param.'.length)) : undefined;
+        if (how === undefined || typeof v !== 'string') return [[k, v]];
+        const shown = recordedCallData(how, v);
+        return shown === null ? [] : [[k, shown]];
+      }))
+      : start.provider;
+    out.event = { ...start, provider, ...(isObject(start.callData) ? { callData: recordedCallDataMap(app.callData, start.callData) } : {}) };
   }
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };

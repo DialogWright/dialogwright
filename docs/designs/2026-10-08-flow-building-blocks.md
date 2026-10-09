@@ -26,7 +26,9 @@ DialogWright already does most of 6 and parts of 3 and 5. It is weak on 1, 2 and
 
 ## 1. Telephony data in: `callData`
 
-```yaml
+The proposal as it was written (a `text` block: as built, a setup field is written `setup.forwardedFrom`; see [the build plan](2026-10-09-call-data-and-transfers.md)):
+
+```text
 # app.yaml
 callData:
   accountRef: { from: param.accountRef, redact: last4 }   # Twilio <Parameter> / Telnyx custom parameter

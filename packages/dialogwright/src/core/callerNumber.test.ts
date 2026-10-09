@@ -324,7 +324,8 @@ describe('an app without the option', () => {
 describe('the fixture\'s scripted calls', () => {
   const scenarios: Scenario[] = loadScenarios(join(FIXTURES, 'scenarios'));
   it('has one for each case', () => {
-    expect(scenarios.map((s) => s.id)).toEqual(['offer-yes', 'offer-no-then-said', 'offer-no-with-a-number', 'withheld-number-asks', 'no-number-asks', 'chat-asks', 'offer-required-no-then-nothing']);
+    // The call data's scripted calls (calldata.json) come first, then the offer's.
+    expect(scenarios.map((s) => s.id)).toEqual(['priority-queue', 'standard-queue', 'chat-from-page', 'offer-yes', 'offer-no-then-said', 'offer-no-with-a-number', 'withheld-number-asks', 'no-number-asks', 'chat-asks', 'offer-required-no-then-nothing']);
   });
   it('a required offer (the defaults, onNo and ifNone ask): a no asks the slot, and with no number its ladder ends at a person, never the summary', async () => {
     const required = scenarios.find((s) => s.id === 'offer-required-no-then-nothing')!;

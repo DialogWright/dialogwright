@@ -18,6 +18,8 @@ export interface ConnectOptions {
   bargeIn?: BargeIn;
   /** Seconds of silence before it connects (a planned restart's handover; StartDocumentOptions.pauseS). */
   pauseS?: number;
+  /** Custom parameters the relay hands back on its setup (StartDocumentOptions.parameters): the locale, app.yaml's startParameters, callData's webhook echoes. */
+  parameters?: Readonly<Record<string, string>>;
 }
 
 /**
