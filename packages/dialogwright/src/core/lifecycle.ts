@@ -90,6 +90,8 @@ export interface TurnOut {
   effects: Effect[];
   /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
   stopped?: FormStopped;
+  /** The form that completed this turn and went on to its next (FormDef.next; core/turn.ts), for the audit's `form_next` row. Absent on every other turn. */
+  movedOn?: FormMovedOn;
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
   offer?: OfferSettled;
   /**
@@ -108,6 +110,17 @@ export interface TurnOut {
    * among theirs. Absent on every other turn.
    */
   callerMatch?: CallerMatchStep[];
+}
+
+/**
+ * A form that completed and went on to its next form (FormDef.next): the two forms, and `at`, the
+ * number of the turn's gate events before the move, so its `form_next` row sits between the first
+ * form's rows and the next form's.
+ */
+export interface FormMovedOn {
+  readonly form: FormId;
+  readonly next: FormId;
+  readonly at: number;
 }
 
 /** One step of the caller-ID match this turn, and how many of the turn's gate events came before it. */

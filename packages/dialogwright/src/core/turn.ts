@@ -4,7 +4,7 @@ import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
-import { informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
+import { formLabel, informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
@@ -16,7 +16,7 @@ import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
@@ -186,6 +186,8 @@ export interface TurnResult {
   effects: Effect[];
   /** the form a check ended this turn (core/checks.ts); absent on every other turn */
   stopped?: FormStopped;
+  /** the form that completed this turn and went on to its next (FormDef.next); absent on every other turn */
+  movedOn?: FormMovedOn;
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
@@ -414,7 +416,7 @@ function askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: A
 function enqueue(s: Session, intent: FormId | undefined): Ack[] {
   if (intent === undefined || intent === s.form || s.queued.includes(intent)) return [];
   s.queued.push(intent);
-  return [{ promptId: 'ack_queued', vars: { intentLabel: intentLabel(appOf(s), intent) } }];
+  return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent) } }];
 }
 
 /** No slot agreed to at a summary: a completion with no summary's yes behind it. */
@@ -449,7 +451,8 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed:
   const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
   switch (c.kind) {
     case 'said':
-      return finishForm(s, form, c.acks, io);
+      // A form with a next form goes on to it at once (FormDef.next); only a `said` completion does.
+      return finishForm(s, form, c.acks, io, true, formOf(io.app, form).next);
     case 'end':
       // A request is waiting: the completion's line is said, and the call goes on to it.
       if (s.queued.length > 0) return finishForm(s, form, [...c.acks, { promptId: c.promptId, vars: c.vars }], io);
@@ -520,22 +523,46 @@ function endOnCompletion(s: Session, form: FormId, c: Extract<Completion, { kind
  * Close a form and carry on: the next queued intent, bridged into, or "anything else?". Identity,
  * the app's facts, the identity slots and the slots the app carries stay; the form's other slots,
  * its entry and any confirmation go (closeForm). `completed` is false for a form the gate refused:
- * it closes the same way but is not reported as completed.
+ * it closes the same way but is not reported as completed. `then` is the form's next form, for a
+ * completion that goes on to it (goOn), ahead of anything queued.
  */
-function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed = true): Decision {
+function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed = true, then?: FormId): Decision {
   if (completed) {
     s.completed.push(form);
     agree(s, form);
   }
+  if (then !== undefined) return goOn(s, form, then, acks, io);
   closeForm(s);
   const next = s.queued.shift();
   if (!next) return prompt('anything_else', 'intent', {}, acks);
   setForm(s, next);
   // The request was added on this very turn, so the caller already hears it bridged into;
   // promising it "after this" as well would say the same thing twice.
-  const label = intentLabel(io.app, next);
+  const label = formLabel(io.app, next);
   const kept = acks.filter((a) => !(a.promptId === 'ack_queued' && a.vars.intentLabel === label));
   return continueForm(s, io, [...kept, { promptId: 'bridge_next', vars: { intentLabel: label } }], null);
+}
+
+/**
+ * A form that completed as `said` goes on to its next form (FormDef.next) at once, ahead of anything
+ * the caller queued, which waits for the end of the chain. The slots both forms list stay as they
+ * are, with their values, displays, confirmations and agreed values (closeForm's `keep`), so the next
+ * form never asks them again; so do the passes of the checks the next form lists too (Session.checked,
+ * the hash of what each passed with), so the gate is not asked again about values it has already
+ * allowed, and a value changed later runs the check again. The next form's checksPassed line is then
+ * said only if one of its own checks is still to pass. The next form is bridged into (bridge_next with
+ * its label, formLabel), never acked as a request, and the audit is told (`form_next`).
+ */
+function goOn(s: Session, form: FormId, then: FormId, acks: Ack[], io: TurnIO): Decision {
+  const next = formOf(io.app, then);
+  const keep = formOf(io.app, form).slots.filter((id) => next.slots.includes(id));
+  const listed = new Set((next.checks ?? []).map((c) => c.action));
+  const passed = Object.entries(s.checked ?? {}).filter(([action]) => listed.has(action));
+  closeForm(s, keep);
+  setForm(s, then);
+  if (passed.length > 0) s.checked = Object.fromEntries(passed);
+  io.out.movedOn = { form, next: then, at: io.out.gateEvents.length };
+  return continueForm(s, io, [...acks, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, then) } }], null);
 }
 
 /** "Thanks for calling Example Parcels. Goodbye." (or "chatting", on a chat): the caller said they are done. */
@@ -1261,7 +1288,7 @@ function stopForm(s: Session, form: FormId, stopped: ChecksStopped, acks: Ack[],
  * them again); with a request queued, the call goes on to it instead.
  */
 function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>, acks: Ack[], io: TurnIO, confirmed = false): Decision {
-  const label = intentLabel(io.app, form);
+  const label = formLabel(io.app, form);
   const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && a.vars.intentLabel === label) || (a.promptId === 'ack_intent_then' && a.vars.a === label);
   const kept = acks.filter((a) => !entering(a));
   const ending = checkEnding(s, check, decision, kept, summaryVars(s));
@@ -1444,7 +1471,7 @@ export function pendingAtSignIn(pc: PendingConfirmation | null): PendingConfirma
  * in by completeForm is bridged with bridge_next instead.
  */
 function ackIntent(s: Session, form: FormId): Ack {
-  return { promptId: 'ack_intent', vars: { intentLabel: intentLabel(appOf(s), form) } };
+  return { promptId: 'ack_intent', vars: { intentLabel: formLabel(appOf(s), form) } };
 }
 
 /**
@@ -1485,7 +1512,7 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   // a parcel, and then report a missing one."), not a promise about "that" before the first is named.
   const queued = enqueue(s, queue);
   const acks: Ack[] = queued.length && queue !== undefined
-    ? [{ promptId: 'ack_intent_then', vars: { a: intentLabel(io.app, form), b: intentLabel(io.app, queue) } }]
+    ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form), b: formLabel(io.app, queue) } }]
     : [ackIntent(s, form)];
   // A yes to the greeting's proposal with the request in the same breath: the slot holds what the yes was to.
   const specs = (fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s)).filter((spec) => spec.id !== io.kept);
@@ -2288,6 +2315,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
   const audit = auditDrafts({
     before: session, after: r.session, event, decision: r.decision, gateEvents: r.gateEvents, kb: r.kb, screen: r.screen, quarantined: r.quarantined,
     ...(r.stopped ? { stopped: r.stopped } : {}),
+    ...(r.movedOn ? { movedOn: r.movedOn } : {}),
     ...(r.reconfirmed ? { reconfirmed: r.reconfirmed } : {}),
     ...(r.offer ? { offer: r.offer } : {}),
     ...(r.consented ? { consented: r.consented } : {}),

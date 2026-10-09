@@ -471,15 +471,19 @@ export function setForm(session: Session, form: FormId): Session {
  * confirmation go. Identity stays for the rest of the call, the slots the app carries (App.carrySlots,
  * and a slot that listens for the call, SlotSpec.listen `call`), and the facts but for what the app
  * clears (App.facts.onFormClosed: e.g. a parcel list, since the call may just have filed a new report).
+ * `keep` are the slots the form that follows lists too (FormDef.next): each stays as it is, its value,
+ * display, confirmation and agreed value, so the next form never asks it again.
  */
-export function closeForm(session: Session): Session {
+export function closeForm(session: Session, keep: readonly SlotId[] = []): Session {
   const app = appOf(session);
   if (session.form) {
-    // The greeting's proposal was for the slot this form had: a later form may propose at the slot again.
-    if (session.greetingOffered !== undefined && formOf(app, session.form).slots.includes(session.greetingOffered)) delete session.greetingOffered;
+    // The greeting's proposal was for the slot this form had: a later form may propose at the slot
+    // again, unless the next form keeps the slot as it is.
+    if (session.greetingOffered !== undefined && formOf(app, session.form).slots.includes(session.greetingOffered) && !keep.includes(session.greetingOffered)) delete session.greetingOffered;
     for (const id of formOf(app, session.form).slots) {
-      // A carried slot keeps its value, but not the nos said to its read-back in this form.
-      if (isCarried(app, id)) {
+      // A carried slot keeps its value, but not the nos said to its read-back in this form; so does
+      // one the next form keeps (setForm drops those as the next form opens).
+      if (isCarried(app, id) || keep.includes(id)) {
         delete session.slots[id]!.readBackNos;
         continue;
       }

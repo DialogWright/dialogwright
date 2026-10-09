@@ -1,6 +1,6 @@
 import { lastFour } from './callerNumber';
 import type { App, SlotId } from './app/types';
-import { intentLabel } from './app/intents';
+import { formLabel, intentLabel } from './app/intents';
 import { appOf } from './app/registry';
 import { formOf } from './app/lookup';
 import { slotLocaleOf } from './locale';
@@ -45,7 +45,7 @@ function pendingState(app: App, session: Session): TurnState['pendingConfirmatio
   const pc = session.pendingConfirmation;
   if (pc === null) return null;
   if (pc.target === 'intent') return { target: 'intent', value: intentLabel(app, pc.intent) };
-  if (pc.target === 'form') return { target: 'form', value: intentLabel(app, pc.form) };
+  if (pc.target === 'form') return { target: 'form', value: formLabel(app, pc.form) };
   if (pc.target === 'transfer') return { target: 'transfer', value: 'connect you to a person' };
   if (pc.target === 'check') return checkState(app, session, pc);
   // The consent to text for the whole call (app.yaml's textConsent): what a yes agrees to, by the
@@ -96,7 +96,7 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
       elapsed: bucketElapsed(nowMs - session.startedAtMs),
     },
     activeForm: session.form,
-    activeFormLabel: session.form ? intentLabel(app, session.form) : null,
+    activeFormLabel: session.form ? formLabel(app, session.form) : null,
     slots,
     history: session.history.slice(-HISTORY_WINDOW).map((h) => ({ ...h })),
     caller: callerOf(app, session),
