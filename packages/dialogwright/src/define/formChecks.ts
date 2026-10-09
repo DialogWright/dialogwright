@@ -19,7 +19,8 @@ import { closest, type DataPath } from './problems';
  * `level: 0` would ask every caller to verify part-way); a `with` slot that is neither one of the
  * form's slots nor an identity factor, or is an identity factor the form also lists in its slots
  * (closeForm would empty it while the caller stays verified); a check action that lists a confirmed
- * rule (nothing is confirmed part-way through a form); a line a check says that prompts.yaml does not have (its read-back `confirm` and its `say`, the handoff line, the form's
+ * rule (nothing is confirmed part-way through a form); an outcome that goes to a form (then: form) not
+ * in forms.yaml, or to its own; a line a check says that prompts.yaml does not have (its read-back `confirm` and its `say`, the handoff line, the form's
  * checksPassed). A `check: true` action with a tool in the code, or no form's checks naming it, is
  * policyFile.ts's and reach's to report.
  *
@@ -96,6 +97,17 @@ export function checkProblems(c: FormCheckInput): void {
           report('forms.yaml', [...at, 'with', j], `check "${check.action}" reads "${slot}", which is not one of form "${id}"'s slots`, `${closest(slot, form.slots) ? `rename it to "${closest(slot, form.slots)}", or ` : ''}add "${slot}" to the form's slots`);
         }
       });
+      // An outcome that goes to a form (then: form) names a form there is, and not its own.
+      for (const [reason, outcome] of Object.entries(check.on ?? {})) {
+        if (outcome.then !== 'form' || outcome.form === undefined) continue;
+        const forms = Object.keys(config.forms.forms);
+        if (!forms.includes(outcome.form)) {
+          const guess = closest(outcome.form, forms);
+          report('forms.yaml', [...at, 'on', reason, 'form'], `check "${check.action}" goes for "${reason}" to "${outcome.form}", which is not a form in forms.yaml`, `${guess ? `rename it to "${guess}", or ` : ''}name a form in forms.yaml`);
+        } else if (outcome.form === id) {
+          report('forms.yaml', [...at, 'on', reason, 'form'], `check "${check.action}" goes for "${reason}" to its own form "${id}", which it has just ended`, 'name another form, or write then: anything-else to close the form');
+        }
+      }
     });
   }
   const named = checkActionsNamed(config);

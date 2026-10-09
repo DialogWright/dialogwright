@@ -3,12 +3,13 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, skipsOnMax, type AppCode } from './defineApp';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
 import type { SlotSpec } from '../core/slots/types';
+import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { CONSENT_PROMPT } from '../core/textConsent';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
@@ -182,6 +183,13 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     if (spec.spokenConfirm === 'by-confidence') needs.push({ id: `ack_${slot}`, why: `it acknowledges a value it heard for the slot "${slot}" (its slot spec's spokenConfirm is "by-confidence")`, vars: [slot] });
     if (typeof spec.partialPromptId === 'string') needs.push({ id: spec.partialPromptId, why: `it asks for the rest of a value the slot "${slot}" holds only part of (its slot spec's partialPromptId)` });
     for (const declared of spec.prompts ?? []) needs.push({ id: declared.id, why: `${declared.why} (the slot "${slot}" declares it in its prompts)`, ...(declared.vars && declared.vars.length > 0 ? { vars: declared.vars } : {}) });
+    // A slot written in code that says a line when it runs out of attempts (SlotSpec.onMaxAttempts); a
+    // library slot's are slots.yaml's references (referencesOf).
+    const outcome = spec.onMaxAttempts;
+    if (typeof outcome === 'object' && !isLibrary(config, slot)) {
+      if (outcome.say !== undefined) needs.push({ id: outcome.say, why: `the slot "${slot}" runs out of attempts (its onMaxAttempts says it)` });
+      if (outcome.then === 'handoff' && outcome.reason !== undefined) needs.push({ id: handoffPromptId(outcome.reason), why: `the slot "${slot}" runs out of attempts and the call goes to a person for the reason "${outcome.reason}" (its onMaxAttempts)` });
+    }
     if (spec.offer === 'facts') needs.push({ id: `offer_${slot}`, why: `it proposes a value from the facts for the slot "${slot}", as a yes or no (its offer is "facts")`, vars: [slot] });
     if (spec.offer === 'facts' && spec.offerAt === 'greeting') {
       needs.push({ id: greetings?.offer ?? 'greeting_offer', why: `a call opens on a proposal for the slot "${slot}" (its offerAt is "greeting"), said in place of the greeting before offer_${slot}` });
@@ -219,6 +227,12 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
   return needs.filter(({ id }) => !seen.has(id) && seen.add(id));
 }
 
+/** Whether `slot` is a library slot of slots.yaml (any type but code). */
+function isLibrary(config: LoadedConfig, slot: string): boolean {
+  const raw = config.slots !== null && Object.hasOwn(config.slots, slot) ? (config.slots[slot] as { type?: unknown }) : undefined;
+  return raw !== undefined && raw.type !== 'code';
+}
+
 /** The slots a form or identity asks for, whose lines the engine says: each form's, then the identity factors. */
 function askedSlots(config: LoadedConfig): Set<string> {
   const slots = new Set<string>(Object.values(config.forms.forms).flatMap((form) => form.slots));
@@ -252,7 +266,9 @@ export interface CheckResult {
    * write does not; a slot that offers the caller's number (callerNumberWarnings); a slot whose
    * `listen` says otherwise than every form that lists it (listenWarnings); and a priority
    * intent's correctsForm or the handoff's unconfirmed option with nothing to act on
-   * (priorityHandoffWarnings); and a short secret redacted by its last four (shortSecretWarnings).
+   * (priorityHandoffWarnings); a short secret redacted by its last four (shortSecretWarnings); and a
+   * check that reads a slot that may be skipped, or a numbered retry line a slot's ladder never
+   * reaches (retryWarnings).
    */
   warnings?: Problem[];
 }
@@ -306,6 +322,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
+    retryWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    });
     callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -389,6 +409,45 @@ function shortSecretWarnings(config: LoadedConfig, report: (file: string, path: 
       `the slot "${id}" ${what}, and redact: last4 shows a value by its last four digits, which would be all of it, so it is recorded as bullets (••••)`,
       'set "redact: length" to record it by its length (<4 chars>), or ask a longer number; nothing to do if bullets are meant',
     );
+  }
+}
+
+/**
+ * The warnings for a slot's retries (SlotSpec.attempts, onMaxAttempts; core/outcome.ts), never refusals:
+ * a form's check that reads a slot that may be skipped (its onMaxAttempts, or its callerNumber's onNo or
+ * ifNone), which then never runs; and a numbered retry or no-input line (`ask_<slot>_retry<k>`,
+ * `ask_<slot>_noinput<k>`) the slot's ladder never reaches: a re-ask is failure 1 to attempts - 1.
+ */
+function retryWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const skippable = (spec: SlotSpec | undefined): string | null => {
+    if (spec === undefined) return null;
+    if (skipsOnMax(spec)) return 'its onMaxAttempts skips it';
+    if (spec.callerNumber?.onNo === 'skip') return 'its callerNumber says onNo: skip';
+    if (spec.callerNumber?.ifNone === 'skip') return 'its callerNumber says ifNone: skip';
+    return null;
+  };
+  for (const [id, form] of Object.entries(config.forms.forms)) {
+    (form.checks ?? []).forEach((check, i) => {
+      check.with.forEach((slot, j) => {
+        const why = Object.hasOwn(slots, slot) ? skippable(slots[slot]) : null;
+        if (why === null) return;
+        report('forms.yaml', ['forms', id, 'checks', i, 'with', j], `check "${check.action}" reads "${slot}", which may be left empty (${why}), and a check runs only once every slot it reads holds a value, so it never runs then`, 'nothing to do if the form may go on unchecked without it; otherwise check a slot that is never skipped, or hand off when it runs out');
+      });
+    });
+  }
+  const prompts = config.prompts[config.defaultLocale] ?? {};
+  for (const slot of askedSlots(config)) {
+    const spec = Object.hasOwn(slots, slot) ? slots[slot] : undefined;
+    if (spec === undefined) continue;
+    const max = spec.attempts ?? DEFAULT_THRESHOLDS.MAX_ATTEMPTS;
+    const numbered = new RegExp(`^ask_${slot}_(retry|noinput)(\\d+)$`);
+    for (const line of Object.keys(prompts)) {
+      const m = numbered.exec(line);
+      if (m === null) continue;
+      const k = Number(m[2]);
+      if (k >= 1 && k < max) continue;
+      report(FILE_NAMES.prompts, ['prompts', line], `the line "${line}" is said at the slot "${slot}"'s failure ${k}, which its ladder never reaches: it re-asks at failures 1 to ${max - 1} (attempts: ${max})`, k < 1 ? `number it from 1 (the first failure), or delete it` : `raise the slot's attempts above ${k}, or delete the line`);
+    }
   }
 }
 
@@ -665,12 +724,28 @@ function referencesOf(config: LoadedConfig): Reference[] {
   }
   // The lines a form's checks say: each outcome's line, each handoff's, and checksPassed (./formChecks.ts).
   for (const ref of checkPromptReferences(config)) refs.push(ref);
+  // The lines a library slot says when it runs out of attempts (slots.yaml onMaxAttempts): its `say`,
+  // and its handoff's line for a reason of its own.
+  for (const ref of slotOutcomeReferences(config)) refs.push(ref);
   // The lines a knowledge answer is said through: a form's answers (kb_answer and kb_unavailable, or its own) and an intent's passage.
   for (const { id, file, path } of knowledgePromptReferences(config)) refs.push({ id, file, path });
   const identity = identityParts(config);
   if (identity?.failedPromptId !== undefined) refs.push({ id: identity.failedPromptId, file: 'identity.yaml', path: identity.failedPath });
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {
     if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['prompts', 'greetings', which] });
+  }
+  return refs;
+}
+
+/** The lines library slots say when they run out of attempts (slots.yaml onMaxAttempts written out): `say`, and handoff_<reason> for a reason of its own. */
+function slotOutcomeReferences(config: LoadedConfig): Reference[] {
+  const refs: Reference[] = [];
+  for (const [id, raw] of Object.entries(config.slots ?? {})) {
+    const o = (raw as { onMaxAttempts?: unknown }).onMaxAttempts;
+    if (typeof o !== 'object' || o === null) continue;
+    const { say, then, reason } = o as { say?: unknown; then?: unknown; reason?: unknown };
+    if (typeof say === 'string') refs.push({ id: say, file: SLOTS_FILE, path: [id, 'onMaxAttempts', 'say'] });
+    if (then === 'handoff' && typeof reason === 'string') refs.push({ id: handoffPromptId(reason), file: SLOTS_FILE, path: [id, 'onMaxAttempts', 'reason'] });
   }
   return refs;
 }

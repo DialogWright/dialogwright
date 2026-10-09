@@ -130,6 +130,19 @@ export type OfferAnswers = 'yes-no-or-value' | 'yes-no';
 /** Every OfferAnswers value, the default first. */
 export const OFFER_ANSWERS_VALUES: readonly OfferAnswers[] = ['yes-no-or-value', 'yes-no'];
 
+/** Every `then` an outcome may take (core/app/types.ts Outcome; forms.yaml checks, slots.yaml onMaxAttempts). */
+export const OUTCOME_THEN = ['end', 'anything-else', 'handoff', 'form', 'skip'] as const;
+
+/** The `then` of a check's outcome: every one but `skip`, which only a slot has. */
+export const CHECK_THEN = ['end', 'anything-else', 'handoff', 'form'] as const;
+
+/** The short forms of a slot's onMaxAttempts: `handoff` (the default) and `skip`, each with no line. */
+export const MAX_ATTEMPTS_SHORT = ['handoff', 'skip'] as const;
+
+/** The fewest and most attempts a slot may be given (SlotSpec.attempts). */
+export const SLOT_ATTEMPTS_MIN = 1;
+export const SLOT_ATTEMPTS_MAX = 10;
+
 export interface SlotSpec {
   id: SlotId;
   /**

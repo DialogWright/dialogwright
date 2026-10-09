@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { checkAlways, identifier, name } from './common';
+import { CHECK_THEN, MAX_ATTEMPTS_SHORT, OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_ATTEMPTS_MIN } from '../../core/slots/types';
 
 /**
  * An outcome: what follows when a form's check refuses (forms.yaml `checks[].on`) or a slot runs out
@@ -13,20 +14,9 @@ import { checkAlways, identifier, name } from './common';
  * - `skip` (a slot's only): the slot is left empty and declined, and the form goes on, after `say`.
  */
 
-/** Every `then` an outcome may take. */
-export const OUTCOME_THEN = ['end', 'anything-else', 'handoff', 'form', 'skip'] as const;
+export { CHECK_THEN, MAX_ATTEMPTS_SHORT, OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_ATTEMPTS_MIN };
 export type OutcomeThen = (typeof OUTCOME_THEN)[number];
-
-/** The `then` of a check's outcome: every one but `skip`, which only a slot has. */
-export const CHECK_THEN = ['end', 'anything-else', 'handoff', 'form'] as const;
 export type CheckThen = (typeof CHECK_THEN)[number];
-
-/** The short forms of a slot's `onMaxAttempts`: `handoff` (the default) and `skip`, each with no line. */
-export const MAX_ATTEMPTS_SHORT = ['handoff', 'skip'] as const;
-
-/** The fewest and most attempts a slot may be given (slots.yaml `attempts`). */
-export const SLOT_ATTEMPTS_MIN = 1;
-export const SLOT_ATTEMPTS_MAX = 10;
 
 const THEN_WORDS: Record<OutcomeThen, string> = {
   end: 'end (the call ends after the line; with a request queued, the call goes on to it)',

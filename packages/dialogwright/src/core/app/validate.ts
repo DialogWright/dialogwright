@@ -8,11 +8,11 @@ import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
-import { formsLeadingTo, nextCycles } from './next';
+import { formsEnteringByOutcome, formsLeadingTo, nextCycles } from './next';
 import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
-import { SLOT_LISTEN_VALUES } from '../slots/types';
+import { OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_ATTEMPTS_MIN, SLOT_LISTEN_VALUES } from '../slots/types';
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../../channel/voiceProviders';
 import { pronounceProblems } from '../../channel/pronounce';
 import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
@@ -89,6 +89,30 @@ export function validateApp(app: App): void {
     if (!SLOT_LISTEN_VALUES.includes(listen)) fail(`slot "${id}" says listen: ${JSON.stringify(listen)}, which is not one of ${SLOT_LISTEN_VALUES.map((v) => `"${v}"`).join(', ')}`);
     if (app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, which listens as identity says: delete its listen`);
     if (listen !== 'call' && app.carrySlots?.includes(id)) fail(`slot "${id}" is carried (carrySlots), which is listen: call, but says listen: ${listen}`);
+  }
+  // A slot's retries (SlotSpec.attempts, onMaxAttempts; core/outcome.ts): attempts a whole number in
+  // range, an outcome of a known shape that enters a form there is and that does not list the slot
+  // (it would be asked there again, and run out there again), and never `skip` on an identity factor
+  // (verification could never finish).
+  for (const [id, spec] of Object.entries(app.slots)) {
+    const attempts: unknown = spec.attempts;
+    if (attempts !== undefined && (typeof attempts !== 'number' || !Number.isInteger(attempts) || attempts < SLOT_ATTEMPTS_MIN || attempts > SLOT_ATTEMPTS_MAX)) {
+      fail(`slot "${id}" says attempts: ${JSON.stringify(attempts)}, which is not a whole number from ${SLOT_ATTEMPTS_MIN} to ${SLOT_ATTEMPTS_MAX}`);
+    }
+    const o: unknown = spec.onMaxAttempts;
+    if (o === undefined || o === 'handoff') continue;
+    if (o !== 'skip' && (typeof o !== 'object' || o === null || !(OUTCOME_THEN as readonly unknown[]).includes((o as { then?: unknown }).then))) {
+      fail(`slot "${id}" says onMaxAttempts: ${JSON.stringify(o)}, which is not "handoff", "skip" or { then: ${OUTCOME_THEN.join(' | ')} }`);
+    }
+    const outcome = o === 'skip' ? { then: 'skip' as const } : (o as { say?: string; then: string; reason?: string; form?: string });
+    if ((outcome.then === 'end' || outcome.then === 'anything-else') && !('say' in outcome && outcome.say !== undefined)) fail(`slot "${id}" ends with ${outcome.then} when it runs out of attempts and says no line`);
+    if ('reason' in outcome && outcome.reason !== undefined && outcome.then !== 'handoff') fail(`slot "${id}" names a handoff reason for an outcome that does not hand off`);
+    if (outcome.then === 'skip' && app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, which may not be skipped: verification could never finish`);
+    if (outcome.then === 'form') {
+      const to = 'form' in outcome ? outcome.form : undefined;
+      if (to === undefined || !Object.hasOwn(app.forms, to)) fail(`slot "${id}" goes, when it runs out of attempts, to the unknown form "${to}"`);
+      else if (app.forms[to]!.slots.includes(id)) fail(`slot "${id}" goes, when it runs out of attempts, to the form "${to}", which asks it too`);
+    } else if ('form' in outcome && outcome.form !== undefined) fail(`slot "${id}" names a form for an outcome that is not then: form`);
   }
   if (app.unsureIntent !== undefined && !UNSURE_VALUES.includes(app.unsureIntent)) fail(`unsureIntent "${app.unsureIntent}" is not "confirm" or "no-match"`);
   if (app.changeSlotWithValue !== undefined && !CHANGE_SLOT_WITH_VALUE.includes(app.changeSlotWithValue)) fail(`changeSlotWithValue "${app.changeSlotWithValue}" is not "set-aside" or "decides"`);
@@ -234,7 +258,7 @@ export function validateApp(app: App): void {
     if (form.internal === true) {
       if (Object.hasOwn(app.intents, id)) fail(`form "${id}" is internal, but there is an intent "${id}": an internal form is no intent`);
       if (form.label === undefined || form.label === '') fail(`internal form "${id}" has no label`);
-      if (formsLeadingTo(app.forms, id).length === 0) fail(`internal form "${id}" is reached by no form's next`);
+      if (formsLeadingTo(app.forms, id).length === 0 && formsEnteringByOutcome(app.forms, onMaxAttemptsOf(app), id).length === 0) fail(`internal form "${id}" is reached by no form's next, and no outcome enters it`);
     } else if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') {
       fail(`form "${id}" has no form intent`);
     }
@@ -254,6 +278,10 @@ export function validateApp(app: App): void {
       if (check.with.length === 0) fail(`form "${id}"'s check "${check.action}" reads no slot`);
       for (const [reason, outcome] of Object.entries(check.on ?? {})) {
         if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) fail(`form "${id}"'s check "${check.action}" ends with ${outcome.then} for "${reason}" and says no line`);
+        if (outcome.then === 'form') {
+          if (outcome.form === undefined || !Object.hasOwn(app.forms, outcome.form)) fail(`form "${id}"'s check "${check.action}" goes for "${reason}" to the unknown form "${outcome.form}"`);
+          else if (outcome.form === id) fail(`form "${id}"'s check "${check.action}" goes for "${reason}" to its own form`);
+        }
       }
     }
     if (form.checksPassed !== undefined && !(form.checks ?? []).length) fail(`form "${id}" has a checksPassed line and no checks`);
@@ -409,4 +437,9 @@ export function validateApp(app: App): void {
       if (slot === undefined && !Object.hasOwn(audit, param)) fail(`tool "${tool}" sends "${param}", which is neither a slot with a redact setting nor declared in the policy's audit`);
     }
   }
+}
+
+/** Each slot's onMaxAttempts, by id (what formsEnteringByOutcome reads). */
+function onMaxAttemptsOf(app: App): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(app.slots).map(([id, spec]) => [id, spec.onMaxAttempts]));
 }

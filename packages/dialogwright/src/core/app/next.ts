@@ -1,4 +1,4 @@
-import type { FormId } from './types';
+import type { FormId, SlotId } from './types';
 
 /**
  * A form's `next` (FormDef.next, forms.yaml `next`) read across the app's forms: which forms lead to
@@ -53,4 +53,32 @@ export function nextCycles(forms: Readonly<Record<FormId, FormNext>>): FormId[][
     for (const id of path) seen.add(id);
   }
   return cycles;
+}
+
+/** The part of a form an outcome reads: its slots and its checks' outcomes. */
+export interface FormOutcomes {
+  readonly slots: readonly SlotId[];
+  readonly checks?: readonly { readonly on?: Readonly<Record<string, { readonly then: string; readonly form?: FormId }>> }[];
+}
+
+/** The form a slot's onMaxAttempts enters (`then: form`), or undefined; read from any value, as slots.yaml may hold one not yet checked. */
+export function slotOutcomeForm(onMaxAttempts: unknown): FormId | undefined {
+  if (typeof onMaxAttempts !== 'object' || onMaxAttempts === null) return undefined;
+  const o = onMaxAttempts as { then?: unknown; form?: unknown };
+  return o.then === 'form' && typeof o.form === 'string' ? o.form : undefined;
+}
+
+/**
+ * The forms an outcome goes from to `form` (`then: form`, core/outcome.ts): a form with a check whose
+ * outcome enters it, and a form that lists a slot whose onMaxAttempts enters it (`slots`: each slot's
+ * onMaxAttempts, as its spec or slots.yaml has it), in definition order. With formsLeadingTo, what
+ * reaches an internal form.
+ */
+export function formsEnteringByOutcome(forms: Readonly<Record<FormId, FormOutcomes>>, slots: Readonly<Record<SlotId, unknown>>, form: FormId): FormId[] {
+  return Object.keys(forms).filter((id) => {
+    const def = forms[id]!;
+    const byCheck = (def.checks ?? []).some((c) => Object.values(c.on ?? {}).some((o) => o.then === 'form' && o.form === form));
+    const bySlot = def.slots.some((slot) => Object.hasOwn(slots, slot) && slotOutcomeForm(slots[slot]) === form);
+    return byCheck || bySlot;
+  });
 }
