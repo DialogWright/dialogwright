@@ -88,6 +88,10 @@ function turnLines(run: TurnRun, indent: string): string[] {
   // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.
   const transfer = run.result.actions.find((a) => a.type === 'transfer');
   if (transfer?.type === 'transfer' && transfer.target !== undefined) lines.push(`${indent}   transfer ${transferLine(run, transfer)}`);
+  // An app with routes: each route taken, its point, its rule and what followed, and the subjects it read.
+  for (const r of run.result.routes ?? []) {
+    lines.push(`${indent}   route  ${r.point}${r.form !== undefined ? ` ${r.form}` : ''}: ${r.rule === 'else' ? 'else' : `rule ${r.rule + 1}`} -> ${r.outcome}${r.subjects.length > 0 ? `   read ${r.subjects.join(', ')}` : ''}`);
+  }
   lines.push(`${indent}   form   ${s.form ?? '-'}   level ${s.principal.level}   slots ${slotsOf(s)}`);
   for (const event of run.result.gateEvents) lines.push(`${indent}   gate   ${describeGate(event)}`);
   return lines;

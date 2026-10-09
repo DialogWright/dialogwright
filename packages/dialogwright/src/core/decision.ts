@@ -9,6 +9,7 @@ import type { Ack } from './fia';
 import type { Session } from './session';
 import { slotLocaleOf } from './locale';
 import { chooseTransfer, type TransferChoice } from './transfer';
+import { sessionConditionFacts, type ConditionClock } from './routes';
 import { callDataOf } from './callData';
 import { handoffDataSlots } from '../handoff/data';
 
@@ -123,9 +124,26 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
       form: s.form ?? s.completed.at(-1) ?? null,
       callData: callDataOf(s),
       slots: handoffDataSlots(app, slots, decision.unconfirmed),
-    });
+    }, sessionConditionFacts(app, s, null));
   }
   return decision;
+}
+
+/**
+ * A handoff's transfer chosen again with what only the turn knows (its clock, the environment, the
+ * app's predicates): a target on the hours, the number called or a predicate (core/conditions.ts) is
+ * judged at the turn's moment. The turn (core/turn.ts) asks this of the handoff it ends with; the
+ * choice is as handoff() made it for every other condition. Nothing for an app without `transfer`.
+ */
+export function withTurnTransfer(s: Session, decision: HandoffDecision, clock: ConditionClock): void {
+  const app = appOf(s);
+  if (app.transfer === undefined) return;
+  decision.transfer = chooseTransfer(app, {
+    reason: decision.reason,
+    form: s.form ?? s.completed.at(-1) ?? null,
+    callData: callDataOf(s),
+    slots: handoffDataSlots(app, decision.slots, decision.unconfirmed),
+  }, sessionConditionFacts(app, s, clock, decision.reason));
 }
 
 /**

@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../schemas/forms.schema.json
+forms:
+  # Anyone may report a problem (level 0). The summary reads back the problem and whether it is a
+  # danger, and a yes files the report (a confirmed write). A danger goes to a person after it
+  # (routes.yaml afterForm).
+  report_problem:
+    slots: [problem, severity]
+    summaryPromptId: confirm_report_problem
+    hooks: [confirmedParams, complete]
+    calls: [reportProblem]
+
+  # The status of the latest request: the entry call needs level 1, so a caller not yet verified is
+  # asked for the account number and the date of birth first. The entry keeps whether the account is
+  # past due, which the route after identity reads.
+  check_status:
+    slots: []
+    summaryPromptId: null
+    hooks: [entry, onEntry, complete]
+    calls: [findAccount, readStatus]
+
+  # Reached only by the route after identity (routes.yaml), for an account past due: a plan to pay
+  # the balance, read back for a yes.
+  payment_plan:
+    internal: true
+    label: set up a payment plan
+    slots: []
+    summaryPromptId: confirm_payment_plan
+    hooks: [complete]
+    calls: [setUpPlan]

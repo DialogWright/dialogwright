@@ -267,6 +267,12 @@ export interface Session {
    * the line as it was said and its language, which each fill from a grant records.
    */
   textConsent?: TextConsentRecord;
+  /**
+   * The routes after identity (routes.yaml's `afterIdentity`) have run on this call: they run once, the
+   * first time the caller is verified. Absent until then, and for every app without them, so every other
+   * session is as it was.
+   */
+  identityRouted?: true;
   /** Who the caller is proven to be. Written only from a verifier result or a portal sign-in (src/gate/types.ts Principal). */
   principal: Principal;
   facts: SessionFacts;

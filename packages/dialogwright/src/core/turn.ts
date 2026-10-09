@@ -8,19 +8,21 @@ import { formLabel, informationOf, intentLabel, isFormIntent, type Informs } fro
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { App, CheckOutcome, Completion, FormCheck, FormId, SlotId, SummaryMove } from './app/types';
+import type { App, CheckOutcome, Completion, FormCheck, FormId, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
-import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
+import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
+import { type RouteNoted } from './lifecycle';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { keptCallData } from './callData';
+import { routeRecord, routeTaken, rulesAt, sessionConditionFacts, ROUTE_HANDOFF_REASON } from './routes';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
 import { recordedValue, recordingOf } from './recording';
@@ -78,6 +80,12 @@ export interface TurnContext {
    * caller that plans or resolves without runTurn passes it to give a turn nominations.
    */
   knowledge?: TurnKnowledge;
+  /**
+   * The environment the `called` condition of a route or a transfer target reads its numbers from
+   * (`env.<NAME>`; core/conditions.ts). runTurn sets it from RunOptions.env, else the process's own;
+   * unset, no variable is set, and a `called` condition never holds.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -202,6 +210,8 @@ export interface TurnResult {
   formLoop?: { readonly form: FormId; readonly from?: FormId };
   /** the forms that completed this turn and went on to their next (FormDef.next), in order; absent on every other turn */
   movedOn?: FormMovedOn[];
+  /** the routes taken this turn (routes.yaml, core/routes.ts), in order; absent on every other turn and for every app without routes */
+  routes?: RouteNoted[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
@@ -466,8 +476,9 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed:
   const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
   switch (c.kind) {
     case 'said':
-      // A form with a next form goes on to it at once (FormDef.next); only a `said` completion does.
-      return finishForm(s, form, c.acks, io, true, formOf(io.app, form).next);
+      // The routes after this form (routes.yaml afterForm), before its next; then a form with a next
+      // form goes on to it at once (FormDef.next); only a `said` completion does either.
+      return afterFormRoute(s, form, c.acks, io) ?? finishForm(s, form, c.acks, io, true, formOf(io.app, form).next);
     case 'end':
       // A request is waiting: the completion's line is said, and the call goes on to it.
       if (s.queued.length > 0) return finishForm(s, form, [...c.acks, { promptId: c.promptId, vars: c.vars }], io);
@@ -972,6 +983,10 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   // A refused entry call still drains the queue: the caller's other requests are not lost to it.
   if (entry?.kind === 'refused') return finishForm(s, form, entry.acks, io, false);
   if (entry) return entry;
+  // The routes after identity (routes.yaml afterIdentity), once, the first time the caller is through it:
+  // after the identity step's own line, before the form that asked for it goes on.
+  const routed = afterIdentityRoute(s, io, said);
+  if (routed !== null) return routed;
   // The form's checks, once its entry is through: an answer that rules the caller out ends the form
   // here, before the next question (core/checks.ts).
   const checks = runChecks(s, form, io.tc, io.out);
@@ -2354,7 +2369,7 @@ function identityAtGreeting(s: Session): boolean {
  */
 function identifyAtGreeting(s: Session, io: TurnIO, acks: Ack[]): Decision {
   const said = [...acks];
-  return continueIdentity(s, io.tc, io.out, said) ?? prompt(GREET_AFTER_OFFER, 'intent', {}, said);
+  return continueIdentity(s, io.tc, io.out, said) ?? afterIdentityRoute(s, io, said) ?? prompt(GREET_AFTER_OFFER, 'intent', {}, said);
 }
 
 /**
@@ -2433,6 +2448,118 @@ function callerMatchAgain(s: Session): boolean {
 }
 
 /**
+ * The app's start hook (App.onStart), once as the call starts, for every call: it may read the call
+ * data, the numbers and the clock, write the facts and call tools through the gate. One that throws
+ * leaves the facts as they were and drops the side effects it queued; the calls it made stay recorded,
+ * and the call goes on.
+ */
+function startHook(s: Session, io: TurnIO): void {
+  const hook = io.app.onStart;
+  if (hook === undefined) return;
+  const facts = io.app.facts;
+  const before = facts !== undefined ? facts.clone(s.facts) : structuredClone(s.facts);
+  const effects = io.out.effects.length;
+  try {
+    hook(appContext(s, io.tc, io.out));
+  } catch {
+    s.facts = before;
+    io.out.effects.length = effects;
+  }
+}
+
+/** The rule `point`'s routes take on this call now, noted for the records; null where the app has no routes there. */
+function takeRoute(s: Session, point: RoutePoint, io: TurnIO, form?: FormId): RouteOutcome | null {
+  const rules = rulesAt(io.app, point, form);
+  if (rules.length === 0) return null;
+  const taken = routeTaken(rules, sessionConditionFacts(io.app, s, { nowMs: io.tc.nowMs, todayIso: io.tc.todayIso, ...(io.tc.env !== undefined ? { env: io.tc.env } : {}) }));
+  if (taken === null) return null;
+  const noted: RouteNoted = { ...routeRecord(point, taken, form), at: io.out.gateEvents.length };
+  io.out.routes = [...(io.out.routes ?? []), noted];
+  return taken.rule.outcome;
+}
+
+/** A route's line, where it has one, rendered with the open form's slot displays as an outcome's is. */
+function routeSay(s: Session, o: RouteOutcome): Ack[] {
+  return o.say === undefined ? [] : [{ promptId: o.say, vars: summaryVars(s) }];
+}
+
+/** A route's outcome that is one of piece 1's (end, handoff, form, anything-else) as it acts (core/outcome.ts Ending). */
+function routeEnding(s: Session, o: Exclude<RouteOutcome, { then: 'continue' | 'locale' }>, acks: Ack[]): Ending {
+  return endingOf(o as Outcome, acks, summaryVars(s), ROUTE_HANDOFF_REASON);
+}
+
+/**
+ * The routes at start (routes.yaml `start`), after the start hook and the call-start lookup: `continue`
+ * and `locale` go on to the greeting (a `say` before it: `acks`); `end` ends with its line and no
+ * greeting; `handoff` goes to a person; `form` enters the form after the welcome (the greeting's line
+ * before a proposal, greeting_offer), in place of the greeting and its open question (`decision`).
+ */
+function startRoute(s: Session, io: TurnIO): { decision?: Decision; acks: Ack[] } {
+  const o = takeRoute(s, 'start', io);
+  if (o === null) return { acks: [] };
+  if (o.then === 'locale') switchLocale(s, io, o.locale);
+  if (o.then === 'continue' || o.then === 'locale') return { acks: routeSay(s, o) };
+  if (o.then === 'form') return { decision: enterByOutcome(s, null, o.form, [...routeSay(s, o), { promptId: greetingOfferPromptId(io.app), vars: {} }], io), acks: [] };
+  return { decision: actOn(s, null, routeEnding(s, o, []), io), acks: [] };
+}
+
+/**
+ * The routes after identity (routes.yaml `afterIdentity`): once, the first time one of the app's
+ * subjects is verified (and through the one-time code, where the step-up asked for it), after the
+ * identity step's own line. `continue` and `locale` go on as before (a `say` added to `said`, which the
+ * caller passes on); any other outcome takes the turn, as a check's outcome does in the form open (or,
+ * at the greeting, with none). `form` puts the caller's own request (the form that asked for identity)
+ * first in the queue, so it is bridged back into once the form entered is done ("past-due accounts go
+ * to payments first"); a route to the form the caller is already in goes on in it. Null where the call
+ * goes on.
+ */
+function afterIdentityRoute(s: Session, io: TurnIO, said: Ack[]): Decision | null {
+  if (s.identityRouted === true || isAnonymous(s.principal) || s.principal.kind !== identityOf(io.app).subjectKind || s.principal.level < 1) return null;
+  if (rulesAt(io.app, 'afterIdentity').length === 0) return null;
+  s.identityRouted = true;
+  const o = takeRoute(s, 'afterIdentity', io);
+  if (o === null) return null;
+  if (o.then === 'locale') switchLocale(s, io, o.locale);
+  if (o.then === 'continue' || o.then === 'locale' || (o.then === 'form' && o.form === s.form)) {
+    said.push(...routeSay(s, o));
+    return null;
+  }
+  if (o.then === 'form' && s.form !== null && !s.queued.includes(s.form)) s.queued.unshift(s.form);
+  return actOn(s, s.form, routeEnding(s, o, [...said]), io);
+}
+
+/**
+ * The routes after a form (routes.yaml `afterForm.<form>`) that completed as said, before its `next`: the
+ * form is counted as completed whatever is taken. `continue` and `locale` go on as the form does without
+ * a route (its next, else "anything else?"); `anything-else` skips the next; `form` goes on to the form
+ * named in its place, as a next does; `end` ends the call on its line (with a request queued, the call
+ * goes on to it); `handoff` goes to a person, the form left open as a completion that hands off leaves
+ * it. Null where the app has no routes after this form.
+ */
+function afterFormRoute(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision | null {
+  const o = takeRoute(s, 'afterForm', io, form);
+  if (o === null) return null;
+  if (o.then === 'locale') switchLocale(s, io, o.locale);
+  const said = [...acks, ...routeSay(s, o)];
+  switch (o.then) {
+    case 'continue':
+    case 'locale':
+      return finishForm(s, form, said, io, true, formOf(io.app, form).next);
+    case 'anything-else':
+      return finishForm(s, form, said, io, true);
+    case 'form':
+      return finishForm(s, form, said, io, true, o.form);
+    case 'end':
+      if (s.queued.length > 0) return finishForm(s, form, said, io);
+      return endOnCompletion(s, form, { kind: 'end', promptId: o.say!, vars: summaryVars(s), acks: [...acks] });
+    case 'handoff':
+      s.completed.push(form);
+      agree(s, form);
+      return handoff(s, o.reason ?? ROUTE_HANDOFF_REASON, said);
+  }
+}
+
+/**
  * The opening line: the voice greeting, or on chat someone acting for the app's subjects or a
  * signed-in subject by name, or the web visitor's.
  */
@@ -2466,6 +2593,7 @@ export function resolve(session: Session, event: SessionEvent, answers: AnswerMa
     ...(r.consented ? { consented: r.consented } : {}),
     ...(r.consent ? { consent: r.consent } : {}),
     ...(r.callerMatch ? { callerMatch: r.callerMatch } : {}),
+    ...(r.routes ? { routes: r.routes } : {}),
   });
   return { ...r, audit };
 }
@@ -2475,7 +2603,11 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   const tc = appTurnContext(appOf(s), turnContext);
   const io: TurnIO = { app: appOf(s), tc, out: newTurnOut(), prefix: [] };
   // The turn's actions: what it asks first (a language switch), then its decision's lines in the session's locale, as it is now.
-  const act = (decision: Decision): Action[] => [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale)];
+  // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
+  const act = (decision: Decision): Action[] => {
+    if (decision.kind === 'handoff') withTurnTransfer(s, decision, { nowMs: tc.nowMs, todayIso: tc.todayIso, ...(tc.env !== undefined ? { env: tc.env } : {}) });
+    return [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale)];
+  };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
   if (s.ended) return { ...base(), decision: { kind: 'ignore' }, actions: [] };
@@ -2502,14 +2634,24 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The data the call or chat came with, only the keys the app names (core/callData.ts).
       const data = keptCallData(io.app, event.callData);
       if (data !== undefined) s.callData = data;
+      // The app's start hook, once, for every call, before the call-start lookup (App.onStart).
+      startHook(s, io);
       // The app's lookup by that number, once, before the greeting, through the gate.
       if (caller !== undefined) callerLookup(s, io);
+      // The routes at start (routes.yaml start), before the greeting: a line before it, a language
+      // switch, or the call ended, handed off or put into a form in its place.
+      const started = startRoute(s, io);
+      if (started.decision !== undefined) {
+        bookkeep(s, started.decision, 'setup');
+        return { ...base(), decision: started.decision, actions: act(started.decision) };
+      }
       // The caller-ID question at the greeting (identity.yaml's callerId, ask: greeting), with a match
       // now; else the consent to text for the whole call (app.yaml's textConsent); else a slot that
       // proposes at the greeting (offerAt: greeting), with a candidate now: one of them in place of the
       // open question, in that order. A proposal not made here is made at its slot; consent not asked
       // here is not asked, and each slot it covers asks its own offer.
-      const decision = callerMatchAtGreeting(s, io) ?? textConsentAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
+      const greeted = callerMatchAtGreeting(s, io) ?? textConsentAtGreeting(s, io) ?? greetingProposal(s, io) ?? greeting(s);
+      const decision = started.acks.length > 0 ? { ...greeted, acks: [...started.acks, ...greeted.acks] } : greeted;
       bookkeep(s, decision, 'setup');
       return { ...base(), decision, actions: act(decision) };
     }
@@ -2572,7 +2714,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The waiting request goes back to the gate as new: its entry call is built again, from the
       // customer now signed in, rather than replayed from before.
       s.stepUp = null;
-      const decision = readSummary(s, parked ? continueForm(s, io, acks, null) : prompt('signin_ready', 'intent', {}, acks), io);
+      const decision = readSummary(s, parked ? continueForm(s, io, acks, null) : (afterIdentityRoute(s, io, acks) ?? prompt('signin_ready', 'intent', {}, acks)), io);
       bookkeep(s, decision, 'signed_in');
       return { ...base(), decision, actions: act(decision) };
     }

@@ -123,13 +123,15 @@ export function resolveSend(app: Pick<App, 'callData'>, values: Readonly<Record<
 }
 
 /**
- * The transfer an app's handoff makes: the rule taken on the reason, the form and the call data, its
- * variable, and its headers and chat data resolved. Undefined for an app without `transfer`.
+ * The transfer an app's handoff makes: the rule taken on the reason, the form, the call data and what
+ * else `conditions` knows (the facts, the slots, the level; the hours, the number called and the app's
+ * predicates where the turn's clock is known: core/routes.ts sessionConditionFacts), its variable, and
+ * its headers and chat data resolved. Undefined for an app without `transfer`.
  */
-export function chooseTransfer(app: Pick<App, 'transfer' | 'callData'>, facts: TransferFacts): TransferChoice | undefined {
+export function chooseTransfer(app: Pick<App, 'transfer' | 'callData'>, facts: TransferFacts, conditions: ConditionFacts = {}): TransferChoice | undefined {
   const transfer = app.transfer;
   if (transfer === undefined) return undefined;
-  const rule = ruleTaken(transfer, { reason: facts.reason, form: facts.form, callData: facts.callData });
+  const rule = ruleTaken(transfer, { ...conditions, reason: facts.reason, form: facts.form, callData: facts.callData });
   const to = rule === null ? transfer.default : transfer.targets[rule]!.to;
   const send = sendOf(transfer, rule);
   const headers = resolveSend(app, send.headers, facts);

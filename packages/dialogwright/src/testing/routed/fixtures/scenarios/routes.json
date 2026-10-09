@@ -1,0 +1,100 @@
+[
+  {
+    "id": "closed-evening",
+    "now": "2026-10-12T19:00:00-04:00",
+    "steps": [],
+    "expect": { "decision": "complete", "promptId": "closed_now", "form": null, "text": "We're closed right now" }
+  },
+  {
+    "id": "closed-holiday",
+    "now": "2026-12-25T10:00:00-05:00",
+    "steps": [],
+    "expect": { "decision": "complete", "promptId": "closed_now", "form": null }
+  },
+  {
+    "id": "open-saturday",
+    "now": "2026-10-17T10:30:00-04:00",
+    "steps": [{ "say": "I'd like to report a problem" }],
+    "expect": { "decision": "prompt", "promptId": "ask_problem", "form": "report_problem" }
+  },
+  {
+    "id": "report-goes-on",
+    "now": "2026-10-12T10:00:00-04:00",
+    "steps": [
+      { "say": "I'd like to report a problem" },
+      { "say": "nothing is working at all" },
+      { "say": "no, no one is at risk" },
+      { "say": "yes, file it" }
+    ],
+    "expect": { "decision": "prompt", "promptId": "anything_else", "form": null, "gate": "reportProblem:ALLOW", "text": "Your report number is P201" }
+  },
+  {
+    "id": "report-danger-hands-off",
+    "now": "2026-10-12T10:00:00-04:00",
+    "steps": [
+      { "say": "I'd like to report a problem" },
+      { "say": "nothing is working at all" },
+      { "say": "yes, someone could get hurt" },
+      { "say": "yes, file it" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "emergency",
+      "gate": "reportProblem:ALLOW",
+      "text": "Your report number is P201. Since someone may be at risk",
+      "transfer": { "target": "MAIN_LINE" }
+    }
+  },
+  {
+    "id": "outage-notice",
+    "now": "2026-10-12T10:00:00-04:00",
+    "callData": { "region": "north" },
+    "steps": [],
+    "expect": { "decision": "prompt", "promptId": "greeting", "gate": "lookupNotices:ALLOW", "text": "We know about a problem with the service in your area, and we're working on it. Thanks for calling Example Service Line." }
+  },
+  {
+    "id": "notices-fail-soft",
+    "now": "2026-10-12T10:00:00-04:00",
+    "callData": { "region": "down" },
+    "steps": [{ "say": "I'd like to report a problem" }],
+    "expect": { "decision": "prompt", "promptId": "ask_problem", "form": "report_problem", "gate": "lookupNotices:ALLOW" }
+  },
+  {
+    "id": "spanish-line",
+    "now": "2026-10-12T10:00:00-04:00",
+    "calledNumber": "+15555550188",
+    "env": { "SPANISH_LINE": "+15555550188" },
+    "steps": [{ "say": "quiero reportar un problema" }],
+    "expect": { "decision": "prompt", "promptId": "ask_problem", "form": "report_problem", "text": "Claro, le puedo ayudar" }
+  },
+  {
+    "id": "vip-caller",
+    "now": "2026-10-12T10:00:00-04:00",
+    "callerNumber": "+15555550143",
+    "steps": [],
+    "expect": { "decision": "handoff", "reason": "vip", "text": "Welcome back", "transfer": { "target": "VIP_DESK" } }
+  },
+  {
+    "id": "past-due-first",
+    "now": "2026-10-12T10:00:00-04:00",
+    "steps": [
+      { "say": "I want to check on my request" },
+      { "say": "five five five zero one two three four" },
+      { "say": "April twelfth nineteen eighty" },
+      { "say": "yes, set that up" }
+    ],
+    "expect": { "decision": "prompt", "promptId": "anything_else", "form": null, "principalLevel": 1, "gate": "readStatus:ALLOW", "text": "Your plan is set up, and the first part is due next month. Now, let's check on a request. Your latest request, P100, is open." }
+  },
+  {
+    "id": "billing-closed-transfer",
+    "now": "2026-10-12T17:30:00-04:00",
+    "steps": [{ "say": "can I talk to a person" }],
+    "expect": { "decision": "handoff", "reason": "live-agent", "transfer": { "target": "AFTER_HOURS_DESK" } }
+  },
+  {
+    "id": "billing-open-transfer",
+    "now": "2026-10-12T16:30:00-04:00",
+    "steps": [{ "say": "can I talk to a person" }],
+    "expect": { "decision": "handoff", "reason": "live-agent", "transfer": { "target": "MAIN_LINE" } }
+  }
+]

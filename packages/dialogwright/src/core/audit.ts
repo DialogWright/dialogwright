@@ -2,7 +2,7 @@ import type { AuditDraft } from '../audit/types';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { maskId } from '../gate/principal';
 import { isAnonymous, type ToolCall } from '../gate/types';
-import type { CallerMatchStep, ConsentSettled, FormMovedOn, GateEvent, KbSource, OfferSettled } from './lifecycle';
+import type { CallerMatchStep, ConsentSettled, FormMovedOn, GateEvent, KbSource, OfferSettled, RouteNoted } from './lifecycle';
 import type { CheckReconfirmed, FormStopped } from './checks';
 import type { Decision } from './decision';
 import type { ScreenResult } from './screen';
@@ -51,6 +51,8 @@ export interface AuditInput {
   callerMatch?: readonly CallerMatchStep[];
   /** The forms that completed this turn and went on to their next (lifecycle.ts TurnOut.movedOn): a `form_next` row for each. */
   movedOn?: readonly FormMovedOn[];
+  /** The routes taken this turn (routes.yaml; lifecycle.ts TurnOut.routes): a `route` row for each. */
+  routes?: readonly RouteNoted[];
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -152,10 +154,18 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // Each form that completed and went on to its next form (FormDef.next): which, after the rows of
   // the gate events before the move (the form's checks) and before the next form's.
   const movedOn = (from: number, to: number): AuditDraft[] => (t.movedOn ?? []).filter((m) => m.at >= from && m.at <= to).map((m) => ({ type: 'form_next', detail: { form: m.form, next: m.next } }));
+  // Each route taken (routes.yaml): the point, the form after which, the rule (its index from 0, or
+  // `else`), what followed, and the subjects it read, never their values; where it was taken among the
+  // turn's gate rows (after the start hook's and the call-start lookup's calls, say).
+  const routed = (from: number, to: number): AuditDraft[] => (t.routes ?? []).filter((r) => r.at >= from && r.at <= to).map((r) => ({
+    type: 'route',
+    detail: { point: r.point, ...(r.form !== undefined ? { form: r.form } : {}), rule: r.rule, outcome: r.outcome, subjects: [...r.subjects] },
+  }));
   for (const [i, e] of t.gateEvents.entries()) {
     // The caller-ID match's steps noted before this gate event, where they happened among the turn's
     // rows: a no before the step-up asks again, a failed check before the retry probe it led to.
     drafts.push(...callerMatchRows(app, after, t.callerMatch, i, i));
+    drafts.push(...routed(i, i));
     drafts.push(...movedOn(i, i));
     const { call, verdict, reason, needLevel } = e.decision;
     drafts.push({
@@ -169,6 +179,7 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   }
   // The caller-ID match's rows still to come, after the last gate event: those it was noted after.
   drafts.push(...callerMatchRows(app, after, t.callerMatch, t.gateEvents.length, Infinity));
+  drafts.push(...routed(t.gateEvents.length, Infinity));
   drafts.push(...movedOn(t.gateEvents.length, Infinity));
   // An answer read from the knowledge base that no tool's audit hook recorded (an informational
   // intent's passage, said with no gated read): the engine records it, as kbAnswerTool's hook would.

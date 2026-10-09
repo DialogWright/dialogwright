@@ -65,6 +65,11 @@ export interface RunOptions {
    */
   screen?: ScreenMode;
   /**
+   * The environment a route's or a transfer target's `called` condition reads (`env.<NAME>`;
+   * TurnContext.env). Unset, the process's own. A test and a scripted call set their own.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
+  /**
    * How long a turn waits for the app's knowledge retriever (run/retrieve.ts RETRIEVE_BUDGET_MS,
    * unset). Tests shorten it; a retriever not back in time nominates nothing.
    */
@@ -193,6 +198,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     thresholds: opts.thresholds,
     tools: opts.tools ?? demoTools(),
     render: opts.render ?? null,
+    env: opts.env ?? process.env,
     ...digit,
   };
   const tr = performance.now();

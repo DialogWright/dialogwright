@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Service Line: a fictional line that takes a report of a problem and reads the status of a
+# request to a verified caller. The engine's fixture for routes (routes.yaml): what the call does as it
+# starts, once the caller is verified and after a form, decided by ordered rules on business hours, the
+# facts the start hook wrote, the number called, a predicate in code and a slot; and for a transfer
+# target chosen on a named schedule's hours.
+id: routed
+locale: en-US
+
+brand:
+  name: Example Service Line
+  mark: SL
+
+console:
+  formLabels:
+    report_problem: Report a problem
+    check_status: Check on a request
+    payment_plan: Payment plan
+  slotLabels:
+    problem: Problem
+    severity: Danger
+
+wording:
+  addressee: the Example Service Line
+
+# The numbers a call comes with, kept for the app's code and the routes: the caller's (the vip
+# predicate reads it) and the number called (the Spanish line's route reads it).
+callerNumber:
+  use: hint
+  called: true
+
+# The region a call is put through from, a custom parameter the start hook reads.
+callData:
+  region: { from: param.region, redact: keep }
+
+# When the line is open, in its own time zone: weekdays and Saturday morning, closed on two holidays.
+# The billing desk keeps shorter hours of its own.
+hours:
+  timezone: America/New_York
+  weekly:
+    mon-fri: ["08:00-18:00"]
+    sat: ["09:00-13:00"]
+  closed: [2026-12-25, 2027-01-01]
+  schedules:
+    billing:
+      weekly: { mon-fri: ["09:00-17:00"] }
+
+# The start hook (onStart in app.ts) asks for the notices in the caller's region before the greeting.
+onStart:
+  calls: [lookupNotices]
+
+# Where a handoff goes. Once the billing desk has closed, to the after-hours desk; a caller the vip
+# route sent to a person, to the vip desk; anything else, to the main line. Every number is in the
+# environment, never here.
+transfer:
+  targets:
+    - when: { hours: closed, schedule: billing }
+      to: env.AFTER_HOURS_DESK
+    - when: { reason: vip }
+      to: env.VIP_DESK
+  default: env.MAIN_LINE
+
+fixtures:
+  dir: src/testing/routed/fixtures

@@ -147,6 +147,10 @@ export type { CallDataKey } from './core/app/types';
 export type { TransferConfig, TransferRule, TransferSend } from './core/app/types';
 export type { TransferChoice } from './core/transfer';
 export type { Condition, ConditionFacts, ValueTest } from './core/conditions';
+// Business hours (app.yaml's hours) and routes (routes.yaml): the schedule, whether it is open at a moment, and a route as the records name it.
+export type { HoursConfig, HoursSchedule, NamedHoursSchedule } from './core/hours';
+export { hoursOpen } from './core/hours';
+export type { RouteTaken } from './core/routes';
 // What the caller answered to consent to text for the whole call (app.yaml's textConsent), for app code that needs it.
 export { textConsentOf } from './core/textConsent';
 export type { TextConsentAnswer } from './core/session';

@@ -53,20 +53,25 @@ export interface ConditionClock {
  * Everything a condition may read on this call, at this moment: the form open (or, with none, the last
  * completed), the call data, the facts, the slots' values, the caller's level, the hours at the turn's
  * clock, the number called, the environment and the app's predicates (each given the session read-only:
- * a copy, so what one writes is lost; one that throws is false).
+ * a copy, so what one writes is lost; one that throws is false). With no clock (null), what only the
+ * turn knows is not known: no hours, no environment and no predicate holds.
  */
-export function sessionConditionFacts(app: App, s: Session, clock: ConditionClock, reason?: string): ConditionFacts {
-  const env = clock.env;
-  const predicates = app.predicates;
-  return {
+export function sessionConditionFacts(app: App, s: Session, clock: ConditionClock | null, reason?: string): ConditionFacts {
+  const base: ConditionFacts = {
     ...(reason !== undefined ? { reason } : {}),
     form: s.form ?? s.completed.at(-1) ?? null,
     callData: callDataOf(s),
     facts: s.facts,
     slots: Object.fromEntries(Object.entries(s.slots).map(([id, st]) => [id, st.value])),
     level: s.principal.level,
-    hoursOpen: (schedule) => hoursOpen(app.hours, clock.nowMs, schedule),
     ...(s.calledNumber !== undefined ? { calledNumber: s.calledNumber } : {}),
+  };
+  if (clock === null) return base;
+  const env = clock.env;
+  const predicates = app.predicates;
+  return {
+    ...base,
+    hoursOpen: (schedule) => hoursOpen(app.hours, clock.nowMs, schedule),
     ...(env !== undefined ? { env: (name: string) => (Object.hasOwn(env, name) ? env[name] : undefined) } : {}),
     predicate: (name) => {
       const p = predicates !== undefined && Object.hasOwn(predicates, name) ? predicates[name] : undefined;

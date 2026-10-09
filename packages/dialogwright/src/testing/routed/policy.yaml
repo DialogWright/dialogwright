@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The start hook's notices are about a region, no one's record; the report is exactly what the summary
+# read back; the status and the plan need the factors, and only the caller's own account.
+actions:
+  lookupNotices:
+    say: look up the notices for a region
+    level: 0
+    rules: [identity]
+  verifyCustomer:
+    say: check the account number and date of birth
+    level: 0
+    rules: [attempts]
+  findAccount:
+    say: look up the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  readStatus:
+    say: read the status of the latest request on the account
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+  reportProblem:
+    say: report a problem
+    level: 0
+    rules:
+      - identity
+      - confirmed: [problem, severity]
+  setUpPlan:
+    say: set up a payment plan
+    level: 1
+    rules:
+      - identity
+      - scope: { param: accountId }
+
+audit:
+  region: keep
+  problem: keep
+  severity: keep

@@ -107,6 +107,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(result.exhausted ? { slotExhausted: { ...result.exhausted } } : {}),
     // Only on a turn a loop of moves went to a person: every other record is as it was.
     ...(result.formLoop ? { formLoop: { ...result.formLoop } } : {}),
+    // Only on a turn a route was taken (routes.yaml): every other record is as it was.
+    ...(result.routes ? { routes: result.routes.map(({ at: _at, ...taken }) => ({ ...taken, subjects: [...taken.subjects] })) } : {}),
     audit: [...result.audit],
     timing,
     usage: {

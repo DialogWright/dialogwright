@@ -1554,6 +1554,12 @@ export interface TestingHooks {
      * as a call's channel would read it. Without it, a seeded call comes with none.
      */
     callData?: Readonly<Record<string, string>>;
+    /**
+     * The moment every seeded corpus call happens, an ISO date and time with its offset (e.g.
+     * "2026-10-12T10:00:00-04:00"), for an app whose routes or transfer targets read business hours
+     * (app.yaml's hours). Without it, the run's own clock.
+     */
+    now?: string;
   };
   /** The heuristic stub's domain answers (src/jev/heuristicStub.ts; the building blocks are src/jev/heuristicKit.ts). */
   heuristics?: {

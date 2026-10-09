@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../../../../schemas/prompts.schema.json
+# The Spanish line's words (routes.yaml's start switches a call to the Spanish line's number to es).
+# A line not written here is said from prompts.yaml.
+prompts:
+  greeting:
+    text: Gracias por llamar a Example Service Line. Puedo tomar un reporte de un problema, o revisar una solicitud. ¿En qué le puedo ayudar?
+    interruptible: true
+  ask_intent:
+    text: ¿En qué le puedo ayudar hoy?
+    interruptible: true
+  ack_intent:
+    text: Claro, le puedo ayudar a {intentLabel}.
+    interruptible: false
+  anything_else:
+    text: ¿Hay algo más en que le pueda ayudar?
+    interruptible: true
+  goodbye:
+    text: Adiós.
+    interruptible: false
+  handoff_live_agent:
+    text: Un momento, le comunico con una persona.
+    interruptible: false
+  ask_problem:
+    text: ¿Qué está pasando, no funciona nada, o funciona solo en parte?
+    interruptible: true

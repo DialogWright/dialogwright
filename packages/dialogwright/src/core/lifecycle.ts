@@ -9,6 +9,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack } from './fia';
 import type { TurnContext } from './turn';
 import type { CheckReconfirmed, FormStopped } from './checks';
+import type { RouteTaken } from './routes';
 import type { SlotExhausted } from './outcome';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
@@ -123,7 +124,16 @@ export interface TurnOut {
    * among theirs. Absent on every other turn.
    */
   callerMatch?: CallerMatchStep[];
+  /**
+   * The routes taken this turn (routes.yaml, core/routes.ts), in order, each for the trace and the
+   * audit's `route` row, with `at`, the number of the turn's gate events before it, so its row sits where
+   * it happened among theirs. Absent on every other turn, and for every app without routes.
+   */
+  routes?: RouteNoted[];
 }
+
+/** A route taken, as the turn notes it: the record, and where among the turn's gate events it was taken. */
+export type RouteNoted = RouteTaken & { readonly at: number };
 
 /**
  * A form that completed and went on to its next form (FormDef.next): the two forms, and `at`, the

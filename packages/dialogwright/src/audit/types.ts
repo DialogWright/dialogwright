@@ -12,6 +12,8 @@ export interface AuditDraft {
    * `answer: consent` for a slot filled from the call's consent to text, with that question's line),
    * consent (the consent to text for the whole call, app.yaml's textConsent: `scope: call`, granted
    * true, false or null, the line as said and how it was answered),
+   * route (a route taken, routes.yaml: the point, the form after which, the rule by its index from 0
+   * or `else`, what followed, and the subjects it read, never their values),
    * identity_caller_match (the caller-ID match of identity.yaml's callerId: its outcome, offered,
    * verified, declined or failed, and the number calling as policy.yaml's audit: records it, never the
    * identifier), handoff, handoff_summary, call_ended. An app's tools and services add their own

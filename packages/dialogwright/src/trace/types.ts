@@ -11,6 +11,7 @@ import type { Effect, GateEvent, KbSource } from '../core/lifecycle';
 import type { AuditDraft } from '../audit/types';
 import type { NominationVia } from '../kb/types';
 import type { SlotExhausted } from '../core/outcome';
+import type { RouteTaken } from '../core/routes';
 
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 
@@ -143,6 +144,12 @@ export interface TraceRecord {
    * from. Absent on every other turn.
    */
   formLoop?: { form: FormId; from?: FormId };
+  /**
+   * The routes taken on this turn (routes.yaml, core/routes.ts), in order: the point, the form (after a
+   * form), the rule (its index from 0, or `else`), what followed, and the subjects the rule read, never
+   * their values. Absent on every other turn, and for every app without routes.
+   */
+  routes?: RouteTaken[];
   /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or
    * `hash` yet (those are the sink's, core/audit.ts's `AuditDraft` is what a turn reports). The
