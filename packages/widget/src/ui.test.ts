@@ -140,6 +140,10 @@ describe('the widget', () => {
     a.f.emit({ type: 'transfer', reason: 'live-agent' });
     expect(reason).toBe('live-agent');
     expect(lines(a.root, 'notice')).toEqual([]);
+    let data: unknown;
+    const c = mount({ startOpen: true, onTransfer: (_r, d) => { data = d; } });
+    c.f.emit({ type: 'transfer', reason: 'live-agent', data: { page: '/orders/1042' } });
+    expect(data).toEqual({ page: '/orders/1042' });
     const b = mount({ startOpen: true });
     b.f.emit({ type: 'transfer', reason: 'live-agent' });
     expect(lines(b.root, 'notice')).toEqual([DEFAULT_STRINGS.transferred]);

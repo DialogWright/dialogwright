@@ -212,6 +212,17 @@ describe('the chat client', () => {
     expect(t.opened).toHaveLength(1);
   });
 
+  it('hands on the data an app\'s transfer sends a chat (transfer.send.chat), its strings only', async () => {
+    const app = { ...testkitApp, transfer: { targets: [], default: 'env.HANDOFF_NUMBER', send: { chat: { reason: 'reason', source: 'web' } } } };
+    server = await startTestServer({ app });
+    const t = client({ backoffMs: [10] });
+    await t.c.ready;
+    await waitFor(() => t.of('say').length > 0);
+    await t.c.send(server.agentLine);
+    await waitFor(() => t.of('transfer').length > 0);
+    expect(t.of('transfer')[0]).toEqual({ type: 'transfer', reason: 'live-agent', data: { reason: 'live-agent', source: 'web' } });
+  });
+
   it('when the server is full, says busy, backs off, then stops and says the chat is unavailable', async () => {
     server = await startTestServer({ env: { CHAT_MAX_SESSIONS: '1' } });
     const holder = client();

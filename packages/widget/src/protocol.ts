@@ -70,7 +70,11 @@ export type ChatErrorCode = 'bad_message' | 'too_long' | 'not_allowed' | 'sign_i
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }
   | { type: 'say'; text: string; lang: string }
-  | { type: 'transfer'; reason: string }
+  /**
+   * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
+   * transfer.send.chat), for the page's own handover; absent unless the app writes it.
+   */
+  | { type: 'transfer'; reason: string; data?: Record<string, string> }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }

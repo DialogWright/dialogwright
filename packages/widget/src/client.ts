@@ -19,6 +19,14 @@ import { CHAT_PROTOCOL_VERSION, contextOf, type ChatErrorCode, type ClientMessag
  * - A transfer is followed by the end: the client reports both, and does not reconnect.
  */
 
+/** A transfer's data as the client hands it on: an object's string values, or undefined for none. */
+function transferData(v: unknown): Record<string, string> | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x === 'string') out[k] = x;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /**
  * Where the connection is. `open`: the chat is ready for text. `reconnecting`: it dropped and the
  * client is bringing it back. `closed`: the chat ended, the page closed it, or the server will not take
@@ -33,7 +41,8 @@ export type ChatClientEvent =
   /** The chat a resume named had ended: a new one follows, its `ready` next. */
   | { type: 'restarted' }
   | { type: 'say'; text: string; lang: string }
-  | { type: 'transfer'; reason: string }
+  /** `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some. */
+  | { type: 'transfer'; reason: string; data?: Record<string, string> }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }
@@ -252,9 +261,12 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
         case 'say':
           emit({ type: 'say', text: m.text, lang: m.lang });
           break;
-        case 'transfer':
-          emit({ type: 'transfer', reason: m.reason });
+        case 'transfer': {
+          // Only string values are handed on: the page's handover reads them as text.
+          const data = transferData(m.data);
+          emit(data === undefined ? { type: 'transfer', reason: m.reason } : { type: 'transfer', reason: m.reason, data });
           break;
+        }
         case 'signed_in':
           signedIn = true;
           emit({ type: 'signed_in', level: m.level });

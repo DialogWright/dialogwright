@@ -30,8 +30,12 @@ export interface WidgetOptions {
   startOpen?: boolean;
   /** The site's sign-in token, or null; with it, the panel offers sign-in. */
   getToken?: () => Promise<string | null>;
-  /** What a transfer does on this site (open a live chat, show a number). Default: the panel says strings.transferred. */
-  onTransfer?: (reason: string) => void;
+  /**
+   * What a transfer does on this site (open a live chat, show a number), with the reason and, when the
+   * app sends some (its app.yaml transfer.send.chat), the data for the handover. Default: the panel says
+   * strings.transferred.
+   */
+  onTransfer?: (reason: string, data?: Readonly<Record<string, string>>) => void;
   /** Delays between reconnect attempts, in ms (the client's backoffMs). */
   backoffMs?: readonly number[];
   /** Reconnects in a row a dropped chat may try before the widget says it is unavailable (the client's maxReconnects). Default: no limit. */
@@ -210,7 +214,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
       case 'transfer':
         if (options.onTransfer) {
           try {
-            options.onTransfer(e.reason);
+            options.onTransfer(e.reason, e.data);
           } catch (err) {
             warn(`DialogWright widget: onTransfer failed: ${String(err)}`);
           }
