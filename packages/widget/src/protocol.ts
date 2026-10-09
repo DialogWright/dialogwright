@@ -17,13 +17,17 @@ export function isLocaleTag(tag: string): boolean {
 /** The most keys a start's `context` may have, and the longest value: a start with more is refused. */
 export const CHAT_CONTEXT_KEYS = 50;
 export const CHAT_CONTEXT_VALUE_MAX = 500;
+/** The most the whole context may take, as UTF-8 bytes of its JSON (the engine's CHAT_CONTEXT_BYTES), so a start fits the socket's frame. */
+export const CHAT_CONTEXT_BYTES = 6 * 1024;
 /** A context key as the engine takes one (its CONTEXT_KEY): letters, digits, underscores, hyphens and dots, at most 64. */
 const CONTEXT_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
 
 /**
  * The page's context as a start may carry it (the data an app's callData reads as chat.<key>): each
- * string under a key the engine takes, the first CHAT_CONTEXT_KEYS of them; anything else is left out,
- * with a warning, so the start is never refused for it. Undefined when nothing is left.
+ * string under a key the engine takes, the first CHAT_CONTEXT_KEYS of them, as long as the whole stays
+ * within CHAT_CONTEXT_BYTES; anything else is left out, with a warning, so the start is never refused
+ * for it (a start too big for the socket would close it, and the widget would try again for ever).
+ * Undefined when nothing is left.
  */
 export function contextOf(raw: unknown, warn: (m: string) => void): Record<string, string> | undefined {
   if (raw === undefined || raw === null) return undefined;
@@ -39,6 +43,10 @@ export function contextOf(raw: unknown, warn: (m: string) => void): Record<strin
     }
     if (!CONTEXT_KEY.test(key) || typeof value !== 'string' || value.length > CHAT_CONTEXT_VALUE_MAX) {
       warn(`DialogWright widget: context "${key}" is left out: a key of letters, digits, underscores, hyphens and dots, and a string of at most ${CHAT_CONTEXT_VALUE_MAX} characters`);
+      continue;
+    }
+    if (new TextEncoder().encode(JSON.stringify({ ...out, [key]: value })).length > CHAT_CONTEXT_BYTES) {
+      warn(`DialogWright widget: context "${key}" is left out: the context may take at most ${CHAT_CONTEXT_BYTES} bytes in all`);
       continue;
     }
     out[key] = value;

@@ -38,7 +38,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
 | `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
 | `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
 | `startOpen` | `data-start-open` (present, `true` or `false`) | `false` | Open the panel, and connect, on load (without taking the page's focus). Otherwise the widget connects when it is first opened, so a page view that never chats opens no chat. |
-| `context` | `data-context` (JSON) | none | The page's own data, sent on each start (`{"page":"/orders"}`): strings by key, at most 50 of at most 500 characters. The app keeps only the keys its `callData` names as `chat.<key>`, and records each as it says. A key or value the chat cannot take is left out, with a warning. |
+| `context` | `data-context` (JSON) | none | The page's own data, sent on each start (`{"page":"/orders"}`): strings by key, at most 50 of at most 500 characters, 6 KiB in all. The app keeps only the keys its `callData` names as `chat.<key>`, and records each as it says. A key or value the chat cannot take is left out, with a warning. |
 | `getToken` | (code only) | none | The site's sign-in token, or null; with it, the panel offers sign-in. |
 | `onTransfer` | (code only) | the panel says `transferred` | What a transfer does on this site (open a live chat, show a number). |
 | `onEvent` | (code only) | none | Every event the client reports (below), after the panel has shown it: for a site that does more on a restart, a sign-in or the end. |

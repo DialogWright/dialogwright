@@ -4,6 +4,7 @@ import { endpointOf, mountWidget, type WidgetOptions } from './ui';
 import { optionsFromScript } from './index';
 import { DEFAULT_STRINGS, stringsOf } from './strings';
 import { STYLES } from './styles';
+import { CHAT_CONTEXT_BYTES } from './protocol';
 import type { ChatClient, ChatClientEvent, ChatClientOptions } from './client';
 
 /** The client replaced by a fake: it records what is sent and lets the test say what the server said. */
@@ -335,6 +336,18 @@ describe('the widget', () => {
 });
 
 describe('the page\'s context', () => {
+  it('keeps the context within the bytes a start may carry, leaving out what would go over, with a warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const big = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${String(i).padStart(2, '0')}`, 'x'.repeat(500)]));
+    const { f } = mount({ context: big, startOpen: true });
+    const sent = f.made[0]!.context!;
+    const bytes = new TextEncoder().encode(JSON.stringify(sent)).length;
+    expect(bytes).toBeLessThanOrEqual(CHAT_CONTEXT_BYTES);
+    expect(Object.keys(sent)).toHaveLength(12);
+    expect(bytes + 509).toBeGreaterThan(CHAT_CONTEXT_BYTES);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`at most ${CHAT_CONTEXT_BYTES} bytes in all`));
+  });
+
   it('goes to the client, a key or value the chat cannot take left out with a warning', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { f, w } = mount({ context: { page: '/orders/1042', 'a key': 'x', n: 42 as unknown as string }, startOpen: true });

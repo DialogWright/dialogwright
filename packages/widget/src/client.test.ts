@@ -5,6 +5,7 @@ import {
   CHAT_TEXT_MAX as ENGINE_TEXT_MAX,
   CHAT_CONTEXT_KEYS as ENGINE_CONTEXT_KEYS,
   CHAT_CONTEXT_VALUE_MAX as ENGINE_CONTEXT_VALUE_MAX,
+  CHAT_CONTEXT_BYTES as ENGINE_CONTEXT_BYTES,
   type ChatErrorCode as EngineErrorCode,
   type ClientMessage as EngineClientMessage,
   type ServerMessage as EngineServerMessage,
@@ -13,7 +14,7 @@ import {
 import { libraryApp } from 'dialogwright/define/fixture/app';
 import { testkitApp } from 'dialogwright/testing/testkit/index';
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions } from './client';
-import { CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_PROTOCOL_VERSION, CHAT_TEXT_MAX, contextOf, isLocaleTag, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
+import { CHAT_CONTEXT_BYTES, CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_PROTOCOL_VERSION, CHAT_TEXT_MAX, contextOf, isLocaleTag, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
 import { startTestServer, TEST_ORIGIN, type TestServer } from './testServer';
 
 let server: TestServer | null = null;
@@ -301,9 +302,10 @@ describe('the chat client', () => {
     expect(CHAT_TEXT_MAX).toBe(ENGINE_TEXT_MAX);
     expect(CHAT_CONTEXT_KEYS).toBe(ENGINE_CONTEXT_KEYS);
     expect(CHAT_CONTEXT_VALUE_MAX).toBe(ENGINE_CONTEXT_VALUE_MAX);
+    expect(CHAT_CONTEXT_BYTES).toBe(ENGINE_CONTEXT_BYTES);
     // The context the widget sends is one a start may carry.
     const warn = (): void => {};
-    for (const raw of [{ page: '/orders' }, { 'utm.source': 'mail-2', page: 'x'.repeat(500) }, { 'a key': 'x', page: '/p' }, { page: 'x'.repeat(501) }, Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${i}`, 'v']))]) {
+    for (const raw of [{ page: '/orders' }, { 'utm.source': 'mail-2', page: 'x'.repeat(500) }, { 'a key': 'x', page: '/p' }, { page: 'x'.repeat(501) }, Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${i}`, 'v'])), Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, 'x'.repeat(500)])), { page: 'é'.repeat(500), more: 'é'.repeat(500), most: '€'.repeat(500), last: '€'.repeat(500), over: '€'.repeat(500) }]) {
       const context = contextOf(raw, warn);
       expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, ...(context ? { context } : {}) })).ok).toBe(true);
     }
