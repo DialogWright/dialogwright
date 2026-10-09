@@ -55,7 +55,7 @@ When no type fits, write the slot in code (`{ type: code }` in `slots.yaml`) or 
 
 | Type | `redact` | `handoff` |
 |---|---|---|
-| `digits` | `last4` ("...0417") | `last4` |
+| `digits` | `last4` ("...0417"; four digits or fewer as "••••"), or `length` for a short secret | `last4` |
 | `birthdate` | `mask` (the year only) | `display` |
 | `name` | `none` | `display` |
 | `text` | `length` (`<38 chars>`) | the display, a stand-in |

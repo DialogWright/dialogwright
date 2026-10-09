@@ -44,7 +44,26 @@ Contents:
 | A trade with repeat customers (a plumber, pest control) | the phone number on the account (`digits`, ten digits) and the house number or ZIP code | customers know their own number; caller ID covers the ones calling from it |
 | A line that only takes new requests | none: no identity.yaml | nothing it does is one caller's own |
 
-Write the choice in the worksheet's "Choices the paragraph left open". Avoid a short secret (a PIN, the last four of an identity number) as a factor: a `digits` slot records its last four, which is all of it ([Known gaps](#known-gaps)). Level 1 has one set of factors ([Known gaps](#known-gaps)).
+Write the choice in the worksheet's "Choices the paragraph left open". A short secret (a PIN, the last four of an identity number) as a factor takes `redact: length` on its `digits` slot ([A short secret](#a-short-secret-redact-length)). Level 1 has one set of factors ([Known gaps](#known-gaps)).
+
+## A short secret: `redact: length`
+
+**When:** a value of four digits or fewer that is someone's secret: a PIN, the last four of an identity number, a short member code. `redact: last4` shows a value by its last four digits, which would be all of it. `slots.yaml`:
+
+```yaml
+# slots.yaml
+pin:
+  type: digits
+  noun: PIN
+  length: 4
+  keypad: true
+  redact: length
+```
+
+- `redact: length` records only how many digits it has (`<4 chars>`) wherever it leaves the turn: the trace, the console (live too), the audit, a tool call's param of the same name and a transfer's handoff. Its display is the number, so the display is masked the same.
+- Under `last4` (the default), a value of four digits or fewer is recorded as four bullets (`••••`) anyway, so nothing leaks, but the trace cannot tell a PIN given from one missing a digit; `pnpm check` warns of a `last4` slot that can be that short (its `length`, or a `mask` that lets it) and points to `length`.
+- `mask` keeps the last four digits as a year, so it would not hide a PIN. A slot written in code says `redact: 'length', statement: false`, so its display is masked too.
+- Longer identifiers (an account number, a member ID) keep `last4`: the person taking a transfer reads the last four back to the caller.
 
 ## A one-time code (level 2)
 
@@ -1519,7 +1538,6 @@ Found so far, with the workaround each time. Log the ones you meet in the worksh
 
 - **One list of confirmed fields per app**: list the union, send `''` for the rest (above).
 - **One set of factors per level, so no either-or verification** ("your account number, or your phone number and ZIP code"): level 1 has one `factors` list. Choose one set ([Which factors](#which-identity-factors-when-the-paragraph-is-silent)); where the other route is the number calling, [caller ID as the identifier](#verified-by-caller-id-callerid) is the second road to level 1.
-- **A short secret is recorded whole**: a `digits` slot's `redact` is `last4` or `none`, so a four-digit PIN or the last four of an identity number is recorded in full. Prefer a longer factor; where the paragraph insists, write the slot in code with `redact: 'length'` ([authoring guide, sensitive values](../../../docs/authoring-an-app.md#sensitive-values)), which records only its length (`<4 chars>`; `mask` keeps the last four digits as a year, so it would not hide a PIN), and log the gap.
 - **No slot asked only of some callers**: a form asks every slot it lists. Give each kind of caller its own form, or its own entry form before a shared booking ([Several entry forms, one booking](#several-entry-forms-one-booking-next)).
 - **The caller's number cannot be offered for a factor**: a phone number on file works as a factor when the caller says or keys it (a `digits` slot), but `callerNumber` on a factor is refused, so the line cannot offer "the number you're calling from" for it. For callers who call from it, use [caller ID as the identifier](#verified-by-caller-id-callerid).
 - **No slot type for an amount of money or an address** (above).
