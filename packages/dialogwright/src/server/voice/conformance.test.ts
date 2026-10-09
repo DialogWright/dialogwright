@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { describe, it } from 'vitest';
-import { runVoiceProviderConformance, type FrameFixture, type WebhookFixture } from '../../testing/voiceConformance';
+import { describe, expect, it } from 'vitest';
+import { runVoiceProviderConformance, voiceConformanceChecks, type CallDataFixture, type FrameFixture, type WebhookFixture } from '../../testing/voiceConformance';
 import { computeTwilioSignature, twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { formFields } from './xml';
@@ -13,7 +13,7 @@ const frames = (id: string): FrameFixture[] =>
     .filter(Boolean)
     .map((l) => JSON.parse(l) as FrameFixture);
 
-const hooks = (id: string): { voice: WebhookFixture; action: WebhookFixture; alternatives?: WebhookFixture[] } =>
+const hooks = (id: string): { voice: WebhookFixture; action: WebhookFixture; alternatives?: WebhookFixture[]; callData?: CallDataFixture } =>
   JSON.parse(readFileSync(new URL(`./__fixtures__/${id}/webhooks.json`, import.meta.url), 'utf8'));
 
 // Twilio signs with the account's auth token; this one is made up for the test.
@@ -41,4 +41,19 @@ runVoiceProviderConformance(telnyxProvider, {
       'telnyx-signature-ed25519': sign(null, Buffer.from(`${req.nowSec}|${req.rawBody}`), privateKey).toString('base64'),
     },
   }),
+});
+
+describe('the kit\'s call data check', () => {
+  const check = (fx: Parameters<typeof voiceConformanceChecks>[1]) => voiceConformanceChecks(twilioProvider, fx).find((c) => c.name.startsWith('brings a custom parameter'))!;
+  const base = { frames: frames('twilio'), ...hooks('twilio'), sign: () => ({ headers: {}, secret: 'x' }) };
+
+  it('asks for a setup with a custom parameter, and a webhook field to echo', () => {
+    const bare = base.frames.map((f) => (f.frame.type === 'setup' ? { ...f, frame: { ...f.frame, customParameters: {} } } : f));
+    expect(() => check({ ...base, frames: bare }).run()).toThrow('no setup frame with a custom parameter in the fixtures');
+    expect(() => check({ ...base, callData: { source: 'x', webhookField: 'SipHeader_X-Missing' } }).run()).toThrow('the voice webhook carries no field "SipHeader_X-Missing" to echo');
+  });
+
+  it('takes the first of each when the fixtures name none', () => {
+    expect(() => check({ ...base, callData: undefined }).run()).not.toThrow();
+  });
 });

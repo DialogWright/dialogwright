@@ -3,6 +3,8 @@ import { frameToEvent } from '../channel/relay/map';
 import type { OutboundFrame } from '../channel/relay/frames';
 import type { TestRegistrar } from '../slots/conformance/run';
 import type { VoiceProvider, WebhookRequest } from '../server/voice/provider';
+import { callDataFrom, webhookParameters, webhookParameterName } from '../channel/callData';
+import { escapeXml } from '../server/voice/xml';
 
 /** One frame as the carrier documents (or a capture shows) it: where it came from, and which way it goes. */
 export interface FrameFixture {
@@ -22,12 +24,29 @@ export interface WebhookFixture {
   expect: Record<string, string | boolean>;
 }
 
+/** Which custom parameter and which answer webhook field the call data check reads, and where that is documented or seen. */
+export interface CallDataFixture {
+  /** The doc URL, `captured <date>`, or `ASSUMED: ...` when the carrier does not document it. */
+  source: string;
+  /** A custom parameter of a setup frame in the fixtures. */
+  param?: string;
+  /** A field of the voice webhook fixture. */
+  webhookField?: string;
+}
+
 export interface VoiceFixtures {
   frames: readonly FrameFixture[];
   /** The webhook that answers a call (POST /voice/<id>). */
   voice: WebhookFixture;
   /** The relay's end-of-session callback (POST /cr-action/<id>). */
   action: WebhookFixture;
+  /**
+   * The call data a carrier brings (app.yaml's callData): a custom parameter of a setup frame in
+   * `frames`, and a field of the `voice` webhook, which the start document echoes back. Each name is
+   * optional: absent, the first custom parameter of the first setup that has one, and the first field
+   * of the voice webhook that is not its call id.
+   */
+  callData?: CallDataFixture;
   /** Other forms the carrier may send the same webhooks in, each read as `expect` says. */
   alternatives?: readonly WebhookFixture[];
   /** Signs a webhook the way the carrier does, with a key or token made in the test; never a stored secret. */
@@ -81,6 +100,33 @@ export function voiceConformanceChecks(provider: VoiceProvider, fx: VoiceFixture
             if (event.provider[k] !== v) fail(`setup field "${k}" is not kept (got ${JSON.stringify(event.provider[k])}): ${f.source}`);
           }
         }
+      },
+    },
+    {
+      name: 'brings a custom parameter and a named answer webhook field to the session as call data',
+      run() {
+        const setup = inbound.find((f) => f.frame.type === 'setup' && typeof f.frame.customParameters === 'object' && f.frame.customParameters !== null && Object.keys(f.frame.customParameters).length > 0);
+        if (setup === undefined) fail('no setup frame with a custom parameter in the fixtures: add one, as the carrier documents a <Parameter> coming back');
+        const params = setup.frame.customParameters as Record<string, unknown>;
+        const param = fx.callData?.param ?? Object.keys(params)[0]!;
+        if (typeof params[param] !== 'string') fail(`custom parameter "${param}" is not a string on the setup: ${setup.source}`);
+        const hook = provider.parse({ url: `/voice/${provider.id}`, headers: fx.voice.headers, rawBody: fx.voice.rawBody, nowSec: NOW_SEC });
+        if (hook === null) fail(`named no call: ${fx.voice.source}`);
+        const field = fx.callData?.webhookField ?? Object.keys(hook.raw).find((k) => hook.raw[k] !== hook.callId && hook.raw[k] !== '');
+        if (field === undefined || typeof hook.raw[field] !== 'string' || hook.raw[field] === '') fail(`the voice webhook carries no field "${field ?? ''}" to echo (CallbackParams.raw): ${fx.voice.source}`);
+        const spec = { fromParam: { from: `param.${param}` }, fromWebhook: { from: `webhook.${field}` } };
+        const echoes = webhookParameters(spec, hook.raw);
+        const name = webhookParameterName('fromWebhook');
+        if (echoes[name] !== hook.raw[field]) fail(`the webhook field "${field}" is not echoed as ${name}`);
+        const doc = provider.startDocument({ publicHost: HOST, token: 'c'.repeat(32), hints: '', parameters: echoes });
+        if (!doc.includes(name) || !doc.includes(escapeXml(hook.raw[field]!))) fail(`start document does not carry ${name} with the field's value: ${doc}`);
+        // The carrier hands the document's parameters back on the setup, beside its own.
+        const back = parseInbound(JSON.stringify({ ...setup.frame, customParameters: { ...params, ...echoes } }));
+        const event = back && frameToEvent(back);
+        if (event?.type !== 'session.start') fail(`not a session start: ${setup.source}`);
+        const data = callDataFrom(spec, event.provider);
+        const want = { fromParam: params[param], fromWebhook: hook.raw[field] };
+        if (!same(data, want)) fail(`call data read as ${JSON.stringify(data)}, expected ${JSON.stringify(want)}: ${fx.callData?.source ?? setup.source}`);
       },
     },
     {

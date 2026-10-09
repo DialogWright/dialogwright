@@ -4,7 +4,7 @@
     "headers": {
       "content-type": "application/x-www-form-urlencoded"
     },
-    "rawBody": "AccountSid=AC00000000000000000000000000000000&ApiVersion=2010-04-01&CallSid=CA00000000000000000000000000000000&CallStatus=ringing&Direction=inbound&From=%2B15555550100&To=%2B15555550101",
+    "rawBody": "AccountSid=AC00000000000000000000000000000000&ApiVersion=2010-04-01&CallSid=CA00000000000000000000000000000000&CallStatus=ringing&Direction=inbound&From=%2B15555550100&To=%2B15555550101&ForwardedFrom=%2B15555550102",
     "expect": {
       "callId": "CA00000000000000000000000000000000",
       "from": "+15555550100",
@@ -26,5 +26,10 @@
       "sessionStatus": "ended",
       "handoffData": "{\"reasonCode\":\"live-agent-handoff\"}"
     }
+  },
+  "callData": {
+    "source": "https://www.twilio.com/docs/voice/twiml/connect/conversationrelay (a <Parameter> child comes back in the setup's customParameters) and https://www.twilio.com/docs/usage/webhooks/voice-webhooks (ForwardedFrom, a field of the call's webhook); values fictional",
+    "param": "callReference",
+    "webhookField": "ForwardedFrom"
   }
 }
