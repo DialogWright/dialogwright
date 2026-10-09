@@ -1346,7 +1346,7 @@ const promptId = callDataOf(s).queue === 'priority' ? 'callback_booked_priority'
 - **The model never sees it**, unless `callerState` passes a value; a choice of lines by call data belongs in code, as above, with every line in prompts.yaml.
 - **Parameters out:** `startParameters: { line: env.CALLBACK_LINE }` writes a fixed custom parameter into every start document, its value from the environment (the server refuses to start while it is unset). Only for calls placed from the app's own systems.
 - **Test:** scripted calls with `"callData": { "queue": "priority" }` and without, each with `expect.promptId` naming the line the data chooses; a chat (`"as": "web"`) with the page's key if the app reads one.
-- **Pitfall:** call data is attached by whoever placed the call: a parameter is as trustworthy as the system that set it, and never identity. Data from the page (`chat.`) is the visitor's browser's: read it as a hint, as the caller's number is ([authoring guide, 13.14](../../../docs/authoring-an-app.md#1314-the-data-a-call-or-chat-comes-with-calldata)).
+- **Pitfall:** call data is attached by whoever placed the call: a parameter is as trustworthy as the system that set it, never identity and never authorization; route on it only when that system is your own. Data from the page (`chat.`) is the visitor's browser's, which anyone can edit: read it as a hint, as the caller's number is. The call's numbers are never call data (`pnpm check` refuses them): they are `callerNumber`'s ([authoring guide, 13.14](../../../docs/authoring-an-app.md#1314-the-data-a-call-or-chat-comes-with-calldata)).
 
 ## Switches with a safe default
 
