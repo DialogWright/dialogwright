@@ -1,4 +1,4 @@
-import { isAnonymous, isParty, type GateDecision } from '../gate/types';
+import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
 import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
@@ -2722,7 +2722,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // have. An app that says nothing of a sign-in takes none.
       // The event's principal is checked, not trusted: a proven party (isParty), or the event is ignored.
       const signInLevel = identityOf(appOf(s)).signInLevel;
-      if (!s.caps.signIn || signInLevel === undefined || !isAnonymous(s.principal) || !isParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== signInLevel) {
+      if (!s.caps.signIn || signInLevel === undefined || !isAnonymous(s.principal) || !isParty(event.principal) || !sayableParty(event.principal) || event.principal.kind !== identityOf(appOf(s)).subjectKind || event.principal.level !== signInLevel) {
         return { ...base(), decision: { kind: 'ignore' }, actions: [] };
       }
       s.principal = event.principal;

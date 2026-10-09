@@ -1,6 +1,6 @@
 import { confirmationHash } from '../gate/policy';
 import { raise } from '../gate/principal';
-import { isAnonymous, isParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
+import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { AppContext, Completion, CompletionContext, FormId, Refused, SlotId, VerifyOutcome } from './app/types';
@@ -13,6 +13,7 @@ import type { RouteTaken } from './routes';
 import type { SlotExhausted } from './outcome';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
+import type { ToolRun } from './tools';
 import { callerGateFacts } from './callerNumber';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
@@ -255,10 +256,12 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
  * Runs a call the gate allowed: the app's tool, against the turn's systems. A tool the app does not
  * define never gets here (the gate's unlisted line blocks it), so one that does is a bug and throws.
  */
-function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): { value: unknown; summary: string; ref?: string } {
+function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): ToolRun {
   const def = toolOf(appOf(s), call.tool);
   // A tool that writes is given its write's key (core/idempotency.ts); any other is called as it always was.
-  return def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out, code, idempotencyKey: idempotencyKey(s, call) } : { s, tc, out, code });
+  const ran = def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out, code, idempotencyKey: idempotencyKey(s, call) } : { s, tc, out, code });
+  // A test's stand-in for the systems' answer (Tools.answers); never set on a call.
+  return tc.tools.answers ? tc.tools.answers(call.tool, ran) : ran;
 }
 
 /**
@@ -296,6 +299,15 @@ export interface CallOptions {
   readonly failSoft?: boolean;
 }
 
+/**
+ * The reason a call the gate allowed is handed to a person when the tool's reply does not pass its own
+ * check (ToolDef.check): the call ran and is recorded, its reply goes nowhere.
+ */
+export const RESULT_UNCHECKED = 'result-unchecked';
+
+/** The summary recorded for a call whose reply did not pass its tool's check: nothing of the reply, nor of the summary it came with. */
+export const RESULT_UNCHECKED_SUMMARY = "result not used: it did not pass the tool's check";
+
 /** The summary recorded for a call made with `failSoft` whose tool threw: the error itself is never recorded. */
 export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
 
@@ -312,7 +324,11 @@ export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
  * never where they are sent. A result that cannot be
  * stripped as the policy says (a tool that declared fields its value does not have) never goes on:
  * the call that ran is still recorded, with a summary that says so, and its outcome is NEEDS_HUMAN
- * (RESULT_UNREDACTABLE), so the caller goes to a person.
+ * (RESULT_UNREDACTABLE), so the caller goes to a person. So is a reply that does not pass its tool's
+ * own check (ToolDef.check: RESULT_UNCHECKED), checked before redaction, before anything reads it.
+ *
+ * A test may stand in for what the systems answer (Tools.answers): the engine reads its answer in
+ * place of the tool's, from the check on.
  *
  * `code` is the keypad one-time code for verifyCode. It travels beside the call, never in its
  * params, so it reaches neither the gate event nor the trace.
@@ -345,6 +361,14 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     if (opts.failSoft !== true) throw err;
     out.effects.length = effectsBefore;
     return { decision, value: null, failed: true };
+  }
+  // The tool's check of its own reply (ToolDef.check), before anything reads it: a reply that fails
+  // goes nowhere. The call ran, so it is recorded, with neither the reply nor the summary it came with.
+  const check = toolOf(appOf(s), call.tool).check;
+  if (check !== undefined && !check(ran.value)) {
+    scrubEffects(out, effectsBefore, scrubberOf(decision));
+    out.gateEvents.push({ decision, summary: RESULT_UNCHECKED_SUMMARY });
+    return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNCHECKED }, value: null };
   }
   // Redaction per principal, the one place it happens: nothing past this line holds the whole
   // result. The hooks, the facts and the lines get the stripped value; the event (so the trace, the
@@ -663,7 +687,8 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     // The factors prove the app's subject to level 1, never more and never anyone else: a verify
     // tool that says otherwise (or hands back something that is not a proven party) is not believed,
     // and the caller goes to a person.
-    if (!isParty(value.principal) || value.principal.kind !== subjectKind || value.principal.level !== 1) return handoff(s, 'needs-human', acks);
+    // Nor one whose name or phone, which the lines say, is not a name or a phone's last four (sayableParty).
+    if (!isParty(value.principal) || value.principal.kind !== subjectKind || value.principal.level !== 1 || !sayableParty(value.principal)) return handoff(s, 'needs-human', acks);
     // Verified with the caller-ID match standing in for the factors it identifies: the principal
     // says so (via), for the app's audit row and its own decisions. Every other principal is as the tool made it.
     const byCallerId = identifiedByCallerId(s);

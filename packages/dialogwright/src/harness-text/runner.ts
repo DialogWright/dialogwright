@@ -24,6 +24,7 @@ export { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
+import { matchLocale } from '../core/locale';
 
 /** How a runner runs one turn: runTurn, unless a test runs each one another way (testing/sessionRoundTrip.ts). */
 export type TurnRunner = typeof runTurn;
@@ -31,6 +32,12 @@ export type TurnRunner = typeof runTurn;
 /** A run's options, and how it runs each turn (runTurn when `turn` is absent, as every run but a test's). */
 export interface ScenarioRunOptions extends RunOptions {
   readonly turn?: TurnRunner;
+  /**
+   * A test's stand-in for a downstream service's answer (dialogwright/testing adversarialSuite: a
+   * hostile reply): given what the app's stand-in answered (App.testing.serviceAnswers), what the call
+   * is given in its place. Absent, as on every run but such a test, the stand-in's answer is given.
+   */
+  readonly serviceReply?: (service: string, answer: unknown) => unknown;
 }
 
 export interface Outcome {
@@ -371,27 +378,67 @@ function seededPrompt(s: Session): Pick<Session, 'lastPromptId' | 'lastPromptTex
 }
 
 export async function runCorpusEntry(entry: CorpusEntry, opts: ScenarioRunOptions): Promise<{ outcome: Outcome; run: TurnRun; setup: TurnRun }> {
+  const { setup, runs } = await runSeeded(entry, opts);
+  const run = runs.at(-1)!;
+  // The setup run is returned as well as traced: a summary that leaves it out would read
+  // the seeded placeholders as slots this one utterance filled.
+  return { outcome: outcomeOf(entry.id, run.result), run, setup };
+}
+
+/**
+ * How a seeded call is set up and what is said into it (runSeeded), where it is not a corpus entry's
+ * own: the language the call starts in, a seed of its own in place of the entry's context, and the
+ * caller's events in place of the entry's words. Each absent: as a corpus entry runs.
+ */
+export interface SeededCall {
+  /** The language tag the call asks to start in (a Scenario's `locale`): the session speaks the app's matching locale. */
+  readonly locale?: string;
+  /** The mid-call state, in place of seedCorpusSession's for the entry. */
+  readonly seed?: (session: Session, opts: SeedOptions) => Session;
+  /** What the caller does, in place of saying the entry's words: each event a turn, with its downstream services' answers after it. */
+  readonly events?: (session: Session) => SessionEvent[];
+}
+
+/**
+ * A corpus entry's call, as runCorpusEntry runs it: seeded to the entry's state (or `how.seed`'s),
+ * greeted, the seeded prompt put back, then the entry's words said (or `how.events`, one turn each,
+ * each followed by the answers of the services it asked, as a scripted call is). Returns the
+ * greeting's run and the caller's turns' runs, in order.
+ */
+export async function runSeeded(entry: CorpusEntry, opts: ScenarioRunOptions, how: SeededCall = {}): Promise<{ setup: TurnRun; runs: TurnRun[] }> {
   // Seed before the greeting so the setup trace record already reports the placeholder slots
   // as filled; otherwise summarize() credits the entry's one utterance with filling them.
   // One book of business per entry: what the entry's turn reads or files is its own.
   // A seeded call happens at the seed's moment, where the app gives one (App.testing.seed.now: hours read it).
   const seededAt = getApp(defaultAppId()).testing?.seed?.now;
   const o = { ...opts, tools: opts.tools ?? demoTools(), ...(seededAt !== undefined ? { now: () => Date.parse(seededAt), todayIso: dateAt(Date.parse(seededAt)) } : {}) };
-  const start = seedCorpusSession(startSession(entry.id, nowOf(o)(), entry.as), entry, o);
-  const asked = entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
+  const fresh = startSession(entry.id, nowOf(o)(), entry.as);
+  // A call in another language is seeded in it, so the prompt the seed leaves is that language's.
+  if (how.locale !== undefined) {
+    const app = appOf(fresh);
+    if (app.locales) fresh.locale = matchLocale(app, how.locale) ?? app.locales.default;
+  }
+  const start = how.seed ? how.seed(fresh, o) : seedCorpusSession(fresh, entry, o);
+  const asked = how.seed === undefined && entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   // The call data a seeded call comes with (App.testing.seed.callData); none for an app whose seed names none.
-  const setup = await turn(start, withCallData(startEvent(), appOf(start).testing?.seed?.callData), o);
+  const setup = await turn(start, withCallData(startEvent({}, how.locale), appOf(start).testing?.seed?.callData), o);
   // The greeting's own bookkeeping moves the prompt to the greeting, so put back the one the seed
   // left the caller answering. Only the prompt: seeding again would read a summary a second time,
   // and a summary hook that remembers what the caller heard (FormDef.onSummaryRead) would then read the
   // short re-read instead of the summary the entry answers.
-  const session = setup.result.session;
+  let session = setup.result.session;
   if (asked) Object.assign(session, asked);
-  const run = await turn(session, saidEvent(session, entry.text), o);
-  // The setup run is returned as well as traced: a summary that leaves it out would read
-  // the seeded placeholders as slots this one utterance filled.
-  return { outcome: outcomeOf(entry.id, run.result), run, setup };
+  if (how.events === undefined) return { setup, runs: [await turn(session, saidEvent(session, entry.text), o)] };
+  const runs: TurnRun[] = [];
+  for (const event of how.events(session)) {
+    if (session.ended) break;
+    const run = await turn(session, event, o);
+    const followed = await followEffects(run, o);
+    runs.push(run, ...followed);
+    session = (followed.at(-1) ?? run).result.session;
+  }
+  return { setup, runs };
 }
 
 /**
@@ -508,7 +555,8 @@ export async function followEffects(run: TurnRun, opts: ScenarioRunOptions, down
   for (const effect of run.result.effects) {
     if (effect.kind !== 'service') continue;
     const answer = appOf(session).testing?.serviceAnswers?.[effect.service];
-    const event = serviceResultEvent(effect.service, down || !answer ? null : answer(effect.params));
+    const answered = down || !answer ? null : answer(effect.params);
+    const event = serviceResultEvent(effect.service, answered !== null && opts.serviceReply ? opts.serviceReply(effect.service, answered) : answered);
     // The answer's audit row is masked as the effect's params were recorded, as the server does (server/services.ts).
     carryScrub(effect, event);
     const next = await (opts.turn ?? runTurn)(session, event, opts);

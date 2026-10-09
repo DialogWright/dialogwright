@@ -227,8 +227,16 @@ function recordOf(kb: KnowledgeBase, passage: KbPassage, facts: Readonly<Record<
  *
  *   tools: { findPassage: kbAnswerTool({ subject: 'cardNumber', facts: (p, sys) => (sys as Systems).cardFacts(p.cardNumber) }) }
  */
+/** The tools kbAnswerTool made: the engine's own, which read the app's approved passages and no downstream system. */
+const KB_ANSWER_TOOLS = new WeakSet<ToolDef>();
+
+/** Whether `def` is a tool kbAnswerTool made (the adversarial suite gives it no hostile reply: it reaches no downstream system). */
+export function isKbAnswerTool(def: ToolDef): boolean {
+  return KB_ANSWER_TOOLS.has(def);
+}
+
 export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
-  return {
+  const def: ToolDef = {
     params: [...(opts.subject !== undefined ? [opts.subject] : []), KB_TOPIC_PARAM],
     run(call, sys, { s, tc }) {
       const kb = appOf(s).knowledge?.kb;
@@ -243,6 +251,8 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
     },
     audit: ({ call, summary, kb }) => [{ type: 'tool_result', detail: { tool: call.tool, summary } }, ...(kb ? [kbAuditRow(kb)] : [])],
   };
+  KB_ANSWER_TOOLS.add(def);
+  return def;
 }
 
 /** What an informational intent's passage comes to: the line to say, and whether it is the answer (false: the unavailable line). */

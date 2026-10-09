@@ -36,6 +36,8 @@ const WORD_DIGITS: Readonly<Record<string, number>> = {
   ten: 2, eleven: 2, twelve: 2, thirteen: 2, fourteen: 2, fifteen: 2, sixteen: 2, seventeen: 2, eighteen: 2, nineteen: 2,
   twenty: 2, thirty: 2, forty: 2, fifty: 2, sixty: 2, seventy: 2, eighty: 2, ninety: 2,
   hundred: 0, thousand: 0,
+  // Spanish, digit by digit: a code said aloud in a Spanish call is masked as an English one is.
+  cero: 1, uno: 1, una: 1, dos: 1, tres: 1, cuatro: 1, cinco: 1, seis: 1, siete: 1, ocho: 1, nueve: 1,
 };
 
 /** The words a recognizer writes for a digit it heard ("to" for two, "for" for four): counted only in runs of MIN_DIGITS or more. */

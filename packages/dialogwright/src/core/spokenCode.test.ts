@@ -17,6 +17,10 @@ describe('maskSpokenCode', () => {
     ['the code is for eight two nine one six', `the code is ${CODE_MASK}`],
     ['ate to for one', CODE_MASK],
     ['it is one two three four and then five six', `it is ${CODE_MASK} and then five six`],
+    // Said in Spanish, digit by digit (the adversarial suite's Spanish code): masked as in English.
+    ['el código es cuatro dos cuatro dos cuatro dos', `el código es ${CODE_MASK}`],
+    ['cero uno, dos tres', CODE_MASK],
+    ['es nueve ocho siete seis cinco una', `es ${CODE_MASK}`],
   ])('masks %j', (said, masked) => {
     expect(maskSpokenCode(said)).toEqual({ text: masked, masked: true });
   });
@@ -30,6 +34,8 @@ describe('maskSpokenCode', () => {
     'hang on two seconds',
     'i have one two three',
     'it ends in 12',
+    'dame dos minutos',
+    'uno dos tres',
     '',
   ])('leaves %j alone', (said) => {
     expect(maskSpokenCode(said)).toEqual({ text: said, masked: false });

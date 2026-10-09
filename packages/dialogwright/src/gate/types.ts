@@ -53,6 +53,28 @@ export function isParty(p: unknown): p is Party {
   return typeof kind === 'string' && kind !== 'anonymous' && (level === 1 || level === 2) && typeof id === 'string' && id !== '';
 }
 
+/**
+ * A first name as the engine's own lines say it (identity_verified, signin_thanks, a chat's greeting):
+ * words of letters of any script, joined inside a word by an apostrophe, a hyphen or a period, a word
+ * ending in a period or not, one space between words; empty for none.
+ */
+const NAME_WORD = String.raw`[\p{L}\p{M}]+(?:['’.-][\p{L}\p{M}]+)*\.?`;
+const SAYABLE_NAME = new RegExp(`^(?:${NAME_WORD}(?: ${NAME_WORD})*)?$`, 'u');
+
+/**
+ * Whether what the engine says of a proven party is what it should be: a first name (at most 40
+ * characters and four words; SAYABLE_NAME) and, where it has one, a phone's last four digits. A
+ * verify tool's principal (and a sign-in's) comes from the app's systems, which are not trusted to
+ * hold only a name there: a party whose name is a sentence, or whose last four are not four digits,
+ * is not believed, and the caller goes to a person.
+ */
+export function sayableParty(p: Party): boolean {
+  const first = p.first;
+  if (typeof first !== 'string' || first.length > 40 || first.split(' ').length > 4 || !SAYABLE_NAME.test(first)) return false;
+  const last4 = p.contact?.phoneLast4;
+  return last4 === undefined || last4 === '' || /^\d{4}$/.test(last4);
+}
+
 /** A tool's name: a plain string. The app defines which tools exist; the gate blocks any other (unlisted). */
 export type { ToolName };
 

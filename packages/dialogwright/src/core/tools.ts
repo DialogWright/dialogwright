@@ -1,5 +1,5 @@
 import { defaultAppId, getApp } from './app/registry';
-import type { GateLookups } from '../gate/types';
+import type { GateLookups, ToolName } from '../gate/types';
 
 /** Checks a one-time code the caller keyed against the one texted to them. */
 export interface CodeVerifier { check(code: string): boolean }
@@ -22,6 +22,20 @@ export interface Tools {
   sys: unknown;
   lookups: GateLookups;
   codes: CodeVerifier;
+  /**
+   * A test's stand-in for what the systems behind a tool answer (dialogwright/testing
+   * adversarialSuite: a hostile reply from a downstream service): given what a tool's run returned,
+   * what the engine reads in its place, before anything else sees it. Never set on a call: the
+   * server, the CLI and every run but such a test leave it unset, and the tool's own answer is read.
+   */
+  answers?(tool: ToolName, ran: ToolRun): ToolRun;
+}
+
+/** What a tool's run returns (ToolDef.run): its value, its one-line summary, and the id of a record it made. */
+export interface ToolRun {
+  value: unknown;
+  summary: string;
+  ref?: string;
 }
 
 /** A fresh copy of the default app's systems, with the mock code verifier. */

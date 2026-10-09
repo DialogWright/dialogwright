@@ -164,6 +164,12 @@ export type { JevClient } from './jev/types';
 export type { AnsweredBy, Answer, AnswerMap, ChoiceAnswer, NoulAnswer, ScoreAnswer, Question, QuestionMap, Ranked } from './jev/types';
 export { isChoice, isNoul, isScore, noulValue, rankProbabilities, topMargin } from './jev/types';
 
+// What a tool's reply must look like (ToolDef.check): checks a downstream system's reply is held to
+// before anything reads it, and the reason a call whose reply fails goes to a person.
+export { replyShape } from './core/replyShape';
+export type { ReplyCheck } from './core/replyShape';
+export { RESULT_UNCHECKED } from './core/lifecycle';
+
 // Decisions a completion or hook may return, and the lines it may say before them.
 export type { Ack } from './core/fia';
 export type { Decision, PromptDecision, CompleteDecision, HandoffDecision } from './core/decision';
