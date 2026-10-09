@@ -99,6 +99,9 @@ describe('a scaffolded app, end to end', () => {
     const regress = node(app, tool('tsx', 'dist', 'cli.mjs'), ['src/regress.ts']);
     expect(regress).toContain('no changes');
     expect(regress).toMatch(/scenarios\s+4\/4 pass expectation,\s+4\/4 match expected/);
+    // The adversarial suite is on as created (app.yaml testing.adversarial), and every case holds.
+    expect(regress).toMatch(/\nadversarial (\d+)\/\1 cases hold {2}\(/);
+    expect(regress).not.toContain('FAIL');
     // Against a cassette, the run reads the app's own .env as `pnpm start` does: here it names a model
     // with no cassette, so the replay looks for that model's file, says where the settings came from
     // (never a value), and every turn misses.
@@ -109,6 +112,9 @@ describe('a scaffolded app, end to end', () => {
     expect(replay.stdout).toContain('model example-model-from-env from typesafe, replayed from its cassette');
     expect(replay.stdout).toContain('example-model-from-env.jsonl (not found; every turn will miss until recorded)');
     expect(replay.stdout).toMatch(/cassette misses \d+/);
+    // Its cases are not yet recorded: listed, failing nothing of their own.
+    expect(replay.stdout).toMatch(/\nadversarial \d+\/\d+ cases hold, \d+ not yet recorded/);
+    expect(replay.stdout).not.toContain('FAIL adversarial');
     rmSync(join(app, '.env'));
     // `pnpm --filter ... cassette:trim`: the launcher runs; the scaffold has no cassette yet, so every
     // request misses and it writes nothing.

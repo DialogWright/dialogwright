@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import {
-  ANONYMOUS, addDays, defineApp, describeDay, localeOf,
+  ANONYMOUS, addDays, defineApp, describeDay, localeOf, replyShape,
   type AppCode, type Completion, type CompletionContext, type Session, type ToolDef,
 } from 'dialogwright';
 import { FIRST_OPENING_IN_DAYS } from './data';
@@ -50,6 +50,10 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.bookings.push({ ref, service, when });
       return { value: { when }, summary: `booked ${ref}`, ref };
     },
+    // The booking system's reply is not trusted: the day it gives is said to the caller, so it must be
+    // a day. A reply that is not is never used, and a person takes the call (the adversarial suite
+    // answers each tool with instructions in its reply to find a field like this one).
+    check: replyShape.object({ when: replyShape.isoDate() }),
   },
 };
 
