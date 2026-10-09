@@ -215,6 +215,8 @@ export interface TurnResult {
   routes?: RouteNoted[];
   /** the app's start hook threw on this turn: its kind of error, never its message; absent on every other turn */
   startHookFailed?: string;
+  /** the replies that did not pass their tool's check this turn, which ended it with a person (TurnOut.unchecked); absent on every other turn */
+  unchecked?: UncheckedReply[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
@@ -2486,7 +2488,9 @@ function startHook(s: Session, io: TurnIO): void {
   const before = cloneSession(s);
   const effects = io.out.effects.length;
   try {
-    hook(appContext(s, io.tc, io.out));
+    // Every call the hook makes takes a reply that fails its check as no data: the hook cannot hand
+    // off, and the call goes on (as the call-start lookup's does).
+    hook(appContext(s, io.tc, io.out, { uncheckedIsNoData: true }));
   } catch (err) {
     for (const key of Object.keys(s)) if (!Object.hasOwn(before, key)) delete (s as unknown as Record<string, unknown>)[key];
     Object.assign(s, before);

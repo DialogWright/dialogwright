@@ -540,9 +540,9 @@ export interface ToolDef {
    * reads it; a check that throws fails the reply. The call is recorded as having run, with a summary
    * that says its reply was not used (neither the reply nor the summary it came with), the side effects
    * the tool queued as it ran are dropped, the gate's decision becomes NEEDS_HUMAN (`result-unchecked`)
-   * with a null value, and the turn ends in a handoff with that reason whatever the app's code did with
-   * the null (core/turn.ts), save for a call made with `failSoft` (the call-start lookup), which takes it
-   * as no data. A write (an idempotent tool, or one whose action has a `confirmed` rule) has still been
+   * with a null value, no later call of the turn runs (each is refused, `after-unchecked`), and the turn
+   * ends in a handoff with that reason whatever the app's code did with the null (core/turn.ts), save
+   * for a call made with `failSoft` (the call-start lookup) or by the start hook, which takes it as no data. A write (an idempotent tool, or one whose action has a `confirmed` rule) has still been
    * made downstream and is not undone: the audit and the transfer say so, with the record it made where
    * that is a plain reference. The adversarial suite's hostile replies find the fields that need a check
    * (dialogwright/testing adversarialSuite). Without it, every reply is used as it is.

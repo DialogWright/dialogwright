@@ -303,6 +303,12 @@ export const RESULT_UNREDACTABLE = 'result-unredactable';
 export interface CallOptions {
   /** A tool that throws fails the call, recorded with TOOL_FAILED_SUMMARY, not the turn. Default false. */
   readonly failSoft?: boolean;
+  /**
+   * A reply that does not pass its tool's check is no data (the call fails, recorded), not a turn that
+   * ends with a person: as with failSoft, for the calls that may never keep a call from going on (the
+   * start hook's). Default false.
+   */
+  readonly uncheckedIsNoData?: boolean;
 }
 
 /**
@@ -313,6 +319,12 @@ export const RESULT_UNCHECKED = 'result-unchecked';
 
 /** The summary recorded for a call whose reply did not pass its tool's check: nothing of the reply, nor of the summary it came with. */
 export const RESULT_UNCHECKED_SUMMARY = "result not used: it did not pass the tool's check";
+
+/** The reason a call is refused, its tool not run, when a reply earlier in the same turn did not pass its tool's check. */
+export const AFTER_UNCHECKED = 'after-unchecked';
+
+/** The summary recorded for such a call. */
+export const AFTER_UNCHECKED_SUMMARY = "not run: a reply earlier in the turn did not pass its tool's check";
 
 /**
  * The summary recorded for a write (a tool that is idempotent, or whose action has a `confirmed` rule)
@@ -371,6 +383,15 @@ export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
 export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string, opts: CallOptions = {}): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
   const decision = evaluate(s, call, tc);
+  // A reply earlier in this turn did not pass its tool's check: the turn ends with a person, and no
+  // later call of the turn runs (a probe or a form's check, which run no tool, are asked as ever). The
+  // call is recorded, refused, with why.
+  const probe = (call.purpose !== undefined && PROBES.has(call.purpose)) || isCheckAction(appOf(s), call.tool);
+  if ((out.unchecked?.length ?? 0) > 0 && !probe) {
+    const refused: GateDecision = { ...decision, verdict: 'NEEDS_HUMAN', reason: AFTER_UNCHECKED };
+    out.gateEvents.push({ decision: refused, summary: AFTER_UNCHECKED_SUMMARY });
+    return { decision: refused, value: null };
+  }
   // A form's check (policy.yaml `check: true`) has no tool: like a probe, the gate's answer is all there is.
   if (decision.verdict !== 'ALLOW' || (call.purpose !== undefined && PROBES.has(call.purpose)) || isCheckAction(appOf(s), call.tool)) {
     out.gateEvents.push({ decision, summary: null });
@@ -404,8 +425,8 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
     const named = wrote && typeof ran.ref === 'string' && ran.ref.length <= 40 && UNCHECKED_REF.test(ran.ref) ? ran.ref : undefined;
     const ref = named !== undefined && scrub ? scrub(named) : named;
     out.gateEvents.push(ref === undefined ? { decision, summary: wrote ? RESULT_UNCHECKED_WRITE_SUMMARY : RESULT_UNCHECKED_SUMMARY } : { decision, summary: RESULT_UNCHECKED_WRITE_SUMMARY, ref });
-    // A call made with failSoft (the call-start lookup) takes it as no data, as a tool that failed.
-    if (opts.failSoft === true) return { decision, value: null, failed: true };
+    // A call made with failSoft (the call-start lookup), or by the start hook, takes it as no data, as a tool that failed.
+    if (opts.failSoft === true || opts.uncheckedIsNoData === true) return { decision, value: null, failed: true };
     (out.unchecked ??= []).push(ref === undefined ? { tool: call.tool, wrote } : { tool: call.tool, wrote, ref });
     return { decision: { ...decision, verdict: 'NEEDS_HUMAN', reason: RESULT_UNCHECKED }, value: null };
   }
@@ -830,8 +851,8 @@ export function takeSummaryHash(s: Session, form: FormId): void {
  * What an app hook gets for this turn (App, FormDef): the session, the turn and its output, and
  * callTool bound to them. The only way an app's code reaches a tool.
  */
-export function appContext(s: Session, tc: TurnContext, out: TurnOut): AppContext {
-  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { failSoft: true } : {}) };
+export function appContext(s: Session, tc: TurnContext, out: TurnOut, base: CallOptions = {}): AppContext {
+  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { ...base, failSoft: true } : base) };
 }
 
 /** A completion's context: an AppContext with the turn's acks so far, and refusal bound to them. */
