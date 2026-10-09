@@ -99,7 +99,7 @@ describe('pnpm console:link', () => {
 
   it('is the workspace\'s pnpm console:link', () => {
     const root = JSON.parse(readFileSync(new URL('../../../../../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> };
-    expect(root.scripts['console:link']).toBe('tsx packages/dialogwright/src/server/console/linkCli.ts');
+    expect(root.scripts['console:link']).toBe('tsx packages/dialogwright/src/define/cli.ts console:link');
   });
 
   it('answers a command line it does not understand with its usage', async () => {

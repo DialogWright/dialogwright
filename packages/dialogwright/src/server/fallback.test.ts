@@ -90,6 +90,6 @@ describe('pnpm fallback', () => {
 
   it('is a script at the repository root', () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
-    expect(scripts.fallback).toBe('tsx packages/dialogwright/src/server/fallback.ts');
+    expect(scripts.fallback).toBe('tsx packages/dialogwright/src/define/cli.ts fallback');
   });
 });

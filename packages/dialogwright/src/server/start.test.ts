@@ -257,11 +257,11 @@ describe('pnpm start', () => {
     }
   });
 
-  it('is pnpm start at the repository root, and pnpm configure beside it, each run by tsx itself', () => {
+  it('is pnpm start at the repository root, and pnpm configure beside it, each run by tsx itself through the one command line', () => {
     // Not through a second pnpm (pnpm --filter): pnpm turns a terminal's Ctrl-C, reaching it twice, into
     // a SIGTERM for the command, and returns the prompt while the server is still draining.
     const scripts = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
-    expect(scripts.start).toBe('tsx packages/dialogwright/src/server/start.ts');
-    expect(scripts.configure).toBe('tsx packages/dialogwright/src/server/setup.ts');
+    expect(scripts.start).toBe('tsx packages/dialogwright/src/define/cli.ts start');
+    expect(scripts.configure).toBe('tsx packages/dialogwright/src/define/cli.ts configure');
   });
 });

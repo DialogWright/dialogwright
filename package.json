@@ -26,13 +26,13 @@
     "kb:review": "pnpm --filter @dialogwright/kb-author kb:review",
     "kb:refresh": "pnpm --filter @dialogwright/kb-author kb:refresh",
     "kb:gaps": "pnpm --filter @dialogwright/kb-author kb:gaps",
-    "audit:verify": "tsx packages/dialogwright/src/audit/verifyCli.ts",
-    "diagnose": "tsx packages/dialogwright/src/server/doctor.ts",
-    "configure": "tsx packages/dialogwright/src/server/setup.ts",
-    "start": "tsx packages/dialogwright/src/server/start.ts",
-    "service": "tsx packages/dialogwright/src/server/serviceFile.ts",
-    "fallback": "tsx packages/dialogwright/src/server/fallback.ts",
-    "console:link": "tsx packages/dialogwright/src/server/console/linkCli.ts"
+    "audit:verify": "tsx packages/dialogwright/src/define/cli.ts audit:verify",
+    "diagnose": "tsx packages/dialogwright/src/define/cli.ts diagnose",
+    "configure": "tsx packages/dialogwright/src/define/cli.ts configure",
+    "start": "tsx packages/dialogwright/src/define/cli.ts start",
+    "service": "tsx packages/dialogwright/src/define/cli.ts service",
+    "fallback": "tsx packages/dialogwright/src/define/cli.ts fallback",
+    "console:link": "tsx packages/dialogwright/src/define/cli.ts console:link"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

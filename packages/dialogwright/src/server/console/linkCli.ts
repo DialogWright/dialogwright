@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config';
 import { readEnvFile } from '../envFile';
-import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } from '../workspace';
+import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from '../workspace';
 import { CODE_TTL_MS, LINK_KEY_HEADER, LINK_PATH, type LinkFile } from './auth';
 import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
 
@@ -37,7 +37,7 @@ export interface LinkIo {
 
 /** The settings and the folder the server runs in, as `pnpm diagnose` finds them; or what went wrong. */
 function settingsOf(appName: string | undefined, envFileArg: string | undefined, io: LinkIo): { env: Env; cwd: string } | { error: string; code: number } {
-  const apps = workspaceApps(io.root ?? WORKSPACE_ROOT);
+  const apps = workspaceApps(io.root ?? projectRoot(io.invokedFrom));
   let app: WorkspaceApp | null = null;
   if (appName !== undefined) {
     app = findApp(apps, appName, io.invokedFrom);
@@ -155,11 +155,16 @@ export async function main(argv: readonly string[], io: LinkIo): Promise<number>
   return 0;
 }
 
-// Run when invoked directly (tsx linkCli.ts); importing it runs nothing.
-if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await main(process.argv.slice(2), {
+/** `dialogwright console:link`: the command with this process's output, environment and folder; returns its exit code. */
+export function commandLine(argv: readonly string[]): Promise<number> {
+  return main(argv, {
     out: (line) => console.log(line),
     env: process.env,
     invokedFrom: process.env.INIT_CWD?.trim() || process.cwd(),
   });
+}
+
+// Run when invoked directly (tsx linkCli.ts); importing it runs nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  process.exitCode = await commandLine(process.argv.slice(2));
 }

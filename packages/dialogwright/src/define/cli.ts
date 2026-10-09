@@ -12,8 +12,10 @@ import { pageCommand, type PageCommand } from './pageCommand';
 import { formatProblem, type Problem } from './problems';
 
 /**
- * The `dialogwright` command (the package's bin; run through tsx, which is how the repo runs its
- * TypeScript). Eleven commands:
+ * The `dialogwright` command: one command line for every command an app's author runs. In this
+ * repository it is the package's bin, run through tsx (the root's `pnpm check`, `pnpm configure`,
+ * `pnpm start`... all run this file); in an installed package the bin is bin/dialogwright.mjs, which
+ * registers tsx's loader and runs this file's build. The commands:
  *
  *   dialogwright check [--json] [dir...]
  *   dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]
@@ -23,6 +25,10 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright app:diagram [dir...]     (./pageCommand.ts: writes each app's APP-MAP.md, the app map)
  *   dialogwright kb:model | kb:index | kb:bakeoff   (../kb/commands.ts: the knowledge base's retrieval)
  *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
+ *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
+ *   dialogwright configure | start | diagnose | service | fallback | console:link   (../server: running an app)
+ *   dialogwright audit:verify [dir]                 (../audit/verifyCli.ts: each audit day file's hash chain)
+ *   dialogwright help
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
  * per problem, then a summary line per folder (`N problems in <dir>`, or `<dir>: ok`). Exit code 1
@@ -35,7 +41,35 @@ import { formatProblem, type Problem } from './problems';
  * `create-app` writes a new app folder from the template (./createApp.ts) and prints what to do next;
  * it is `pnpm create-app` at the repository root. It exits 1 for a name it refuses or a folder that
  * exists, and 2 for a command line it does not understand.
+ *
+ * The commands that run an app (configure, start, diagnose, service, fallback, console:link) and
+ * audit:verify are their modules' own, given this process's terminal, environment and folder; each
+ * prints its own usage.
  */
+
+/** Every command, with what it does in a line: `dialogwright help` prints them. */
+export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
+  ['check', 'every app folder (or those named): YAML, schemas, cross-links to the code, prompts, corpus'],
+  ['create-app', 'a new app from the template (--standalone: a project of its own, outside this repository)'],
+  ['regress', "an app's regression run against its fixtures (the stub, or a recording with --client recorded)"],
+  ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
+  ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
+  ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
+  ['policy:convert', 'policy.yaml and identity.yaml from the old table shape to the current one'],
+  ['configure', "ask, and write the app's .env: a laptop with no keys, or a phone line"],
+  ['start', "the app's server with its .env, through a quick tunnel when PUBLIC_HOST is unset"],
+  ['diagnose', 'what is misconfigured, one line per check with its fix (--offline: no requests)'],
+  ['service', 'a launchd or systemd service file with this machine\'s paths; prints the install commands'],
+  ['fallback', 'the document a carrier plays when it cannot reach the server'],
+  ['console:link', 'a new one-time sign-in link for the console (CONSOLE_AUTH=token)'],
+  ['audit:verify', "each audit day file's hash chain; exit 1 at the first break"],
+  ['kb:model', 'download the pinned embedding model, checking its SHA-256'],
+  ['kb:index', "write a knowledge base's vector index after its topics change"],
+  ['kb:bakeoff', 'compare the retrievers on paraphrases offline'],
+  ['kb:approve', 'approve passages, by a person at the terminal'],
+  ['kb:status', 'the passages by state, each with its fix'],
+  ['help', 'this list'],
+];
 
 export const USAGE = [
   'usage: dialogwright check [--json] [dir...]',
@@ -70,7 +104,31 @@ export const USAGE = [
   '  asks you to confirm at the terminal first; --yes confirms on the command line instead (refused in CI)',
   '       dialogwright kb:status [dir...]',
   '  dir: an app folder with a kb/, or a kb folder; lists the passages by state (fresh, stale, unapproved) and the drafts, with the fix for each',
+  '       dialogwright regress [dir] [options]',
+  '  the app\'s regression run, as its src/regress.ts runs it (dialogwright regress --help: the options)',
+  '       dialogwright configure | start | diagnose | service | fallback | console:link | audit:verify [options]',
+  '  running an app: each prints its own usage; dialogwright help lists every command',
 ].join('\n');
+
+/** `dialogwright help`: every command, a line each. */
+export function helpText(): string {
+  const width = Math.max(...COMMANDS.map(([name]) => name.length));
+  return ['usage: dialogwright <command> [options]', '', ...COMMANDS.map(([name, summary]) => `  ${name.padEnd(width)}  ${summary}`), '', 'In a project of your own, run them with npx dialogwright <command> (or the project\'s npm scripts); in the DialogWright repository, pnpm <command>.'].join('\n');
+}
+
+/** The commands that run an app, and audit:verify: each module's own command line. Loaded only when one runs. */
+const PROCESS_COMMANDS: Readonly<Record<string, () => Promise<(argv: readonly string[]) => Promise<number> | number>>> = {
+  configure: async () => (await import('../server/setup')).commandLine,
+  start: async () => (await import('../server/start')).commandLine,
+  diagnose: async () => (await import('../server/doctor')).commandLine,
+  service: async () => (await import('../server/serviceFile')).commandLine,
+  fallback: async () => (await import('../server/fallback')).commandLine,
+  'console:link': async () => (await import('../server/console/linkCli')).commandLine,
+  'audit:verify': async () => {
+    const { main: verify } = await import('../audit/verifyCli');
+    return (argv) => verify([...argv]);
+  },
+};
 
 export interface Io {
   out(line: string): void;
@@ -143,6 +201,16 @@ const APP_DIAGRAM: PageCommand = {
 /** Runs the command with `argv` (what follows `dialogwright`); returns the exit code. */
 export async function main(argv: readonly string[], io: Io = stdio()): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === 'help' || command === '--help' || command === '-h') {
+    io.out(helpText());
+    return 0;
+  }
+  const runner = command !== undefined && Object.hasOwn(PROCESS_COMMANDS, command) ? PROCESS_COMMANDS[command] : undefined;
+  if (runner) return (await runner())(rest);
+  if (command === 'regress') {
+    const { regressCommand } = await import('../harness-text/regressCommand');
+    return regressCommand(rest, { err: io.err, invokedFrom: io.invokedFrom ?? io.cwd });
+  }
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);
   if (command === 'policy:matrix') return matrixCommand(rest, io);

@@ -1,11 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
 /**
  * The apps a repository's commands run (pnpm configure, start, diagnose, service): each workspace
- * package with an app folder (app.yaml) and a `serve` script, found from pnpm-workspace.yaml.
+ * package with an app folder (app.yaml) and a `serve` script, found from pnpm-workspace.yaml. In a
+ * project of its own (`dialogwright create-app --standalone`), where the engine is installed in
+ * node_modules, the project is found from where the command was run, and the project's own folder is
+ * its app.
  */
 
 export interface WorkspaceApp {
@@ -19,6 +22,38 @@ export interface WorkspaceApp {
 
 /** The repository root: the folder with pnpm-workspace.yaml above this package. */
 export const WORKSPACE_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
+
+/** Whether the engine runs from the DialogWright repository (src/, or a build beside it), not installed in a project's node_modules. */
+export const ENGINE_IN_REPOSITORY = existsSync(join(WORKSPACE_ROOT, 'pnpm-workspace.yaml')) && !fileURLToPath(import.meta.url).split(sep).includes('node_modules');
+
+/**
+ * Where a command finds its apps: the repository, when the engine runs from it (as before there was a
+ * package to install); otherwise the project it was run in: the nearest folder at or above
+ * `invokedFrom` with pnpm-workspace.yaml, else the nearest app folder with a package.json (a project of
+ * its own), else the nearest folder with a package.json.
+ */
+export function projectRoot(invokedFrom: string, inRepository: boolean = ENGINE_IN_REPOSITORY): string {
+  if (inRepository) return WORKSPACE_ROOT;
+  let app: string | null = null;
+  let pkg: string | null = null;
+  for (let at = resolve(invokedFrom); ; at = dirname(at)) {
+    if (existsSync(join(at, 'pnpm-workspace.yaml'))) return at;
+    if (existsSync(join(at, 'package.json'))) {
+      pkg ??= at;
+      if (existsSync(join(at, 'app.yaml'))) app ??= at;
+    }
+    if (dirname(at) === at) return app ?? pkg ?? resolve(invokedFrom);
+  }
+}
+
+/**
+ * How `start` runs an app's server: `pnpm --filter <app> serve` from the root of a pnpm workspace, as
+ * before; in a project of its own, the app's `serve` script with npm, which every Node install has.
+ */
+export function serveCommand(app: WorkspaceApp, root: string): { command: string; args: string[]; cwd: string } {
+  if (existsSync(join(root, 'pnpm-workspace.yaml'))) return { command: 'pnpm', args: ['--filter', app.name, 'serve'], cwd: root };
+  return { command: 'npm', args: ['run', '--silent', 'serve'], cwd: app.dir };
+}
 
 function packageJson(dir: string): { name?: string; scripts?: Record<string, string> } | null {
   try {
@@ -56,9 +91,11 @@ function workspaceFolders(root: string): string[] {
   return [...new Set(out)].sort();
 }
 
-/** The workspace's apps, by folder. */
+/** The workspace's apps, by folder; a project whose own folder is an app (one made with --standalone) is its one app, folder `.`. */
 export function workspaceApps(root: string = WORKSPACE_ROOT): WorkspaceApp[] {
   const apps: WorkspaceApp[] = [];
+  const self = packageJson(root);
+  if (self?.name && self.scripts?.serve && existsSync(join(root, 'app.yaml'))) apps.push({ name: self.name, dir: root, folder: '.' });
   for (const dir of workspaceFolders(root)) {
     const pkg = packageJson(dir);
     if (!pkg?.name || !pkg.scripts?.serve || !existsSync(join(dir, 'app.yaml'))) continue;

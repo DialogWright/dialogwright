@@ -33,7 +33,7 @@ function chain(): string {
 describe('pnpm audit:verify', () => {
   it('is a script at the repository root', () => {
     const root = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    expect(root.scripts['audit:verify']).toBe('tsx packages/dialogwright/src/audit/verifyCli.ts');
+    expect(root.scripts['audit:verify']).toBe('tsx packages/dialogwright/src/define/cli.ts audit:verify');
   });
 
   it('exits 0 on a whole chain', () => {

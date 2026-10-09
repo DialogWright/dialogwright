@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_DRAIN_MS, integer, type Env } from './config';
 import { readEnvFile } from './envFile';
 import { findOnPath } from './tunnel';
-import { findApp, workspaceApps, WORKSPACE_ROOT } from './workspace';
+import { findApp, projectRoot, workspaceApps } from './workspace';
 
 /**
  * `ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>] [--force]`
@@ -157,7 +157,7 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out('the settings file the service reads is needed: ENV_FILE=<path> pnpm service ... (keep it outside the repository, mode 600)');
     return 2;
   }
-  const root = io.root ?? WORKSPACE_ROOT;
+  const root = io.root ?? projectRoot(io.invokedFrom);
   const app = findApp(workspaceApps(root), flags.app, io.invokedFrom);
   if (app === null) {
     io.out(`no app "${flags.app}" in this workspace`);
@@ -208,7 +208,12 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
   return 0;
 }
 
+/** `dialogwright service`: the command with this process's output, environment and folder; returns its exit code. */
+export function commandLine(argv: readonly string[]): Promise<number> {
+  return main(argv, { out: (line) => console.log(line), env: process.env, invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
+}
+
 // Run when invoked directly (tsx serviceFile.ts); importing it runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await main(process.argv.slice(2), { out: (line) => console.log(line), env: process.env, invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
+  process.exitCode = await commandLine(process.argv.slice(2));
 }

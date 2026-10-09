@@ -4,11 +4,11 @@ import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { carrierSteps } from './carrierSteps';
-import type { Env } from './config';
+import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
 import { checkSecretOf } from './voice/registry';
 import { resolveJevProvider } from '../jev/provider';
-import { findApp, workspaceApps, WORKSPACE_ROOT, appList, type WorkspaceApp } from './workspace';
+import { findApp, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
 /**
  * `pnpm configure`: the first hour's settings, asked for and written. It asks, in order: which app; to
@@ -217,7 +217,7 @@ export async function runSetup(argv: readonly string[], io: SetupIo): Promise<nu
     return 2;
   }
   const interactive = !flags.nonInteractive && io.prompt !== null;
-  const root = io.root ?? WORKSPACE_ROOT;
+  const root = io.root ?? projectRoot(io.invokedFrom);
   try {
     return await wizard(flags, io, interactive, root);
   } catch (e) {
@@ -335,7 +335,8 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
 
   if (mode === 'try') {
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', `The number a call goes to for a person (E.164; Enter for ${TRY_HANDOFF}, which goes nowhere):`, checkHandoff, TRY_HANDOFF);
-    const widget = join(root, 'packages', 'widget', 'dist', 'dialogwright-widget.js');
+    // This repository's widget build, or, in a project of its own, the installed package's.
+    const widget = existsSync(join(root, 'packages', 'widget')) ? join(root, 'packages', 'widget', 'dist', 'dialogwright-widget.js') : join(app.dir, DEFAULT_WIDGET_FILE);
     const signIn = (() => {
       try {
         return /^\s*signIn\s*:/m.test(readFileSync(join(app.dir, 'identity.yaml'), 'utf8'));
@@ -491,14 +492,14 @@ async function check(file: string, app: WorkspaceApp, io: SetupIo): Promise<void
   await diagnose(['--app', app.folder, '--env-file', file, '--offline'], { out: (l) => io.out(`  ${l}`), env: io.env, invokedFrom: io.invokedFrom, root: io.root });
 }
 
-// Run when invoked directly (tsx setup.ts); importing it runs nothing.
-if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+/** `dialogwright configure`: the command at this process's terminal, with its environment and folder; returns its exit code. */
+export async function commandLine(argv: readonly string[]): Promise<number> {
   const prompt = linePrompt(process.stdin, process.stdout, () => {
     process.stdout.write('\nstopped; nothing was written\n');
     process.exit(130);
   });
   try {
-    process.exitCode = await runSetup(process.argv.slice(2), {
+    return await runSetup(argv, {
       out: (line) => console.log(line),
       prompt,
       env: process.env,
@@ -507,4 +508,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   } finally {
     prompt.close?.();
   }
+}
+
+// Run when invoked directly (tsx setup.ts); importing it runs nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  process.exitCode = await commandLine(process.argv.slice(2));
 }

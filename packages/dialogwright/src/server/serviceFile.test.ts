@@ -243,7 +243,7 @@ describe('pnpm service', () => {
 
   it('is a script at the repository root, with its templates beside the app templates', () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
-    expect(scripts.service).toBe('tsx packages/dialogwright/src/server/serviceFile.ts');
+    expect(scripts.service).toBe('tsx packages/dialogwright/src/define/cli.ts service');
     expect(existsSync(join(ROOT, 'packages/dialogwright/templates/service/launchd.plist'))).toBe(true);
     expect(existsSync(join(ROOT, 'packages/dialogwright/templates/service/systemd.service'))).toBe(true);
   });

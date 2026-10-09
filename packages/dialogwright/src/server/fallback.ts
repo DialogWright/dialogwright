@@ -101,7 +101,12 @@ export async function main(argv: readonly string[], io: FallbackIo): Promise<num
   return 0;
 }
 
+/** `dialogwright fallback`: the command with this process's output and folder; returns its exit code. */
+export function commandLine(argv: readonly string[]): Promise<number> {
+  return main(argv, { out: (line) => console.log(line), invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
+}
+
 // Run when invoked directly (tsx fallback.ts); importing it runs nothing.
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await main(process.argv.slice(2), { out: (line) => console.log(line), invokedFrom: process.env.INIT_CWD?.trim() || process.cwd() });
+  process.exitCode = await commandLine(process.argv.slice(2));
 }

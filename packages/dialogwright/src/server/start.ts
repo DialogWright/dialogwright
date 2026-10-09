@@ -8,7 +8,7 @@ import { readEnvFile } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { isLoopbackHost } from './localOnly';
 import { CLOUDFLARED_INSTALL, findOnPath, QUICK_TUNNEL_TIMEOUT_MS, QUICK_TUNNEL_TROUBLE, waitForQuickTunnel, type TunnelProcess } from './tunnel';
-import { chooseApp, workspaceApps, WORKSPACE_ROOT } from './workspace';
+import { chooseApp, projectRoot, serveCommand, workspaceApps } from './workspace';
 
 /**
  * `[ENV_FILE=<path>] pnpm start [--app <name>] [--tunnel quick|named|none]`: an app's server with its
@@ -75,7 +75,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
       return 2;
     }
   }
-  const root = deps.root ?? WORKSPACE_ROOT;
+  const root = deps.root ?? projectRoot(deps.invokedFrom);
   const chosen = chooseApp(workspaceApps(root), flags.app, deps.invokedFrom, 'start');
   if ('error' in chosen) {
     deps.out(chosen.error);
@@ -179,7 +179,8 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   if (laptop || tunnel === 'quick') say(`the console, on this machine: http://localhost:${port}/dashboard`);
 
   const env: NodeJS.ProcessEnv = { ...deps.env, ENV_FILE: file, ...(tunnel === 'quick' ? { PUBLIC_HOST: publicHost } : {}) };
-  const server = deps.spawn('pnpm', ['--filter', app.name, 'serve'], { cwd: root, env, detached: true, stdio: 'inherit' });
+  const serve = serveCommand(app, root);
+  const server = deps.spawn(serve.command, serve.args, { cwd: serve.cwd, env, detached: true, stdio: 'inherit' });
 
   return await new Promise<number>((done) => {
     let serverCode: number | null = null;
@@ -239,13 +240,13 @@ function signalGroup(child: StartChild & { kill?(signal: NodeJS.Signals): boolea
   }
 }
 
-// Run when invoked directly (tsx start.ts); importing it runs nothing.
-if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+/** `dialogwright start`: the command with this process's output, environment, children and signals; resolves with its exit code once the server has stopped. */
+export function commandLine(argv: readonly string[]): Promise<number> {
   const children: StartChild[] = [];
   process.on('exit', () => {
     for (const c of children) signalGroup(c, 'SIGTERM');
   });
-  process.exitCode = await main(process.argv.slice(2), {
+  return main(argv, {
     out: (line) => console.log(line),
     env: process.env,
     invokedFrom: process.env.INIT_CWD?.trim() || process.cwd(),
@@ -264,4 +265,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     },
     now: () => Date.now(),
   });
+}
+
+// Run when invoked directly (tsx start.ts); importing it runs nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  process.exitCode = await commandLine(process.argv.slice(2));
 }

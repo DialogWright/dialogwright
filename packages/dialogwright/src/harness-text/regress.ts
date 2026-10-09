@@ -29,8 +29,9 @@ export function refusesUnanswerableSteps(kind: string): boolean {
 /** Corpus entries between progress lines on a run that talks to a model. */
 const PROGRESS_EVERY = 25;
 
-async function run(): Promise<void> {
+async function run(argv?: readonly string[]): Promise<void> {
   const { values: args } = parseArgs({
+    ...(argv === undefined ? {} : { args: [...argv] }),
     options: {
       update: { type: 'boolean', default: false },
       threshold: { type: 'string', multiple: true, default: [] },
@@ -305,9 +306,13 @@ async function outcomesJson(
   return unanswered.length > 0 ? 1 : 0;
 }
 
-/** The process entry point, run by an app's launcher after it has registered the app. */
-export async function main(): Promise<void> {
-  await run().catch((e: unknown) => {
+/**
+ * The process entry point, run by an app's launcher after it has registered the app, or by
+ * `dialogwright regress`, which registers the app its folder exports and passes what follows the folder
+ * as `argv` (default: this process's own arguments).
+ */
+export async function main(argv?: readonly string[]): Promise<void> {
+  await run(argv).catch((e: unknown) => {
     console.error(e instanceof Error ? e.message : String(e));
     process.exitCode = 1;
   });

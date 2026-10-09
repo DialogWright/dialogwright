@@ -10,7 +10,7 @@ import { readEnvFile } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
-import { chooseApp, findApp, workspaceApps, WORKSPACE_ROOT, type WorkspaceApp } from './workspace';
+import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -521,7 +521,7 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
       return 2;
     }
   }
-  const apps = workspaceApps(io.root ?? WORKSPACE_ROOT);
+  const apps = workspaceApps(io.root ?? projectRoot(io.invokedFrom));
   let app: WorkspaceApp | null = null;
   if (appName !== undefined) {
     app = findApp(apps, appName, io.invokedFrom);
@@ -567,11 +567,16 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
   return count('fail') > 0 ? 1 : 0;
 }
 
-// Run when invoked directly (tsx doctor.ts); importing it runs nothing.
-if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  process.exitCode = await main(process.argv.slice(2), {
+/** `dialogwright diagnose`: the command with this process's output, environment and folder; returns its exit code. */
+export function commandLine(argv: readonly string[]): Promise<number> {
+  return main(argv, {
     out: (line) => console.log(line),
     env: process.env,
     invokedFrom: process.env.INIT_CWD?.trim() || process.cwd(),
   });
+}
+
+// Run when invoked directly (tsx doctor.ts); importing it runs nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  process.exitCode = await commandLine(process.argv.slice(2));
 }
