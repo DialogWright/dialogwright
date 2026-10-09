@@ -44,7 +44,7 @@ export interface LineNote {
 }
 
 export interface Line {
-  /** `handoff` is the transfer to a person, as its own labelled row ("to …9110 · caller asked for a person"). */
+  /** `handoff` is the transfer to a person, as its own labelled row ("to …0142 · caller asked for a person"). */
   kind: 'system' | 'caller' | 'marker' | 'handoff';
   text: string;
   promptId?: string;

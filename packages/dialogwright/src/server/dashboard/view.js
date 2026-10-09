@@ -580,7 +580,7 @@ export function handoffReasonText(reason) {
   return Object.hasOwn(ENGINE_HANDOFF_REASONS, r) ? ENGINE_HANDOFF_REASONS[r] : r.replace(/[_-]/g, ' ');
 }
 
-/** A transfer number worth showing: the adapter's masked `…9110`, not the bare `…` replay has. */
+/** A transfer number worth showing: the adapter's masked `…0142`, not the bare `…` replay has. */
 function shownNumber(number) {
   return typeof number === 'string' && /\d/.test(number) ? number : null;
 }

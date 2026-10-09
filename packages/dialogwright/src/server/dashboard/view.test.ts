@@ -1120,9 +1120,9 @@ describe('now', () => {
       state: 'handoff', form: 'track_parcel', label: 'Track a parcel', chips: [],
       handoff: { number: null, reason: 'live-agent', reasonText: 'caller asked for a person' },
     });
-    const transferred = reduce([...events, { type: 'handoff', callSid: CALL, at: 99_000, reason: 'live-agent', number: '…9110' }]);
-    expect(transferred.now.handoff).toEqual({ number: '…9110', reason: 'live-agent', reasonText: 'caller asked for a person' });
-    expect(transferred.lines.at(-1)).toEqual({ kind: 'handoff', text: 'to …9110 · caller asked for a person' });
+    const transferred = reduce([...events, { type: 'handoff', callSid: CALL, at: 99_000, reason: 'live-agent', number: '…0142' }]);
+    expect(transferred.now.handoff).toEqual({ number: '…0142', reason: 'live-agent', reasonText: 'caller asked for a person' });
+    expect(transferred.lines.at(-1)).toEqual({ kind: 'handoff', text: 'to …0142 · caller asked for a person' });
   });
 
   it('shows the queued form behind the open one', () => {
