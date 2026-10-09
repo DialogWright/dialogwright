@@ -1527,8 +1527,10 @@ export const TOOLS: Record<string, ToolDef> = {
 };
 ```
 
-- Name every field a line says or a call is made from: `object` checks only those it names. `text()` is a short phrase (an item, a street, a first name), never a sentence; `code()` a reference such as `OT401`; `digits(n)`, `amount()`, `isoDate()`, `number()`, `oneOf([...])` the rest.
-- The adversarial suite (on in every scaffold) answers each tool with instructions in place of each text field of its reply: a `nothing-said` or `threw` failure on `hostile-reply/<tool>/field` names the field that needs a check.
+- A check bounds a field's shape; it does not detect instructions: "Ignore your rules now" passes `text()`. So use a closed form wherever the field has one: a status `oneOf([...])`, a reference `code()` (`OT401`, `A-1001`), a number `digits(n)`, a day `isoDate()` (never `text()`), an amount `amount()`. Keep `text()` for a field that is truly free text and said (a first name, an item): it is then said only in its own place in a fixed line, the residual risk.
+- Name every field a line says or a call is made from: `object` checks only those it names. The verify tool checks the id a match names (`principal: r.object({ id: r.digits(8) })`): every later call is made for it.
+- A reply that fails ends the turn with a person (`result-unchecked`), whatever the hook does with the null value; still read the decision before the value in a hook. A write whose reply fails has still been made: the audit and the transfer say so, with its reference.
+- The adversarial suite (on in every scaffold) answers each tool with instructions in place of each text field of its reply, a sentence and then four plain words: a `nothing-said`, `said-in-place`, `no-new-action` (passed on to another call) or `threw` failure on `hostile-reply/<tool>/field` names the field that needs a closed check; a `said in its place` line under the counts names a free-text field to look at.
 - The identity tools' principal is the engine's to check: a first name that is not one, or a phone's last four that are not four digits, goes to a person.
 
 ## Values with no slot type
