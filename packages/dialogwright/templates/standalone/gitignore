@@ -1,0 +1,12 @@
+node_modules/
+# The settings file: it holds keys. Never commit it (.env.example lists the names).
+.env
+.env.*
+!.env.example
+# What a server or the harness writes where it runs: traces, audit logs, saved calls, the console's link
+traces/
+audit/
+sessions/
+.console-link/
+*.log
+.DS_Store

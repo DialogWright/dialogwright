@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { USAGE, main, type Io } from './cli';
+import { COMMANDS, USAGE, main, type Io } from './cli';
 import { contentHash } from '../core/app/configHash';
-import { REPO_ROOT, createApp, displayNameOf, markOf, nameProblem, render, templateFiles } from './createApp';
+import { ENGINE_VERSION, REPO_ROOT, createApp, displayNameOf, markOf, nameProblem, render, templateFiles } from './createApp';
 
 const scratch: string[] = [];
 afterAll(() => {
@@ -181,9 +181,11 @@ describe('createApp', () => {
     const words = ['gene' + 'sys'];
     const banned = new RegExp(`\\b(${words.join('|')})\\b`, 'i');
     for (const identity of [false, true]) {
-      for (const [file, text] of templateFiles(identity)) {
-        expect(text, file).not.toMatch(banned);
-        expect(text, file).not.toContain('—');
+      for (const standalone of [false, true]) {
+        for (const [file, text] of templateFiles(identity, standalone)) {
+          expect(text, file).not.toMatch(banned);
+          expect(text, file).not.toContain('—');
+        }
       }
     }
   });
@@ -271,5 +273,93 @@ describe('dialogwright create-app', () => {
     expect(out.join('\n')).not.toContain('1. pnpm install');
     expect(out.join('\n')).toContain('1. pnpm check    (every app folder');
     expect(out.join('\n')).toContain('running pnpm check after each change');
+  });
+});
+
+describe('dialogwright create-app --standalone: a project of its own', () => {
+  const PROJECT_FILES = [
+    '.claude/skills/create-app/SKILL.md', '.claude/skills/create-app/corpus.md', '.claude/skills/create-app/options.md',
+    '.claude/skills/create-app/patterns.md', '.claude/skills/create-app/triage.md', '.claude/skills/create-app/worksheet.md',
+    '.gitignore', ...PLAIN_FILES.filter((f) => f !== 'src/regress.ts'),
+  ].sort();
+
+  it('writes the app folder as the scaffold does, as a project on the installed package, with the skill beside it', () => {
+    const dir = join(temp(), 'my-line');
+    const made = createApp({ name: 'my-line', dir, standalone: true });
+    expect(made).toMatchObject({ dir, packageName: 'my-line', inWorkspace: false, standalone: true });
+    expect(walk(dir).map((f) => f.split('\\').join('/')).sort()).toEqual(PROJECT_FILES);
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name: string; private: boolean; dependencies: Record<string, string>; devDependencies: Record<string, string>; scripts: Record<string, string> };
+    expect(pkg.name).toBe('my-line');
+    expect(pkg.private).toBe(true);
+    expect(pkg.dependencies).toEqual({ dialogwright: `^${ENGINE_VERSION}` });
+    expect(Object.keys(pkg.devDependencies).sort()).toEqual(['@types/node', 'tsx', 'typescript', 'vitest']);
+    // The package's commands, and the app's own launchers for what an app may extend (its server, its console).
+    expect(pkg.scripts).toMatchObject({ check: 'dialogwright check', regress: 'dialogwright regress', typecheck: 'tsc --noEmit', test: 'vitest run', serve: 'tsx src/serve.ts', start: 'dialogwright start' });
+    for (const line of Object.values(pkg.scripts)) {
+      const command = /^dialogwright (\S+)/.exec(line)?.[1];
+      if (command !== undefined) expect(COMMANDS.map(([name]) => name), line).toContain(command);
+    }
+    // Nothing points into this repository, and nothing is left to put in.
+    for (const file of walk(dir)) {
+      const text = readFileSync(join(dir, file), 'utf8');
+      expect(text, file).not.toMatch(/\{\{[^}]*\}\}/);
+      // The skill is the repository's, word for word but its links: it says how its commands read in a project of its own.
+      if (file.startsWith('.claude')) continue;
+      expect(text, file).not.toContain('packages/dialogwright');
+      expect(text, file).not.toContain('pnpm --filter');
+    }
+    expect(readFileSync(join(dir, '.gitignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['node_modules/', '.env', '!.env.example']));
+    const tsconfig = JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8')) as { extends?: string; compilerOptions: Record<string, unknown> };
+    expect(tsconfig.extends).toBeUndefined();
+    const base = JSON.parse(readFileSync(join(REPO_ROOT, 'tsconfig.base.json'), 'utf8')) as { compilerOptions: Record<string, unknown> };
+    expect(tsconfig.compilerOptions).toEqual(Object.fromEntries(Object.entries(base.compilerOptions).filter(([key]) => key !== 'exactOptionalPropertyTypes')));
+    expect(readFileSync(join(dir, 'src', 'app.test.ts'), 'utf8')).toContain('`npx dialogwright policy:matrix ${APP_DIR}`');
+  });
+
+  it('points every schema line at the installed package\'s schemas, and the skill\'s links at its guide or at GitHub', () => {
+    const dir = join(temp(), 'my-line');
+    createApp({ name: 'my-line', dir, standalone: true, identity: true });
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.yaml'))) {
+      const first = readFileSync(join(dir, file), 'utf8').split('\n')[0]!;
+      const match = /^# yaml-language-server: \$schema=node_modules\/dialogwright\/schemas\/(.+)$/.exec(first);
+      expect(match, `${file}: ${first}`).not.toBeNull();
+      expect(existsSync(join(REPO_ROOT, 'packages/dialogwright/schemas', match![1]!)), file).toBe(true);
+    }
+    const skill = join(dir, '.claude', 'skills', 'create-app');
+    for (const page of readdirSync(skill)) {
+      for (const [, link] of readFileSync(join(skill, page), 'utf8').matchAll(/\]\(([^)\s]+)\)/g)) {
+        const path = link!.split('#')[0]!;
+        if (link!.startsWith('#') || link!.startsWith('https://dialogwright.com')) continue;
+        if (link!.startsWith('https://')) {
+          expect(link, page).toMatch(/^https:\/\/github\.com\/DialogWright\/dialogwright\/blob\/main\//);
+          expect(existsSync(join(REPO_ROOT, link!.slice('https://github.com/DialogWright/dialogwright/blob/main/'.length).split('#')[0]!)), link).toBe(true);
+          continue;
+        }
+        const target = resolve(skill, path);
+        if (target.startsWith(join(dir, 'node_modules'))) {
+          // The installed package's copy of a page of this repository's docs/.
+          const shipped = relative(join(dir, 'node_modules', 'dialogwright'), target);
+          expect(shipped, link).toMatch(/^docs\//);
+          expect(existsSync(join(REPO_ROOT, shipped)), link).toBe(true);
+        } else expect(existsSync(target), `${page}: ${link}`).toBe(true);
+      }
+    }
+  });
+
+  it('names the dialogwright it is given (a packed package, for the adoption test), and prints the steps in the project', async () => {
+    const base = temp();
+    const out: string[] = [];
+    const err: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l), cwd: base };
+    expect(await main(['create-app', 'my-line', '--standalone', '--dialogwright', 'file:/tmp/dialogwright-0.1.0.tgz'], io)).toBe(0);
+    expect(err).toEqual([]);
+    expect((JSON.parse(readFileSync(join(base, 'my-line', 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies.dialogwright).toBe('file:/tmp/dialogwright-0.1.0.tgz');
+    expect(out[0]).toBe(`created my-line: a project of its own, ${PROJECT_FILES.length} files, without identity.yaml, for "My Line"`);
+    const text = out.join('\n');
+    for (const step of ['cd my-line', 'npm install', 'npx dialogwright check', 'npm test', 'npx dialogwright regress', '.claude/skills/create-app/SKILL.md']) expect(text).toContain(step);
+    expect(text).not.toContain('pnpm --filter');
+    expect(await main(['create-app', 'other', '--dialogwright', '^1.0.0'], io)).toBe(2);
+    expect(err.at(-1)).toContain('--dialogwright goes with --standalone');
+    expect(await main(['create-app', 'my-line', '--standalone'], io)).toBe(1);
   });
 });

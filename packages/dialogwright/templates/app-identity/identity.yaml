@@ -1,4 +1,4 @@
-# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/identity.schema.json
+# yaml-language-server: $schema={{schemas}}/identity.schema.json
 # How a caller proves who they are, and who the app serves. Compliance owns this file.
 #
 # `subject` is the kind of person the app serves and verifies. Level 1 is the factors matched: the

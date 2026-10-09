@@ -1,4 +1,4 @@
-# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/slots.schema.json
+# yaml-language-server: $schema={{schemas}}/slots.schema.json
 # Every slot the app has, in the order the engine works through them. Each is a library type
 # configured here (docs/slots/README.md lists the types and their options); `type: code` names a
 # slot the code writes in src/app.ts.

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { packagePathOf, REPOSITORY_PAGES, relinkMarkdown } from './shipped';
 
 /**
  * `dialogwright create-app`: a new app folder from the template in templates/app (and, with
@@ -11,18 +12,39 @@ import { fileURLToPath } from 'node:url';
  *
  * Template files are text. `{{name}}`, `{{display}}`, `{{mark}}` and `{{root}}` are replaced (the
  * app's id, its display name, two letters for its brand mark, and the path from the new folder to the
- * repository root); `{{#identity}}...{{/identity}}` keeps what it wraps (whole lines, or words in a
+ * repository root), and so are `{{schemas}}` (the folder of the JSON Schemas, from the app folder),
+ * `{{run}}` (how a root command is run: `pnpm` in this repository, `npx dialogwright` in a project of
+ * its own) and `{{dependency}}` (the version of `dialogwright` a project of its own depends on);
+ * `{{#identity}}...{{/identity}}` keeps what it wraps (whole lines, or words in a
  * line) only with `--identity` and `{{^identity}}...{{/identity}}` only without it. In the identity overlay a file replaces the
  * base's, and a file whose name ends in `.append` is added to the end of the base's file of that
  * name.
+ *
+ * With `standalone`, the app is a project of its own, outside this repository, on the installed
+ * package: the standalone overlay (templates/standalone) replaces the files that name this
+ * repository (package.json, tsconfig.json, README.md, CLAUDE.md) and adds a .gitignore (`gitignore`
+ * in the template, since a package's .gitignore is not packed); src/regress.ts is left out
+ * (`dialogwright regress` runs the regression); and the create-app skill is copied into
+ * .claude/skills/create-app, its links to the guide pointing at the installed package's copy.
  */
 
 /** The repository's package folder and its template folders. */
 const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'app');
 export const IDENTITY_TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'app-identity');
+export const STANDALONE_TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'standalone');
 /** The repository root: the folder with pnpm-workspace.yaml above this package. */
 export const REPO_ROOT = resolve(PACKAGE_DIR, '..', '..');
+/** Whether this package is installed in a project's node_modules, rather than run from this repository. */
+const INSTALLED = PACKAGE_DIR.split(sep).includes('node_modules');
+/** The create-app skill a project of its own gets: this repository's, or, installed, the copy the package carries. */
+export const SKILL_DIR = INSTALLED ? join(PACKAGE_DIR, 'skills', 'create-app') : join(REPO_ROOT, '.claude', 'skills', 'create-app');
+/** Where the skill is in this repository, which its links are relative to. */
+const SKILL_REPO_PATH = '.claude/skills/create-app';
+/** The engine package's version: a project of its own depends on `^` it unless told otherwise. */
+export const ENGINE_VERSION = (JSON.parse(readFileSync(join(PACKAGE_DIR, 'package.json'), 'utf8')) as { version: string }).version;
+/** The files the base template has that a project of its own goes without. */
+const STANDALONE_DROPS = ['src/regress.ts'];
 
 /** A name that cannot be used, or a folder that cannot be written: the message says what to do. */
 export class CreateAppError extends Error {
@@ -67,6 +89,10 @@ export interface CreateAppOptions {
   dir?: string;
   /** The repository root, which the folder's relative paths (schemas, tsconfig) lead to. Default: this repository. */
   root?: string;
+  /** A project of its own, outside this repository, depending on the installed `dialogwright` (templates/standalone). */
+  standalone?: boolean;
+  /** With `standalone`: the `dialogwright` dependency its package.json names (a range, or a `file:` path to a packed package). Default: `^` this package's version. */
+  dependency?: string;
 }
 
 export interface CreatedApp {
@@ -78,6 +104,8 @@ export interface CreatedApp {
   packageName: string;
   /** Whether the folder is directly under apps/ of the repository, where the workspace finds it. */
   inWorkspace: boolean;
+  /** Whether it is a project of its own (--standalone). */
+  standalone: boolean;
 }
 
 function listFiles(dir: string, base = dir): string[] {
@@ -86,23 +114,36 @@ function listFiles(dir: string, base = dir): string[] {
     .flatMap((e) => (e.isDirectory() ? listFiles(join(dir, e.name), base) : [relative(base, join(dir, e.name)).split(sep).join('/')]));
 }
 
-/** `{{name}}` and the others replaced, and the identity blocks kept or dropped. A `{{token}}` left over is a template bug, so it throws. */
-export function render(text: string, values: Record<string, string>, identity: boolean): string {
-  const block = (open: string): RegExp => new RegExp(`^[ \\t]*${open}[ \\t]*\\n([\\s\\S]*?)^[ \\t]*\\{\\{/identity\\}\\}[ \\t]*\\n`, 'gm');
-  const inline = (open: string): RegExp => new RegExp(`${open}(.*?)\\{\\{/identity\\}\\}`, 'g');
-  const withIdentity = text
-    .replace(block('\\{\\{#identity\\}\\}'), (_m, body: string) => (identity ? body : ''))
-    .replace(block('\\{\\{\\^identity\\}\\}'), (_m, body: string) => (identity ? '' : body))
-    .replace(inline('\\{\\{#identity\\}\\}'), (_m, body: string) => (identity ? body : ''))
-    .replace(inline('\\{\\{\\^identity\\}\\}'), (_m, body: string) => (identity ? '' : body));
-  const out = withIdentity.replace(/\{\{(name|display|mark|root)\}\}/g, (_m, key: string) => values[key]!);
+/**
+ * `{{name}}` and the others replaced, and the identity blocks (and the standalone blocks,
+ * `{{#standalone}}...{{/standalone}}` and `{{^standalone}}...{{/standalone}}`) kept or dropped. A
+ * `{{token}}` left over is a template bug, so it throws.
+ */
+export function render(text: string, values: Record<string, string>, identity: boolean, standalone = false): string {
+  const blocks = (input: string, flag: string, on: boolean): string => {
+    const block = (open: string): RegExp => new RegExp(`^[ \\t]*${open}[ \\t]*\\n([\\s\\S]*?)^[ \\t]*\\{\\{/${flag}\\}\\}[ \\t]*\\n`, 'gm');
+    const inline = (open: string): RegExp => new RegExp(`${open}(.*?)\\{\\{/${flag}\\}\\}`, 'g');
+    return input
+      .replace(block(`\\{\\{#${flag}\\}\\}`), (_m, body: string) => (on ? body : ''))
+      .replace(block(`\\{\\{\\^${flag}\\}\\}`), (_m, body: string) => (on ? '' : body))
+      .replace(inline(`\\{\\{#${flag}\\}\\}`), (_m, body: string) => (on ? body : ''))
+      .replace(inline(`\\{\\{\\^${flag}\\}\\}`), (_m, body: string) => (on ? '' : body));
+  };
+  const withIdentity = blocks(blocks(text, 'identity', identity), 'standalone', standalone);
+  // In this repository the schemas and the commands follow from the path to the root, as they did before a project of its own had its own.
+  const given: Record<string, string> = values.root === undefined ? values : { schemas: `${values.root}/packages/dialogwright/schemas`, run: 'pnpm', ...values };
+  const out = withIdentity.replace(/\{\{(name|display|mark|root|schemas|run|dependency)\}\}/g, (_m, key: string) => {
+    const value = given[key];
+    if (value === undefined) throw new Error(`template token {{${key}}} has no value here`);
+    return value;
+  });
   const left = /\{\{[^}]*\}\}/.exec(out);
   if (left) throw new Error(`template token ${left[0]} is not one create-app knows`);
   return out;
 }
 
-/** What goes where: the template's files by path, with the identity overlay applied. */
-export function templateFiles(identity: boolean): Map<string, string> {
+/** What goes where: the template's files by path, with the identity overlay applied, and the standalone overlay with `standalone`. */
+export function templateFiles(identity: boolean, standalone = false): Map<string, string> {
   const files = new Map<string, string>();
   for (const file of listFiles(TEMPLATE_DIR)) files.set(file, readFileSync(join(TEMPLATE_DIR, file), 'utf8'));
   if (identity) {
@@ -115,6 +156,31 @@ export function templateFiles(identity: boolean): Map<string, string> {
         files.set(target, `${base.endsWith('\n') ? base : `${base}\n`}${text}`);
       } else files.set(file, text);
     }
+  }
+  if (standalone) {
+    for (const file of STANDALONE_DROPS) files.delete(file);
+    for (const file of listFiles(STANDALONE_TEMPLATE_DIR)) files.set(file === 'gitignore' ? '.gitignore' : file, readFileSync(join(STANDALONE_TEMPLATE_DIR, file), 'utf8'));
+  }
+  return files;
+}
+
+/**
+ * The create-app skill as a project of its own gets it, by path under .claude/skills/create-app: each
+ * page's links to the authoring guide and the slot pages point at the installed package's copies
+ * (node_modules/dialogwright/docs), links between the skill's own pages stay, and a link to any other
+ * page of this repository points at it on GitHub.
+ */
+export function standaloneSkill(): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const file of listFiles(SKILL_DIR)) {
+    const text = readFileSync(join(SKILL_DIR, file), 'utf8');
+    const from = posix.join(SKILL_REPO_PATH, file);
+    files.set(posix.join('.claude/skills/create-app', file), !file.endsWith('.md') ? text : relinkMarkdown(text, from, (target, anchor) => {
+      if (target === SKILL_REPO_PATH || target.startsWith(`${SKILL_REPO_PATH}/`)) return null;
+      const shipped = packagePathOf(target);
+      if (shipped !== null && shipped.startsWith('docs/')) return `${posix.relative(posix.dirname(from), posix.join('node_modules/dialogwright', shipped))}${anchor}`;
+      return `${REPOSITORY_PAGES}${target}${anchor}`;
+    }));
   }
   return files;
 }
@@ -135,24 +201,42 @@ export function createApp(options: CreateAppOptions): CreatedApp {
   const problem = nameProblem(options.name);
   if (problem) throw new CreateAppError(problem);
   const root = resolve(options.root ?? REPO_ROOT);
-  const dir = resolve(options.dir ?? join(root, 'apps', options.name));
+  const standalone = options.standalone === true;
+  const dir = resolve(options.dir ?? (standalone ? options.name : join(root, 'apps', options.name)));
   if (existsSync(dir)) {
     throw new CreateAppError(`${dir} already exists; create-app never writes into an existing folder. Choose another name, or --dir, or remove the folder first`);
   }
   const display = options.display?.trim() || displayNameOf(options.name);
   if (/[\n\r{}]/.test(display)) throw new CreateAppError('the display name may not have a line break or braces');
   const identity = options.identity === true;
-  const values = { name: options.name, display, mark: markOf(display), root: relative(realPath(dir), realPath(root)).split(sep).join('/') || '.' };
+  const dependency = options.dependency ?? `^${ENGINE_VERSION}`;
+  if (/["\\\n]/.test(dependency)) throw new CreateAppError('the dialogwright dependency may not have a quote, a backslash or a line break');
+  const base = { name: options.name, display, mark: markOf(display) };
+  const values: Record<string, string> = standalone
+    ? { ...base, run: 'npx dialogwright', schemas: 'node_modules/dialogwright/schemas', dependency }
+    : (() => {
+        const toRoot = relative(realPath(dir), realPath(root)).split(sep).join('/') || '.';
+        return { ...base, root: toRoot };
+      })();
 
   const written: string[] = [];
-  const files = templateFiles(identity);
-  const rendered = new Map([...files].map(([file, text]) => [file, render(text, values, identity)] as const));
+  const files = templateFiles(identity, standalone);
+  const rendered = new Map([...files].map(([file, text]) => [file, render(text, values, identity, standalone)] as const));
   for (const [file, text] of rendered) {
     const to = join(dir, file);
     mkdirSync(dirname(to), { recursive: true });
     writeFileSync(to, text);
     written.push(file);
   }
+  if (standalone) {
+    for (const [file, text] of standaloneSkill()) {
+      const to = join(dir, file);
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, text);
+      written.push(file);
+    }
+    return { dir, files: written, packageName: options.name, inWorkspace: false, standalone };
+  }
   const apps = join(root, 'apps');
-  return { dir, files: written, packageName: `@dialogwright/example-${options.name}`, inWorkspace: dirname(dir) === apps && statSync(dir).isDirectory() };
+  return { dir, files: written, packageName: `@dialogwright/example-${options.name}`, inWorkspace: dirname(dir) === apps && statSync(dir).isDirectory(), standalone };
 }

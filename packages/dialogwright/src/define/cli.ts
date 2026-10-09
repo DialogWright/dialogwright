@@ -74,8 +74,10 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
 export const USAGE = [
   'usage: dialogwright check [--json] [dir...]',
   '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace',
-  '       dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install]',
+  '       dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install] [--standalone [--dialogwright spec]]',
   '  name: lowercase letters, digits and hyphens; the new app is apps/<name> unless --dir says where',
+  '  --standalone: a project of its own, outside this repository, depending on the dialogwright package (<name> in the folder it is run in, unless --dir)',
+  '  --dialogwright spec: with --standalone, the dependency its package.json names (default: ^ this version; a file: path to a packed package works too)',
   '  --identity: add identity.yaml, so callers verify with two factors (an account number and a birth date) before the booking',
   '  --display text: the name the greeting and the console use (default: the name in capitals, "water-utility" is "Water Utility")',
   '  --no-install: do not run `pnpm install` afterwards, which links the new app into the workspace',
@@ -280,11 +282,14 @@ function createAppCommand(args: readonly string[], io: Io): number {
   let display: string | undefined;
   let identity = false;
   let install = true;
+  let standalone = false;
+  let dependency: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === '--identity') identity = true;
     else if (arg === '--no-install') install = false;
-    else if (arg === '--dir' || arg === '--display') {
+    else if (arg === '--standalone') standalone = true;
+    else if (arg === '--dir' || arg === '--display' || arg === '--dialogwright') {
       const value = args[i + 1];
       if (value === undefined || value.startsWith('--')) {
         io.err(`dialogwright create-app: ${arg} needs a value\n${USAGE}`);
@@ -292,7 +297,8 @@ function createAppCommand(args: readonly string[], io: Io): number {
       }
       i += 1;
       if (arg === '--dir') dir = value;
-      else display = value;
+      else if (arg === '--display') display = value;
+      else dependency = value;
     } else if (arg.startsWith('-')) {
       io.err(`dialogwright create-app: ${arg} is not an option\n${USAGE}`);
       return 2;
@@ -306,7 +312,12 @@ function createAppCommand(args: readonly string[], io: Io): number {
     io.err(`dialogwright create-app: give the app a name\n${USAGE}`);
     return 2;
   }
+  if (dependency !== undefined && !standalone) {
+    io.err(`dialogwright create-app: --dialogwright goes with --standalone\n${USAGE}`);
+    return 2;
+  }
   const from = io.invokedFrom ?? io.cwd;
+  if (standalone) return standaloneCommand({ name, identity, from, ...(dir === undefined ? {} : { dir }), ...(display === undefined ? {} : { display }), ...(dependency === undefined ? {} : { dependency }) }, io);
   try {
     const root = io.root ?? REPO_ROOT;
     const made = createApp({ name, identity, root, ...(dir === undefined ? {} : { dir: resolve(from, dir) }), ...(display === undefined ? {} : { display }) });
@@ -337,6 +348,34 @@ function createAppCommand(args: readonly string[], io: Io): number {
     );
     io.out('');
     io.out('Next:');
+    steps.forEach((lines, i) => lines.forEach((line, j) => io.out(`  ${j === 0 ? `${i + 1}.` : '  '} ${line}`)));
+    return 0;
+  } catch (error) {
+    if (!(error instanceof CreateAppError)) throw error;
+    io.err(`dialogwright create-app: ${error.message}`);
+    return 1;
+  }
+}
+
+/** `dialogwright create-app --standalone`: a project of its own, and what to run in it. */
+function standaloneCommand(o: { name: string; identity: boolean; from: string; dir?: string; display?: string; dependency?: string }, io: Io): number {
+  try {
+    const made = createApp({ name: o.name, identity: o.identity, standalone: true, dir: resolve(o.from, o.dir ?? o.name), ...(o.display === undefined ? {} : { display: o.display }), ...(o.dependency === undefined ? {} : { dependency: o.dependency }) });
+    const rel = relative(o.from, made.dir);
+    const shown = rel === '' ? '.' : rel.startsWith('..') ? made.dir : rel;
+    io.out(`created ${shown}: a project of its own, ${made.files.length} files, ${o.identity ? 'with' : 'without'} identity.yaml, for "${o.display ?? displayNameOf(o.name)}"`);
+    io.out('');
+    io.out('Next:');
+    const steps = [
+      [`cd ${shown}`, 'npm install    (or pnpm install)'],
+      ['npx dialogwright check    (the folder: it passes as created)'],
+      ['npm run typecheck', 'npm test', 'npx dialogwright regress    (the stub regression: "no changes")'],
+      [
+        'Read README.md and CLAUDE.md, then replace the example intent, form, slot and tool with your own, running npx dialogwright check after each change.',
+        'To build it from a paragraph describing your line, give the paragraph to an AI coding assistant and point it at .claude/skills/create-app/SKILL.md.',
+        'The guide is node_modules/dialogwright/docs/authoring-an-app.md once it is installed.',
+      ],
+    ];
     steps.forEach((lines, i) => lines.forEach((line, j) => io.out(`  ${j === 0 ? `${i + 1}.` : '  '} ${line}`)));
     return 0;
   } catch (error) {

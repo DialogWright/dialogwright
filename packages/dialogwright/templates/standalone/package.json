@@ -1,0 +1,36 @@
+{
+  "name": "{{name}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "{{display}}: a DialogWright app.",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "check": "dialogwright check",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "regress": "dialogwright regress",
+    "policy:matrix": "dialogwright policy:matrix",
+    "policy:card": "dialogwright policy:card",
+    "app:diagram": "dialogwright app:diagram",
+    "cli": "tsx src/cli.ts",
+    "serve": "tsx src/serve.ts",
+    "cassette:trim": "tsx src/cassetteTrim.ts",
+    "configure": "dialogwright configure",
+    "start": "dialogwright start",
+    "diagnose": "dialogwright diagnose",
+    "console:link": "dialogwright console:link",
+    "audit:verify": "dialogwright audit:verify"
+  },
+  "dependencies": {
+    "dialogwright": "{{dependency}}"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -32,7 +32,7 @@ type Manifest = {
 const manifest = (dir: string): Manifest => JSON.parse(readFileSync(join(ROOT, dir, 'package.json'), 'utf8')) as Manifest;
 
 /** The packages a project installs, by folder. */
-const PUBLISHED = ['packages/dialogwright', 'packages/kb-author', 'packages/widget'];
+const PUBLISHED = ['packages/dialogwright', 'packages/kb-author', 'packages/widget', 'packages/create-dialogwright'];
 
 describe('the published packages', () => {
   it('are 0.1.0 and still private (publishing is the maintainer\'s step), and depend on each other by a range', () => {
@@ -112,5 +112,17 @@ describe('the pages the package carries', () => {
     expect(out).toBe('See [the guide](X/docs/authoring-an-app.md#appyaml), [a pattern](patterns.md#known-gaps), [here](#top) and [the site](https://dialogwright.com).');
     expect(linkBetween('docs', 'docs/slots/README.md')).toBe('slots/README.md');
     expect(linkBetween('skills/create-app', 'docs/authoring-an-app.md')).toBe('../../docs/authoring-an-app.md');
+  });
+});
+
+describe('create-dialogwright', () => {
+  it('is a thin bin over dialogwright create-app --standalone, depending on dialogwright by a range', () => {
+    const pkg = manifest('packages/create-dialogwright');
+    expect(pkg.bin).toEqual({ 'create-dialogwright': './index.mjs' });
+    expect(pkg.dependencies).toEqual({ dialogwright: 'workspace:^' });
+    expect(pkg.files).toContain('index.mjs');
+    const bin = readFileSync(join(ROOT, 'packages/create-dialogwright/index.mjs'), 'utf8');
+    expect(bin.startsWith('#!/usr/bin/env node\n')).toBe(true);
+    expect(bin).toContain("'create-app', ...args, '--standalone'");
   });
 });

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/intents.schema.json
+# yaml-language-server: $schema={{schemas}}/intents.schema.json
 # What a caller can ask for, in the order the decision model is offered them, and the keypad menu.
 # Each criteria line is sent to the model as written: a change re-keys the recorded cassette
 # (fixtures/recorded). Each label is said in acknowledgements ("Sure, I can help you {label}").

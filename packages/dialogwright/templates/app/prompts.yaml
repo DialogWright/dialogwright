@@ -1,4 +1,4 @@
-# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/prompts.schema.json
+# yaml-language-server: $schema={{schemas}}/prompts.schema.json
 # Every line a caller can hear, word for word. The agent says exactly these and never composes its
 # own. Braces are filled in by the engine ({intentLabel}) or by the code ({service}); `interruptible`
 # says whether a caller may talk over it. `pnpm check` lists any line the engine needs that is

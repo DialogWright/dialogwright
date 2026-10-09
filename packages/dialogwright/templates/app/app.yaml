@@ -1,4 +1,4 @@
-# yaml-language-server: $schema={{root}}/packages/dialogwright/schemas/app.schema.json
+# yaml-language-server: $schema={{schemas}}/app.schema.json
 # {{display}}: who the app is and how it presents itself. The dialog is in intents.yaml, forms.yaml,
 # prompts.yaml and policy.yaml, and what runs is in src/app.ts. See README.md.
 id: {{name}}

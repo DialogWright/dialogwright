@@ -18,7 +18,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const NEVER = new RegExp(`\\b${'gene' + 'sys'}\\b`, 'gi');
 
 /** The folders scanned (every file under them), and the root's own pages. */
-const FOLDERS = ['apps', 'docs', 'packages/dialogwright/templates', 'packages/kb-author', 'packages/widget', '.claude', '.github', 'site'];
+const FOLDERS = ['apps', 'docs', 'packages/dialogwright/templates', 'packages/kb-author', 'packages/widget', 'packages/create-dialogwright', '.claude', '.github', 'site'];
 const ROOT_FILES = ['README.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'SECURITY.md', 'llms.txt', 'NOTICE'];
 
 function walk(dir: string): string[] {

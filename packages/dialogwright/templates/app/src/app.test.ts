@@ -41,15 +41,15 @@ describe('the policy read back', () => {
   it('has no custom rule whose examples the gate disagrees with', () => expect(runRuleExamples(app)).toEqual([]));
 
   it('policy.matrix is what the gate decides', () => {
-    expectPolicyMatrix(app, page('policy.matrix'), `pnpm policy:matrix ${APP_DIR}`);
+    expectPolicyMatrix(app, page('policy.matrix'), `{{run}} policy:matrix ${APP_DIR}`);
   });
 
   it('POLICY.md is the policy card the app generates', () => {
-    expectPolicyCard(app, page('POLICY.md'), `pnpm policy:card ${APP_DIR}`);
+    expectPolicyCard(app, page('POLICY.md'), `{{run}} policy:card ${APP_DIR}`);
   });
 
   it('APP-MAP.md is the app map the app generates', () => {
-    expectAppMap(app, page('APP-MAP.md'), `pnpm app:diagram ${APP_DIR}`);
+    expectAppMap(app, page('APP-MAP.md'), `{{run}} app:diagram ${APP_DIR}`);
   });
 
   it('has no dangling reference: every form is started by an intent and every action is reached', () => {

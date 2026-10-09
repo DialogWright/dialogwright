@@ -1,0 +1,36 @@
+{
+  "name": "create-dialogwright",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Starts a DialogWright project of your own: npm create dialogwright@latest <name>.",
+  "license": "Apache-2.0",
+  "homepage": "https://dialogwright.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DialogWright/dialogwright.git",
+    "directory": "packages/create-dialogwright"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "create-dialogwright": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs",
+    "typecheck": "node --check index.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dialogwright": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "vitest": "^2.1.0"
+  }
+}
