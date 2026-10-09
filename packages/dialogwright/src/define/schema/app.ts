@@ -5,10 +5,12 @@ import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 import { ENV_REFERENCE } from '../../core/app/envReference';
+import { whenSchema } from './condition';
+import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, fixtures, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, fixtures, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -389,6 +391,44 @@ const callDataKey = z
   .describe('One piece of data the call or chat came with, kept for the app\'s code (callDataOf(s)). A key whose source sent nothing is absent.');
 
 
+/** A target's number: the environment variable that holds it, never a number written in YAML. */
+const envTarget = () =>
+  matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable to an E.164 number or a sip: URI in the server\'s environment (.env); a number is never written in YAML');
+
+const SEND_VALUE = 'reason (the handoff\'s reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written';
+
+/** What goes with a transfer. */
+const transferSend = z
+  .strictObject({
+    headers: z
+      .record(matching(HEADER_NAME, 'is not a header a transfer may send: an X- name (letters, digits and hyphens) or User-to-User', 'name an X- header (X-Account-Ref) or User-to-User'), text())
+      .optional()
+      .describe(`SIP headers on a transfer to a sip: target, by name, each value ${SEND_VALUE}. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.`),
+    chat: z
+      .record(matching(CHAT_DATA_KEY, 'is not a plain word', 'name the key with letters, digits and underscores, starting with a letter'), text())
+      .optional()
+      .describe(`What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value ${SEND_VALUE}. Absent: the message carries only the reason, as before.`),
+  })
+  .describe('What goes with the transfer: SIP headers on a call to a sip: target, and data on a web chat\'s transfer message.');
+
+/** One transfer target. */
+const transferRule = z
+  .strictObject({
+    when: whenSchema.optional().describe('When the rule is taken: one condition, or a list that must all hold (reason, form, callData with is, in, notIn or present). A rule without when is always taken. A callData key read from a web chat\'s context (chat.<key>) is what the visitor\'s page sent: routing on it is routing on the visitor\'s own word.'),
+    to: envTarget().describe('The environment variable holding the number dialed: an E.164 number or a sip: URI, read as the server starts.'),
+    send: transferSend.optional().describe('What goes with a transfer to this target, merged over the top-level send (a name written here wins).'),
+  })
+  .describe('One transfer target: taken when its conditions all hold, the first such in order.');
+
+const transfer = z
+  .strictObject({
+    targets: z.array(transferRule).optional().describe('The targets, tried in order: the first whose conditions all hold is taken. The order is the app\'s; the most specific first (callData, then form, then reason) reads best. Default: none, every handoff goes to default.'),
+    default: envTarget().describe('Where a handoff goes when no target is taken, and where the server sends a call it puts through with no handoff decision (a lost connection, a server stopping). Usually env.HANDOFF_NUMBER.'),
+    send: transferSend.optional(),
+  })
+  .describe('Where a handoff goes and what goes with it: ordered targets on the handoff\'s reason, the form and the call data, each an environment variable holding an E.164 number or a sip: URI, and the SIP headers (or a web chat\'s data) sent with it. Without it, every handoff dials HANDOFF_NUMBER and sends nothing more.');
+
+
 export const appSchema = z
   .strictObject({
     id: matching(/^[a-z][a-z0-9_-]*$/, 'is not a valid app id: it must be lowercase, starting with a letter, with only letters, digits, hyphens and underscores', 'rename it, for example "my-app" or "parcels"')
@@ -445,6 +485,7 @@ export const appSchema = z
       }))
       .optional()
       .describe('Custom parameters the server writes into every start document, by name, each value the environment variable that holds it (env.<NAME>), read as the server starts; it refuses to start when one is unset. For a call placed from the app\'s own systems through the carrier, which hands them back on the setup. Default: none.'),
+    transfer: transfer.optional(),
     fixtures: z
       .strictObject({
         dir: matching(

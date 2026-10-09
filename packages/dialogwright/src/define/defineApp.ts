@@ -1,6 +1,6 @@
 import type {
   App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
-  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse,
+  PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse, TransferConfig, TransferSend,
 } from '../core/app/types';
 import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
 import { CONSOLE_ELEMENT_IDS, validateApp } from '../core/app/validate';
@@ -34,6 +34,8 @@ import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/ans
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { handoffDataProblems } from '../handoff/data';
+import { whenFrom } from '../core/conditions';
+import { transferProblems, type TransferProblem, type TransferWorld } from '../core/transfer';
 
 /**
  * defineApp: an app folder's YAML joined with the app's TypeScript into the App the engine runs.
@@ -555,6 +557,16 @@ export function crossLink(
     else yaml('app.yaml', path, p.message, p.fix);
   }
 
+  // Where a handoff goes and what goes with it (transfer): the forms, call data keys and slots it names
+  // are the app's, and no secret key is sent (core/transfer.ts). Its warnings are check's (checkWarnings).
+  if (app.transfer !== undefined) {
+    for (const p of transferYamlProblems(app.transfer, { forms: Object.keys(forms), slots, ...(app.callData !== undefined ? { callData: app.callData } : {}) })) {
+      if (p.warning) continue;
+      if (p.unknownSlot !== undefined) slotExists('app.yaml', p.path, p.unknownSlot);
+      else yaml('app.yaml', p.path, p.message, p.fix);
+    }
+  }
+
   // Where each slot listens (SlotSpec.listen): written in slots.yaml for a library slot, on the
   // spec for the code's. An identity factor listens as identity.yaml says, so it takes none; a slot
   // app.yaml carries listens for the call (carrySlots is the shorthand), so it may say only that.
@@ -901,6 +913,38 @@ function manifestOf(prompts: Readonly<Record<string, { text: string; interruptib
   return Object.fromEntries(Object.entries(prompts).map(([id, p]) => [id, { text: p.text, interruptible: p.interruptible }]));
 }
 
+/** What goes with a transfer, as app.yaml writes it, each part only when written. */
+function transferSendOf(send: NonNullable<AppYaml['transfer']>['send']): TransferSend | undefined {
+  if (send === undefined) return undefined;
+  return { ...(send.headers !== undefined ? { headers: { ...send.headers } } : {}), ...(send.chat !== undefined ? { chat: { ...send.chat } } : {}) };
+}
+
+/** app.yaml's transfer in the engine's shape: each rule's `when` a list of conditions (core/conditions.ts). */
+function transferOf(t: NonNullable<AppYaml['transfer']>): TransferConfig {
+  const send = transferSendOf(t.send);
+  return {
+    targets: (t.targets ?? []).map((r) => {
+      const own = transferSendOf(r.send);
+      return { when: whenFrom(r.when), to: r.to, ...(own !== undefined ? { send: own } : {}) };
+    }),
+    default: t.default,
+    ...(send !== undefined ? { send } : {}),
+  };
+}
+
+/**
+ * The problems of app.yaml's transfer (core/transfer.ts transferProblems), each at its path in the
+ * file: a rule's `when` written as one condition has no index of its own there.
+ */
+export function transferYamlProblems(t: NonNullable<AppYaml['transfer']>, world: TransferWorld): (TransferProblem & { path: DataPath })[] {
+  return transferProblems(transferOf(t), world).map((p) => {
+    const path: (string | number)[] = ['transfer', ...p.path];
+    const rule = typeof p.path[1] === 'number' && p.path[0] === 'targets' ? t.targets?.[p.path[1]] : undefined;
+    if (rule !== undefined && p.path[2] === 'when' && !Array.isArray(rule.when)) path.splice(4, 1);
+    return { ...p, path: path as DataPath };
+  });
+}
+
 /**
  * The App, its fields in the contract's order and every map in the order its file lists it, so two
  * builds of the same folder are the same object, field for field.
@@ -934,6 +978,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
   put(app, 'callData', a.callData === undefined ? undefined : Object.fromEntries(Object.entries(a.callData).map(([k, v]) => [k, v.redact !== undefined ? { from: v.from, redact: v.redact } : { from: v.from }])));
   put(app, 'startParameters', a.startParameters === undefined ? undefined : { ...a.startParameters });
+  put(app, 'transfer', a.transfer === undefined ? undefined : transferOf(a.transfer));
   put(app, 'callerOffer', code.callerOffer);
   put(app, 'textConsent', a.textConsent === undefined ? undefined : { covers: [...a.textConsent.covers] });
   put(app, 'questions', code.questions);

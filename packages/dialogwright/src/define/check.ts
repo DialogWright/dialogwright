@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
-import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, type AppCode } from './defineApp';
+import { CODE_FILE, codePath, crossLink, isAppDefinitionError, linkSlots, transferYamlProblems, type AppCode } from './defineApp';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
@@ -337,6 +337,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  transferWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   priorityHandoffWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -379,6 +383,24 @@ function priorityHandoffWarnings(config: LoadedConfig, report: (file: string, pa
   if ((unconfirmed === 'mark' || unconfirmed === 'omit') && data?.slots === 'none') {
     report('app.yaml', ['handoff', 'data', 'unconfirmed'], `unconfirmed is ${unconfirmed}, but slots is none, so a transfer sends no value to ${unconfirmed === 'mark' ? 'mark' : 'leave out'}`, 'delete "unconfirmed", or name the slots that go');
   }
+}
+
+/**
+ * The warnings for app.yaml's transfer (core/transfer.ts): a reason no handoff has a line for (the
+ * condition never holds), a rule after one that always holds (never taken), a constant that looks like a
+ * misspelled reference, and a header the carrier reserves. Warnings, never refusals: each may be meant.
+ */
+function transferWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const transfer = config.app.transfer;
+  if (transfer === undefined) return;
+  const prompts = config.prompts[config.defaultLocale] ?? {};
+  const world = {
+    forms: Object.keys(config.forms.forms),
+    slots: Object.keys(config.slots ?? {}),
+    ...(config.app.callData !== undefined ? { callData: config.app.callData } : {}),
+    hasReasonLine: (reason: string) => Object.hasOwn(prompts, handoffPromptId(reason)),
+  };
+  for (const p of transferYamlProblems(transfer, world)) if (p.warning) report('app.yaml', p.path, p.message, p.fix);
 }
 
 /**

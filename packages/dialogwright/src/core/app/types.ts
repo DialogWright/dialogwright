@@ -11,6 +11,7 @@ import type { ServiceResult } from '../../channel/events';
 import type { AuditDraft } from '../../audit/types';
 import type { GateDecision, GateLookups, Level, Party, Principal, RuleContext, RuleOutcome, ToolCall } from '../../gate/types';
 import type { CompiledPolicy } from '../../gate/compiled';
+import type { Condition } from '../conditions';
 
 /** Engine id types: plain strings. An app defines which values exist; the engine never hard-codes them. */
 export type SlotId = string;
@@ -687,6 +688,48 @@ export interface CallDataKey {
 }
 
 /**
+ * What goes with a transfer (app.yaml's `transfer.send`, a rule's own `send`): each value a reference
+ * or a constant, as written:
+ * - `reason`: the handoff's reason; `form`: the form the transfer was chosen on (TransferChoice);
+ * - `callData.<key>`: a key of App.callData, sent as its `redact` records it (masked unless `keep`, and
+ *   never less than the masking by its source's name), a `secret` key never;
+ * - `slot.<id>`: a slot, sent as the handoff data sends it (HandoffData: omitted, masked or as is);
+ * - anything else: a constant, sent as written.
+ * A reference with nothing to send on a call (no form, a key the call came without, a slot left out)
+ * is left out of the transfer.
+ */
+export interface TransferSend {
+  /** SIP headers on the transfer to a `sip:` target, by name (an `X-` name or `User-to-User`). A phone number carries none. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** What a web chat's `transfer` message carries (its `data`), by key, for the page's own handover. */
+  readonly chat?: Readonly<Record<string, string>>;
+}
+
+/**
+ * One transfer target (app.yaml's `transfer.targets[]`): taken when every condition of `when` holds
+ * (core/conditions.ts; an empty `when` always does), dialing the environment variable `to` names
+ * (`env.<NAME>`: an E.164 number or a `sip:` URI, read as the server starts), with its own `send`
+ * merged over the top-level one.
+ */
+export interface TransferRule {
+  readonly when: readonly Condition[];
+  readonly to: string;
+  readonly send?: TransferSend;
+}
+
+/**
+ * Where a handoff goes and what goes with it (app.yaml's `transfer`, core/transfer.ts): the rules are
+ * tried in order and the first whose conditions all hold is taken, else `default`. Every number is an
+ * `env.<NAME>`, never written in YAML. Without it, every handoff dials HANDOFF_NUMBER and sends
+ * nothing more, as before.
+ */
+export interface TransferConfig {
+  readonly targets: readonly TransferRule[];
+  readonly default: string;
+  readonly send?: TransferSend;
+}
+
+/**
  * Consent to text for the whole call (app.yaml's `textConsent`): asked once, on a call, right after
  * the greeting (`consent_texts`, with `{last4}`). Granted, each slot in `covers` (each offers the
  * number the caller is calling from, SlotSpec.callerNumber) is filled with that number, confirmed, with
@@ -1104,6 +1147,13 @@ export interface App {
    * carrier, which hands them back as the setup's custom parameters. Without it, none.
    */
   startParameters?: Readonly<Record<string, string>>;
+  /**
+   * Where a handoff goes and what goes with it (app.yaml's `transfer`, TransferConfig): ordered rules on
+   * the handoff's reason, the form and the call data, each naming the environment variable its number
+   * is in, and the SIP headers (and a chat's data) sent with it. Without it, every handoff dials
+   * HANDOFF_NUMBER, as before.
+   */
+  transfer?: TransferConfig;
   /**
    * Whether the number the caller is calling from may be offered for `slot` (a slot's
    * `callerNumber`): called only when an offer is about to be made (the form would ask the slot and

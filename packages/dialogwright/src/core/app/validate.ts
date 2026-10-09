@@ -17,6 +17,7 @@ import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS, VOICE_PROVIDER_IDS } from '../..
 import { pronounceProblems } from '../../channel/pronounce';
 import { MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { handoffDataProblems } from '../../handoff/data';
+import { transferProblems } from '../transfer';
 import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 import { envVariableOf } from './envReference';
 
@@ -393,6 +394,10 @@ export function validateApp(app: App): void {
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   for (const problem of callDataProblems(app)) fail(problem);
+  // Where a handoff goes (transfer, core/transfer.ts): the same refusals `check` makes of app.yaml's.
+  for (const p of transferProblems(app.transfer, { forms: Object.keys(app.forms), slots: Object.keys(app.slots), ...(app.callData !== undefined ? { callData: app.callData } : {}) })) {
+    if (!p.warning) fail(`transfer: ${p.message} (transfer.${p.path.join('.')}): ${p.fix}`);
+  }
   const seenLinks = new Set<string>();
   for (const { id } of app.console?.links ?? []) {
     if (typeof id !== 'string' || !LINK_ID.test(id)) fail(`console link id "${String(id)}" is not a lowercase word`);

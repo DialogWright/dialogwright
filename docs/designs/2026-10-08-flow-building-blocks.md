@@ -46,7 +46,9 @@ callData:
 
 ## 2. Telephony data out: transfer targets and data
 
-```yaml
+The proposal as it was written (a `text` block: as built, targets are ordered rules with `when`, and `default` is the variable itself; see [the build plan](2026-10-09-call-data-and-transfers.md#as-built-2b)):
+
+```text
 # app.yaml
 transfer:
   default: { to: env.HANDOFF_NUMBER }

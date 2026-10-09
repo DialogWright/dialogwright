@@ -31,5 +31,33 @@ callData:
   referral: { from: webhook.SipHeader_X-Referral }
   page: { from: chat.page, redact: keep }
 
+# Where a handoff goes and what goes with it (core/transfer.ts). The rules are tried in order: a call
+# from the priority queue goes to the priority line whatever it is about; a caller the callback form
+# could not get through goes to the callback desk; a caller who tried to manipulate the agent goes to
+# the security desk; anything else to HANDOFF_NUMBER. Every number is in the environment, never here.
+# A target that is a sip: URI gets the headers; a phone number carries none. On a web chat the transfer
+# message carries `chat` instead.
+transfer:
+  targets:
+    - when: { callData: queue, is: priority }
+      to: env.PRIORITY_LINE
+      send:
+        headers: { X-Queue: callData.queue }
+    - when: [{ form: request_callback }, { reason: max-attempts }]
+      to: env.CALLBACK_DESK
+    - when: { reason: security }
+      to: env.SECURITY_DESK
+      send:
+        headers: { X-Priority: "1" }
+  default: env.HANDOFF_NUMBER
+  send:
+    headers:
+      X-Account-Ref: callData.accountRef
+      X-Reason: reason
+      X-Form: form
+      X-About: slot.reason
+      X-Source: ivr
+    chat: { reason: reason, page: callData.page }
+
 fixtures:
   dir: src/testing/callback/fixtures

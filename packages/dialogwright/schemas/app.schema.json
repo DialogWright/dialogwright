@@ -987,6 +987,275 @@
         "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
       }
     },
+    "transfer": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "description": "The targets, tried in order: the first whose conditions all hold is taken. The order is the app's; the most specific first (callData, then form, then reason) reads best. Default: none, every handoff goes to default.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "when": {
+                "description": "When the rule is taken: one condition, or a list that must all hold (reason, form, callData with is, in, notIn or present). A rule without when is always taken. A callData key read from a web chat's context (chat.<key>) is what the visitor's page sent: routing on it is routing on the visitor's own word.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "description": "Holds when the handoff's reason is this one, or one of this list (for example emergency, or [live-agent, frustrated]).",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                          },
+                          {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            }
+                          }
+                        ]
+                      },
+                      "form": {
+                        "description": "Holds when the form the caller is in (or, with none open, the last one completed on the call) is this one, or one of this list.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                          },
+                          {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                            }
+                          }
+                        ]
+                      },
+                      "callData": {
+                        "description": "A key of app.yaml's callData, tested by is, in, notIn or present beside it. A key the call came without fails is, in and notIn, and holds present: false.",
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "is": {
+                        "description": "For callData: holds when the value is this one.",
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      },
+                      "in": {
+                        "description": "For callData: holds when the value is one of these.",
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "notIn": {
+                        "description": "For callData: holds when the call has the key and its value is none of these.",
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "present": {
+                        "description": "For callData: true holds when the call came with the key, false when it came without it.",
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "One condition: a subject (reason, form or callData) and, for callData, one test (is, in, notIn or present)."
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "description": "Holds when the handoff's reason is this one, or one of this list (for example emergency, or [live-agent, frustrated]).",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+                              }
+                            }
+                          ]
+                        },
+                        "form": {
+                          "description": "Holds when the form the caller is in (or, with none open, the last one completed on the call) is this one, or one of this list.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                              }
+                            }
+                          ]
+                        },
+                        "callData": {
+                          "description": "A key of app.yaml's callData, tested by is, in, notIn or present beside it. A key the call came without fails is, in and notIn, and holds present: false.",
+                          "type": "string",
+                          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                        },
+                        "is": {
+                          "description": "For callData: holds when the value is this one.",
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        },
+                        "in": {
+                          "description": "For callData: holds when the value is one of these.",
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        },
+                        "notIn": {
+                          "description": "For callData: holds when the call has the key and its value is none of these.",
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        },
+                        "present": {
+                          "description": "For callData: true holds when the call came with the key, false when it came without it.",
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "One condition: a subject (reason, form or callData) and, for callData, one test (is, in, notIn or present)."
+                    }
+                  }
+                ]
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^env\\.([A-Z][A-Z0-9_]*)$",
+                "description": "The environment variable holding the number dialed: an E.164 number or a sip: URI, read as the server starts."
+              },
+              "send": {
+                "description": "What goes with a transfer to this target, merged over the top-level send (a name written here wins).",
+                "type": "object",
+                "properties": {
+                  "headers": {
+                    "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^(?:[Xx]-[A-Za-z0-9][A-Za-z0-9-]*|[Uu]ser-[Tt]o-[Uu]ser)$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "chat": {
+                    "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "to"
+            ],
+            "additionalProperties": false,
+            "description": "One transfer target: taken when its conditions all hold, the first such in order."
+          }
+        },
+        "default": {
+          "type": "string",
+          "pattern": "^env\\.([A-Z][A-Z0-9_]*)$",
+          "description": "Where a handoff goes when no target is taken, and where the server sends a call it puts through with no handoff decision (a lost connection, a server stopping). Usually env.HANDOFF_NUMBER."
+        },
+        "send": {
+          "type": "object",
+          "properties": {
+            "headers": {
+              "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^(?:[Xx]-[A-Za-z0-9][A-Za-z0-9-]*|[Uu]ser-[Tt]o-[Uu]ser)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "chat": {
+              "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "description": "What goes with the transfer: SIP headers on a call to a sip: target, and data on a web chat's transfer message."
+        }
+      },
+      "required": [
+        "default"
+      ],
+      "additionalProperties": false,
+      "description": "Where a handoff goes and what goes with it: ordered targets on the handoff's reason, the form and the call data, each an environment variable holding an E.164 number or a sip: URI, and the SIP headers (or a web chat's data) sent with it. Without it, every handoff dials HANDOFF_NUMBER and sends nothing more."
+    },
     "fixtures": {
       "description": "Where the app's regression fixtures live, for the harness, the stubs and the clients that read them.",
       "type": "object",

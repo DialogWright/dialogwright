@@ -1,0 +1,166 @@
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+import { checkAppFully } from './check';
+import { formatProblem } from './problems';
+import { CALLBACK_DIR, callbackApp, callbackCode } from '../testing/callback/app';
+import { validateApp } from '../core/app/validate';
+import { appSchema } from './schema/app';
+
+/**
+ * What `check` says of app.yaml's `transfer` (design 2026-10-09-call-data-and-transfers, 2b decision 8):
+ * it refuses an unknown form, call data key or slot, a secret key sent, a target that is not
+ * `env.<NAME>`, a header name that is not an `X-` name or `User-to-User`, and a missing default; it
+ * warns of a reason no handoff has a line for, a rule after one that always holds, a constant that
+ * looks like a misspelled reference, and a header the carrier reserves. Business choices (which
+ * targets, in what order, what goes with them) are the app's.
+ */
+
+const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const scratch: string[] = [];
+afterAll(() => {
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+});
+
+function folder(change: (text: string) => string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'dialogwright-transfer-'));
+  scratch.push(dir);
+  cpSync(CALLBACK_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+  writeFileSync(join(dir, 'app.yaml'), change(readFileSync(join(dir, 'app.yaml'), 'utf8')));
+  return dir;
+}
+
+async function resultOf(change: (text: string) => string): Promise<{ problems: string[]; warnings: string[] }> {
+  const r = await checkAppFully(folder(change), { code: callbackCode, fixturesRoot: PACKAGE_DIR });
+  return { problems: r.problems.map(formatProblem), warnings: (r.warnings ?? []).map(formatProblem) };
+}
+
+const replace = (from: string, to: string) => (text: string): string => {
+  if (!text.includes(from)) throw new Error(`not in the file: ${from}`);
+  return text.replace(from, to);
+};
+
+describe('the fixture', () => {
+  it('builds App.transfer: each when a list of conditions, each send as written', () => {
+    expect(callbackApp.transfer).toEqual({
+      targets: [
+        { when: [{ kind: 'callData', key: 'queue', test: { is: 'priority' } }], to: 'env.PRIORITY_LINE', send: { headers: { 'X-Queue': 'callData.queue' } } },
+        { when: [{ kind: 'form', forms: ['request_callback'] }, { kind: 'reason', reasons: ['max-attempts'] }], to: 'env.CALLBACK_DESK' },
+        { when: [{ kind: 'reason', reasons: ['security'] }], to: 'env.SECURITY_DESK', send: { headers: { 'X-Priority': '1' } } },
+      ],
+      default: 'env.HANDOFF_NUMBER',
+      send: {
+        headers: { 'X-Account-Ref': 'callData.accountRef', 'X-Reason': 'reason', 'X-Form': 'form', 'X-About': 'slot.reason', 'X-Source': 'ivr' },
+        chat: { reason: 'reason', page: 'callData.page' },
+      },
+    });
+  });
+});
+
+describe('app.yaml transfer: refusals', () => {
+  it('refuses a form, a call data key or a slot the app does not have', async () => {
+    const form = await resultOf(replace('{ form: request_callback }', '{ form: request_refund }'));
+    expect(form.problems).toHaveLength(1);
+    expect(form.problems[0]).toContain('transfer.targets[1].when[0].form');
+    expect(form.problems[0]).toContain('form "request_refund" is not defined');
+    const key = await resultOf(replace('when: { callData: queue, is: priority }', 'when: { callData: lane, is: priority }'));
+    expect(key.problems).toHaveLength(1);
+    // A rule's when written as one condition has no index of its own in the file.
+    expect(key.problems[0]).toContain('transfer.targets[0].when.callData');
+    expect(key.problems[0]).toContain('callData key "lane" is not defined');
+    const sent = await resultOf(replace('X-Account-Ref: callData.accountRef', 'X-Account-Ref: callData.account'));
+    expect(sent.problems[0]).toContain('transfer.send.headers.X-Account-Ref');
+    const slot = await resultOf(replace('X-About: slot.reason', 'X-About: slot.topic'));
+    expect(slot.problems).toHaveLength(1);
+    expect(slot.problems[0]).toContain('slot "topic" is not defined');
+  });
+
+  it('refuses a secret call data key sent: it would be sent as nothing the records keep', async () => {
+    const r = await resultOf(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: secret }'));
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain('callData key "accountRef" is secret, so it is never sent');
+  });
+
+  it('refuses a target that is not env.<NAME>, a header that is not an X- name or User-to-User, and a missing default', async () => {
+    const to = await resultOf(replace('to: env.SECURITY_DESK', 'to: "+15555550100"'));
+    expect(to.problems).toHaveLength(1);
+    expect(to.problems[0]).toContain('transfer.targets[2].to');
+    expect(to.problems[0]).toContain('is not an environment variable');
+    const header = await resultOf(replace('X-Source: ivr', 'Source: ivr'));
+    expect(header.problems).toHaveLength(1);
+    expect(header.problems[0]).toContain('is not a header a transfer may send');
+    expect((await resultOf(replace('X-Source: ivr', 'User-to-User: callData.accountRef'))).problems).toEqual([]);
+    const missing = await resultOf(replace('  default: env.HANDOFF_NUMBER\n', ''));
+    expect(missing.problems).toHaveLength(1);
+    expect(missing.problems[0]).toContain('transfer.default');
+  });
+
+  it('refuses a condition with two subjects, or a test on one that takes none', async () => {
+    const two = await resultOf(replace('when: { reason: security }', 'when: { reason: security, form: request_callback }'));
+    expect(two.problems).toHaveLength(1);
+    expect(two.problems[0]).toContain('a condition has one subject');
+    const test = await resultOf(replace('when: { reason: security }', 'when: { reason: security, is: x }'));
+    expect(test.problems[0]).toContain('reason takes no is');
+  });
+});
+
+describe('app.yaml transfer: warnings, never refusals', () => {
+  it('warns of a reason no handoff has a line for: the condition never holds', async () => {
+    const r = await resultOf(replace('when: { reason: security }', 'when: { reason: billing }'));
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('no handoff has the reason "billing" (prompts.yaml has no handoff_billing)');
+  });
+
+  it('warns of a rule after one that always holds', async () => {
+    const r = await resultOf(replace('    - when: { reason: security }\n', '    - to: env.SECURITY_DESK\n    - when: { reason: security }\n'));
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('transfer.targets[3]');
+    expect(r.warnings[0]).toContain('is never taken: rule 3 before it always holds');
+  });
+
+  it('warns of a constant that looks like a misspelled reference, and of a header Telnyx reserves', async () => {
+    const r = await resultOf(replace('X-Source: ivr', 'X-Source: Reason'));
+    expect(r.problems).toEqual([]);
+    expect(r.warnings[0]).toContain('is sent as written, as a constant, though it looks like a reference');
+    const reserved = await resultOf(replace('X-Source: ivr', 'X-Telnyx-Source: ivr'));
+    expect(reserved.problems).toEqual([]);
+    expect(reserved.warnings[0]).toContain('a header Telnyx reserves');
+  });
+
+  it('takes a condition on a chat key: routing a visitor by their own page is the app\'s choice', async () => {
+    const r = await resultOf(replace('when: { callData: queue, is: priority }', 'when: { callData: page, present: true }'));
+    expect(r).toEqual({ problems: [], warnings: [] });
+  });
+});
+
+describe('the schema and validateApp', () => {
+  it('the schema takes the plan\'s transfer', () => {
+    const r = appSchema.safeParse({
+      id: 'x',
+      transfer: {
+        targets: [
+          { when: { callData: 'queue', is: 'vip' }, to: 'env.VIP_NUMBER' },
+          { when: { form: ['billing_question', 'payment'] }, to: 'env.BILLING_NUMBER' },
+          { when: { reason: ['emergency'] }, to: 'env.EMERGENCY_NUMBER', send: { headers: { 'X-Priority': '1' } } },
+        ],
+        default: 'env.HANDOFF_NUMBER',
+        send: { headers: { 'X-Account-Ref': 'callData.accountRef', 'X-Reason': 'reason', 'X-Form': 'form', 'X-Member': 'slot.memberId' }, chat: { reason: 'reason', form: 'form' } },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('validateApp refuses what check refuses, for an app built in code', () => {
+    const app = { ...callbackApp, transfer: { ...callbackApp.transfer!, default: '+15555550100' } };
+    expect(() => validateApp(app)).toThrow('transfer: "+15555550100" is not an environment variable (transfer.default)');
+    const form = { ...callbackApp, transfer: { targets: [{ when: [{ kind: 'form' as const, forms: ['nope'] }], to: 'env.X' }], default: 'env.HANDOFF_NUMBER' } };
+    expect(() => validateApp(form)).toThrow('transfer: form "nope" is not defined (transfer.targets.0.when.0.form)');
+    const header = { ...callbackApp, transfer: { targets: [], default: 'env.HANDOFF_NUMBER', send: { headers: { Accept: 'reason' } } } };
+    expect(() => validateApp(header)).toThrow('"Accept" is not a header a transfer may send');
+    expect(() => validateApp(callbackApp)).not.toThrow();
+  });
+});
