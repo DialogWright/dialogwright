@@ -193,6 +193,12 @@ export interface Session {
   pendingConfirmation: PendingConfirmation | null;
   /** intents the caller added mid-form, handled in order after the current form completes */
   queued: FormId[];
+  /**
+   * The forms the open form was reached through by `next` on this call (FormDef.next), in the order
+   * the chain went: their checks still hold in it (core/checks.ts checksOf). Absent for a form entered
+   * any other way, so every session of an app without `next` is as it was.
+   */
+  via?: FormId[];
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -416,6 +422,7 @@ export function cloneSession(s: Session): Session {
     ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
     ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
+    ...(s.via ? { via: [...s.via] } : {}),
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
   };
@@ -447,6 +454,8 @@ export function setForm(session: Session, form: FormId): Session {
   // The form in hand is never also waiting in the queue, however it was entered:
   // a switch to a queued intent starts it now rather than promising it twice.
   session.queued = session.queued.filter((q) => q !== form);
+  // A form entered by its own route was reached through nothing; one reached by next is told so after.
+  delete session.via;
   session.intentAttempts = 0;
   session.pendingConfirmation = null;
   session.menuActive = false;
@@ -493,6 +502,7 @@ export function closeForm(session: Session, keep: readonly SlotId[] = []): Sessi
     }
   }
   session.form = null;
+  delete session.via;
   session.entered = null;
   session.stepUp = null;
   if (session.callerMatch === 'offered') delete session.callerMatch;

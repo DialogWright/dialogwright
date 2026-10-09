@@ -7,8 +7,9 @@ import { formLabel } from './app/intents';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { closeForm, newSession, setForm, type Session } from './session';
 import { plan, resolve, type TurnContext, type TurnResult } from './turn';
-import { speechEvent, startEvent } from '../channel/events';
-import { VOICE_RELAY } from '../channel/caps';
+import { speechEvent, startEvent, textEvent } from '../channel/events';
+import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
+import { jsonTrip } from '../testing/sessionRoundTrip';
 import { ANONYMOUS } from '../gate/principal';
 import { mockCodeVerifier } from './tools';
 import { spokenText } from '../prompts/render';
@@ -39,6 +40,17 @@ const townUpFront = variants.variant(over(NEXT, {
   'app.yaml': replace('id: screened-next', 'id: screened-next-town'),
   'forms.yaml': replace('    next: book_visit\n', '    next: book_visit\n    listenBeforeEntered: false\n'),
   'slots.yaml': replace('town:\n  type: choice\n', 'town:\n  type: choice\n  listen: up-front\n'),
+}));
+
+/** A middle form between the screen and the booking: internal, no summary, its slots all the screen's. */
+const middled = variants.variant(over(NEXT, {
+  'app.yaml': replace('id: screened-next', 'id: screened-next-middle'),
+  'forms.yaml': (t) => replace('    next: book_visit\n', '    next: note_home\n')(t).replace('  book_visit:\n', '  note_home:\n    internal: true\n    label: note the home\n    slots: [problem, ownership, town]\n    summaryPromptId: null\n    calls: []\n    next: book_visit\n  book_visit:\n'),
+}));
+/** The screen checks only the town; the booking checks the ownership, on its first turn. */
+const ownerInBooking = variants.variant(over(NEXT, {
+  'app.yaml': replace('id: screened-next', 'id: screened-next-owner'),
+  'forms.yaml': replace('    checks:\n      - action: checkOwner\n        with: [ownership]\n        on:\n          not-owner: { say: decline_renter, then: end }\n      - action: checkArea', '    checks:\n      - action: checkArea'),
 }));
 
 let current: App = app;
@@ -78,6 +90,19 @@ const gates = (t: TurnResult): string[] => t.gateEvents.map((e) => `${e.decision
 const rows = (t: TurnResult): string[] => t.audit.map((d) => d.type);
 const ackIds = (t: TurnResult): string[] => ('acks' in t.decision ? t.decision.acks.map((a) => a.promptId) : []);
 const promptOf = (t: TurnResult): string | null => (t.decision.kind === 'prompt' ? t.decision.promptId : null);
+const NO: AnswerMap = { confirmsYes: noul(0.05), confirmsNo: noul(0.9) };
+/** The screen named again beside something urgent: the screen likelier, the urgent request under its priority threshold. */
+const SCREEN_AND_URGENT: AnswerMap = { intent: choice({ screen_home: 0.6, urgent: 0.35, none: 0.05 }) };
+const ADDING = choice({ adding: 0.9, answering: 0.05, replacing: 0.05 });
+const REPLACING = choice({ replacing: 0.9, answering: 0.05, adding: 0.05 });
+
+/** From the opener to the booking's summary: an owner in Riverton, a leak, whenever suits, Saturday morning. */
+function toSummary(): TurnResult {
+  let t = say(started(), OPENER_TEXT, OPENER);
+  t = say(t.session, 'it can wait', { howUrgent: one('routine') });
+  t = say(t.session, 'Saturday', { visitDay: one('saturday') });
+  return say(t.session, 'the morning', { timeOfDay: one('morning') });
+}
 
 describe('the screen goes on to the booking', () => {
   it('in one breath: the screen qualifies and completes, and the booking opens at once with the shared slots kept and its own asked', () => {
@@ -92,8 +117,9 @@ describe('the screen goes on to the booking', () => {
     // The shared slots carried in; the booking's own were not taken from the opener.
     expect([t.session.slots.problem!.value, t.session.slots.ownership!.value, t.session.slots.town!.value]).toEqual(['leak', 'own', 'riverton']);
     expect([t.session.slots.visitDay!.value, t.session.slots.timeOfDay!.value]).toEqual([null, null]);
-    // The booking lists the ownership check too: its pass carried, so the gate is not asked again.
-    expect(Object.keys(t.session.checked ?? {})).toEqual(['checkOwner']);
+    // The booking lists the ownership check too, and the screen's area check holds in it (its town is
+    // the booking's too): both passes carried, so the gate is not asked again.
+    expect(Object.keys(t.session.checked ?? {}).sort()).toEqual(['checkArea', 'checkOwner']);
     // The audit says the form moved on, after the screen's checks.
     expect(rows(t)).toEqual(['gate', 'gate', 'form_next']);
     expect(t.audit[2]).toEqual({ type: 'form_next', detail: { form: 'screen_home', next: 'book_visit' } });
@@ -218,5 +244,98 @@ describe('listenBeforeEntered: which slots fill before their form is open', () =
         expect(listenOf(a, id)).toBe(factor ? null : carried ? 'call' : (spec.listen ?? 'up-front'));
       }
     }
+  });
+});
+
+describe('the forms that lead to the open one are the same task', () => {
+  it('at the booking summary, "yes, and something urgent too" books, then goes on to the urgent request: the screen is not added', () => {
+    const t = say(toSummary().session, 'yes, and something urgent too', { ...YES, ...SCREEN_AND_URGENT, intentChange: ADDING });
+    expect(gates(t)).toEqual(['bookVisit:ALLOW']);
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', completed: ['screen_home', 'book_visit'] });
+    // Queued and bridged into on the same turn: the bridge says it, so "after this" is not said too.
+    expect(ackIds(t)).toEqual(['visit_booked', 'bridge_next']);
+    expect(t.decision).toMatchObject({ acks: [{}, { vars: { intentLabel: 'get help right away' } }] });
+  });
+
+  it('mid-booking, adding queues the other request, never the screen', () => {
+    const t0 = say(started(), OPENER_TEXT, OPENER);
+    const t = say(t0.session, 'it can wait, and something urgent as well', { ...SCREEN_AND_URGENT, intentChange: ADDING, howUrgent: one('routine') });
+    expect(t.session.queued).toEqual(['urgent']);
+    expect(t.session.form).toBe('book_visit');
+  });
+
+  it('mid-booking, "replacing" with the screen is no switch: the booking goes on', () => {
+    const t0 = say(started(), OPENER_TEXT, OPENER);
+    const t = say(t0.session, 'I want a visit about my home', { intent: one('screen_home'), intentChange: REPLACING });
+    expect(t.session.form).toBe('book_visit');
+    expect(t.session.completed).toEqual(['screen_home']);
+    expect(t.session.slots.problem!.value).toBe('leak');
+    // The words answered nothing the booking asked: its question again, as for any such turn.
+    expect(promptOf(t)).toBe('ask_howUrgent_retry');
+  });
+});
+
+describe('two moves on one turn', () => {
+  it('screen, then a middle form already full, then the booking: a form_next row for each, one bridge', () => {
+    use(middled);
+    const t = say(started(), OPENER_TEXT, OPENER);
+    expect(t.session.form).toBe('book_visit');
+    expect(t.session.completed).toEqual(['screen_home', 'note_home']);
+    expect(rows(t)).toEqual(['gate', 'gate', 'form_next', 'form_next']);
+    expect(t.audit.slice(2).map((d) => d.detail)).toEqual([{ form: 'screen_home', next: 'note_home' }, { form: 'note_home', next: 'book_visit' }]);
+    expect(t.movedOn!.map((m) => m.next)).toEqual(['note_home', 'book_visit']);
+    expect(ackIds(t)).toEqual(['ack_intent', 'visit_qualifies', 'bridge_next']);
+    expect(heard(t)).toBe('Sure, I can help you book a free visit. Good news, we work in Riverton, and the visit is free. Now, let\'s book your visit. How soon does it need looking at?');
+  });
+});
+
+describe('a refusal on the booking\'s first turn', () => {
+  it('drops the screen\'s "Sure, I can help" and its checksPassed as well as the bridge: only the refusal is heard', () => {
+    use(ownerInBooking);
+    const t = say(started(), 'I rent a place in Riverton with a leak', { intent: one('screen_home'), problem: one('leak'), ownership: one('rent'), town: one('riverton') });
+    expect(gates(t)).toEqual(['checkArea:ALLOW', 'checkOwner:BLOCK:not-owner']);
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'decline_renter' });
+    expect(ackIds(t)).toEqual([]);
+    expect(rows(t)).toEqual(['gate', 'form_next', 'gate', 'form_stopped', 'call_ended']);
+  });
+});
+
+describe('the earlier forms\' checks hold in the booking', () => {
+  it('a town changed at the booking\'s summary runs the screen\'s area check, and its line ends the call', () => {
+    const t = say(toSummary().session, 'no, it\'s in Lakeview', { ...NO, town: one('elsewhere') });
+    expect(gates(t)).toEqual(['checkArea:BLOCK:out-of-area']);
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'decline_out_of_area' });
+    expect(t.audit.find((d) => d.type === 'form_stopped')!.detail).toEqual({ form: 'book_visit', action: 'checkArea', reason: 'out-of-area', then: 'end' });
+  });
+
+  it('a carried check runs again when its value changes: "no, I rent it" at the summary', () => {
+    const t = say(toSummary().session, 'no, I rent it', { ...NO, ownership: one('rent') });
+    expect(gates(t)).toEqual(['checkOwner:BLOCK:not-owner']);
+    expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'decline_renter' });
+  });
+
+  it('the forms the booking was reached through are on the session, and only there', () => {
+    const t = say(started(), OPENER_TEXT, OPENER);
+    expect(t.session.via).toEqual(['screen_home']);
+    expect(started()).not.toHaveProperty('via');
+  });
+});
+
+describe('a chain resumed and on chat', () => {
+  it('a session saved mid-chain goes on as the live one does', () => {
+    const t0 = say(started(), OPENER_TEXT, OPENER);
+    const live = say(t0.session, 'it can wait', { howUrgent: one('routine') });
+    const resumed = say(jsonTrip(t0.session), 'it can wait', { howUrgent: one('routine') });
+    expect(resumed.decision).toEqual(live.decision);
+    expect(resumed.session).toEqual(live.session);
+    expect(resumed.audit).toEqual(live.audit);
+  });
+
+  it('on a web chat the screen goes on to the booking the same way', () => {
+    const s = resolve(newSession('c', 0, WEB_CHAT, ANONYMOUS, current.id), startEvent(), null, tc()).session;
+    const t = resolve(s, textEvent(OPENER_TEXT), { ...PLAIN, ...OPENER }, tc());
+    expect(t.session.form).toBe('book_visit');
+    expect(ackIds(t)).toEqual(['ack_intent', 'visit_qualifies', 'bridge_next']);
+    expect(rows(t)).toEqual(['gate', 'gate', 'form_next']);
   });
 });

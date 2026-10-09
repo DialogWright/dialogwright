@@ -1,6 +1,7 @@
 import { lastFour } from './callerNumber';
 import type { App, SlotId } from './app/types';
 import { formLabel, intentLabel } from './app/intents';
+import { checksOf } from './checks';
 import { appOf } from './app/registry';
 import { formOf } from './app/lookup';
 import { slotLocaleOf } from './locale';
@@ -65,7 +66,7 @@ function pendingState(app: App, session: Session): TurnState['pendingConfirmatio
  * reads that is not confirmed and its display (the trace masks it as it masks that slot's).
  */
 function checkState(app: App, session: Session, pc: Extract<Session['pendingConfirmation'], { target: 'check' }>): TurnState['pendingConfirmation'] {
-  const reads = formOf(app, pc.form).checks?.find((c) => c.action === pc.action)?.with ?? [];
+  const reads = checksOf(session, pc.form).find((c) => c.action === pc.action)?.with ?? [];
   const slot = reads.find((id) => session.slots[id]?.confirmed === false) ?? reads[0];
   return slot === undefined ? { target: pc.action, value: pc.reason } : { target: slot, value: session.slots[slot]?.display ?? '' };
 }

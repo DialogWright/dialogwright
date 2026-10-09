@@ -5,6 +5,7 @@ import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { formLabel, informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
+import { formsBefore } from './app/next';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
@@ -17,7 +18,7 @@ import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type 
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
-import { checkEnding, checkHash, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
+import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
@@ -186,8 +187,8 @@ export interface TurnResult {
   effects: Effect[];
   /** the form a check ended this turn (core/checks.ts); absent on every other turn */
   stopped?: FormStopped;
-  /** the form that completed this turn and went on to its next (FormDef.next); absent on every other turn */
-  movedOn?: FormMovedOn;
+  /** the forms that completed this turn and went on to their next (FormDef.next), in order; absent on every other turn */
+  movedOn?: FormMovedOn[];
   /** the check whose read-back the caller said no to this turn (core/checks.ts); absent on every other turn */
   reconfirmed?: CheckReconfirmed;
   /** the offer of the caller's number this turn settled; absent on every other turn */
@@ -414,7 +415,9 @@ function askChange(pc: Extract<PendingConfirmation, { target: 'form' }>, acks: A
 
 /** Add an intent the caller asked for on the side; returns the ack to speak, if it was new. */
 function enqueue(s: Session, intent: FormId | undefined): Ack[] {
+  // A form that leads to the open one through next is the task in hand, not another.
   if (intent === undefined || intent === s.form || s.queued.includes(intent)) return [];
+  if (s.form !== null && formsBefore(appOf(s).forms, s.form).includes(intent)) return [];
   s.queued.push(intent);
   return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent) } }];
 }
@@ -547,22 +550,31 @@ function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed
  * A form that completed as `said` goes on to its next form (FormDef.next) at once, ahead of anything
  * the caller queued, which waits for the end of the chain. The slots both forms list stay as they
  * are, with their values, displays, confirmations and agreed values (closeForm's `keep`), so the next
- * form never asks them again; so do the passes of the checks the next form lists too (Session.checked,
- * the hash of what each passed with), so the gate is not asked again about values it has already
- * allowed, and a value changed later runs the check again. The next form's checksPassed line is then
- * said only if one of its own checks is still to pass. The next form is bridged into (bridge_next with
- * its label, formLabel), never acked as a request, and the audit is told (`form_next`).
+ * form never asks them again; a slot the next form does not list goes, as any form's does. The next
+ * form is told the forms it was reached through (Session.via), whose checks still hold in it
+ * (checksOf), and the passes of every check that runs there carry (Session.checked, the hash of what
+ * each passed with), so the gate is not asked again about values it has already allowed, and a value
+ * changed later runs the check again. The next form's checksPassed line is then said only if one of
+ * its checks is still to pass. The next form is bridged into (bridge_next with its label, formLabel),
+ * never acked as a request: a form moved through on the same turn (a middle form already full) has
+ * its own bridge dropped, so one bridge is said. The audit is told of each move (`form_next`).
  */
 function goOn(s: Session, form: FormId, then: FormId, acks: Ack[], io: TurnIO): Decision {
   const next = formOf(io.app, then);
   const keep = formOf(io.app, form).slots.filter((id) => next.slots.includes(id));
-  const listed = new Set((next.checks ?? []).map((c) => c.action));
-  const passed = Object.entries(s.checked ?? {}).filter(([action]) => listed.has(action));
+  const checked = s.checked ?? {};
+  const via = [...(s.via ?? []), form];
   closeForm(s, keep);
   setForm(s, then);
+  s.via = via;
+  const runs = new Set(checksOf(s, then).map((c) => c.action));
+  const passed = Object.entries(checked).filter(([action]) => runs.has(action));
   if (passed.length > 0) s.checked = Object.fromEntries(passed);
-  io.out.movedOn = { form, next: then, at: io.out.gateEvents.length };
-  return continueForm(s, io, [...acks, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, then) } }], null);
+  const movedThrough = (io.out.movedOn ?? []).some((m) => m.next === form);
+  io.out.movedOn = [...(io.out.movedOn ?? []), { form, next: then, at: io.out.gateEvents.length }];
+  const label = formLabel(io.app, form);
+  const said = movedThrough ? acks.filter((a) => !(a.promptId === 'bridge_next' && a.vars.intentLabel === label)) : acks;
+  return continueForm(s, io, [...said, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, then) } }], null);
 }
 
 /** "Thanks for calling Example Parcels. Goodbye." (or "chatting", on a chat): the caller said they are done. */
@@ -1288,8 +1300,12 @@ function stopForm(s: Session, form: FormId, stopped: ChecksStopped, acks: Ack[],
  * them again); with a request queued, the call goes on to it instead.
  */
 function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<GateDecision, 'verdict' | 'reason'>, acks: Ack[], io: TurnIO, confirmed = false): Decision {
-  const label = formLabel(io.app, form);
-  const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && a.vars.intentLabel === label) || (a.promptId === 'ack_intent_then' && a.vars.a === label);
+  // A form reached by next on this very turn: the forms moved through are dropped as well, their
+  // entering lines and their checksPassed ("Good news, ..."), so the refusal is all that is heard.
+  const moved = (io.out.movedOn ?? []).map((m) => m.form);
+  const labels = new Set([form, ...moved].map((f) => formLabel(io.app, f)));
+  const passedLines = new Set(moved.flatMap((f) => formOf(io.app, f).checksPassed ?? []));
+  const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
   const kept = acks.filter((a) => !entering(a));
   const ending = checkEnding(s, check, decision, kept, summaryVars(s));
   io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(confirmed ? { confirmed: true as const } : {}) };
@@ -1327,7 +1343,7 @@ function checkReadBack(s: Session, form: FormId, refused: Extract<ReturnType<typ
 
 /** The check a pending read-back is for, and the outcome its refusal maps to (which has the read-back line). */
 function pendingCheck(s: Session, pc: CheckConfirmation): { check: FormCheck; outcome: CheckOutcome } {
-  const check = (formOf(appOf(s), pc.form).checks ?? []).find((c) => c.action === pc.action);
+  const check = checksOf(s, pc.form).find((c) => c.action === pc.action);
   const outcome = check === undefined ? null : outcomeOf(check, pc);
   if (check === undefined || outcome === null) throw new Error(`form ${pc.form} has no check ${pc.action} with an outcome for "${pc.reason}"`);
   return { check, outcome };

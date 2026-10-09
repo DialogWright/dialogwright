@@ -74,6 +74,30 @@ function waitsOnIdentity(s: Session, check: FormCheck): boolean {
   return empty.length > 0 && empty.every((id) => factors.includes(id));
 }
 
+/**
+ * The checks that run in `form`: its own, after those of the forms it was reached through by `next`
+ * on this call (Session.via, earliest first) that read only slots `form` lists too and that `form`
+ * does not list itself, so a value the screen checked and the booking changes ("no, it's in
+ * Lakeview" at the booking's summary) is checked again, with the screen's own outcome. For a form
+ * reached any other way, exactly its own.
+ */
+export function checksOf(s: Session, form: FormId): readonly FormCheck[] {
+  const app = appOf(s);
+  const def = formOf(app, form);
+  const own = def.checks ?? [];
+  if (s.form !== form || s.via === undefined) return own;
+  const listed = new Set(own.map((c) => c.action));
+  const earlier: FormCheck[] = [];
+  for (const before of s.via) {
+    for (const check of formOf(app, before).checks ?? []) {
+      if (listed.has(check.action) || !check.with.every((id) => def.slots.includes(id))) continue;
+      listed.add(check.action);
+      earlier.push(check);
+    }
+  }
+  return earlier.length === 0 ? own : [...earlier, ...own];
+}
+
 /** Whether every check of the form has passed, with whatever params (Session.checked). */
 function allPassed(s: Session, checks: readonly FormCheck[]): boolean {
   return checks.every((c) => s.checked !== undefined && Object.hasOwn(s.checked, c.action));
@@ -87,7 +111,7 @@ function allPassed(s: Session, checks: readonly FormCheck[]): boolean {
  */
 export function runChecks(s: Session, form: FormId, tc: TurnContext, out: TurnOut): ChecksRun {
   const def = formOf(appOf(s), form);
-  const checks = def.checks ?? [];
+  const checks = checksOf(s, form);
   if (checks.length === 0) return NOTHING;
   const before = allPassed(s, checks);
   let waiting: FormCheck | null = null;

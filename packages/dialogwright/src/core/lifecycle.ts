@@ -90,8 +90,8 @@ export interface TurnOut {
   effects: Effect[];
   /** The form a check ended this turn (core/checks.ts), for the audit's `form_stopped` row. Absent on every other turn. */
   stopped?: FormStopped;
-  /** The form that completed this turn and went on to its next (FormDef.next; core/turn.ts), for the audit's `form_next` row. Absent on every other turn. */
-  movedOn?: FormMovedOn;
+  /** The forms that completed this turn and went on to their next (FormDef.next; core/turn.ts), in order, each for an audit `form_next` row. Absent on every other turn. */
+  movedOn?: FormMovedOn[];
   /** The offer of the caller's number this turn settled (core/turn.ts), for the audit's `offer` row. Absent on every other turn. */
   offer?: OfferSettled;
   /**

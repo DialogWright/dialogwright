@@ -2,6 +2,7 @@ import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from 
 import { informationOf, isFormIntent, type Informs } from './app/intents';
 import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
+import { formsBefore } from './app/next';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
 import type { TurnState } from './state';
@@ -79,6 +80,15 @@ function isRoutable(app: App, intent: string): boolean {
 }
 
 /**
+ * The task in hand as the intents name it: the open form, and the forms that lead to it through
+ * `next` (a screen before its booking), which are the same request. Exactly the open form for an app
+ * without `next`.
+ */
+function sameTask(app: App, form: FormId): FormId[] {
+  return [form, ...formsBefore(app.forms, form)];
+}
+
+/**
  * The raw probability an added form needs before its share is read at all. The share divides by
  * what `active` leaves, so as `active` nears 1 a sliver of leftover would otherwise pass (0.03
  * beside 0.95 is a 0.6 share): the added task must also stand on its own.
@@ -88,13 +98,15 @@ export const ADDED_INTENT_FLOOR = 0.3;
 /**
  * The task an in-form "adding" utterance adds: the likeliest form other than `active`, with its
  * probability as a share of everything but `active` (the model's reading that the words go on with
- * the current task is no evidence against the task added beside it). Null when no other form is
+ * the current task is no evidence against the task added beside it). `active` is the form in hand
+ * and the forms that lead to it through next (sameTask): the screen before a booking is the booking's
+ * own request, so naming it again adds nothing. Null when no other form is
  * ranked, when `active` takes all of it, or when the added form's own probability is under
  * `ADDED_INTENT_FLOOR`.
  */
-function addedIntent(app: App, ranked: readonly { label: string; p: number }[], active: FormId): { label: FormId; p: number } | null {
-  const pActive = ranked.find((r) => r.label === active)?.p ?? 0;
-  const best = ranked.find((r) => r.label !== active && isFormIntent(app, r.label));
+function addedIntent(app: App, ranked: readonly { label: string; p: number }[], active: readonly FormId[]): { label: FormId; p: number } | null {
+  const pActive = ranked.filter((r) => active.includes(r.label)).reduce((sum, r) => sum + r.p, 0);
+  const best = ranked.find((r) => !active.includes(r.label) && isFormIntent(app, r.label));
   if (!best || pActive >= 1 || best.p < ADDED_INTENT_FLOOR) return null;
   return { label: best.label as FormId, p: best.p / (1 - pActive) };
 }
@@ -268,6 +280,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   const second = ranked[1];
   const label = top.label as Intent;
   const activeForm = session.form;
+  // The form in hand, and the forms that lead to it through next: one task (sameTask).
+  const inHand = activeForm === null ? [] : sameTask(app, activeForm);
   const informs = informationOf(app, label);
 
   let routeVerdict: Verdict | null = null;
@@ -313,7 +327,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     rows.push({ gate: 'intentChange', value: changeTop?.p ?? null, threshold: t.INTENT_CHANGE, passed: changePassed, outcome: changePassed ? mode : `${mode}:below`, decided: false });
 
     // Only an intent that is a form other than the one in hand can add or replace.
-    const other = isFormIntent(app, label) && label !== activeForm ? label : null;
+    const other = isFormIntent(app, label) && !inHand.includes(label) ? label : null;
 
     if (label === 'agent' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
@@ -324,7 +338,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       // is the caller carrying on with it (the yes to its summary in "yes, and can I also check on
       // my other parcel"), so the added task is read from the rest: the likeliest other form, as a
       // share of what is not the current one.
-      const added = addedIntent(app, ranked, activeForm);
+      const added = addedIntent(app, ranked, inHand);
       if (added && atLeast(added.p, t.INTENT_IMPLICIT)) {
         routeVerdict = { kind: 'queue', intent: added.label }; outcome = 'queue';
         intentValue = added.p; intentLabel = added.label;
@@ -460,7 +474,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     // `none` stands when the intent answer ranks no priority intent at all.
     if (p === null) row.outcome = 'none';
     else if (!p.reached) row.outcome = 'below';
-    else if (p.intent === activeForm) row.outcome = 'in_form';
+    else if (inHand.includes(p.intent)) row.outcome = 'in_form';
     else if (settledVerdict.kind === 'handoff' || settledVerdict.kind === 'hold') row.outcome = `stands:${decidedBy}`;
     else if (actsOn(settledVerdict, p.intent, label)) row.outcome = 'agrees';
     else {

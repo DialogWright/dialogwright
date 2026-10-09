@@ -48,8 +48,8 @@ export interface AuditInput {
   reconfirmed?: CheckReconfirmed;
   /** What became of the caller-ID match this turn (lifecycle.ts TurnOut.callerMatch): an `identity_caller_match` row for each. */
   callerMatch?: readonly CallerMatchStep[];
-  /** The form that completed this turn and went on to its next (lifecycle.ts TurnOut.movedOn): its `form_next` row. */
-  movedOn?: FormMovedOn;
+  /** The forms that completed this turn and went on to their next (lifecycle.ts TurnOut.movedOn): a `form_next` row for each. */
+  movedOn?: readonly FormMovedOn[];
 }
 
 /** A redacted call as one line: "createReport(accountId=...1234, missingNote=<38 chars>, expectedDate=2026-09-15)". */
@@ -148,9 +148,9 @@ export function auditDrafts(t: AuditInput): AuditDraft[] {
   // A check's read-back the caller said no to: the deciding answer was corrected, and is asked again.
   // Before the turn's gate rows: the no came first, and the check may run again on the answer it gave.
   if (t.reconfirmed) drafts.push({ type: 'check_reconfirmed', detail: { form: t.reconfirmed.form, action: t.reconfirmed.action, reason: t.reconfirmed.reason } });
-  // A form that completed and went on to its next form (FormDef.next): which, after the rows of the
-  // gate events before the move (the first form's checks) and before the next form's.
-  const movedOn = (from: number, to: number): AuditDraft[] => (t.movedOn !== undefined && t.movedOn.at >= from && t.movedOn.at <= to ? [{ type: 'form_next', detail: { form: t.movedOn.form, next: t.movedOn.next } }] : []);
+  // Each form that completed and went on to its next form (FormDef.next): which, after the rows of
+  // the gate events before the move (the form's checks) and before the next form's.
+  const movedOn = (from: number, to: number): AuditDraft[] => (t.movedOn ?? []).filter((m) => m.at >= from && m.at <= to).map((m) => ({ type: 'form_next', detail: { form: m.form, next: m.next } }));
   for (const [i, e] of t.gateEvents.entries()) {
     // The caller-ID match's steps noted before this gate event, where they happened among the turn's
     // rows: a no before the step-up asks again, a failed check before the retry probe it led to.
