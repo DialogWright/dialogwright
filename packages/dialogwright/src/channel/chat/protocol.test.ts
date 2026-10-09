@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, serializeServerMessage, actionsToChatMessages, CHAT_TEXT_MAX } from './protocol';
+import { parseClientMessage, serializeServerMessage, actionsToChatMessages, CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_TEXT_MAX } from './protocol';
 
 describe('the chat wire', () => {
   it('reads each client message', () => {
@@ -52,5 +52,31 @@ describe('the chat wire', () => {
   it('never sends the collected slots to the browser', () => {
     const [transfer] = actionsToChatMessages([{ type: 'transfer', reason: 'live-agent', completed: ['x'], queued: ['y'], slots: { accountId: '55501234' } }], 'en-US');
     expect(serializeServerMessage(transfer!)).toBe('{"type":"transfer","reason":"live-agent"}');
+  });
+});
+
+describe('a start\'s context (the page\'s data, which an app\'s callData reads as chat.<key>)', () => {
+  it('takes an object of short strings, and a start without one as before', () => {
+    expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1, context: { page: '/orders/1042', 'utm.source': 'mail-2' } }))).toEqual({ ok: true, message: { type: 'start', v: 1, context: { page: '/orders/1042', 'utm.source': 'mail-2' } } });
+    expect(parseClientMessage(JSON.stringify({ type: 'start', v: 1 }))).toEqual({ ok: true, message: { type: 'start', v: 1 } });
+  });
+
+  it('refuses one that is not, saying what it must be and never the value', () => {
+    const refused = [
+      { page: 42 },
+      { page: 'x'.repeat(CHAT_CONTEXT_VALUE_MAX + 1) },
+      { 'a key': 'x' },
+      Object.fromEntries(Array.from({ length: CHAT_CONTEXT_KEYS + 1 }, (_, i) => [`k${i}`, 'v'])),
+      ['page'],
+    ];
+    for (const context of refused) {
+      const r = parseClientMessage(JSON.stringify({ type: 'start', v: 1, context }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.code).toBe('bad_message');
+        expect(r.message).toContain('context');
+        expect(r.message).not.toContain('xxxx');
+      }
+    }
   });
 });

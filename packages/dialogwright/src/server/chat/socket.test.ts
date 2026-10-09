@@ -11,6 +11,7 @@ import { useTestkit } from '../../testing/apps';
 import { testkitApp } from '../../testing/testkit/index';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { libraryApp } from '../../define/fixture/app';
+import { callbackApp } from '../../testing/callback/app';
 import { lineLang, promptText } from '../../prompts/render';
 import { loadScenarios, runScenario } from '../../harness-text/runner';
 import { scenariosDir, defaultCorpusFile } from '../../run/fixtures';
@@ -769,5 +770,62 @@ describe('a chat asks for its language', () => {
     expect(c.received[0]).toMatchObject({ type: 'ready', locale: 'en-US' });
     expect(c.received[1]).toMatchObject({ type: 'say', lang: 'en-US' });
     expect((c.received[1] as Extract<Msg, { type: 'say' }>).text).toBe(promptText(libraryApp, 'greeting_chat', {}, 'en-US'));
+  });
+});
+
+describe('a chat\'s page context (app.yaml callData chat.<key>)', () => {
+  beforeAll(() => {
+    // Example Callbacks, whose callData reads chat.page (kept) and whose priority queue is said within the hour.
+    resetAppsForTest();
+    registerApp(callbackApp);
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('keeps the keys the app names, and writes the context to the frame log as each key\'s redact says', async () => {
+    const { url, config } = await start({}, { client: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, context: { page: '/orders/1042', queue: 'priority', campaign: 'spring-sale' } });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    await settled();
+    const ready = c.received[0] as Extract<Msg, { type: 'ready' }>;
+    const frames = readFileSync(join(config.traceDir, `${ready.session}.frames.jsonl`), 'utf8');
+    // page is chat.page, kept; queue and campaign are no chat key's: written redacted.
+    expect(frames).toContain('"context":{"page":"/orders/1042","queue":"redacted","campaign":"redacted"}');
+    expect(frames).not.toContain('spring-sale');
+    const trace = readFileSync(join(config.traceDir, `${ready.session}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { event: { callData?: unknown } });
+    expect(trace[0]!.event.callData).toEqual({ page: '/orders/1042' });
+    const started = auditEntries(config).find((e) => e.type === 'call_started' && e.callId === ready.session);
+    expect(started?.detail).toMatchObject({ 'callData.page': '/orders/1042' });
+  });
+
+  it('refuses a context that is not an object of short strings, as any malformed start', async () => {
+    const { url } = await start({}, { client: new HeuristicStubClient({ todayIso: '2026-09-18' }) });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1, context: { page: 42 } });
+    await c.until((r) => r.some((m) => m.type === 'error'));
+    expect(c.received[0]).toMatchObject({ type: 'error', code: 'bad_message' });
+    expect((c.received[0] as Extract<Msg, { type: 'error' }>).message).toContain('context');
+  });
+});
+
+describe('app.yaml startParameters at server start', () => {
+  beforeAll(() => {
+    resetAppsForTest();
+    registerApp({ ...libraryApp, startParameters: { line: 'env.CALLBACK_LINE' } });
+  });
+  afterAll(() => {
+    useTestkit();
+  });
+
+  it('refuses to start when a variable it names is unset, with the fix', async () => {
+    await expect(start({}, { env: {} })).rejects.toThrow('app.yaml\'s startParameters "line" reads CALLBACK_LINE, which is not set: set CALLBACK_LINE in the app\'s .env');
+  });
+
+  it('starts, and says which it writes, when it is set', async () => {
+    const { logs } = await start({}, { env: { CALLBACK_LINE: 'support-east' } });
+    expect(logs).toContain('start parameters: line');
+    expect(logs.join('\n')).not.toContain('support-east');
   });
 });

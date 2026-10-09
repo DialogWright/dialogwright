@@ -3,7 +3,9 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { WEB_CHAT } from '../../channel/caps';
-import { signedInEvent, startEvent, textEvent, type SessionEvent } from '../../channel/events';
+import { signedInEvent, startEvent, textEvent, withCallData, type SessionEvent } from '../../channel/events';
+import { callDataFrom, recordedContext } from '../../channel/callData';
+import type { CallDataKey } from '../../core/app/types';
 import { actionsToChatMessages, parseClientMessage, serializeServerMessage, type ClientMessage, type ServerMessage } from '../../channel/chat/protocol';
 import { appOf } from '../../core/app/registry';
 import { codeLengthOf } from '../../core/app/lookup';
@@ -129,10 +131,14 @@ function describeError(err: unknown): string {
 }
 
 /** A client message as the frame log keeps it: a token or resume token is never written, only that there was one. */
-function loggedIn(m: ClientMessage, text?: string): Record<string, unknown> {
+function loggedIn(m: ClientMessage, text?: string, spec?: Readonly<Record<string, CallDataKey>>): Record<string, unknown> {
   switch (m.type) {
     case 'start':
-      return { type: 'start', v: m.v, ...(m.locale !== undefined ? { locale: m.locale } : {}), ...(m.token !== undefined ? { token: true } : {}), ...(m.resume !== undefined ? { resume: true } : {}) };
+      return {
+        type: 'start', v: m.v, ...(m.locale !== undefined ? { locale: m.locale } : {}), ...(m.token !== undefined ? { token: true } : {}), ...(m.resume !== undefined ? { resume: true } : {}),
+        // The page's context, each key an app's callData reads as that key's redact says, every other one redacted.
+        ...(m.context !== undefined ? { context: recordedContext(spec, m.context) } : {}),
+      };
     case 'sign_in':
       return { type: 'sign_in', token: true };
     case 'text':
@@ -372,7 +378,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
     conn.id = id;
-    record(e.frames, 'in', loggedIn(m));
+    record(e.frames, 'in', loggedIn(m, undefined, appOf(e.session).callData));
     // Ahead of the opening turn, and it is what resets the console's history: the page follows this chat now.
     deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null });
     void enqueue(e, async (s) => {
@@ -395,7 +401,9 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       const signedIn: ServerMessage[] = delegate === null ? [] : [{ type: 'signed_in', level: delegate.level }];
       // The client asks for a language; the core matches it to one of the app's (core/locale.ts matchLocale),
       // and ready names the one the session speaks.
-      await turn(s, startEvent({ channel: 'chat' }, m.locale), (x) => [...ready(x), ...signedIn]);
+      // The page's context, by the app's callData keys (chat.<key>); none for an app that names none.
+      const data = m.context !== undefined ? callDataFrom(appOf(s.session).callData, {}, m.context) : {};
+      await turn(s, withCallData(startEvent({ channel: 'chat' }, m.locale), data), (x) => [...ready(x), ...signedIn]);
       if (refused !== null) sendTo(s, refused);
       if (subject !== null && !s.ended) await signInTurn(s, subject);
     });
@@ -414,7 +422,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     e.socket = conn.ws;
     e.lastActivityMs = now();
     conn.id = e.id;
-    record(e.frames, 'in', loggedIn(m));
+    // A resume's context is the page's again, and changes nothing: the chat keeps what it started with.
+    record(e.frames, 'in', loggedIn(m, undefined, appOf(e.session).callData));
     // Saved with its new token, so the one just used opens nothing after a restart either.
     save(e);
     // At once, ahead of a reply still in flight (which goes to this socket when it is done), so the

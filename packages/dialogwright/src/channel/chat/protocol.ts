@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import type { Action } from '../actions';
+import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX } from '../callData';
 
 /**
  * The web chat wire: our own JSON, one message per WebSocket frame, versioned by `start.v`. The
  * widget speaks it, and so may any client a site writes; it is a public contract, so a change that
  * a client would notice is a new version.
  *
- * Client to server: `start` (v, locale?, token?, resume?), `text` (text), `sign_in` (token), `ping`.
+ * Client to server: `start` (v, locale?, token?, resume?, context?), `text` (text), `sign_in` (token), `ping`.
+ * `context` is the page's own data (strings by key, at most CHAT_CONTEXT_KEYS of them, each at most
+ * CHAT_CONTEXT_VALUE_MAX characters), of which the app keeps only the keys its callData names
+ * (`chat.<key>`); optional, so a client that sends none is unchanged and the version stays 1.
  * Server to client: `ready` (session, resume, locale), `say` (text, lang), `transfer` (reason), `end`,
  * `signed_in` (level), `error` (code, message), `pong`.
  *
@@ -22,6 +26,11 @@ export const CHAT_TOKEN_MAX = 8192;
 const LOCALE_TAG = /^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$/;
 /** A resume token, as `ready` gives one: 16 random bytes in hex. */
 const RESUME_TOKEN = /^[0-9a-f]{32}$/;
+/** The most keys a start's `context` may have, and the longest value: a call's custom parameters' limits (channel/callData.ts). */
+export const CHAT_CONTEXT_KEYS = CALL_DATA_MAX_KEYS;
+export const CHAT_CONTEXT_VALUE_MAX = CALL_DATA_VALUE_MAX;
+/** A context key: a name as a callData `chat.<key>` source writes it, at most 64 characters. */
+const CONTEXT_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
 
 const clientMessage = z.discriminatedUnion('type', [
   z.strictObject({
@@ -30,6 +39,10 @@ const clientMessage = z.discriminatedUnion('type', [
     locale: z.string().max(35).regex(LOCALE_TAG).optional(),
     token: z.string().min(1).max(CHAT_TOKEN_MAX).optional(),
     resume: z.string().regex(RESUME_TOKEN).optional(),
+    context: z
+      .record(z.string().regex(CONTEXT_KEY), z.string().max(CHAT_CONTEXT_VALUE_MAX))
+      .refine((o) => Object.keys(o).length <= CHAT_CONTEXT_KEYS)
+      .optional(),
   }),
   z.strictObject({ type: z.literal('text'), text: z.string().min(1).max(CHAT_TEXT_MAX) }),
   z.strictObject({ type: z.literal('sign_in'), token: z.string().min(1).max(CHAT_TOKEN_MAX) }),
@@ -78,6 +91,7 @@ export function parseClientMessage(raw: string): ParsedClientMessage {
   const why = issue?.code === 'unrecognized_keys' ? 'has a field the protocol does not have'
     : issue?.code === 'invalid_union' || where === 'type' ? 'is not a type the protocol has (start, text, sign_in, ping)'
     : where === 'v' ? `must be ${CHAT_PROTOCOL_VERSION}, the protocol version this server speaks`
+    : where.startsWith('context') ? `must be an object of at most ${CHAT_CONTEXT_KEYS} strings, each at most ${CHAT_CONTEXT_VALUE_MAX} characters, under keys of letters, digits, underscores, hyphens and dots`
     : 'is not what the protocol takes';
   return { ok: false, code: 'bad_message', message: `${where} ${why}` };
 }
