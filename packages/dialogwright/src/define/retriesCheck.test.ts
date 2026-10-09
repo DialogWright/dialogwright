@@ -101,6 +101,15 @@ describe('check refuses a broken outcome', () => {
     expect(problems.join('\n')).toContain('the slot "problem" says onMaxAttempts: "end": "end" is written out, with what it needs (the line said)');
   });
 
+  it('a code slot\'s lines, in every locale the engine asks them of', async () => {
+    const problem: SlotSpec = { ...(screenedApp.slots.problem as SlotSpec), onMaxAttempts: { say: 'problem_unclear', then: 'handoff', reason: 'problem-unclear' } };
+    const code: AppCode = { ...screenedCode, slots: { problem } };
+    const asCode = (t: string): string => t.slice(0, t.indexOf('problem:\n')) + 'problem:\n  type: code\n' + t.slice(t.indexOf('ownership:\n'));
+    const { problems } = await checked({ 'slots.yaml': asCode }, code);
+    expect(problems.join('\n')).toContain('prompt "problem_unclear" is missing from prompts.yaml; the engine says it when the slot "problem" runs out of attempts');
+    expect(problems.join('\n')).toContain('prompt "handoff_problem_unclear" is missing from prompts.yaml');
+  });
+
   it('skip on an identity factor', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dialogwright-retries-check-'));
     scratch.push(dir);
