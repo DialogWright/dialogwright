@@ -22,7 +22,8 @@ function dialogwrightDir() {
 
 const args = process.argv.slice(2);
 if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
-  console.log('usage: npm create dialogwright@latest <name> [-- --identity] [-- --display "<business name>"] [-- --dir <path>]');
+  console.log('usage: npm create dialogwright@latest <name> -- [--identity] [--display "<business name>"] [--dir <path>]');
+  console.log('  (with pnpm: pnpm create dialogwright <name> [--identity] ...; npm passes the options on after --)');
   console.log('  name: lowercase letters, digits and hyphens; the project is <name> in this folder unless --dir says where');
   console.log('  --identity: callers verify with two factors (an account number and a birth date) before the booking');
   console.log('  --display: the name the greeting and the console use');

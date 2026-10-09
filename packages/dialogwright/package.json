@@ -39,6 +39,8 @@
   ],
   "scripts": {
     "build": "node ../../scripts/build-package.mjs && tsx scripts/shipDocs.ts",
+    "prepack": "node ../../scripts/publish-guard.mjs",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regress:testkit": "tsx src/testing/testkit/regress.ts",
@@ -64,14 +66,10 @@
     "zod": "^4.6"
   },
   "peerDependencies": {
-    "@huggingface/transformers": ">=3",
-    "vitest": ">=2.1"
+    "@huggingface/transformers": ">=3"
   },
   "peerDependenciesMeta": {
     "@huggingface/transformers": {
-      "optional": true
-    },
-    "vitest": {
       "optional": true
     }
   },

@@ -52,3 +52,13 @@ export function linkBetween(fromDir: string, to: string): string {
   const rel = posix.relative(fromDir, to);
   return rel === '' ? posix.basename(to) : rel;
 }
+
+/** A page of this repository (at `repoPath`) as the package carries it: links between shipped pages kept relative, any other to GitHub. */
+export function packageCopy(text: string, repoPath: string): string {
+  const pkgPath = packagePathOf(repoPath);
+  if (pkgPath === null) throw new Error(`${repoPath} is not a page the package carries`);
+  return relinkMarkdown(text, repoPath, (target, anchor) => {
+    const shipped = packagePathOf(target);
+    return shipped === null ? `${REPOSITORY_PAGES}${target}${anchor}` : `${linkBetween(posix.dirname(pkgPath), shipped)}${anchor}`;
+  });
+}

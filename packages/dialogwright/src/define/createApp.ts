@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
+import { INSTALLED, PACKAGE_DIR, REPO_ROOT } from './home';
 import { packagePathOf, REPOSITORY_PAGES, relinkMarkdown } from './shipped';
 
 /**
@@ -28,19 +30,17 @@ import { packagePathOf, REPOSITORY_PAGES, relinkMarkdown } from './shipped';
  * .claude/skills/create-app, its links to the guide pointing at the installed package's copy.
  */
 
-/** The repository's package folder and its template folders. */
-const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+/** The template folders. */
 export const TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'app');
 export const IDENTITY_TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'app-identity');
 export const STANDALONE_TEMPLATE_DIR = join(PACKAGE_DIR, 'templates', 'standalone');
-/** The repository root: the folder with pnpm-workspace.yaml above this package. */
-export const REPO_ROOT = resolve(PACKAGE_DIR, '..', '..');
-/** Whether this package is installed in a project's node_modules, rather than run from this repository. */
-const INSTALLED = PACKAGE_DIR.split(sep).includes('node_modules');
+export { REPO_ROOT };
 /** The create-app skill a project of its own gets: this repository's, or, installed, the copy the package carries. */
 export const SKILL_DIR = INSTALLED ? join(PACKAGE_DIR, 'skills', 'create-app') : join(REPO_ROOT, '.claude', 'skills', 'create-app');
-/** Where the skill is in this repository, which its links are relative to. */
+/** Where the skill is in this repository (and in a project), which its links are relative to. */
 const SKILL_REPO_PATH = '.claude/skills/create-app';
+/** Where the package carries its copy. */
+const SKILL_PACKAGE_PATH = 'skills/create-app';
 /** The engine package's version: a project of its own depends on `^` it unless told otherwise. */
 export const ENGINE_VERSION = (JSON.parse(readFileSync(join(PACKAGE_DIR, 'package.json'), 'utf8')) as { version: string }).version;
 /** The files the base template has that a project of its own goes without. */
@@ -74,8 +74,9 @@ export function displayNameOf(name: string): string {
 
 /** Two capital letters for the brand mark: the initials of the first two words, or the first two letters of a single word. */
 export function markOf(display: string): string {
-  const words = display.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
-  const letters = words.length >= 2 ? words.slice(0, 2).map((w) => w.charAt(0)).join('') : (words[0] ?? 'App').slice(0, 2);
+  // Letters and digits only, in any script: "Joe's \"Fix\"" is JF, "Café Niño" is CN.
+  const words = display.split(/\s+/).map((w) => w.replace(/[^\p{L}\p{N}]/gu, '')).filter((w) => w !== '');
+  const letters = words.length >= 2 ? words.slice(0, 2).map((w) => [...w][0]!).join('') : [...(words[0] ?? 'App')].slice(0, 2).join('');
   return letters.toUpperCase();
 }
 
@@ -117,9 +118,10 @@ function listFiles(dir: string, base = dir): string[] {
 /**
  * `{{name}}` and the others replaced, and the identity blocks (and the standalone blocks,
  * `{{#standalone}}...{{/standalone}}` and `{{^standalone}}...{{/standalone}}`) kept or dropped. A
- * `{{token}}` left over is a template bug, so it throws.
+ * `{{token}}` left over is a template bug, so it throws. With `file` (the path it is written to), the
+ * display name is written as that file's syntax needs it (see below); without, as it is.
  */
-export function render(text: string, values: Record<string, string>, identity: boolean, standalone = false): string {
+export function render(text: string, values: Record<string, string>, identity: boolean, standalone = false, file?: string): string {
   const blocks = (input: string, flag: string, on: boolean): string => {
     const block = (open: string): RegExp => new RegExp(`^[ \\t]*${open}[ \\t]*\\n([\\s\\S]*?)^[ \\t]*\\{\\{/${flag}\\}\\}[ \\t]*\\n`, 'gm');
     const inline = (open: string): RegExp => new RegExp(`${open}(.*?)\\{\\{/${flag}\\}\\}`, 'g');
@@ -132,14 +134,70 @@ export function render(text: string, values: Record<string, string>, identity: b
   const withIdentity = blocks(blocks(text, 'identity', identity), 'standalone', standalone);
   // In this repository the schemas and the commands follow from the path to the root, as they did before a project of its own had its own.
   const given: Record<string, string> = values.root === undefined ? values : { schemas: `${values.root}/packages/dialogwright/schemas`, run: 'pnpm', ...values };
-  const out = withIdentity.replace(/\{\{(name|display|mark|root|schemas|run|dependency)\}\}/g, (_m, key: string) => {
+  const token = /\{\{(name|display|mark|root|schemas|run|dependency)\}\}/g;
+  const valueOf = (key: string): string => {
     const value = given[key];
     if (value === undefined) throw new Error(`template token {{${key}}} has no value here`);
     return value;
-  });
+  };
+  // Line by line, so the display name, the one value a person types freely, is written as each file's
+  // own syntax needs it where it lands: inside a JSON string, inside a quoted string of TypeScript, or
+  // as a YAML value that would not read back as written.
+  const out = withIdentity
+    .split('\n')
+    .map((line) => {
+      const rendered = line.replace(token, (_m, key: string, at: number) => {
+        const value = valueOf(key);
+        if (key !== 'display' || file === undefined) return value;
+        if (file.endsWith('.json')) return JSON.stringify(value).slice(1, -1);
+        if (/\.[cm]?[jt]s$/.test(file)) {
+          const quote = openQuote(line.slice(0, at));
+          return quote === null ? value : jsEscaped(value, quote);
+        }
+        return value;
+      });
+      return /\.ya?ml$/.test(file ?? '') && line.includes('{{display}}') ? yamlValueKept(rendered) : rendered;
+    })
+    .join('\n');
   const left = /\{\{[^}]*\}\}/.exec(out);
   if (left) throw new Error(`template token ${left[0]} is not one create-app knows`);
   return out;
+}
+
+/** The quote a string open at the end of `before` (a line of code up to a token) was opened with, or null. */
+function openQuote(before: string): "'" | '"' | '`' | null {
+  let open: "'" | '"' | '`' | null = null;
+  for (let i = 0; i < before.length; i += 1) {
+    const c = before[i]!;
+    if (c === '\\' && open !== null) i += 1;
+    else if (open === null && (c === "'" || c === '"' || c === '`')) open = c;
+    else if (c === open) open = null;
+  }
+  return open;
+}
+
+/** `value` inside a string opened with `quote`. */
+function jsEscaped(value: string, quote: "'" | '"' | '`'): string {
+  const escaped = value.replace(/\\/g, '\\\\').split(quote).join(`\\${quote}`);
+  return quote === '`' ? escaped.replace(/\$\{/g, '\\${') : escaped;
+}
+
+/**
+ * A YAML line `key: value` (or `- key: value`) whose plain value would not read back as written (a
+ * display name with `: `, ` #`, or a quote or an indicator at its start), with the value double-quoted
+ * so it does; any other line, as it is.
+ */
+function yamlValueKept(line: string): string {
+  const m = /^(\s*(?:- )?[A-Za-z_][\w.-]*:[ \t]+)(.*)$/.exec(line);
+  if (m === null || line.trimStart().startsWith('#')) return line;
+  const value = m[2]!;
+  try {
+    const read = parse(`k: ${value}`) as { k?: unknown } | null;
+    if (read !== null && typeof read === 'object' && read.k === value) return line;
+  } catch {
+    // It does not read: quote it.
+  }
+  return `${m[1]}${JSON.stringify(value)}`;
 }
 
 /** What goes where: the template's files by path, with the identity overlay applied, and the standalone overlay with `standalone`. */
@@ -171,20 +229,34 @@ export function templateFiles(identity: boolean, standalone = false): Map<string
  * project's own, where the repository's is) stay, and a link to any other page of this repository
  * points at it on GitHub.
  */
-export function standaloneSkill(): Map<string, string> {
+export function standaloneSkill(dir: string = SKILL_DIR, base: string = INSTALLED ? SKILL_PACKAGE_PATH : SKILL_REPO_PATH): Map<string, string> {
   const files = new Map<string, string>();
-  for (const file of listFiles(SKILL_DIR)) {
-    const text = readFileSync(join(SKILL_DIR, file), 'utf8');
-    const from = posix.join(SKILL_REPO_PATH, file);
-    files.set(posix.join('.claude/skills/create-app', file), !file.endsWith('.md') ? text : relinkMarkdown(text, from, (target, anchor) => {
-      // The skill's own pages, and CLAUDE.md, which in a project is the project's own, at the same place.
-      if (target === SKILL_REPO_PATH || target.startsWith(`${SKILL_REPO_PATH}/`) || target === 'CLAUDE.md') return null;
-      const shipped = packagePathOf(target);
-      if (shipped !== null && shipped.startsWith('docs/')) return `${posix.relative(posix.dirname(from), posix.join('node_modules/dialogwright', shipped))}${anchor}`;
-      return `${REPOSITORY_PAGES}${target}${anchor}`;
-    }));
+  for (const file of listFiles(dir)) {
+    const text = readFileSync(join(dir, file), 'utf8');
+    files.set(posix.join(SKILL_REPO_PATH, file), file.endsWith('.md') ? projectSkillPage(text, file, base) : text);
   }
   return files;
+}
+
+/**
+ * A page of the skill, `file` under `base` (where it is read: `.claude/skills/create-app` in this
+ * repository, whose links are the repository's; `skills/create-app` in the package, whose copy
+ * scripts/shipDocs.ts re-linked within the package), as a project has it under
+ * .claude/skills/create-app: the same links whichever it was read from.
+ */
+export function projectSkillPage(text: string, file: string, base: string): string {
+  const from = posix.join(base, file);
+  const at = posix.dirname(posix.join(SKILL_REPO_PATH, file));
+  const relinked = relinkMarkdown(text, from, (target, anchor) => {
+    // The skill's own pages, and CLAUDE.md, which in a project is the project's own, at the same place.
+    if (target === base || target.startsWith(`${base}/`)) return null;
+    if (target === 'CLAUDE.md') return `${posix.relative(at, 'CLAUDE.md')}${anchor}`;
+    const shipped = packagePathOf(target) ?? (target.startsWith('docs/') ? target : null);
+    if (shipped !== null && shipped.startsWith('docs/')) return `${posix.relative(at, posix.join('node_modules/dialogwright', shipped))}${anchor}`;
+    return `${REPOSITORY_PAGES}${target}${anchor}`;
+  });
+  // The package's copy links CLAUDE.md on GitHub (the package has none); a project has its own.
+  return relinked.split(`](${REPOSITORY_PAGES}CLAUDE.md`).join(`](${posix.relative(at, 'CLAUDE.md')}`);
 }
 
 /** `path` with the symbolic links of its existing part resolved (a temporary folder on macOS is under /var, which is /private/var), so a relative path from it is one a tool finds from the real folder too. */
@@ -205,11 +277,17 @@ export function createApp(options: CreateAppOptions): CreatedApp {
   const root = resolve(options.root ?? REPO_ROOT);
   const standalone = options.standalone === true;
   const dir = resolve(options.dir ?? (standalone ? options.name : join(root, 'apps', options.name)));
+  // A project of its own goes outside the DialogWright repository, whose workspace would take it for one of its packages.
+  const repository = options.root ?? (INSTALLED ? null : REPO_ROOT);
+  if (standalone && repository !== null && existsSync(join(repository, 'pnpm-workspace.yaml')) && (realPath(dir) === realPath(repository) || realPath(dir).startsWith(realPath(repository) + sep))) {
+    throw new CreateAppError(`${dir} is inside the DialogWright repository (${repository}); a project of its own goes outside it: give --dir <a folder outside the repository>`);
+  }
   if (existsSync(dir)) {
     throw new CreateAppError(`${dir} already exists; create-app never writes into an existing folder. Choose another name, or --dir, or remove the folder first`);
   }
   const display = options.display?.trim() || displayNameOf(options.name);
-  if (/[\n\r{}]/.test(display)) throw new CreateAppError('the display name may not have a line break or braces');
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f{}]/.test(display)) throw new CreateAppError('the display name may not have a line break, another control character or braces');
   const identity = options.identity === true;
   const dependency = options.dependency ?? `^${ENGINE_VERSION}`;
   if (/["\\\n]/.test(dependency)) throw new CreateAppError('the dialogwright dependency may not have a quote, a backslash or a line break');
@@ -223,7 +301,7 @@ export function createApp(options: CreateAppOptions): CreatedApp {
 
   const written: string[] = [];
   const files = templateFiles(identity, standalone);
-  const rendered = new Map([...files].map(([file, text]) => [file, render(text, values, identity, standalone)] as const));
+  const rendered = new Map([...files].map(([file, text]) => [file, render(text, values, identity, standalone, file)] as const));
   for (const [file, text] of rendered) {
     const to = join(dir, file);
     mkdirSync(dirname(to), { recursive: true });

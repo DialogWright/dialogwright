@@ -21,7 +21,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "node build.mjs && node ../../scripts/build-package.mjs --out dist/types --no-assets"
+    "build": "node build.mjs && node ../../scripts/build-package.mjs --out dist/types --no-assets",
+    "prepack": "node ../../scripts/publish-guard.mjs",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs"
   },
   "devDependencies": {
     "@types/node": "^22",

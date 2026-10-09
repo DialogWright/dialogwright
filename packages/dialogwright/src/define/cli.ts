@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { appFolderAt } from './appFolder';
+import { INSTALLED } from './home';
 import { checkAppFully } from './check';
 import { createApp, CreateAppError, displayNameOf, REPO_ROOT } from './createApp';
 import { ConvertError, convertFolder, convertTables, toText, writeConversion } from './convert/convertPolicy';
@@ -76,7 +78,8 @@ export const USAGE = [
   '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace',
   '       dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install] [--standalone [--dialogwright spec]]',
   '  name: lowercase letters, digits and hyphens; the new app is apps/<name> unless --dir says where',
-  '  --standalone: a project of its own, outside this repository, depending on the dialogwright package (<name> in the folder it is run in, unless --dir)',
+  '  --standalone: a project of its own, outside this repository, depending on the dialogwright package (<name> in the folder it is run in, unless --dir);',
+  '    run from an installed package (npx dialogwright create-app), it is always a project of its own, as if --standalone were given',
   '  --dialogwright spec: with --standalone, the dependency its package.json names (default: ^ this version; a file: path to a packed package works too)',
   '  --identity: add identity.yaml, so callers verify with two factors (an account number and a birth date) before the booking',
   '  --display text: the name the greeting and the console use (default: the name in capitals, "water-utility" is "Water Utility")',
@@ -141,6 +144,8 @@ export interface Io {
   invokedFrom?: string;
   /** The repository root create-app writes into and installs in. Default: the repository this package is in. */
   root?: string;
+  /** Whether the package is installed in a project's node_modules, where create-app always writes a project of its own. Default: ./home.ts INSTALLED. */
+  installed?: boolean;
   /** Runs `pnpm install` in `root`; returns its exit code. Default: runs it, showing its output. */
   install?(root: string): number;
   /** Today, as an ISO date (kb:approve records it). Default: today (UTC). */
@@ -162,17 +167,26 @@ const stdio = (): Io => ({
 
 const pnpmInstall = (root: string): number => spawnSync('pnpm', ['install'], { cwd: root, stdio: 'inherit' }).status ?? 1;
 
-/** The app folders a bare `dialogwright check` means: the working directory, or those under apps/ of the workspace, as paths from the directory it looked in. */
+/**
+ * The app folders a bare `dialogwright check` means: the working directory, or, outside a workspace,
+ * the app it is inside (a folder of a project of its own), or those under apps/ of the workspace, as
+ * paths from the directory it looked in (`root`).
+ */
 export function findAppFolders(cwd: string): { root: string; dirs: string[] } {
   if (existsSync(join(cwd, 'app.yaml'))) return { root: cwd, dirs: [cwd] };
   let root = cwd;
+  let workspace = false;
   for (let at = cwd; ; at = dirname(at)) {
     if (existsSync(join(at, 'pnpm-workspace.yaml'))) {
       root = at;
+      workspace = true;
       break;
     }
     if (dirname(at) === at) break;
   }
+  // Outside a workspace, a folder inside an app (a project of its own) means that app.
+  const inside = workspace ? null : appFolderAt(cwd);
+  if (inside !== null) return { root: cwd, dirs: [inside] };
   const subfolders = (dir: string): string[] => {
     try {
       return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.')).map((e) => join(dir, e.name)).sort();
@@ -312,6 +326,8 @@ function createAppCommand(args: readonly string[], io: Io): number {
     io.err(`dialogwright create-app: give the app a name\n${USAGE}`);
     return 2;
   }
+  // Installed in a project, there is no repository to write an app into: it is always a project of its own.
+  if (io.installed ?? INSTALLED) standalone = true;
   if (dependency !== undefined && !standalone) {
     io.err(`dialogwright create-app: --dialogwright goes with --standalone\n${USAGE}`);
     return 2;

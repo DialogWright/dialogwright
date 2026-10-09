@@ -3,12 +3,12 @@
 // the create-app skill) from this repository into the package's docs/ and skills/, which are
 // git-ignored, so a project that installs the package reads them in node_modules/dialogwright. A link
 // to another shipped page stays a link between the copies; a link to a page the package does not carry
-// becomes a link to that page on GitHub. The skill is copied as it is: create-app re-links it when it
-// writes it into a project (createApp.ts standaloneSkill).
+// becomes a link to that page on GitHub (shipped.ts packageCopy); the skill's copy too, and create-app
+// re-links it again when it writes it into a project (createApp.ts projectSkillPage).
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { linkBetween, packagePathOf, REPOSITORY_PAGES, relinkMarkdown, SHIPPED } from '../src/define/shipped';
+import { packageCopy, packagePathOf, SHIPPED } from '../src/define/shipped';
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = join(PACKAGE_DIR, '..', '..');
@@ -26,13 +26,9 @@ for (const [repo] of SHIPPED) {
     const pkgPath = packagePathOf(file)!;
     const to = join(PACKAGE_DIR, pkgPath);
     mkdirSync(dirname(to), { recursive: true });
-    if (file.startsWith('.claude/') || !file.endsWith('.md')) cpSync(join(REPO_ROOT, file), to);
+    if (!file.endsWith('.md')) cpSync(join(REPO_ROOT, file), to);
     else {
-      const text = readFileSync(join(REPO_ROOT, file), 'utf8');
-      writeFileSync(to, relinkMarkdown(text, file, (target, anchor) => {
-        const shipped = packagePathOf(target);
-        return shipped === null ? `${REPOSITORY_PAGES}${target}${anchor}` : `${linkBetween(posix.dirname(pkgPath), shipped)}${anchor}`;
-      }));
+      writeFileSync(to, packageCopy(readFileSync(join(REPO_ROOT, file), 'utf8'), file));
     }
     count += 1;
   }

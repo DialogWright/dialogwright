@@ -8,7 +8,7 @@ import { readEnvFile } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { isLoopbackHost } from './localOnly';
 import { CLOUDFLARED_INSTALL, findOnPath, QUICK_TUNNEL_TIMEOUT_MS, QUICK_TUNNEL_TROUBLE, waitForQuickTunnel, type TunnelProcess } from './tunnel';
-import { chooseApp, commandHints, projectRoot, serveCommand, workspaceApps } from './workspace';
+import { chooseApp, commandHints, projectRoot, runCommand, serveCommand, workspaceApps } from './workspace';
 
 /**
  * `[ENV_FILE=<path>] pnpm start [--app <name>] [--tunnel quick|named|none]`: an app's server with its
@@ -85,7 +85,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   const named = flags.envFile ?? (deps.env.ENV_FILE?.trim() || undefined);
   const file = named === undefined ? join(app.dir, '.env') : isAbsolute(named) ? named : resolve(deps.invokedFrom, named);
   if (!existsSync(file)) {
-    deps.out(`no settings file at ${file}: run pnpm configure first (or name one: ENV_FILE=<path> pnpm start)`);
+    deps.out(`no settings file at ${file}: run ${runCommand(root)} configure first (or name one: ENV_FILE=<path> ${runCommand(root)} start)`);
     return 1;
   }
   const settings: Env = { ...readEnvFile(file) };
@@ -168,7 +168,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     deps.out('');
     for (const c of carriers) for (const line of carrierSteps(c, `${base}/voice/${c}`)) deps.out(line);
     deps.out('');
-    deps.out('It changes every time pnpm start runs, so paste the new one each time. For a hostname that stays, use a named');
+    deps.out(`It changes every time ${runCommand(root)} start runs, so paste the new one each time. For a hostname that stays, use a named`);
     deps.out('tunnel on your own domain and set PUBLIC_HOST (https://dialogwright.com/guides/home-server.html#tunnel).');
     deps.out('To check it end to end through the tunnel, in another terminal while this runs:');
     deps.out(`  ${named === undefined ? '' : `ENV_FILE=${file} `}PUBLIC_HOST=${publicHost} ${commandHints(app, root).command('diagnose')}`);

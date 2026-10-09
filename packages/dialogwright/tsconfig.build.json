@@ -6,6 +6,5 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/index.ts", "src/testing/index.ts", "src/slots/kit.ts", "src/define/policyEntry.ts", "src/kb/onnx.ts", "src/define/cli.ts"]
 }

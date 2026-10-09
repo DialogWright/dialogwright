@@ -23,6 +23,8 @@
   ],
   "scripts": {
     "build": "node --check index.mjs",
+    "prepack": "node ../../scripts/publish-guard.mjs --no-build",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs --no-build",
     "typecheck": "node --check index.mjs",
     "test": "vitest run"
   },

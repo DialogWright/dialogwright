@@ -14,7 +14,7 @@ import { SHORT_TMP, withShortTmp } from '../testing/shortTmp';
  * the policy read back among them) and its stub regression, and the three commands that write the
  * read back (policy:matrix, policy:card, app:diagram), which must find every page as it shipped.
  * Each must pass with nothing changed. Slow (it starts seven processes per variant), so
- * it is two cases: the plain app and the one with identity.
+ * it is three cases: the plain app, the one with identity, and one with a display name full of quotes.
  */
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const scratch: string[] = [];
@@ -64,14 +64,16 @@ function node(cwd: string, script: string, args: string[]): string {
 
 describe('a scaffolded app, end to end', () => {
   it.each([
-    { name: 'plain-demo', identity: false },
-    { name: 'identity-demo', identity: true },
-  ])('$name passes check, typecheck, its tests and its stub regression as created, and its recorded launchers run', async ({ name, identity }) => {
+    { name: 'plain-demo', identity: false, display: undefined },
+    { name: 'identity-demo', identity: true, display: undefined },
+    // A display name a person types, with each character a file's syntax treats specially.
+    { name: 'quoted-demo', identity: false, display: 'Joe\'s "Fix" \\ Café Niño: # one' },
+  ])('$name passes check, typecheck, its tests and its stub regression as created, and its recorded launchers run', async ({ name, identity, display }) => {
     const base = mkdtempSync(join(SHORT_TMP, 'dialogwright-scaffold-'));
     scratch.push(base);
     const app = join(base, name);
     const out: string[] = [];
-    const code = await main(['create-app', name, '--dir', app, '--no-install', ...(identity ? ['--identity'] : [])], { out: (l) => out.push(l), err: (l) => out.push(l), cwd: base });
+    const code = await main(['create-app', name, '--dir', app, '--no-install', ...(identity ? ['--identity'] : []), ...(display === undefined ? [] : ['--display', display])], { out: (l) => out.push(l), err: (l) => out.push(l), cwd: base });
     expect(code, out.join('\n')).toBe(0);
     expect(existsSync(join(app, 'identity.yaml'))).toBe(identity);
     link(app);

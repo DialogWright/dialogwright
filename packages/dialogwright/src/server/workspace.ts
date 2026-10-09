@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { IN_REPOSITORY, REPO_ROOT } from '../define/home';
 
 /**
  * The apps a repository's commands run (pnpm configure, start, diagnose, service): each workspace
@@ -20,30 +21,38 @@ export interface WorkspaceApp {
   folder: string;
 }
 
-/** The repository root: the folder with pnpm-workspace.yaml above this package. */
-export const WORKSPACE_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
+/** The repository root: the folder with pnpm-workspace.yaml above this package (../define/home.ts). */
+export const WORKSPACE_ROOT = REPO_ROOT;
 
 /** Whether the engine runs from the DialogWright repository (src/, or a build beside it), not installed in a project's node_modules. */
-export const ENGINE_IN_REPOSITORY = existsSync(join(WORKSPACE_ROOT, 'pnpm-workspace.yaml')) && !fileURLToPath(import.meta.url).split(sep).includes('node_modules');
+export const ENGINE_IN_REPOSITORY = IN_REPOSITORY;
 
 /**
  * Where a command finds its apps: the repository, when the engine runs from it (as before there was a
  * package to install); otherwise the project it was run in: the nearest folder at or above
- * `invokedFrom` with pnpm-workspace.yaml, else the nearest app folder with a package.json (a project of
- * its own), else the nearest folder with a package.json.
+ * `invokedFrom` with pnpm-workspace.yaml (unless an app folder with a package.json below it is not one
+ * of its packages: then that app), else the nearest app folder with a package.json (a project of its
+ * own), else the nearest folder with a package.json.
  */
 export function projectRoot(invokedFrom: string, inRepository: boolean = ENGINE_IN_REPOSITORY): string {
   if (inRepository) return WORKSPACE_ROOT;
   let app: string | null = null;
   let pkg: string | null = null;
   for (let at = resolve(invokedFrom); ; at = dirname(at)) {
-    if (existsSync(join(at, 'pnpm-workspace.yaml'))) return at;
+    // A workspace above is the project, unless the app found on the way is not one of its packages
+    // (a project of its own that happens to sit inside some other workspace).
+    if (existsSync(join(at, 'pnpm-workspace.yaml'))) return app !== null && !workspaceFolders(at).includes(app) ? app : at;
     if (existsSync(join(at, 'package.json'))) {
       pkg ??= at;
       if (existsSync(join(at, 'app.yaml'))) app ??= at;
     }
     if (dirname(at) === at) return app ?? pkg ?? resolve(invokedFrom);
   }
+}
+
+/** How a hint names one of the root commands: `pnpm` in a pnpm workspace (this repository), `npx dialogwright` in a project of its own. */
+export function runCommand(root: string): string {
+  return existsSync(join(root, 'pnpm-workspace.yaml')) ? 'pnpm' : 'npx dialogwright';
 }
 
 /**

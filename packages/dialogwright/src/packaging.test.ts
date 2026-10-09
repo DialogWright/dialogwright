@@ -1,11 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { LIBRARY_DIR } from './define/fixture/app';
-import { linkBetween, packagePathOf, relinkMarkdown, SHIPPED } from './define/shipped';
-import { withShortTmp } from './testing/shortTmp';
+import { linkBetween, packageCopy, packagePathOf, relinkMarkdown, SHIPPED } from './define/shipped';
+import { projectSkillPage } from './define/createApp';
+import { SHORT_TMP, withShortTmp } from './testing/shortTmp';
+
+const scratch: string[] = [];
+afterAll(() => {
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+});
 
 /**
  * What a project that installs the packages gets (Phase 10a): in this workspace each package.json
@@ -64,8 +70,8 @@ describe('the published packages', () => {
     // The bin loads an app's TypeScript through tsx, so tsx is a dependency, not a tool of the workspace's.
     expect(pkg.dependencies?.tsx).toBeDefined();
     expect(pkg.devDependencies?.tsx).toBeUndefined();
-    // dialogwright/testing's conformance kits import vitest: the project's own, as a peer.
-    expect(pkg.peerDependencies?.vitest).toBeDefined();
+    // No built code imports vitest (the conformance kits take the runner's describe and it), so it is no peer.
+    expect(pkg.peerDependencies?.vitest).toBeUndefined();
   });
 
   it('dialogwright: the installed bin is a node script that runs the one command line, from src/ here', () => {
@@ -124,5 +130,154 @@ describe('create-dialogwright', () => {
     const bin = readFileSync(join(ROOT, 'packages/create-dialogwright/index.mjs'), 'utf8');
     expect(bin.startsWith('#!/usr/bin/env node\n')).toBe(true);
     expect(bin).toContain("'create-app', ...args, '--standalone'");
+  });
+});
+
+describe('the build\'s specifiers (scripts/build/specifiers.mjs)', () => {
+  type Specifiers = {
+    resolvedSpecifier(spec: string, from: string, exists: (path: string) => boolean): string | null;
+    emitModule(ts: unknown, code: string, fileName: string, exists: (path: string) => boolean): { code: string; unresolved: string[] };
+  };
+  const load = async () => (await import(/* @vite-ignore */ new URL('../../../scripts/build/specifiers.mjs', import.meta.url).href)) as Specifiers;
+  // A small source tree: src/a.ts, src/kb/index.ts, src/data.json, src/view.js.
+  const files = new Set(['/p/src/a.ts', '/p/src/kb/index.ts', '/p/src/data.json', '/p/src/view.js']);
+  const exists = (path: string) => files.has(path);
+
+  it('makes a relative specifier one Node resolves, and leaves packages and named files alone', async () => {
+    const { resolvedSpecifier } = await load();
+    expect(resolvedSpecifier('./a', '/p/src/b.ts', exists)).toBe('./a.js');
+    expect(resolvedSpecifier('./kb', '/p/src/b.ts', exists)).toBe('./kb/index.js');
+    expect(resolvedSpecifier('./kb/', '/p/src/b.ts', exists)).toBe('./kb/index.js');
+    expect(resolvedSpecifier('../a', '/p/src/kb/index.ts', exists)).toBe('../a.js');
+    expect(resolvedSpecifier('./data.json', '/p/src/b.ts', exists)).toBe('./data.json');
+    expect(resolvedSpecifier('./view.js', '/p/src/b.ts', exists)).toBe('./view.js');
+    expect(resolvedSpecifier('zod', '/p/src/b.ts', exists)).toBe('zod');
+    expect(resolvedSpecifier('node:fs', '/p/src/b.ts', exists)).toBe('node:fs');
+    expect(resolvedSpecifier('./missing', '/p/src/b.ts', exists)).toBeNull();
+  });
+
+  it('rewrites only real specifiers: never a string, a comment or a template that looks like one', async () => {
+    const { emitModule } = await load();
+    const ts = (await import('typescript')).default;
+    const source = [
+      "import { x } from './a';",
+      "export * from './kb';",
+      "export { y } from './a';",
+      "import data from './data.json';",
+      "// import { z } from './a';",
+      "const text = \"import { q } from './a'\";",
+      'const tpl = `export * from \'./kb\'`;',
+      "const later = await import('./kb');",
+      'console.log(x, data, text, tpl, later);',
+    ].join('\n');
+    const { code, unresolved } = emitModule(ts, source, '/p/src/b.ts', exists);
+    expect(unresolved).toEqual([]);
+    expect(code).toContain("import { x } from './a.js';");
+    expect(code).toContain("export * from './kb/index.js';");
+    expect(code).toContain("export { y } from './a.js';");
+    expect(code).toMatch(/import data from '\.\/data\.json' with \{ type: 'json' \};/);
+    expect(code).toContain("// import { z } from './a';");
+    expect(code).toContain("\"import { q } from './a'\"");
+    expect(code).toContain("`export * from './kb'`");
+    expect(code).toContain("await import('./kb/index.js')");
+    expect(emitModule(ts, "import { x } from './nowhere';\nconsole.log(x);", '/p/src/b.ts', exists).unresolved).toEqual(['/p/src/b.ts: ./nowhere']);
+  });
+});
+
+describe('the publish guard (scripts/publish-guard.mjs), each package\'s prepack and prepublishOnly', () => {
+  const guard = fileURLToPath(new URL('../../../scripts/publish-guard.mjs', import.meta.url));
+  const PNPM = 'pnpm/9.12.0 npm/? node/v22.19.0 darwin arm64';
+
+  /** A package folder: src/ and dist/, each with a file of the given age (seconds before now). */
+  function pkgDir(srcAge: number, distAge: number | null, files: string[] = ['dist']): string {
+    const dir = mkdtempSync(join(SHORT_TMP, 'dialogwright-guard-'));
+    scratch.push(dir);
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'guarded', files }));
+    mkdirSync(join(dir, 'src'));
+    writeFileSync(join(dir, 'src', 'index.ts'), 'export {};\n');
+    const now = Date.now() / 1000;
+    utimesSync(join(dir, 'src', 'index.ts'), now - srcAge, now - srcAge);
+    if (distAge !== null) {
+      mkdirSync(join(dir, 'dist'));
+      writeFileSync(join(dir, 'dist', 'index.js'), 'export {};\n');
+      utimesSync(join(dir, 'dist', 'index.js'), now - distAge, now - distAge);
+    }
+    return dir;
+  }
+  const run = (dir: string, agent: string | undefined, args: string[] = []) => {
+    const env = { ...withShortTmp(), npm_config_user_agent: agent ?? '' };
+    const r = spawnSync(process.execPath, [guard, ...args], { cwd: dir, encoding: 'utf8', env });
+    return { status: r.status, err: r.stderr };
+  };
+
+  it('passes a fresh build packed by pnpm', () => {
+    expect(run(pkgDir(60, 10), PNPM)).toEqual({ status: 0, err: '' });
+  });
+
+  it('refuses npm, which would pack the workspace\'s fields', () => {
+    const r = run(pkgDir(60, 10), 'npm/11.0.0 node/v22.19.0 darwin arm64');
+    expect(r.status).toBe(1);
+    expect(r.err).toContain('it runs under npm/11.0.0, not pnpm');
+  });
+
+  it('refuses a missing build, and one older than a file under src/', () => {
+    expect(run(pkgDir(60, null), PNPM).err).toContain('there is no build in dist/');
+    const stale = run(pkgDir(10, 60), PNPM);
+    expect(stale.status).toBe(1);
+    expect(stale.err).toContain('the build in dist/ is older than 1 file under src/ (src/index.ts)');
+    // A package with no build (create-dialogwright) says so.
+    expect(run(pkgDir(10, null), PNPM, ['--no-build']).status).toBe(0);
+  });
+
+  it('refuses a file git ignores in a folder the package\'s files names', () => {
+    const dir = pkgDir(60, 10, ['dist', 'templates']);
+    expect(spawnSync('git', ['init', '-q'], { cwd: dir }).status).toBe(0);
+    writeFileSync(join(dir, '.gitignore'), 'dist/\n.env\n*.log\n');
+    mkdirSync(join(dir, 'templates'));
+    writeFileSync(join(dir, 'templates', 'app.yaml'), 'id: x\n');
+    expect(run(dir, PNPM).status).toBe(0);
+    writeFileSync(join(dir, 'templates', '.env'), 'KEY=x\n');
+    writeFileSync(join(dir, 'templates', 'server.log'), 'x\n');
+    const r = run(dir, PNPM);
+    expect(r.status).toBe(1);
+    expect(r.err).toContain('templates has files git ignores, which would be packed: templates/.env, templates/server.log');
+  });
+
+  it('runs before every pack and publish of the four packages', () => {
+    for (const dir of PUBLISHED) {
+      const scripts = manifest(dir).scripts ?? {};
+      const expected = `node ../../scripts/publish-guard.mjs${dir.endsWith('create-dialogwright') ? ' --no-build' : ''}`;
+      expect(scripts.prepack, dir).toBe(expected);
+      expect(scripts.prepublishOnly, dir).toBe(expected);
+    }
+  });
+});
+
+describe('the create-app skill as the package carries it and as a project gets it', () => {
+  const SKILL = join(ROOT, '.claude/skills/create-app');
+  const pages = readdirSync(SKILL).filter((f) => f.endsWith('.md'));
+
+  it('links, in the package\'s copy, only to pages the package carries or to GitHub', () => {
+    for (const page of pages) {
+      const copy = packageCopy(readFileSync(join(SKILL, page), 'utf8'), `.claude/skills/create-app/${page}`);
+      for (const [, link] of copy.matchAll(/\]\(([^)\s]+)\)/g)) {
+        if (link!.startsWith('#') || /^https?:/.test(link!)) continue;
+        // A path in the package, which must be one of the pages the package carries, made from a file of this repository.
+        const inPackage = join('skills/create-app', link!.split('#')[0]!).split('\\').join('/');
+        const repoPath = SHIPPED.map(([repo, pkg]) => (inPackage.startsWith(pkg) ? repo + inPackage.slice(pkg.length) : null)).find((p) => p !== null);
+        expect(repoPath, `${page}: ${link}`).toBeDefined();
+        expect(existsSync(join(ROOT, repoPath!)), `${page}: ${link}`).toBe(true);
+      }
+    }
+  });
+
+  it('gives a project the same pages whether create-app reads this repository\'s skill or the package\'s copy', () => {
+    for (const page of pages) {
+      const text = readFileSync(join(SKILL, page), 'utf8');
+      const fromRepository = projectSkillPage(text, page, '.claude/skills/create-app');
+      const fromPackage = projectSkillPage(packageCopy(text, `.claude/skills/create-app/${page}`), page, 'skills/create-app');
+      expect(fromPackage, page).toBe(fromRepository);
+    }
+    expect(projectSkillPage('[rules](../../../CLAUDE.md) and [x](https://github.com/DialogWright/dialogwright/blob/main/CLAUDE.md)', 'SKILL.md', 'skills/create-app')).toBe('[rules](../../../CLAUDE.md) and [x](../../../CLAUDE.md)');
   });
 });

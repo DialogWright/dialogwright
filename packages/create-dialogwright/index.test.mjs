@@ -27,7 +27,7 @@ describe('npm create dialogwright', () => {
   it('says how to use it when given no name, and refuses a bad one as the scaffold does', () => {
     const none = run([]);
     expect(none.status).toBe(2);
-    expect(none.stdout).toContain('usage: npm create dialogwright@latest <name>');
+    expect(none.stdout).toContain('usage: npm create dialogwright@latest <name> -- [--identity] [--display "<business name>"] [--dir <path>]');
     const bad = run(['Not A Name']);
     expect(bad.status).toBe(1);
     expect(bad.stderr).toContain('is not a valid app name');

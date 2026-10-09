@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Builds a DialogWright knowledge base from a folder of documents or a website: extraction by section with provenance, a polite crawler, drafting with a pluggable drafter, a local review page, and refresh.",
   "license": "Apache-2.0",
-  "homepage": "https://dialogwright.dev",
+  "homepage": "https://dialogwright.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/DialogWright/dialogwright.git",
@@ -25,7 +25,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../scripts/build-package.mjs --skip __fixtures__",
+    "build": "node ../../scripts/build-package.mjs --no-assets",
+    "prepack": "node ../../scripts/publish-guard.mjs",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "kb:ingest": "tsx src/cli.ts kb:ingest",

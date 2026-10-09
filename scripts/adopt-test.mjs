@@ -17,7 +17,7 @@
 // then removes the folder (--keep: leaves it, and says where). It calls no model and needs no key.
 //
 // usage: node scripts/adopt-test.mjs [--no-build] [--plain-only] [--keep]
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -94,6 +94,15 @@ for (const file of ['package/bin/dialogwright.mjs', 'package/dist/index.js', 'pa
   check(listing.includes(file), `the packed dialogwright has ${file.slice('package/'.length)}`);
 }
 check(!listing.some((f) => f.startsWith('package/src/')), 'the packed dialogwright has no src/');
+// The engine's test fixtures stay in the repository: nothing the five entries import needs them.
+const fixtures = listing.filter((f) => /\/(__fixtures__|fixture)\/|^package\/dist\/testing\/(testkit|callback|proposals|recognized|routed|screened|texting)\/|^package\/dist\/.*\.jsonl$/.test(f));
+check(fixtures.length === 0, `the packed dialogwright has no test fixtures${fixtures.length > 0 ? `: ${fixtures.slice(0, 5).join(', ')}` : ''}`);
+// Nothing git ignores is packed: no settings file, no log, no trace (publish-guard.mjs refuses them too).
+for (const name of PACKAGES) {
+  const files = run('tar', ['-tzf', tarball[name]], base, { quiet: true }).split('\n').filter(Boolean);
+  const stray = files.filter((f) => /(^|\/)\.env($|\.(?!example$))|\.log$|(^|\/)(traces|sessions|\.console-link)\/|^package\/templates\/.*\/audit\//.test(f));
+  check(stray.length === 0, `the packed ${name} has no .env, log or trace${stray.length > 0 ? `: ${stray.join(', ')}` : ''}`);
+}
 
 /** Writes a project with the packed create-dialogwright, as `npm create dialogwright` would, and installs it. */
 function project(name, extra) {
@@ -109,8 +118,54 @@ function project(name, extra) {
   return dir;
 }
 
+/**
+ * `npx dialogwright start --tunnel none` with the settings configure wrote: the server answers GET
+ * /health, and a SIGTERM drains it and ends every process start began (npm, tsx and the server).
+ */
+async function startSmoke(dir, port) {
+  const child = spawn('npx', ['dialogwright', 'start', '--tunnel', 'none'], { cwd: dir, env: { ...env, INIT_CWD: dir }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => (output += chunk));
+  const exited = new Promise((done) => child.on('exit', (code, signal) => done(code ?? signal)));
+  let health = null;
+  for (let i = 0; i < 120 && health === null; i += 1) {
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      if (res.ok) health = await res.json();
+    } catch {
+      // Not listening yet.
+    }
+  }
+  if (health === null) {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    console.error(output);
+  }
+  check(health !== null && health.ok === true, `npx dialogwright start serves GET /health on ${port}`);
+  process.kill(-child.pid, 'SIGTERM');
+  const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 20_000))]);
+  if (code === 'timeout') console.error(output);
+  check(code !== 'timeout' && output.includes('drained'), `a SIGTERM drains the server and start exits (${code})`);
+  let left = true;
+  for (let i = 0; i < 40 && left; i += 1) {
+    try {
+      process.kill(-child.pid, 0);
+      await new Promise((r) => setTimeout(r, 250));
+    } catch {
+      left = false;
+    }
+  }
+  let listening = true;
+  try {
+    await fetch(`http://127.0.0.1:${port}/health`);
+  } catch {
+    listening = false;
+  }
+  check(!left && !listening, 'every process start began has exited, and nothing listens on the port');
+}
+
 /** The README's commands, in a project, all green; then the read back, the internals and the other two packages. */
-function exercise(dir) {
+async function exercise(dir) {
   const checked = run('npx', ['dialogwright', 'check'], dir);
   check(checked.trim().endsWith(': ok'), `npx dialogwright check: ${checked.trim().split('\n').at(-1)}`);
   run('npm', ['run', 'typecheck'], dir);
@@ -126,11 +181,18 @@ function exercise(dir) {
   }
   check(pages.every((p, i) => readFileSync(join(dir, p), 'utf8') === before[i]), 'the read back is as it shipped');
   // Running it: the settings for a laptop with no keys, then what is misconfigured, offline.
-  const configured = run('npx', ['dialogwright', 'configure', '--non-interactive', '--mode', 'try'], dir);
+  const port = String(39000 + Math.floor(Math.random() * 2000));
+  const configured = run('npx', ['dialogwright', 'configure', '--non-interactive', '--mode', 'try', '--port', port], dir);
   check(existsSync(join(dir, '.env')) && configured.includes('npx dialogwright start'), 'npx dialogwright configure wrote .env, and names the next command as the project runs it');
   const diagnosed = run('npx', ['dialogwright', 'diagnose', '--offline'], dir);
   check(/ 0 fail/.test(diagnosed), `npx dialogwright diagnose --offline: ${diagnosed.trim().split('\n').at(-1)}`);
+  await startSmoke(dir, port);
   rmSync(join(dir, '.env'));
+  // create-app from the installed package always writes a project of its own: never apps/<name> inside this one.
+  const second = join(dir, '..', `${dir.split('/').at(-1)}-second`);
+  run('npx', ['dialogwright', 'create-app', 'second-line', '--dir', second], dir);
+  const secondPkg = JSON.parse(readFileSync(join(second, 'package.json'), 'utf8'));
+  check(existsSync(join(second, '.gitignore')) && secondPkg.dependencies.dialogwright.startsWith('^') && !existsSync(join(dir, 'apps')), `npx dialogwright create-app writes a project of its own (dialogwright ${secondPkg.dependencies.dialogwright})`);
   const help = run('npx', ['dialogwright', 'help'], dir, { quiet: true });
   check(help.includes('regress') && help.includes('configure'), 'npx dialogwright help lists the commands');
   const internal = run(process.execPath, ['--input-type=module', '-e', "import('dialogwright/core/app/registry').then(() => process.exit(0), (e) => { console.log(e.code); process.exit(3); })"], dir, { expect: 3, quiet: true });
@@ -141,13 +203,13 @@ function exercise(dir) {
 
 const plain = project('adopt-plain', []);
 run('npm', ['install', '--save-dev', `file:${tarball['kb-author']}`, `file:${tarball.widget}`], plain);
-exercise(plain);
+await exercise(plain);
 const kb = run('npx', ['dialogwright-kb'], plain, { expect: 2, quiet: true });
 check(kb.includes('the commands are kb:ingest'), 'npx dialogwright-kb runs (kb-author\'s own command)');
 const kbEntry = run(process.execPath, ['--input-type=module', '-e', "const m = await import('@dialogwright/kb-author'); console.log(Object.keys(m).length);"], plain, { quiet: true });
 check(Number(kbEntry.trim()) > 0, '@dialogwright/kb-author loads in Node');
 check(existsSync(join(plain, 'node_modules', '@dialogwright', 'widget', 'dist', 'dialogwright-widget.js')), "the widget's script is where the server looks for it (node_modules/@dialogwright/widget/dist)");
 check(existsSync(join(plain, 'node_modules', '@dialogwright', 'widget', 'dist', 'types', 'index.d.ts')), "the widget's declarations are packed");
-if (!args.has('--plain-only')) exercise(project('adopt-identity', ['--identity', '--display', 'Example Water']));
+if (!args.has('--plain-only')) await exercise(project('adopt-identity', ['--identity', '--display', 'Example Water']));
 say('all green');
 finish(0);

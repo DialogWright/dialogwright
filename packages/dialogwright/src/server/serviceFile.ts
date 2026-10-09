@@ -40,6 +40,8 @@ export interface ServiceInputs {
   logDir: string;
   /** How long a stop may take before the process is killed. */
   stopSeconds: number;
+  /** A project of its own (no pnpm-workspace.yaml at its root), whose file says so; this repository by default. */
+  project?: boolean;
 }
 
 const TEMPLATES = fileURLToPath(new URL('../../templates/service/', import.meta.url));
@@ -57,11 +59,13 @@ export function renderService(i: ServiceInputs): string {
     i.kind === 'launchd'
       ? { label: xml(i.label), app: xml(i.app), root: xml(i.root), envFile: xml(i.envFile), pnpm: xml(i.pnpm), path: xml(i.path), logDir: xml(i.logDir), stopSeconds: String(i.stopSeconds) }
       : { label: unitValue(i.label), app: unitValue(i.app), root: unitValue(i.root), envFile: unitValue(i.envFile).replace(/"/g, '\\"'), path: unitValue(i.path), pnpm: unitWord(i.pnpm), logDir: unitValue(i.logDir), stopSeconds: String(i.stopSeconds) };
-  return template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
+  const text = template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
     const v = values[key];
     if (v === undefined) throw new Error(`the ${i.kind} template names {{${key}}}, which pnpm service does not fill`);
     return v;
   });
+  // Its first line says who wrote it and where the app runs from: in a project of its own, the project.
+  return i.project === true ? text.replace('Written by pnpm service', 'Written by npx dialogwright service').replace('run from the repository', 'run from its project') : text;
 }
 
 /** Where each manager reads a service of this label, under `home`. */
@@ -194,7 +198,7 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out(`${file} exists: pnpm service ... --force replaces it`);
     return 1;
   }
-  const text = renderService({ kind, label, app: app.name, root, envFile, pnpm, path, logDir, stopSeconds: Math.ceil(drainMs / 1000) + 10 });
+  const text = renderService({ kind, label, app: app.name, root, envFile, pnpm, path, logDir, stopSeconds: Math.ceil(drainMs / 1000) + 10, project: !existsSync(join(root, 'pnpm-workspace.yaml')) });
   mkdirSync(dirname(file), { recursive: true });
   // It names the settings file and holds no secret, so it is an ordinary file.
   writeFileSync(file, text, { mode: 0o644 });

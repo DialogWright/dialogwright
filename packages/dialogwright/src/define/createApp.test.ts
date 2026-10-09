@@ -276,6 +276,46 @@ describe('dialogwright create-app', () => {
   });
 });
 
+describe('a display name a person types: quotes, a backslash, letters of any script', () => {
+  const DISPLAYS = ["Joe's Plumbing", 'Say "Hi" Repairs', 'Back\\slash & Co', 'Café Niño', '"Quoted" at the start', "Fix: it's # done"];
+
+  it('reads back as typed from every file it lands in, in both variants and as a project of its own', async () => {
+    const ts = (await import('typescript')).default;
+    for (const display of DISPLAYS) {
+      for (const [identity, standalone] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+        const dir = join(temp(), 'demo');
+        createApp({ name: 'demo', dir, display, identity, standalone });
+        const app = parse(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { brand: { name: string }; wording: { addressee: string } };
+        expect(app.brand.name, display).toBe(display);
+        expect(app.wording.addressee, display).toBe(`the ${display} line`);
+        const prompts = parse(readFileSync(join(dir, 'prompts.yaml'), 'utf8')) as Record<string, unknown>;
+        expect(JSON.stringify(prompts), display).toContain(JSON.stringify(`Thanks for calling ${display}. I can book a service. How can I help?`).slice(1, -1));
+        const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { description: string };
+        expect(pkg.description.startsWith(`${display}: `), display).toBe(true);
+        const test = readFileSync(join(dir, 'src', 'app.test.ts'), 'utf8');
+        const source = ts.createSourceFile('app.test.ts', test, ts.ScriptTarget.ES2022, true);
+        expect((source as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics, display).toEqual([]);
+        const strings: string[] = [];
+        const visit = (node: import('typescript').Node): void => {
+          if (ts.isStringLiteral(node)) strings.push(node.text);
+          ts.forEachChild(node, visit);
+        };
+        visit(source);
+        expect(strings, display).toEqual(expect.arrayContaining([display, `is ${display}, in en-US`]));
+      }
+    }
+  });
+
+  it('keeps an ordinary name byte for byte as before, and makes a mark of letters only', () => {
+    expect(render('name: {{display}}\nit(\'is {{display}}\')\n', { name: 'n', display: 'Example Water', mark: 'EW', root: '.' }, false, false, 'app.yaml')).toBe('name: Example Water\nit(\'is Example Water\')\n');
+    expect(render("it('is {{display}}')", { name: 'n', display: "Joe's", mark: 'JO', root: '.' }, false, false, 'src/app.test.ts')).toBe("it('is Joe\\'s')");
+    expect(render('name: {{display}}', { name: 'n', display: '"Fix" Co', mark: 'FC', root: '.' }, false, false, 'app.yaml')).toBe('name: "\\"Fix\\" Co"');
+    expect(markOf('Joe\'s "Fix" Repairs')).toBe('JF');
+    expect(markOf('Café Niño')).toBe('CN');
+    for (const bad of ['Tab\there', 'Line\nbreak', 'Brace {x}']) expect(() => createApp({ name: 'demo', dir: join(temp(), 'demo'), display: bad })).toThrow(/control character or braces/);
+  });
+});
+
 describe('dialogwright create-app --standalone: a project of its own', () => {
   const PROJECT_FILES = [
     '.claude/skills/create-app/SKILL.md', '.claude/skills/create-app/corpus.md', '.claude/skills/create-app/options.md',
@@ -361,5 +401,23 @@ describe('dialogwright create-app --standalone: a project of its own', () => {
     expect(await main(['create-app', 'other', '--dialogwright', '^1.0.0'], io)).toBe(2);
     expect(err.at(-1)).toContain('--dialogwright goes with --standalone');
     expect(await main(['create-app', 'my-line', '--standalone'], io)).toBe(1);
+  });
+
+  it('is always a project of its own from an installed package, and never one inside this repository', async () => {
+    const base = temp();
+    const out: string[] = [];
+    const err: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l), cwd: base };
+    // npx dialogwright create-app in a project: there is no repository to write apps/<name> into.
+    expect(await main(['create-app', 'my-line', '--no-install'], { ...io, installed: true })).toBe(0);
+    expect(out[0]).toMatch(/^created my-line: a project of its own/);
+    expect(existsSync(join(base, 'my-line', '.gitignore'))).toBe(true);
+    expect((JSON.parse(readFileSync(join(base, 'my-line', 'package.json'), 'utf8')) as { name: string }).name).toBe('my-line');
+    expect(USAGE).toContain('run from an installed package (npx dialogwright create-app), it is always a project of its own');
+    // --standalone run in this repository with no --dir would write <repo>/<name>: refused, with the fix.
+    expect(await main(['create-app', 'my-line', '--standalone'], { ...io, cwd: REPO_ROOT })).toBe(1);
+    expect(err.at(-1)).toContain('is inside the DialogWright repository');
+    expect(err.at(-1)).toContain('give --dir <a folder outside the repository>');
+    expect(existsSync(join(REPO_ROOT, 'my-line'))).toBe(false);
   });
 });

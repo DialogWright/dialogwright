@@ -8,7 +8,7 @@ import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
 import { checkSecretOf } from './voice/registry';
 import { resolveJevProvider } from '../jev/provider';
-import { commandHints, findApp, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
+import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
 /**
  * `pnpm configure`: the first hour's settings, asked for and written. It asks, in order: which app; to
@@ -299,7 +299,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   // Which app.
   const apps = workspaceApps(root);
   if (apps.length === 0) {
-    out('no app in this workspace yet: make one with pnpm create-app <name>, then run pnpm configure again');
+    out(`no app in this workspace yet: make one with ${runCommand(root)} create-app <name>, then run ${runCommand(root)} configure again`);
     return 1;
   }
   let app: WorkspaceApp;
@@ -320,7 +320,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   out(`App: ${short} (${app.folder})`);
   const file = join(app.dir, '.env');
   if (existsSync(file) && !flags.force) {
-    out(`${file} exists: pnpm configure --force replaces it (keep a copy of its keys first)`);
+    out(`${file} exists: ${runCommand(root)} configure --force replaces it (keep a copy of its keys first)`);
     return 1;
   }
 
@@ -454,7 +454,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
   out(`  then open http://localhost:${port}/dashboard, the console (on this machine only), to watch each call and chat.`);
   out(`  To type to the app: ${hint.script('cli')} --client heuristic`);
   out(`  An app with a chat page (the utility example's is http://localhost:${port}/chat-demo) shows the widget there.`);
-  out('  For a phone line, run pnpm configure --force again and choose one.');
+  out(`  For a phone line, run ${runCommand(root)} configure --force again and choose one.`);
   return 0;
 }
 
@@ -489,7 +489,7 @@ function writeSettings(file: string, app: WorkspaceApp, sections: Section[], out
 /** pnpm diagnose --offline on the file just written. */
 async function check(file: string, app: WorkspaceApp, io: SetupIo): Promise<void> {
   io.out('');
-  io.out('Checking it (pnpm diagnose --offline):');
+  io.out(`Checking it (${runCommand(io.root ?? projectRoot(io.invokedFrom))} diagnose --offline):`);
   await diagnose(['--app', app.folder, '--env-file', file, '--offline'], { out: (l) => io.out(`  ${l}`), env: io.env, invokedFrom: io.invokedFrom, root: io.root });
 }
 

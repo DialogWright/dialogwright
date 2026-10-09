@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { getApp, registerApp } from '../core/app/registry';
+import { appFolderAt } from '../define/appFolder';
 import { loadFolderApp } from '../define/pageCommand';
 import { main as regressMain } from './regress';
 
@@ -27,13 +28,7 @@ export interface RegressIo {
   chdir?(dir: string): void;
 }
 
-/** The nearest folder at or above `from` with an app.yaml, or null. */
-export function appFolderAt(from: string): string | null {
-  for (let at = from; ; at = dirname(at)) {
-    if (existsSync(join(at, 'app.yaml'))) return at;
-    if (existsSync(join(at, 'pnpm-workspace.yaml')) || dirname(at) === at) return null;
-  }
-}
+export { appFolderAt };
 
 /** Runs the regression for the app folder `argv` names (or the one it is run in); returns the exit code. */
 export async function regressCommand(argv: readonly string[], io: RegressIo): Promise<number> {
