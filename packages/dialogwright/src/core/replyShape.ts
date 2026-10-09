@@ -11,10 +11,11 @@
 export type ReplyCheck = (value: unknown) => boolean;
 
 /**
- * A word of short text: letters and digits of any script, with an apostrophe, a hyphen, a slash or a
- * period inside it; a word of letters alone may end in one period, an abbreviation's ("St.", "Apt.").
+ * A word of short text: letters and digits of any script, with an apostrophe, a hyphen, a slash, a
+ * period, a middle dot or a zero-width joiner or non-joiner inside it (as a name may be written); a word
+ * of letters alone may end in one period, an abbreviation's ("St.", "Apt.").
  */
-const WORD = String.raw`(?:[\p{L}\p{M}\p{N}]+(?:['’./-][\p{L}\p{M}\p{N}]+)*|[\p{L}\p{M}]+(?:['’.-][\p{L}\p{M}]+)*\.)`;
+const WORD = String.raw`(?:[\p{L}\p{M}\p{N}]+(?:['’./\u00B7\u200C\u200D-][\p{L}\p{M}\p{N}]+)*|[\p{L}\p{M}]+(?:['’.\u00B7\u200C\u200D-][\p{L}\p{M}]+)*\.)`;
 /** Words with one space or a comma and a space between them, and the `#` of a unit number before one: an address line, an item, a name, never a sentence. */
 const TEXT = new RegExp(`^#?${WORD}(?:,? #?${WORD})*$`, 'u');
 

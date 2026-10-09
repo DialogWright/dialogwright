@@ -8,7 +8,7 @@ describe('replyShape', () => {
     const text = r.text();
     for (const ok of ['a box of books', '14 Birch Lane', '200 Heron Row, unit 3', "Mary-Ann O'Neil", 'José', 'unit #3', 'P.O.Box 12', 'Dr Chen']) expect(text(ok), ok).toBe(true);
     // A word of letters may end in one period, an abbreviation's.
-    for (const ok of ['12 Main St.', 'Apt. 4B', 'Ma. Cristina', 'Dr. Chen']) expect(text(ok), ok).toBe(true);
+    for (const ok of ['12 Main St.', 'Apt. 4B', 'Ma. Cristina', 'Dr. Chen', 'Gal\u00B7la', 'Mehr\u200Cnaz']) expect(text(ok), ok).toBe(true);
     for (const bad of [HOSTILE, 'a: b', 'a\nb', '', '  ', 'a  b', 1, null, 'call now!', 'Main St..', '4B.', 'what?']) expect(text(bad), String(bad)).toBe(false);
     expect(r.text({ words: 2 })('three words here')).toBe(false);
     expect(r.text({ chars: 5 })('sixsix')).toBe(false);
