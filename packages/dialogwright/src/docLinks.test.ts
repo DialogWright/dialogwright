@@ -93,7 +93,7 @@ function targetOf(page: string, path: string): string | null {
 
 describe('the Markdown pages', () => {
   it('are read, the guide\'s chapters among them', () => {
-    for (const page of ['README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', 'docs/first-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
+    for (const page of ['README.md', 'docs/README.md', 'docs/guide/README.md', 'docs/guide/12-the-knowledge-base.md', 'docs/authoring-an-app.md', 'docs/first-app.md', '.claude/skills/create-app/SKILL.md', `${STANDALONE}README.md`]) expect(PAGES, page).toContain(page);
   });
 
   it('link only to files that exist, and to anchors their pages have', () => {

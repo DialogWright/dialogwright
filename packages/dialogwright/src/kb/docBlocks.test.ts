@@ -228,10 +228,10 @@ describe('the other examples of section 12', () => {
 });
 
 describe('where the docs say the knowledge base is', () => {
-  it('has the guide\'s section 12 in its contents, and the other docs name its commands', () => {
+  it('has the guide\'s section 12 in its contents, and the docs index, llms.txt and CLAUDE.md name its commands', () => {
     const guide = read('docs/guide/README.md');
     expect(guide).toContain('12. [The knowledge base](12-the-knowledge-base.md)');
-    for (const file of ['README.md', 'llms.txt', 'CLAUDE.md']) {
+    for (const file of ['docs/README.md', 'llms.txt', 'CLAUDE.md']) {
       const doc = read(file);
       for (const command of ['kb:ingest', 'kb:draft', 'kb:review', 'kb:approve']) expect(doc, `${file} ${command}`).toContain(command);
     }
