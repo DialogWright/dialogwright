@@ -8,6 +8,7 @@ import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
+import { formsLeadingTo, nextCycles } from './next';
 import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
@@ -227,9 +228,19 @@ export function validateApp(app: App): void {
       else if (!Object.hasOwn(kb.passages, def.passage)) fail(`informational intent "${id}" says the passage "${def.passage}", which the knowledge base does not have`);
     }
   }
-  for (const id of Object.keys(app.forms)) {
-    if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') fail(`form "${id}" has no form intent`);
+  // Every form is a form intent, but an internal one (FormDef.internal), which is no intent, has a
+  // label of its own and is reached by another form's next; a next names a form, and never loops.
+  for (const [id, form] of Object.entries(app.forms)) {
+    if (form.internal === true) {
+      if (Object.hasOwn(app.intents, id)) fail(`form "${id}" is internal, but there is an intent "${id}": an internal form is no intent`);
+      if (form.label === undefined || form.label === '') fail(`internal form "${id}" has no label`);
+      if (formsLeadingTo(app.forms, id).length === 0) fail(`internal form "${id}" is reached by no form's next`);
+    } else if (!Object.hasOwn(app.intents, id) || app.intents[id]?.kind !== 'form') {
+      fail(`form "${id}" has no form intent`);
+    }
+    if (form.next !== undefined && !Object.hasOwn(app.forms, form.next)) fail(`form "${id}" goes on to the unknown form "${form.next}"`);
   }
+  for (const loop of nextCycles(app.forms)) fail(`the forms' next go round in a loop: ${[...loop, loop[0]!].join(' -> ')}`);
   // A form's checks (FormDef.checks): each a check of the policy, reading the form's own slots or an
   // identity factor (which holds a value once the caller has given it), each outcome that ends the call
   // with a line to end on.

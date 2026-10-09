@@ -54,3 +54,73 @@ export const CONFIRMING: Record<string, (text: string) => string> = {
   'forms.yaml': replace('out-of-area: { say: decline_out_of_area, then: end }', 'out-of-area: { confirm: check_area, say: decline_out_of_area, then: end }'),
   'prompts.yaml': (t) => `${t}${CONFIRMING_LINES}`,
 };
+
+/**
+ * The screened forms.yaml as two forms (design 2026-10-08-sub-forms-and-listening): a screen that asks
+ * the qualifying answers, with a check on the ownership and the town and no summary of its own, which
+ * goes on (`next`) to an internal booking form. The booking lists the screen's slots again, so their
+ * values and confirmations carry in, and checks the urgency and the ownership once more; it is no
+ * intent, so it has a label of its own.
+ */
+export const NEXT_FORMS = [
+  '# yaml-language-server: $schema=../../../schemas/forms.schema.json',
+  'forms:',
+  '  screen_home:',
+  '    slots: [problem, ownership, town]',
+  '    summaryPromptId: null',
+  '    calls: []',
+  '    checks:',
+  '      - action: checkOwner',
+  '        with: [ownership]',
+  '        on:',
+  '          not-owner: { say: decline_renter, then: end }',
+  '      - action: checkArea',
+  '        with: [town]',
+  '        on:',
+  '          out-of-area: { say: decline_out_of_area, then: end }',
+  '    checksPassed: visit_qualifies',
+  '    next: book_visit',
+  '  book_visit:',
+  '    internal: true',
+  '    label: book your visit',
+  '    slots: [problem, ownership, town, howUrgent, visitDay, timeOfDay]',
+  '    summaryPromptId: confirm_book_visit',
+  '    hooks: [confirmedParams, complete]',
+  '    calls: [bookVisit]',
+  '    checks:',
+  '      - action: checkUrgency',
+  '        with: [howUrgent]',
+  '        on:',
+  '          urgent: { then: handoff }',
+  '      - action: checkOwner',
+  '        with: [ownership]',
+  '        on:',
+  '          not-owner: { say: decline_renter, then: end }',
+  '  urgent:',
+  '    slots: []',
+  '    summaryPromptId: null',
+  '    hooks: [complete]',
+  '    calls: []',
+  '',
+].join('\n');
+
+/**
+ * The two-form variant: NEXT_FORMS, the booking intent renamed to the screen's (the booking is no
+ * intent), the keypad's 1 to the screen, and no corpus (its lines are labelled for the one-form
+ * fixture).
+ */
+export const NEXT: Record<string, (text: string) => string> = {
+  'app.yaml': (t) => replace('fixtures:\n  dir: src/testing/screened/fixtures\n', '')(replace('id: screened', 'id: screened-next')(t)),
+  'forms.yaml': () => NEXT_FORMS,
+  'intents.yaml': (t) => replace('    intent: book_visit', '    intent: screen_home')(replace('  book_visit:\n    criteria: Wants a visit', '  screen_home:\n    criteria: Wants a visit')(t)),
+};
+
+/** `changes` applied over `base`: a file both change gets base's change, then the other's. */
+export function over(base: Record<string, (text: string) => string>, changes: Record<string, (text: string) => string>): Record<string, (text: string) => string> {
+  const out = { ...base };
+  for (const [file, change] of Object.entries(changes)) {
+    const first = base[file];
+    out[file] = first === undefined ? change : (t) => change(first(t));
+  }
+  return out;
+}

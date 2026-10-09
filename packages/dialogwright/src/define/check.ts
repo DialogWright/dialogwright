@@ -300,6 +300,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     }, codeFile);
+    listenWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
+      const at = locate(file, path) ?? { line: 1, column: 1 };
+      warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+    }, codeFile);
     callerHintWarnings(config, code.slots ?? {}, (file, path, message, fix) => {
       const at = locate(file, path) ?? { line: 1, column: 1 };
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -371,6 +375,26 @@ function callerNumberWarnings(config: LoadedConfig, slots: Readonly<Record<strin
     if (spec.listen === 'call' || (config.app.carrySlots ?? []).includes(id)) {
       at(`the slot "${id}" offers the number the caller is calling from and is kept for the whole call, so it is offered once, in the first form that asks it; a later form uses the value kept`, `nothing to do if that is meant; otherwise give the slot listen: form or up-front`);
     }
+  }
+}
+
+/**
+ * The warning for a slot whose own `listen` says it listens before its form is open (`up-front`,
+ * `anywhere` or `call`) while every form that lists it says its slots do not (forms.yaml
+ * `listenBeforeEntered: false`, the default for an internal form): the slot's own setting wins, so
+ * the designer is told which one the call follows.
+ */
+function listenWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void, codeFile: string): void {
+  for (const [id, spec] of Object.entries(slots)) {
+    const listen = spec?.listen;
+    if (listen === undefined || listen === 'form') continue;
+    const forms = Object.entries(config.forms.forms).filter(([, form]) => form.slots.includes(id));
+    if (forms.length === 0 || forms.some(([, form]) => form.listenBeforeEntered ?? form.internal !== true)) continue;
+    const names = forms.map(([form]) => `"${form}"`).join(', ');
+    const message = `the slot "${id}" says listen: ${listen}, but ${forms.length === 1 ? 'the form' : 'every form'} that lists it (${names}) says its slots do not listen before it is open (listenBeforeEntered: false${forms.some(([, form]) => form.listenBeforeEntered === undefined) ? ', the default for an internal form' : ''}); the slot's own listen wins`;
+    const fix = 'nothing to do if that is meant; otherwise delete the slot\'s "listen", so it is asked once its form is open';
+    if (config.slots !== null && Object.hasOwn(config.slots, id)) report(SLOTS_FILE, [id, 'listen'], message, fix);
+    else report(codeFile, ['slots', id, 'listen'], message, fix);
   }
 }
 

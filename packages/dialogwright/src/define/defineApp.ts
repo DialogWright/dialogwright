@@ -1,5 +1,5 @@
 import type {
-  App, AppBrand, AppLocales, CheckOutcome, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
+  App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse,
 } from '../core/app/types';
 import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, type SlotSpec } from '../core/slots/types';
@@ -8,6 +8,7 @@ import { askedQuestionIdClashes, clashMessage, declaredQuestionIdClashes } from 
 import { askedQuestionIds, probeContexts } from '../core/app/probeQuestions';
 import { thresholdNamesOf, unknownSlotThresholds, unknownThresholdMessage } from '../core/slotThresholds';
 import { reachOf, unreachedActions } from '../core/app/reach';
+import { formsLeadingTo, nextCycles } from '../core/app/next';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -58,7 +59,7 @@ import { handoffDataProblems } from '../handoff/data';
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -372,10 +373,17 @@ export function crossLink(
   // forms.yaml, and each form's hooks in the code
   for (const [id, form] of Object.entries(forms)) {
     const intent = intents[id];
-    if (!intent) {
+    if (form.internal === true) {
+      // An internal form is no intent: it is reached only by another form's next.
+      if (intent) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, so it is no intent, but intents.yaml has an intent "${id}"`, `delete "${id}:" from intents.yaml (the form is reached by another form's next), or delete "internal: true" to make the form an intent`);
+      if (formsLeadingTo(forms, id).length === 0) yaml('forms.yaml', ['forms', id, 'internal'], `form "${id}" is internal, and no form goes on to it, so nothing can reach it`, `add "next: ${id}" to the form that comes before it, or delete "internal: true" and give it an intent in intents.yaml`);
+    } else if (!intent) {
       yaml('forms.yaml', ['forms', id], `form "${id}" has no intent in intents.yaml`, `add "${id}:" under intents in intents.yaml with kind: form, its criteria and its label`);
     } else if (intent.kind !== 'form') {
       yaml('forms.yaml', ['forms', id], `form "${id}" has an intent in intents.yaml of kind ${intent.kind}, not form`, `change intents.${id}.kind in intents.yaml to form`);
+    }
+    if (form.next !== undefined && !has(forms, form.next)) {
+      yaml('forms.yaml', ['forms', id, 'next'], `form "${id}" goes on to "${form.next}", which is not a form in forms.yaml`, `${renameHint(form.next, Object.keys(forms))}add "${form.next}:" under forms in forms.yaml, or delete "next"`);
     }
     form.slots.forEach((slot, i) => slotExists('forms.yaml', ['forms', id, 'slots', i], slot));
     if (form.summaryPromptId !== null) promptExists('forms.yaml', ['forms', id, 'summaryPromptId'], form.summaryPromptId);
@@ -410,6 +418,10 @@ export function crossLink(
         yaml('forms.yaml', ['forms', id, 'hooks'], `form "${id}" has the hook "${key}" in the code, but forms.yaml does not declare it`, `add "${key}" to forms.${id}.hooks, or delete the hook from ${inCode('forms', id, key)}`);
       }
     }
+  }
+  // A chain of next that comes back round would never end: each loop once, at the form defined first.
+  for (const loop of nextCycles(forms)) {
+    yaml('forms.yaml', ['forms', loop[0]!, 'next'], `the forms ${loop.map((f) => `"${f}"`).join(', ')} go on to each other in a loop (${[...loop, loop[0]!].join(' -> ')}), so the chain never ends`, `delete "next" from one of them: the last form of a chain completes in code (hooks: [complete])`);
   }
   // forms.yaml's checks: their actions, slots, levels and lines (./formChecks.ts).
   checkProblems({ config, report: yaml, promptExists });
@@ -925,13 +937,23 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.calls !== undefined) def.calls = form.calls;
   if (form.checks !== undefined && form.checks.length > 0) def.checks = form.checks.map(checkOf);
   if (form.checksPassed !== undefined) def.checksPassed = form.checksPassed;
+  if (form.next !== undefined) def.next = form.next;
+  if (form.internal === true) def.internal = true;
+  if (form.label !== undefined) def.label = form.label;
+  if (form.listenBeforeEntered !== undefined) def.listenBeforeEntered = form.listenBeforeEntered;
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
     const { slot, via, answer, unavailable } = form.answers;
     def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
   }
+  // A form that goes on to the next with no complete hook of its own completes as `said`, with the
+  // turn's lines: the next form is its answer.
+  if (form.next !== undefined && def.complete === undefined) def.complete = goesOn;
   return def as unknown as FormDef;
 }
+
+/** The completion of a form with `next` and no complete hook: `said`, with the turn's lines as they are. */
+const goesOn = (c: CompletionContext): Completion => ({ kind: 'said', acks: c.acks });
 
 /** A form's check as forms.yaml writes it, as FormDef carries it. */
 function checkOf(check: NonNullable<LoadedConfig['forms']['forms'][string]['checks']>[number]): FormCheck {

@@ -32,7 +32,7 @@
             "description": "The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full)."
           },
           "hooks": {
-            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
+            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's) or goes on to a `next` form (its completion is then that form). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
             "type": "array",
             "items": {
               "type": "string",
@@ -162,6 +162,24 @@
             "description": "A line said once, on the turn every check of the form has passed (never again after a correction). It renders with the form's slot displays as variables. Only with checks.",
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "next": {
+            "description": "The form entered at once when this one completes (its complete hook answers `said`, or it has none, which `next` allows): the slots both forms list are kept, with their values and confirmations, and the next form is bridged into (bridge_next with its label), ahead of any request the caller queued. A completion that ends the call, a refusal, or a check that ends the form does not go on. Usually an internal form (a booking after a screen); it may be a form intent too.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "internal": {
+            "description": "true: the form is not an intent. The model, the keypad menu and the queue never see it; it is reached only by another form's `next`, and it has no intent in intents.yaml. Needs a `label`. Default false.",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "An internal form's spoken label (\"book your free inspection\"), as an intent's label is used: in bridge_next as {intentLabel}, and as the form the caller is in. Only on an internal form; a form intent's label is in intents.yaml.",
+            "type": "string",
+            "minLength": 1
+          },
+          "listenBeforeEntered": {
+            "description": "Whether the form's slots fill from what the caller says before the form is open (on the turn that opens it, as `listen: up-front` does). false: a slot every form that lists it says false for behaves as `listen: form`, and is asked once its form is open, even when it was said earlier. A slot's own `listen` overrides it. Default true for a form intent, false for an internal form.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -171,7 +189,7 @@
         "additionalProperties": false,
         "description": "One form: the slots it collects, the summary it reads back, the code hooks it uses (or the knowledge answer it says), and the actions it calls."
       },
-      "description": "Every form, by id. Each id must also be a form intent in intents.yaml."
+      "description": "Every form, by id. Each id must also be a form intent in intents.yaml, unless the form is internal (reached only by another form's next)."
     }
   },
   "required": [

@@ -41,13 +41,26 @@ export function identityOf(app: App): IdentityConfig {
 
 /**
  * Where a slot listens outside a form (SlotSpec.listen): `call` for a slot app.yaml carries
- * (App.carrySlots, shorthand for it), else the slot's own, else `up-front`. Null for an identity
- * factor, which listens as identity says (fia.ts activeSlots) whatever the slot sets.
+ * (App.carrySlots, shorthand for it), else the slot's own; else `form` when every form that lists
+ * the slot says its slots do not listen before it is entered (listensBeforeEntered), else
+ * `up-front`. Null for an identity factor, which listens as identity says (fia.ts activeSlots)
+ * whatever the slot sets.
  */
 export function listenOf(app: App, id: SlotId): SlotListen | null {
   if (identityOf(app).factorSlots.includes(id)) return null;
   if (app.carrySlots?.includes(id)) return 'call';
-  return app.slots[id]?.listen ?? 'up-front';
+  const own = app.slots[id]?.listen;
+  if (own !== undefined) return own;
+  const forms = Object.values(app.forms).filter((form) => form.slots.includes(id));
+  return forms.length > 0 && !forms.some(listensBeforeEntered) ? 'form' : 'up-front';
+}
+
+/**
+ * Whether a form's slots fill from what is said before it is open (FormDef.listenBeforeEntered): its
+ * own setting, else true for a form intent and false for an internal form (FormDef.internal).
+ */
+export function listensBeforeEntered(form: FormDef): boolean {
+  return form.listenBeforeEntered ?? form.internal !== true;
 }
 
 /**

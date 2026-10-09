@@ -122,6 +122,27 @@ export interface FormDef {
   /** The line said once, on the turn every check of the form has passed (forms.yaml `checksPassed`). Only with checks. */
   checksPassed?: string;
   /**
+   * The form entered at once when this one completes as `said` (forms.yaml `next`; core/turn.ts
+   * finishForm): the slots both forms list are kept with their values, displays, confirmations and
+   * agreed values, and the next form is bridged into (`bridge_next` with its label, formLabel) ahead
+   * of anything queued. Any other completion, and a check's refusal, ends the form as written.
+   * Without it, a completed form goes on to the queue or "anything else?".
+   */
+  next?: FormId;
+  /**
+   * True for a form that is not an intent (forms.yaml `internal`): reached only by another form's
+   * `next`, never offered to the model, the keypad menu or the queue. It has a `label` of its own.
+   */
+  internal?: boolean;
+  /** An internal form's spoken label (forms.yaml `label`), read by formLabel where an intent's would be. */
+  label?: string;
+  /**
+   * Whether the form's slots fill from what is said before the form is open (forms.yaml
+   * `listenBeforeEntered`; app/lookup.ts listenOf): a slot with no `listen` of its own, every form of
+   * which says false, listens as `listen: form`. Default true, or false for an internal form.
+   */
+  listenBeforeEntered?: boolean;
+  /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
    * principalEntry is called.
@@ -711,7 +732,7 @@ export interface AppBrand {
  * (src/server/dashboard/meta.ts consoleMetaOf), so every value is plain data.
  */
 export interface ConsoleConfig {
-  /** Each form in words, as the NOW panel says it (e.g. report_missing, "Report a missing parcel"). Default: the id with spaces. */
+  /** Each form in words, as the NOW panel says it (e.g. report_missing, "Report a missing parcel"). Default: an internal form's label, else the id with spaces. */
   readonly formLabels?: Readonly<Record<FormId, string>>;
   /**
    * Every slot in the order the chips and the perception groups show them outside a form.

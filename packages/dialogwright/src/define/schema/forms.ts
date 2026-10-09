@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { checkAlways, identifier, name, unique } from './common';
+import { checkAlways, identifier, name, text, unique } from './common';
 
 /**
  * forms.yaml: the forms (tasks that collect slots and then act). Mirrors App.forms (FormDef): the
@@ -74,7 +74,7 @@ const form = z
     hooks: unique(z.enum(FORM_HOOKS), 'hook')
       .optional()
       .describe(
-        'The code hooks this form uses, written in the app\'s TypeScript; "complete" is required, unless the form `answers` from the knowledge base (its completion is then the engine\'s). ' +
+        'The code hooks this form uses, written in the app\'s TypeScript; "complete" is required, unless the form `answers` from the knowledge base (its completion is then the engine\'s) or goes on to a `next` form (its completion is then that form). ' +
           'entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), ' +
           'confirmedParams (the values a confirmed write sends, for the gate\'s confirmed rule), complete (runs when the form is full and confirmed), ' +
           'onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), ' +
@@ -112,9 +112,30 @@ const form = z
     checksPassed: identifier()
       .optional()
       .describe('A line said once, on the turn every check of the form has passed (never again after a correction). It renders with the form\'s slot displays as variables. Only with checks.'),
+    next: identifier()
+      .optional()
+      .describe(
+        'The form entered at once when this one completes (its complete hook answers `said`, or it has none, which `next` allows): the slots both forms list are kept, with their values and confirmations, and the next form is bridged into (bridge_next with its label), ahead of any request the caller queued. ' +
+          'A completion that ends the call, a refusal, or a check that ends the form does not go on. Usually an internal form (a booking after a screen); it may be a form intent too.',
+      ),
+    internal: z
+      .boolean()
+      .optional()
+      .describe('true: the form is not an intent. The model, the keypad menu and the queue never see it; it is reached only by another form\'s `next`, and it has no intent in intents.yaml. Needs a `label`. Default false.'),
+    label: text()
+      .optional()
+      .describe('An internal form\'s spoken label ("book your free inspection"), as an intent\'s label is used: in bridge_next as {intentLabel}, and as the form the caller is in. Only on an internal form; a form intent\'s label is in intents.yaml.'),
+    listenBeforeEntered: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the form\'s slots fill from what the caller says before the form is open (on the turn that opens it, as `listen: up-front` does). ' +
+          'false: a slot every form that lists it says false for behaves as `listen: form`, and is asked once its form is open, even when it was said earlier. A slot\'s own `listen` overrides it. ' +
+          'Default true for a form intent, false for an internal form.',
+      ),
   })
   .check(checkAlways((value, ctx) => {
-    const form = value as { hooks?: unknown; answers?: unknown; checks?: unknown; checksPassed?: unknown } | null;
+    const form = value as { hooks?: unknown; answers?: unknown; checks?: unknown; checksPassed?: unknown; next?: unknown; internal?: unknown; label?: unknown } | null;
     if (typeof form !== 'object' || form === null || Array.isArray(form)) return;
     const checks = Array.isArray(form.checks) ? form.checks : [];
     if (form.checksPassed !== undefined && checks.length === 0) {
@@ -127,9 +148,16 @@ const form = z
       if (seen.has(action)) ctx.addIssue({ code: 'custom', path: ['checks', i, 'action'], message: `the check "${action}" is listed twice`, params: { fix: 'delete one of the two: a check runs once per change of what it reads' } });
       seen.add(action);
     });
+    if (form.internal === true && form.label === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['internal'], message: 'an internal form has no intent, so its label is its own, and this form names none', params: { fix: 'add "label: <what the caller is helped to do>" (for example "label: book your free inspection"), said as bridge_next\'s {intentLabel}' } });
+    }
+    if (form.internal !== true && form.label !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['label'], message: 'only an internal form has a label of its own: a form intent\'s label is in intents.yaml', params: { fix: 'delete "label", or write "internal: true" for a form reached only by another form\'s next' } });
+    }
     const hooks = Array.isArray(form.hooks) ? form.hooks : [];
     const answers = form.answers !== undefined;
-    if (!answers && !hooks.includes('complete')) {
+    // A form with `next` may have no complete hook: its completion is the next form.
+    if (!answers && !hooks.includes('complete') && form.next === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: form.hooks === undefined ? [] : ['hooks'],
@@ -152,7 +180,7 @@ export const formsSchema = z
   .strictObject({
     forms: z
       .record(identifier(), form, { error: 'must be a map from form id to its definition' })
-      .describe('Every form, by id. Each id must also be a form intent in intents.yaml.'),
+      .describe('Every form, by id. Each id must also be a form intent in intents.yaml, unless the form is internal (reached only by another form\'s next).'),
   })
   .describe('forms.yaml: the forms the app runs.');
 
