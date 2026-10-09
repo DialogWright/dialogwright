@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { withParentKey, worldWithRoles } from '../testing/docBlocks';
 import { defineRule } from '../gate/defineRule';
 import { AppDefinitionError } from './defineApp';
 import { defineIdentity, definePolicy } from './definePolicy';
@@ -66,16 +67,6 @@ function kindOf(value: unknown): Kind | null {
   return null;
 }
 
-/**
- * A block that shows a piece of a file under one of its keys, as the create-app skill's patterns do
- * (a first line `# policy.yaml, under actions:` and the entries indented beneath it), read with that
- * key put back, so the piece is checked as the file it is part of.
- */
-function withParentKey(text: string): string {
-  const key = /^#\s+[A-Za-z0-9_./<>-]+\.yaml,?\s+under (actions|intents|forms|prompts):/.exec(text.split('\n')[0] ?? '')?.[1];
-  return key === undefined ? text : `${key}:\n${text}`;
-}
-
 /** Each fenced YAML block that is a policy or an identity file, with where it starts. */
 function blocksOf(file: string): Block[] {
   const text = readFileSync(file, 'utf8');
@@ -128,19 +119,6 @@ const standIn = (id: string) => {
   });
 };
 
-/**
- * The world's identity, with the delegate roles the same markdown file's own identity.yaml blocks
- * declare (the create-app skill declares a `manager`), as a delegate kind of the doc's own: a policy
- * block is read beside the identity its page shows. A role neither declares is still refused.
- */
-function worldWithRoles(roles: readonly string[]): Record<string, unknown> {
-  const principals = WORLD_IDENTITY.principals as { delegates?: Record<string, { roles: string[] }> };
-  const known = new Set(Object.values(principals.delegates ?? {}).flatMap((d) => d.roles));
-  const missing = roles.filter((r) => !known.has(r));
-  if (missing.length === 0) return WORLD_IDENTITY;
-  return { ...WORLD_IDENTITY, principals: { ...principals, delegates: { ...principals.delegates, doc_delegate: { roles: missing } } } };
-}
-
 /** What loading a block says is wrong with it, one line each: its path, the message and the fix. */
 export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>, declaredRoles: readonly string[] = []): string[] {
   try {
@@ -149,7 +127,7 @@ export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>, declaredRo
     } else {
       const { customRules, lookups } = namedBy(block.value);
       definePolicy({ actions: {}, ...block.value }, {
-        identity: worldWithRoles(declaredRoles),
+        identity: worldWithRoles(WORLD_IDENTITY, declaredRoles),
         lookups,
         customRules: Object.fromEntries(customRules.map((id) => [id, standIn(id)])),
       });

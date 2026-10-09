@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { withParentKey } from '../testing/docBlocks';
 import type { z } from 'zod';
 import { appSchema, intentsSchema } from './schema';
 
@@ -76,16 +77,6 @@ function piecesOf(text: string, value: unknown): { kind: Kind; value: Record<str
   if (keys.includes('intents')) out.push({ kind: 'intents', value: pick(INTENTS_KEYS) });
   if (keys.some((k) => APP_ONLY.includes(k)) || (file === 'app.yaml' && keys.some((k) => APP_KEYS.includes(k)))) out.push({ kind: 'app', value: pick(APP_KEYS) });
   return out;
-}
-
-/**
- * A block that shows a piece of a file under one of its keys, as the create-app skill's patterns do
- * (a first line `# policy.yaml, under actions:` and the entries indented beneath it), read with that
- * key put back, so the piece is checked as the file it is part of.
- */
-function withParentKey(text: string): string {
-  const key = /^#\s+[A-Za-z0-9_./<>-]+\.yaml,?\s+under (actions|intents|forms|prompts):/.exec(text.split('\n')[0] ?? '')?.[1];
-  return key === undefined ? text : `${key}:\n${text}`;
 }
 
 /** Each fenced YAML block's app.yaml and intents.yaml pieces, with where the block starts. */
