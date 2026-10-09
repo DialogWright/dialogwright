@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ANONYMOUS, callDataOf, defineApp, type AppCode, type Completion, type CompletionContext, type Session, type ToolDef } from '../../index';
+import { ANONYMOUS, callDataOf, defineApp, replyShape, type AppCode, type Completion, type CompletionContext, type Session, type ToolDef } from '../../index';
 import type { CorpusSlotLabels } from '../../core/app/types';
 
 /**
@@ -42,6 +42,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.callbacks.push({ ref, phone: call.params.phone ?? '' });
       return { value: { ref }, summary: `callback ${ref}`, ref };
     },
+    // The reference is said to the caller: a reply whose reference is not one is never used.
+    check: replyShape.object({ ref: replyShape.code() }),
   },
 };
 

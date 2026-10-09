@@ -52,6 +52,8 @@ const CHATTY: App = {
     ...testkitApp.tools,
     getParcel: {
       ...getParcel,
+      // Its reply is no longer a parcel, so the testkit's check of one (ToolDef.check) is not this tool's.
+      check: undefined,
       run: (c, sys, x) => {
         const parcel = getParcel.run(c, sys, x).value as ParcelView;
         return { value: { parcel }, summary: `${parcel.status}, left ${parcel.safePlace} (not "${parcel.safePlace}way")`, ref: `${parcel.number}:${parcel.safePlace}` };
@@ -60,7 +62,7 @@ const CHATTY: App = {
   },
 };
 /** The testkit with a getParcel that returns its parcel as text: nothing can be stripped from it. */
-const STRINGY: App = { ...testkitApp, id: 'redact-stringy', tools: { ...testkitApp.tools, getParcel: { ...getParcel, run: (c, sys, x) => ({ value: JSON.stringify(getParcel.run(c, sys, x).value), summary: 'text' }) } } };
+const STRINGY: App = { ...testkitApp, id: 'redact-stringy', tools: { ...testkitApp.tools, getParcel: { ...getParcel, check: undefined, run: (c, sys, x) => ({ value: JSON.stringify(getParcel.run(c, sys, x).value), summary: 'text' }) } } };
 registerApp(CHATTY);
 registerApp(STRINGY);
 

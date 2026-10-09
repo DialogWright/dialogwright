@@ -1,4 +1,5 @@
 import type { ToolDef, VerifyOutcome } from '../../../core/app/types';
+import { replyShape as r, type ReplyCheck } from '../../../core/replyShape';
 import type { ToolCall } from '../../../gate/types';
 import { customerPrincipal } from './principals';
 import type { AccountView, ParcelSystems, ParcelView } from './systems';
@@ -32,6 +33,22 @@ function tool<T extends TestkitTool>(params: readonly string[], run: Run<T>, aud
 /** The fields of a parcel the policy may withhold (ToolDef.fields). */
 const PARCEL_FIELDS = ['safePlace'] as const;
 
+/**
+ * What the parcel system's reply must look like where a line says it or a call is made from it
+ * (ToolDef.check): a reply that does not is never used, and the caller goes to a person.
+ */
+const PARCEL = r.object({
+  number: r.digits(4),
+  item: r.text({ words: 6 }),
+  status: r.oneOf(['in_transit', 'out_for_delivery', 'delivered', 'held']),
+  day: r.isoDate(),
+  safePlace: r.nullable(r.text({ words: 10 })),
+});
+
+function checked(def: ToolDef, check: ReplyCheck): ToolDef {
+  return { ...def, check };
+}
+
 function withFields(def: ToolDef, fields: readonly string[]): ToolDef {
   return { ...def, fields };
 }
@@ -46,33 +63,33 @@ export const TESTKIT_TOOLS: { readonly [T in TestkitTool]: ToolDef } = {
     const ok = code !== undefined && tc.tools.codes.check(code);
     return { value: ok, summary: ok ? 'code accepted' : 'code rejected' };
   }, ({ summary, after }) => [{ type: 'identity', detail: { factor: 'one_time_code', pass: summary === 'code accepted', level: after.principal.level } }]),
-  sendCode: tool<'sendCode'>(['accountId'], (p, sys) => {
+  sendCode: checked(tool<'sendCode'>(['accountId'], (p, sys) => {
     const sent = sys.sendText(p.accountId ?? '', 'one_time_code');
     return { value: sent, summary: sent ? `texted ...${sent.phoneLast4}` : 'no phone on record' };
-  }),
-  getAccount: tool<'getAccount'>(['accountId'], (p, sys) => {
+  }), r.nullable(r.object({ phoneLast4: r.digits(4) }))),
+  getAccount: checked(tool<'getAccount'>(['accountId'], (p, sys) => {
     const a = sys.account(p.accountId ?? '');
     return { value: a, summary: a ? 'account found' : 'no account' };
-  }),
+  }), r.nullable(r.object({ id: r.digits(8), first: r.text({ words: 4, chars: 40 }), depotId: r.code() }))),
   // The whole parcel, safe place and all: what a party acting for customers may not see of it is
   // the policy's (policy.yaml redact), and the engine withholds it.
-  listParcels: withFields(tool<'listParcels'>(['accountId'], (p, sys) => {
+  listParcels: checked(withFields(tool<'listParcels'>(['accountId'], (p, sys) => {
     const list = sys.listParcels(p.accountId ?? '');
     return { value: list, summary: `${list.length} parcel${list.length === 1 ? '' : 's'}` };
-  }), PARCEL_FIELDS),
-  getParcel: withFields(tool<'getParcel'>(['parcel'], (p, sys) => {
+  }), PARCEL_FIELDS), r.list(PARCEL)),
+  getParcel: checked(withFields(tool<'getParcel'>(['parcel'], (p, sys) => {
     const v = sys.getParcel(p.parcel ?? '');
     return { value: v, summary: v ? v.status : 'not found' };
-  }), PARCEL_FIELDS),
+  }), PARCEL_FIELDS), r.nullable(PARCEL)),
   getWindows: tool<'getWindows'>(['accountId', 'deliveryDay', 'deliveryPart'], (p, sys) => {
     const open = sys.windowOpen(p.deliveryDay ?? '', p.deliveryPart ?? '');
     return { value: { open }, summary: open ? 'window open' : 'window full' };
   }),
   // A write: idempotent, so the systems file one report for the same confirmed write however often it runs.
   createReport: { ...tool<'createReport'>(['accountId', 'missingNote', 'expectedDate'], (p, sys, { idempotencyKey }) => {
-    const r = sys.createReport({ owner: p.accountId ?? '', missingNote: p.missingNote ?? '', expectedDate: p.expectedDate ?? '' }, idempotencyKey);
-    return { value: { number: r.number }, summary: `report ${r.number}`, ref: r.number };
-  }, ({ call, ref }) => [{ type: 'report_created', detail: { report: ref ?? null, customer: call.params.accountId ?? null } }]), idempotent: true },
+    const report = sys.createReport({ owner: p.accountId ?? '', missingNote: p.missingNote ?? '', expectedDate: p.expectedDate ?? '' }, idempotencyKey);
+    return { value: { number: report.number }, summary: `report ${report.number}`, ref: report.number };
+  }, ({ call, ref }) => [{ type: 'report_created', detail: { report: ref ?? null, customer: call.params.accountId ?? null } }]), idempotent: true, check: r.object({ number: r.digits(4) }) },
   notifyDepot: tool<'notifyDepot'>(['report', 'missingNote', 'expectedDate'], (p, _sys, { out }) => {
     // The one hop to another agent: queued as an effect, made after the turn.
     out.effects.push({ kind: 'service', service: 'depot', params: { ...p } });

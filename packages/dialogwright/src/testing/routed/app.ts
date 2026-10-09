@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { callDataOf, callerOf, defineApp, type AppCode, type AppContext, type Completion, type CompletionContext, type Principal, type Session, type SessionFacts, type ToolDef, type VerifyOutcome } from '../../index';
+import { callDataOf, callerOf, defineApp, replyShape, type AppCode, type AppContext, type Completion, type CompletionContext, type Principal, type Session, type SessionFacts, type ToolDef, type VerifyOutcome } from '../../index';
 
 /**
  * Example Service Line: a small, fictional line that takes a report of a problem and reads the status
@@ -107,6 +107,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const latest = accountOf(call.params.accountId ?? '')?.latest ?? null;
       return { value: latest, summary: latest ? 'status read' : 'no request open' };
     },
+    // Said to the caller: the reference and a status of the request system's own words.
+    check: replyShape.nullable(replyShape.object({ ref: replyShape.code(), status: replyShape.oneOf(['open', 'closed']) })),
   },
   reportProblem: {
     params: [...WRITTEN],
@@ -117,6 +119,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.reports.push({ ref, problem: call.params.problem ?? '', severity: call.params.severity ?? '' });
       return { value: { ref }, summary: `report ${ref}`, ref };
     },
+    // The report number is said to the caller.
+    check: replyShape.object({ ref: replyShape.code() }),
   },
   setUpPlan: {
     params: ['accountId'],
@@ -127,6 +131,7 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.plans.push({ ref, accountId: call.params.accountId ?? '' });
       return { value: { ref }, summary: `plan ${ref}`, ref };
     },
+    check: replyShape.object({ ref: replyShape.code() }),
   },
 };
 

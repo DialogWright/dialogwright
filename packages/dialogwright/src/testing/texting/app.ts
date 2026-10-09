@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ANONYMOUS, callerOf, defineApp, type AppCode, type AppContext, type Completion, type CompletionContext, type Session, type SessionFacts, type ToolDef } from '../../index';
+import { ANONYMOUS, callerOf, defineApp, replyShape, type AppCode, type AppContext, type Completion, type CompletionContext, type Session, type SessionFacts, type ToolDef } from '../../index';
 import type { CorpusSlotLabels, SummaryContext, SummaryRead } from '../../core/app/types';
 
 /**
@@ -88,6 +88,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.requests.push({ ref, topic: call.params.topic ?? '' });
       return { value: { ref }, summary: `request ${ref}`, ref };
     },
+    // The request number is said to the caller.
+    check: replyShape.object({ ref: replyShape.code() }),
   },
   sendUpdates: {
     params: [...WRITTEN],

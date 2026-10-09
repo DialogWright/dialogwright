@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineApp, type AppCode, type Completion, type CompletionContext, type Principal, type Session, type SessionFacts, type ToolDef, type VerifyOutcome } from '../../index';
+import { defineApp, replyShape, type AppCode, type Completion, type CompletionContext, type Principal, type Session, type SessionFacts, type ToolDef, type VerifyOutcome } from '../../index';
 
 /**
  * Example Service Desk: a small, fictional line that takes a report of a problem at an address and
@@ -83,6 +83,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const found = ACCOUNTS.find((a) => a.phone === call.params.callerNumber);
       return found === undefined ? { value: null, summary: 'no account for the number' } : { value: { serviceAddress: found.serviceAddress }, summary: 'a street on file' };
     },
+    // The street is proposed to the caller and read back at the summary: a street, never a sentence.
+    check: replyShape.nullable(replyShape.object({ serviceAddress: replyShape.text({ words: 8 }) })),
   },
   verifyCustomer: {
     params: ['accountId', 'dob'],
@@ -107,6 +109,8 @@ export const TOOLS: Record<string, ToolDef> = {
       const latest = accountOf(call.params.accountId ?? '')?.latest ?? null;
       return { value: latest, summary: latest ? 'status read' : 'no request open' };
     },
+    // Said to the caller: the reference and a status of the request system's own words.
+    check: replyShape.nullable(replyShape.object({ ref: replyShape.code(), status: replyShape.oneOf(['open', 'closed']) })),
   },
   reportProblem: {
     params: [...WRITTEN],
@@ -117,6 +121,8 @@ export const TOOLS: Record<string, ToolDef> = {
       systems.reports.push({ ref, place: call.params.place ?? '', problem: call.params.problem ?? '' });
       return { value: { ref }, summary: `report ${ref}`, ref };
     },
+    // The report number is said to the caller.
+    check: replyShape.object({ ref: replyShape.code() }),
   },
 };
 

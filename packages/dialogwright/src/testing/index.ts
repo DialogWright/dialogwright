@@ -18,7 +18,8 @@
  * plain English with its diagrams (policyCard.ts), and the app map, its intents, forms, slots,
  * actions and rules as diagrams (appMap.ts). The voice conformance kit runs the checks every phone
  * carrier (a VoiceProvider, src/server/voice) must pass over its documented frames and webhooks
- * (voiceConformance.ts).
+ * (voiceConformance.ts). The adversarial suite is generated from an app and run against it, with
+ * properties over each run rather than lines (adversarial/).
  */
 export {
   shadowSlot, withShadowSlots, shadowFromEnv, shadowModeOf, createShadowReport, formatShadowReport, formatShadowMismatch,
@@ -74,6 +75,17 @@ export type { CallbackParams, DialTarget, StartDocumentOptions, VoiceProvider, W
 export { runStoreContract, storeContractChecks, contractCall, contractChat, contractSession, CONTRACT_TOKEN_TTL_MS } from './storeContract';
 export type { ContractContext, ContractStores, StoreContractCheck, StoreContractOptions } from './storeContract';
 export type { Awaitable, CallStateStore, ChatStateStore, StoredCall, StoredChat, TokenStore } from '../server/stores/types';
+// The adversarial suite every app inherits (adversarial/): cases generated from the app (announced
+// injections, relationships claimed and not proven, off-scope requests, codes said aloud or never
+// sent, hostile replies from every tool and service), run with properties checked over each run.
+export {
+  adversarialSuite, runAdversarialSuite, formatAdversarialReport, adversarialTranscript, outcomeClassOf,
+  HOSTILE_TEXT, HOSTILE_MARKERS, saysHostile, FAMILIES, OUTCOME_CLASSES,
+} from './adversarial/index';
+export type {
+  AdversarialCase, AdversarialFamily, AdversarialReport, AdversarialRunOptions, AdversarialSuite, AdversarialSuiteOptions,
+  CaseCall, CaseResult, CaseStatus, CodePrompt, HostileMode, HostileTarget, OutcomeClass, Perception, PropertyName,
+} from './adversarial/index';
 // Whether a saved session resumes exactly: the corpus and scenarios run with the session put through
 // JSON before every turn, against the same run as it is (sessionRoundTrip.ts).
 export { sessionRoundTrip, jsonTrip } from './sessionRoundTrip';
