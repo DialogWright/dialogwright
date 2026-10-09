@@ -18,6 +18,7 @@ import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation,
 import { askSlot, handoff, offerTransfer, prompt, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type TurnOut } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
+import { attemptsOf } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
@@ -591,9 +592,9 @@ function promptedTarget(s: Session): 'intent' | 'confirm' | 'otp' | SlotId {
   return s.promptedFor ?? 'intent';
 }
 
-/** The retry ladder's rung on this channel: a chat has no keypad, so its keypad rung is another plain re-ask. */
-function rungFor(s: Session, attempts: number, t: Thresholds): RetryStep {
-  const step = retryStep(attempts, t);
+/** The retry ladder's rung on this channel: a chat has no keypad, so its keypad rung is another plain re-ask. `max` is the ladder's length (retryStep). */
+function rungFor(s: Session, attempts: number, t: Thresholds, max: number = t.MAX_ATTEMPTS): RetryStep {
+  const step = retryStep(attempts, t, max);
   return step === 'dtmf' && !s.caps.keypad ? 'open' : step;
 }
 
@@ -629,7 +630,7 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if (awaitingSignIn(s)) return prompt('signin_reminder', 'intent', {}, acks);
   if (target === 'otp') return codeReask(s, io, acks, 'ask_otp');
   const attempts = target === 'intent' ? ++s.intentAttempts : ++s.slots[target]!.attempts;
-  const step = rungFor(s, attempts, t);
+  const step = rungFor(s, attempts, t, target === 'intent' ? t.MAX_ATTEMPTS : attemptsOf(io.app, target, t));
   if (step === 'agent') return handoff(s, 'max-attempts', acks);
   if (target === 'intent') {
     if (step === 'dtmf') return { ...prompt('nomatch_dtmf_menu', 'intent', {}, acks, io.app.menu.map((m) => m.digit)), menu: true };
@@ -845,7 +846,7 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     const st = s.slots[pc.slot]!;
     if (!count) return slotConfirmPrompt(pc, acks);
     const attempts = ++st.attempts;
-    const step = rungFor(s, attempts, t);
+    const step = rungFor(s, attempts, t, attemptsOf(io.app, pc.slot, t));
     // The caller's number offered and never answered: the offer is closed at the end of its ladder.
     // A slot that skips on a no (`onNo: skip`) is left empty, declined, and the form goes on: an
     // offer nobody answered is not worth a person.
@@ -1459,7 +1460,7 @@ const ACK_DECLINED: Ack = { promptId: 'ack_declined', vars: {} };
 function askOnLadder(s: Session, io: TurnIO, slot: SlotId, acks: Ack[]): Decision {
   const st = s.slots[slot]!;
   st.attempts += 1;
-  const step = rungFor(s, st.attempts, io.tc.thresholds);
+  const step = rungFor(s, st.attempts, io.tc.thresholds, attemptsOf(io.app, slot, io.tc.thresholds));
   if (step === 'agent') return handoff(s, 'max-attempts');
   if (step === 'dtmf' && slotSpecOf(io.app, slot).dtmf !== undefined) return prompt(`ask_${slot}_dtmf`, slot, {}, acks);
   return askSlot(s, slot, null, acks);
@@ -1733,8 +1734,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // A declined readback means the spoken path failed; go straight to the keypad,
         // and let a second decline hand off rather than read a third value back.
         const st = s.slots[pc.slot]!;
-        st.attempts = Math.max(st.attempts + 1, t.MAX_ATTEMPTS - 1);
-        if (retryStep(st.attempts, t) === 'agent') return { decision: handoff(s, 'max-attempts'), events: [] };
+        const max = attemptsOf(io.app, pc.slot, t);
+        st.attempts = Math.max(st.attempts + 1, max - 1);
+        if (retryStep(st.attempts, t, max) === 'agent') return { decision: handoff(s, 'max-attempts'), events: [] };
         Object.assign(st, emptySlot(), { attempts: st.attempts });
         return { decision: prompt(`ask_${pc.slot}_dtmf`, pc.slot, {}, [ACK_DECLINED]), events: [] };
       }

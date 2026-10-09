@@ -10,10 +10,15 @@ import type { Thresholds } from './thresholds';
 
 export type RetryStep = 'open' | 'dtmf' | 'agent';
 
-/** attempts = failures so far including the one just counted. */
-export function retryStep(attempts: number, t: Thresholds): RetryStep {
-  if (attempts >= t.MAX_ATTEMPTS) return 'agent';
-  if (attempts >= t.MAX_ATTEMPTS - 1) return 'dtmf';
+/**
+ * The rung of a retry ladder `max` failures long (default the run's MAX_ATTEMPTS; a slot's own
+ * `attempts`, core/outcome.ts attemptsOf): `attempts` = failures so far including the one just
+ * counted. The last runs out (`agent`: a slot's onMaxAttempts, a person elsewhere), the last but one
+ * is the keypad rung, and each before it re-asks.
+ */
+export function retryStep(attempts: number, t: Thresholds, max: number = t.MAX_ATTEMPTS): RetryStep {
+  if (attempts >= max) return 'agent';
+  if (attempts >= max - 1) return 'dtmf';
   return 'open';
 }
 
