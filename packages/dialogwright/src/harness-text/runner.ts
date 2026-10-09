@@ -14,7 +14,7 @@ import type { App, Refused, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
-import { sayText } from '../channel/actions';
+import { sayText, type Action } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
 import { carryScrub } from '../core/recording';
@@ -405,6 +405,18 @@ export interface ScenarioExpectation {
   principalLevel?: number;
   /** the last gate decision on the scenario, as "tool:VERDICT", or null for none */
   gate?: string | null;
+  /**
+   * The last turn's transfer (app.yaml's transfer, core/transfer.ts): the target's variable, and, where
+   * given, exactly the headers and the chat data it sends. Absent: not checked.
+   */
+  transfer?: ScenarioTransfer;
+}
+
+/** A scripted call's expected transfer: the variable the target is in, and exactly what goes with it where given. */
+export interface ScenarioTransfer {
+  target: string;
+  headers?: Record<string, string>;
+  data?: Record<string, string>;
 }
 
 export interface Scenario {
@@ -531,7 +543,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
     failNext = false;
   }
   const outcome = outcomeOf(scenario.id, last.result, runs.flatMap((r) => r.result.gateEvents));
-  const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result));
+  const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result), last.result.actions.find((a) => a.type === 'transfer'));
   return { outcome, runs, stepOf, pass: mismatches.length === 0, mismatches };
 }
 
@@ -540,7 +552,7 @@ export function spokenText(result: TurnResult): string {
   return sayText(result.actions);
 }
 
-export function checkExpectation(outcome: Outcome, expected: ScenarioExpectation, spoken: string): string[] {
+export function checkExpectation(outcome: Outcome, expected: ScenarioExpectation, spoken: string, transfer?: Action): string[] {
   const out: string[] = [];
   if (outcome.decision !== expected.decision) out.push(`decision: expected ${expected.decision}, got ${outcome.decision}`);
   if (expected.promptId !== undefined && outcome.promptId !== expected.promptId) out.push(`promptId: expected ${expected.promptId}, got ${outcome.promptId}`);
@@ -555,6 +567,13 @@ export function checkExpectation(outcome: Outcome, expected: ScenarioExpectation
   if (expected.gate !== undefined && outcome.gate !== expected.gate) out.push(`gate: expected ${expected.gate}, got ${outcome.gate}`);
   if (expected.text !== undefined && !spoken.includes(expected.text)) {
     out.push(`text: expected to contain ${JSON.stringify(expected.text)}, got ${JSON.stringify(spoken)}`);
+  }
+  if (expected.transfer !== undefined) {
+    const t = transfer?.type === 'transfer' ? transfer : undefined;
+    const got = (v: unknown): string => JSON.stringify(v ?? null);
+    if (t?.target !== expected.transfer.target) out.push(`transfer target: expected ${expected.transfer.target}, got ${t?.target ?? 'no transfer target'}`);
+    if (expected.transfer.headers !== undefined && got(t?.headers) !== got(expected.transfer.headers)) out.push(`transfer headers: expected ${got(expected.transfer.headers)}, got ${got(t?.headers)}`);
+    if (expected.transfer.data !== undefined && got(t?.data) !== got(expected.transfer.data)) out.push(`transfer data: expected ${got(expected.transfer.data)}, got ${got(t?.data)}`);
   }
   return out;
 }

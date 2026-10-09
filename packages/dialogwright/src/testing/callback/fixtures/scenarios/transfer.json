@@ -1,0 +1,67 @@
+[
+  {
+    "id": "transfer-priority",
+    "callData": { "queue": "priority", "accountRef": "AC-55501234" },
+    "steps": [
+      { "say": "can I talk to a person" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "transfer": {
+        "target": "PRIORITY_LINE",
+        "headers": { "X-Account-Ref": "...1234", "X-Reason": "live-agent", "X-Source": "ivr", "X-Queue": "priority" },
+        "data": { "reason": "live-agent" }
+      }
+    }
+  },
+  {
+    "id": "transfer-callback-desk",
+    "steps": [
+      { "say": "can someone call me back" },
+      { "silence": true },
+      { "silence": true },
+      { "silence": true }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "form": "request_callback",
+      "transfer": {
+        "target": "CALLBACK_DESK",
+        "headers": { "X-Reason": "max-attempts", "X-Form": "request_callback", "X-Source": "ivr" }
+      }
+    }
+  },
+  {
+    "id": "transfer-default",
+    "steps": [
+      { "say": "can I talk to a person" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "transfer": {
+        "target": "HANDOFF_NUMBER",
+        "headers": { "X-Reason": "live-agent", "X-Source": "ivr" },
+        "data": { "reason": "live-agent" }
+      }
+    }
+  },
+  {
+    "id": "transfer-chat-page",
+    "as": "web",
+    "callData": { "page": "/orders/1042" },
+    "steps": [
+      { "say": "can I talk to a person" }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "transfer": {
+        "target": "HANDOFF_NUMBER",
+        "data": { "reason": "live-agent", "page": "/orders/1042" }
+      }
+    }
+  }
+]

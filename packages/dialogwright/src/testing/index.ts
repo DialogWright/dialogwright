@@ -65,8 +65,10 @@ export { policyCardText, expectPolicyCard, writePolicyCard, ruleName, POLICY_CAR
 export { appMapText, expectAppMap, writeAppMap, danglingReferences, APP_MAP_FILE } from './appMap';
 export type { DanglingReference } from './appMap';
 export { runVoiceProviderConformance, voiceConformanceChecks } from './voiceConformance';
-export type { FrameFixture, VoiceFixtures, WebhookFixture } from './voiceConformance';
-export type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookRequest } from '../server/voice/provider';
+// The <Dial> verb both built-in carriers write for a DialTarget (a number, or a sip: URI with its headers encoded and capped), for a carrier adapter of one's own.
+export { dialVerb } from '../server/voice/dial';
+export type { CallDataFixture, DialFixture, FrameFixture, VoiceFixtures, WebhookFixture } from './voiceConformance';
+export type { CallbackParams, DialTarget, StartDocumentOptions, VoiceProvider, WebhookRequest } from '../server/voice/provider';
 // The session stores' contract (server/stores/types.ts): what every store, memory, file or shared,
 // must do, run with the test runner's describe and it (storeContract.ts).
 export { runStoreContract, storeContractChecks, contractCall, contractChat, contractSession, CONTRACT_TOKEN_TTL_MS } from './storeContract';

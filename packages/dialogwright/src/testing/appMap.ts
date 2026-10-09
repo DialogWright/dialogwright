@@ -6,6 +6,9 @@ import type { App, FormId, IntentDef, Outcome } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { capitalize, cell, code, expectGeneratedPage, formWords, levelName, mermaidLabel, nodeId, slotNoun, writeGeneratedPage } from './generatedPage';
 import { ruleName } from './policyCard';
+import { describeWhen } from '../core/conditions';
+import { sendOf } from '../core/transfer';
+import { envVariableOf } from '../core/app/envReference';
 
 /**
  * Test support: the app map, a page of Mermaid diagrams written from the compiled app, kept as
@@ -285,6 +288,35 @@ function formOrder(app: App): FormId[] {
   return order;
 }
 
+/**
+ * Where a handoff goes (app.yaml's transfer, core/transfer.ts): the targets in the order they are tried,
+ * each with its conditions, the variable it dials and what goes with it, and the default. Nothing for an
+ * app without transfer.
+ */
+function transferDiagram(app: App): string[] {
+  const t = app.transfer;
+  if (t === undefined) return [];
+  const sent = (rule: number | null): string[] => {
+    const send = sendOf(t, rule);
+    const headers = Object.keys(send.headers ?? {});
+    const chat = Object.keys(send.chat ?? {});
+    return [...(headers.length > 0 ? [`headers ${headers.join(', ')}`] : []), ...(chat.length > 0 ? [`chat ${chat.join(', ')}`] : [])];
+  };
+  const out = ['flowchart TD', `  handoff(${mermaidLabel('A handoff', 'its reason, the form, the call data')})`];
+  let from = 'handoff';
+  let edge = '';
+  t.targets.forEach((rule, i) => {
+    const ask = nodeId('w', String(i));
+    const target = nodeId('t', String(i));
+    out.push(`  ${ask}{${mermaidLabel(describeWhen(rule.when))}}`, `  ${from} -->${edge} ${ask}`);
+    out.push(`  ${target}[[${mermaidLabel(envVariableOf(rule.to) ?? rule.to, ...sent(i))}]]`, `  ${ask} -->|${mermaidLabel('yes')}| ${target}`);
+    from = ask;
+    edge = `|${mermaidLabel('no')}|`;
+  });
+  out.push(`  fallback[[${mermaidLabel(`default ${envVariableOf(t.default) ?? t.default}`, ...sent(null))}]]`, `  ${from} -->${edge} fallback`);
+  return out;
+}
+
 /** The app map for `app`, as Markdown. */
 export function appMapText(app: App): string {
   const forms = Object.keys(app.forms);
@@ -315,6 +347,8 @@ export function appMapText(app: App): string {
   }
   const identity = identityDiagram(app);
   if (identity.length > 0) lines.push('', '## When an identity factor runs out', '', 'Identity asks its factors for whichever form needs them; each factor below does something other than hand off when it runs out of attempts.', '', '```mermaid', ...identity, '```');
+  const transfer = transferDiagram(app);
+  if (transfer.length > 0) lines.push('', '## Where a handoff goes', '', 'The transfer targets, tried in order: the first whose conditions all hold is taken, else the default. Each dials the number or SIP address in its environment variable; the headers go only to a SIP address, the chat data only on a web chat.', '', '```mermaid', ...transfer, '```');
   lines.push('', '## Dangling references', '');
   if (found.length === 0) {
     lines.push(`None: every intent reaches a form or a line, and ${reach.declared ? 'every action is reached by a form or the identity flow.' : 'the forms do not declare which actions they call (`calls`), so which actions are reached is not checked.'}`);

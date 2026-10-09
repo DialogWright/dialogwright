@@ -143,6 +143,10 @@ export type { CallerNumber } from './core/callerNumber';
 // The data a call or chat came with that the app names (app.yaml's callData), for the app's code.
 export { callDataOf } from './core/callData';
 export type { CallDataKey } from './core/app/types';
+// Where a handoff goes (app.yaml's transfer): the engine's choice, the conditions it is made on.
+export type { TransferConfig, TransferRule, TransferSend } from './core/app/types';
+export type { TransferChoice } from './core/transfer';
+export type { Condition, ConditionFacts, ValueTest } from './core/conditions';
 // What the caller answered to consent to text for the whole call (app.yaml's textConsent), for app code that needs it.
 export { textConsentOf } from './core/textConsent';
 export type { TextConsentAnswer } from './core/session';

@@ -424,6 +424,12 @@ describe('checkExpectation', () => {
       .toMatch(/^slot accountId: expected 55501234, got null/);
     expect(checkExpectation(outcome, { decision: 'prompt', principalLevel: 2 }, '')[0]).toMatch(/^principalLevel: expected 2, got 0/);
     expect(checkExpectation(outcome, { decision: 'prompt', gate: 'getParcel:BLOCK' }, '')[0]).toMatch(/^gate: expected getParcel:BLOCK, got getAccount:STEP_UP/);
+    // A transfer (app.yaml's transfer): the target's variable, and exactly the headers and data where given.
+    const transfer = { type: 'transfer' as const, reason: 'live-agent', completed: [], queued: [], slots: {}, target: 'DESK_LINE', headers: { 'X-Reason': 'live-agent' } };
+    expect(checkExpectation(outcome, { decision: 'prompt', transfer: { target: 'DESK_LINE', headers: { 'X-Reason': 'live-agent' } } }, '', transfer)).toEqual([]);
+    expect(checkExpectation(outcome, { decision: 'prompt', transfer: { target: 'MAIN_LINE' } }, '', transfer)).toEqual(['transfer target: expected MAIN_LINE, got DESK_LINE']);
+    expect(checkExpectation(outcome, { decision: 'prompt', transfer: { target: 'DESK_LINE', headers: {} } }, '', transfer)).toEqual(['transfer headers: expected {}, got {"X-Reason":"live-agent"}']);
+    expect(checkExpectation(outcome, { decision: 'prompt', transfer: { target: 'DESK_LINE' } }, '')).toEqual(['transfer target: expected DESK_LINE, got no transfer target']);
     expect(checkExpectation({ ...outcome, gate: null }, { decision: 'prompt', gate: null }, '')).toEqual([]);
   });
 
