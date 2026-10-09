@@ -72,11 +72,16 @@ export interface PostedHandoff {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
+/** A handoff reason as the engine writes one: letters, digits, '-', '_' and '.', at most 64 characters. */
+export const PLAIN_REASON = /^[A-Za-z0-9_.-]{1,64}$/;
+
 /** The handoff data the carrier posted back, read: its reason, and for an app with transfer its target and headers (each a string, or left out). */
 export function parseHandoff(raw: string): PostedHandoff {
   try {
     const v = JSON.parse(raw) as { reasonCode?: unknown; target?: unknown; headers?: unknown };
-    const reasonCode = typeof v.reasonCode === 'string' ? v.reasonCode : 'unknown';
+    // Written into the server's log line (`dial:<reason>`): a reason that is not a plain token is `unknown`,
+    // so a value posted back can never forge a line. Every reason the engine writes is one.
+    const reasonCode = typeof v.reasonCode === 'string' && PLAIN_REASON.test(v.reasonCode) ? v.reasonCode : 'unknown';
     const target = typeof v.target === 'string' ? v.target : undefined;
     const headers = typeof v.headers === 'object' && v.headers !== null && !Array.isArray(v.headers)
       ? Object.fromEntries(Object.entries(v.headers as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'))

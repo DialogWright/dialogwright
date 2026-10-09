@@ -57,6 +57,9 @@ describe('a posted handoff', () => {
     expect(parseHandoff('{"reasonCode":"live-agent","target":"PRIORITY_LINE","headers":{"X-A":"1","X-B":2}}')).toEqual({ reasonCode: 'live-agent', target: 'PRIORITY_LINE', headers: { 'X-A': '1' } });
     expect(parseHandoff('{"reasonCode":"live-agent"}')).toEqual({ reasonCode: 'live-agent' });
     expect(parseHandoff('not json')).toEqual({ reasonCode: 'unknown' });
+    // A reason that is not a plain token is read as unknown, so it can never forge a log line.
+    expect(parseHandoff(JSON.stringify({ reasonCode: 'live-agent\r\nforged' }))).toEqual({ reasonCode: 'unknown' });
+    expect(parseHandoff(JSON.stringify({ reasonCode: 'x'.repeat(65) }))).toEqual({ reasonCode: 'unknown' });
   });
 
   it('dials the target it names with the headers the app sends, and HANDOFF_NUMBER for a name the app does not have', () => {
@@ -172,6 +175,16 @@ describe('decideAction', () => {
     expect(r.document).toContain(`<Dial>${ENV.CALLBACK_DESK}</Dial>`);
     expect(r.note).toBe('dial:max-attempts to CALLBACK_DESK (headers left out: X-Reason: a phone number carries none)');
     expect(readFileSync(join(d.dir, 'CA2.frames.jsonl'), 'utf8')).toContain('"transfer":{"target":"CALLBACK_DESK","dropped":[{"name":"X-Reason","why":"number"}]}');
+  });
+
+  it('a posted reason that is not a plain token reaches the note as unknown; an ordinary one as it always did', () => {
+    const plain = deps(false);
+    expect(decideAction(plain, twilioProvider, { callId: 'CA7', raw: {}, handoffData: '{"reasonCode":"live-agent"}' }).note).toBe('dial:live-agent');
+    expect(decideAction(plain, twilioProvider, { callId: 'CA8', raw: {}, handoffData: '{"reasonCode":"max-attempts"}' }).note).toBe('dial:max-attempts');
+    const forged = decideAction(plain, twilioProvider, { callId: 'CA9', raw: {}, handoffData: JSON.stringify({ reasonCode: 'live-agent\r\nforged' }) });
+    expect(forged.note).toBe('dial:unknown');
+    expect(forged.document).toContain(`<Dial>${HANDOFF}</Dial>`);
+    expect(decideAction(deps(true), twilioProvider, { callId: 'CA10', raw: {}, handoffData: JSON.stringify({ reasonCode: 'live-agent\nforged', target: 'CALLBACK_DESK' }) }).note).toBe('dial:unknown to CALLBACK_DESK');
   });
 
   it('an app without transfer dials HANDOFF_NUMBER as before, its note unchanged', () => {
