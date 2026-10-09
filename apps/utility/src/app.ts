@@ -43,12 +43,21 @@ export class Systems {
 /** The number of installments each `count` option means. */
 const COUNTS: Readonly<Record<string, number>> = { two: 2, three: 3, four: 4, six: 6 };
 
-/** A plain decimal ("240.00") as it is said: "$240.00"; a credit ("-12.50") as "a credit of $12.50". */
-export const money = (amount: string): string => (amount.startsWith('-') ? `a credit of $${amount.slice(1)}` : `$${amount}`);
+/** A plain decimal ("240.00") as it is said: "$240.00". A credit's amount is said without its minus, by a line of its own (balance_credit). */
+export const money = (amount: string): string => `$${amount.replace(/^-/, '')}`;
 
-/** A day as describeDay says it in English ("Wednesday, September 2"): the form the account line's day must have. */
-const DAY_SAID = (v: unknown): boolean => typeof v === 'string'
-  && /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (?:January|February|March|April|May|June|July|August|September|October|November|December) (?:[1-9]|[12]\d|3[01])$/.test(v);
+/**
+ * The last outage's day as the account line says it: the system's own date, checked as a date
+ * (`lastOutageOn`), and the words the tool made of it, which must be that date as the engine says a
+ * day in one of the languages it says days in (describeDay), so a call in another language is
+ * answered as an English one is.
+ */
+const OUTAGE_DAY = (v: unknown): boolean => {
+  if (typeof v !== 'object' || v === null) return false;
+  const { lastOutageOn: on, lastOutageDay: day } = v as { lastOutageOn?: unknown; lastOutageDay?: unknown };
+  if (on === null && day === null) return true;
+  return r.isoDate()(on) && typeof day === 'string' && [undefined, 'es'].some((locale) => describeDay(on as string, locale) === day);
+};
 
 /** A plain decimal split into `n` installments, in cents, the last taking any remainder. */
 export function splitInto(total: string, n: number): string[] {
@@ -164,15 +173,15 @@ export const TOOLS: Record<string, ToolDef> = {
   // (kb/topics.yaml accountLine). Its two fields are what the line says; none on record: no line.
   getOutageHistory: {
     params: ['accountId', 'topic'],
-    fields: ['lastOutageDay', 'lastOutageHours'],
+    fields: ['lastOutageOn', 'lastOutageDay', 'lastOutageHours'],
     run(call, _sys, { s }) {
       const outage = accountOf(call.params.accountId ?? '')?.lastOutage ?? null;
-      if (outage === null) return { value: { lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' };
-      return { value: { lastOutageDay: describeDay(outage.day, localeOf(s)), lastOutageHours: outage.hours }, summary: 'last outage read' };
+      if (outage === null) return { value: { lastOutageOn: null, lastOutageDay: null, lastOutageHours: null }, summary: 'no outage on record' };
+      return { value: { lastOutageOn: outage.day, lastOutageDay: describeDay(outage.day, localeOf(s)), lastOutageHours: outage.hours }, summary: 'last outage read' };
     },
-    // Both are said in the account line after an outage credit answer: a day as the line says one
-    // ("Wednesday, September 2"), and a number of hours.
-    check: r.object({ lastOutageDay: r.nullable(DAY_SAID), lastOutageHours: r.nullable(r.number({ min: 0, max: 24 * 365 })) }),
+    // Both are said in the account line after an outage credit answer: the day (checked from the
+    // system's own date, OUTAGE_DAY), and a number of hours.
+    check: r.all(OUTAGE_DAY, r.object({ lastOutageHours: r.nullable(r.number({ min: 0, max: 24 * 365 })) })),
   },
   // Sets up the arrangement: the total split into the installments, the first on the day given.
   setUpPlan: {
@@ -226,6 +235,8 @@ function completeBalance(c: CompletionContext): Completion {
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   if (value === null) return { kind: 'said', acks: [...acks, { promptId: 'account_not_found', vars: {} }] };
   const { balance, due } = value as { balance: string; due: string };
+  // A balance in the caller's favour has its own line: it is never said as owed.
+  if (balance.startsWith('-')) return { kind: 'said', acks: [...acks, { promptId: 'balance_credit', vars: { last4: accountId.slice(-4), balance: money(balance) } }] };
   const vars = { last4: accountId.slice(-4), balance: money(balance), due: describeDay(due, localeOf(s)) };
   return { kind: 'said', acks: [...acks, { promptId: 'balance_is', vars }] };
 }

@@ -218,6 +218,10 @@ prompts:
   balance_is:
     text: The balance on the account ending in {last4} is {balance}, due {due}.
     interruptible: false
+  # A balance in the caller's favour: never said as owed.
+  balance_credit:
+    text: The account ending in {last4} has a credit of {balance}. Nothing is due.
+    interruptible: false
   account_not_found:
     text: I couldn't find that account.
     interruptible: false
