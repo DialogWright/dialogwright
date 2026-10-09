@@ -9,7 +9,7 @@ Contents:
 - Who the caller is: [Verification](#verification-level-1) · [Which factors](#which-identity-factors-when-the-paragraph-is-silent) · [A one-time code](#a-one-time-code-level-2) · [Verified by caller ID](#verified-by-caller-id-callerid) · [Phone and chat](#phone-and-chat) · [Delegates](#delegates)
 - Writes and rules: [Confirmed writes](#confirmed-writes) · [One of the caller's own records](#one-of-the-callers-own-records-record) · [An opening from a schedule](#an-opening-from-a-schedule) · [Bounds](#bounds-limit-and-dateinrange) · [A value from a list](#a-value-from-a-list-oneof-and-noneof) · [A value no slot holds](#a-value-no-slot-holds-in-the-read-back)
 - Forms that rule callers out: [Qualify before you collect](#qualify-before-you-collect) · [Reading an answer back](#reading-an-answer-back-confirm-and-confirmvalues) · [A check that needs identity](#a-check-that-needs-identity) · [Several entry forms, one booking](#several-entry-forms-one-booking-next) · [Where a slot listens](#where-a-slot-listens-listen-and-listenbeforeentered)
-- Ends of a call: [Refusals and handoffs](#refusals-and-handoffs) · [Something that must never wait](#something-that-must-never-wait) · [What a transfer hands over](#what-a-transfer-hands-over-handoffdata)
+- Ends of a call: [Refusals and handoffs](#refusals-and-handoffs) · [Something that must never wait](#something-that-must-never-wait) · [What a transfer hands over](#what-a-transfer-hands-over-handoffdata) · [Where a transfer goes](#where-a-transfer-goes-and-what-goes-with-it-transfer)
 - Requests and answers: [An intent's criteria](#an-intents-criteria) · [Informational answers](#informational-answers) · [A knowledge form](#a-knowledge-form) · [Keypad entry](#keypad-entry)
 - The number calling: [A callback number](#a-callback-number-callernumber) · [Texting the caller](#texting-the-caller-onno-ifnone-and-the-callernumber-rule) · [One number to call and text](#one-number-to-call-and-text) · [What an offer takes](#what-an-offer-takes-whether-it-may-be-declined-and-consent-for-the-call) · [Looking the caller up by number](#looking-the-caller-up-by-number)
 - The rest: [Switches with a safe default](#switches-with-a-safe-default) · [What is recorded](#what-is-recorded-params-and-audit) · [Values with no slot type](#values-with-no-slot-type) · [Names the engine keeps](#names-the-engine-keeps) · [Testing the policy](#testing-the-policy) · [Known gaps](#known-gaps)
@@ -954,6 +954,37 @@ handoff:
 - **`slots` and `send`**: by default an identity factor is left out, a slot with a `redact` setting goes masked as the trace masks it, and any other slot goes as it is. Name a slot `as-is` only when the person taking the call needs it in the clear, and write why in the worksheet.
 - **Test:** a scripted call that hands over mid-form, with `expect.slots` naming the values the call holds as it goes; one from a priority switch at a read-back, where none is confirmed.
 - **Pitfall:** `pnpm check` refuses a factor listed in `slots` with no `send`, `masked` for a slot with no `redact`, and warns of `mark` with `slots: none`, which sends nothing to mark ([authoring guide, app.yaml](../../../docs/authoring-an-app.md#appyaml)).
+
+## Where a transfer goes, and what goes with it: `transfer`
+
+**When:** "billing questions go to the billing team", "callers from the VIP queue get the priority line", "an emergency goes straight to the on-call desk", "the agent should see the account when the call arrives". Without `transfer` every handoff dials `HANDOFF_NUMBER`; with it, ordered targets choose the line, and SIP headers (or a web chat's data) carry what the person taking it needs.
+
+```yaml
+# app.yaml (the callData key first: a condition or a header may name only a key callData has)
+callData:
+  queue: { from: param.queue, redact: keep }
+transfer:
+  targets:                                   # tried in order: the first whose conditions all hold
+    - when: { callData: queue, is: vip }     # the most specific first
+      to: env.VIP_LINE
+    - when: { reason: [max-attempts] }       # a reason, or a list; { form: [..] } names forms
+      to: env.HELP_DESK
+  default: env.HANDOFF_NUMBER
+  send:
+    headers: { X-Reason: reason, X-Form: form, X-Account: slot.accountId }   # only on a sip: target
+    chat: { reason: reason }                                                 # a web chat's transfer message
+```
+
+```sh
+# the owner's .env: each variable an E.164 number or a sip: URI (sip: carries the headers)
+VIP_LINE=sip:vip@pbx.example.com
+HELP_DESK=+15555550123
+```
+
+- **Order:** the app's. Put `callData` rules first, then `form`, then `reason`, so a VIP caller in the billing form reaches the VIP line. A `when` that is a list holds when all of it does. `form` is the form the caller is in, or, with none open, the last one completed.
+- **What goes:** `reason`, `form`, `callData.<key>` (as its `redact` records it: `keep` sends it whole, `last4` by its last four), `slot.<id>` (as `handoff.data` sends it: an identity factor is left out unless `handoff.data.send` names it), or a constant. Headers go only to a `sip:` target; a phone number carries none, and the frame log says so.
+- **Test:** a scripted call per target, with `"expect": { "decision": "handoff", "transfer": { "target": "VIP_LINE", "headers": { ... } } }`, its call data in `"callData"`; one that reaches the default. Write each target's variable in the worksheet, and tell the owner to set it: the server will not start while one is unset (`pnpm diagnose` checks each).
+- **Pitfall:** a condition on call data is only as trustworthy as its source; a `chat.` key is the visitor's own word, fine for choosing a team, never for a line that trusts the caller more. `pnpm check` refuses a form, key or slot the app does not have, a `secret` key sent, and a header that is not an `X-` name or `User-to-User`; it warns of a reason no handoff has a line for and a rule after one that always holds ([authoring guide, 13.15](../../../docs/authoring-an-app.md#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)).
 
 ## A knowledge form
 
