@@ -130,6 +130,13 @@ export interface ServerOverrides {
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
+/**
+ * Connections each server opens to SESSION_STORE's database: one held for LISTEN (the notices), the
+ * rest for the stores' questions, and the audit's when AUDIT_STORE names the same database; and to
+ * AUDIT_STORE's when it names another. A database serves servers x SESSION_POOL (+ AUDIT_POOL).
+ */
+export const SESSION_POOL = 12;
+export const AUDIT_POOL = 5;
 const EVICT_EVERY_MS = 60 * 1000;
 /** How often the idle sweep also sweeps old traces and audit days, when a retention is set. */
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
@@ -241,8 +248,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // SESSION_STORE=postgres://...: the connection, opened now (the pg driver connects on the first
   // question), so AUDIT_STORE may share it; the stores on it are opened below, with the file store's.
   const setting0 = config.sessionStore;
+  // This server's name: the lease owner, its trace segments' and its audit anchors' server. SERVER_ID
+  // with a random suffix per process, so two processes given one name never share a hold.
+  const serverName = `${(setting0?.kind === 'postgres' ? setting0.serverId : undefined) ?? config.serverId ?? 'server'}-${randomBytes(4).toString('hex')}`;
   const sessionSql: SqlClient | null = setting0?.kind === 'postgres'
-    ? (overrides.sessionSql ?? (await openPgClient(setting0.url, { log, queryTimeoutMs: setting0.timeoutMs })))
+    ? (overrides.sessionSql ?? (await openPgClient(setting0.url, { log, queryTimeoutMs: setting0.timeoutMs, max: SESSION_POOL })))
     : null;
   // AUDIT_STORE=postgres://...: the audit in a database, a chain per call anchored into a chain per day;
   // on SESSION_STORE's connection when it names the same database. Unset, one chain per day file, as always.
@@ -250,7 +260,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const auditSql: SqlClient | null = auditSetting
     ? (overrides.auditSql ?? (sessionSql !== null && setting0?.kind === 'postgres' && setting0.url === auditSetting.url
       ? sessionSql
-      : await openPgClient(auditSetting.url, { log, queryTimeoutMs: auditSetting.timeoutMs })))
+      : await openPgClient(auditSetting.url, { log, queryTimeoutMs: auditSetting.timeoutMs, max: AUDIT_POOL })))
     : null;
   /** The connections opened here, closed once whatever happens: a failed start, or close(). */
   const closeAuditSql = async (): Promise<void> => {
@@ -259,7 +269,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   let postgresAudit: PostgresAuditLog | null = null;
   if (auditSql !== null && auditSetting) {
     try {
-      postgresAudit = await openPostgresAudit(auditSql, { now, timeoutMs: auditSetting.timeoutMs, log });
+      postgresAudit = await openPostgresAudit(auditSql, { now, timeoutMs: auditSetting.timeoutMs, log, server: serverName });
     } catch (err) {
       await closeAuditSql();
       await sessionSql?.close().catch(() => undefined);
@@ -295,7 +305,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     })
     : null;
   const leaseMs = setting?.kind === 'postgres' ? setting.leaseMs : 0;
-  const owner = setting?.kind === 'postgres' ? `${setting.serverId ?? 'server'}-${randomBytes(4).toString('hex')}` : '';
+  const owner = setting?.kind === 'postgres' ? serverName : '';
   if (shared && setting?.kind === 'postgres') {
     log(`sessions: ${maskConnectionString(setting.url)} (shared: calls, chats and relay tokens are saved after every turn, and any server the carrier reconnects to takes a call over); this server is ${owner}, holding each call ${leaseMs} ms at a time`);
   }
@@ -328,7 +338,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   }
   // TRACE_STORE=s3://...: each call's trace and frame log as segments on S3-compatible storage, which
   // this server writes under its own name and every reader joins. Unset, files in TRACE_DIR, as always.
-  const serverName = owner !== '' ? owner : `${config.serverId ?? 'server'}-${randomBytes(4).toString('hex')}`;
   const traceStore = config.traceStore
     ? new S3TraceStore(config.traceStore, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}) })
     : null;

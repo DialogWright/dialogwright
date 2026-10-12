@@ -44,15 +44,15 @@ describe('the audit in Postgres', () => {
     expect(entryHash(rest)).toBe(hash);
     const anchors = (await db.query<{ body: string }>('SELECT body FROM dw_audit_anchors ORDER BY seq')).rows.map((r) => JSON.parse(r.body) as { callId: string; callSeq: number });
     expect(anchors.map((a) => [a.callId, a.callSeq])).toEqual([['CA1', 1], ['CA2', 1], ['CA1', 3]]);
-    expect(await verifyPostgresAudit(db)).toEqual({ chains: 2, entries: 4, days: [{ day: '2026-10-11', anchors: 3 }], breaks: [] });
+    expect(await verifyPostgresAudit(db)).toEqual({ chains: 2, entries: 4, days: [{ day: '2026-10-11', server: 'server', anchors: 3 }], breaks: [] });
     expect(await schemaVersion(db, 'audit')).toBe(AUDIT_SCHEMA_VERSION);
   });
 
   it('two servers appending to one call at once never fork it: one chain, in the order the database took them', async () => {
     const db = await PGlite.create();
     dbs.push(db);
-    const a = await openPostgresAudit(pgliteSql(db));
-    const b = await openPostgresAudit(pgliteSql(db));
+    const a = await openPostgresAudit(pgliteSql(db), { server: 'a-1' });
+    const b = await openPostgresAudit(pgliteSql(db), { server: 'b-2' });
     await a.append('CA1', 'voice', draft('call_started'));
     // A turn that outlived A's hold on the call, and B's first turn, at once.
     await Promise.all([
@@ -69,6 +69,26 @@ describe('the audit in Postgres', () => {
     const bodies = (await db.query<{ body: string }>('SELECT body FROM dw_audit_entries ORDER BY seq')).rows.map((x) => JSON.parse(x.body) as AuditEntry);
     const fromB = bodies.filter((e) => e.detail.from === 'b').map((e) => e.type);
     expect(fromB).toEqual(['gate', 'call_ended']);
+    // Each server anchors into its own chain for the day, so neither waits on the other's anchors; the call's newest entry is anchored.
+    expect(r.days).toEqual([{ day: expect.any(String), server: 'a-1', anchors: 2 }, { day: expect.any(String), server: 'b-2', anchors: 2 }]);
+    const anchors = (await db.query<{ body: string }>('SELECT body FROM dw_audit_anchors')).rows.map((x) => JSON.parse(x.body) as { callSeq: number });
+    expect(Math.max(...anchors.map((a) => a.callSeq))).toBe(5);
+  });
+
+  it('one server sweeps at a time: two at once, and the one that finds the sweep taken removes nothing', async () => {
+    const day = 86_400_000;
+    const t0 = Date.UTC(2026, 9, 1, 12, 0, 0);
+    let t = t0;
+    const db = await PGlite.create();
+    dbs.push(db);
+    const a = await openPostgresAudit(pgliteSql(db), { now: () => t, server: 'a-1' });
+    const b = await openPostgresAudit(pgliteSql(db), { now: () => t, server: 'b-2' });
+    await a.append('OLD', 'voice', draft('call_started'));
+    t = t0 + 9 * day;
+    await a.append('NEW', 'voice', draft('call_started'));
+    const [x, y] = await Promise.all([a.sweep(7, t0 + 10 * day), b.sweep(7, t0 + 10 * day)]);
+    expect([x.chains, y.chains].sort()).toEqual([0, 1]);
+    expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
   });
 
   it("the console's access log is chained per day, so no chain grows without end", async () => {
@@ -106,7 +126,7 @@ describe('the audit in Postgres', () => {
     // An anchor of the day's chain edited: the day's chain breaks there.
     const a2 = (await db.query<{ body: string }>("SELECT body FROM dw_audit_anchors WHERE seq = 2")).rows[0]!.body;
     await db.query('UPDATE dw_audit_anchors SET body = $1 WHERE seq = 2', [a2.replace('"callSeq":3', '"callSeq":2')]);
-    expect((await verifyPostgresAudit(db)).breaks).toContain('day 2026-10-11: BROKEN at anchor 2 (hash mismatch)');
+    expect((await verifyPostgresAudit(db)).breaks).toContain('day 2026-10-11 (server): BROKEN at anchor 2 (hash mismatch)');
   });
 
   it('retention removes a chain whole once its newest entry is past the days, and the days\' anchors; what stays verifies', async () => {

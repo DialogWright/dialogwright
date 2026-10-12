@@ -73,7 +73,7 @@ describe('pnpm audit:verify postgres://... (AUDIT_STORE=postgres)', () => {
       expect(await main([URL], {}, { sql: pgliteSql(db) })).toBe(0);
       expect(lines).toEqual([
         'postgres://dialogwright:***@db.invalid:5432/dialogwright: 2 chains, 3 entries',
-        '2026-10-11: 2 anchors, chain intact',
+        '2026-10-11 (server): 2 anchors, chain intact',
         "every call's chain intact, and each one's newest entry anchored",
       ]);
       // AUDIT_STORE is read when no argument names a place.

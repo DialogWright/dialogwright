@@ -15,15 +15,18 @@ import { ensureTables, type TablePart } from '../server/stores/postgres';
  *
  *   dw_audit_entries   one row per entry: its chain (the call's id), its seq in the chain, its UTC day,
  *                      and the entry as JSON (a day file's line)
- *   dw_audit_anchors   one row per anchor: its day, its seq in the day's chain, and the anchor as JSON:
- *                      { day, seq, at, callId, callSeq, callHash, prevHash, hash }
+ *   dw_audit_anchors   one row per anchor: its day, the server that wrote it, its seq in that server's
+ *                      chain for the day, and the anchor as JSON:
+ *                      { day, server, seq, at, callId, callSeq, callHash, prevHash, hash }
  *
  * A call's entries are chained in one transaction under a lock on the call (an advisory lock, so two
  * servers appending to one call at once, a turn that outlived its server's hold on the call and the
  * new holder's, say, are put one after the other and never fork it), and the anchor in the same
- * transaction under a lock on the day. So every entry a server wrote is in its call's chain, in the
- * order the database took them, and a call's newest entry is always anchored. What a chain cannot
- * show by itself, as a day file cannot, is its own last entries cut off together with their anchors.
+ * transaction into the writing server's own chain for the day, under a lock on that chain alone, so
+ * servers never wait on each other for their anchors (every lock wait is bounded: lock_timeout). So
+ * every entry a server wrote is in its call's chain, in the order the database took them, and a
+ * call's newest entry is always anchored. What a chain cannot show by itself, as a day file cannot,
+ * is its own last entries cut off together with their anchors.
  *
  * The console's own access entries (call id `console`, as in a day file) are chained per day
  * (`console@<day>`), so the access log is not one chain without end, and a day of it can be retained.
@@ -48,16 +51,18 @@ export const AUDIT_TABLES: TablePart = {
     'CREATE INDEX IF NOT EXISTS dw_audit_entries_day ON dw_audit_entries (day)',
     `CREATE TABLE IF NOT EXISTS dw_audit_anchors (
       day text NOT NULL,
+      server text NOT NULL,
       seq integer NOT NULL,
       body text NOT NULL,
-      PRIMARY KEY (day, seq)
+      PRIMARY KEY (day, server, seq)
     )`,
   ],
 };
 
-/** The advisory locks' first keys: a call's chain, and a day's. */
+/** The advisory locks' first keys: a call's chain, a server's chain for a day, and the one sweeper. */
 const CALL_LOCK = 0x6461; // "da"
 const DAY_LOCK = 0x6464; // "dd"
+const SWEEP_LOCK = 0x6473; // "ds"
 
 /** The call id the console's access entries go under (server/console/auth.ts). */
 const CONSOLE = 'console';
@@ -70,6 +75,8 @@ export function chainOf(callId: string, day: string): string {
 /** An anchor: a call's chain's newest hash, in the day's chain. */
 export interface AuditAnchor {
   day: string;
+  /** The server whose chain for the day the anchor is in. */
+  server: string;
   seq: number;
   at: string;
   callId: string;
@@ -90,7 +97,16 @@ export class PostgresAuditLog implements AuditSink {
   /** Each chain's appends from this server, in the order they were asked for. */
   private readonly queues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly sql: SqlClient, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly sql: SqlClient,
+    private readonly now: () => number = Date.now,
+    /** The server whose chain for each day its anchors go into (the lease owner with SESSION_STORE=postgres). */
+    readonly server = 'server',
+    /** The longest a lock is waited for (lock_timeout), within the deadline of a question. */
+    private readonly lockTimeoutMs = DEFAULT_SQL_TIMEOUT_MS,
+    /** The connection the retention sweep runs on, with a longer deadline of its own. */
+    private readonly sweepSql: SqlClient = sql,
+  ) {}
 
   append(callId: string, channel: string, d: AuditDraft): Promise<AuditEntry> {
     return this.appendAll(callId, channel, [d]).then((e) => e[0]!);
@@ -115,6 +131,7 @@ export class PostgresAuditLog implements AuditSink {
     const day = at.slice(0, 10);
     const chain = chainOf(callId, day);
     return this.sql.transaction(async (tx) => {
+      await tx.query(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(this.lockTimeoutMs))}ms'`);
       await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [CALL_LOCK, chain]);
       const head = await tx.query<{ body: string }>('SELECT body FROM dw_audit_entries WHERE chain = $1 ORDER BY seq DESC LIMIT 1', [chain]);
       let seq = 0;
@@ -139,14 +156,14 @@ export class PostgresAuditLog implements AuditSink {
         return `($${n - 3}, $${n - 2}, $${n - 1}, $${n})`;
       });
       await tx.query(`INSERT INTO dw_audit_entries (chain, seq, day, body) VALUES ${rows.join(', ')}`, params);
-      // The chain's newest hash, anchored into the day's chain.
-      await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [DAY_LOCK, day]);
-      const dayHead = await tx.query<{ body: string }>('SELECT body FROM dw_audit_anchors WHERE day = $1 ORDER BY seq DESC LIMIT 1', [day]);
+      // The chain's newest hash, anchored into this server's chain for the day.
+      await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [DAY_LOCK, `${day}/${this.server}`]);
+      const dayHead = await tx.query<{ body: string }>('SELECT body FROM dw_audit_anchors WHERE day = $1 AND server = $2 ORDER BY seq DESC LIMIT 1', [day, this.server]);
       const lastAnchor = dayHead.rows.length > 0 ? (JSON.parse(dayHead.rows[0]!.body) as AuditAnchor) : null;
       const newest = entries.at(-1)!;
-      const anchorBase = { day, seq: (lastAnchor?.seq ?? 0) + 1, at, callId: chain, callSeq: newest.seq, callHash: newest.hash, prevHash: lastAnchor?.hash ?? GENESIS };
+      const anchorBase = { day, server: this.server, seq: (lastAnchor?.seq ?? 0) + 1, at, callId: chain, callSeq: newest.seq, callHash: newest.hash, prevHash: lastAnchor?.hash ?? GENESIS };
       const anchor: AuditAnchor = { ...anchorBase, hash: anchorHash(anchorBase) };
-      await tx.query('INSERT INTO dw_audit_anchors (day, seq, body) VALUES ($1, $2, $3)', [day, anchor.seq, JSON.stringify(anchor)]);
+      await tx.query('INSERT INTO dw_audit_anchors (day, server, seq, body) VALUES ($1, $2, $3, $4)', [day, this.server, anchor.seq, JSON.stringify(anchor)]);
       return entries;
     });
   }
@@ -159,25 +176,50 @@ export class PostgresAuditLog implements AuditSink {
   /**
    * AUDIT_RETENTION_DAYS: the days older than `days` removed, never today's. A call's chain is removed
    * whole once its newest entry is older (never in part, so every chain that stays verifies from its
-   * first entry), and a day's anchors with the day. Returns the days, chains and entries removed.
+   * first entry), checked again in the statement that removes it with each chain's lock held, so an
+   * entry appended meanwhile keeps its chain; and the days' anchors with the days. One server sweeps at
+   * a time (an advisory lock; the others skip), with a deadline of its own. Returns the days, chains and
+   * entries removed (all 0 for a server that skipped).
    */
   async sweep(days: number, nowMs: number): Promise<{ days: number; chains: number; entries: number }> {
     const cutoff = new Date(nowMs - days * 86_400_000).toISOString().slice(0, 10);
-    return this.sql.transaction(async (tx) => {
-      const gone = await tx.query<{ chain: string; n: Num }>('SELECT chain, count(*) AS n FROM dw_audit_entries GROUP BY chain HAVING max(day) < $1', [cutoff]);
-      for (const g of gone.rows) await tx.query('DELETE FROM dw_audit_entries WHERE chain = $1', [g.chain]);
-      const dayRows = await tx.query<{ day: string }>('SELECT DISTINCT day FROM dw_audit_anchors WHERE day < $1', [cutoff]);
-      await tx.query('DELETE FROM dw_audit_anchors WHERE day < $1', [cutoff]);
-      return { days: dayRows.rows.length, chains: gone.rows.length, entries: gone.rows.reduce((n, g) => n + Number(g.n), 0) };
+    return this.sweepSql.transaction(async (tx) => {
+      await tx.query(`SET LOCAL statement_timeout = '${SWEEP_TIMEOUT_MS}ms'`);
+      await tx.query(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(this.lockTimeoutMs))}ms'`);
+      const got = await tx.query<{ ok: boolean }>('SELECT pg_try_advisory_xact_lock($1) AS ok', [SWEEP_LOCK]);
+      if (got.rows[0]?.ok !== true) return { days: 0, chains: 0, entries: 0 };
+      const old = (await tx.query<{ chain: string }>('SELECT chain FROM dw_audit_entries GROUP BY chain HAVING max(day) < $1', [cutoff])).rows.map((r) => r.chain);
+      let chains = 0;
+      let entries = 0;
+      for (let i = 0; i < old.length; i += SWEEP_BATCH) {
+        const batch = old.slice(i, i + SWEEP_BATCH);
+        for (const chain of batch) await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [CALL_LOCK, chain]);
+        const list = batch.map((_, j) => `$${j + 2}`).join(', ');
+        const gone = await tx.query<{ chain: string }>(
+          `DELETE FROM dw_audit_entries WHERE chain IN (
+             SELECT chain FROM dw_audit_entries WHERE chain IN (${list}) GROUP BY chain HAVING max(day) < $1
+           ) RETURNING chain`,
+          [cutoff, ...batch],
+        );
+        chains += new Set(gone.rows.map((r) => r.chain)).size;
+        entries += gone.rows.length;
+      }
+      const dayRows = await tx.query<{ day: string }>('DELETE FROM dw_audit_anchors WHERE day < $1 RETURNING day', [cutoff]);
+      return { days: new Set(dayRows.rows.map((r) => r.day)).size, chains, entries };
     });
   }
 }
 
+/** How long the retention sweep may take, and how many chains it removes in one statement. */
+const SWEEP_TIMEOUT_MS = 60_000;
+const SWEEP_BATCH = 500;
+
 /** The audit over `given`, once its tables are there at this code's version (made on first use). */
-export async function openPostgresAudit(given: SqlClient, o: { now?: () => number; timeoutMs?: number; log?: (line: string) => void } = {}): Promise<PostgresAuditLog> {
-  const sql = boundedSql(given, o.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS);
+export async function openPostgresAudit(given: SqlClient, o: { now?: () => number; timeoutMs?: number; log?: (line: string) => void; server?: string } = {}): Promise<PostgresAuditLog> {
+  const timeoutMs = o.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS;
+  const sql = boundedSql(given, timeoutMs);
   if (await ensureTables(sql, AUDIT_TABLES)) o.log?.(`audit: made the audit tables in Postgres (version ${AUDIT_SCHEMA_VERSION})`);
-  return new PostgresAuditLog(sql, o.now);
+  return new PostgresAuditLog(sql, o.now, o.server ?? 'server', timeoutMs, boundedSql(given, SWEEP_TIMEOUT_MS + 5_000));
 }
 
 /** Thrown to undo the probe's transaction. */
@@ -192,7 +234,7 @@ export async function probeAuditWrite(sql: SqlClient): Promise<void> {
   try {
     await sql.transaction(async (tx) => {
       await tx.query('INSERT INTO dw_audit_entries (chain, seq, day, body) VALUES ($1, 1, $2, $3)', [chain, '0000-00-00', '{}']);
-      await tx.query('INSERT INTO dw_audit_anchors (day, seq, body) VALUES ($1, 1, $2)', [chain, '{}']);
+      await tx.query('INSERT INTO dw_audit_anchors (day, server, seq, body) VALUES ($1, $1, 1, $2)', [chain, '{}']);
       throw new ProbeUndone('undone');
     });
   } catch (err) {
@@ -208,20 +250,21 @@ export async function probeAuditWrite(sql: SqlClient): Promise<void> {
 export interface PostgresVerifyResult {
   chains: number;
   entries: number;
-  days: { day: string; anchors: number }[];
+  /** Each server's chain of anchors for each day. */
+  days: { day: string; server: string; anchors: number }[];
   /** Every break found, the first of each chain: empty when the whole audit verifies. */
   breaks: string[];
 }
 
 /**
- * Re-walk every call's chain and every day's anchors (`pnpm audit:verify postgres://...`): each chain
- * from GENESIS with no gap, each entry's hash its own, each anchor's link and hash, each anchor naming
- * an entry that is there with that hash, and each chain's newest entry anchored. The first break of
- * each chain (and of each day) is reported.
+ * Re-walk every call's chain and every server's anchors for every day (`pnpm audit:verify postgres://...`):
+ * each chain from GENESIS with no gap, each entry's hash its own, each anchor's link and hash, each
+ * anchor naming an entry that is there with that hash, and each chain's newest entry anchored. The
+ * first break of each chain (and of each server's day) is reported.
  */
 export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVerifyResult> {
   const entries = await sql.query<{ chain: string; seq: Num; day: string; body: string }>('SELECT chain, seq, day, body FROM dw_audit_entries ORDER BY chain, seq');
-  const anchors = await sql.query<{ day: string; seq: Num; body: string }>('SELECT day, seq, body FROM dw_audit_anchors ORDER BY day, seq');
+  const anchors = await sql.query<{ day: string; server: string; seq: Num; body: string }>('SELECT day, server, seq, body FROM dw_audit_anchors ORDER BY day, server, seq');
   const breaks: string[] = [];
   /** Each chain's entries' hashes by seq, and its newest seq. */
   const hashes = new Map<string, Map<number, string>>();
@@ -267,21 +310,23 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
   const anchoredTo = new Map<string, number>();
   const days: PostgresVerifyResult['days'] = [];
   let day: string | null = null;
+  let server: string | null = null;
   let dayBroken = false;
   const brokenDays = new Set<string>();
   for (const row of anchors.rows) {
-    if (row.day !== day) {
+    if (row.day !== day || row.server !== server) {
       day = row.day;
+      server = row.server;
       expected = 1;
       prev = GENESIS;
       dayBroken = false;
-      days.push({ day, anchors: 0 });
+      days.push({ day, server, anchors: 0 });
     }
     days.at(-1)!.anchors += 1;
     if (dayBroken) continue;
     const seq = Number(row.seq);
     const fail = (why: string): void => {
-      breaks.push(`day ${day}: BROKEN at anchor ${seq} (${why})`);
+      breaks.push(`day ${day} (${server}): BROKEN at anchor ${seq} (${why})`);
       dayBroken = true;
       brokenDays.add(day!);
     };
@@ -293,7 +338,7 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
       continue;
     }
     const { hash, ...rest } = a;
-    if (seq !== expected || a.seq !== seq || a.day !== day) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq or day is not its place');
+    if (seq !== expected || a.seq !== seq || a.day !== day || a.server !== server) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq, day or server is not its place');
     else if (a.prevHash !== prev) fail('broken link');
     else if (anchorHash(rest) !== hash) fail('hash mismatch');
     if (dayBroken) continue;

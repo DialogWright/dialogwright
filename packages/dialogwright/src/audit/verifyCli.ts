@@ -53,8 +53,8 @@ async function verifyDatabase(url: string, given?: SqlClient): Promise<number> {
     const r = await verifyPostgresAudit(sql);
     console.log(`${shown}: ${r.chains} ${r.chains === 1 ? 'chain' : 'chains'}, ${r.entries} entries`);
     for (const d of r.days) {
-      const broken = r.breaks.some((b) => b.startsWith(`day ${d.day}:`));
-      if (!broken) console.log(`${d.day}: ${d.anchors} ${d.anchors === 1 ? 'anchor' : 'anchors'}, chain intact`);
+      const broken = r.breaks.some((b) => b.startsWith(`day ${d.day} (${d.server}):`));
+      if (!broken) console.log(`${d.day} (${d.server}): ${d.anchors} ${d.anchors === 1 ? 'anchor' : 'anchors'}, chain intact`);
     }
     for (const b of r.breaks) console.log(b);
     if (r.breaks.length === 0) console.log("every call's chain intact, and each one's newest entry anchored");
