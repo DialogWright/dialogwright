@@ -55,7 +55,7 @@ describe('loadAppFolder: a valid folder', () => {
     const config = result.config!;
     expect(config.defaultLocale).toBe('en-US');
     expect(Object.keys(config.prompts).sort()).toEqual(['en-US', 'fr']);
-    expect(config.prompts['en-US']!.greeting).toEqual({ text: 'Thanks for calling Example Family Practice. How can I help you today?', interruptible: true, mode: 'fixed' });
+    expect(config.prompts['en-US']!.greeting).toEqual({ text: 'Thanks for calling Example Family Practice. How can I help you today?', interruptible: true });
     expect(config.prompts.fr!.greeting!.text).toBe("Merci d'appeler Example Family Practice. Comment puis-je vous aider ?");
   });
 
@@ -346,8 +346,8 @@ describe('loadAppFolder: problems', () => {
         line: 5,
         column: 11,
         path: 'prompts.greeting.mode',
-        message: '"mode" is "generated", but the only value allowed is "fixed"',
-        fix: 'write "fixed"'
+        message: '"mode" is "generated", which is not allowed here; it must be one of "fixed", "generative"',
+        fix: 'change it to "generative"'
       },
       {
         file: 'prompts.yaml',
@@ -589,7 +589,7 @@ describe('loadAppFolder: problems', () => {
         line: 1,
         column: 1,
         path: '(file)',
-        message: 'polcy.yaml is not a file DialogWright reads; the YAML files are app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml, slots.yaml',
+        message: 'polcy.yaml is not a file DialogWright reads; the YAML files are app.yaml, intents.yaml, forms.yaml, prompts.yaml, policy.yaml, identity.yaml, routes.yaml, style.yaml, slots.yaml',
         fix: 'rename polcy.yaml to policy.yaml'
       }
     ]);

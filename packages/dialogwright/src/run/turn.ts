@@ -21,6 +21,8 @@ import { topicsListening } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve } from './retrieve';
 import { calledVariables } from '../core/routes';
+import { renderTurn, withRenderAudit } from '../render/turn';
+import type { Renderer } from '../render/types';
 
 export interface TurnObserver {
   /**
@@ -96,6 +98,12 @@ export interface RunOptions {
    * unset). Tests shorten it; a retriever not back in time nominates nothing.
    */
   retrieveBudgetMs?: number;
+  /**
+   * How lines the app generates are worded (generated wording, render/types.ts Renderer): its client
+   * (a model, its recording, or a fake), RENDER_SHARE and RENDER_TIMEOUT_MS. Unset, or for an app that
+   * generates no line, every line is its fixed text and the turn is exactly as it was.
+   */
+  renderer?: Renderer | null;
 }
 
 /**
@@ -301,8 +309,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     }
   }
   const t2 = performance.now();
-  const result = resolve(session, event, response?.answers ?? null, tc, error, screen);
+  const resolved = resolve(session, event, response?.answers ?? null, tc, error, screen);
   const t3 = performance.now();
+  // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
+  // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
+  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client }) : null;
+  const result = rendered ? { ...resolved, actions: rendered.actions, audit: withRenderAudit(resolved.audit, rendered.audit) } : resolved;
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
   const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
@@ -325,9 +337,15 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     // What answers the call, on its first record only, and only from a client that asks a model.
     answeredBy: event.type === 'session.start' ? opts.client.answeredBy ?? null : null,
     // Retrieval's time only on a turn a retriever ran; its total then counts from before it.
-    timing: retrieved?.ms != null
-      ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }
-      : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 },
+    timing: {
+      ...(retrieved?.ms != null
+        ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }
+        : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 }),
+      // A turn that rendered a generated line counts its rendering too.
+      ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
+    },
+    render: rendered?.record ?? null,
+    driftUsage: rendered?.driftUsage ?? null,
     retrieval: retrieved?.record ?? null,
     joined: fragments ?? null,
     ts: new Date(now()).toISOString(),

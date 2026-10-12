@@ -12,12 +12,15 @@ import type { AuditDraft } from '../audit/types';
 import type { NominationVia } from '../kb/types';
 import type { SlotExhausted } from '../core/outcome';
 import type { RouteTaken } from '../core/routes';
+import type { RenderRecord } from '../render/types';
 
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 
 export interface TraceTiming {
   /** How long the knowledge retriever took, before planning; only on a turn it ran (TraceRecord.retrieval). */
   retrieveMs?: number;
+  /** How long the generated lines took, after the core decided; only on a turn that rendered one (TraceRecord.render). */
+  renderMs?: number;
   planMs: number;
   askMs: number;
   resolveMs: number;
@@ -167,4 +170,12 @@ export interface TraceRecord {
    * never written to the trace file.
    */
   audit?: AuditDraft[];
+  /**
+   * What generated wording did on this turn (render/turn.ts): the call's group (RENDER_SHARE), and each
+   * line the app generates that the turn said, with its mode, its fixed line, the wording said or why
+   * it fell back, and what it cost. `actions` hold the words as said; `decision` is the core's, whose
+   * lines are the fixed ones. Only for an app that generates a line, on a run with a renderer, on the
+   * call's first turn and each turn that says such a line; absent on every other record.
+   */
+  render?: RenderRecord;
 }

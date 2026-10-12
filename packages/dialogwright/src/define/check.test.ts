@@ -288,12 +288,12 @@ describe('checkApp: the lines the engine builds from the code', () => {
   });
 });
 
-describe('checkApp: every prompt is mode: fixed', () => {
+describe('checkApp: a prompt is mode: fixed or generative', () => {
   it('a prompt in any other mode is refused, and the message says what to write', async () => {
     const dir = folder({
       'prompts.yaml': (t) => t.replace('  hours:\n    text: Every branch is open from nine to six, Monday to Saturday.\n    interruptible: true', '  hours:\n    text: Every branch is open from nine to six, Monday to Saturday.\n    interruptible: true\n    mode: generated'),
     });
-    expect(await lines(dir)).toEqual(['prompts.yaml:99:11  prompts.hours.mode  "mode" is "generated", but the only value allowed is "fixed"  ->  write "fixed"']);
+    expect(await lines(dir)).toEqual(['prompts.yaml:99:11  prompts.hours.mode  "mode" is "generated", which is not allowed here; it must be one of "fixed", "generative"  ->  change it to "generative"']);
   });
 });
 

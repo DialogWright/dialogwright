@@ -98,6 +98,13 @@ const form = z
     label: text()
       .optional()
       .describe('An internal form\'s spoken label ("book your free inspection"), as an intent\'s label is used: in bridge_next as {intentLabel}, and as the form the caller is in. Only on an internal form; a form intent\'s label is in intents.yaml.'),
+    wording: z
+      .enum(['fixed', 'generative'])
+      .optional()
+      .describe(
+        'How the form\'s lines are produced (generated wording). generative: each of its lines (its slots\' questions, ask_<slot> and their retry, no-input and partial lines, their read-backs, confirm_<slot>, and its summary) is generated as a prompt with mode: generative is, ' +
+          'unless the line says mode: fixed or is prescribed (prescribed: true). A line without a goal of its own is worded to say what its fixed text says. Default fixed: every line word for word.',
+      ),
     listenBeforeEntered: z
       .boolean()
       .optional()

@@ -15,9 +15,27 @@ const CONTROL_INTENT_KEYWORDS: Array<[string, RegExp]> = [
 const NUMBER_WORD_DIGIT: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5' };
 
 function textOf(state: unknown): string {
-  const s = state as { asr?: { text?: string } } | null;
+  const s = state as { asr?: { text?: string }; line?: { said?: string; fixed?: string; goal?: string } } | null;
+  if (s?.asr?.text === undefined && typeof s?.line?.said === 'string') return driftText(s.line.said, `${s.line.fixed ?? ''} ${s.line.goal ?? ''}`);
   return (s?.asr?.text ?? '').toLowerCase();
 }
+
+/**
+ * A generated line's drift check (render/checks.ts renderDriftState) is about the line, not a caller's
+ * words: what it reads is the line's words that neither its fixed wording nor its goal has, so a line
+ * is held to what it adds.
+ */
+function driftText(said: string, given: string): string {
+  const known = new Set(given.toLowerCase().match(/[a-z0-9']+/g) ?? []);
+  return (said.toLowerCase().match(/[a-z0-9']+/g) ?? []).filter((w) => !known.has(w)).join(' ');
+}
+
+/**
+ * What a generated line that does more than its goal looks like to the stub's drift check: talk of
+ * instructions, rules, prompts or modes, a transfer, a refund, a credit or a promise, an address to a
+ * system. A test's renderer that injects such words is held to falling back; a real model is asked.
+ */
+const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
 
 function has(text: string, re: RegExp): boolean {
   return re.test(text);
@@ -122,6 +140,8 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'confirmsNo': return noulAnswer(has(text, /\b(no|nope|wrong|not|incorrect)\b/) ? 0.9 : 0.1);
     case 'callerMatchDeclined': return noulAnswer(has(text, /\b(no|nope|different account|another account|not me|not mine|not my account)\b/) ? 0.9 : 0.05);
     case 'manipulation': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) ? 0.9 : 0.04);
+    // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
+    case 'renderDrift': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) || DRIFT_CUES.test(text) ? 0.9 : 0.04);
     default: return quietAnswer(id, q, 0.9, app);
   }
 }

@@ -2,7 +2,8 @@ import { parseArgs } from 'node:util';
 import { existsSync } from 'node:fs';
 import { loadCorpus } from '../jev/corpus';
 import { buildClient, buildThresholds, cassettePath, CLIENT_KINDS, isClientKind, modelHeader, providerFor } from '../run/client';
-import { defaultCorpusFile, expectedDir, scenariosDir } from '../run/fixtures';
+import { defaultCorpusFile, expectedDir, recordedDir, scenariosDir } from '../run/fixtures';
+import { emptyRenderTally, formatRenderTally, harnessRenderer, tallyRender } from '../render/harness';
 import { isCassetteMiss } from '../jev/cassette';
 import { diff, differingIds, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
 import { formatRegressSummary, formatTriage } from './regressSummary';
@@ -54,6 +55,8 @@ async function run(argv?: readonly string[]): Promise<void> {
       // A transcript of the adversarial suite's cases whose ids start with this, turn by turn, with
       // their properties' verdict (testing/adversarial), whether or not app.yaml turns the suite on.
       adversarial: { type: 'string', multiple: true, default: [] },
+      // For an app that generates lines: `fixed` says every line word for word (render/harness.ts).
+      render: { type: 'string' },
     },
   });
   const kind = args.client ?? 'stub';
@@ -108,12 +111,17 @@ async function run(argv?: readonly string[]): Promise<void> {
     const path = cassettePath(provider.model);
     header(`cassette ${path}${existsSync(path) ? '' : ' (not found; every turn will miss until recorded)'}  screen ${screen}`);
   }
+  // Generated wording, for an app that generates lines: the fake renderer on the stubs, the render
+  // cassette replayed, or the model itself when recording (render/harness.ts). None for any other app.
+  const rendering = harnessRenderer(kind, getApp(defaultAppId()), recordedDir(), args.render === undefined ? {} : { render: args.render });
+  for (const line of rendering.header) header(line);
   const opts: RunOptions = {
     client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY, provider ?? undefined),
     thresholds,
     todayIso: REGRESS_TODAY,
     now: () => 0,
     screen,
+    ...(rendering.renderer ? { renderer: rendering.renderer } : {}),
   };
   // A run that reaches a model is slow and can abort part way; it reports progress on stderr
   // (stdout is the diff artifact) and still gets a summary of what it paid for, from the finally.
@@ -220,6 +228,12 @@ async function run(argv?: readonly string[]): Promise<void> {
           scenarioMatching: diff('scenario', expected.scenarios, actual.scenarios, drift).matching,
           records: actual.records,
         }));
+        // For an app that generates lines: how many were tried, said generated, and fell back, and why.
+        if (rendering.renderer) {
+          const tally = emptyRenderTally();
+          for (const record of actual.records) tallyRender(tally, record);
+          console.log(formatRenderTally(tally));
+        }
         // Against a model or its cassette, one more line: what needs a decision, counted.
         if (REAL_MODEL_KINDS.has(kind)) {
           console.log(formatTriage({

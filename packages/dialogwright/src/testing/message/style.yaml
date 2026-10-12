@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../schemas/style.schema.json
+# How the generated lines sound: told to the model, and the word budget and the phrases to avoid
+# checked on every generated line before anyone hears it.
+persona: a warm, brief office receptionist
+words:
+  voice: 40
+  chat: 50
+avoid:
+  - unfortunately
+  - I apologize for the inconvenience

@@ -14,17 +14,71 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "description": "The words said. Variables go in braces ({first}); the engine fills them. Approved wording: the agent says exactly this and never composes its own."
+            "description": "The words said. Variables go in braces ({first}); the engine fills them. Said exactly as written unless the line is generated, and then the fallback and the meaning a generated wording is held to."
           },
           "interruptible": {
             "type": "boolean",
             "description": "Whether the caller may talk over the line (barge-in). false for lines that must be heard whole, such as a keypad instruction or a legal statement."
           },
           "mode": {
-            "default": "fixed",
-            "description": "How the line is produced. fixed: the text above, word for word; the only mode there is for now (generated wording is not available). Default \"fixed\".",
+            "description": "How the line is produced. fixed: the text above, word for word. generative: worded by a model for the moment (it needs a `goal`), under checks that hold it to this line's data and meaning, with the text above said whenever a check fails or the model is slow. Absent: fixed, unless its form says `wording: generative`; `mode: fixed` keeps a line of such a form fixed.",
             "type": "string",
-            "const": "fixed"
+            "enum": [
+              "fixed",
+              "generative"
+            ]
+          },
+          "goal": {
+            "description": "What a generated line must do, for the model that words it (\"Ask when the outage started; briefly acknowledge what they just said.\"). Required with mode: generative. In a locale's prompts.yaml: the line is generated in that locale only where its goal is given there.",
+            "type": "string",
+            "minLength": 1
+          },
+          "prescribed": {
+            "description": "true: the line is prescribed (regulated, legal or otherwise fixed by the app designer) and is always said word for word: never generated, whatever its form says; `pnpm check` refuses mode: generative on it. The policy card lists it.",
+            "type": "boolean",
+            "const": true
+          },
+          "when": {
+            "type": "object",
+            "properties": {
+              "situations": {
+                "description": "The situations the line is generated in; in any other it is said word for word. first-ask: the line has not been said before on this call; re-ask: it has (asked again after a miss, a no or a change); after-correction: this turn the caller changed a value they had given, or said no to a read-back; frustrated: the caller has been frustrated on this call. Absent: every situation.",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "first-ask",
+                    "re-ask",
+                    "after-correction",
+                    "frustrated"
+                  ]
+                }
+              },
+              "channels": {
+                "description": "The channels the line is generated on (voice: a call; chat: a web chat); on another it is said word for word. Absent: both.",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "voice",
+                    "chat"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false,
+            "description": "Where a generated line is generated; everywhere else its fixed text is said. Both parts must hold."
+          },
+          "from": {
+            "description": "Generated from collected content: the line's variables (its {names}) that hold content the call collected (a message, a note) and the model may summarize rather than repeat word for word. The exact content is always kept and is what is stored; the fixed text, which reads it word for word, is the fallback, and a caller who asks to hear it again hears it. Only with a generated line.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            }
           }
         },
         "required": [

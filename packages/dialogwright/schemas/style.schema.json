@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "persona": {
+      "description": "Who the agent sounds like, for the model (\"a calm, plain-spoken service agent\"). Default: a calm, plain-spoken agent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "words": {
+      "description": "The word budget of a generated line, per channel: a longer one is not said (its fixed line is).",
+      "type": "object",
+      "properties": {
+        "voice": {
+          "description": "The most words a generated line may use on a call. Default 25.",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 200
+        },
+        "chat": {
+          "description": "The most words a generated line may use in a chat. Default 40.",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 400
+        }
+      },
+      "additionalProperties": false
+    },
+    "avoid": {
+      "description": "Phrases a generated line must not use (\"unfortunately\", \"I apologize for the inconvenience\"): told to the model, and a line that uses one anyway is not said (its fixed line is). Compared without regard to case.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "description": "style.yaml: how a generated line sounds. Only read when the app generates a line.",
+  "title": "DialogWright style.yaml"
+}

@@ -110,9 +110,39 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   return sayAction(parts, interruptible, lang);
 }
 
+/**
+ * What a line of a decision is for, as generated wording words it (render/): an acknowledgement before
+ * the line, the line that asks (a prompt decision's own), the line a call ends on (a completion's, and
+ * the goodbye), or the line a call is handed to a person on.
+ */
+export type LineRole = 'acknowledge' | 'ask' | 'close' | 'hand-off';
+
+/** Which prompt a Say of decisionToActions says, with its variables and its role in the decision. */
+export interface SaidLine {
+  readonly promptId: string;
+  readonly vars: Readonly<Record<string, string>>;
+  readonly role: LineRole;
+}
+
+const SAID_LINES = new WeakMap<Say, SaidLine>();
+
+/**
+ * The prompt a Say made by decisionToActions says (its id, variables and role), or undefined for any
+ * other Say (a replay, a language switch's prefix). Held beside the action, never on it, so an action
+ * and everything written from it (the trace, the wire) are exactly as they were.
+ */
+export function saidLineOf(say: Say): SaidLine | undefined {
+  return SAID_LINES.get(say);
+}
+
 /** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
 export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string): Action[] {
-  const say = (id: string, vars: Record<string, string>, interruptible: boolean): Say => promptSay(app, id, vars, interruptible, ctx, locale);
+  const sayAs = (role: LineRole) => (id: string, vars: Record<string, string>, interruptible: boolean): Say => {
+    const line = promptSay(app, id, vars, interruptible, ctx, locale);
+    SAID_LINES.set(line, { promptId: id, vars, role });
+    return line;
+  };
+  const ack = sayAs('acknowledge');
   switch (decision.kind) {
     case 'ignore':
     case 'hold':
@@ -120,17 +150,17 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
     case 'replay':
       return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
-      const actions: Action[] = decision.acks.map((a) => say(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
-      actions.push(say(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
+      const actions: Action[] = decision.acks.map((a) => ack(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
+      actions.push(sayAs('ask')(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
       return actions;
     }
     case 'complete':
       // A barge-in on an ack here could cut the closing line before the end, so only a
       // prompt's acks read their own manifest flag; a terminal decision's acks stay non-interruptible.
       return [
-        ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
-        say(decision.promptId, decision.vars, false),
-        ...(closesWithGoodbye(decision) ? [] : [say(GOODBYE, {}, false)]),
+        ...decision.acks.map((a) => ack(a.promptId, a.vars, false)),
+        sayAs('close')(decision.promptId, decision.vars, false),
+        ...(closesWithGoodbye(decision) ? [] : [sayAs('close')(GOODBYE, {}, false)]),
         endAction(decision.completed),
       ];
     case 'handoff':
@@ -142,8 +172,8 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       const transfer = transferAction(decision.reason, decision.completed, decision.queued, slots, handoffDataUnconfirmed(app, slots, decision.unconfirmed), decision.transfer);
       if (decision.unchecked !== undefined) transfer.unchecked = decision.unchecked.map((u) => ({ ...u }));
       return [
-        ...decision.acks.map((a) => say(a.promptId, a.vars, false)),
-        say(decision.promptId, {}, false),
+        ...decision.acks.map((a) => ack(a.promptId, a.vars, false)),
+        sayAs('hand-off')(decision.promptId, {}, false),
         transfer,
       ];
   }

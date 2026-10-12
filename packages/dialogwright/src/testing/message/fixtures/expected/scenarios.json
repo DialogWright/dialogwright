@@ -1,0 +1,109 @@
+{
+  "message-summarized": {
+    "id": "message-summarized",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "message-read-back-word-for-word": {
+    "id": "message-read-back-word-for-word",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-pushback-exact": {
+    "id": "message-pushback-exact",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-for-lee": {
+    "id": "message-for-lee",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "lee",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "tell her the boiler inspection moved to next Tuesday morning"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "message-injection-screened": {
+    "id": "message-injection-screened",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  }
+}

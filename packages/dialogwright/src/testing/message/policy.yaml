@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../schemas/policy.schema.json
+# The one write: the message passed on, with exactly what the summary read back.
+actions:
+  leaveMessage:
+    say: pass a message on
+    level: 0
+    rules:
+      - identity
+      - confirmed: [recipient, caller, phone, message]
+
+audit:
+  recipient: keep
+  caller: length
+  message: length

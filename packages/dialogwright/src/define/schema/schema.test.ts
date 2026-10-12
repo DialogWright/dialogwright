@@ -47,9 +47,9 @@ describe('a valid example of each kind parses', () => {
     expect(intents.menu.map((m) => m.digit)).toEqual(['1', '2', '3', '0']);
   });
 
-  it('fills in what is left out: a prompt is fixed, and a policy has no purposes', () => {
+  it('fills in what is left out: a prompt says no mode (fixed, unless its form generates its lines), and a policy has no purposes', () => {
     const prompts = SCHEMAS.prompts.parse({ prompts: { hello: { text: 'Hi', interruptible: true } } });
-    expect(prompts.prompts.hello!.mode).toBe('fixed');
+    expect(prompts.prompts.hello!.mode).toBeUndefined();
     expect(SCHEMAS.policy.parse({ actions: { a: { rules: [] } } })).toEqual({ actions: { a: { rules: [] } }, purposes: {} });
   });
 
@@ -135,10 +135,19 @@ describe('mistakes get a precise error', () => {
     ]);
   });
 
-  it('a prompt mode other than fixed is refused', () => {
+  it('a prompt mode other than fixed or generative is refused', () => {
     expect(issuesOf('prompts', 'prompts:\n  hello: { text: Hi, interruptible: true, mode: generated }\n')).toEqual([
-      { path: 'prompts.hello.mode', code: 'invalid_value', message: 'Invalid input: expected "fixed"' },
+      { path: 'prompts.hello.mode', code: 'invalid_value', message: 'Invalid option: expected one of "fixed"|"generative"' },
     ]);
+  });
+
+  it('a prompt is prescribed with true only, and a generated line\'s when names known situations and channels', () => {
+    expect(issuesOf('prompts', 'prompts:\n  hello: { text: Hi, interruptible: true, prescribed: false }\n').map((i) => i.path)).toEqual(['prompts.hello.prescribed']);
+    expect(issuesOf('prompts', 'prompts:\n  hello: { text: Hi, interruptible: true, mode: generative, goal: Greet, when: { situations: [later], channels: [fax] } }\n').map((i) => i.path)).toEqual(['prompts.hello.when.situations.0', 'prompts.hello.when.channels.0']);
+  });
+
+  it('style.yaml: a word budget is a whole number from 3, and a phrase to avoid is listed once', () => {
+    expect(issuesOf('style', 'words: { voice: 2, chat: 4.5 }\navoid: [sorry, sorry]\n').map((i) => i.path)).toEqual(['words.voice', 'words.chat', 'avoid.1']);
   });
 
   it('policy levels, attempts and role access are bounded', () => {

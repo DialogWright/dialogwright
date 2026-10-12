@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../../schemas/app.schema.json
+# Example Office: a fictional line that takes a message for one of two people, the engine's fixture
+# for generated wording (design section 5): the message form's lines are generated (forms.yaml's
+# wording: generative), its read-back is generated from the message itself (prompts.yaml's from), and
+# two lines are prescribed (prompts.yaml's prescribed: true). How the generated lines sound is
+# style.yaml. All names and numbers are made up (the 555 range).
+id: message
+locale: en-US
+
+brand:
+  name: Example Office
+  mark: EO
+
+console:
+  formLabels:
+    take_message: Take a message
+  slotLabels:
+    recipient: For
+    caller: From
+    phone: Call back on
+    message: Message
+
+wording:
+  addressee: the Example Office line
+
+fixtures:
+  dir: src/testing/message/fixtures

@@ -10,6 +10,7 @@ import { appOf } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { recordedEffect } from '../core/recording';
 import { usesCallerNumber } from '../core/callerNumber';
+import type { RenderRecord } from '../render/types';
 
 /** Where a call's trace records go: the file (TraceWriter), or a trace store's segments (trace/store.ts). */
 export interface TraceSink {
@@ -63,6 +64,10 @@ export interface TraceInput {
   answeredBy?: AnsweredBy | null;
   ts: string;
   pricePerMtok: number;
+  /** What generated wording did on the turn (TraceRecord.render); null or absent when it did nothing. */
+  render?: RenderRecord | null;
+  /** The decision model's usage on the drift checks of generated lines, added into the record's usage; null or absent when none was asked. */
+  driftUsage?: JevUsage | null;
 }
 
 /** The record's `configHash`: the combined hash of the session's app (App.configHashes), when it has one. */
@@ -74,8 +79,9 @@ function configHashOf(session: Session): { configHash: string } | Record<string,
 export function buildTraceRecord(input: TraceInput): TraceRecord {
   const { result, event, questions, response, error, timing, ts, pricePerMtok } = input;
   const screenUsage = input.screenUsage ?? null;
+  const driftUsage = input.driftUsage ?? null;
   const source = error ? 'error' : response ? response.source : event.type === 'user.key' ? 'dtmf' : event.type === 'user.silence' ? 'silence' : 'none';
-  const inputTokens = (response?.usage.inputTokens ?? 0) + (screenUsage?.inputTokens ?? 0);
+  const inputTokens = (response?.usage.inputTokens ?? 0) + (screenUsage?.inputTokens ?? 0) + (driftUsage?.inputTokens ?? 0);
   return {
     v: 2,
     sessionId: result.session.sessionId,
@@ -128,11 +134,13 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(result.startHookFailed ? { startHookFailed: result.startHookFailed } : {}),
     ...(result.routes ? { routes: result.routes.map(({ at: _at, ...taken }) => ({ ...taken, subjects: [...taken.subjects] })) } : {}),
     audit: [...result.audit],
+    // Only for an app that generates a line, on a run with a renderer: every other record is as it was.
+    ...(input.render ? { render: input.render } : {}),
     timing,
     usage: {
       inputTokens,
-      outputTokens: (response?.usage.outputTokens ?? 0) + (screenUsage?.outputTokens ?? 0),
-      estimated: (response?.usage.estimated ?? true) || (screenUsage?.estimated ?? false),
+      outputTokens: (response?.usage.outputTokens ?? 0) + (screenUsage?.outputTokens ?? 0) + (driftUsage?.outputTokens ?? 0),
+      estimated: (response?.usage.estimated ?? true) || (screenUsage?.estimated ?? false) || (driftUsage?.estimated ?? false),
       costUsd: (inputTokens * pricePerMtok) / 1_000_000,
     },
   };

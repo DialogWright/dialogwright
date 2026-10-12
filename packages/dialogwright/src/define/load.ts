@@ -6,7 +6,7 @@ import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfI
 import {
   FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
   type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
-  type PromptsYaml, type SlotsYaml,
+  type PromptsYaml, type SlotsYaml, type StyleYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
 import { z } from 'zod';
@@ -63,6 +63,8 @@ export interface LoadedConfig {
    * (defineApp, `check`), since they depend on the types the app registers.
    */
   slots: SlotsYaml | null;
+  /** style.yaml (how a generated line sounds); null when the folder has none. */
+  style: StyleYaml | null;
   /** The locale of prompts.yaml: app.yaml's `locale`, else en-US. */
   defaultLocale: string;
   /** Every prompt of each locale, by locale tag then prompt id. The default locale's come from prompts.yaml, the others' from locale/<tag>/prompts.yaml. */
@@ -136,6 +138,7 @@ const STARTS_WITH: Record<Kind, string> = {
   prompts: 'the "prompts:" map',
   policy: '"actions:", each tool with its level and rules, for example "actions: { getRecord: { level: 1, rules: [identity] } }"',
   identity: '"principals:", "levels:" and "attempts:"',
+  style: 'a persona, a word budget or phrases to avoid, for example "persona: a calm, plain-spoken service agent"',
   routes: 'a point and its rules, for example "start: [{ when: { hours: closed }, say: after_hours, then: end }, { else: continue }]"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
@@ -202,7 +205,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     return null;
   }
 
-  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; routes: RoutesYaml; slots: SlotsYaml }> = {};
+  const valid: Partial<{ app: AppYaml; intents: IntentsYaml; forms: FormsYaml; prompts: PromptsYaml; policy: PolicyYaml; identity: IdentityYaml; routes: RoutesYaml; slots: SlotsYaml; style: StyleYaml }> = {};
   const top = listTopLevel(root.real);
   for (const kind of [...(Object.keys(FILE_NAMES) as FileKind[]), 'slots' as const]) {
     const file = kind === 'slots' ? SLOTS_FILE : FILE_NAMES[kind];
@@ -282,6 +285,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     identity: valid.identity ?? null,
     routes: valid.routes ?? null,
     slots: valid.slots ?? null,
+    style: valid.style ?? null,
     defaultLocale,
     prompts,
     localeSlots,

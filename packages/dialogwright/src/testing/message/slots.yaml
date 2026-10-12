@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../schemas/slots.schema.json
+recipient:
+  type: choice
+  options:
+    dana:
+      say: Dana Reyes
+      means: The message is for Dana Reyes, or Dana
+    lee:
+      say: Lee Park
+      means: The message is for Lee Park, or Lee
+  text:
+    instructions: Read asr.text. Who does the caller say the message is for?
+caller:
+  type: name
+phone:
+  type: digits
+  noun: phone
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+# The message, as the caller said it: kept word for word (redact: none, say: null), whatever a
+# generated line says of it.
+message:
+  type: text
+  what: the message the caller wants to leave
+  instructions: Count the message itself, even when it comes with other words.
+  say: null
+  redact: none
+  maxLength: 400

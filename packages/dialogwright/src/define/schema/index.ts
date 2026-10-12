@@ -13,8 +13,12 @@ import { policySchema } from './policy';
 import { promptsSchema } from './prompts';
 import { localeSlotsSchema, SLOTS_FILE, slotsSchema } from './slots';
 import { routesSchema } from './routes';
+import { styleSchema } from './style';
 
-export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, routesSchema, slotsSchema };
+export { appSchema, formsSchema, identitySchema, intentsSchema, localeSlotsSchema, policySchema, promptsSchema, routesSchema, slotsSchema, styleSchema };
+export type { StyleYaml } from './style';
+export { DEFAULT_WORDS } from './style';
+export { RENDER_SITUATIONS, RENDER_CHANNELS, type RenderSituation, type RenderChannel } from './prompts';
 export type { RoutesYaml, RouteRuleYaml } from './routes';
 export { FILE_KINDS, fixForPattern, type FileKind } from './common';
 export type { AppYaml, ConsoleFactYaml } from './app';
@@ -37,12 +41,13 @@ export const SCHEMAS = {
   policy: policySchema,
   identity: identitySchema,
   routes: routesSchema,
+  style: styleSchema,
 } as const satisfies Record<FileKind, z.ZodType>;
 
 /** The file each kind is read from, in the app folder. */
 export const FILE_NAMES: Readonly<Record<FileKind, string>> = Object.fromEntries(FILE_KINDS.map((kind) => [kind, `${kind}.yaml`])) as Record<FileKind, string>;
 
-/** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one), and so is routes.yaml (an app without it routes nothing). */
+/** Kinds whose file an app must have; identity.yaml is optional (an app without it verifies no one), and so are routes.yaml (an app without it routes nothing) and style.yaml (read only by an app that generates a line). */
 export const REQUIRED_KINDS: readonly FileKind[] = ['app', 'intents', 'forms', 'prompts', 'policy'];
 
 /** Every YAML file the loader reads from the folder itself, in the order problems are sorted: the kinds, then the optional slots.yaml. */

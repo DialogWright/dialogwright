@@ -1,6 +1,6 @@
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
-import type { App, AuditMask, RoleAccess, ToolName } from '../core/app/types';
+import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
 import { lookupRefsOf } from '../define/policyFile';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
@@ -234,7 +234,7 @@ function header(app: App, dir: string): string[] {
   const out = [
     `# Policy card: ${app.brand?.name ?? app.id}`,
     '',
-    '*Generated from `policy.yaml` and `identity.yaml` by `pnpm policy:card`: do not edit it by hand. Change the files, write the card again, and review the diff. A test fails when this page and the files disagree.*',
+    `*Generated from \`policy.yaml\` and \`identity.yaml\`${app.generated !== undefined ? ', and the lines a model words from `prompts.yaml` and `forms.yaml`,' : ''} by \`pnpm policy:card\`: do not edit it by hand. Change the files, write the card again, and review the diff. A test fails when this page and the files disagree.*`,
     '',
     '| File | Config hash |',
     '| --- | --- |',
@@ -484,6 +484,54 @@ function policyDiagram(app: App, source: PolicySource): string[] {
   return out;
 }
 
+/** Where a generated line is generated (its `when`), in words. */
+function whereWords(line: GeneratedLine): string {
+  const situations = line.situations === undefined ? 'every situation' : orList(line.situations.map((s) => SITUATION_WORDS[s]));
+  const channels = line.channels === undefined ? '' : ` (${andList(line.channels.map((c) => (c === 'voice' ? 'calls' : 'chats')))} only)`;
+  return `${situations}${channels}`;
+}
+
+const SITUATION_WORDS: Record<RenderSituation, string> = {
+  'first-ask': 'the first time it is said',
+  're-ask': 'when it is said again',
+  'after-correction': 'after a correction',
+  frustrated: 'once the caller is frustrated',
+};
+
+/**
+ * The lines a model words (generated wording: prompts.yaml's `mode: generative`, a form's `wording:
+ * generative`), each with its fixed text (said whenever a check fails or the model is slow), its goal,
+ * where it is generated, the data it carries word for word and the content it may summarize; and the
+ * prescribed lines, always word for word. Nothing for an app that generates nothing and prescribes nothing.
+ */
+function wordingSection(app: App): string[] {
+  const g = app.generated;
+  if (g === undefined) return [];
+  const out = ['## Lines a model words', ''];
+  const ids = Object.keys(g.lines);
+  if (ids.length === 0) out.push('No line is generated: every line is said word for word.');
+  else {
+    out.push(`These lines are worded by a model for the moment (generated wording). Each is checked before anyone hears it: every value it must carry is there word for word, it names no other number, amount, date or name, it keeps to its word budget and asks one question only where its fixed text does, it avoids the phrases style.yaml lists, and the decision model finds it does nothing beyond its goal. When a check fails, the model is slow or errs, or the caller's words were flagged as an injection, its fixed text is said instead. A model is never sent an identifier, the transcript or what a tool returned. Every other line is said word for word.`);
+    out.push('', '| Line | Fixed text | Goal | Generated | Carries word for word | May summarize |', '| --- | --- | --- | --- | --- | --- |');
+    for (const id of ids) {
+      const line = g.lines[id]!;
+      const text = app.prompts.manifest[id]?.text ?? '';
+      const vars = [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!))];
+      const from = new Set(line.from ?? []);
+      const carried = vars.filter((v) => !from.has(v));
+      const by = line.by === 'prompt' ? '' : ` (its form ${code(line.by.form)})`;
+      out.push(`| ${code(id)} | ${cell(text)} | ${cell(line.goal)} | ${cell(whereWords(line))}${by} | ${carried.length === 0 ? 'nothing' : carried.map((v) => code(`{${v}}`)).join(', ')} | ${from.size === 0 ? 'nothing' : [...from].map((v) => code(`{${v}}`)).join(', ')} |`);
+    }
+  }
+  out.push('');
+  if (g.prescribed.length === 0) out.push('No line is marked prescribed (`prescribed: true`).');
+  else {
+    out.push('Prescribed lines (`prescribed: true`): always said word for word, never generated.', '', '| Line | Text |', '| --- | --- |');
+    for (const id of g.prescribed) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]?.text ?? '')} |`);
+  }
+  return out;
+}
+
 /** A section and the blank line after it; nothing for a section that is not there. */
 const withGap = (lines: string[]): string[] => (lines.length === 0 ? [] : [...lines, '']);
 
@@ -501,6 +549,7 @@ export function policyCardText(app: App, dir: string): string {
     '',
     ...withGap(redactionSection(app, source)),
     ...withGap(recordingSection(app, source)),
+    ...withGap(wordingSection(app)),
     ...actionsSection(app, source),
     '',
     '### Actions by level, with their rules and what each role gets',

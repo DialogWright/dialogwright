@@ -1,0 +1,331 @@
+{
+  "tm-01": {
+    "id": "tm-01",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-02": {
+    "id": "tm-02",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-01": {
+    "id": "rc-01",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "lee",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-02": {
+    "id": "rc-02",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-01": {
+    "id": "nm-01",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-01": {
+    "id": "ph-01",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-01": {
+    "id": "ms-01",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-02": {
+    "id": "ms-02",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "tell her the boiler inspection moved to next Tuesday morning"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-01": {
+    "id": "sm-01",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "sm-02": {
+    "id": "sm-02",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-03": {
+    "id": "sm-03",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "no-01": {
+    "id": "no-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "in-01": {
+    "id": "in-01",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  }
+}

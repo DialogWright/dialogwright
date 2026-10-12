@@ -13,6 +13,7 @@ import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextC
 import { slotOutcomeOf } from '../core/outcome';
 import { outcomeFrom, parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
 import { handoffPromptId } from '../prompts/render';
+import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom } from '../render/config';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -899,6 +900,14 @@ export function crossLink(
     inTs(clash.with === 'undeclared' ? ['slots', clash.slot, 'questionIds'] : ['slots', clash.slot], clashMessage(clash), fix);
   }
 
+  // Generated wording: prescribed lines never generated, a generated line's goal and variables, a locale's goals (render/config.ts).
+  for (const p of generatedWordingProblems({
+    prompts,
+    forms,
+    localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
+    identifierVars: identifierVarsFrom(linked.slots, config.identity?.levels[1].factors ?? []),
+  })) yaml(p.file, p.path, p.message, p.fix, p.atKey === true);
+
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
   for (const u of unknownSlotThresholds(linked.slots, app.thresholds)) {
     const known = thresholdNamesOf(app.thresholds);
@@ -1026,6 +1035,14 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'voice', a.voice ? voiceOf(a.voice) : undefined);
   put(app, 'handoff', a.handoff as HandoffWording | undefined);
   app.prompts = promptsOf(config, a);
+  // The lines a model words (generated wording), the prescribed lines and style.yaml: none for an app that generates nothing and prescribes nothing.
+  put(app, 'generated', generatedWordingOf({
+    prompts: config.prompts[config.defaultLocale] ?? {},
+    forms: config.forms.forms,
+    style: config.style,
+    localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
+    identifierVars: identifierVarsFrom(slots, config.identity?.levels[1].factors ?? []),
+  }));
   put(app, 'locales', localesOf(config));
   put(app, 'principals', code.principals);
   put(app, 'portal', code.portal);

@@ -183,6 +183,14 @@
             "type": "string",
             "minLength": 1
           },
+          "wording": {
+            "description": "How the form's lines are produced (generated wording). generative: each of its lines (its slots' questions, ask_<slot> and their retry, no-input and partial lines, their read-backs, confirm_<slot>, and its summary) is generated as a prompt with mode: generative is, unless the line says mode: fixed or is prescribed (prescribed: true). A line without a goal of its own is worded to say what its fixed text says. Default fixed: every line word for word.",
+            "type": "string",
+            "enum": [
+              "fixed",
+              "generative"
+            ]
+          },
           "listenBeforeEntered": {
             "description": "Whether the form's slots fill from what the caller says before the form is open (on the turn that opens it, as `listen: up-front` does). false: a slot every form that lists it says false for behaves as `listen: form`, and is asked once its form is open, even when it was said earlier. A slot's own `listen` overrides it. Default true for a form intent, false for an internal form.",
             "type": "boolean"

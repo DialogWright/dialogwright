@@ -85,6 +85,11 @@ function turnLines(run: TurnRun, indent: string): string[] {
   if (acks.length > 0) lines.push(`${indent}   acks   ${acks.join(', ')}`);
   const said = spokenText(run.result);
   if (said !== '') lines.push(`${indent}   says   ${JSON.stringify(said)}`);
+  // An app that generates lines: each such line's mode, and for one said generated or fallen back, its fixed line.
+  for (const l of run.record.render?.lines ?? []) {
+    const how = l.mode === 'generated' ? 'generated' : l.fallback !== undefined ? `fixed, fell back (${l.fallback})` : `fixed (${l.skipped ?? 'not tried'})`;
+    lines.push(`${indent}   line   ${l.promptId}: ${how}${l.mode === 'generated' ? `; fixed ${JSON.stringify(l.fixed)}` : ''}${l.refused !== undefined ? `; refused ${JSON.stringify(l.refused)}` : ''}`);
+  }
   // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.
   const transfer = run.result.actions.find((a) => a.type === 'transfer');
   if (transfer?.type === 'transfer' && transfer.target !== undefined) lines.push(`${indent}   transfer ${transferLine(run, transfer)}`);
