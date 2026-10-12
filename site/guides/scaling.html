@@ -346,7 +346,9 @@
           The design for a rolling deploy: new instances report ready before they take traffic; old ones stop taking new calls and keep
           serving the ones they have; after a drain limit (about 15 minutes) they close the remaining sockets, and those calls reconnect
           to the new version from the shared session (built: a draining server gives each call up as its socket closes, and another takes
-          it at once). The test that proves it is the kill-an-instance test: a deploy never drops a call.
+          it at once). What is shown so far is in one process, two servers on one database: a call survives its server crashing or
+          draining. The kill-an-instance test, separate processes on a real Postgres behind a real load balancer, is what will show
+          a deploy never drops a call.
         </p>
       </section>
 
