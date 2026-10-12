@@ -20,7 +20,8 @@ function temp(): string {
 let last = '';
 runStoreContract('file', (ctx) => {
   last = join(temp(), 'sessions');
-  return openFileStores(last, { tokenTtlMs: ctx.tokenTtlMs, now: ctx.now });
+  const s = openFileStores(last, { tokenTtlMs: ctx.tokenTtlMs, now: ctx.now });
+  return { ...s, leases: s.calls };
 }, { describe, it, reopen: (ctx) => openFileStores(last, { tokenTtlMs: ctx.tokenTtlMs, now: ctx.now }) });
 
 const mode = (p: string): number => statSync(p).mode & 0o777;

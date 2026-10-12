@@ -72,7 +72,7 @@ export type { CallDataFixture, DialFixture, FrameFixture, VoiceFixtures, Webhook
 export type { CallbackParams, DialTarget, StartDocumentOptions, VoiceProvider, WebhookRequest } from '../server/voice/provider';
 // The session stores' contract (server/stores/types.ts): what every store, memory, file or shared,
 // must do, run with the test runner's describe and it (storeContract.ts).
-export { runStoreContract, storeContractChecks, contractCall, contractChat, contractSession, CONTRACT_TOKEN_TTL_MS } from './storeContract';
+export { runStoreContract, storeContractChecks, contractCall, contractChat, contractSession, CONTRACT_TOKEN_TTL_MS, CONTRACT_LEASE_TTL_MS } from './storeContract';
 export type { ContractContext, ContractStores, StoreContractCheck, StoreContractOptions } from './storeContract';
 export type { Awaitable, CallStateStore, ChatStateStore, StoredCall, StoredChat, TokenStore } from '../server/stores/types';
 // The adversarial suite every app inherits (adversarial/): cases generated from the app (announced

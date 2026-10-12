@@ -7,9 +7,9 @@ import type { ScrubPart } from '../../core/recording';
 /**
  * What the server keeps of a call or a chat between turns, behind interfaces, so where it lives is a
  * setting (SESSION_STORE) and not the server's business: in this process's memory (the default, as it
- * always was), in files on this machine (`file:<dir>`, which outlives a restart), or, later, in a store
- * many servers share. Each implementation passes one contract suite (dialogwright/testing
- * runStoreContract).
+ * always was), in files on this machine (`file:<dir>`, which outlives a restart), or in Postgres
+ * (`postgres://...`, stores/postgres.ts), which many servers share. Each implementation passes one
+ * contract suite (dialogwright/testing runStoreContract).
  *
  * What is stored is plain data: a session (core/session.ts, a plain serializable value) and the
  * counters the server keeps beside it. What is live (a socket, a call's turn queue, its timers) stays
@@ -17,7 +17,8 @@ import type { ScrubPart } from '../../core/recording';
  * every turn and loads from it when a call it does not hold calls back.
  *
  * A method may answer at once or with a promise (Awaitable): the memory and file stores answer at
- * once, a store across the network will not, and the server awaits either.
+ * once, a store across the network will not, and the server awaits either (a token store's mint and
+ * revoke excepted: ServerTokenStore).
  */
 export type Awaitable<T> = T | Promise<T>;
 
@@ -100,6 +101,70 @@ export interface TokenStore {
   /** Forget every expired token; how many there were. */
   evictExpired(): Awaitable<number>;
 }
+
+/**
+ * A TokenStore the server can run on: one whose `mint` and `revoke` answer at once, since the carrier's
+ * callback decides in one synchronous step (server/http.ts decideAction). A store across the network
+ * writes behind those answers and says, through `settled`, when the writes have landed, so another
+ * server can read them: the callback awaits it before it hands the carrier a token. `verify` and `has`
+ * may answer with a promise. The memory and file stores write at once and have no `settled`.
+ */
+export interface ServerTokenStore extends TokenStore {
+  mint(callId: string, provider?: string): string;
+  revoke(callId: string): void;
+  /** The writes behind every mint and revoke so far, landed; rejects when one of them failed. */
+  settled?(): Promise<void>;
+}
+
+/**
+ * One owner per call at a time (design §8, Phase 8b decision 2): a lease per call id, held by the server
+ * that runs the call's turns, for a stretch of time it renews while the call is live. Only a store many
+ * servers share needs one to mean anything; the memory and file stores implement it in the process
+ * (one machine is the only owner there is), so the contract holds every store to the same rules, and
+ * the server reads a lease only from a shared store (SessionStoreOptions.lease).
+ *
+ * Every time is the store's clock (the `now` it was made with): servers that share a store keep their
+ * clocks within a second of each other, as `pnpm diagnose` checks.
+ */
+export interface CallLeases {
+  /**
+   * Take the call's lease for `owner` until now plus `ttlMs`, and read the call as saved, in one step
+   * no other server's claim can come between: taken when no one holds it, its holder's lease has
+   * lapsed, it was released, or `owner` holds it already (which renews it). Not taken, it says who
+   * holds it and until when. A call never saved is taken with `call` null (a new call).
+   */
+  claim(callId: string, owner: string, ttlMs: number): Awaitable<LeaseClaim>;
+  /** Extend every lease `owner` holds to now plus `ttlMs`; the ids of the calls it holds. */
+  renew(owner: string, ttlMs: number): Awaitable<readonly string[]>;
+  /** Give the call's lease up, when `owner` holds it; anything else is no error. */
+  release(callId: string, owner: string): Awaitable<void>;
+  /** Who holds the call's lease and until when, lapsed or not; null when no one does. */
+  holder(callId: string): Awaitable<LeaseHolder | null>;
+  /**
+   * Save the call only while `owner` holds its lease, lapsed or not, and renew the lease: false, saving
+   * nothing, when another owner holds it or there is none (the call was taken over, or ended and
+   * removed). Its reconnect count never goes down (one counted elsewhere is kept).
+   */
+  saveAs(call: StoredCall, owner: string, ttlMs: number): Awaitable<boolean>;
+  /**
+   * Count one reconnect of the call, at once and for all servers, while its count is under `limit`:
+   * the count before, and whether it was counted. Null when the call is not saved.
+   */
+  countReconnect(callId: string, limit: number): Awaitable<{ before: number; counted: boolean } | null>;
+  /** Remove the call (and its lease) unless someone holds a lease on it that has not lapsed: whether it was removed. */
+  removeUnleased(callId: string): Awaitable<boolean>;
+}
+
+/** A call's lease: who holds it, and until when (the store's clock, in ms). */
+export interface LeaseHolder {
+  readonly owner: string;
+  readonly expiresAtMs: number;
+}
+
+/** What `claim` found: the lease taken, with the call as saved (null for a call never saved), or held by another. */
+export type LeaseClaim =
+  | { readonly taken: true; readonly call: StoredCall | null }
+  | ({ readonly taken: false } & LeaseHolder);
 
 /** A token's SHA-256, in hex: what a store keeps of a token, so the store holds nothing that opens a socket. */
 export function tokenHash(token: string): string {

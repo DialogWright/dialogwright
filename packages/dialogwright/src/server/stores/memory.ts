@@ -1,4 +1,5 @@
-import type { CallStateStore, ChatStateStore, StoredCall, StoredChat } from './types';
+import { InProcessLeases } from './leases';
+import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, StoredCall, StoredChat } from './types';
 
 /**
  * The memory stores: what a process keeps in itself, gone when it stops. The tokens are today's class
@@ -16,8 +17,15 @@ function copy<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export class MemoryCallStateStore implements CallStateStore {
+/** The memory call store, with its leases in the process (stores/leases.ts), read by the contract only. */
+export class MemoryCallStateStore implements CallStateStore, CallLeases {
   private readonly calls = new Map<string, string>();
+  private readonly leases: InProcessLeases;
+
+  /** `now` is the leases' clock. */
+  constructor(now: () => number = Date.now) {
+    this.leases = new InProcessLeases({ load: (id) => this.load(id), save: (c) => this.save(c), removeRecord: (id) => this.calls.delete(id) }, now);
+  }
 
   load(callId: string): StoredCall | null {
     const raw = this.calls.get(callId);
@@ -30,10 +38,39 @@ export class MemoryCallStateStore implements CallStateStore {
 
   remove(callId: string): void {
     this.calls.delete(callId);
+    this.leases.forget(callId);
   }
 
   list(): string[] {
     return [...this.calls.keys()];
+  }
+
+  claim(callId: string, owner: string, ttlMs: number): LeaseClaim {
+    return this.leases.claim(callId, owner, ttlMs);
+  }
+
+  renew(owner: string, ttlMs: number): string[] {
+    return this.leases.renew(owner, ttlMs);
+  }
+
+  release(callId: string, owner: string): void {
+    this.leases.release(callId, owner);
+  }
+
+  holder(callId: string): LeaseHolder | null {
+    return this.leases.holder(callId);
+  }
+
+  saveAs(call: StoredCall, owner: string, ttlMs: number): boolean {
+    return this.leases.saveAs(call, owner, ttlMs);
+  }
+
+  countReconnect(callId: string, limit: number): { before: number; counted: boolean } | null {
+    return this.leases.countReconnect(callId, limit);
+  }
+
+  removeUnleased(callId: string): boolean {
+    return this.leases.removeUnleased(callId);
   }
 }
 

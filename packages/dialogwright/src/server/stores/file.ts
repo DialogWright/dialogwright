@@ -2,7 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CallTokens, type TokenEntry } from '../tokens';
-import type { CallStateStore, ChatStateStore, StoredCall, StoredChat } from './types';
+import { InProcessLeases } from './leases';
+import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, StoredCall, StoredChat } from './types';
 
 /**
  * The file stores (SESSION_STORE=file:<dir>): one machine's calls, chats and tokens in a folder, so a
@@ -114,8 +115,8 @@ function sweepTemporary(dir: string): void {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** Why a parsed file is not a stored call, or null when it is one. */
-function callProblem(v: unknown): string | null {
+/** Why a parsed record is not a stored call, or null when it is one (a store that reads JSON back checks it with this). */
+export function storedCallProblem(v: unknown): string | null {
   if (!isRecord(v)) return 'not an object';
   if (typeof v.callId !== 'string' || v.callId === '') return 'no callId';
   if (typeof v.provider !== 'string') return 'no provider';
@@ -126,8 +127,8 @@ function callProblem(v: unknown): string | null {
   return null;
 }
 
-/** Why a parsed file is not a stored chat, or null when it is one. */
-function chatProblem(v: unknown): string | null {
+/** Why a parsed record is not a stored chat, or null when it is one. */
+export function storedChatProblem(v: unknown): string | null {
   if (!isRecord(v)) return 'not an object';
   if (typeof v.id !== 'string' || v.id === '') return 'no id';
   if (!isNumber(v.schema)) return 'no schema';
@@ -258,11 +259,46 @@ class RecordFolder<T> {
   }
 }
 
-export class FileCallStateStore implements CallStateStore {
+/**
+ * The file call store, with its leases in the process (stores/leases.ts), read by the contract only:
+ * one folder is one machine's, and a restarted process holds no lease, so none is written down.
+ */
+export class FileCallStateStore implements CallStateStore, CallLeases {
   private readonly folder: RecordFolder<StoredCall>;
+  private readonly leases: InProcessLeases;
 
-  constructor(dir: string, log: (line: string) => void = () => {}, options: FileStoreOptions = {}) {
-    this.folder = new RecordFolder<StoredCall>(dir, 'call', callProblem, (c) => c.callId, log, options);
+  /** `now` is the leases' clock. */
+  constructor(dir: string, log: (line: string) => void = () => {}, options: FileStoreOptions = {}, now: () => number = Date.now) {
+    this.folder = new RecordFolder<StoredCall>(dir, 'call', storedCallProblem, (c) => c.callId, log, options);
+    this.leases = new InProcessLeases({ load: (id) => this.load(id), save: (c) => this.save(c), removeRecord: (id) => this.folder.remove(id) }, now);
+  }
+
+  claim(callId: string, owner: string, ttlMs: number): LeaseClaim {
+    return this.leases.claim(callId, owner, ttlMs);
+  }
+
+  renew(owner: string, ttlMs: number): string[] {
+    return this.leases.renew(owner, ttlMs);
+  }
+
+  release(callId: string, owner: string): void {
+    this.leases.release(callId, owner);
+  }
+
+  holder(callId: string): LeaseHolder | null {
+    return this.leases.holder(callId);
+  }
+
+  saveAs(call: StoredCall, owner: string, ttlMs: number): boolean {
+    return this.leases.saveAs(call, owner, ttlMs);
+  }
+
+  countReconnect(callId: string, limit: number): { before: number; counted: boolean } | null {
+    return this.leases.countReconnect(callId, limit);
+  }
+
+  removeUnleased(callId: string): boolean {
+    return this.leases.removeUnleased(callId);
   }
 
   load(callId: string): StoredCall | null {
@@ -275,6 +311,7 @@ export class FileCallStateStore implements CallStateStore {
 
   remove(callId: string): void {
     this.folder.remove(callId);
+    this.leases.forget(callId);
   }
 
   list(): string[] {
@@ -286,7 +323,7 @@ export class FileChatStateStore implements ChatStateStore {
   private readonly folder: RecordFolder<StoredChat>;
 
   constructor(dir: string, log: (line: string) => void = () => {}, options: FileStoreOptions = {}) {
-    this.folder = new RecordFolder<StoredChat>(dir, 'chat', chatProblem, (c) => c.id, log, options);
+    this.folder = new RecordFolder<StoredChat>(dir, 'chat', storedChatProblem, (c) => c.id, log, options);
   }
 
   load(id: string): StoredChat | null {
@@ -429,7 +466,7 @@ export function openFileStores(dir: string, o: { tokenTtlMs: number; now?: () =>
   if (openToOthers(dir)) log(`sessions: WARNING: ${dir} can be read by others than its owner; calls/ and chats/ in it cannot (mode 700)`);
   return {
     dir,
-    calls: new FileCallStateStore(join(dir, 'calls'), log, { fsync: o.fsync === true }),
+    calls: new FileCallStateStore(join(dir, 'calls'), log, { fsync: o.fsync === true }, o.now),
     chats: new FileChatStateStore(join(dir, 'chats'), log, { fsync: o.fsync === true }),
     tokens: new FileTokens(join(dir, 'tokens.json'), o.tokenTtlMs, o.now, log, { fsync: o.fsync === true }),
   };

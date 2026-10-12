@@ -1,7 +1,7 @@
 import type { Session } from '../core/session';
 import type { AuditEntry } from '../audit/types';
 import {
-  tokenHash, type Awaitable, type CallStateStore, type ChatStateStore, type StoredCall, type StoredChat, type TokenStore,
+  tokenHash, type Awaitable, type CallLeases, type CallStateStore, type ChatStateStore, type StoredCall, type StoredChat, type TokenStore,
 } from '../server/stores/types';
 
 /**
@@ -16,6 +16,10 @@ import {
  * `make` is called afresh for each check, with a clock the check moves and the token lifetime the
  * stores are to be made with. `reopen`, for a store that outlives its process, makes new stores over
  * the same storage as the last `make`: what was saved must be there, and a token minted must still verify.
+ *
+ * A store that gives `leases` (one owner per call at a time: every built-in store does, and a store many
+ * servers share must) is held to them too, by the checks named `lease: ...`; for a store that gives
+ * none, those checks have nothing to hold and pass.
  */
 
 /** The stores a check runs against. `close` is called after each check, when given. */
@@ -23,6 +27,8 @@ export interface ContractStores {
   readonly calls: CallStateStore;
   readonly chats: ChatStateStore;
   readonly tokens: TokenStore;
+  /** The calls' leases, over the same storage as `calls` (often the same object). */
+  readonly leases?: CallLeases;
   close?(): Awaitable<void>;
 }
 
@@ -41,6 +47,9 @@ export interface StoreContractOptions {
 
 /** The token lifetime every check makes its stores with. */
 export const CONTRACT_TOKEN_TTL_MS = 600_000;
+
+/** The lease lifetime the lease checks take and renew with. */
+export const CONTRACT_LEASE_TTL_MS = 30_000;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -248,6 +257,138 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       await s.tokens.revoke('CA-none');
       if (await s.tokens.verify(token, 'CA0001', 'twilio')) fail('a revoked token verifies');
       if (await s.tokens.has(token, 'twilio')) fail('a revoked token is live');
+    },
+  },
+  {
+    name: 'lease: one owner at a time; its holder takes it again, which renews it',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      const a = await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!a.taken) fail(`a free lease was not taken: ${JSON.stringify(a)}`);
+      const b = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (b.taken) fail('a second owner took a lease that is held');
+      if (b.owner !== 'server-a' || b.expiresAtMs !== c.now() + CONTRACT_LEASE_TTL_MS) fail(`a lease held says ${JSON.stringify(b)}`);
+      c.advance(CONTRACT_LEASE_TTL_MS / 2);
+      if (!(await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS)).taken) fail('the holder could not take its own lease again');
+      sameJson(await l.holder('CA0001'), { owner: 'server-a', expiresAtMs: c.now() + CONTRACT_LEASE_TTL_MS }, 'the lease after its holder took it again');
+      if ((await l.claim('CA0002', 'server-b', CONTRACT_LEASE_TTL_MS)).taken !== true) fail("one call's lease kept another call's from being taken");
+    },
+  },
+  {
+    name: 'lease: a lapsed lease is taken over, and a released one at once',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      c.advance(CONTRACT_LEASE_TTL_MS - 1);
+      if ((await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a lease was taken over before it lapsed');
+      c.advance(1);
+      if (!(await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a lapsed lease was not taken over');
+      if ((await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS)).taken) fail('the old holder took back a lease another had taken over');
+      await l.release('CA0001', 'server-a');
+      if ((await l.holder('CA0001'))?.owner !== 'server-b') fail("a release by one who does not hold the lease gave it up");
+      await l.release('CA0001', 'server-b');
+      await l.release('CA-none', 'server-b');
+      if ((await l.holder('CA0001')) !== null) fail('a released lease is still held');
+      if (!(await l.claim('CA0001', 'server-c', CONTRACT_LEASE_TTL_MS)).taken) fail('a released lease was not taken at once');
+    },
+  },
+  {
+    name: 'lease: renewing keeps a lease, and names the calls its owner holds',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      await l.claim('CA0002', 'server-a', CONTRACT_LEASE_TTL_MS);
+      await l.claim('CA0003', 'server-b', CONTRACT_LEASE_TTL_MS);
+      c.advance(CONTRACT_LEASE_TTL_MS * 0.6);
+      sameJson([...(await l.renew('server-a', CONTRACT_LEASE_TTL_MS))].sort(), ['CA0001', 'CA0002'], 'the calls a renewal names');
+      c.advance(CONTRACT_LEASE_TTL_MS * 0.6);
+      if ((await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a renewed lease was taken over');
+      if (!(await l.claim('CA0003', 'server-a', CONTRACT_LEASE_TTL_MS)).taken) fail("a renewal by one owner kept another's lease");
+      sameJson([...(await l.renew('server-c', CONTRACT_LEASE_TTL_MS))], [], 'the calls an owner with none renews');
+    },
+  },
+  {
+    name: 'lease: taking a lease reads the call as saved; a call never saved is taken with none',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      const call = contractCall('v2:telnyx-call');
+      await s.calls.save(call);
+      const got = await l.claim('v2:telnyx-call', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!got.taken) fail('a free lease was not taken');
+      sameJson(got.call, call, 'the call read with its lease');
+      const none = await l.claim('CA-new', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!none.taken || none.call !== null) fail(`a call never saved was taken as ${JSON.stringify(none)}`);
+    },
+  },
+  {
+    name: 'lease: a save under a lease is kept only from its holder, and never lowers the reconnect count',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      if (await l.saveAs(contractCall('CA0001', 3), 'server-a', CONTRACT_LEASE_TTL_MS)) fail('a save with no lease was kept');
+      if ((await s.calls.load('CA0001')) !== null) fail('a save refused was written');
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!(await l.saveAs(contractCall('CA0001', 4, { reconnects: 2 }), 'server-a', CONTRACT_LEASE_TTL_MS))) fail("the holder's save was refused");
+      if (await l.saveAs(contractCall('CA0001', 9), 'server-b', CONTRACT_LEASE_TTL_MS)) fail("another owner's save was kept");
+      const got = await s.calls.load('CA0001');
+      if (got?.session.turnIndex !== 4) fail(`a save from one who does not hold the lease won: ${JSON.stringify(got?.session.turnIndex)}`);
+      await l.saveAs(contractCall('CA0001', 5, { reconnects: 1 }), 'server-a', CONTRACT_LEASE_TTL_MS);
+      const after = await s.calls.load('CA0001');
+      if (after?.session.turnIndex !== 5 || after.reconnects !== 2) fail(`a save under a lease lowered the reconnect count or was lost: ${JSON.stringify({ turn: after?.session.turnIndex, reconnects: after?.reconnects })}`);
+      sameJson(after, contractCall('CA0001', 5, { reconnects: 2 }), 'the call saved under its lease');
+    },
+  },
+  {
+    name: 'lease: reconnects are counted under the limit, each once, however many count at once',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      if ((await l.countReconnect('CA-none', 2)) !== null) fail('a reconnect was counted for a call never saved');
+      await s.calls.save(contractCall('CA0001', 3, { reconnects: 0 }));
+      const counts = await Promise.all(Array.from({ length: 5 }, () => l.countReconnect('CA0001', 3)));
+      const counted = counts.filter((n) => n?.counted === true).map((n) => n!.before).sort();
+      sameJson(counted, [0, 1, 2], 'the counts before each reconnect counted');
+      if (counts.some((n) => n?.counted === false && n.before !== 3)) fail(`a reconnect over the limit says ${JSON.stringify(counts)}`);
+      if ((await s.calls.load('CA0001'))?.reconnects !== 3) fail('the reconnect count saved is not the number counted');
+    },
+  },
+  {
+    name: 'lease: a call removed takes its lease with it, and one with a live lease is not removed unleased',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (await l.removeUnleased('CA0001')) fail('a call with a live lease was removed unleased');
+      if ((await s.calls.load('CA0001')) === null) fail('a call with a live lease is gone');
+      c.advance(CONTRACT_LEASE_TTL_MS);
+      if (!(await l.removeUnleased('CA0001'))) fail('a call whose lease lapsed was not removed');
+      if ((await s.calls.load('CA0001')) !== null || (await l.holder('CA0001')) !== null) fail('a call removed unleased, or its lease, is still there');
+      if (await l.removeUnleased('CA0001')) fail('a call removed twice was removed twice');
+      await s.calls.save(contractCall('CA0002'));
+      await l.claim('CA0002', 'server-a', CONTRACT_LEASE_TTL_MS);
+      await s.calls.remove('CA0002');
+      if ((await l.holder('CA0002')) !== null) fail("a call removed left its lease");
+      if (!(await l.claim('CA0002', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail("a removed call's lease was not free");
+    },
+  },
+  {
+    name: 'lease: of many claims at once, exactly one takes the lease',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      const owners = Array.from({ length: 8 }, (_, i) => `server-${i}`);
+      const claims = await Promise.all(owners.map((o) => l.claim('CA0001', o, CONTRACT_LEASE_TTL_MS)));
+      const winners = owners.filter((_, i) => claims[i]!.taken);
+      if (winners.length !== 1) fail(`${winners.length} owners took one lease: ${winners.join(', ')}`);
+      if ((await l.holder('CA0001'))?.owner !== winners[0]) fail('the lease is not held by the one claim that took it');
+      for (const cl of claims) if (!cl.taken && cl.owner !== winners[0]) fail(`a claim that lost names ${cl.owner}, not ${winners[0]}`);
     },
   },
   {
