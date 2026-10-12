@@ -67,3 +67,21 @@ describe('numbers in words', () => {
     expect([bytesText(512), bytesText(3.5 * 1024 * 1024), bytesText(undefined)]).toEqual(['512 B', '3.5 MB', '–']);
   });
 });
+
+describe("the page's own script", () => {
+  it('parses as a module (a name declared twice, say, would leave every page blank)', async () => {
+    const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import('node:fs');
+    const { execFileSync } = await import('node:child_process');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const page = readFileSync(join(__dirname, 'page.html'), 'utf8');
+    const script = /<script type="module">([\s\S]*?)<\/script>/.exec(page)![1]!.replace('{{meta}}', '{}');
+    const dir = mkdtempSync(join(tmpdir(), 'page-script-'));
+    try {
+      writeFileSync(join(dir, 'page.mjs'), script);
+      expect(() => execFileSync(process.execPath, ['--check', join(dir, 'page.mjs')], { stdio: 'pipe' })).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

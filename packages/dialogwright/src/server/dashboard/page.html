@@ -124,6 +124,7 @@
   .pager { display:flex; gap:12px; align-items:center; justify-content:flex-end; padding-top:.8em; color:var(--muted); }
 
   /* ---------- Insights, Knowledge, Health: cards of figures, charts, tables ---------- */
+  #insights-body, #knowledge-body, #health-body { display:flex; flex-direction:column; gap:16px; min-width:0; }
   .grid2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; align-items:start; }
   .fig { min-width:0; }
   .fig h2 { margin:0; font-size:inherit; font-weight:inherit; }
@@ -131,9 +132,9 @@
   .chart.bars { height:140px; }
   .chart.split { height:22px; border-radius:6px; }
   .chart .base { stroke:var(--border-2); stroke-width:1; vector-effect:non-scaling-stroke; }
-  .chart .bar { fill:var(--accent); }
-  .chart .bar:hover { fill:var(--sys); }
-  .chart .part.k-handled { fill:var(--pass); } .chart .part.k-person { fill:var(--warn); } .chart .part.k-hangup { fill:var(--caller); } .chart .part.k-error { fill:var(--fail); } .chart .part.k-open { fill:var(--idle); }
+  .chart .cbar { fill:var(--accent); }
+  .chart .cbar:hover { fill:var(--sys); }
+  .chart .cpart.k-handled { fill:var(--pass); } .chart .cpart.k-person { fill:var(--warn); } .chart .cpart.k-hangup { fill:var(--caller); } .chart .cpart.k-error { fill:var(--fail); } .chart .cpart.k-open { fill:var(--idle); }
   .axis { display:flex; justify-content:space-between; color:var(--faint); font-size:.75em; font-family:var(--mono); margin-top:.3em; }
   .chart-max { color:var(--faint); font-size:.75em; font-family:var(--mono); margin-bottom:.2em; }
   .legend { display:flex; flex-wrap:wrap; gap:.3em 1.1em; margin:.6em 0 0; padding:0; list-style:none; font-size:.88em; }
@@ -143,13 +144,16 @@
   .legend b { font-family:var(--mono); font-weight:600; }
   .tablewrap { overflow-x:auto; }
   table.figs { width:100%; border-collapse:collapse; font-size:.9em; }
-  table.figs th { text-align:left; color:var(--faint); font-size:.78em; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:.3em .5em; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.figs th { text-align:left; color:var(--faint); font-size:.78em; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:.3em .5em; border-bottom:1px solid var(--border); vertical-align:bottom; }
   table.figs td { padding:.4em .5em; border-bottom:1px solid #1d2430; vertical-align:top; }
+  table.figs td:not(.n) { min-width:6em; }
   table.figs td.n, table.figs th.n { text-align:right; font-family:var(--mono); white-space:nowrap; }
   table.figs caption { text-align:left; color:var(--muted); font-size:.85em; padding:.2em 0 .4em; }
   details.astable { margin-top:.6em; }
   details.astable summary { color:var(--sys); cursor:pointer; font-size:.85em; }
   .figs-note { color:var(--muted); font-size:.85em; line-height:1.5; margin:.5em 0 0; }
+  .figs-note code { overflow-wrap:anywhere; }
+  #insights-body > *, #knowledge-body > *, #health-body > * { min-width:0; }
   .figs-note code, .card code { font-family:var(--mono); font-size:.92em; color:var(--text); background:var(--panel-2); padding:.05em .35em; border-radius:4px; }
   .kv2 { display:grid; grid-template-columns:auto 1fr; gap:.35em 1.2em; margin:0; font-size:.92em; }
   .kv2 dt { color:var(--muted); } .kv2 dd { margin:0; font-family:var(--mono); }
@@ -421,6 +425,7 @@
     .rows.current .c-task, .rows.past .c-tasks, .rows.past .c-ending { grid-column:1 / -1; }
     .c-turns .unit { display:inline; }
     .grid2 { grid-template-columns:minmax(0,1fr); gap:12px; }
+    #insights-body, #knowledge-body, #health-body { gap:12px; }
     table.figs { font-size:.85em; }
     .chart.bars { height:110px; }
     .filters label { flex:1 1 9em; }
@@ -2130,9 +2135,9 @@
     const s = Math.max(0, Math.round(ms / 1000));
     return s < 5 ? 'now' : s < 120 ? `${s} s ago` : `${Math.round(s / 60)} min ago`;
   };
-  function auditHtml(a, last) {
+  function auditCheckHtml(a, last) {
     if (!a.available) return '<p class="figs-note">This server has no audit to verify.</p>';
-    const result = last ? `<p class="figs-note ${last.ok ? 'ok' : 'bad'}">${last.ok ? 'Intact' : 'BROKEN'}: ${n(last.chains)} ${last.kind === 'postgres' ? 'chains' : 'day files'}, ${n(last.entries)} entries, verified ${esc(new Date(last.at).toLocaleTimeString())} in ${n(last.tookMs)} ms.</p>${last.breaks.length ? `<ul class="figs-note">${last.breaks.map((b) => `<li><code>${esc(b)}</code></li>`).join('')}</ul>` : ''}` : '<p class="figs-note">Not verified since this server started.</p>';
+    const result = last ? `<p class="figs-note ${last.ok ? 'ok' : 'bad'}">${last.ok ? 'Intact' : 'BROKEN'}: ${n(last.chains)} ${last.kind === 'postgres' ? (last.chains === 1 ? 'chain' : 'chains') : (last.chains === 1 ? 'day file' : 'day files')}, ${n(last.entries)} ${last.entries === 1 ? 'entry' : 'entries'}, verified ${esc(new Date(last.at).toLocaleTimeString())} in ${n(last.tookMs)} ms.</p>${last.breaks.length ? `<ul class="figs-note">${last.breaks.map((b) => `<li><code>${esc(b)}</code></li>`).join('')}</ul>` : ''}` : '<p class="figs-note">Not verified since this server started.</p>';
     return `<p class="figs-note">The audit at <code>${esc(a.label ?? '')}</code>, every hash chain walked as <code>pnpm audit:verify</code> walks it.</p>${result}<button type="button" id="audit-verify"${a.running ? ' disabled' : ''}>${a.running ? 'Verifying…' : 'Verify the audit now'}</button>`;
   }
   function renderHealth(h) {
@@ -2155,7 +2160,7 @@
       ${disk ? `<dt>Traces</dt><dd>${esc(bytesText(disk.traceBytes))}</dd><dt>Audit</dt><dd>${esc(bytesText(disk.auditBytes))}</dd>${disk.freeBytes !== undefined ? `<dt>Free</dt><dd class="${disk.low ? 'bad' : ''}">${esc(bytesText(disk.freeBytes))}${disk.low ? ' (low)' : ''}</dd>` : ''}` : ''}
       ${num.traces ? `<dt>Trace writes failed</dt><dd class="${num.traces.failures ? 'bad' : ''}">${n(num.traces.failures)}</dd><dt>Trace lines dropped</dt><dd class="${num.traces.dropped ? 'bad' : ''}">${n(num.traces.dropped)}</dd>` : ''}</dl>` : '<p class="figs-note">Not known.</p>');
     auditShown = h.audit;
-    const audit = card('Audit', `<div id="audit-box">${auditHtml(h.audit, h.audit.last)}</div>`);
+    const audit = card('Audit', `<div id="audit-box">${auditCheckHtml(h.audit, h.audit.last)}</div>`);
     el('health-body').innerHTML = `${strip}<div class="grid2">${list}${health}${audit}</div>`;
   }
   // The audit verified on demand: the server runs one at a time, and records each asking.
@@ -2165,8 +2170,8 @@
     e.target.textContent = 'Verifying…';
     const got = await fetchJson('/dashboard/health/audit');
     if (!el('audit-box')) return;
-    if (got.body) el('audit-box').innerHTML = auditHtml({ ...auditShown, running: false }, got.body);
-    else el('audit-box').innerHTML = `${auditHtml({ ...auditShown, running: false }, auditShown?.last ?? null)}<p class="figs-note bad">The audit could not be verified.</p>`;
+    if (got.body) el('audit-box').innerHTML = auditCheckHtml({ ...auditShown, running: false }, got.body);
+    else el('audit-box').innerHTML = `${auditCheckHtml({ ...auditShown, running: false }, auditShown?.last ?? null)}<p class="figs-note bad">The audit could not be verified.</p>`;
   });
 
   // A row of either list opens its call: the detail live, or the replay.

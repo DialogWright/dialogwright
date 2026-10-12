@@ -1772,7 +1772,7 @@ export function barsSvg(points, opts) {
   const gap = Math.min(step * 0.2, 6);
   const bars = values.map((v, i) => {
     const h = v === 0 ? 0 : Math.max(1.5, (v / max) * H);
-    return `<rect x="${(i * step + gap / 2).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(0.5, step - gap).toFixed(2)}" height="${h.toFixed(2)}" class="bar"><title>${escChart(opts.titleOf(points[i]))}</title></rect>`;
+    return `<rect x="${(i * step + gap / 2).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(0.5, step - gap).toFixed(2)}" height="${h.toFixed(2)}" class="cbar"><title>${escChart(opts.titleOf(points[i]))}</title></rect>`;
   }).join('');
   return `<svg class="chart bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escChart(opts.label)}"><line x1="0" y1="${H}" x2="${W}" y2="${H}" class="base"/>${bars}</svg>`;
 }
@@ -1788,7 +1788,7 @@ export function splitSvg(parts, label) {
   let x = 0;
   const rects = parts.filter((p) => p.value > 0).map((p) => {
     const w = (p.value / total) * 1000;
-    const r = `<rect x="${x.toFixed(2)}" y="0" width="${Math.max(0, w - 2).toFixed(2)}" height="20" class="part ${escChart(p.cls)}"><title>${escChart(`${p.label}: ${p.value}`)}</title></rect>`;
+    const r = `<rect x="${x.toFixed(2)}" y="0" width="${Math.max(0, w - 2).toFixed(2)}" height="20" class="cpart ${escChart(p.cls)}"><title>${escChart(`${p.label}: ${p.value}`)}</title></rect>`;
     x += w;
     return r;
   }).join('');
