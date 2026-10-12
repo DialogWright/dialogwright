@@ -104,6 +104,9 @@ export type { BuiltIndex, KbIndexData, KbIndexRead } from './kb/vectorIndex';
 // The retrieval bake-off (pnpm kb:bakeoff): recall at the cap and candidates on a paraphrase file.
 export { bakeoff, parseParaphrases } from './kb/bakeoff';
 export type { BakeoffResult, Paraphrases } from './kb/bakeoff';
+// The knowledge base's gaps in the traces (what kb:gaps ranks and the console counts): a record read as a turn, and the gaps among turns.
+export { collectGaps, looksLikeQuestion, topicQuestionOf, turnOf as gapTurnOf, turnsOfLines as gapTurnsOfLines, GAP_KINDS, QUESTION_WORDS } from './kb/gaps';
+export type { CollectContext as GapCollectContext, CollectStats as GapCollectStats, Gap, GapKind, Near as GapNear, Turn as GapTurn, TurnAnswer as GapTurnAnswer, TurnQuestion as GapTurnQuestion, Unavailable as GapUnavailable } from './kb/gaps';
 
 // The slot library: slots from configuration (a built-in type and its options) rather than code.
 // What the author of a slot type uses is in 'dialogwright/slot-kit'; the conformance kit is in

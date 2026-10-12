@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { traceReaderOf } from 'dialogwright';
+import { gapTurnsOfLines as turnsOfLines, traceReaderOf, type GapTurn as Turn } from 'dialogwright';
 
 /**
  * Reading trace files for kb:gaps: which files (a file, a folder, or a glob; by default the folder a
@@ -128,153 +128,11 @@ export function defaultTraceSpecs(opts: { cwd: string; appDir: string | null; en
 }
 
 // ---------------------------------------------------------------------------------------------
-// What a gap reads of a record
+// What a gap reads of a record: the engine's (dialogwright kb/gaps.ts), which the console counts with too
 // ---------------------------------------------------------------------------------------------
 
-/** One question as the model was asked it, as far as a gap needs it. */
-export interface TurnQuestion {
-  type: string;
-  /** The labels of a choice question. */
-  labels: string[];
-}
-
-/** One choice answer: the label chosen, and every label's probability. */
-export interface TurnAnswer {
-  choice: string | null;
-  probabilities: Record<string, number>;
-  confidence: number | null;
-}
-
-/** One turn of a trace, as kb:gaps reads it. */
-export interface Turn {
-  file: string;
-  line: number;
-  sessionId: string;
-  turnIndex: number;
-  ts: string;
-  /** The caller's words as recorded (speech or text); null for any other event. */
-  words: string | null;
-  quarantined: boolean;
-  locale: string | null;
-  /** What the knowledge retriever did; null when it did not run on this turn. */
-  retrieval: { nominated: string[]; failed: string | null } | null;
-  questions: Record<string, TurnQuestion>;
-  answers: Record<string, TurnAnswer>;
-  /** The intent the model chose, when it was asked. */
-  intent: string | null;
-  decision: { kind: string; promptId: string | null; target: string | null; acks: string[] };
-  promptedFor: string | null;
-  /** The slots with a value after the turn, as recorded (a masked slot's value is the mask). */
-  slotValues: Record<string, string>;
-  /** The slots whose value is one of the trace's masks. */
-  masked: string[];
-  /** Whether a masked value is in what the turn did: a gated call's params, or what the decision says (its variables, a handoff's slots). */
-  maskedInDecision: boolean;
-  /** The gated calls of the turn: the tool, the `topic` param when recorded, and the tool's summary. */
-  calls: { tool: string; topic: string | null; summary: string | null }[];
-  /** The knowledge record of the turn (a passage said, or one withheld). */
-  kb: { passageId: string; topic: string; fresh: boolean; document: string | null; section: string | null; locale: string | null } | null;
-}
-
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
-
-/** The values the trace writer puts in place of an identity slot's value (trace/redact.ts): last four, year only, a length. */
-const MASKED_VALUE = /^(?:\.\.\.\d{4}|••\/••\/(?:\d{4}|••••)|<\d+ chars>)$/;
-
-/** A record as a Turn, or null when it does not read as a v2 record with a session and a turn. */
-export function turnOf(raw: unknown, file: string, line: number): Turn | null {
-  // A record a server wrote after it had let the call go (trace/store.ts): the server that took the call ran that turn too.
-  if (!isObject(raw) || raw.v !== 2 || raw.outlivedHold === true) return null;
-  const sessionId = str(raw.sessionId);
-  const ts = str(raw.ts);
-  if (sessionId === null || ts === null || typeof raw.turnIndex !== 'number') return null;
-  const event = isObject(raw.event) ? raw.event : {};
-  const words = (event.type === 'user.speech' || event.type === 'user.text') && typeof event.text === 'string' ? event.text : null;
-
-  const retrieval = isObject(raw.retrieval)
-    ? {
-        nominated: (Array.isArray(raw.retrieval.nominated) ? raw.retrieval.nominated : []).flatMap((n) => (isObject(n) && typeof n.topic === 'string' ? [n.topic] : [])),
-        failed: str(raw.retrieval.failed),
-      }
-    : null;
-
-  const questions: Record<string, TurnQuestion> = {};
-  if (isObject(raw.questions)) {
-    for (const [id, q] of Object.entries(raw.questions)) {
-      if (!isObject(q)) continue;
-      questions[id] = { type: str(q.type) ?? '', labels: isObject(q.criteria) ? Object.keys(q.criteria) : [] };
-    }
-  }
-  const answers: Record<string, TurnAnswer> = {};
-  if (isObject(raw.answers)) {
-    for (const [id, a] of Object.entries(raw.answers)) {
-      if (!isObject(a) || a.type !== 'choice') continue;
-      const probabilities: Record<string, number> = {};
-      if (isObject(a.probabilities)) for (const [label, p] of Object.entries(a.probabilities)) if (typeof p === 'number' && Number.isFinite(p)) probabilities[label] = p;
-      answers[id] = { choice: str(a.choice), probabilities, confidence: typeof a.confidence === 'number' ? a.confidence : null };
-    }
-  }
-
-  const d = isObject(raw.decision) ? raw.decision : {};
-  const decision = {
-    kind: str(d.kind) ?? '',
-    promptId: str(d.promptId),
-    target: str(d.target),
-    acks: (Array.isArray(d.acks) ? d.acks : []).flatMap((a) => (isObject(a) && typeof a.promptId === 'string' ? [a.promptId] : [])),
-  };
-
-  const slotValues: Record<string, string> = {};
-  const masked: string[] = [];
-  if (isObject(raw.slots)) {
-    for (const [id, s] of Object.entries(raw.slots)) {
-      if (!isObject(s) || typeof s.value !== 'string') continue;
-      slotValues[id] = s.value;
-      if (MASKED_VALUE.test(s.value)) masked.push(id);
-    }
-  }
-
-  const calls: Turn['calls'] = [];
-  const isMask = (v: unknown): boolean => typeof v === 'string' && MASKED_VALUE.test(v);
-  const hasMask = (o: unknown): boolean => isObject(o) && Object.values(o).some(isMask);
-  let maskedInDecision = hasMask(d.vars) || hasMask(d.slots) || (Array.isArray(d.acks) && d.acks.some((a) => isObject(a) && hasMask(a.vars)));
-  if (Array.isArray(raw.gateEvents)) {
-    for (const g of raw.gateEvents) {
-      if (!isObject(g) || !isObject(g.decision) || !isObject(g.decision.call)) continue;
-      const params = isObject(g.decision.call.params) ? g.decision.call.params : {};
-      if (hasMask(params)) maskedInDecision = true;
-      calls.push({ tool: str(g.decision.call.tool) ?? '', topic: str(params.topic), summary: str(g.summary) });
-    }
-  }
-
-  let kb: Turn['kb'] = null;
-  if (isObject(raw.kb) && typeof raw.kb.passageId === 'string' && typeof raw.kb.topic === 'string') {
-    kb = { passageId: raw.kb.passageId, topic: raw.kb.topic, fresh: raw.kb.fresh === true, document: str(raw.kb.document), section: str(raw.kb.section), locale: str(raw.kb.locale) };
-  }
-
-  const intent = isObject(raw.answers) && isObject(raw.answers.intent) ? str(raw.answers.intent.choice) : null;
-  return {
-    file,
-    line,
-    sessionId,
-    turnIndex: raw.turnIndex,
-    ts,
-    words,
-    quarantined: raw.quarantined === true,
-    locale: str(raw.locale),
-    retrieval,
-    questions,
-    answers,
-    intent,
-    decision,
-    promptedFor: str(raw.promptedFor),
-    slotValues,
-    masked,
-    maskedInDecision,
-    calls,
-    kb,
-  };
-}
+export { gapTurnOf as turnOf } from 'dialogwright';
+export type { GapTurn as Turn, GapTurnAnswer as TurnAnswer, GapTurnQuestion as TurnQuestion } from 'dialogwright';
 
 /** The turns of one trace file, in the order written; lines that do not read as a record are passed over (counted in `skipped`). */
 export function readTurns(file: string): { turns: Turn[]; skipped: number } {
@@ -314,20 +172,5 @@ export async function storeTurns(specs: readonly string[], env: NodeJS.ProcessEn
   return out;
 }
 
-/** The turns of a trace's lines (a file's, or a call's joined segments), named `file`, each with its line number. */
-export function turnsOfLines(lines: readonly string[], file: string): { turns: Turn[]; skipped: number } {
-  const turns: Turn[] = [];
-  let skipped = 0;
-  for (let i = 0; i < lines.length; i += 1) {
-    const l = lines[i]!;
-    if (l.trim() === '') continue;
-    try {
-      const turn = turnOf(JSON.parse(l) as unknown, file, i + 1);
-      if (turn) turns.push(turn);
-      else skipped += 1;
-    } catch {
-      skipped += 1;
-    }
-  }
-  return { turns, skipped };
-}
+/** The turns of a trace's lines (a file's, or a call's joined segments), named `file`, each with its line number: the engine's. */
+export { gapTurnsOfLines as turnsOfLines } from 'dialogwright';
