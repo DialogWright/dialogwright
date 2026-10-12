@@ -212,7 +212,7 @@
           <li><strong>Locally</strong>, a <code>docker compose</code> stack (<code>deploy/compose</code>) with Postgres, an
             S3-compatible store, two instances and HAProxy, where the kill-an-instance test runs: <code>pnpm multi:test</code> kills
             (SIGKILL) and stops (SIGTERM, the drain) the server holding a call on Twilio and on Telnyx, and checks the other takes it
-            over with nothing lost; weekly and by hand in CI. Its in-process version runs in every test run: <code>server/manyServers.e2e.test.ts</code> puts two servers on one Postgres (PGlite, in the
+            over with nothing lost (passed on arm64; a weekly and by-hand CI workflow runs it on amd64 once pushed, not yet run). Its in-process version runs in every test run: <code>server/manyServers.e2e.test.ts</code> puts two servers on one Postgres (PGlite, in the
             process) and one in-process S3 store behind a balancer, kills or drains the one with the call, and the other resumes it,
             with one trace, one verifying audit chain and one console across both; and
             <code>server/restart.e2e.test.ts</code> kills one server mid-call and resumes the call on a new process.</li>
