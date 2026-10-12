@@ -1811,16 +1811,16 @@
   }
 
   const whenText = (ms) => {
-    if (typeof ms !== 'number') return '—';
+    if (typeof ms !== 'number') return '–';
     const d = new Date(ms);
     return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   function pastRowHtml(r) {
     const ending = r.ending ? `<span class="c-ending end-${esc(r.ending.kind)}">${esc(r.ending.text)}</span>` : '<span class="c-ending end-none">in progress</span>';
-    const tasks = Array.isArray(r.tasks) && r.tasks.length ? r.tasks.map((t) => t.label).join(', ') : '—';
+    const tasks = Array.isArray(r.tasks) && r.tasks.length ? r.tasks.map((t) => t.label).join(', ') : '–';
     const until = r.endedAt ?? r.lastAt;
-    const length = typeof r.startedAt === 'number' && typeof until === 'number' ? durationText(until - r.startedAt) : '—';
+    const length = typeof r.startedAt === 'number' && typeof until === 'number' ? durationText(until - r.startedAt) : '–';
     const href = `#/replay/${encodeURIComponent(r.callSid)}${r.app ? `?app=${encodeURIComponent(r.app)}` : ''}`;
     return `<div class="lrow" role="row" tabindex="0" data-href="${esc(href)}" title="${esc(r.callSid)}">`
       + `<span class="c-when">${esc(whenText(r.startedAt))}</span><span class="c-app">${esc(r.appName ?? appName(r.app))}</span>`
@@ -1877,7 +1877,7 @@
     } catch { /* storage blocked or bad value: no place to go back to */ }
     if (!state.resume || state.resume.mode !== 'replay') state.resume = null;
     // A reload during a replay came from the replay's own address (#/replay/<call>), which route() opens again.
-    if (state.resume && state.resume.sid && !location.hash.startsWith('#/replay/')) location.hash = `#/replay/${encodeURIComponent(state.resume.sid)}`;
+    if (state.resume && state.resume.sid && !location.hash.startsWith('#/replay/')) history.replaceState(null, '', `#/replay/${encodeURIComponent(state.resume.sid)}`);
     startRows();
     route();
   })();
