@@ -25,15 +25,57 @@ describe('DashboardBus', () => {
     expect(late.mock.calls.map((c) => c[0].type)).toEqual(['call_started', 'dtmf']);
   });
 
-  it('resets the history when a new call starts and ignores events for older calls', () => {
+  it('keeps every call in progress, each with its own history, in the order published', () => {
     const bus = new DashboardBus();
     bus.publish(started('CA1'));
     bus.publish(dtmf('CA1', '1'));
     bus.publish(started('CA2', 5));
-    bus.publish(dtmf('CA1', '2', 6)); // a straggler from the old call
+    bus.publish(dtmf('CA1', '2', 6));
     const late = vi.fn();
     bus.subscribe(late);
-    expect(late.mock.calls.map((c) => [c[0].type, c[0].callSid])).toEqual([['call_started', 'CA2']]);
+    expect(late.mock.calls.map((c) => [c[0].type, c[0].callSid, c[0].seq])).toEqual([
+      ['call_started', 'CA1', 1], ['dtmf', 'CA1', 2], ['call_started', 'CA2', 3], ['dtmf', 'CA1', 4],
+    ]);
+    expect(bus.historyOf('CA1').map((e) => e.seq)).toEqual([1, 2, 4]);
+    expect(bus.callIds()).toEqual(['CA1', 'CA2']);
+    expect(bus.current()).toBe('CA2');
+  });
+
+  it('ignores an event for a call it never saw start, and starts a call\'s history over on a second call_started', () => {
+    const bus = new DashboardBus();
+    bus.publish(dtmf('CA9', '1'));
+    expect(bus.history()).toEqual([]);
+    bus.publish(started('CA1'));
+    bus.publish(dtmf('CA1', '1'));
+    bus.publish(started('CA1', 9));
+    expect(bus.historyOf('CA1').map((e) => e.type)).toEqual(['call_started']);
+  });
+
+  it('keeps the newest calls that ended, up to its bound, and every call in progress', () => {
+    const bus = new DashboardBus(2000, 2);
+    for (const sid of ['CA1', 'CA2', 'CA3', 'CA4']) {
+      bus.publish(started(sid));
+      bus.publish({ type: 'ended', callSid: sid, at: 3, reason: 'hangup' });
+    }
+    bus.publish(started('CA5'));
+    expect(bus.callIds()).toEqual(['CA3', 'CA4', 'CA5']);
+    expect(bus.hasEnded('CA4')).toBe(true);
+    expect(bus.hasEnded('CA5')).toBe(false);
+    // A reconnect after the hangup webhook makes the call live again.
+    bus.publish({ type: 'reconnect', callSid: 'CA4', at: 4, attempt: 1 });
+    expect(bus.hasEnded('CA4')).toBe(false);
+  });
+
+  it('bounds the calls it keeps, dropping the oldest that ended first', () => {
+    const bus = new DashboardBus(2000, 20, 3);
+    bus.publish(started('CA1'));
+    bus.publish(started('CA2'));
+    bus.publish({ type: 'ended', callSid: 'CA2', at: 3, reason: 'hangup' });
+    bus.publish(started('CA3'));
+    bus.publish(started('CA4'));
+    expect(bus.callIds()).toEqual(['CA1', 'CA3', 'CA4']);
+    bus.publish(started('CA5'));
+    expect(bus.callIds()).toEqual(['CA3', 'CA4', 'CA5']);
   });
 
   it('bounds the history', () => {

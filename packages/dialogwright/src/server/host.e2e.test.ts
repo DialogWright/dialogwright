@@ -249,6 +249,10 @@ describe('a host of two apps', () => {
     expect(page).toContain('"apps":[{"id":"callback","name":"Example Callbacks"');
     const seen: { type: string; app?: string }[] = [];
     running!.bus!.subscribe((e) => seen.push(e as { type: string; app?: string }))();
-    expect(seen[0]).toMatchObject({ type: 'call_started', callSid: 'CA0000000000000000000000000000sl08', app: 'routed' });
+    // The bus keeps every call it saw start (the Live list), each call_started with its app.
+    expect(seen.filter((e) => e.type === 'call_started')).toMatchObject([
+      { type: 'call_started', callSid: 'CA0000000000000000000000000000cb05', app: 'callback' },
+      { type: 'call_started', callSid: 'CA0000000000000000000000000000sl08', app: 'routed' },
+    ]);
   });
 });

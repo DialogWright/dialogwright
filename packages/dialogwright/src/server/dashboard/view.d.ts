@@ -341,3 +341,64 @@ export function decisiveRows(
 ): Row[];
 export function groupRows(rows: Row[], formSlots: readonly string[], pending: PendingConfirmation | { target: string } | null): Group[];
 export function thresholdFor(id: string, thresholds: Partial<Thresholds>, activeForm?: string | null): number | null;
+/** A call's status in the Live list. */
+export type CallStatus = 'on-track' | 'second-try' | 'frustrated' | 'transferring' | 'with-person' | 'ended';
+
+/** How a call ended, as the Calls page and the Live list say it. */
+export interface CallEnding {
+  /** handled (the agent finished it), person (handed off), hangup (the caller hung up or left a chat), error. */
+  kind: 'handled' | 'person' | 'hangup' | 'error';
+  text: string;
+  /** For `person`: the handoff reason's code. */
+  reason?: string | null;
+  /** For `hangup`: the task and step the call was on ("Book an appointment · date of birth"), or the greeting. */
+  where?: string;
+}
+
+/** One call as the console's lists show it (callRow): only what was asked and counts, never a value a caller gave. */
+export interface CallRow {
+  callSid: string | null;
+  /** The call's app on a server of several apps (call_started.app); null on a server of one. */
+  app: string | null;
+  /** The caller as masked (`…0110`), or how a chat names itself (`web chat`). */
+  from: string;
+  /** Who is chatting, as the console's header already says it; null on a voice call. */
+  caller: string | null;
+  channel: string;
+  /** The carrier a voice call came in on; null for a chat. */
+  provider: string | null;
+  startedAt: number | null;
+  lastAt: number | null;
+  /** When the call ended; null while it is in progress. */
+  endedAt: number | null;
+  turns: number;
+  /** The task the call is on (its form and its label), or nulls between tasks. */
+  task: { form: string | null; label: string | null };
+  /** The step in plain words: the slot being asked (its console label), or what is being confirmed. */
+  step: string | null;
+  /** Every task the call worked on, by form id and label. */
+  tasks: { id: string; label: string }[];
+  status: CallStatus;
+  /** Whether the frustration gate fired on any turn of the call. */
+  frustrated: boolean;
+  handoffReason: string | null;
+  ending: CallEnding | null;
+  /** The decision model's cost of the call so far, from its records' usage. */
+  costUsd: number;
+}
+
+export function withMeta<T>(meta: ConsoleMeta | null | undefined, fn: () => T): T;
+export function callRow(events: readonly DashboardEvent[], opts?: { meta?: ConsoleMeta | null }): CallRow;
+export const STATUS_TEXT: Readonly<Record<CallStatus, string>>;
+export function isAlert(row: Pick<CallRow, 'status'> | null | undefined): boolean;
+export const HANDED_OFF_SHOWN_MS: number;
+export function liveList(rows: readonly CallRow[], now: number, app?: string | null): CallRow[];
+export function liveStrip(shown: readonly CallRow[]): { inProgress: number; waiting: number };
+export function alertCount(shown: readonly CallRow[]): number;
+export function alertsRaised(before: Readonly<Record<string, CallStatus>> | null, shown: readonly CallRow[]): { statuses: Record<string, CallStatus>; raised: string[] };
+export function pageTitle(page: string, alerts: number, brand: string): string;
+export function durationText(ms: number): string;
+export const ENDINGS: readonly CallEnding['kind'][];
+export interface CallsFilters { last4?: string; from?: string; to?: string; app?: string; task?: string; ending?: string; page?: number }
+export function callsQuery(f: CallsFilters): string;
+export function dayBoundMs(day: string | null | undefined, end?: boolean): number | null;

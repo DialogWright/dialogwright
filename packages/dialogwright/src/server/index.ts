@@ -860,12 +860,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
    * test can drive a tick without waiting a minute for one.
    */
   const sweep = (): void => {
-    // Read before the eviction: `evictIdle` deletes the entry, so afterwards there is no way to
-    // tell whether the call it closed was still live. It closes the socket too, but that close
-    // reaches `handleSocketClose` with the entry already gone, so nothing downstream would ever
-    // publish the end of an evicted call -- this is the only producer of reason 'error'.
-    const live = bus?.current() ?? null;
-    const wasLive = live ? store.get(live)?.ended === false : false;
     // Snapshot before `evictIdle` deletes the entries: a call still live at the moment it is swept
     // away is the one end a turn never sees and http.ts's hangup branch never reaches either, so
     // this sweep is its only producer of a `call_ended` audit entry.
@@ -881,10 +875,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       if (liveBefore.has(sid)) {
         whenChained(auditOf(appIds.get(sid)).append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
           (err: unknown) => log(`${sid}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
+        // The console's end of it: `evictIdle` closes the socket too, but that close reaches
+        // `handleSocketClose` with the entry already gone, so nothing downstream would ever publish the
+        // end of an evicted call -- this is the only producer of reason 'error'. Every call the console
+        // keeps (its Live list), not only the newest, and a call the bus never saw start is ignored there.
+        bus?.publish({ type: 'ended', callSid: sid, at: now(), reason: 'error' });
       }
-    }
-    if (live && wasLive && evicted.includes(live)) {
-      bus?.publish({ type: 'ended', callSid: live, at: now(), reason: 'error' });
     }
     for (const r of routes) r.sweep?.();
     chat?.sweep();

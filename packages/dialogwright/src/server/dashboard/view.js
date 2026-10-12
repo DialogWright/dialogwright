@@ -1383,3 +1383,275 @@ export function stepStop(stops, cursor, delta) {
   if (i < 0) return stops[0];
   return stops[Math.max(0, i + delta + 1)];
 }
+
+// ---------------------------------------------------------------------------------------------
+// The console's lists: Live (the calls in progress) and Calls (the calls that happened)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Runs `fn` with `meta` as the console metadata in force, then puts back what was: one call's row in
+ * its own app's words on a page (or a server) that lists several apps' calls. Without `meta`, the
+ * metadata in force.
+ */
+export function withMeta(meta, fn) {
+  if (!meta) return fn();
+  const saved = META;
+  const slots = [...ALL_SLOTS];
+  const forms = { ...FORM_SLOTS };
+  configure(meta);
+  try {
+    return fn();
+  } finally {
+    META = saved;
+    ALL_SLOTS.splice(0, ALL_SLOTS.length, ...slots);
+    for (const k of Object.keys(FORM_SLOTS)) delete FORM_SLOTS[k];
+    Object.assign(FORM_SLOTS, forms);
+  }
+}
+
+/** A slot in words: its console label (ConsoleMeta.slotLabels), else its id spelled out (`dateOfBirth` reads "date of birth"). */
+function slotWords(id) {
+  const named = id == null ? null : slotName(id);
+  if (named) return named;
+  return String(id ?? 'a value').replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+}
+
+/**
+ * The step a turn left the call at, in plain words for a list: the slot being asked (its console
+ * label), or what is being confirmed. Never a value: only what is asked.
+ */
+function stepOf(r) {
+  if (!r) return null;
+  const p = r.pendingConfirmation;
+  if (p) {
+    if (p.target === 'form') return 'confirming the details';
+    if (p.target === 'intent') return `confirming: ${formLabel(p.intent ?? p.form).toLowerCase() || 'the request'}`;
+    if (p.target === 'check') return 'confirming before a refusal';
+    if (p.target === 'transfer') return 'offered a person';
+    return `confirming ${slotWords(p.slot)}`;
+  }
+  const id = r.promptedFor;
+  if (id === 'otp') return 'the one-time code';
+  if (id === 'intent') return 'what the caller wants';
+  if (id === 'confirm') return 'confirming';
+  return id ? slotWords(id) : null;
+}
+
+/** Whether a record's frustration gate fired (its first two rungs, or the handoff it ends in). */
+function frustratedOn(r) {
+  if ((r.gates ?? []).some((g) => g && g.gate === 'frustration' && (g.outcome === 'ack' || g.outcome === 'offer' || g.outcome === 'handoff'))) return true;
+  return r.decision?.kind === 'handoff' && r.decision.reason === 'frustrated';
+}
+
+/** Whether the slot the turn asks for is past its first attempt. */
+function secondTryOn(r) {
+  if (!r || r.pendingConfirmation) return false;
+  const id = r.promptedFor;
+  if (!id || id === 'intent' || id === 'confirm' || id === 'otp') return false;
+  return (r.slots?.[id]?.attempts ?? 0) >= 1;
+}
+
+/**
+ * Where a call stood when it ended, for "hung up at ...": the task and the step it was on, after the
+ * task it completed, or the greeting.
+ */
+function whereOf(v, step) {
+  const label = v.now.state === 'task' || v.now.state === 'handoff' ? v.now.label : null;
+  if (!label && v.turnCount <= 1) return 'the greeting';
+  const at = [label, step].filter(Boolean).join(' · ');
+  if (at) return at;
+  if (v.now.state === 'completed' && v.now.completedLabel) return `after ${v.now.completedLabel}`;
+  return 'between tasks';
+}
+
+/** How a call ended, in words, from the bus's `ended` reason (null while it is in progress). */
+function endingOf(reason, v, step, handoffReason) {
+  if (reason === null) return null;
+  if (reason === 'completed') return { kind: 'handled', text: 'handled' };
+  if (reason === 'handoff') return { kind: 'person', reason: handoffReason, text: `to a person · ${handoffReasonText(handoffReason)}` };
+  if (reason === 'error') return { kind: 'error', text: 'ended in an error' };
+  const where = whereOf(v, step);
+  return { kind: 'hangup', where, text: `${reason === 'abandoned' ? 'left' : 'hung up'} at ${where}` };
+}
+
+/**
+ * One call as the console's lists show it, from its events (the bus's, live; or replayEvents', from
+ * its trace): its app, the caller as masked (`call_started.from`), the channel and carrier, the task
+ * and step in the app's words (`opts.meta`, else the metadata in force), how long, its status and,
+ * once it ended, how. Nothing here is a value a caller gave: only what was asked, and counts.
+ */
+export function callRow(events, opts) {
+  return withMeta(opts?.meta, () => rowOf(events ?? []));
+}
+
+function rowOf(events) {
+  const list = events.filter((e) => e && typeof e === 'object');
+  const started = list.find((e) => e.type === 'call_started') ?? null;
+  const v = reduce(list);
+  let lastAct = null;
+  let frustrated = false;
+  let handoffEvent = null;
+  let lastAt = typeof started?.at === 'number' ? started.at : null;
+  let endedAt = null;
+  let endReason = null;
+  const forms = [];
+  for (const e of list) {
+    if (typeof e.at === 'number') lastAt = lastAt === null ? e.at : Math.max(lastAt, e.at);
+    if (e.type === 'turn' && e.record && e.record.outlivedHold !== true) {
+      const r = e.record;
+      const consulted = r.questions !== null && r.questions !== undefined;
+      const acted = r.decision?.kind !== 'ignore' && r.decision?.kind !== 'hold';
+      if (consulted || acted) {
+        lastAct = r;
+        // As reduce() reads it: a call that said it ended is live again once a turn acts.
+        endedAt = null;
+        endReason = null;
+      }
+      if (frustratedOn(r)) frustrated = true;
+      for (const f of [r.form, ...(Array.isArray(r.completed) ? r.completed : [])]) if (f && !forms.includes(f)) forms.push(f);
+    } else if (e.type === 'asked' || e.type === 'reconnect') {
+      endedAt = null;
+      endReason = null;
+    } else if (e.type === 'handoff') {
+      handoffEvent = e;
+    } else if (e.type === 'ended') {
+      endedAt = typeof e.at === 'number' ? e.at : lastAt;
+      endReason = e.reason;
+    }
+  }
+  const handoffReason = v.handoff?.reason ?? handoffEvent?.reason ?? null;
+  const step = v.now.state === 'completed' ? null : stepOf(lastAct);
+  const status = endReason === 'handoff' ? 'with-person'
+    : endReason !== null ? 'ended'
+      : v.handoff || handoffEvent ? 'transferring'
+        : frustrated ? 'frustrated'
+          : secondTryOn(lastAct) ? 'second-try'
+            : 'on-track';
+  return {
+    callSid: started?.callSid ?? list[0]?.callSid ?? null,
+    app: typeof started?.app === 'string' ? started.app : null,
+    from: typeof started?.from === 'string' ? started.from : 'unknown',
+    caller: v.caller ?? null,
+    channel: v.channel ?? 'voice',
+    provider: typeof started?.provider === 'string' ? started.provider : null,
+    startedAt: typeof started?.at === 'number' ? started.at : null,
+    lastAt,
+    endedAt,
+    turns: v.turnCount,
+    task: { form: v.now.form ?? null, label: v.now.label ?? null },
+    step,
+    tasks: forms.map((id) => ({ id, label: formLabel(id) })),
+    status,
+    frustrated,
+    handoffReason,
+    ending: endingOf(endReason, v, step, handoffReason),
+    costUsd: Math.round((v.totals.usd ?? 0) * 1e6) / 1e6,
+  };
+}
+
+/** A status in words, as the Live list says it. */
+export const STATUS_TEXT = {
+  'on-track': 'on track',
+  'second-try': 'second try',
+  frustrated: 'frustrated',
+  transferring: 'transferring',
+  'with-person': 'with a person',
+  ended: 'ended',
+};
+
+/** The statuses that raise an alert: a frustrated caller, and a call waiting for a person. */
+export function isAlert(row) {
+  return !!row && (row.status === 'frustrated' || row.status === 'transferring' || row.status === 'with-person');
+}
+
+/**
+ * How long a handed-off call stays in the Live list as "with a person": the server does not see the
+ * person's leg of the call, so it is shown this long after the handoff and then leaves the list.
+ */
+export const HANDED_OFF_SHOWN_MS = 120_000;
+
+/**
+ * The Live list: the calls in progress, and calls handed off in the last HANDED_OFF_SHOWN_MS, of one
+ * app (`app`) or all (null); alerts first, then the longest-running first.
+ */
+export function liveList(rows, now, app) {
+  return (rows ?? [])
+    .filter((r) => r && (app == null || r.app === app))
+    .filter((r) => r.endedAt === null || (r.status === 'with-person' && now - r.endedAt < HANDED_OFF_SHOWN_MS))
+    .sort((a, b) => Number(isAlert(b)) - Number(isAlert(a)) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
+}
+
+/** The strip's two live numbers: calls in progress, and calls waiting for a person or being transferred. */
+export function liveStrip(shown) {
+  return {
+    inProgress: shown.filter((r) => r.endedAt === null).length,
+    waiting: shown.filter((r) => r.status === 'transferring' || r.status === 'with-person').length,
+  };
+}
+
+/** How many calls in the list raise an alert, for the page title. */
+export function alertCount(shown) {
+  return shown.filter(isAlert).length;
+}
+
+/**
+ * The calls that entered an alert since `before` (each call's status as last seen, by id), and the
+ * statuses now. With `before` null (the first list a page sees) nothing is raised: an alert is a
+ * change, not a state the page found on opening.
+ */
+export function alertsRaised(before, shown) {
+  const now = {};
+  const raised = [];
+  for (const r of shown) {
+    now[r.callSid] = r.status;
+    if (before !== null && isAlert(r) && !(Object.hasOwn(before, r.callSid) && isAlert({ status: before[r.callSid] }))) raised.push(r.callSid);
+  }
+  return { statuses: now, raised };
+}
+
+/** The page title: the alert count first when there is any, "(2) Live · Example console". */
+export function pageTitle(page, alerts, brand) {
+  return `${alerts > 0 ? `(${alerts}) ` : ''}${page} · ${brand} console`;
+}
+
+/** A duration as a clock reads it: `0:42`, `12:05`, `1:02:03`. */
+export function durationText(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/** The endings the Calls page filters by. */
+export const ENDINGS = ['handled', 'person', 'hangup', 'error'];
+
+/**
+ * The query the Calls page asks `/dashboard/calls` with, from its filters: only what is well formed
+ * (four digits, a known ending, a day as YYYY-MM-DD read as this browser's local day), so a stray
+ * value never reaches the server.
+ */
+export function callsQuery(f) {
+  const q = new URLSearchParams();
+  const last4 = String(f?.last4 ?? '').replace(/\D/g, '');
+  if (last4.length === 4) q.set('last4', last4);
+  const from = dayBoundMs(f?.from, false);
+  const to = dayBoundMs(f?.to, true);
+  if (from !== null) q.set('from', String(from));
+  if (to !== null) q.set('to', String(to));
+  if (typeof f?.app === 'string' && f.app !== '') q.set('app', f.app);
+  if (typeof f?.task === 'string' && f.task !== '') q.set('task', f.task);
+  if (ENDINGS.includes(f?.ending)) q.set('ending', f.ending);
+  const page = Math.max(0, Math.floor(Number(f?.page) || 0));
+  if (page > 0) q.set('page', String(page));
+  return q.toString();
+}
+
+/** The first (or, with `end`, the last) millisecond of a local day given as YYYY-MM-DD; null for anything else. */
+export function dayBoundMs(day, end) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day ?? ''));
+  if (!m) return null;
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  if (!Number.isFinite(start)) return null;
+  return end ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1).getTime() - 1 : start;
+}
