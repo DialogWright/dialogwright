@@ -8,7 +8,7 @@ import type { ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest, type DashboardDeps } from './dashboard/routes';
-import { noteKind, type AuditCheck, type DayCounters, type HealthNumbers, type HealthSource, type ServerSeen } from './dashboard/health';
+import { type AuditCheck, type DayCounters, type HealthNumbers, type HealthSource, type ServerSeen } from './dashboard/health';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
 import { HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
@@ -421,10 +421,22 @@ function decideUnreadable(
   provider: VoiceProvider,
   params: CallbackParams,
   start?: (o: StartDocumentOptions) => string,
-): { document: string; note: string } {
+): ActionAnswer {
   if (!wantsReconnect(params)) return decideAction(deps, provider, params, start);
   deps.tokens.revoke(params.callId);
-  return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, servedOf(deps, params.callId, params.to).s)), note: 'dial:unreadable' };
+  return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, servedOf(deps, params.callId, params.to).s)), note: 'dial:unreadable', fallback: true };
+}
+
+/**
+ * A callback's answer: its document and the note the log says. `fallback` marks a call the server put
+ * through to a person itself (the server closing, a store it could not read or reach, a session it
+ * cannot read, a call past its reconnects), never one the dialog decided to hand off: the console's
+ * Health page counts them apart.
+ */
+export interface ActionAnswer {
+  document: string;
+  note: string;
+  fallback?: true;
 }
 
 /**
@@ -449,7 +461,7 @@ export function decideAction(
   params: CallbackParams,
   start: (o: StartDocumentOptions) => string = (o) => provider.startDocument(o),
   held?: string | null | 'unknown',
-): { document: string; note: string } {
+): ActionAnswer {
   const callSid = params.callId;
   // The call's app (on a host, the one its entry is in, else the one its number reaches): its transfer
   // targets, its languages and its audit chain answer for it.
@@ -518,7 +530,7 @@ export function decideAction(
     if (deps.closing?.() && !deps.store.durable) {
       deps.store.end(callSid);
       deps.tokens.revoke(callSid);
-      return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:closing' };
+      return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:closing', fallback: true };
     }
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
@@ -540,7 +552,7 @@ export function decideAction(
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'gave-up' };
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'gave-up', fallback: true };
   }
   // A transfer whose `end` was held for its line to play (END_AFTER_PLAYBACK, server/adapter.ts) and never
   // sent: the socket closed first with the caller still on the line. The call has ended, but the
@@ -550,7 +562,7 @@ export function decideAction(
     if (entry) entry.heldHandoffData = null;
     // The store could not say whether a transfer is owed to a caller still on the line: a person, never a hangup.
     deps.tokens.revoke(callSid);
-    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:store-unavailable' };
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:store-unavailable', fallback: true };
   }
   const owed = held !== undefined ? held : entry?.heldHandoffData;
   if (owed && !isBlank(owed)) {
@@ -610,11 +622,6 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
     ...(sh?.peers ? { peers: sh.peers } : {}),
     ...(sh?.verify ? { verify: sh.verify } : {}),
     ...(sh?.auditLabel !== undefined ? { auditLabel: sh.auditLabel } : {}),
-  };
-  /** A webhook's answer counted for the Health page: a reconnect, or a call put through to a person by the server. */
-  const counted = (note: string): void => {
-    const kind = noteKind(note);
-    if (kind !== null) sh?.counters.count(kind);
   };
   return (req, res) => {
     void (async () => {
@@ -705,7 +712,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         if (deps.draining?.()) {
           // A server about to stop starts no call it may not finish: the caller is put through to a person.
           deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}${inApp}: draining: new call sent to handoff`);
-          counted('dial:draining');
+          sh?.counters.count('fallbacks');
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
@@ -714,7 +721,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // it, so the server its socket reaches can read it; one that could not be written puts the caller
         // through to a person rather than at a socket no server will open.
         if (deps.tokens.settled && !(await landed(deps, params.callId))) {
-          counted('dial:token-not-saved');
+          sh?.counters.count('fallbacks');
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
@@ -759,11 +766,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const served = servedOf(deps, callback.callId, callback.to).s;
       deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(served.app?.callData, callback.raw) }));
       const start = legacy ? connectRelayTwiml : undefined;
-      let { document, note } = loaded === 'unreadable'
+      let { document, note, fallback } = loaded === 'unreadable'
         ? decideUnreadable(deps, provider, callback, start)
         : loaded === 'unavailable' && wantsReconnect(callback)
           // The store could not be asked in time: the caller is put through rather than at a reconnect no server can resume.
-          ? { document: provider.apologizeAndDialDocument(fallbackTarget(deps, served)), note: 'dial:store-unavailable' }
+          ? { document: provider.apologizeAndDialDocument(fallbackTarget(deps, served)), note: 'dial:store-unavailable', fallback: true }
           : decideAction(deps, provider, callback, start, held);
       if (deps.store.shared && callback.callId) {
         // Loaded only to answer: the call is taken where its socket lands.
@@ -772,10 +779,12 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         if (note.startsWith('reconnect') && deps.tokens.settled && !(await landed(deps, callback.callId))) {
           document = provider.apologizeAndDialDocument(fallbackTarget(deps, served));
           note = `${note}, then dial:token-not-saved`;
+          fallback = true;
         }
       }
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
-      counted(note);
+      if (fallback) sh?.counters.count('fallbacks');
+      else if (note.startsWith('reconnect')) sh?.counters.count('reconnects');
       if (callback.callId) deps.handover?.()?.answered(callback.callId);
       reply(res, 200, provider.contentType, document);
     })().catch((e: unknown) => {

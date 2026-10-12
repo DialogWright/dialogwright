@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DashboardBus } from './bus';
 import { handleDashboardRequest, type DashboardDeps, type HealthAnswer, type InsightsAnswer, type KnowledgeApp } from './routes';
 import { forgetSummaries } from './calls';
-import { DayCounters, latencyOf, noteKind, ServersSeen, verifyAudit, type HealthSource } from './health';
+import { DayCounters, latencyOf, ServersSeen, verifyAudit, type HealthSource } from './health';
 import { useTestkit } from '../../testing/apps';
 import { writeFolderCall } from '../../testing/consoleCalls';
 import { defaultAppId, getApp } from '../../core/app/registry';
@@ -228,11 +228,6 @@ describe('Health (/dashboard/health) and the audit verified on demand', () => {
     appendFileSync(join(audit, 'north', '2026-09-18.jsonl'), JSON.stringify({ seq: 4, prevHash: 'nope', hash: 'x' }) + '\n');
     const broken = await getJson<{ ok: boolean; breaks: string[] }>(`${base}/dashboard/health/audit`);
     expect(broken).toMatchObject({ ok: false, breaks: ['north/2026-09-18.jsonl: BROKEN at line 4 of 4 (broken link)'] });
-  });
-
-  it('a callback\'s note counted as a reconnect, a fallback dial, or neither', () => {
-    expect(['reconnect:1', 'reconnect:2 after 5 s', 'dial:closing', 'gave-up', 'dial:store-unavailable', 'reconnect:1, then dial:token-not-saved', 'hangup:completed', 'completed', 'dial:draining'].map(noteKind))
-      .toEqual(['reconnects', 'reconnects', 'fallbacks', 'fallbacks', 'fallbacks', 'fallbacks', null, null, 'fallbacks']);
   });
 
   it('today\'s counts start again on a new day', () => {

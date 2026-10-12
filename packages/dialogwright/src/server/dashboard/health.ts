@@ -71,13 +71,6 @@ export class DayCounters {
   }
 }
 
-/** Whether a callback's note (http.ts decideAction's) is a reconnect, a fallback dial, or neither. */
-export function noteKind(note: string): 'reconnects' | 'fallbacks' | null {
-  if (note.includes('dial:') || note === 'gave-up') return 'fallbacks';
-  if (note.startsWith('reconnect')) return 'reconnects';
-  return null;
-}
-
 /** The latency window: an hour. */
 const LATENCY_WINDOW_MS = 3_600_000;
 /** The most asks kept in the window. */
