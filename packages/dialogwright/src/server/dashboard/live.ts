@@ -1,6 +1,7 @@
 import type { DashboardBus } from './bus';
 import type { ConsoleMeta } from './meta';
-import { callRow, type CallRow } from './view.js';
+import { callRow } from './view.js';
+import type { CallRow } from './rows';
 
 /** What the Live list's feed sends after its first list: a call's row as it now stands, or a call the console no longer keeps. */
 export type LiveChange = { type: 'row'; row: CallRow } | { type: 'gone'; callSid: string };

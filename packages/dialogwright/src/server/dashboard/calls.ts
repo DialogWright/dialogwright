@@ -9,7 +9,8 @@ import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog';
 import { maskNumber, redactFrameLine, redactRecord } from './events';
 import { consoleMetaOf } from './meta';
-import { callRow, replayEvents, withMeta, ENDINGS, type CallRow } from './view.js';
+import { callRow, replayEvents, withMeta, ENDINGS } from './view.js';
+import type { CallRow } from './rows';
 import type { ReplayRecord } from './routes';
 
 /**
