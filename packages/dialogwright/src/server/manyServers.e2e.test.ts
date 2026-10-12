@@ -1,7 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
-import { createServer, request, type Server } from 'node:http';
-import { connect, type Socket } from 'node:net';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +8,7 @@ import { startServer, type RunningServer } from './index';
 import { loadConfig, type Env } from './config';
 import { pgliteSql, type PgliteSql } from './stores/pgliteSql';
 import { FakeRelay } from '../testing/fakeRelay';
+import { startBalancer } from '../testing/multi/balancer';
 import { useTestkit } from '../testing/apps';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
@@ -130,62 +129,15 @@ async function boot(name: string, db: PGlite, extra: Env = {}, o: { client?: Jev
 }
 
 /**
- * The load balancer: each webhook and each socket goes to the first server that is up and not draining
- * (as a balancer reading /ready would), a socket piped through whole, so a server that dies closes its
- * sockets on the carrier's side too. No stickiness: carrier webhooks are stateless.
+ * The load balancer (testing/multi/balancer.ts): each webhook and each socket goes to the first server
+ * that is up and not draining (as a balancer reading /ready would). No stickiness: carrier webhooks are
+ * stateless.
  */
 async function balancer(nodes: () => Node[], o: { slow?: boolean } = {}): Promise<{ base: string; ws: string }> {
   // `slow`: a balancer that has not yet seen a draining server's /ready, and still sends it work.
-  const pick = (): Node | undefined => nodes().find((n) => !n.down && (o.slow === true || !n.server.draining));
-  const pipes = new Set<Socket>();
-  const lb: Server = createServer((req, res) => {
-    const to = pick();
-    if (!to) {
-      res.writeHead(502).end();
-      return;
-    }
-    const up = request({ host: '127.0.0.1', port: to.server.port, method: req.method, path: req.url, headers: req.headers }, (r) => {
-      res.writeHead(r.statusCode ?? 502, r.headers);
-      r.pipe(res);
-    });
-    up.on('error', () => {
-      if (!res.headersSent) res.writeHead(502);
-      res.end();
-    });
-    req.pipe(up);
-  });
-  lb.on('upgrade', (req, client: Socket, head: Buffer) => {
-    const to = pick();
-    if (!to) {
-      client.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-      return;
-    }
-    const backend = connect(to.server.port, '127.0.0.1', () => {
-      const lines = [`${req.method} ${req.url} HTTP/1.1`];
-      for (let i = 0; i < req.rawHeaders.length; i += 2) lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
-      backend.write(`${lines.join('\r\n')}\r\n\r\n`);
-      if (head.length) backend.write(head);
-      backend.pipe(client);
-      client.pipe(backend);
-    });
-    pipes.add(backend).add(client);
-    const close = (): void => {
-      backend.destroy();
-      client.destroy();
-      pipes.delete(backend);
-      pipes.delete(client);
-    };
-    backend.on('error', close).on('close', close);
-    client.on('error', close).on('close', close);
-  });
-  await new Promise<void>((resolve) => lb.listen(0, '127.0.0.1', resolve));
-  cleanups.push(() => new Promise<void>((resolve) => {
-    for (const p of pipes) p.destroy();
-    lb.closeAllConnections();
-    lb.close(() => resolve());
-  }));
-  const port = (lb.address() as { port: number }).port;
-  return { base: `http://127.0.0.1:${port}`, ws: `ws://127.0.0.1:${port}` };
+  const lb = await startBalancer(() => nodes().find((n) => !n.down && (o.slow === true || !n.server.draining))?.server.port);
+  cleanups.push(() => lb.close());
+  return { base: lb.base, ws: lb.ws };
 }
 
 /** A connection to the database that, once `hang` is set, never answers (a database blackholed, not refusing). */
