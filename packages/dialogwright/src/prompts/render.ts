@@ -93,9 +93,10 @@ export function lineLang(app: App, locale?: string): string | undefined {
  * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
  * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
  */
-export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string): Say {
+export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
-  vars = framedVars(app, promptId, vars);
+  // A framed line: each span its exact content, or its wording where the renderer gives one.
+  vars = framedVars(app, promptId, vars, spans);
   const segments = segmentTemplate(promptId, entry.text);
   // A line that carries data is spoken whole by TTS, even when clips are on.
   const lang = lineLang(app, locale);

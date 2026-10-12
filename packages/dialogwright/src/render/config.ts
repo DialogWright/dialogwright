@@ -268,7 +268,7 @@ export function summarizedFrom(line: GeneratedLine): string[] {
  * a goal or a `from` of the whole line; each span one of its text's variables and none of the app's
  * slots (a span is worded, not collected), worded from a slot (`from`) that is no identifier.
  */
-function framedProblems(id: string, p: PromptYaml, input: { identifierVars: ReadonlySet<string>; slots?: readonly string[] }): WordingProblem[] {
+function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; identifierVars: ReadonlySet<string>; slots?: readonly string[] }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
   const at = (...key: (string | number)[]): (string | number)[] => ['prompts', id, ...key];
@@ -292,6 +292,15 @@ function framedProblems(id: string, p: PromptYaml, input: { identifierVars: Read
     if (names.includes(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from {${sp.from}}, another span of the line, which is worded, never collected`, fix: 'name the slot the span summarizes' });
     else if (slots !== undefined && !slots.has(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from "${sp.from}", which is not a slot, so there is no content for it`, fix: `name one of the app's slots${input.slots!.length > 0 ? ` (${input.slots!.slice(0, 8).map((x) => `"${x}"`).join(', ')}${input.slots!.length > 8 ? ', ...' : ''})` : ''}: the content the call collected` });
     else if (input.identifierVars.has(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from {${sp.from}}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a model is never sent an identifier`, fix: `delete the span and say {${sp.from}} in the fixed text, or word the span from other content` });
+    else {
+      // A line of a form is given its form's slots: a span worded from another is worded from nothing.
+      const ids = Object.keys(input.prompts);
+      for (const [form, def] of Object.entries(input.forms)) {
+        if (formLineIds(ids, def.slots, def.summaryPromptId).includes(id) && !def.slots.includes(sp.from)) {
+          out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from "${sp.from}", which the form "${form}" does not ask, so the line is never given it`, fix: `name one of the form's slots (${def.slots.map((x) => `"${x}"`).join(', ')}), or add "${sp.from}" to the form` });
+        }
+      }
+    }
   }
   return out;
 }
@@ -304,10 +313,27 @@ export type WordingWarning = WordingProblem;
  * the caller said (its `from`), where a framed line (a fixed frame that says whose words they are, and a
  * generated span inside it) makes the attribution by design rather than by the checks.
  */
-export function generatedWordingWarnings(input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; localePrompts: Readonly<Record<string, Readonly<Record<string, PromptYaml>>>> }): WordingWarning[] {
+export function generatedWordingWarnings(input: {
+  prompts: Readonly<Record<string, PromptYaml>>;
+  forms: FormsYaml['forms'];
+  localePrompts: Readonly<Record<string, Readonly<Record<string, PromptYaml>>>>;
+  /** Each slot the records keep masked, by its redact setting: a span worded from one sends the value whole. */
+  redacted?: Readonly<Record<string, string>>;
+}): WordingWarning[] {
   const generated = generatedWordingOf({ ...input, style: null })?.lines ?? {};
   const out: WordingWarning[] = [];
   for (const [id, line] of Object.entries(generated)) {
+    for (const [name, span] of Object.entries(line.spans ?? {})) {
+      const redact = input.redacted?.[span.from];
+      if (redact === undefined) continue;
+      out.push({
+        file: 'prompts.yaml',
+        path: ['prompts', id, 'generate', name, 'from'],
+        message: `the span "${name}" is worded from {${span.from}}, which the records keep ${redact === 'last4' ? 'by its last four' : 'masked'} (redact: ${redact}), and a model is sent it whole to word the span`,
+        fix: `say {${span.from}} in the line's fixed text instead, or keep the span, as the app's choice (the policy card lists it as sent whole)`,
+        atKey: true,
+      });
+    }
     if (line.spans !== undefined || (line.from ?? []).length === 0) continue;
     out.push({
       file: 'prompts.yaml',

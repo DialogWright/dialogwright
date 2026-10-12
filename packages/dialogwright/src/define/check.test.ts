@@ -770,3 +770,22 @@ describe('checkApp: a summary read back word for word on a no (review fixes)', (
     }
   });
 });
+
+describe('checkApp: a framed line (review fixes)', () => {
+  it('warns, never refuses, of a span worded from a slot the records mask; refuses one worded from no slot', async () => {
+    const { MESSAGE_DIR, messageCode } = await import('../testing/message/app');
+    const dir = mkdtempSync(join(tmpdir(), 'framed-'));
+    try {
+      cpSync(MESSAGE_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      const prompts = readFileSync(join(dir, 'prompts.yaml'), 'utf8');
+      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace('on {phone}, called', 'on {callback}, called').replace('        words: 25\n', '        words: 25\n      callback:\n        from: phone\n        goal: Say the number to call back.\n'));
+      const masked = await checkAppFully(dir, { code: messageCode });
+      expect(masked.problems.map(formatProblem)).toEqual([]);
+      expect((masked.warnings ?? []).map(formatProblem)).toEqual([expect.stringContaining('prompts.confirm_take_message.generate.callback.from  the span "callback" is worded from {phone}, which the records keep by its last four (redact: last4), and a model is sent it whole to word the span')]);
+      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace('        from: message\n', '        from: elsewhere\n'));
+      expect((await checkApp(dir, { code: messageCode })).map(formatProblem)).toContainEqual(expect.stringContaining('the span "summary" is worded from "elsewhere", which is not a slot'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

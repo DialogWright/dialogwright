@@ -266,7 +266,9 @@ const PERSON_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Words a span may begin with, capitalized, that are not names (beside the common words a line's sentences begin with). */
-const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's", 'they', "they're", "they'd", "they'll", 'them', 'their', 'his', 'her', 'about', 'asking', 'wants', 'needs', 'call', 'calling', 'regarding', 're']);
+const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's", 'they', "they're", "they'd", "they'll", 'them', 'their', 'his', 'her', 'about', 'asking', 'wants', 'needs', 'call', 'calling', 'regarding', 're',
+  // Summary verbs: a span begins mid-sentence, but a model may still capitalize its first word.
+  'asks', 'requests', 'says', 'would', 'wanted', 'needed', 'reports', 'mentions']);
 
 /**
  * The first check a framed line's span fails, or null when it passes them all (the drift check aside).

@@ -210,3 +210,23 @@ describe('a framed line: a fixed line with generated spans (generate)', () => {
     expect(problems({ confirm_f: whole })).toEqual([]);
   });
 });
+
+describe('a framed line (review fixes)', () => {
+  const FRAME = '{caller} called and left this message: {summary}. Shall I pass it on?';
+  const span = (from: string): PromptYaml => line(FRAME, { generate: { summary: { from, goal: 'Summarize it.' } } });
+  const forms = { f: form(['caller', 'message', 'phone'], { summaryPromptId: 'confirm_f' }) };
+  it('check refuses a span worded from a slot its line\'s form does not ask: the line is never given it', () => {
+    const problems = (prompts: Record<string, PromptYaml>) => generatedWordingProblems({ prompts, forms, localePrompts: {}, identifierVars: new Set(), slots: ['caller', 'message', 'phone', 'other'] }).map((p) => `${p.path.join('.')}: ${p.message}`);
+    expect(problems({ confirm_f: span('other') })).toEqual(['prompts.confirm_f.generate.summary.from: the span "summary" is worded from "other", which the form "f" does not ask, so the line is never given it']);
+    expect(problems({ confirm_f: span('message') })).toEqual([]);
+    // A line of no form: any slot.
+    expect(problems({ somewhere: span('other') })).toEqual([]);
+  });
+  it('check warns, never refuses, of a span worded from a slot the records mask: its value goes to the model whole', () => {
+    const warnings = generatedWordingWarnings({ prompts: { confirm_f: span('phone'), c2: span('message') }, forms, localePrompts: {}, redacted: { phone: 'last4' } });
+    expect(warnings.map((w) => `${w.path.join('.')}: ${w.message}`)).toEqual([
+      'prompts.confirm_f.generate.summary.from: the span "summary" is worded from {phone}, which the records keep by its last four (redact: last4), and a model is sent it whole to word the span',
+    ]);
+    expect(generatedWordingProblems({ prompts: { confirm_f: span('phone') }, forms, localePrompts: {}, identifierVars: new Set(), slots: ['caller', 'message', 'phone'] })).toEqual([]);
+  });
+});

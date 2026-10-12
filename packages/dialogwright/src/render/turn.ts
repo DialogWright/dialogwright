@@ -9,7 +9,7 @@ import type { App, GeneratedLine, RenderChannel, RenderSituation } from '../core
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
-import { framedVars, localePromptEntry, promptText, renderTemplate, saidLineOf, type SaidLine } from '../prompts/render';
+import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
@@ -79,6 +79,8 @@ export interface RenderInput {
   client: JevClient;
   /** The run's thresholds: the screen's fire level, for the collected content screened again. */
   thresholds: Thresholds;
+  /** The run's recorded clips (RunOptions.render): a framed line keeps its frame's clips when a span is worded. */
+  clips?: RenderContext | null;
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
@@ -434,9 +436,9 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: sp.name, reason: got.fallback } });
     });
     if (Object.keys(worded).length > 0) {
+      // Said as the fixed line is (its frame's recorded clips kept), each worded span in its place.
       const was = actions[f.index] as Say;
-      const template = localePromptEntry(app, promptId, result.session.locale).entry.text;
-      actions[f.index] = sayAction([{ text: renderTemplate(template, framedVars(app, promptId, { ...f.said.vars }, worded)) }], was.interruptible, was.lang);
+      actions[f.index] = promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded);
     }
   });
   // In the order the lines were said.

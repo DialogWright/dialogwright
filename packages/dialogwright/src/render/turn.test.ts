@@ -404,6 +404,16 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     if (last.result.decision.kind === 'prompt' && last.result.decision.promptId === 'confirm_take_message') expect(spanOf(changed)).toMatchObject({ skipped: 'when' });
   });
 
+  it('keeps the frame\'s recorded clips when its span is generated (review fixes)', async () => {
+    const render = { clips: new Map([['confirm_take_message.0', 'frame-open.wav']]), audioBase: 'https://h/audio/' };
+    const scenario: Scenario = { id: 'call-1', steps: TO_SUMMARY, expect: { decision: 'any' } };
+    const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, render, renderer: fake() });
+    const say = r.runs.at(-1)!.result.actions.find((a) => a.type === 'say') as { parts: ({ audio: string } | { text: string })[] };
+    expect(say.parts[0]).toEqual({ audio: 'https://h/audio/frame-open.wav' });
+    expect(sayText([r.runs.at(-1)!.result.actions.find((a) => a.type === 'say')!])).toContain('called and left this message: please call me about the March invoice before. Shall I pass it on?');
+    expect(spanOf(r)).toMatchObject({ mode: 'generated' });
+  });
+
   it('a call in the fixed group (RENDER_SHARE) says the exact content, untried', async () => {
     const r = await call(TO_SUMMARY, { client: new FakeRenderClient(), share: 0 });
     expect(lastSaid(r)).toBe(EXACT);

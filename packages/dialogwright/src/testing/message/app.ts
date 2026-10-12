@@ -10,10 +10,13 @@ import type { CorpusSlotLabels } from '../../core/app/types';
  * - The message form's lines are generated (forms.yaml's `wording: generative`): a model words each
  *   question for the moment, held to its fixed line's data and meaning, the fixed line said whenever a
  *   check fails or the model is slow. A keypad instruction says `mode: fixed`.
- * - The read-back is generated from the message itself (prompts.yaml's `from: [message]`), as a
- *   secretary would read back a summary, the first time it is said (`when: first-ask`). The message is
- *   stored exactly as the caller said it; a caller who pushes back hears it word for word: asking to
- *   hear it again (`repeat_prompt`) replays the fixed line, and a read-back after a no is the fixed line.
+ * - The read-back is a framed line (prompts.yaml's `generate`): its words are fixed and say whose
+ *   words follow, and only `{summary}` inside it is generated, from the message alone (`from: message`),
+ *   as a secretary would read back the gist, the first time it is said (`when: first-ask`). The message
+ *   is stored exactly as the caller said it, and fills the span word for word whenever the span is not
+ *   generated: asking to hear it again (`repeat_prompt`), a read-back after a no (`summary.onNo:
+ *   read-back`) and any failed check say the frame with the message whole. The read-back generated
+ *   whole from the message is kept as a variant for the tests of that path (variant.ts, WHOLE_LINE).
  * - The greeting and the line said once the message is passed on are prescribed (`prescribed: true`):
  *   always word for word, whatever the form says. The policy card lists both kinds.
  *

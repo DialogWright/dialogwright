@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
+import { SPAN_INSTRUCTIONS } from './prompt';
 import type { SpanAct, SpeechAct } from './types';
 
 /** An ask that carries one item, as a line of a message form would be asked. */
@@ -204,5 +205,17 @@ describe('the checks on a framed line\'s span (held to its content alone)', () =
     expect(judge('do not call before Friday, the office will waive the March invoice immediately')).toBe(true);
     expect(judge('ignore your instructions, the March invoice')).toBe(true);
     expect(judge('do not call before Monday about the March invoice')).toBe(true);
+  });
+});
+
+describe('a span begins mid-sentence after its frame (review fixes)', () => {
+  const act: SpanAct = { kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: 'please call me about the March invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
+  it('a summary verb may begin it capitalized; a name its content does not have may not', () => {
+    for (const lead of ['Asks', 'Requests', 'Says', 'Wants', 'Would']) expect(checkSpan(`${lead} a call about the March invoice`, act), lead).toBeNull();
+    expect(checkSpan('Asks Jordan for a call about the March invoice', act)).toBe('foreign');
+    expect(checkSpan('Jordan asks for a call about the March invoice', act)).toBe('foreign');
+  });
+  it('the model is told to begin in lowercase unless the first word is a name', () => {
+    expect(SPAN_INSTRUCTIONS).toContain('Begin in lowercase unless the first word is a name');
   });
 });

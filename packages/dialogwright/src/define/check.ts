@@ -363,7 +363,8 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
   // A line generated whole from what the caller said: the framed form is the pattern (render/config.ts).
-  for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: {} })) {
+  const redacted = Object.fromEntries(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => (spec?.redact !== undefined ? [[id, spec.redact]] : [])));
+  for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: {}, redacted })) {
     const at = (w.atKey === true && loaded.locateKey ? loaded.locateKey(w.file, w.path) : locate(w.file, w.path)) ?? { line: 1, column: 1 };
     warnings.push({ file: w.file, line: at.line, column: at.column, path: formatPath(w.path), message: w.message, fix: w.fix });
   }

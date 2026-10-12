@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { expectAppMap, policyCardText, expectPolicyCard, expectPolicyMatrix, policyInvariants } from '../index';
 import { MESSAGE_DIR, messageApp } from './app';
+import { messageVariants, replace } from './variant';
+import { afterAll } from 'vitest';
 
 /**
  * The fixture's three read-back pages, the policy card listing the lines a model words and the
@@ -24,10 +26,39 @@ describe('the message fixture\'s pages', () => {
     const card = policyCardText(messageApp, MESSAGE_DIR);
     expect(card).toContain('## Lines a model words');
     // The read-back is framed: its summary a span a model words from the message, every other word fixed.
-    expect(card).toContain('| Line | Fixed text | Span | Goal | Generated | Worded from | Words |');
+    expect(card).toContain('| Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |');
     expect(card).toContain("| `confirm_take_message` | Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on? | `{summary}` |");
     expect(card).toContain('| `ask_caller` |');
     expect(card).toContain('| `message_taken` | Thanks, {caller}. Your message for {recipient} has been passed on. Your reference is {ref}. |');
     expect(card).not.toContain('| `ask_phone_dtmf` |');
+  });
+});
+
+describe('the policy card\'s framed lines (review fixes)', () => {
+  const variants = messageVariants();
+  afterAll(() => variants.remove());
+  it('says once that every other line is said word for word, after the framed lines', () => {
+    const card = policyCardText(messageApp, MESSAGE_DIR);
+    expect(card.match(/Every other line is said word for word\./g)).toHaveLength(1);
+    expect(card).toMatch(/anything a tool returned\. Every other line is said word for word\./);
+  });
+  it('lists a span worded from a slot the records mask as sent whole', () => {
+    const app = variants.variant({
+      'app.yaml': replace('id: message', 'id: message-masked-span'),
+      'prompts.yaml': (text) => replace('on {phone}, called', 'on {callback}, called')(replace(`        words: 25
+`, `        words: 25
+      callback:
+        from: phone
+        goal: Say the number to call back.
+`)(text)),
+    });
+    resetAppsForTest();
+    registerApp(app);
+    const card = policyCardText(app, MESSAGE_DIR);
+    expect(card).toContain('| Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |');
+    expect(card).toMatch(/\| `\{callback\}` \| Say the number to call back\. \| the first time it is said \| `\{phone\}`, a value the caller confirms \| `\{phone\}` \| 25 \|/);
+    expect(card).toMatch(/\| `\{summary\}` \| .* \| `\{message\}`, a value the caller confirms \| nothing \| 25 \|/);
+    resetAppsForTest();
+    registerApp(messageApp);
   });
 });

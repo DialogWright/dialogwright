@@ -313,7 +313,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t3 = performance.now();
   // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
   // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
-  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds }) : null;
+  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null }) : null;
   const result = rendered ? { ...resolved, actions: rendered.actions, audit: withRenderAudit(resolved.audit, rendered.audit) } : resolved;
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
