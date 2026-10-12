@@ -606,6 +606,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const stopListening = (): Promise<void> => (stopped ??= new Promise<void>((resolve) => server.close(() => resolve())));
   try {
     consoleAuth?.start(port);
+    // With the audit in a database, the first link exists once its record does.
+    await consoleAuth?.linkRecorded();
   } catch (err) {
     // A link file that cannot be written safely is a setting to fix, not a console without a way in.
     clearInterval(evictor);

@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { startServer, type RunningServer } from '../index';
 import { loadConfig } from '../config';
 import { useTestkit } from '../../testing/apps';
-import type { LinkFile } from './auth';
+import { LINK_KEY_HEADER, type LinkFile } from './auth';
+import type { SqlClient } from '../stores/sql';
 import { PGlite } from '@electric-sql/pglite';
 import { pgliteSql } from '../stores/pgliteSql';
 import { verifyPostgresAudit } from '../../audit/postgres';
@@ -79,6 +80,14 @@ describe('startServer with CONSOLE_AUTH=token', () => {
   });
 });
 
+/** A connection that, while `down` is set, fails every question (a database that stops answering, then comes back). */
+function downable(sql: SqlClient): SqlClient & { down: boolean } {
+  const d = { ...sql, down: false } as SqlClient & { down: boolean };
+  d.query = (text, params) => (d.down ? Promise.reject(new Error('the database is down')) : sql.query(text, params));
+  d.transaction = (fn) => (d.down ? Promise.reject(new Error('the database is down')) : sql.transaction(fn));
+  return d;
+}
+
 describe('startServer with CONSOLE_AUTH=token and AUDIT_STORE=postgres', () => {
   const DB_URL = 'postgres://dialogwright:not-a-password@db.invalid:5432/dialogwright';
 
@@ -94,7 +103,7 @@ describe('startServer with CONSOLE_AUTH=token and AUDIT_STORE=postgres', () => {
   it('the access log goes to the database: the link made, the sign-in, the live feed; one the database cannot take is not served', async () => {
     const db = await PGlite.create();
     try {
-      const sql = pgliteSql(db);
+      const sql = downable(pgliteSql(db));
       const { dir, config: c } = config({ CONSOLE_AUTH: 'token', AUDIT_STORE: DB_URL });
       const lines: string[] = [];
       running = await startServer(c, { host: '127.0.0.1', log: (l) => lines.push(l), auditSql: sql });
@@ -115,13 +124,36 @@ describe('startServer with CONSOLE_AUTH=token and AUDIT_STORE=postgres', () => {
       ]);
       expect(existsSync(join(dir, 'audit'))).toBe(false);
       expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
-      // The database stops answering: a sign-in it cannot record is not made, and a feed not opened.
-      sql.cut();
+      // A second browser signs in with a link made by console:link (the key in the link file).
+      const minted = await fetch(`http://127.0.0.1:${running.port}/dashboard/link`, { method: 'POST', headers: { [LINK_KEY_HEADER]: link.key } });
+      expect(minted.status).toBe(200);
+      const second = await signInWith(running.port, new URL((await minted.json() as { url: string }).url).searchParams.get('code')!);
+      const cookie2 = second.headers.get('set-cookie')!.split(';')[0]!;
+      // The database stops answering.
+      sql.down = true;
+      const watch = () => fetch(`http://127.0.0.1:${running!.port}/dashboard/events`, { headers: { cookie: cookie2, 'x-forwarded-for': '203.0.113.9', host: 'demo.example.net' } });
+      // A feed it cannot record is not opened, and the browser's retry is not served either while it cannot be.
+      for (let i = 0; i < 2; i++) {
+        const refusedFeed = await watch();
+        expect(refusedFeed.status).toBe(503);
+        expect(await refusedFeed.text()).toBe('the access could not be recorded');
+      }
+      // A sign-in it cannot record is not made.
       const refused = await signInWith(running.port, 'f'.repeat(64));
       expect(refused.status).toBe(500);
       expect(refused.headers.get('set-cookie')).toBeNull();
-      const other = await fetch(`http://127.0.0.1:${running.port}/dashboard/login?code=${'e'.repeat(64)}`);
-      expect(other.status).toBe(200);
+      // Nor a link: console:link fails, and no link is written to the file.
+      const notMinted = await fetch(`http://127.0.0.1:${running.port}/dashboard/link`, { method: 'POST', headers: { [LINK_KEY_HEADER]: link.key } });
+      expect(notMinted.status).toBe(500);
+      expect((JSON.parse(readFileSync(join(dir, '.console-link', 'link.json'), 'utf8')) as LinkFile).url).toBeNull();
+      // The database is back: the retry is served, and recorded once.
+      sql.down = false;
+      const ac = new AbortController();
+      const served = await fetch(`http://127.0.0.1:${running.port}/dashboard/events`, { headers: { cookie: cookie2, 'x-forwarded-for': '203.0.113.9', host: 'demo.example.net' }, signal: ac.signal });
+      expect(served.status).toBe(200);
+      ac.abort();
+      const lives = (await db.query<{ body: string }>('SELECT body FROM dw_audit_entries')).rows.filter((r) => r.body.includes('"event":"live"'));
+      expect(lives).toHaveLength(2);
       await running.close();
       running = null;
     } finally {

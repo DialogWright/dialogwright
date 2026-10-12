@@ -418,13 +418,18 @@ export function decideAction(
       // This is the one end no turn sees, so nothing pushed it onto the entry's own chain either
       // (the observer's audit hook only fires from inside a turn) -- done here instead, so the
       // handoff summary a later call could still read (src/handoff/summary.ts) is never short one.
+      // The console has the audit's entry before the end, as on one machine, whenever the audit has it.
+      const ended = (): void => deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() });
       if (deps.audit) {
         whenChained(deps.audit.append(callSid, live.session.channel, { type: 'call_ended', detail: { reason: 'hangup', completed: [...live.session.completed] } }), (entry) => {
           live.auditEntries.push(entry);
           deps.bus?.publish({ type: 'audit', callSid, at: Date.now(), entries: [entry] });
-        }, (err: unknown) => deps.log(`${callSid}: the hangup's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
-      }
-      deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() });
+          ended();
+        }, (err: unknown) => {
+          deps.log(`${callSid}: the hangup's audit entry failed: ${err instanceof Error ? err.message : String(err)}`);
+          ended();
+        });
+      } else ended();
     }
     const reason = params.sessionStatus ?? params.callStatus ?? 'unknown';
     return { document: provider.hangupDocument(), note: `hangup:${reason}` };

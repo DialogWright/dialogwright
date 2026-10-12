@@ -284,6 +284,11 @@ export class ConsoleAuth implements ConsoleGate {
     return this.mint('start');
   }
 
+  /** The last link's record written (AUDIT_STORE=postgres), or failed and said; at once with day files. */
+  async linkRecorded(): Promise<void> {
+    await this.minted?.catch(() => undefined);
+  }
+
   /** Removes the link file: its key dies with the process. */
   stop(): void {
     rmSync(this.linkFile, { force: true });
@@ -292,18 +297,26 @@ export class ConsoleAuth implements ConsoleGate {
   /** A new one-time link; one made before it that was not used stops working. The link file is rewritten. */
   mint(by: 'start' | 'console:link' = 'console:link'): SignInLink {
     const now = this.now();
-    if (this.pending) this.retire(this.pending.digest, now > this.pending.expiresAt ? 'expired' : 'replaced');
     const code = randomBytes(32).toString('hex');
     const expiresAt = now + CODE_TTL_MS;
     const hash = shortHash(code);
     const url = `${this.base()}${LOGIN_PATH}?code=${code}`;
     const noted = this.note('console', { event: 'link_made', code: hash, by });
-    // AUDIT_STORE=postgres: the link made is recorded once the database has it; the link route waits for it.
-    this.minted = noted instanceof Promise ? noted : null;
-    this.minted?.catch((e: unknown) => this.log(`console: the link made could not be recorded: ${e instanceof Error ? e.message : String(e)}`));
-    this.pending = { digest: sha256(code), expiresAt, hash };
-    this.writeLinkFile(url, expiresAt);
-    this.log(`console: a sign-in link (code ${hash}…, until ${new Date(expiresAt).toISOString().slice(11, 16)} UTC, once) is in ${this.linkFile}; pnpm console:link prints a new one`);
+    // The link works, and is written to its file, only once the audit has the record of it.
+    const made = (): void => {
+      if (this.pending) this.retire(this.pending.digest, now > this.pending.expiresAt ? 'expired' : 'replaced');
+      this.pending = { digest: sha256(code), expiresAt, hash };
+      this.writeLinkFile(url, expiresAt);
+      this.log(`console: a sign-in link (code ${hash}…, until ${new Date(expiresAt).toISOString().slice(11, 16)} UTC, once) is in ${this.linkFile}; pnpm console:link prints a new one`);
+    };
+    if (noted instanceof Promise) {
+      // AUDIT_STORE=postgres: once the database has it; the link route waits for it, and a link not recorded is never made.
+      this.minted = noted.then(made);
+      this.minted.catch((e: unknown) => this.log(`console: a sign-in link was not made: its record could not be written (${e instanceof Error ? e.message : String(e)})`));
+    } else {
+      this.minted = null;
+      made();
+    }
     return { url, code, expiresAt, codeHash: hash };
   }
 
@@ -346,8 +359,13 @@ export class ConsoleAuth implements ConsoleGate {
   noteLive(session: ConsoleSession): Chained<void> {
     if (this.live.has(session.id)) return;
     const noted = this.note('console', { event: 'live', session: session.hash });
-    this.live.set(session.id, session.expiresAt);
-    prune(this.live, (exp) => exp <= this.now());
+    const seen = (): void => {
+      this.live.set(session.id, session.expiresAt);
+      prune(this.live, (exp) => exp <= this.now());
+    };
+    // Counted as recorded only once it is: a feed whose record failed is asked to record again when it retries.
+    if (noted instanceof Promise) return noted.then(seen);
+    seen();
     return noted;
   }
 
