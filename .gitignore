@@ -17,6 +17,8 @@ apps/*/sessions/
 *.log
 .DS_Store
 coverage/
+# pnpm multi:test's logs of the compose stack
+deploy/compose/logs/
 *.tmp
 
 # A package build (pnpm -r build): the code, and the pages the engine package carries

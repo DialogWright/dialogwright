@@ -1,0 +1,27 @@
+# What the image never takes from the repository (Dockerfile): installed packages and builds (the image
+# installs its own), settings files and keys, and what a server or the harness writes where it runs
+# (traces, audit logs, saved calls, the console's link, logs). A test reads this file against what git
+# tracks: every source file the image needs is kept.
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+traces
+audit
+sessions
+apps/*/traces
+apps/*/audit
+apps/*/sessions
+packages/*/traces
+packages/*/audit
+**/.console-link
+**/*.log
+**/coverage
+**/*.tmp
+**/.DS_Store
+deploy/compose/logs
+# Not needed to run an app.
+site
+.github

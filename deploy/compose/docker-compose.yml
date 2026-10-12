@@ -1,0 +1,130 @@
+# Two servers of one app on one Postgres and one S3-compatible store, behind a load balancer: the stack
+# `pnpm multi:test` builds, starts and runs its takeover driver against (guide 14.14). Every image is
+# pinned by version and digest; the app's is built from this repository (the Dockerfile at its root).
+#
+# Its secrets are made fresh by `pnpm multi:test` for each run and never stored: the database's
+# password, the store's keys, and the carriers' (signatures are off: the driver is the carrier). Every
+# port is published on 127.0.0.1 only. It is a test stack, not a deployment: the console is served past
+# the loopback rule with no sign-in (CONSOLE_LOCAL_ONLY=off), for the driver to read it.
+#
+# To start it by hand (the variables set as scripts/multi-test.mjs sets them):
+#   docker compose -p dialogwright-multi -f deploy/compose/docker-compose.yml up --build -d
+
+name: dialogwright-multi
+
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+    args:
+      APP: ${APP:-clinic}
+  image: dialogwright-multi-app:${APP:-clinic}
+  # Past DRAIN_MS: a `docker compose stop` lets the drain run and the server exit by itself.
+  stop_grace_period: 30s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    s3-bucket:
+      condition: service_completed_successfully
+
+# Each server's settings: the stack's (testing/multi/driver.ts MULTI_SERVER_ENV, which a test holds this
+# to), then its stores, its keys and its name.
+x-app-env: &app-env
+  PUBLIC_HOST: voice.example.com
+  VOICE_PROVIDERS: twilio,telnyx
+  SIGNATURE_CHECK: "off"
+  HANDOFF_NUMBER: "+15555550100"
+  TODAY_OVERRIDE: "2026-09-18"
+  NO_INPUT_MS: "0"
+  CONSOLE_LOCAL_ONLY: "off"
+  CALL_LEASE_MS: "5000"
+  DRAIN_MS: "4000"
+  RESTART_PAUSE_S: "0"
+  TRACE_STORE: s3://call-traces/multi
+  S3_REGION: us-east-1
+  S3_FORCE_PATH_STYLE: "on"
+  PORT: "3000"
+  SESSION_STORE: postgres://dialogwright:${MULTI_PG_PASSWORD:?set by pnpm multi:test}@postgres:5432/dialogwright
+  AUDIT_STORE: postgres://dialogwright:${MULTI_PG_PASSWORD:?set by pnpm multi:test}@postgres:5432/dialogwright
+  S3_ENDPOINT: http://s3:9000
+  S3_ACCESS_KEY_ID: ${MULTI_S3_ACCESS_KEY:?set by pnpm multi:test}
+  S3_SECRET_ACCESS_KEY: ${MULTI_S3_SECRET_KEY:?set by pnpm multi:test}
+  TWILIO_AUTH_TOKEN: ${MULTI_TWILIO_AUTH_TOKEN:?set by pnpm multi:test}
+  TELNYX_PUBLIC_KEY: ${MULTI_TELNYX_PUBLIC_KEY:?set by pnpm multi:test}
+
+services:
+  postgres:
+    image: postgres:17.11-trixie@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_USER: dialogwright
+      POSTGRES_PASSWORD: ${MULTI_PG_PASSWORD:?set by pnpm multi:test}
+      POSTGRES_DB: dialogwright
+    ports:
+      - "127.0.0.1:${MULTI_PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dialogwright", "-d", "dialogwright"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The S3-compatible store: RustFS (Apache-2.0), path-style. MinIO's own images are no longer published
+  # for anonymous pulls; any store that speaks S3's API with Signature Version 4 does.
+  s3:
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    environment:
+      RUSTFS_ACCESS_KEY: ${MULTI_S3_ACCESS_KEY:?set by pnpm multi:test}
+      RUSTFS_SECRET_KEY: ${MULTI_S3_SECRET_KEY:?set by pnpm multi:test}
+    ports:
+      - "127.0.0.1:${MULTI_S3_PORT:-19000}:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The bucket, made once the store is up (a signed CreateBucket; 409 when it is there already).
+  s3-bucket:
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    depends_on:
+      s3:
+        condition: service_healthy
+    environment:
+      S3_KEY: ${MULTI_S3_ACCESS_KEY:?set by pnpm multi:test}
+      S3_SECRET: ${MULTI_S3_SECRET_KEY:?set by pnpm multi:test}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        code=$$(curl -sS -o /dev/null -w '%{http_code}' --aws-sigv4 'aws:amz:us-east-1:s3' --user "$$S3_KEY:$$S3_SECRET" -X PUT http://s3:9000/call-traces)
+        echo "the bucket call-traces: $$code"
+        [ "$$code" = 200 ] || [ "$$code" = 409 ]
+    restart: "no"
+
+  app-a:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_ID: app-a
+    ports:
+      - "127.0.0.1:${MULTI_APP_A_PORT:-18081}:3000"
+
+  app-b:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_ID: app-b
+    ports:
+      - "127.0.0.1:${MULTI_APP_B_PORT:-18082}:3000"
+
+  # The balancer: HAProxy, reading each server's /ready, round robin with no stickiness, WebSockets
+  # passed through with an idle timeout longer than any call (haproxy.cfg).
+  lb:
+    image: haproxy:3.2.25@sha256:89c31eabc1ce443a13a42725a04df034b992c9d60580f4e6ef8b7bf5b15deddf
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "127.0.0.1:${MULTI_LB_PORT:-18080}:8080"
+    depends_on:
+      app-a:
+        condition: service_started
+      app-b:
+        condition: service_started

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "adopt:test": "node scripts/adopt-test.mjs",
+    "multi:test": "node scripts/multi-test.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check": "pnpm --filter dialogwright check",
