@@ -12,6 +12,7 @@ import { maskNumber, redactFrameLine, redactRecord } from './events';
 import { consoleMetaOf } from './meta';
 import { callRow, replayEvents, settledRow, withMeta, ENDINGS } from './view.js';
 import type { CallRow } from './rows';
+import { factsOfTrace, type CallSummary } from './figures';
 import type { ReplayRecord } from './routes';
 
 /**
@@ -40,7 +41,7 @@ export interface CallsSource {
 }
 
 /** One call found by name, before its trace is read. */
-interface Candidate {
+export interface Candidate {
   source: CallsSource;
   sid: string;
   /** Its last write: a file's mtime, or the newest segment's. */
@@ -127,7 +128,7 @@ async function folderCandidates(source: CallsSource, fromMs: number | undefined,
 }
 
 /** The calls of one source by name: a folder's files, or the store's day folders in the range (a day either side, for the time zones). */
-async function candidatesOf(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
+export async function candidatesOf(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
   if (!source.traces) return folderCandidates(source, fromMs, toMs);
   const range = {
     ...(fromMs !== undefined ? { from: dayOf(fromMs - DAY_MS) } : {}),
@@ -165,18 +166,18 @@ export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: re
   return row.channel === 'chat' && from === null ? { ...row, from: 'web chat' } : row;
 }
 
-/** The summaries read so far, by app, call, size and last write, the most recently used last (an LRU). */
-const kept = new Map<string, CallRow | null>();
+/** The summaries read so far (with what each call adds to Insights' figures), by app, call, size and last write, the most recently used last (an LRU). */
+const kept = new Map<string, CallSummary | null>();
 
 /** Forgets every summary (tests). */
 export function forgetSummaries(): void {
   kept.clear();
 }
 
-const keyOf = (c: Candidate): string => `${c.source.id ?? ''}|${c.sid}|${c.lastMs}|${c.size}`;
+export const keyOf = (c: Candidate): string => `${c.source.id ?? ''}|${c.sid}|${c.lastMs}|${c.size}`;
 
-/** A candidate's summary: kept, or read from its trace now. */
-async function read(c: Candidate): Promise<CallRow | null> {
+/** A candidate's summary and facts: kept, or read from its trace now. */
+async function read(c: Candidate): Promise<CallSummary | null> {
   const key = keyOf(c);
   if (kept.has(key)) {
     // Used: to the end, so the least recently used summary is the one let go.
@@ -185,15 +186,19 @@ async function read(c: Candidate): Promise<CallRow | null> {
     kept.set(key, row);
     return row;
   }
-  let row: CallRow | null = null;
+  let row: CallSummary | null = null;
+  const summarize = (records: TraceRecord[], frames: ReadFrameLogLine[]): CallSummary | null => {
+    const summary = summaryOfTrace(records, frames, c.source.app);
+    return summary === null ? null : { row: summary, facts: factsOfTrace(records, c.source.app) };
+  };
   if (c.source.traces) {
     const joined = await c.source.traces.read(c.sid, c.day);
-    if (joined !== null) row = summaryOfTrace(parseTraceLines(joined.trace), parseFrameLog(joined.frames.join('\n')), c.source.app);
+    if (joined !== null) row = summarize(parseTraceLines(joined.trace), parseFrameLog(joined.frames.join('\n')));
   } else {
     // Read without blocking the server: a voice call's turns run on the same thread.
     const trace = await readFile(join(c.source.traceDir, `${c.sid}.jsonl`), 'utf8').catch(() => null);
     const frames = await readFile(join(c.source.traceDir, `${c.sid}.frames.jsonl`), 'utf8').catch(() => '');
-    if (trace !== null) row = summaryOfTrace(parseTraceLines(trace.split('\n')), parseFrameLog(frames), c.source.app);
+    if (trace !== null) row = summarize(parseTraceLines(trace.split('\n')), parseFrameLog(frames));
   }
   kept.set(key, row);
   if (kept.size > MAX_KEPT) kept.delete(kept.keys().next().value!);
@@ -243,7 +248,7 @@ async function walk(sources: readonly CallsSource[], fromMs: number | undefined,
     const read_ = await Promise.all(batch.map(read));
     if (fresh > 0) await yieldToOthers();
     batch.forEach((c, k) => {
-      const row = read_[k];
+      const row = read_[k]?.row;
       if (!row || rows.length >= enough) return;
       const shown: CallsRow = { ...settled(row, nowMs), ...(c.source.id !== null ? { app: c.source.id, appName: nameOf(c.source.app) } : {}) };
       if (keep(shown)) rows.push(shown);
@@ -290,3 +295,23 @@ export async function todayOf(sources: readonly CallsSource[], sinceMs: number, 
 
 /** The endings a query may name. */
 export const QUERY_ENDINGS: readonly string[] = ENDINGS;
+
+/**
+ * Every candidate's summary and facts, kept or read now, a few at a time with the server's other work let
+ * run between (Insights' figures, figuresCache.ts): no bound on how many, as a day's figures need every
+ * call of the day; each settled at `nowMs` as the Calls page settles it.
+ */
+export async function summariesOf(candidates: readonly Candidate[], nowMs: number): Promise<{ candidate: Candidate; summary: CallSummary }[]> {
+  const out: { candidate: Candidate; summary: CallSummary }[] = [];
+  for (let i = 0; i < candidates.length; i += READ_CONCURRENCY) {
+    const batch = candidates.slice(i, i + READ_CONCURRENCY);
+    const fresh = batch.some((c) => !kept.has(keyOf(c)));
+    const read_ = await Promise.all(batch.map(read));
+    if (fresh) await yieldToOthers();
+    batch.forEach((c, k) => {
+      const s = read_[k];
+      if (s) out.push({ candidate: c, summary: { row: settled(s.row, nowMs), facts: s.facts } });
+    });
+  }
+  return out;
+}

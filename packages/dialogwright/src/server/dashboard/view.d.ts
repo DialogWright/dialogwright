@@ -289,6 +289,8 @@ export function nowChipLabel(id: string, slot: { value?: string | null; display?
 export function formLabel(form: string | null | undefined): string;
 /** A handoff reason in words: `live-agent` reads "caller asked for a person"; the app's own from ConsoleMeta.handoffReasons. */
 export function handoffReasonText(reason: string | null | undefined): string;
+/** What was asked, in words for a list: a slot by its console label (else its id spelled out), what the caller wants, confirming, the one-time code. */
+export function askedWords(id: string): string;
 export function reduce(events: DashboardEvent[], opts?: ReduceOptions): View;
 export function replayEvents(records: ReplayRecord[], frames: FrameLogLine[], opts?: ReplayOptions): DashboardEvent[];
 export function latestTrace(rows: TraceRow[]): TraceRow | null;

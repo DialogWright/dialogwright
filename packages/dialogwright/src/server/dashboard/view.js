@@ -1416,6 +1416,14 @@ function slotWords(id) {
   return String(id ?? 'a value').replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
+/** What was asked, in words for a list: a slot by its console label (else its id spelled out), what the caller wants, confirming, the one-time code. */
+export function askedWords(id) {
+  if (id === 'otp') return 'the one-time code';
+  if (id === 'intent') return 'what the caller wants';
+  if (id === 'confirm') return 'confirming';
+  return slotWords(id);
+}
+
 /**
  * The step a turn left the call at, in plain words for a list: the slot being asked (its console
  * label), or what is being confirmed. Never a value: only what is asked.
