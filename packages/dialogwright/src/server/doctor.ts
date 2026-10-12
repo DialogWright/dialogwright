@@ -11,6 +11,8 @@ import { appYamlEnvReferences } from '../define/envReferences';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
+import { maskConnectionString, maskSecrets, openPgClient, PgUnavailableError, type SqlClient } from './stores/sql';
+import { POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } from './stores/postgres';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -32,11 +34,15 @@ import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } fro
  *      (or else the model provider's) answers a HEAD with. Not PUBLIC_HOST's: through a tunnel that is
  *      this machine's own clock, passed back;
  *  10. with SESSION_STORE=file:<dir> (and only then, after the folders), its folder can be written, is not
- *      on a temporary filesystem a reboot empties, and is not readable by others.
+ *      on a temporary filesystem a reboot empties, and is not readable by others; with SESSION_STORE=
+ *      postgres://... (not with --offline), the database answers, its session tables are at the version
+ *      this server reads (or not made yet), and this server can take a test lease and give it up. The
+ *      connection string is said with its password masked, and so is any message the driver gives.
  *
  * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address
- * (three with CONSOLE_AUTH=token), and one HEAD with no key and no body to a host the setup already
- * relies on, for its clock; none with --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
+ * (three with CONSOLE_AUTH=token), one HEAD with no key and no body to a host the setup already relies
+ * on, for its clock, and with SESSION_STORE=postgres a connection to that database; none with
+ * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
 export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'space' | 'clock';
@@ -58,6 +64,8 @@ export interface DoctorDeps {
   freeBytes(dir: string): number | null;
   /** Whether `dir` is on a temporary filesystem a reboot empties; onTemporaryFilesystem when absent. */
   temporary?(dir: string): boolean;
+  /** A connection to SESSION_STORE's Postgres (the check closes it); the pg driver's when absent. Tests give PGlite. */
+  postgres?(url: string): Promise<SqlClient>;
 }
 
 export const defaultDoctorDeps: DoctorDeps = {
@@ -286,8 +294,9 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
       : { id: 'folders', status: 'ok', message: `traces in ${traceDir}, audit in ${auditDir}` },
   );
 
-  // 10. The session store's folder, when there is one (the memory store has none to check).
+  // 10. The session store's folder, when there is one (the memory store has none to check), or its database.
   if (config.sessionStore?.kind === 'file') results.push(storeCheck(resolve(o.cwd, config.sessionStore.dir), deps.temporary ?? onTemporaryFilesystem));
+  if (config.sessionStore?.kind === 'postgres') results.push(await postgresCheck(config.sessionStore.url, o.offline === true, deps));
 
   // 8. The space.
   const free = [traceDir, auditDir].map((d) => deps.freeBytes(nearestExisting(d))).filter((n): n is number => n !== null);
@@ -426,6 +435,55 @@ function storeCheck(dir: string, temporary: (dir: string) => boolean): CheckResu
   }
   return { id: 'store', status: 'ok', message: `sessions in ${dir}: a restart resumes the calls under way (a carrier that calls back while no server listens needs its fallback document: pnpm fallback)` };
 }
+
+/** Check 10 with SESSION_STORE=postgres://...: reachable, the tables' version, and a test lease taken and given up. Never the password. */
+async function postgresCheck(url: string, offline: boolean, deps: DoctorDeps): Promise<CheckResult> {
+  const named = `SESSION_STORE ${maskConnectionString(url)}`;
+  if (offline) return { id: 'store', status: 'skip', message: `${named}: not asked (--offline)` };
+  let sql: SqlClient;
+  try {
+    sql = await (deps.postgres ?? ((u: string) => openPgClient(u, { max: 1, connectTimeoutMs: ASK_MS })))(url);
+  } catch (err) {
+    if (err instanceof PgUnavailableError) return { id: 'store', status: 'fail', message: `${named}: the pg package is not installed here`, fix: 'pnpm add pg (or npm install pg) in the project' };
+    return { id: 'store', status: 'fail', message: `${named}: ${maskSecrets(dbMessage(err), url)}`, fix: UNREACHABLE_DB };
+  }
+  try {
+    let version: number | null;
+    try {
+      version = await schemaVersion(sql);
+    } catch (err) {
+      return { id: 'store', status: 'fail', message: `${named} cannot be reached: ${maskSecrets(dbMessage(err), url)}`, fix: UNREACHABLE_DB };
+    }
+    if (version === null) {
+      return { id: 'store', status: 'ok', message: `${named} answers; its session tables are made when the server first starts (version ${POSTGRES_SCHEMA_VERSION})` };
+    }
+    if (version !== POSTGRES_SCHEMA_VERSION) {
+      return {
+        id: 'store', status: 'fail', message: `${named}: its session tables are version ${version}, and this server reads ${POSTGRES_SCHEMA_VERSION}`,
+        fix: version > POSTGRES_SCHEMA_VERSION ? 'run the newer server, or point SESSION_STORE at another database' : 'point SESSION_STORE at a new database, or run the server that made them',
+      };
+    }
+    try {
+      await probeLease(sql, deps.now);
+    } catch (err) {
+      return { id: 'store', status: 'fail', message: `${named}: a test lease could not be taken and given up: ${maskSecrets(dbMessage(err), url)}`, fix: 'give the user in SESSION_STORE the right to read and write the dw_ tables' };
+    }
+    return { id: 'store', status: 'ok', message: `${named} answers, its session tables are version ${version}, and a test lease was taken and given up: the servers on it share their calls` };
+  } finally {
+    await sql.close().catch(() => undefined);
+  }
+}
+
+/** A database error as said: its message (a driver's names what failed), or its code when it has none. */
+function dbMessage(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const code = (err as { code?: unknown }).code;
+  if (err.message !== '') return err.message;
+  return typeof code === 'string' ? code : err.name;
+}
+
+/** What to look at when the session store's database does not answer. */
+const UNREACHABLE_DB = 'check the host, the port, the database, the user and the password in SESSION_STORE, and that this machine may connect to it (the database\'s allowed hosts, a firewall)';
 
 /**
  * The servers whose clocks the clock check reads, in order: each enabled carrier's API host (none on a

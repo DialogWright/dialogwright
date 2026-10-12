@@ -382,6 +382,21 @@ export class PostgresTokenStore implements ServerTokenStore {
   }
 }
 
+/**
+ * Take a lease on a call no one has and give it up, as a server does (pnpm diagnose): it throws, saying
+ * what failed, when either cannot be done. The probe's call id and owner are its own, never a caller's.
+ */
+export async function probeLease(sql: SqlClient, now: () => number = Date.now): Promise<void> {
+  const calls = new PostgresCallStateStore(sql, now, new Reported(() => {}));
+  const suffix = randomBytes(4).toString('hex');
+  const callId = `dw-diagnose-${suffix}`;
+  const owner = `diagnose-${suffix}`;
+  const taken = await calls.claim(callId, owner, 5_000);
+  if (!taken.taken) throw new Error(`a test lease was refused: ${taken.owner} holds it`);
+  await calls.release(callId, owner);
+  if ((await calls.holder(callId)) !== null) throw new Error('a test lease could not be given up');
+}
+
 /** The Postgres stores over one client, as SESSION_STORE=postgres://... opens them. */
 export interface PostgresStores {
   readonly calls: PostgresCallStateStore;

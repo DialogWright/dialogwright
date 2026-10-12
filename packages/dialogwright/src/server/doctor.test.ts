@@ -4,7 +4,11 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PGlite } from '@electric-sql/pglite';
 import { formatResult, main, runDoctor, settingsFileCheck, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { pgliteSql } from './stores/pgliteSql';
+import { ensureSchema } from './stores/postgres';
+import { PgUnavailableError } from './stores/sql';
 
 /**
  * `pnpm diagnose` (doctor.ts): each check's ok and its warn or fail, with fetch, DNS, the clock and the
@@ -395,6 +399,95 @@ describe('pnpm diagnose', () => {
       expect(r).toEqual({
         id: 'store', status: 'warn', message: `SESSION_STORE folder ${open} can be read by others than its owner (mode 755)`,
         fix: `chmod 700 ${open}`,
+      });
+    });
+
+    describe('with SESSION_STORE=postgres://...', () => {
+      const URL_WITH_PASSWORD = 'postgres://dialogwright:s3cret-pw@db.example:5432/dialogwright';
+      const MASKED = 'postgres://dialogwright:***@db.example:5432/dialogwright';
+      const pg = (db: PGlite): Pick<DoctorDeps, 'postgres'> & { asked: string[] } => {
+        const asked: string[] = [];
+        return { asked, postgres: async (url) => (asked.push(url), pgliteSql(db)) };
+      };
+      const said = (r: CheckResult): string => JSON.stringify(r);
+
+      it('passes a database that answers, at this version, where a test lease is taken and given up; never the password', async () => {
+        const dir = tempDir();
+        const db = await PGlite.create();
+        try {
+          await ensureSchema(pgliteSql(db));
+          const p = pg(db);
+          const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...p });
+          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'clock']);
+          expect(byId(results, 'store')).toEqual({
+            id: 'store', status: 'ok',
+            message: `SESSION_STORE ${MASKED} answers, its session tables are version 1, and a test lease was taken and given up: the servers on it share their calls`,
+          });
+          expect(p.asked).toEqual([URL_WITH_PASSWORD]);
+          expect(results.map(said).join('\n')).not.toContain('s3cret-pw');
+          // The test lease leaves nothing behind.
+          expect((await db.query('SELECT * FROM dw_call_leases')).rows).toEqual([]);
+        } finally {
+          await db.close();
+        }
+      });
+
+      it('passes a database whose tables are not made yet, saying the server makes them', async () => {
+        const dir = tempDir();
+        const db = await PGlite.create();
+        try {
+          const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...pg(db) }), 'store');
+          expect(r).toEqual({ id: 'store', status: 'ok', message: `SESSION_STORE ${MASKED} answers; its session tables are made when the server first starts (version 1)` });
+          expect((await db.query("SELECT to_regclass('dw_calls')::text AS t")).rows).toEqual([{ t: null }]);
+        } finally {
+          await db.close();
+        }
+      });
+
+      it('fails tables at another version, with what to do', async () => {
+        const dir = tempDir();
+        const db = await PGlite.create();
+        try {
+          await ensureSchema(pgliteSql(db));
+          await db.query('UPDATE dw_schema SET version = 2');
+          const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...pg(db) }), 'store');
+          expect(r).toEqual({
+            id: 'store', status: 'fail', message: `SESSION_STORE ${MASKED}: its session tables are version 2, and this server reads 1`,
+            fix: 'run the newer server, or point SESSION_STORE at another database',
+          });
+        } finally {
+          await db.close();
+        }
+      });
+
+      it('fails a database that does not answer, with the driver\'s reason and its password taken out', async () => {
+        const dir = tempDir();
+        const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, {
+          ...deps(),
+          postgres: async () => ({
+            query: async () => { throw new Error(`password authentication failed for ${URL_WITH_PASSWORD} (s3cret-pw)`); },
+            transaction: async () => { throw new Error('unused'); },
+            close: async () => {},
+          }),
+        }), 'store');
+        expect(r).toEqual({
+          id: 'store', status: 'fail', message: `SESSION_STORE ${MASKED} cannot be reached: password authentication failed for ${MASKED} (***)`,
+          fix: "check the host, the port, the database, the user and the password in SESSION_STORE, and that this machine may connect to it (the database's allowed hosts, a firewall)",
+        });
+      });
+
+      it('fails when the pg package is not installed, naming the command that adds it', async () => {
+        const dir = tempDir();
+        const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres: async () => { throw new PgUnavailableError(new Error("Cannot find package 'pg'")); } }), 'store');
+        expect(r).toEqual({ id: 'store', status: 'fail', message: `SESSION_STORE ${MASKED}: the pg package is not installed here`, fix: 'pnpm add pg (or npm install pg) in the project' });
+      });
+
+      it('asks nothing with --offline', async () => {
+        const dir = tempDir();
+        const p = { asked: [] as string[], postgres: async (url: string) => { p.asked.push(url); throw new Error('asked'); } };
+        const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir, offline: true }, { ...deps(), ...p }), 'store');
+        expect(r).toEqual({ id: 'store', status: 'skip', message: `SESSION_STORE ${MASKED}: not asked (--offline)` });
+        expect(p.asked).toEqual([]);
       });
     });
 
