@@ -892,6 +892,14 @@ systemctl --user restart myline              # or: launchctl kickstart -k gui/$(
           The sessions folder needs no sweep: it holds only the calls under way. Check the audit's hash chains with
           <code>pnpm audit:verify ~/ivr/data/audit</code>.
         </p>
+        <p>
+          A settings file <code>pnpm configure</code> writes now starts with a policy: traces kept 30 days and at most 5 GB
+          (<code>TRACE_MAX_GB</code>: past it, the calls written least recently go first, whole), a warning on <code>/health</code> and in
+          the log under 2 GB free (<code>DISK_WARN_FREE_GB</code>), and the server's own log, which <code>pnpm service</code> writes to
+          <code>server.log</code> on a Mac, rolled at 10 MB with 5 kept (<code>LOG_MAX_MB</code>, <code>LOG_KEEP</code>). The audit is left to
+          you. A trace that cannot be written (a full disk) is counted on <code>/health</code> and never fails a call; an audit that
+          cannot be written still does, as the audit is the record.
+        </p>
 
         <h3>Backing up</h3>
         <p>

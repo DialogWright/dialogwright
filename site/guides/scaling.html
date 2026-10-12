@@ -258,7 +258,7 @@
                   last line when the process starts.</td>
                 <td data-label="Across instances">Two processes appending to one day file would fork the chain. Built: <code>AUDIT_STORE=postgres://...</code>,
                   a hash chain per call, chained under a lock on the call so servers appending at once never fork it, each call's newest hash
-                  anchored into a chain for the day; <code>pnpm audit:verify postgres://...</code> walks both.</td>
+                  anchored into the writing instance's own chain for the day; <code>pnpm audit:verify postgres://...</code> walks them all.</td>
               </tr>
               <tr>
                 <td data-label="State">Traces and frame logs</td>
