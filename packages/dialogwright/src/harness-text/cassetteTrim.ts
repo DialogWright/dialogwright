@@ -5,7 +5,8 @@ import { isCassetteMiss, loadCassette, requestKey, trimCassette } from '../jev/c
 import type { JevClient } from '../jev/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { recordedCassette } from '../run/client';
-import { defaultCorpusFile, scenariosDir } from '../run/fixtures';
+import { defaultCorpusFile, recordedDir, scenariosDir } from '../run/fixtures';
+import { harnessRenderer } from '../render/harness';
 import { REGRESS_TODAY } from './baseline';
 import { loadScenarios } from './runner';
 import { runAll } from './runAll';
@@ -39,6 +40,8 @@ async function run(): Promise<void> {
       return replay.ask(req);
     },
   };
+  // An app that generates lines replays its render cassette, so the drift checks its lines ask are kept too.
+  const renderer = harnessRenderer('recorded', getApp(defaultAppId()), recordedDir()).renderer ?? undefined;
   let misses = 0;
   const count = (record: Parameters<typeof isCassetteMiss>[0]): void => {
     if (isCassetteMiss(record)) misses += 1;
@@ -49,6 +52,7 @@ async function run(): Promise<void> {
     todayIso: REGRESS_TODAY,
     now: () => 0,
     screen,
+    ...(renderer !== undefined ? { renderer } : {}),
   }, {
     onCorpus: (_done, _total, _entry, record) => count(record),
     onScenario: (_done, _total, _scenario, records) => records.forEach(count),
@@ -57,7 +61,7 @@ async function run(): Promise<void> {
   // its recorded cases use are kept too. A case not yet recorded is no miss here: it is recorded with
   // the app's next recording, and the trim keeps what is there.
   if (getApp(defaultAppId()).adversarial === true) {
-    await adversarialRun('recorded', client, { ...DEFAULT_THRESHOLDS }, screen, loadCorpus(defaultCorpusFile()), loadScenarios(scenariosDir()));
+    await adversarialRun('recorded', client, { ...DEFAULT_THRESHOLDS }, screen, loadCorpus(defaultCorpusFile()), loadScenarios(scenariosDir()), undefined, renderer);
   }
   if (misses > 0) {
     console.error(`${path}: ${misses} requests missed; re-record the cassette (run the regression with --client record) before trimming. Nothing written.`);

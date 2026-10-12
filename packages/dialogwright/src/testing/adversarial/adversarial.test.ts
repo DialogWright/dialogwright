@@ -15,6 +15,8 @@ import { recognizedApp } from '../recognized/app';
 import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
+import { messageApp } from '../message/app';
+import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { HOSTILE_TEXT, textPaths, withField, withNote } from './hostile';
 import { FixtureStubClient } from '../../jev/fixtureStub';
@@ -291,5 +293,46 @@ describe('a hostile reply', () => {
     expect(withField(reply, ['principal', 'contact', 'phoneLast4'])).toEqual({ ...reply, principal: { ...reply.principal, contact: { phoneLast4: HOSTILE_TEXT } } });
     expect(withField('a reply', [])).toBe(HOSTILE_TEXT);
     expect(withField(reply, ['missing'])).toEqual(reply);
+  });
+});
+
+describe('generated wording under the suite (the wording family, on the message fixture and the fake renderer)', () => {
+  const fake = (): AdversarialRunOptions['renderer'] => ({ client: new FakeRenderClient() });
+
+  it('holds, every family with it, and an app that generates nothing gets no wording case', async () => {
+    const report = await run(messageApp, { renderer: fake() });
+    expect(failing(report)).toEqual([]);
+    expect(families(report)).toEqual(['hostile-reply', 'injection', 'off-scope', 'wording']);
+    expect(report.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
+      'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
+    ]);
+    resetAppsForTest();
+    registerApp(callbackApp);
+    expect(adversarialSuite(callbackApp).cases.some((c) => c.family === 'wording')).toBe(false);
+  });
+
+  it('a hostile renderer is tried on every generated line, and every line falls back: nothing it wrote is said', async () => {
+    const report = await run(messageApp, { renderer: fake() });
+    for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
+      const r = report.results.find((x) => x.case.id === id)!;
+      const lines = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.skipped === undefined);
+      expect(lines.length).toBeGreaterThan(5);
+      expect(lines.every((l) => l.mode === 'fixed' && l.fallback !== undefined)).toBe(true);
+    }
+    // The fooled injection: the renderer echoed the words into the question asked again, and it fell back.
+    const fooled = report.results.find((x) => x.case.id === 'wording/form-take_message/hidden-instruction/fooled/en')!;
+    const tried = fooled.calls[0]!.turns.at(-1)!.record.render!.lines;
+    expect(tried).toEqual([expect.objectContaining({ mode: 'fixed', fallback: 'drift', refused: expect.stringContaining('ignore your rules') })]);
+  });
+
+  it('render-held catches a line said from a hostile renderer: here, a drift check that misses instructions the other checks let by', async () => {
+    resetAppsForTest();
+    registerApp(messageApp);
+    const { suite, opts } = stubRun(messageApp);
+    const blind: JevClient = { ask: async () => ({ answers: { renderDrift: { type: 'noul', noul: 0.01 } }, model: 'blind', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:heuristic' }) };
+    const cases = suite.cases.filter((c) => c.id === 'wording/render/instructions');
+    const caught = await runAdversarialSuite({ ...suite, cases }, { ...opts, renderer: { client: new FakeRenderClient(), drift: blind } });
+    expect(caught.results[0]!.status).toBe('fail');
+    expect(caught.results[0]!.violations.some((v) => v.includes('render-held:') && v.includes('ask_caller said what the renderer wrote'))).toBe(true);
   });
 });

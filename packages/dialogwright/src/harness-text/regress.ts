@@ -4,6 +4,7 @@ import { loadCorpus } from '../jev/corpus';
 import { buildClient, buildThresholds, cassettePath, CLIENT_KINDS, isClientKind, modelHeader, providerFor } from '../run/client';
 import { defaultCorpusFile, expectedDir, recordedDir, scenariosDir } from '../run/fixtures';
 import { emptyRenderTally, formatRenderTally, harnessRenderer, tallyRender } from '../render/harness';
+import type { Renderer } from '../render/types';
 import { isCassetteMiss } from '../jev/cassette';
 import { diff, differingIds, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
 import { formatRegressSummary, formatTriage } from './regressSummary';
@@ -135,7 +136,7 @@ async function run(argv?: readonly string[]): Promise<void> {
     if (cases.length === 0) return;
   }
   if (cases.length > 0) {
-    const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases);
+    const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases, opts.renderer ?? undefined);
     for (const r of report.results) console.log([...adversarialTranscript(r), ''].join('\n'));
     if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
     return;
@@ -206,7 +207,7 @@ async function run(argv?: readonly string[]): Promise<void> {
     // cases, held to their properties, never to the baseline. A failed case fails the run; with a
     // recording, a case it has no answers for yet is listed as not yet recorded.
     if (getApp(defaultAppId()).adversarial === true) {
-      const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs);
+      const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, undefined, opts.renderer ?? undefined);
       console.log('');
       for (const l of formatAdversarialReport(report)) console.log(l);
       if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
@@ -265,6 +266,7 @@ export async function adversarialRun(
   corpus: readonly CorpusEntry[],
   scenarios: readonly Scenario[],
   only?: readonly string[],
+  renderer?: Renderer,
 ): Promise<AdversarialReport> {
   const app = getApp(defaultAppId());
   const delegates = [...corpus.flatMap((e) => (e.as ? [e.as] : [])), ...scenarios.flatMap((s) => (s.as && s.as !== 'web' ? [s.as] : []))];
@@ -282,6 +284,7 @@ export async function adversarialRun(
     screen,
     perceiver: kind === 'stub' ? { stub: true, corpus } : { stub: false, client, recorded: kind === 'recorded' },
     scenarios,
+    ...(renderer !== undefined ? { renderer } : {}),
   });
 }
 

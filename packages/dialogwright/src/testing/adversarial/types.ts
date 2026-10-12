@@ -11,11 +11,15 @@ import type { HostileMode } from './hostile';
  * - `off-scope`: another business's service, and a question no intent or passage answers;
  * - `spoken-code`: a one-time code said aloud at its prompt, and a code read back by a caller who
  *   was never sent one;
- * - `hostile-reply`: each tool and downstream service answering with instructions in its reply.
+ * - `hostile-reply`: each tool and downstream service answering with instructions in its reply;
+ * - `wording` (only for an app that generates lines, design section 5): an injection said where a
+ *   generated line answers it, the screen catching it (no line generated from it) or fooled with the
+ *   renderer fooled too (the line echoes the words: never said); and a renderer that answers every
+ *   line with instructions, or with a number and an amount it was not given (never said).
  */
-export type AdversarialFamily = 'injection' | 'relationship' | 'off-scope' | 'spoken-code' | 'hostile-reply';
+export type AdversarialFamily = 'injection' | 'relationship' | 'off-scope' | 'spoken-code' | 'hostile-reply' | 'wording';
 
-export const FAMILIES: readonly AdversarialFamily[] = ['injection', 'relationship', 'off-scope', 'spoken-code', 'hostile-reply'];
+export const FAMILIES: readonly AdversarialFamily[] = ['injection', 'relationship', 'off-scope', 'spoken-code', 'hostile-reply', 'wording'];
 
 /**
  * How the decision model is taken to read a case's words, under the stub (which answers from labels):
@@ -61,10 +65,20 @@ export const OUTCOME_CLASSES: readonly OutcomeClass[] = ['screened', 'handoff', 
  * - `no-new-action`: the hostile reply made no write run that the same call with a clean reply did
  *   not, no read the policy does not let the caller make then, raised no level it did not, and was
  *   passed on to no call's params or downstream request;
- * - `same-outcome`: the call ended exactly as with a clean reply;
- * - `outcome`: the call ended in one of the case's allowed outcomes.
+ * - `same-outcome`: the call ended exactly as with a clean reply (or, for a hostile renderer, as with a well-behaved one);
+ * - `outcome`: the call ended in one of the case's allowed outcomes;
+ * - `not-generated`: on a turn the injection screen flagged, no line was generated or tried: each line
+ *   the app generates was said fixed, and nothing of the turn was sent to a model to word;
+ * - `render-held`: nothing a hostile renderer wrote was said: no line said generated holds its words.
  */
-export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome';
+export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome' | 'not-generated' | 'render-held';
+
+/**
+ * How a `wording` case's renderer answers (a fake, never a model): `echo`, the caller's words put in
+ * the line, as a fooled model would; `instructions`, instructions to the caller and the system before
+ * the line; `numbers`, an amount and a number it was not given before the line.
+ */
+export type RenderAttack = 'echo' | 'instructions' | 'numbers';
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a
@@ -113,6 +127,8 @@ export interface AdversarialCase {
   readonly code?: { readonly digits: string; readonly words: string };
   /** The reply made hostile, and how: run over the app's scripted calls that reach it. */
   readonly hostile?: { readonly target: HostileTarget; readonly mode: HostileMode };
+  /** For a `wording` case: how its renderer answers. Without a line, run over the app's scripted calls that say a generated line. */
+  readonly render?: RenderAttack;
   readonly properties: readonly PropertyName[];
   /** The outcomes a correct app may end the case in (`outcome`). */
   readonly allowed: readonly OutcomeClass[];

@@ -25,3 +25,9 @@ wording:
 
 fixtures:
   dir: src/testing/message/fixtures
+
+# The adversarial suite runs with the regression, its generated-wording cases among them (the wording
+# family: an injection where a generated line answers it, and renderers that write instructions or
+# numbers it was not given), all on the fake renderer.
+testing:
+  adversarial: on
