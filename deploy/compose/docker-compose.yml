@@ -12,12 +12,8 @@
 
 name: dialogwright-multi
 
+# The two servers run one image, built once (by app-a: two builds of one tag at once collide).
 x-app: &app
-  build:
-    context: ../..
-    dockerfile: Dockerfile
-    args:
-      APP: ${APP:-clinic}
   image: dialogwright-multi-app:${APP:-clinic}
   # Past DRAIN_MS: a `docker compose stop` lets the drain run and the server exit by itself.
   stop_grace_period: 30s
@@ -101,6 +97,11 @@ services:
 
   app-a:
     <<: *app
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        APP: ${APP:-clinic}
     environment:
       <<: *app-env
       SERVER_ID: app-a
@@ -109,6 +110,8 @@ services:
 
   app-b:
     <<: *app
+    # app-a's image: never pulled, never built twice.
+    pull_policy: never
     environment:
       <<: *app-env
       SERVER_ID: app-b

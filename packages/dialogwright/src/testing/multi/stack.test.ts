@@ -121,11 +121,15 @@ describe('the compose stack', () => {
   it('has Postgres, the S3-compatible store and its bucket, two servers of the app, and the balancer, each image pinned by digest', () => {
     expect(Object.keys(services).sort()).toEqual(['app-a', 'app-b', 'lb', 'postgres', 's3', 's3-bucket']);
     for (const [name, s] of Object.entries(services)) {
-      if (s.build) continue;
+      if ((MULTI_SERVERS as readonly string[]).includes(name)) continue;
       expect(s.image, name).toMatch(/^[a-z0-9/-]+:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/);
     }
+    // One image for both servers, built once (by app-a), never pulled.
+    expect(services['app-a']!.build).toEqual({ context: '../..', dockerfile: 'Dockerfile', args: { APP: '${APP:-clinic}' } });
+    expect(services['app-b']!.build).toBeUndefined();
+    expect((services['app-b'] as { pull_policy?: string }).pull_policy).toBe('never');
     for (const name of MULTI_SERVERS) {
-      expect(services[name]!.build).toEqual({ context: '../..', dockerfile: 'Dockerfile', args: { APP: '${APP:-clinic}' } });
+      expect(services[name]!.image).toBe('dialogwright-multi-app:${APP:-clinic}');
       expect(services[name]!.depends_on).toEqual({ postgres: { condition: 'service_healthy' }, 's3-bucket': { condition: 'service_completed_successfully' } });
     }
   });
