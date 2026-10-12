@@ -19,6 +19,7 @@ import { useTestkit } from '../../testing/apps';
 import type { AuditDraft, AuditEntry } from '../../audit/types';
 import type { AppRoute } from '../appRoutes';
 import { CODE_TTL_MS, CONSOLE_COOKIE, ConsoleAuth } from './auth';
+import { DayCounters } from '../dashboard/health';
 
 useTestkit();
 
@@ -49,7 +50,7 @@ interface Rig {
 }
 
 /** A server in token mode, with a clock the test moves and an audit it reads. */
-async function rig(env: Record<string, string> = {}, routes: AppRoute[] = []): Promise<Rig> {
+async function rig(env: Record<string, string> = {}, routes: AppRoute[] = [], more: Partial<HttpDeps> = {}): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'console-'));
   const linkFile = join(dir, 'private', 'link.json');
   const config = loadConfig({
@@ -72,7 +73,7 @@ async function rig(env: Record<string, string> = {}, routes: AppRoute[] = []): P
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000);
   const bus = new DashboardBus();
-  const deps: HttpDeps = { config, store, tokens: new CallTokens(60_000), hints: '', log: () => {}, bus, audit: sink, consoleAuth: auth, routes };
+  const deps: HttpDeps = { config, store, tokens: new CallTokens(60_000), hints: '', log: () => {}, bus, audit: sink, consoleAuth: auth, routes, ...more };
   server = createServer(createRequestHandler(deps));
   await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
@@ -145,9 +146,9 @@ describe('CONSOLE_AUTH=token: no session', () => {
     }
   });
 
-  it('answers 401 to the live feed, the Live list and a call\'s feed, the trace list, a replay, the Calls page\'s list, today\'s figures, the boot id and the view module', async () => {
+  it('answers 401 to the live feed, the Live list and a call\'s feed, the trace list, a replay, the Calls page\'s list, today\'s figures, Insights, Knowledge, Health, the audit check, the boot id and the view module', async () => {
     const r = await rig();
-    for (const path of ['/dashboard/events', '/dashboard/events?view=calls', `/dashboard/events?call=${SID}`, '/dashboard/traces', `/dashboard/traces/${SID}`, '/dashboard/calls', '/dashboard/calls?last4=0199', '/dashboard/today', '/dashboard/boot', '/dashboard/view.js']) {
+    for (const path of ['/dashboard/events', '/dashboard/events?view=calls', `/dashboard/events?call=${SID}`, '/dashboard/traces', `/dashboard/traces/${SID}`, '/dashboard/calls', '/dashboard/calls?last4=0199', '/dashboard/today', '/dashboard/insights?from=0&to=1', '/dashboard/knowledge', '/dashboard/health', '/dashboard/health/audit', '/dashboard/boot', '/dashboard/view.js']) {
       const res = await raw(r.base, 'GET', path, TUNNEL);
       expect(res.status, path).toBe(401);
       expect(res.body, path).not.toContain(SID);
@@ -381,6 +382,9 @@ describe('CONSOLE_AUTH=token: the headers', () => {
       await peek(r.base, `/dashboard/events?call=${SID}`, { ...TUNNEL, cookie }),
       await raw(r.base, 'GET', '/dashboard/calls', { ...TUNNEL, cookie }),
       await raw(r.base, 'GET', '/dashboard/today', { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', '/dashboard/insights?from=0&to=1', { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', '/dashboard/knowledge', { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', '/dashboard/health', { ...TUNNEL, cookie }),
     ];
     for (const a of answers) {
       expect(a.headers['content-security-policy'], String(a.status)).toMatch(/default-src 'none'.*frame-ancestors 'none'/);
@@ -401,6 +405,29 @@ describe('CONSOLE_AUTH=token: the headers', () => {
 });
 
 describe('CONSOLE_AUTH=token: the access log', () => {
+  it('records the first read of Insights, Knowledge and Health in a session, and every audit check asked for, before answering', async () => {
+    const verified = { ok: true, kind: 'files' as const, chains: 1, entries: 2, breaks: [], at: 0, tookMs: 1 };
+    const r = await rig({}, [], { serverHealth: { name: 'web-1', counters: new DayCounters(() => '2026-10-04'), verify: async () => verified, auditLabel: 'audit' } });
+    const cookie = await signIn(r);
+    for (let i = 0; i < 2; i++) {
+      expect((await raw(r.base, 'GET', '/dashboard/insights?from=0&to=1', { ...TUNNEL, cookie })).status).toBe(200);
+      expect((await raw(r.base, 'GET', '/dashboard/knowledge', { ...TUNNEL, cookie })).status).toBe(200);
+      expect((await raw(r.base, 'GET', '/dashboard/health', { ...TUNNEL, cookie })).status).toBe(200);
+      expect(JSON.parse((await raw(r.base, 'GET', '/dashboard/health/audit', { ...TUNNEL, cookie })).body)).toEqual(verified);
+    }
+    // A range refused is no read.
+    expect((await raw(r.base, 'GET', '/dashboard/insights?from=5', { ...TUNNEL, cookie })).status).toBe(400);
+    const access = r.audit.filter((e) => e.type === 'console_access' && !['link_made', 'sign_in'].includes(String(e.detail.event)));
+    expect(access.map((e) => [e.callId, e.detail.event])).toEqual([
+      ['console', 'insights'], ['console', 'knowledge'], ['console', 'health'], ['console', 'audit_verify'], ['console', 'audit_verify'],
+    ]);
+    for (const e of access) expect(e.detail.session).toMatch(/^[0-9a-f]{16}$/);
+    // The Health page with this server's name and counts.
+    const health = JSON.parse((await raw(r.base, 'GET', '/dashboard/health', { ...TUNNEL, cookie })).body) as { servers: { server: string }[]; audit: { last: unknown } };
+    expect(health.servers.map((s) => s.server)).toEqual(['web-1']);
+    expect(health.audit.last).toEqual(verified);
+  });
+
   it('names the call\'s app on a replay on a server of several apps', async () => {
     const r = await rig();
     await r.auth.noteReplay({ hash: '0123456789abcdef' } as never, 'CA1', 'routed');

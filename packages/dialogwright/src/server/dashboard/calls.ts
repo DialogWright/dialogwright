@@ -281,6 +281,8 @@ export interface TodayFigures {
   /** contained / ended, or null with none ended. */
   containment: number | null;
   costUsd: number;
+  /** Minutes billed on voice calls by carrier, each call rounded up to the minute (at least one), for the carrier's cost when a rate is set. */
+  billedMinutes: Record<string, number>;
   partial: boolean;
 }
 
@@ -290,7 +292,14 @@ export async function todayOf(sources: readonly CallsSource[], sinceMs: number, 
   const count = (kind: string): number => ended.filter((r) => r.ending!.kind === kind).length;
   const contained = count('handled');
   const costUsd = Math.round(rows.reduce((s, r) => s + r.costUsd, 0) * 1e6) / 1e6;
-  return { calls: rows.length, ended: ended.length, contained, toPerson: count('person'), hungUp: count('hangup'), errors: count('error'), containment: ended.length === 0 ? null : contained / ended.length, costUsd, partial };
+  const billedMinutes: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.channel === 'chat' || r.startedAt === null) continue;
+    const until = r.endedAt ?? r.lastAt ?? r.startedAt;
+    const carrier = r.provider ?? 'unknown';
+    billedMinutes[carrier] = (billedMinutes[carrier] ?? 0) + Math.max(1, Math.ceil(Math.max(0, until - r.startedAt) / 60_000));
+  }
+  return { calls: rows.length, ended: ended.length, contained, toPerson: count('person'), hungUp: count('hangup'), errors: count('error'), containment: ended.length === 0 ? null : contained / ended.length, costUsd, billedMinutes, partial };
 }
 
 /** The endings a query may name. */

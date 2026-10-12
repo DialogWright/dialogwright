@@ -32,6 +32,7 @@ import type { AuditDraft } from '../audit/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
+import { DayCounters, latencyOf, ServersSeen, REPORT_EVERY_MS, verifyAudit, type ServerReport } from './dashboard/health';
 import type { JevClient } from '../jev/types';
 import { TraceWriter, type TraceSink } from '../trace/writer';
 import { S3TraceStore, type CallMeta } from '../trace/store';
@@ -419,6 +420,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
 
   const bus = config.dashboard ? new DashboardBus() : undefined;
   log(bus ? 'dashboard: /dashboard' : 'dashboard: off');
+  // The console's Health page shows the decision model's latency over the last hour: watched from the start.
+  if (bus) latencyOf(bus);
+  // The reconnects and fallback dials this server answers today (in TIMEZONE's day), for the Health page.
+  const counters = new DayCounters(() => localDateIso(now(), config.timezone));
 
   // Annotated because the factory below hands `store` to `makeObserver`, and an inferred type
   // would be circular: the initializer references the very binding it is initializing.
@@ -503,6 +508,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // With SESSION_STORE=postgres: notices between the servers on the database (stores/notices.ts), so one
   // console sees every server's calls and a chat resumed elsewhere is let go here.
   let notices: PostgresNotices | null = null;
+  /** The other servers heard from (with notices), and this server's report of itself: for the console's Health page. */
+  const serversSeen = new ServersSeen(now);
+  let reporter: ReturnType<typeof setInterval> | null = null;
+  let reportNow: (() => void) | null = null;
+  // Read when a report is sent, by which time the store and the chat below are made.
+  const selfReport = (): ServerReport => ({ server: serverName, calls: store.liveCount(), chats: chat?.liveCount() ?? 0, ...counters.now() });
   if (shared && sessionSql && setting?.kind === 'postgres') {
     try {
       notices = await PostgresNotices.open(sessionSql, { origin: owner, log, now, timeoutMs: setting.timeoutMs });
@@ -511,6 +522,15 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       await closeAuditSql();
       throw postgresFailure('SESSION_STORE', setting.url, err);
     }
+    // Each server says it is up every REPORT_EVERY_MS, with its calls and today's reconnects and fallback
+    // dials, so every console's Health page lists the servers on the database (dashboard/health.ts).
+    // (The reports start once the server listens, below.) A server heard from for the first time (one that
+    // just started) is answered with this one's report at once, so it lists every server without waiting.
+    notices.subscribe('server', (body, origin) => {
+      const first = !serversSeen.knows(origin);
+      serversSeen.heard(origin, body);
+      if (first) reportNow?.();
+    });
     if (bus) {
       const linked = notices;
       // Each event as this server's console has it (already redacted), to the others' consoles, and theirs to this one.
@@ -789,9 +809,25 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ...(host
       ? {
         host: { appFor: (called: string | null | undefined) => host.appFor(called), served: (id: string) => httpApps.get(id) },
-        consoleApps: appsRun.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}) })),
+        consoleApps: appsRun.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}), ...(a.dir !== undefined ? { dir: a.dir } : {}) })),
       }
       : {}),
+    // The console's Health page: this server's name and counts, the servers heard from, the audit verified on demand.
+    serverHealth: {
+      name: serverName,
+      counters,
+      ...(notices ? { peers: () => serversSeen.list() } : {}),
+      verify: async () => {
+        try {
+          return await (auditSql !== null && postgresAudit !== null ? verifyAudit({ sql: auditSql }, now) : verifyAudit({ dir: config.auditDir }, now));
+        } catch (err) {
+          throw new Error(secretUrls.reduce((m, u) => maskSecrets(m, u), err instanceof Error ? err.message : String(err)));
+        }
+      },
+      auditLabel: config.auditStore ? maskConnectionString(config.auditStore.url) : config.auditDir,
+    },
+    // On a server of one app run from its folder (pnpm start, pnpm --filter <app> serve): the folder, for the Knowledge page's drafts.
+    ...(!host && existsSync(join(process.cwd(), 'app.yaml')) ? { appDir: process.cwd() } : {}),
     // /health's `traces`: always with a trace store; on one machine only once a write has failed, so a
     // body is as it was while the disk works.
     traceHealth: () => (traceStores.size > 0
@@ -902,6 +938,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   /** The shared store's connection, closed once (a failed start, or close()). */
   const closeShared = async (): Promise<void> => {
     if (renewer) clearInterval(renewer);
+    if (reporter) clearInterval(reporter);
     await notices?.close();
     await postgresAudit?.settled();
     // The audit's roster names how far this server's chains for each day go, as it stops.
@@ -927,6 +964,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     wss.close();
     await closeShared();
     throw err;
+  }
+  if (notices) {
+    const told = notices;
+    const report = (): void => void told.publish('server', JSON.stringify(selfReport())).catch(() => undefined);
+    reportNow = report;
+    report();
+    reporter = setInterval(report, REPORT_EVERY_MS);
+    reporter.unref();
   }
   const port = (server.address() as { port: number }).port;
   /** Stop taking new connections (those open go on); the same promise however often it is asked. */

@@ -8,6 +8,7 @@ import type { ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest, type DashboardDeps } from './dashboard/routes';
+import { noteKind, type AuditCheck, type DayCounters, type HealthNumbers, type HealthSource, type ServerSeen } from './dashboard/health';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
 import { HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
@@ -117,11 +118,30 @@ export interface HttpDeps extends HttpApp {
   /** TRACE_STORE=s3://...: the segment writes that failed and the lines dropped, for `/health`'s `traces`; absent, `/health` has none. */
   traceHealth?: () => { failures: number; dropped: number } | null;
   /**
+   * The console's Health page (dashboard/health.ts): this server's name, its reconnects and fallback dials
+   * today (counted here, as each callback is answered), the other servers heard from with a shared store,
+   * and the audit verified on demand. Absent, the page has `/health`'s numbers alone, and nothing is counted.
+   */
+  serverHealth?: ServerHealth;
+  /** On a server of one app, the app's folder when the server runs in it, for the console's Knowledge page (its kb/pending drafts). */
+  appDir?: string;
+  /**
    * The console's sign-in, for CONSOLE_AUTH=token (index.ts makes it, and its first link once the server
    * listens). Read only when config.consoleAuth is set; absent then, one is made here, with no link until
    * something mints one. With CONSOLE_AUTH=local it is never used.
    */
   consoleAuth?: ConsoleAuth;
+}
+
+/** What the server gives the console's Health page beside `/health`'s numbers (index.ts makes it). */
+export interface ServerHealth {
+  /** This server's name (SERVER_ID with its suffix, or `server-<random>`). */
+  name: string;
+  counters: DayCounters;
+  /** With a shared store: the other servers heard from in the last minutes. */
+  peers?: () => ServerSeen[];
+  verify?: () => Promise<AuditCheck>;
+  auditLabel?: string;
 }
 
 const MAX_BODY = 64 * 1024;
@@ -570,6 +590,32 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
   // local-only pages keep CONSOLE_LOCAL_ONLY's rule either way.
   const localOnly = auth ? localOnlyPaths(routes).filter((p) => !CONSOLE_PATHS.includes(p)) : localOnlyPaths(routes);
   const enabled = voiceProviders(deps.config.voiceProviders);
+  /** `/health`'s numbers, which the console's Health page shows too. */
+  const healthNumbers = (): HealthNumbers => {
+    const live = deps.store.liveCount();
+    const traces = deps.traceHealth?.() ?? null;
+    return {
+      sessions: live,
+      retained: deps.store.size() - live,
+      ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
+      ...(deps.draining?.() ? { draining: true } : {}),
+      ...(deps.disk ? { disk: deps.disk() } : {}),
+      ...(traces === null ? {} : { traces }),
+    };
+  };
+  const sh = deps.serverHealth;
+  const consoleHealth: HealthSource = {
+    numbers: healthNumbers,
+    self: () => ({ server: sh?.name ?? 'this server', calls: deps.store.liveCount(), chats: deps.chatLive?.() ?? 0, ...(sh ? sh.counters.now() : { reconnects: 0, fallbacks: 0, day: '' }) }),
+    ...(sh?.peers ? { peers: sh.peers } : {}),
+    ...(sh?.verify ? { verify: sh.verify } : {}),
+    ...(sh?.auditLabel !== undefined ? { auditLabel: sh.auditLabel } : {}),
+  };
+  /** A webhook's answer counted for the Health page: a reconnect, or a call put through to a person by the server. */
+  const counted = (note: string): void => {
+    const kind = noteKind(note);
+    if (kind !== null) sh?.counters.count(kind);
+  };
   return (req, res) => {
     void (async () => {
       const path = (req.url ?? '/').split('?')[0] ?? '/';
@@ -578,7 +624,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         reply(res, 404, 'text/plain', 'not found');
         return;
       }
-      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}), ...(deps.consoleApps ? { apps: deps.consoleApps } : {}) })) return;
+      if (deps.bus && handleDashboardRequest(req, res, {
+        bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, health: consoleHealth,
+        ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}), ...(deps.consoleApps ? { apps: deps.consoleApps } : {}),
+        ...(deps.config.carrierRates ? { carrierRates: deps.config.carrierRates } : {}), ...(deps.appDir !== undefined ? { appDir: deps.appDir } : {}),
+      })) return;
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {
@@ -607,19 +657,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // inside their grace period, which are memory but not callers. `chat` is there when the chat
         // is on, `draining` while the server is stopping, and `disk` when a retention is set, so a
         // body is what it was before them for a deployment that sets none.
-        const live = deps.store.liveCount();
-        const body = JSON.stringify({
-          ok: true,
-          sessions: live,
-          retained: deps.store.size() - live,
-          ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
-          ...(deps.draining?.() ? { draining: true } : {}),
-          ...(deps.disk ? { disk: deps.disk() } : {}),
-          ...(() => {
-            const traces = deps.traceHealth?.() ?? null;
-            return traces === null ? {} : { traces };
-          })(),
-        });
+        const body = JSON.stringify({ ok: true, ...healthNumbers() });
         answerJson(req, res, 200, body);
         return;
       }
@@ -667,6 +705,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         if (deps.draining?.()) {
           // A server about to stop starts no call it may not finish: the caller is put through to a person.
           deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}${inApp}: draining: new call sent to handoff`);
+          counted('dial:draining');
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
@@ -675,6 +714,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // it, so the server its socket reaches can read it; one that could not be written puts the caller
         // through to a person rather than at a socket no server will open.
         if (deps.tokens.settled && !(await landed(deps, params.callId))) {
+          counted('dial:token-not-saved');
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
@@ -735,6 +775,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         }
       }
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
+      counted(note);
       if (callback.callId) deps.handover?.()?.answered(callback.callId);
       reply(res, 200, provider.contentType, document);
     })().catch((e: unknown) => {

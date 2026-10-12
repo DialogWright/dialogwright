@@ -346,6 +346,35 @@ describe('two servers on one Postgres', () => {
     }, 30_000);
   }
 
+  it("the console's Health page on either server: every server heard from with its calls, the reconnect today on the server it reached, and the shared audit verified", async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const s3 = await traceStore();
+    const a = await boot('a', db, {}, { records: s3 });
+    const b = await boot('b', db, {}, { records: s3 });
+    const health = async (n: Node): Promise<{ servers: { server: string; calls: number; reconnects: number; self: boolean }[]; shared: boolean }> =>
+      (await (await fetch(`http://127.0.0.1:${n.server.port}/dashboard/health`)).json()) as never;
+    // Each server said it was up as it started listening: each hears the other.
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && (await health(b)).servers.length < 2) await new Promise((r) => setTimeout(r, 50));
+    const onB = await health(b);
+    expect(onB.shared).toBe(true);
+    expect(onB.servers.map((s) => [s.server.replace(/-[0-9a-f]{8}$/, ''), s.self])).toEqual([['b', true], ['a', false]]);
+    // A call runs on A; B hears it from A's next report (every 30 s): here, A's own page counts it at once.
+    const lb = await balancer(() => [a, b]);
+    const callSid = 'CA0000000000000000000000000health1';
+    await firstHalf(await answer(lb, 'twilio', callSid), callSid);
+    expect((await health(a)).servers[0]).toMatchObject({ self: true, calls: 1 });
+    await crash(a);
+    // A holder that never let go: the resumed line is said.
+    await reconnect(lb, 'twilio', callSid, 0, true);
+    expect((await health(b)).servers[0]).toMatchObject({ self: true, reconnects: 1 });
+    await b.server.store.settled();
+    const verified = (await (await fetch(`http://127.0.0.1:${b.server.port}/dashboard/health/audit`)).json()) as { ok: boolean; kind: string; chains: number; breaks: string[] };
+    expect(verified).toMatchObject({ ok: true, kind: 'postgres', breaks: [] });
+    expect(verified.chains).toBeGreaterThan(0);
+  }, 30_000);
+
   it('a crash whose carrier is slow to connect again: the resumed line, as for a quick one', async () => {
     const db = await PGlite.create();
     cleanups.push(() => db.close());
@@ -500,14 +529,15 @@ describe('a chat across two servers', () => {
     await second.until((r) => r.some((m) => m.type === 'ready'));
     await first.closed;
     await b.server.chat!.settled!();
-    await db.query("SELECT setval('dw_notices_id_seq', 10)");
+    // Far past the notices so far (the chat's, and each server's report of itself to the others' Health pages).
+    await db.query("SELECT setval('dw_notices_id_seq', 1000)");
     const third = await chatOn(a);
     third.send({ type: 'start', v: 1, resume: (second.received.find((m) => m.type === 'ready') as Extract<ServerMessage, { type: 'ready' }>).resume });
     await third.until((r) => r.some((m) => m.type === 'ready'));
     expect(await second.closed).toEqual({ code: 1000, reason: 'resumed elsewhere' });
-    // A notice from B placed before A's own restore (id 5, A's being 11), arriving late: A keeps the chat.
-    await db.query("INSERT INTO dw_notices (id, topic, origin, body, at_ms) VALUES (5, 'chat', $1, $2, 0)", [b.server.store.owner, ready.session]);
-    await db.query("SELECT pg_notify('dw_notices', '5')");
+    // A notice from B placed before A's own restore (id 500, A's being 1001), arriving late: A keeps the chat.
+    await db.query("INSERT INTO dw_notices (id, topic, origin, body, at_ms) VALUES (500, 'chat', $1, $2, 0)", [b.server.store.owner, ready.session]);
+    await db.query("SELECT pg_notify('dw_notices', '500')");
     await new Promise((r) => setTimeout(r, 300));
     expect(a.server.chat!.liveCount()).toBe(1);
     third.send({ type: 'ping' });

@@ -116,7 +116,14 @@ export interface ConsoleGate {
   noteCall(session: ConsoleSession, callId: string, app?: string): Chained<void>;
   /** Records a Calls page search by a caller's last four (what the console already shows of a number), with its date range, as noteLive. */
   noteSearch(session: ConsoleSession, search: CallsSearch): Chained<void>;
+  /** Records the first read of one of the console's pages of figures (Insights, Knowledge, Health) in a session, as noteLive. */
+  noteView(session: ConsoleSession, page: ConsolePage): Chained<void>;
+  /** Records each verification of the audit asked from the Health page, as noteLive. */
+  noteAuditCheck(session: ConsoleSession): Chained<void>;
 }
+
+/** The console's pages of figures, as the access log names them. */
+export type ConsolePage = 'insights' | 'knowledge' | 'health';
 
 /** A Calls page search as the access log records it. */
 export interface CallsSearch {
@@ -274,6 +281,8 @@ export class ConsoleAuth implements ConsoleGate {
   private readonly live = new Map<string, number>();
   /** Each call's own feed a session opened (`<session id>|<call id>`), until the session expires. */
   private readonly callsWatched = new Map<string, number>();
+  /** The pages of figures each session has read (session id and page), until it expires: recorded the first time. */
+  private readonly viewed = new Map<string, number>();
   private readonly failures = new Map<string, number[]>();
   private failuresInAll: number[] = [];
   /** When a lock (an address's, or `*` for all) was last recorded, so one lock is one audit entry. */
@@ -407,6 +416,23 @@ export class ConsoleAuth implements ConsoleGate {
       event: 'calls_search', session: session.hash, last4: search.last4, from: iso(search.fromMs), to: iso(search.toMs),
       ...(search.app ? { app: search.app } : {}),
     });
+  }
+
+  noteView(session: ConsoleSession, page: ConsolePage): Chained<void> {
+    const key = `${session.id}|${page}`;
+    if (this.viewed.has(key)) return;
+    const noted = this.note('console', { event: page, session: session.hash });
+    const seen = (): void => {
+      this.viewed.set(key, session.expiresAt);
+      prune(this.viewed, (exp) => exp <= this.now());
+    };
+    if (noted instanceof Promise) return noted.then(seen);
+    seen();
+    return noted;
+  }
+
+  noteAuditCheck(session: ConsoleSession): Chained<void> {
+    return this.note('console', { event: 'audit_verify', session: session.hash });
   }
 
   handle(req: IncomingMessage, res: ServerResponse, path: string): boolean {

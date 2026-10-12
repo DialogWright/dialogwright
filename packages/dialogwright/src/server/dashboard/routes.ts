@@ -19,6 +19,11 @@ import type { ConsoleGate, ConsoleSession } from '../console/auth';
 import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type CallsQuery, type CallsSource, type TodayFigures } from './calls';
 import { LiveCalls } from './live';
 import type { PublishedEvent } from './bus';
+import { FiguresCache } from './figuresCache';
+import { insightsOf, type Insights } from './figures';
+import { knowledgeStatusOf, type KnowledgeStatus } from './knowledge';
+import { AuditVerifier, latencyOf, type AuditCheck, type HealthNumbers, type HealthSource, type ServerSeen } from './health';
+import type { ConsolePage } from '../console/auth';
 
 /**
  * Changes every time the server process starts. The page keeps the first one it sees and reloads
@@ -51,6 +56,17 @@ export interface DashboardDeps {
   apps?: readonly ConsoleApp[];
   /** Tests only: awaited before a Calls search reads, so a test can hold one open (the one-at-a-time rule). */
   holdCalls?: () => Promise<void>;
+  /** Tests only: awaited before Insights' figures are read, as holdCalls. */
+  holdInsights?: () => Promise<void>;
+  /**
+   * The carriers' rates a minute (config.carrierRates: CARRIER_RATE_PER_MIN_<CARRIER>): Insights and the
+   * Live strip show the carrier's cost with them; absent, no carrier cost at all.
+   */
+  carrierRates?: Readonly<Partial<Record<string, number>>>;
+  /** The Health page's sources (index.ts): this server, the others heard from, `/health`'s numbers, the audit. Absent, the page says only what the bus knows. */
+  health?: HealthSource;
+  /** On a server of one app, the app's folder when the server runs in it (the Knowledge page counts its kb/pending drafts there). */
+  appDir?: string;
 }
 
 /** One app of a host, as the console reads it. */
@@ -59,6 +75,8 @@ export interface ConsoleApp {
   readonly app: App;
   readonly traceDir: string;
   readonly traces?: S3TraceReader;
+  /** The app's folder (a host file's apps all have one), for the Knowledge page's drafts. */
+  readonly dir?: string;
 }
 
 /** One trace record as `/dashboard/traces/<sid>` returns it: redacted, plus the line the caller heard. */
@@ -451,14 +469,20 @@ const endsSeen = new WeakMap<DashboardBus, { n: number }>();
  * passed, never on every poll of every viewer. The summaries under them are kept too (calls.ts), so working
  * them out again reads only the calls written since.
  */
-function todayFigures(deps: DashboardDeps, only: string | null, since: number): Promise<TodayFigures> {
-  let ends = endsSeen.get(deps.bus);
+/** The bus's count of calls that ended, counted from the first time it is asked for. */
+function endsOf(bus: DashboardBus): { n: number } {
+  let ends = endsSeen.get(bus);
   if (!ends) {
     const counter = { n: 0 };
-    deps.bus.subscribe((e) => { if (e.type === 'ended') counter.n += 1; });
-    endsSeen.set(deps.bus, counter);
+    bus.subscribe((e) => { if (e.type === 'ended') counter.n += 1; });
+    endsSeen.set(bus, counter);
     ends = counter;
   }
+  return ends;
+}
+
+function todayFigures(deps: DashboardDeps, only: string | null, since: number): Promise<TodayFigures> {
+  const ends = endsOf(deps.bus);
   let kept = todayKept.get(deps.bus);
   if (!kept) { kept = new Map(); todayKept.set(deps.bus, kept); }
   const key = `${only ?? ''}|${since}`;
@@ -470,6 +494,165 @@ function todayFigures(deps: DashboardDeps, only: string | null, since: number): 
   figures.catch(() => kept!.delete(key));
   if (kept.size > 50) kept.delete(kept.keys().next().value!);
   return figures;
+}
+
+/** The carrier's cost of minutes billed, by each carrier's rate a minute; null with no rate set (none shown). */
+function carrierCostOf(billed: Readonly<Record<string, number>>, rates: DashboardDeps['carrierRates']): number | null {
+  if (!rates || Object.keys(rates).length === 0) return null;
+  const usd = Object.entries(billed).reduce((sum, [c, minutes]) => sum + (rates[c] !== undefined ? minutes * rates[c]! : 0), 0);
+  return Math.round(usd * 1e4) / 1e4;
+}
+
+/** The daily figures cache of each bus (figuresCache.ts), told of each call that ends. */
+const figuresKept = new WeakMap<DashboardBus, FiguresCache>();
+function figuresOf(deps: DashboardDeps): FiguresCache {
+  let f = figuresKept.get(deps.bus);
+  if (!f) {
+    const ends = endsOf(deps.bus);
+    f = new FiguresCache({ endsSeen: () => ends.n });
+    figuresKept.set(deps.bus, f);
+  }
+  return f;
+}
+
+/** The longest range Insights reads: a quarter. */
+const MAX_RANGE_MS = 92 * 86_400_000;
+/** The sessions (or `local`) with Insights' figures being read. */
+const reading = new Set<string>();
+
+/** The app `?app=` names on a host (one it runs), else null: every app. */
+function onlyApp(deps: DashboardDeps, query: URLSearchParams): string | null {
+  const wanted = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
+  return wanted !== null && deps.apps!.some((a) => a.id === wanted) ? wanted : null;
+}
+
+/** What /dashboard/insights answers. */
+export interface InsightsAnswer {
+  from: number;
+  to: number;
+  insights: Insights;
+  /** Whether any app has a knowledge base, so the unanswered questions are counted; and the command that ranks them. */
+  knowledge: { apps: number; command: string } | null;
+}
+
+/** Records a page's first read in a session (with a sign-in), then answers what `work` gives; 503 when the record could not be made. */
+function viewed(res: ServerResponse, head: boolean, deps: DashboardDeps, session: ConsoleSession | null, page: ConsolePage, work: () => Promise<unknown>): void {
+  const noted = !head && deps.auth && session ? deps.auth.noteView(session, page) : undefined;
+  if (noted instanceof Promise) {
+    noted.then(() => answerJson(res, head, work), () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
+    return;
+  }
+  answerJson(res, head, work);
+}
+
+/**
+ * Insights for a range (`?from=<ms>&to=<ms>`, at most a quarter) and an app (`?app=`, on a host) or all:
+ * from the daily figures cache; one read at a time per session (429 for a second), as the Calls page's.
+ */
+function insightsRoute(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps, head: boolean, query: URLSearchParams, session: ConsoleSession | null): void {
+  const from = msOf(query.get('from'));
+  const to = msOf(query.get('to'));
+  if (from === undefined || to === undefined || to < from || to - from > MAX_RANGE_MS) {
+    send(res, 400, 'text/plain', 'give a range: from and to, in milliseconds, at most 92 days apart', head);
+    return;
+  }
+  const who = session?.id ?? 'local';
+  if (reading.has(who)) { send(res, 429, 'text/plain', 'Insights are already being read: try again when they answer', head); return; }
+  reading.add(who);
+  const done = (): void => { reading.delete(who); };
+  res.once('close', done);
+  const only = onlyApp(deps, query);
+  viewed(res, head, deps, session, 'insights', async () => {
+    try {
+      if (deps.holdInsights) await deps.holdInsights();
+      const sources = callsSources(deps, only);
+      const apps = await figuresOf(deps).range(sources, from, to);
+      const withKb = sources.filter((s) => s.app.knowledge !== undefined).length;
+      const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates), knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
+      return answer;
+    } finally {
+      done();
+    }
+  });
+}
+
+/** One app's part of the Knowledge page. */
+export interface KnowledgeApp {
+  id: string | null;
+  name: string;
+  status: KnowledgeStatus;
+  /** The unanswered questions of the last `days` days, by nearest topic, the most first (at most 10), and how many in all. */
+  unanswered: { total: number; top: { topic: string; label: string; n: number; latest: string }[] };
+}
+
+const KNOWLEDGE_DAYS = [7, 30, 90];
+
+/** The Knowledge page: each app's knowledge base counted, and its unanswered questions of the last `?days=` (7, 30 or 90) days. */
+async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams): Promise<{ days: number; apps: KnowledgeApp[] }> {
+  const asked = Number(query.get('days'));
+  const days = KNOWLEDGE_DAYS.includes(asked) ? asked : 30;
+  const only = onlyApp(deps, query);
+  const sources = callsSources(deps, only);
+  const to = Date.now();
+  const out: KnowledgeApp[] = [];
+  for (const s of sources) {
+    const dir = s.id === null ? deps.appDir : deps.apps?.find((a) => a.id === s.id)?.dir;
+    const status = await knowledgeStatusOf(s.app, dir);
+    let unanswered: KnowledgeApp['unanswered'] = { total: 0, top: [] };
+    if (status.kind !== 'none') {
+      const [figures] = await figuresOf(deps).range([s], to - days * 86_400_000, to);
+      const ins = insightsOf(figures ? [{ ...figures, id: null }] : [], undefined);
+      unanswered = { total: ins.totals.gaps, top: ins.gapTopics.slice(0, 10).map((g) => ({ topic: g.key, label: g.label, n: g.value.n, latest: g.value.latest })) };
+    }
+    out.push({ id: s.id, name: appNameOf(s.app), status, unanswered });
+  }
+  return { days, apps: out };
+}
+
+/** What /dashboard/health answers. */
+export interface HealthAnswer {
+  at: number;
+  /** This server first, then the others heard from in the last minutes (with a shared store). */
+  servers: ServerSeen[];
+  shared: boolean;
+  numbers: HealthNumbers | null;
+  latency: { asks: number; medianMs: number | null; p95Ms: number | null };
+  audit: { available: boolean; label: string | null; running: boolean; last: AuditCheck | null };
+}
+
+const verifiers = new WeakMap<HealthSource, AuditVerifier>();
+function verifierOf(h: HealthSource | undefined): AuditVerifier | null {
+  if (!h?.verify) return null;
+  let v = verifiers.get(h);
+  if (!v) { v = new AuditVerifier(h.verify); verifiers.set(h, v); }
+  return v;
+}
+
+function healthOf(deps: DashboardDeps): HealthAnswer {
+  const h = deps.health;
+  const now = Date.now();
+  const self: ServerSeen | null = h ? { ...h.self(), lastSeenMs: now, self: true } : null;
+  const peers = h?.peers?.() ?? [];
+  const v = verifierOf(h);
+  return {
+    at: now,
+    servers: [...(self ? [self] : []), ...peers.filter((p) => p.server !== self?.server)],
+    shared: h?.peers !== undefined,
+    numbers: h ? h.numbers() : null,
+    latency: latencyOf(deps.bus).stats(),
+    audit: { available: v !== null, label: h?.auditLabel ?? null, running: v?.busy ?? false, last: v?.last ?? null },
+  };
+}
+
+/** The audit verified (one at a time: an asker while one runs gets its answer), each asking recorded first. */
+function auditRoute(res: ServerResponse, deps: DashboardDeps, head: boolean, session: ConsoleSession | null): void {
+  const v = verifierOf(deps.health);
+  if (v === null) { send(res, 404, 'text/plain', 'no audit to verify on this server', head); return; }
+  if (head) { send(res, 200, 'application/json', '{}', head); return; }
+  const noted = deps.auth && session ? deps.auth.noteAuditCheck(session) : undefined;
+  const run = (): void => answerJson(res, head, () => v.verify());
+  if (noted instanceof Promise) { noted.then(run, () => send(res, 503, 'text/plain', 'the access could not be recorded', head)); return; }
+  run();
 }
 
 /** Returns true when the request was a dashboard route (handled), false to let the caller continue. */
@@ -565,7 +748,27 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   if (path === '/dashboard/today') {
     const only = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
     const since = msOf(query.get('since')) ?? new Date(new Date().setHours(0, 0, 0, 0)).getTime();
-    answerJson(res, head, () => todayFigures(deps, only, since));
+    answerJson(res, head, async () => {
+      const t = await todayFigures(deps, only, since);
+      return { ...t, carrierUsd: carrierCostOf(t.billedMinutes, deps.carrierRates) };
+    });
+    return true;
+  }
+  // Insights, Knowledge and Health: each read recorded (its first in a session), then answered.
+  if (path === '/dashboard/insights') {
+    insightsRoute(req, res, deps, head, query, session);
+    return true;
+  }
+  if (path === '/dashboard/knowledge') {
+    viewed(res, head, deps, session, 'knowledge', () => knowledgeOf(deps, query));
+    return true;
+  }
+  if (path === '/dashboard/health') {
+    viewed(res, head, deps, session, 'health', async () => healthOf(deps));
+    return true;
+  }
+  if (path === '/dashboard/health/audit') {
+    auditRoute(res, deps, head, session);
     return true;
   }
   if (path === '/dashboard/traces' && deps.apps && deps.apps.length > 0) {

@@ -319,6 +319,9 @@ export async function probeAuditWrite(sql: SqlClient): Promise<void> {
 // Verifying
 // ---------------------------------------------------------------------------------------------
 
+/** How many rows are checked between letting the server's other work run. */
+const VERIFY_YIELD_ROWS = 1_000;
+
 export interface PostgresVerifyResult {
   chains: number;
   entries: number;
@@ -347,7 +350,13 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
   let expected = 0;
   let prev = GENESIS;
   let current: string | null = null;
+  // Every so many rows the server's other work runs (a voice call's turn): the console verifies on a live server.
+  let walked = 0;
+  const breathe = async (): Promise<void> => {
+    if (++walked % VERIFY_YIELD_ROWS === 0) await new Promise<void>((r) => setImmediate(r));
+  };
   for (const row of entries.rows) {
+    await breathe();
     const chain = row.chain;
     if (chain !== current) {
       current = chain;
@@ -386,6 +395,7 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
   let key: string | null = null;
   let broken = false;
   for (const row of anchors.rows) {
+    await breathe();
     const k = `${row.day}/${row.server}`;
     if (k !== key) {
       key = k;
@@ -427,6 +437,7 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
   let rosterDay: string | null = null;
   let rosterBroken = false;
   for (const row of roster.rows) {
+    await breathe();
     if (row.day !== rosterDay) {
       rosterDay = row.day;
       expected = 1;
