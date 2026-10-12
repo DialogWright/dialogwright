@@ -269,6 +269,13 @@ export interface ServerConfig {
    */
   drainMs?: number;
   /**
+   * DRAIN_UNREADY_MS, default 0 (off, as before), 0 to 600000: how long a stopping server answers `/ready`
+   * with 503 while still answering new calls as usual, before its drain begins (index.ts
+   * RunningServer.unready): time for a load balancer to see it go and send new calls elsewhere, so none
+   * reaches the handoff number only because this server is stopping. Optional in the type only.
+   */
+  drainUnreadyMs?: number;
+  /**
    * TRACE_RETENTION_DAYS, unset by default (every trace kept, as before): trace files and their frame
    * logs last written more than this many days ago are deleted (server/retention.ts). Absent when unset.
    */
@@ -658,6 +665,7 @@ export function loadConfig(env: Env): ServerConfig {
     handoffSummary: handoffSummarySwitch === 'on',
     consoleLocalOnly: localOnlySwitch === 'on',
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
+    drainUnreadyMs: drainUnreadyOf(env),
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
     ...gigabytesOf(env, 'TRACE_MAX_GB', 'traceMaxBytes'),
@@ -674,6 +682,20 @@ export function loadConfig(env: Env): ServerConfig {
     ...(widget ? { widget } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
   };
+}
+
+/** DRAIN_UNREADY_MS, checked: 0 (the default, off) to 600000. */
+function drainUnreadyOf(env: Env): number {
+  const raw = env.DRAIN_UNREADY_MS;
+  const bad = (): Error => new Error(`DRAIN_UNREADY_MS must be a whole number of milliseconds from 0 to 600000, got "${raw}"`);
+  let ms: number;
+  try {
+    ms = integer(env, 'DRAIN_UNREADY_MS', 0);
+  } catch {
+    throw bad();
+  }
+  if (ms > 600_000) throw bad();
+  return ms;
 }
 
 /** The silence after which a resumed call hears the `resumed` line, unless RESUMED_AFTER_MS says otherwise. */
@@ -978,7 +1000,7 @@ export function describeConfig(c: ServerConfig): string {
     describeEndAfterPlayback(c),
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
-    `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
+    `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms${c.drainUnreadyMs ? ` (unready ${c.drainUnreadyMs} ms first)` : ''}`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}${c.traceMaxBytes !== undefined ? `, at most ${gb(c.traceMaxBytes)}` : ''}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
     ...(c.diskWarnFreeBytes !== undefined ? [`warn below ${gb(c.diskWarnFreeBytes)} free`] : []),

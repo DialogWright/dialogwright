@@ -14,7 +14,7 @@ ExecStart={{pnpm}} --filter {{app}} serve
 Restart=always
 RestartSec=10
 # On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of
-# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_MS and 10 more).
+# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_UNREADY_MS, DRAIN_MS and 10 more).
 KillSignal=SIGTERM
 KillMode=mixed
 TimeoutStopSec={{stopSeconds}}

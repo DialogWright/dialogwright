@@ -12,7 +12,7 @@ import { findApp, projectRoot, workspaceApps } from './workspace';
  * (or `--env-file <path>`): a service definition that keeps an app's server running on this machine, with absolute paths
  * resolved here. It runs `<pnpm> --filter <app> serve` from the repository with ENV_FILE naming the
  * settings file (the server reads it, as pnpm start does), starts it at load (login, or boot for a
- * lingering systemd user), restarts it when it exits, and gives a stop DRAIN_MS and ten seconds more
+ * lingering systemd user), restarts it when it exits, and gives a stop DRAIN_UNREADY_MS and DRAIN_MS and ten seconds more
  * before it is killed. It writes the file and prints the commands that install it; it runs none of them.
  *
  * - launchd: a LaunchAgent plist (default ~/Library/LaunchAgents/<label>.plist), its output in
@@ -170,8 +170,10 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
   const envFile = isAbsolute(named) ? named : resolve(io.invokedFrom, named);
   let drainMs: number;
   try {
-    // Read for DRAIN_MS alone; nothing from it goes into the service file but its path.
-    drainMs = integer(readEnvFile(envFile), 'DRAIN_MS', DEFAULT_DRAIN_MS);
+    // Read for DRAIN_MS and DRAIN_UNREADY_MS alone (a stop is the unready time, then the drain); nothing
+    // from it goes into the service file but its path.
+    const settings = readEnvFile(envFile);
+    drainMs = integer(settings, 'DRAIN_MS', DEFAULT_DRAIN_MS) + integer(settings, 'DRAIN_UNREADY_MS', 0);
   } catch (e) {
     io.out(e instanceof Error ? e.message : String(e));
     return 1;

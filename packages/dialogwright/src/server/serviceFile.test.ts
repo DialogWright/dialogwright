@@ -63,7 +63,7 @@ const LAUNCHD = `<?xml version="1.0" encoding="UTF-8"?>
   <integer>10</integer>
   <key>ProcessType</key>
   <string>Interactive</string>
-  <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. -->
+  <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_UNREADY_MS, DRAIN_MS and 10 more) before SIGKILL. -->
   <key>ExitTimeOut</key>
   <integer>40</integer>
   <!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what
@@ -92,7 +92,7 @@ ExecStart=/opt/homebrew/bin/pnpm --filter @dialogwright/example-myline serve
 Restart=always
 RestartSec=10
 # On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of
-# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_MS and 10 more).
+# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_UNREADY_MS, DRAIN_MS and 10 more).
 KillSignal=SIGTERM
 KillMode=mixed
 TimeoutStopSec=40
@@ -194,6 +194,15 @@ describe('pnpm service', () => {
     expect(r.out).toContain(`wrote ${out}`);
     expect(r.out).toContain(`launchctl bootstrap gui/$(id -u) ${out}`);
     expect(r.out).toContain(`mkdir -p ${join(w.home, 'Library/Logs/com.example.ivr')}`);
+  });
+
+  it('gives a stop DRAIN_UNREADY_MS too, when it is set, before the drain\'s DRAIN_MS and the ten seconds', async () => {
+    const w = workspace();
+    writeFileSync(w.envFile, 'DRAIN_MS=50000\nDRAIN_UNREADY_MS=5000\n');
+    const r = await run(['launchd', '--app', 'myline', '--env-file', 'myline.env', '--label', 'com.example.ivr', '--out', 'agent.plist'], w);
+    expect(r.code).toBe(0);
+    expect(readFileSync(join(w.root, 'agent.plist'), 'utf8')).toContain('<integer>65</integer>');
+    expect(r.out).toContain('65 s to stop');
   });
 
   it('writes a systemd user unit, to its usual place by default, and says how to start it at boot', async () => {

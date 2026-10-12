@@ -64,6 +64,14 @@ export interface RunningServer {
   sweep(): void;
   /** Whether the server is stopping: drain (or close) has begun, and `/ready` answers 503. */
   readonly draining: boolean;
+  /** Whether `/ready` answers 200: neither unready (DRAIN_UNREADY_MS) nor draining. */
+  readonly ready: boolean;
+  /**
+   * The first step of a stop, before the drain (DRAIN_UNREADY_MS, default 0: none): `/ready` answers 503
+   * for `ms` while the server answers new calls as usual, so a load balancer sees it go before any new
+   * call it still sends would be put through to a person. Resolves once the time is up; `drain` follows.
+   */
+  unready(ms?: number): Promise<void>;
   /**
    * The first half of a stop: the server stops taking new work and waits for what is live. From now on
    * `/ready` answers 503, a new call is put through to the handoff number, and a new chat is refused
@@ -433,6 +441,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (transfer) log(`transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
   if (Object.keys(called).length > 0) log(`called numbers: ${Object.keys(called).join(', ')}`);
   let draining = false;
+  /** Set by unready() (DRAIN_UNREADY_MS): /ready answers 503 while new calls are still answered. */
+  let unready = false;
   /** Set once the drain's wait is over (or close() has begun): a live call's reconnect goes to the handoff number. */
   let closing = false;
   /**
@@ -527,6 +537,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ...(transfer ? { transfer } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
     draining: () => draining,
+    unready: () => unready,
     closing: () => closing,
     handover: () =>
       handover === null
@@ -690,6 +701,15 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     sweep,
     get draining() {
       return draining;
+    },
+    get ready() {
+      return !draining && !unready;
+    },
+    unready: async (ms = config.drainUnreadyMs ?? 0) => {
+      if (ms <= 0 || draining) return;
+      unready = true;
+      log(`stopping: /ready says 503 for ${ms} ms while new calls are still answered, then the drain`);
+      await new Promise((resolve) => setTimeout(resolve, ms));
     },
     drain: async (ms = config.drainMs ?? DEFAULT_DRAIN_MS) => {
       draining = true;
@@ -918,8 +938,10 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
         stoppedAt = at;
         console.log(`[server] shutting down (${signal}; a second one stops at once)`);
         // The app's own services stay up while live calls finish, since those calls still use them.
+        // DRAIN_UNREADY_MS first (0 by default: none): /ready says 503 while new calls are still answered.
         void running
-          .drain()
+          .unready()
+          .then(() => running.drain())
           .catch(() => {})
           .then(() => Promise.allSettled([running.close(), sidecars.close?.()]))
           .then(() => process.exit(0));

@@ -50,6 +50,8 @@ export interface HttpDeps {
    * goes to the handoff number. Absent, never: the server is ready whenever it answers.
    */
   draining?: () => boolean;
+  /** Whether the server is stopping but not yet draining (DRAIN_UNREADY_MS): /ready says 503, and new calls are still answered. */
+  unready?: () => boolean;
   /**
    * Whether the drain's wait is over and the server is about to close (index.ts): a live call's reconnect
    * is put through to the handoff number rather than back to a server that will not be there (with the
@@ -564,8 +566,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       if ((req.method === 'GET' || req.method === 'HEAD') && path === '/ready') {
         // Readiness: whether to send this server new calls. A load balancer or a monitor reads it; a
         // stopping server says no while its live calls finish.
+        // Before the drain (DRAIN_UNREADY_MS) it says no while still answering new calls, so a balancer
+        // that has not yet seen it go loses none of them.
         const draining = deps.draining?.() ?? false;
-        answerJson(req, res, draining ? 503 : 200, JSON.stringify(draining ? { ready: false, draining: true } : { ready: true }));
+        const stopping = !draining && (deps.unready?.() ?? false);
+        answerJson(req, res, draining || stopping ? 503 : 200, JSON.stringify(draining ? { ready: false, draining: true } : stopping ? { ready: false, stopping: true } : { ready: true }));
         return;
       }
       // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the

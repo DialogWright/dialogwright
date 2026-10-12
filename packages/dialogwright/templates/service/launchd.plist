@@ -36,7 +36,7 @@
   <integer>10</integer>
   <key>ProcessType</key>
   <string>Interactive</string>
-  <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. -->
+  <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_UNREADY_MS, DRAIN_MS and 10 more) before SIGKILL. -->
   <key>ExitTimeOut</key>
   <integer>{{stopSeconds}}</integer>
   <!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what

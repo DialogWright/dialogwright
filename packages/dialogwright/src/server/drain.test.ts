@@ -215,3 +215,47 @@ describe('the drain', () => {
     await drained;
   });
 });
+
+describe('DRAIN_UNREADY_MS: unready before the drain', () => {
+  const ring = (base: string, callSid: string) =>
+    fetch(`${base}/voice`, form({ CallSid: callSid, From: '+15555550110', To: '+15555550111', CallStatus: 'ringing' })).then((r) => r.text());
+
+  it('says 503 on /ready for its time while a new call is still served as usual, then drains, sending a new call to the handoff number', async () => {
+    const { base, logs } = await start({ DRAIN_UNREADY_MS: '400', DRAIN_MS: '5000' });
+    expect(running!.ready).toBe(true);
+    const unready = running!.unready();
+    // The window: the balancer is told to stop sending calls, and one it sends meanwhile is answered.
+    const during = await fetch(`${base}/ready`);
+    expect(during.status).toBe(503);
+    expect(await during.json()).toEqual({ ready: false, stopping: true });
+    expect(running!.ready).toBe(false);
+    expect(running!.draining).toBe(false);
+    const served = await ring(base, 'CA-in-window');
+    expect(served).toContain('<ConversationRelay');
+    expect(served).not.toContain('<Dial>');
+    expect(await settlesWithin(unready, 2000)).toBeGreaterThanOrEqual(300);
+    expect(logs).toContain('stopping: /ready says 503 for 400 ms while new calls are still answered, then the drain');
+    // Then the drain, as before: a new call goes to a person.
+    const drained = running!.drain();
+    const after = await ring(base, 'CA-after');
+    expect(after).toContain('<Dial>+15551234567</Dial>');
+    expect((await fetch(`${base}/ready`)).status).toBe(503);
+    await drained;
+  });
+
+  it('is off by default (0): the drain begins at once, as before', async () => {
+    const { base, logs } = await start();
+    expect(await settlesWithin(running!.unready(), 200)).not.toBeNull();
+    expect((await fetch(`${base}/ready`)).status).toBe(200);
+    expect(logs.some((l) => l.startsWith('stopping: /ready says 503'))).toBe(false);
+  });
+
+  it('is refused at startup when it is not a whole number of milliseconds from 0 to 600000', () => {
+    const base = { PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567' };
+    expect(loadConfig({ ...base, DRAIN_UNREADY_MS: '2000' }).drainUnreadyMs).toBe(2000);
+    expect(loadConfig(base).drainUnreadyMs).toBe(0);
+    expect(() => loadConfig({ ...base, DRAIN_UNREADY_MS: '-1' })).toThrow(/DRAIN_UNREADY_MS/);
+    expect(() => loadConfig({ ...base, DRAIN_UNREADY_MS: '700000' })).toThrow(/DRAIN_UNREADY_MS/);
+    expect(() => loadConfig({ ...base, DRAIN_UNREADY_MS: 'soon' })).toThrow(/DRAIN_UNREADY_MS/);
+  });
+});

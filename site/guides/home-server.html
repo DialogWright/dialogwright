@@ -693,7 +693,7 @@ ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.
   &lt;integer&gt;10&lt;/integer&gt;
   &lt;key&gt;ProcessType&lt;/key&gt;
   &lt;string&gt;Interactive&lt;/string&gt;
-  &lt;!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. --&gt;
+  &lt;!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_UNREADY_MS, DRAIN_MS and 10 more) before SIGKILL. --&gt;
   &lt;key&gt;ExitTimeOut&lt;/key&gt;
   &lt;integer&gt;{{stopSeconds}}&lt;/integer&gt;
   &lt;!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what
@@ -742,7 +742,7 @@ ExecStart={{pnpm}} --filter {{app}} serve
 Restart=always
 RestartSec=10
 # On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of
-# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_MS and 10 more).
+# the service gets SIGKILL only if it is still there after TimeoutStopSec (DRAIN_UNREADY_MS, DRAIN_MS and 10 more).
 KillSignal=SIGTERM
 KillMode=mixed
 TimeoutStopSec={{stopSeconds}}
