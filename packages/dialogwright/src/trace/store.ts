@@ -15,17 +15,19 @@ import { frameLine, parseFrameLog, type FrameDir, type FrameSink, type ReadFrame
  * startedAtMs, which moves with the call, so a call that crosses midnight or moves server stays in one
  * folder) and `call` its id as its trace file is named (safeFileStem):
  *
- *   <first>-<last>-<gen>-<ms>-<server>-<n>.trace.jsonl    trace records, each line as a trace file's
- *   <turn>-<turn>-<gen>-<ms>-<server>-<n>.frames.jsonl    frame-log lines, each as a frame log's
- *   <first>-<last>-<gen>-<ms>-<server>-<n>.late.jsonl     records written after the server let the call go
+ *   <first>-<last>-<gen>-<server>-<n>-<ms>.trace.jsonl    trace records, each line as a trace file's
+ *   <turn>-<turn>-<gen>-<server>-<n>-<ms>.frames.jsonl    frame-log lines, each as a frame log's
+ *   <first>-<last>-<gen>-<server>-<n>-<ms>.late.jsonl     records written after the server let the call go
  *
  * `first` and `last` are the turn indexes of a segment's first and last record (six digits; a frames
  * segment carries the call's turn when its first line was written), `gen` the call's reconnect count
- * when it was written (four digits), `ms` the time of its first line (thirteen digits), `server` the
- * server that wrote it (SERVER_ID and its suffix), `n` its count in that server's run (six digits).
- * Sorted by name, a call's segments are in the order they were written: by turn, and within a turn by
- * the reconnect that moved the call (every takeover follows a reconnect the database counted, which
- * the call carries), then by the writing server's own count; no server's clock is compared. A segment
+ * when it was written (four digits), `server` the server that wrote it (SERVER_ID and its suffix), `n`
+ * its count in that server's run (six digits), `ms` the time of its first line (thirteen digits, for
+ * the console's list, never for order). Sorted by name, a call's segments are in the order they were
+ * written: by turn, and within a turn by the reconnect that moved the call (every takeover follows a
+ * reconnect the database counted, which the call carries), then by the writing server's own count; no
+ * server's clock is compared. Two servers' segments of one turn and one reconnect (lines the first
+ * wrote after the call moved) are in the order of the servers' names. A segment
  * is named once and never rewritten: one that fails is tried again under the same name.
  *
  * Writing never stops a call: a segment is written when a turn's record is (at once) and when frames
@@ -122,16 +124,16 @@ export interface SegmentName {
 const pad = (v: number, width: number): string => String(Math.max(0, Math.min(v, 10 ** width - 1))).padStart(width, '0');
 
 export function segmentName(s: SegmentName): string {
-  return `${pad(s.first, 6)}-${pad(s.last, 6)}-${pad(s.gen, 4)}-${pad(s.ms, 13)}-${s.server}-${pad(s.n, 6)}.${s.kind}.jsonl`;
+  return `${pad(s.first, 6)}-${pad(s.last, 6)}-${pad(s.gen, 4)}-${s.server}-${pad(s.n, 6)}-${pad(s.ms, 13)}.${s.kind}.jsonl`;
 }
 
-const SEGMENT = /^(\d{6})-(\d{6})-(\d{4})-(\d{13})-([A-Za-z0-9._-]+)-(\d{6})\.(trace|frames|late)\.jsonl$/;
+const SEGMENT = /^(\d{6})-(\d{6})-(\d{4})-([A-Za-z0-9._-]+)-(\d{6})-(\d{13})\.(trace|frames|late)\.jsonl$/;
 
 /** A segment's name read back, or null for anything else in the folder. */
 export function parseSegmentName(name: string): SegmentName | null {
   const m = SEGMENT.exec(name);
   if (!m) return null;
-  return { first: Number(m[1]), last: Number(m[2]), gen: Number(m[3]), ms: Number(m[4]), server: m[5]!, n: Number(m[6]), kind: m[7] as SegmentKind };
+  return { first: Number(m[1]), last: Number(m[2]), gen: Number(m[3]), server: m[4]!, n: Number(m[5]), ms: Number(m[6]), kind: m[7] as SegmentKind };
 }
 
 /** A UTC day as a folder is named: YYYY-MM-DD. */

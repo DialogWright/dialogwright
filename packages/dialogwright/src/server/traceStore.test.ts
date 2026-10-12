@@ -77,7 +77,7 @@ describe('TRACE_STORE=s3://... on a server', () => {
     await server.close();
     const keys = [...s3.objects.keys()];
     expect(keys.length).toBeGreaterThan(1);
-    expect(keys.every((k) => /^prod\/traces\/\d{4}-\d{2}-\d{2}\/CA0000000000000000000000000000s3a\/\d{6}-\d{6}-0000-\d{13}-web-1-[0-9a-f]{8}-\d{6}\.(trace|frames)\.jsonl$/.test(k))).toBe(true);
+    expect(keys.every((k) => /^prod\/traces\/\d{4}-\d{2}-\d{2}\/CA0000000000000000000000000000s3a\/\d{6}-\d{6}-0000-web-1-[0-9a-f]{8}-\d{6}-\d{13}\.(trace|frames)\.jsonl$/.test(k))).toBe(true);
     expect(existsSync(join(dir, 'traces')) ? readdirSync(join(dir, 'traces')) : []).toEqual([]);
     // No key in any line said.
     expect(logs.join('\n')).not.toContain(KEYS.secretAccessKey);

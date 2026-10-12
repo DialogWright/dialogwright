@@ -64,7 +64,7 @@ describe('TRACE_STORE: the setting', () => {
 
   it('names a segment so that name order is write order, and reads it back', () => {
     const name = segmentName({ first: 3, last: 4, gen: 1, ms: 1_760_000_000_000, server: 'web-1-ab12cd34', n: 7, kind: 'trace' });
-    expect(name).toBe('000003-000004-0001-1760000000000-web-1-ab12cd34-000007.trace.jsonl');
+    expect(name).toBe('000003-000004-0001-web-1-ab12cd34-000007-1760000000000.trace.jsonl');
     expect(parseSegmentName(name)).toEqual({ first: 3, last: 4, gen: 1, ms: 1_760_000_000_000, server: 'web-1-ab12cd34', n: 7, kind: 'trace' });
     expect(parseSegmentName('notes.txt')).toBeNull();
     expect(splitCallAddress('s3://call-traces/prod/traces/CA123')).toEqual({ store: 's3://call-traces/prod/traces', call: 'CA123' });
