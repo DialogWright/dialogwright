@@ -18,6 +18,7 @@ import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
 import type { Renderer } from './types';
 import type { AuditDraft } from '../audit/types';
+import { traceLine } from '../trace/writer';
 
 /**
  * Generated wording on a turn (render/turn.ts), on the message fixture (src/testing/message), whose
@@ -219,5 +220,18 @@ describe('a generated line in another locale', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a generated line in the trace file', () => {
+  it('is masked as the say actions are: a slot recorded by its last four is never written whole, in the fixed line, the wording said or a wording refused', async () => {
+    const r = await call(TO_SUMMARY, fake());
+    const record = r.runs.at(-1)!.record;
+    expect(JSON.stringify(record.render)).toContain('555 555 0142');
+    const line = traceLine(record, messageApp);
+    expect(line).not.toContain('555 555 0142');
+    expect(line).not.toContain('5555550142');
+    const written = JSON.parse(line) as typeof record;
+    expect(written.render!.lines.find((l) => l.promptId === 'confirm_take_message')).toMatchObject({ mode: 'generated' });
   });
 });
