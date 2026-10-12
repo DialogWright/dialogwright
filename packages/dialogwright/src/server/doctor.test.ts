@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { formatResult, main, runDoctor, settingsFileCheck, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { formatResult, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
 import { openPostgresAudit } from '../audit/postgres';
@@ -757,3 +757,17 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
   });
 });
 
+
+describe('pnpm diagnose: generated wording', () => {
+  const MESSAGE = fileURLToPath(new URL('../testing/message', import.meta.url));
+  it('nothing for an app that generates no line', () => {
+    expect(wordingChecks(fileURLToPath(new URL('../testing/callback', import.meta.url)), {})).toEqual([]);
+  });
+  it('who words the lines, the key by its variable only; every line fixed with RENDER_PROVIDER unset; a setting the server would refuse', () => {
+    expect(wordingChecks(MESSAGE, {})[0]).toMatchObject({ id: 'wording', status: 'warn', message: '9 generated lines, but RENDER_PROVIDER is unset: every line is said fixed' });
+    const ok = wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_SHARE: '50' })[0]!;
+    expect(ok).toMatchObject({ status: 'ok', message: '9 generated lines, worded by claude-haiku-5-5 from anthropic (key in ANTHROPIC_API_KEY), 50% of calls, within 700 ms on a call and 1500 ms in a chat' });
+    expect(JSON.stringify(ok)).not.toContain('sk-test-not-real');
+    expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'openrouter' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: missing required environment variable OPENROUTER_API_KEY (RENDER_PROVIDER=openrouter): the server will not start' });
+  });
+});

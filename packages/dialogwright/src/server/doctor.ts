@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { gb as gbOf, loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
+import { loadAppFolder } from '../define/load';
+import { generatedWordingOf } from '../render/config';
+import { renderSettings, resolveRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
@@ -60,7 +63,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -300,6 +303,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
 
   // 6b. The variables app.yaml names (env.<NAME>), read from the YAML alone: set or not, and how long, never the value.
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
+  // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
+  if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
 
   // 7. The folders, read from where the server runs.
   const traceDir = resolve(o.cwd, config.traceDir);
@@ -383,6 +388,29 @@ const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp',
  * than a custom parameter may be, or has a control character, so each of those fails here too. None
  * for an app.yaml that names none, so every other app's diagnosis is as it was.
  */
+/**
+ * Generated wording (prompts.yaml's mode: generative, a form's wording: generative): which model words
+ * the app's generated lines, with its key's variable (never the key), RENDER_SHARE and the budget; that
+ * every line is said fixed with RENDER_PROVIDER unset; and a setting the server would refuse. Nothing for
+ * an app that generates no line, or a folder that cannot be read (pnpm check says why). No model is asked.
+ */
+export function wordingChecks(appDir: string, env: Env): CheckResult[] {
+  const loaded = loadAppFolder(appDir).config;
+  if (loaded === null) return [];
+  const g = generatedWordingOf({ prompts: loaded.prompts[loaded.defaultLocale] ?? {}, forms: loaded.forms.forms, style: loaded.style, localePrompts: {} });
+  const lines = g === undefined ? 0 : Object.keys(g.lines).length;
+  if (lines === 0) return [];
+  const said = `${lines} generated line${lines === 1 ? '' : 's'}`;
+  try {
+    const p = resolveRenderProvider(env);
+    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated' }];
+    const r = renderSettings(env);
+    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat` }];
+  } catch (e) {
+    return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
+  }
+}
+
 export function variableChecks(appDir: string, env: Env): CheckResult[] {
   const refs = appYamlEnvReferences(appDir);
   if (refs === null) return [{ id: 'variables', status: 'skip', message: 'the variables app.yaml names: app.yaml cannot be read (pnpm check says why)' }];
@@ -712,6 +740,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     }
     const read = appEnvironment(env, own, ownVariablesOf(app));
     out.push(...variableChecks(app.dir, read.env).map(tag));
+    out.push(...wordingChecks(app.dir, read.env).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
     for (const [name, variable] of Object.entries(app.services)) {
       const url = read.env[variable]?.trim();
