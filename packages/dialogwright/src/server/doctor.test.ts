@@ -688,11 +688,11 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
       mkdirSync(join(dir, 'apps', id), { recursive: true });
       writeFileSync(join(dir, 'apps', id, 'app.yaml'), `id: ${id}\ntransfer:\n  default: env.MAIN_LINE\n`);
     }
-    writeFileSync(join(dir, 'apps', 'one', '.env'), 'MAIN_LINE=+447700900201\n', { mode: 0o600 });
+    writeFileSync(join(dir, 'apps', 'one', '.env'), 'MAIN_LINE=+15555550201\n', { mode: 0o600 });
     // An app's .env from before the host, with a server setting in it: not read under a host.
     writeFileSync(join(dir, 'apps', 'two', '.env'), 'MAIN_LINE=sip:desk@pbx.example.com\nTWILIO_AUTH_TOKEN=not-read\n', { mode: 0o600 });
     writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/two]\nnumbers:\n  - { number: env.ONE_LINE, app: one }\n');
-    writeFileSync(join(dir, '.env'), Object.entries({ ...goodEnv(dir), ONE_LINE: '+447700900301', ...serverExtra }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
+    writeFileSync(join(dir, '.env'), Object.entries({ ...goodEnv(dir), ONE_LINE: '+15555550301', ...serverExtra }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
     return dir;
   }
 
@@ -703,10 +703,10 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(code).toBe(0);
     expect(out[0]).toBe(`the apps of ${join(dir, 'host.yaml')} (one, two): settings from ${join(dir, '.env')} (offline)`);
     expect(out).toContain("ok    host.yaml's numbers: ONE_LINE (one), each set and its own; any other number reaches one");
-    expect(out).toContain("ok    app one: app.yaml's transfer.default reads MAIN_LINE: set, a phone number");
+    expect(out).toContain("warn  app one: app.yaml's transfer.default reads MAIN_LINE: a 555 number, so calls handed off there will go nowhere  ->  set MAIN_LINE to a phone a person answers");
     expect(out).toContain("ok    app two: app.yaml's transfer.default reads MAIN_LINE: set, a SIP address");
     expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^warn  app two: .*sets TWILIO_AUTH_TOKEN, which the app's YAML does not name/);
-    expect(out.join('\n')).not.toContain('+447700900201');
+    expect(out.join('\n')).not.toContain('+15555550201');
     expect(out.join('\n')).not.toContain('not-read');
   });
 
