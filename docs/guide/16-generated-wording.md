@@ -62,13 +62,30 @@ A line can be generated from content the call holds: the line's variables named 
     mode: generative
     goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message in your own words, and ask whether to pass it on.
     from: [message]
+    summarizesConfirmed: true
     when:
       situations: [first-ask]
+  read_back_exact:
+    text: Here it is exactly as I took it down.
+    interruptible: false
 ```
 
-- `{recipient}`, `{caller}` and `{phone}` are data items: the generated line must say each word for word. `{message}` is content: the model may summarize it, and its words count as allowed source for the checks (16.6).
+```yaml
+# forms.yaml, under forms:
+  take_message:
+    slots: [recipient, caller, phone, message]
+    summaryPromptId: confirm_take_message
+    hooks: [confirmedParams, complete]
+    calls: [leaveMessage]
+    summary:
+      onNo: read-back
+    wording: generative
+```
+
+- `{recipient}`, `{caller}` and `{phone}` are data items: the generated line must say each word for word. `{message}` is content: the model may summarize it. The content is the caller's words: before a line is worded from it, the injection screen reads it again, alone, and a line is generated from it only when the screen reads it and does not flag it (otherwise `content-flagged`, and the fixed line). The drift check is given the fixed line with `{message}` left as a placeholder and the message apart, marked as the caller's words, never as approved wording: a line that states anything of it as the agent's own fact, promise or decision, rather than as the caller's ("your message says..."), falls back.
 - The exact content is always kept. The slot holds the message as the caller said it, the summary's yes arms exactly what the slots hold, and the tool is sent the message word for word, whatever a line said of it.
-- Reading it back word for word is always there. A caller who asks to hear it again ("can you read that back word for word", the `repeat_prompt` intent) hears the fixed line, which reads the message whole: a repeat always says a line's fixed text. With `when: { situations: [first-ask] }`, every later reading of the summary (after a no, after a change) is the fixed line too. The fixture's `ask_change` line offers it: "Tell me what to change, or say read it back to hear your message word for word."
+- A read-back that summarizes a value a `confirmed` rule holds the caller to (the caller confirms the message they heard summarized) needs `summarizesConfirmed: true`, the app's acceptance; `pnpm check` asks for it, and the policy card says so on the action.
+- Reading it back word for word is always there. A bare no to the summary, with the form's `summary: { onNo: read-back }`, reads it again word for word, after `read_back_exact`, whatever its `when` says, with no attempt counted, on a call as in a chat; a second bare no asks what to change (`ask_change`), and the ladder goes on as always. Asking to hear it again at "what should I change?" reads the summary again, word for word. A caller who asks to hear the summary again ("can you read that back word for word", the `repeat_prompt` intent) hears the fixed line, which reads the message whole: a repeat always says a line's fixed text. With `when: { situations: [first-ask] }`, every later reading of the summary is the fixed line too. Without `summary.onNo` (its default, `ask-change`), a bare no asks what to change, as it always has.
 
 ## 16.4 style.yaml
 
@@ -89,9 +106,11 @@ avoid:
 
 ## 16.5 What a model is sent
 
-A speech act, never the conversation: what the line is for in its decision (an acknowledgement, the question, the line a call ends on, the handoff line), the goal, the fixed line as it would be said, whether it asks a question, the data items it must carry (display values), the collected content it may summarize (`from`), the caller's words on this turn quoted as data, how frustrated the caller has been (none, some, high), the situations, the channel, the call's language and the style. Never the transcript, never a tool's result, never the prompt id.
+A speech act, never the conversation: what the line is for in its decision (an acknowledgement, the question, the line a call ends on, the handoff line), the goal, the fixed line as it would be said, whether it asks a question, the data items it must carry, the collected content it may summarize (`from`), the caller's words on this turn quoted as data, how frustrated the caller has been (none, some, high), the situations, the channel, the call's language and the style. Never the transcript and never the prompt id.
 
-Never an identifier either: a line that names an identity factor (an account number, a date of birth) or a slot hidden whole in the records (a slot's `redact: mask` or `length`) is not generated; `pnpm check` refuses `mode: generative` on one, and a form's switch leaves it fixed. A slot recorded by its last four (a callback number) is a data item a line may carry, as its fixed text does. The caller's words are not quoted after a question whose words are sensitive (the code, an identity factor, a slot with a `redact` setting).
+The data items are every variable of the line as its fixed text would say it, whoever filled it: a slot's display, and a value the app's code took from a tool's reply (a reference, a balance, a day) are sent as they would be said. Nothing else of a tool's reply is sent.
+
+Never an identifier: a line that names an identity factor (an account number, a date of birth) or a slot hidden whole in the records (a slot's `redact: mask` or `length`) is not generated; `pnpm check` refuses `mode: generative` on one, and a form's switch leaves it fixed. A slot recorded by its last four (a callback number) is a data item a line may carry, as its fixed text does, so it is sent to the render model whole, though the records mask it: the policy card lists each such value. The caller's words are not quoted after a question whose words are sensitive (the code, an identity factor, a slot with a `redact` setting).
 
 A turn whose words the injection screen flagged, or did not read (it failed), generates nothing: every line of it is said fixed, and nothing of it is sent to the model.
 
@@ -107,14 +126,15 @@ Every generated line is checked before anyone hears it. The first that fails is 
 | `question` | a line whose fixed text asks must end in exactly one question; one that does not ask must ask none |
 | `avoid` | a phrase style.yaml lists |
 | `items` | a data item left out (each word for word, letter case aside) |
-| `foreign` | a number, an amount, a date word or a name that is in none of what the line was given (the fixed line, the goal, the items, the content, the caller's words) |
-| `drift` | the decision model, asked one yes-or-no question about the line alone (`renderDrift`: does it do anything beyond its goal?), said yes |
-| `timeout` | the line, checks included, was not ready within the turn's budget |
+| `foreign` | a figure (a digit, a number word with one and zero, an ordinal, an amount, a month, a weekday or a relative day such as today or tomorrow) or a capitalized word (at the start of a sentence or inside one; a common word that begins a sentence aside) that is in none of what the line was given: the fixed line, the goal, the items and the content; the caller's words count for a name, and for a figure only in an acknowledgement, which says back what was heard |
+| `drift` | the decision model, asked one yes-or-no question about the line alone (`renderDrift`: does it do anything beyond its goal, or state anything of the caller's words as the agent's own?), said yes |
+| `content-flagged` | the collected content (`from`), read again by the injection screen before the line was worded, was flagged, or could not be read |
+| `timeout` | the wording, or the checks, took longer than their budget |
 | `error` | the model's request failed |
 | `cassette-miss` | a replay had no recording of the line |
 | `drift-error` | the drift check could not be asked |
 
-Each fallback is a `render_fallback` row in the audit (the prompt and the reason) and is in the trace. The checks bound a line's shape against what it was given; they do not trust the model. The drift check is the one that reads meaning, and it is the decision model's, not the renderer's.
+Each fallback is a `render_fallback` row in the audit (the prompt and the reason) and is in the trace. The checks bound a line's shape against what it was given; they do not trust the model, and they do not read meaning. A line that rephrases what it was given into a new claim with the same words, or says a figure the caller said as if it were the agent's, passes them: that is the drift check's to catch, and it is a model's judgement, not a guarantee. It is the decision model's, not the renderer's, and it is given the line, its goal and its fixed text, with the caller's words apart as quoted. In the stub regression it is a deterministic judge of the same criteria by their words (a sentence stating a figure, a name or a claim found only in the caller's words without attributing it to them, a sentence traceable to neither the fixed text, the goal nor the caller's words, the words of an injection).
 
 ## 16.7 Running it
 
@@ -124,17 +144,18 @@ Each fallback is a `render_fallback` row in the audit (the prompt and the reason
 | `RENDER_MODEL` | the model id | a current Claude Haiku: `claude-haiku-5-5` on Anthropic, `anthropic/claude-haiku-5.5` on OpenRouter |
 | `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` | the provider's key, from its own variable, never a flag; never logged, never in a trace | none |
 | `RENDER_SHARE` | the share of calls (0 to 100) served generated; the rest are served fixed | `100` |
-| `RENDER_TIMEOUT_MS` | how long a turn waits for its generated lines, checks included; one value sets both channels | `700` on a call, `1500` in a chat |
+| `RENDER_TIMEOUT_MS` | how long a line's wording may take; one value sets both channels | `700` on a call, `1500` in a chat |
+| `RENDER_CHECK_TIMEOUT_MS` | how long the decision model's checks of a line may take together (the content screened again, the drift check); one value sets both channels | `500` on a call, `1000` in a chat |
 | `RENDER_PRICE_INPUT_PER_MTOK`, `RENDER_PRICE_OUTPUT_PER_MTOK` | the model's price in dollars a million tokens, for the cost | the default model's: 0.10 and 0.50 |
 
-The Anthropic adapter calls the Messages API with thinking off (a line, at most 200 tokens); a model that cannot turn thinking off is not one for a 700 ms line. OpenRouter is called through its chat completions endpoint. Both are plain `fetch`, the key only in a header. One model call per generated line, started once the core has decided; a turn's lines are worded at once, under one budget, and a late wording is dropped. On a host of several apps, each app reads its own settings. `pnpm diagnose` says which model words an app's lines (with its key's variable, never the key), the share and the budget, or that every line is said fixed, without asking the model anything.
+The Anthropic adapter calls the Messages API with thinking off (a line, at most 200 tokens; a line cut off at the limit is an `error`); a model that cannot turn thinking off is not one for a 700 ms line. OpenRouter is called through its chat completions endpoint, with its reasoning setting off (`reasoning: { enabled: false }`; that each model honours it is unconfirmed), and its default model id is unconfirmed against OpenRouter's list: set `RENDER_MODEL`. Both are plain `fetch`, the key only in a header. One model call per generated line, started once the core has decided, and the decision model's checks around it (a line from collected content: the screen before, then the wording, then the drift check, in turn); a turn's lines are worded at once, the wording within its budget and the checks within theirs, so a caller waits at most both. A late wording is dropped, and its request is counted at an estimate of its input (it was paid for). On a host of several apps, each app reads its own settings. `pnpm diagnose` says which model words an app's lines (with its key's variable, never the key), the share and the budget, or that every line is said fixed, without asking the model anything.
 
 ## 16.8 Measuring it
 
 The point is to find out whether it helps, so it is measured:
 
 - **The call's group.** `RENDER_SHARE` chooses each call's group, generated or fixed, from its id (the same call is always in the same group), recorded on its first trace record and as a `render_group` audit row.
-- **The trace.** Each turn that says a line the app generates has a `render` record: each such line's mode, its fixed text, the wording said or why it fell back (and the wording a check refused, for whoever reads the trace), how long it took and what it cost. The actions hold the words as said; the decision, the session's last line and what the decision model is told was asked are the fixed lines, so the decision model's requests (and their cassettes) are the same whatever was worded.
+- **The trace.** Each turn that says a line the app generates has a `render` record: each such line's mode, its fixed text, the wording said or why it fell back (and the wording a check refused, for whoever reads the trace), how long it took and what it cost. The actions hold the words as said; the decision, the session's last line and what the decision model is told was asked are the fixed lines, so the decision model's requests (and their cassettes) are the same whatever was worded. The trade-off: on the next turn the decision model reads the fixed line as the prompt just played (a summary whole, say) while the caller heard the generated one (its gist); what a caller answers about the line is read against its meaning, which the two share.
 - **The console's call detail** shows under each agent line each line the app generates: generated, with the fixed line it stands for beside it, or fixed and why.
 - **Insights** compares the calls served generated with those served fixed (containment, re-asks a call, the share with a frustrated caller, call length, and the models' cost a call), lists each generated line's fallback rate and latency, and counts what the lines cost, in the cost with the decision model's.
 - **The policy card** (`POLICY.md`) lists every line a model words, with its fixed text, its goal, where it is generated, the data it carries word for word and what it may summarize, and every prescribed line.
@@ -145,7 +166,7 @@ No test and no CI run calls a model. The stub regression words an app's generate
 
 `--client recorded` replays the render cassette (`fixtures/recorded/render/<model>.jsonl`, keyed by the act and its line) and runs every check again on every recorded line; a line with no recording falls back as `cassette-miss`. `--client record` records real generations with the author's key: the maintainer's step, never a test's.
 
-The adversarial suite (chapter 15) adds a `wording` family for an app that generates lines: an injection where a generated question answers it, the screen catching it (nothing is put to the renderer) or fooled along with the renderer, which echoes the words into its line (never said); and renderers that write instructions, or an amount and a number, before every line (never said, and each call ends as with a well-behaved renderer).
+The adversarial suite (chapter 15) adds a `wording` family for an app that generates lines: an injection where a generated question answers it, the screen catching it (nothing is put to the renderer) or fooled along with the renderer, which echoes the words into its line (never said); collected content that asks a line worded from it to state something as the agent's own (an amount and a day, and a claim with no word an injection screen knows), the screen fooled and the renderer obeying it (never said); and renderers that write instructions, or an amount and a number, before every line (never said, and each call ends as with a well-behaved renderer).
 
 ## 16.10 Languages
 
@@ -153,4 +174,4 @@ A line is generated in the call's language. In another locale it is generated on
 
 ## 16.11 Cost and latency
 
-Each generated line is one call to a small model, and one decision-model question for its drift check. Both are counted: the line's tokens and cost in the trace's `render`, the drift check's in the record's own usage, and both in Insights' cost. Latency is the line's wording and checks, within the turn's budget; Insights shows it per line.
+Each generated line is one call to a small model, and one decision-model question for its drift check (two for a line from collected content, whose content is screened again first). All are counted: the line's tokens and cost in the trace's `render` (a wording the turn stopped waiting for at an estimate of its input), the checks' in the record's own usage, and both in Insights' cost and the console's cost of each turn. Latency is the line's wording and checks, each within its budget; Insights shows it per line. If timeouts dominate a line's fallbacks, raise the budget the trace shows it ran out of, or keep the line fixed: on a call, a wording and two checks in turn rarely fit in well under a second.

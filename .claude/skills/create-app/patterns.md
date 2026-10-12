@@ -1572,8 +1572,12 @@ export const TOOLS: Record<string, ToolDef> = {
     mode: generative
     goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message, and ask whether to pass it on.
     from: [message]
+    summarizesConfirmed: true
     when:
       situations: [first-ask]
+  read_back_exact:
+    text: Here it is exactly as I took it down.
+    interruptible: false
   privacy_notice:
     text: This call may be recorded for quality and training.
     interruptible: false
@@ -1581,7 +1585,7 @@ export const TOOLS: Record<string, ToolDef> = {
 ```
 
 - Every generated line has a `goal`. Keep its `text`: it is the meaning, the fallback and what a repeat says.
-- `from` names the variables that hold collected content the line may summarize; the slot keeps the exact words, the write sends them, and `when: { situations: [first-ask] }` makes every later reading word for word. Give the slot `redact: none` and `say: null` (a `text` slot), so the words are what the line reads back.
+- `from` names the variables that hold collected content the line may summarize; the slot keeps the exact words, the write sends them, and `when: { situations: [first-ask] }` makes every later reading word for word. Give the slot `redact: none` and `say: null` (a `text` slot), so the words are what the line reads back. A read-back whose `from` value the write's `confirmed` rule covers needs `summarizesConfirmed: true`. Give its form `summary: { onNo: read-back }` and a `read_back_exact` line, so a caller who says no hears the exact words, on a call too.
 - A whole form: `wording: generative` in forms.yaml generates its questions, read-backs and summary, but for a line that says `mode: fixed` (a keypad instruction) or is prescribed.
 - When the paragraph does not say what is regulated, mark these `prescribed: true`: the lines that state what an action did (a booking made, a payment taken, an amount or a date the gate decided on), the identity and one-time-code lines, the handoff lines, and any legal or required notice. The policy card lists every generated and every prescribed line for the owner to review.
 - A line that names an identity factor, or a slot hidden whole in the records, cannot be generated (`check` refuses it), nor can a knowledge base's answer line (`{answer}`).
