@@ -3,7 +3,7 @@ import { checkAlways, identifier, localeTag, matching, name, text, textMap, uniq
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
-import { callDataSourceProblem, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
+import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 import { ENV_REFERENCE } from '../../core/app/envReference';
 import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
@@ -518,6 +518,7 @@ export const appSchema = z
         if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
         for (const name of Object.keys(value)) {
           if (name === 'locale') ctx.addIssue({ code: 'custom', path: [name], message: 'the custom parameter "locale" is the engine\'s own (the language a call starts in)', params: { fix: 'rename the parameter' } });
+          else if (name === HOST_APP_PARAMETER) ctx.addIssue({ code: 'custom', path: [name], message: `the custom parameter "${HOST_APP_PARAMETER}" is the engine's own (the app a call to a host's number reached)`, params: { fix: 'rename the parameter' } });
           else if (name.startsWith(WEBHOOK_PARAMETER_PREFIX)) ctx.addIssue({ code: 'custom', path: [name], message: `custom parameters named "${WEBHOOK_PARAMETER_PREFIX}..." are the server's echoes of webhook fields (callData's webhook.<field>)`, params: { fix: 'rename the parameter' } });
         }
       }))

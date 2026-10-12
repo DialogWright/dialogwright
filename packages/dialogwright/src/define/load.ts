@@ -16,6 +16,7 @@ import type { ConfigHashes } from '../core/app/types';
 import { readKbFolder, type KbEntry, type KbFolderIo } from '../kb/folder';
 import { kbContentProblems } from '../kb/rules';
 import { KB_KINDS, type KbKind } from '../kb/schema';
+import { hostSchema, type HostYaml } from './schema/host';
 import type { KnowledgeBase } from '../kb/types';
 
 export type { Problem } from './problems';
@@ -135,14 +136,16 @@ const STARTS_WITH: Record<Kind, string> = {
   routes: 'a point and its rules, for example "start: [{ when: { hours: closed }, say: after_hours, then: end }, { else: continue }]"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
+  host: '"apps:", the apps the server runs, for example "apps: [apps/clinic, apps/utility]"',
 };
 
 /** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
-type Kind = FileKind | 'slots' | 'localeSlots' | KbKind;
+type Kind = FileKind | 'slots' | 'localeSlots' | 'host' | KbKind;
 const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   ...SCHEMAS,
   slots: slotsSchema,
   localeSlots: localeSlotsSchema,
+  host: hostSchema,
   ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
 };
 const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
@@ -519,7 +522,7 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
  * `kind` does not know at its top level. Only the six kinds: slots.yaml's top-level keys are slot ids.
  */
 function homesOf(kind: Kind, key: string): string[] {
-  if (kind === 'slots' || kind === 'localeSlots' || isKbKind(kind)) return [];
+  if (kind === 'slots' || kind === 'localeSlots' || kind === 'host' || isKbKind(kind)) return [];
   return FILE_KINDS.filter((other) => other !== kind && Object.hasOwn((jsonSchemaOf(other).properties as object | undefined) ?? {}, key)).map((other) => FILE_NAMES[other]);
 }
 
@@ -529,7 +532,7 @@ function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
   if (!schema) {
     // slots.yaml's published schema is the full union over the types (and a locale's, over their wording); the loader checks the outer shape, whose schema is this.
-    schema = kind === 'slots' || kind === 'localeSlots' || isKbKind(kind) ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    schema = kind === 'slots' || kind === 'localeSlots' || kind === 'host' || isKbKind(kind) ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
     jsonSchemas.set(kind, schema);
   }
   return schema;
@@ -773,6 +776,47 @@ export function loadSlotsFile(path: string): SlotsFile {
   const checked = checkFile(path, 'slots', read.text, problems, documents, {});
   const parsed = documents.get(path)!;
   return { slots: problems.length === 0 ? (checked as SlotsYaml) : null, doc: parsed.doc, lines: parsed.lines, problems };
+}
+
+/** What loadHostYaml found: the parsed host file (null when there is a problem), and its problems. */
+export interface HostYamlFile {
+  host: HostYaml | null;
+  /** Every problem with reading and parsing the file, positioned in it; empty when it is valid. */
+  problems: Problem[];
+  /** Where each top-level entry is, for a later check's problem (an app id the apps do not have). */
+  locate(path: DataPath): { line: number; column: number };
+}
+
+/**
+ * Reads one host.yaml (several apps on one server, ../server/host.ts) with the same safe reading and
+ * parsing as an app folder's files: no tags, aliases capped, a file inside its folder, size bounded,
+ * then its schema. `path` is also the file name its problems carry.
+ */
+export function loadHostYaml(path: string): HostYamlFile {
+  const problems: Problem[] = [];
+  const documents = new Map<string, { doc: Document; lines: LineCounter }>();
+  const located = (): HostYamlFile['locate'] => {
+    const parsed = documents.get(path);
+    return (at) => (parsed ? positionOf(parsed.doc, parsed.lines, at) : { line: 1, column: 1 });
+  };
+  let root: string;
+  try {
+    root = realpathSync(dirname(resolve(path)));
+  } catch {
+    problems.push(problemAt(path, WHOLE_FILE, `${path} cannot be read: its folder does not exist`, 'pass the path of the host.yaml file'));
+    return { host: null, problems, locate: located() };
+  }
+  const read = readFile(root, basename(path));
+  if (read.kind === 'missing') {
+    problems.push(problemAt(path, WHOLE_FILE, `${path} does not exist`, `create it; it starts with ${STARTS_WITH.host}`));
+    return { host: null, problems, locate: located() };
+  }
+  if (read.kind === 'problem') {
+    problems.push({ ...read.problem, file: path });
+    return { host: null, problems, locate: located() };
+  }
+  const checked = checkFile(path, 'host', read.text, problems, documents, {});
+  return { host: problems.length === 0 ? (checked as HostYaml) : null, problems: sortProblems(problems), locate: located() };
 }
 
 /** What loadConfigFile found: the parsed file (null when there is a problem), the name its problems carry, and the document, to position later problems. */

@@ -6,6 +6,7 @@ import { slotTypeWordingJsonSchema } from '../../slots/wording';
 import { KB_KINDS } from '../../kb/schema';
 import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
+import { hostSchema } from './host';
 
 /** A JSON Schema document, as zod generates it. */
 export type JsonSchema = Record<string, unknown>;
@@ -82,6 +83,11 @@ export function kbJsonSchemas(): Record<string, JsonSchema> {
   return Object.fromEntries(
     Object.values(KB_KINDS).map((def) => [def.jsonName, { ...(z.toJSONSchema(def.schema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: `DialogWright ${def.title}` }]),
   );
+}
+
+/** host.yaml's JSON Schema (several apps on one server): schemas/host.schema.json. */
+export function hostJsonSchema(): JsonSchema {
+  return { ...(z.toJSONSchema(hostSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright host.yaml' };
 }
 
 /** A JSON Schema as it is written to schemas/<kind>.schema.json: two-space indent and a final newline. */

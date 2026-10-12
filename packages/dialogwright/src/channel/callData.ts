@@ -43,6 +43,13 @@ export const SETUP_FIELDS: readonly string[] = ['callSid', 'sessionId', ...SETUP
 /** The prefix of the custom parameter the server echoes a webhook field as: `dw_<key>`. */
 export const WEBHOOK_PARAMETER_PREFIX = 'dw_';
 
+/**
+ * The custom parameter a host's start document carries (several apps on one server, server/host.ts):
+ * the app the number called reached at the answer webhook, so the setup, on whichever server it lands,
+ * starts the call in the same app. Only under a host file; a server of one app sends none.
+ */
+export const HOST_APP_PARAMETER = 'dialogwright_app';
+
 /** The most custom parameters a setup keeps, and the longest value (the wire's limits, channel/relay/wire.ts); a chat's context is held to the same. */
 export const CALL_DATA_MAX_KEYS = 50;
 export const CALL_DATA_VALUE_MAX = 500;

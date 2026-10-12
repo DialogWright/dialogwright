@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "apps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "description": "An app by its folder, from host.yaml's folder (for example apps/clinic)."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "folder": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The app's folder, the one with app.yaml, from host.yaml's folder (for example apps/clinic)."
+              },
+              "env": {
+                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "folder"
+            ],
+            "additionalProperties": false,
+            "description": "An app by its folder, with its own settings file named."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "package": {
+                "type": "string",
+                "pattern": "^(@[a-z0-9][a-z0-9._~-]*\\/)?[a-z0-9][a-z0-9._~-]*$",
+                "description": "An app installed as a package (for example \"@acme/repairs-line\"): its folder is the package's, found from host.yaml's folder as Node finds it. The package has app.yaml and app.ts (or src/app.ts), as an app folder has."
+              },
+              "env": {
+                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "package"
+            ],
+            "additionalProperties": false,
+            "description": "An app installed as a package."
+          }
+        ],
+        "description": "An app the server runs: its folder (a path), { folder, env }, or { package, env }."
+      },
+      "description": "The apps this server runs, each known by the id its own app.yaml gives it. Each keeps its own folder, policy, prompts, tests, traces and audit."
+    },
+    "numbers": {
+      "description": "The numbers callers dial, each pointing at an app by its id, as the carrier delivers the number called (the same matching as a `called` condition). Default: none, so every call goes to the default app.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "pattern": "^env\\.([A-Z][A-Z0-9_]*)$",
+            "description": "The number callers dial, as env.<NAME>: the variable in the server's settings file holds it, an E.164 number like +15551234567."
+          },
+          "app": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "description": "The app a call to this number reaches: the id its app.yaml gives it."
+          }
+        },
+        "required": [
+          "number",
+          "app"
+        ],
+        "additionalProperties": false,
+        "description": "One number callers dial and the app it reaches. Several numbers may name one app; a number listed twice is refused."
+      }
+    },
+    "default": {
+      "description": "The app a call reaches when its number is listed nowhere (or the carrier sends none), and the web chat at /chat. Default: the first app listed.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    }
+  },
+  "required": [
+    "apps"
+  ],
+  "additionalProperties": false,
+  "description": "Several apps on one server: the apps, the numbers that reach each, and the default.",
+  "title": "DialogWright host.yaml"
+}
