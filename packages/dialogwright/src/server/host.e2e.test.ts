@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -78,9 +79,11 @@ const form = (params: Record<string, string>) => ({
   body: new URLSearchParams(params).toString(),
 });
 
+const TELNYX_KEY = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+
 /** The carrier's answer webhook for a call to `to`: the start document. */
-async function answer(base: string, callSid: string, to?: string): Promise<string> {
-  return (await fetch(`${base}/voice/twilio`, form({ CallSid: callSid, From: '+15555550110', CallStatus: 'ringing', ...(to !== undefined ? { To: to } : {}) }))).text();
+async function answer(base: string, callSid: string, to?: string, carrier = 'twilio'): Promise<string> {
+  return (await fetch(`${base}/voice/${carrier}`, form({ CallSid: callSid, From: '+15555550110', CallStatus: 'ringing', ...(to !== undefined ? { To: to } : {}) }))).text();
 }
 
 /** The socket a start document names, and the parameters it carries. */
@@ -127,6 +130,24 @@ describe('a host of two apps', () => {
     expect(running!.store.get('CA0000000000000000000000000000ot01')!.session.appId).toBe('callback');
     expect(s.logs).toContain('app routed: numbers SERVICE_LINE, SERVICE_LINE_ES; its own AFTER_HOURS_DESK, MAIN_LINE, SPANISH_LINE, VIP_DESK');
     expect(s.logs.some((l) => /\/voice\/twilio CA0000000000000000000000000000sl01 from \S+ \(app routed\)$/.test(l))).toBe(true);
+  });
+
+  it('telnyx: sends a call to each number to its app, the setup reading the number called where Telnyx puts it', async () => {
+    const s = await start({ VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY });
+    const { url, parameters } = startOf(await answer(s.base, 'v3:host-telnyx-one', NUMBERS.SERVICE_LINE, 'telnyx'), s.ws);
+    expect(url).toContain('/conversation/telnyx?token=');
+    expect(parameters[HOST_APP_PARAMETER]).toBe('routed');
+    const relay = await FakeRelay.connect(url);
+    relays.push(relay);
+    // As Telnyx sends it: no `to`, the number called among the custom parameters.
+    relay.setup('v3:host-telnyx-one', 'VX-t1', { to: null, customParameters: { ...parameters, telnyx_call_to: NUMBERS.SERVICE_LINE } });
+    expect((await relay.waitForTexts(1))[0]).toBe(ROUTED_GREETING);
+    // A setup with no app named reads the number called from Telnyx's own parameter.
+    const token = running!.tokens.mint('v3:host-telnyx-two', 'telnyx') as string;
+    const second = await FakeRelay.connect(`${s.ws}/conversation/telnyx?token=${token}`);
+    relays.push(second);
+    second.setup('v3:host-telnyx-two', 'VX-t2', { to: null, customParameters: { telnyx_call_to: NUMBERS.SERVICE_LINE_ES } });
+    expect((await second.waitForTexts(1))[0]).toBe(ROUTED_GREETING_ES);
   });
 
   it('starts the call in the app the answer chose, whatever number the setup carries, and by the setup\'s number when the answer named none', async () => {
