@@ -271,11 +271,30 @@ describe('the Calls page\'s list (/dashboard/calls)', () => {
 
   it('answers one search at a time per session: a second one while the first runs is refused (429)', async () => {
     const bus = new DashboardBus();
-    const { base, dir } = await serve({ bus });
-    for (let i = 0; i < 40; i++) await writeCall(dir, `CA_${i}`, [OPENER], 'hangup', DAY + i);
-    const [a, b] = await Promise.all([fetch(`${base}/dashboard/calls?last4=0199`), fetch(`${base}/dashboard/calls?last4=0199`)]);
-    expect([a.status, b.status].sort()).toEqual([200, 429]);
-    expect((await fetch(`${base}/dashboard/calls?last4=0199`)).status).toBe(200);
+    // The first search is held where it would read, until the test lets it go.
+    let release!: () => void;
+    let reached!: () => void;
+    const atHold = new Promise<void>((r) => { reached = r; });
+    const held = new Promise<void>((r) => { release = r; });
+    let holds = 0;
+    const holdCalls = (): Promise<void> => {
+      holds += 1;
+      if (holds > 1) return Promise.resolve();
+      reached();
+      return held;
+    };
+    const { base, dir } = await serve({ bus, holdCalls });
+    await writeCall(dir, 'CA_1', [OPENER], 'hangup', DAY, '+15555550144');
+    const first = fetch(`${base}/dashboard/calls?last4=0144`);
+    await atHold;
+    const second = await fetch(`${base}/dashboard/calls?last4=0144`);
+    expect(second.status).toBe(429);
+    release();
+    const answered = await first;
+    expect(answered.status).toBe(200);
+    expect(((await answered.json()) as { rows: CallRow[] }).rows.map((r) => r.callSid)).toEqual(['CA_1']);
+    const third = await fetch(`${base}/dashboard/calls?last4=0144`);
+    expect(third.status).toBe(200);
   });
 
   it('pages', async () => {

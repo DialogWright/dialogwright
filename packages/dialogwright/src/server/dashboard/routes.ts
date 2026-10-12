@@ -49,6 +49,8 @@ export interface DashboardDeps {
    * page knows each app's console words. Absent, the one app's, as before.
    */
   apps?: readonly ConsoleApp[];
+  /** Tests only: awaited before a Calls search reads, so a test can hold one open (the one-at-a-time rule). */
+  holdCalls?: () => Promise<void>;
 }
 
 /** One app of a host, as the console reads it. */
@@ -551,6 +553,7 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     answerJson(res, head, async () => {
       try {
         if (noted instanceof Promise) await noted;
+        if (deps.holdCalls) await deps.holdCalls();
         return await listCalls(callsSources(deps, only), q, Date.now());
       } finally {
         done();
