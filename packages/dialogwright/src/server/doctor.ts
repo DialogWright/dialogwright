@@ -13,7 +13,7 @@ import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
 import { maskConnectionString, maskSecrets, openPgClient, PgUnavailableError, type SqlClient } from './stores/sql';
 import { databaseNowMs, POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } from './stores/postgres';
-import { NOTICE_TABLES, NOTICES_SCHEMA_VERSION } from './stores/notices';
+import { NOTICE_TABLES, NOTICES_SCHEMA_VERSION, probeNoticeWrite } from './stores/notices';
 import { AUDIT_SCHEMA_VERSION, AUDIT_TABLES, probeAuditWrite } from '../audit/postgres';
 import { describeTraceStore, type S3TraceSetting } from '../trace/store';
 import { S3Client } from '../trace/s3/client';
@@ -497,6 +497,13 @@ async function postgresCheck(url: string, offline: boolean, deps: DoctorDeps): P
       const notices = await schemaVersion(sql, NOTICE_TABLES.row);
       if (notices !== null && notices !== NOTICES_SCHEMA_VERSION) {
         return { id: 'store', status: 'fail', message: `${named}: its notice table is version ${notices}, and this server reads ${NOTICES_SCHEMA_VERSION}`, fix: 'run the server that made it, or point SESSION_STORE at another database' };
+      }
+      if (notices !== null) {
+        try {
+          await probeNoticeWrite(sql);
+        } catch (err) {
+          return { id: 'store', status: 'fail', message: `${named}: a notice could not be written: ${maskSecrets(dbMessage(err), url)}`, fix: 'give the user in SESSION_STORE the right to select, insert and delete on dw_notices and to use the sequence dw_notices_id_seq' };
+        }
       }
     } catch {
       // Read with the session tables' version just above; a failure here is said by the server at start.

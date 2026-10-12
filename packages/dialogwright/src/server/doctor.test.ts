@@ -9,6 +9,7 @@ import { formatResult, main, runDoctor, settingsFileCheck, type CheckId, type Ch
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
 import { openPostgresAudit } from '../audit/postgres';
+import { PostgresNotices } from './stores/notices';
 import { FakeS3 } from '../testing/fakeS3';
 import type { SqlClient } from './stores/sql';
 import { PgUnavailableError } from './stores/sql';
@@ -429,6 +430,25 @@ describe('pnpm diagnose', () => {
           expect(results.map(said).join('\n')).not.toContain('s3cret-pw');
           // The test lease leaves nothing behind.
           expect((await db.query('SELECT * FROM dw_call_leases')).rows).toEqual([]);
+        } finally {
+          await db.close();
+        }
+      });
+
+      it('fails a user that may not write a notice (tried in a transaction undone), saying which rights it needs', async () => {
+        const dir = tempDir();
+        const db = await PGlite.create();
+        try {
+          await ensureSchema(pgliteSql(db));
+          await PostgresNotices.open(pgliteSql(db), { origin: 'x' }).then((n) => n.close());
+          await db.exec(`CREATE ROLE dw_app LOGIN; GRANT SELECT, INSERT, UPDATE, DELETE ON dw_schema, dw_calls, dw_call_leases, dw_chats, dw_tokens TO dw_app;
+            GRANT SELECT ON dw_notices TO dw_app; SET ROLE dw_app;`);
+          const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...pg(db) }), 'store');
+          expect(r).toMatchObject({ id: 'store', status: 'fail', fix: 'give the user in SESSION_STORE the right to select, insert and delete on dw_notices and to use the sequence dw_notices_id_seq' });
+          expect(r.message).toMatch(/^SESSION_STORE postgres:\/\/dialogwright:\*\*\*@db\.example:5432\/dialogwright: a notice could not be written: permission denied/);
+          await db.exec('RESET ROLE; GRANT INSERT ON dw_notices TO dw_app; GRANT USAGE ON SEQUENCE dw_notices_id_seq TO dw_app; SET ROLE dw_app;');
+          expect(byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...pg(db) }), 'store').status).toBe('ok');
+          expect((await db.query('SELECT * FROM dw_notices')).rows).toEqual([]);
         } finally {
           await db.close();
         }

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
+import { NOTICE_TABLES, PostgresNotices } from './notices';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { runStoreContract, contractCall, CONTRACT_LEASE_TTL_MS } from '../../testing/storeContract';
 import { ensureSchema, openPostgresStores, POSTGRES_SCHEMA_VERSION, schemaVersion, SchemaVersionError, type PostgresStores } from './postgres';
@@ -271,8 +272,15 @@ describe('the review of 8b1', () => {
       const s = await openPostgresStores(pgliteSql(fresh), { tokenTtlMs: 1000 });
       await s.calls.save(contractCall('CA-role'));
       expect((await s.calls.claim('CA-role', 'server-a', 1000)).taken).toBe(true);
+      // Tables its owner made without their version row (or one whose row was lost) are taken as they are, with no DDL.
+      await fresh.exec('RESET ROLE; DELETE FROM dw_schema; SET ROLE dw_app;');
+      expect(await ensureSchema(pgliteSql(fresh))).toBe(false);
+      // The notices beside them, made by the owner: a user that may not create opens them with no DDL too.
+      await fresh.exec(`RESET ROLE; ${NOTICE_TABLES.tables.join('; ')}; GRANT SELECT, INSERT, DELETE ON dw_notices TO dw_app; GRANT USAGE ON SEQUENCE dw_notices_id_seq TO dw_app; SET ROLE dw_app;`);
+      const notices = await PostgresNotices.open(pgliteSql(fresh), { origin: 'a-1' });
+      await notices.close();
       // The same user could not make them: a first start needs a user that may.
-      await fresh.exec('RESET ROLE; DROP TABLE dw_schema; SET ROLE dw_app;');
+      await fresh.exec('RESET ROLE; DROP TABLE dw_schema, dw_calls, dw_call_leases, dw_chats, dw_tokens; SET ROLE dw_app;');
       await expect(ensureSchema(pgliteSql(fresh))).rejects.toThrow(/permission denied/);
     } finally {
       await fresh.close();

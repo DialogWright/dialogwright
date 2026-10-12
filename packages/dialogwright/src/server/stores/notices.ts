@@ -189,3 +189,22 @@ export class PostgresNotices {
     await this.reading?.catch(() => undefined);
   }
 }
+
+/** Thrown to undo the probe's transaction. */
+class ProbeUndone extends Error {}
+
+/**
+ * Whether a notice can be sent (pnpm diagnose): one inserted (with its id taken from the sequence) in a
+ * transaction then rolled back, so a check sends nothing. Throws, saying what failed, when it cannot.
+ */
+export async function probeNoticeWrite(sql: SqlClient): Promise<void> {
+  try {
+    await sql.transaction(async (tx) => {
+      await tx.query("INSERT INTO dw_notices (topic, origin, body, at_ms) VALUES ('diagnose', 'diagnose', '', 0)");
+      throw new ProbeUndone('undone');
+    });
+  } catch (err) {
+    if (err instanceof ProbeUndone) return;
+    throw err;
+  }
+}

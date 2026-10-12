@@ -137,6 +137,14 @@ export async function ensureTables(sql: SqlClient, part: TablePart): Promise<boo
     if (found !== part.version) throw refuse(found);
     return false;
   }
+  // The tables there with no version row (made by their owner, as the guide says, for a user that may
+  // not create them): taken as they are, no DDL, the version row added if this user may.
+  const names = [...part.tables.join('\n').matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
+  const there = await Promise.all(names.map(async (n) => (await sql.query<{ t: string | null }>('SELECT to_regclass($1)::text AS t', [n])).rows[0]?.t != null));
+  if (names.length > 0 && there.every(Boolean)) {
+    await sql.query('INSERT INTO dw_schema (name, version) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING', [part.row, part.version]).catch(() => undefined);
+    return false;
+  }
   return sql.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock($1)', [SCHEMA_LOCK]);
     await tx.query('CREATE TABLE IF NOT EXISTS dw_schema (name text PRIMARY KEY, version integer NOT NULL)');
