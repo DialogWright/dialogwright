@@ -10,7 +10,17 @@ import { appOf } from '../core/app/registry';
 import { recordedEffect } from '../core/recording';
 import { usesCallerNumber } from '../core/callerNumber';
 
-export class TraceWriter {
+/** Where a call's trace records go: the file (TraceWriter), or a trace store's segments (trace/store.ts). */
+export interface TraceSink {
+  write(record: TraceRecord): void;
+}
+
+/** A trace record as a line is written, without its newline, wherever it is kept: its identity fields masked (redactRecordSlots). */
+export function traceLine(record: TraceRecord): string {
+  return JSON.stringify(redactRecordSlots(record, 'length'));
+}
+
+export class TraceWriter implements TraceSink {
   constructor(private readonly path: string) {
     mkdirSync(dirname(path), { recursive: true });
   }
@@ -26,7 +36,7 @@ export class TraceWriter {
    * and the harness read it.
    */
   write(record: TraceRecord): void {
-    appendFileSync(this.path, JSON.stringify(redactRecordSlots(record, 'length')) + '\n');
+    appendFileSync(this.path, traceLine(record) + '\n');
   }
 }
 

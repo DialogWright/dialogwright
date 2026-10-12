@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { cleanScratch } from 'dialogwright/kb/__fixtures__/libraryKbApp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { appendJunk, appOf, cleanGaps, runCalls, SAYS_CARD, scratchApp, scratchDir, type CallScript } from '../__fixtures__/gapCalls';
@@ -8,7 +8,10 @@ import { findKb, loadKb, type KbPlace } from '../kbPlace';
 import { approve } from '../review/actions';
 import { startReviewServer, type ReviewServer } from '../review/server';
 import { collectGaps, looksLikeQuestion, topicQuestionOf, type CollectContext } from './collect';
-import { buildReport, codeSpan, formatJson, formatMarkdown, reportFromFiles, type GapReport } from './report';
+import { buildReport, codeSpan, formatJson, formatMarkdown, reportFromFiles, reportFromTraces, type GapReport } from './report';
+import { FakeS3 } from 'dialogwright/testing/fakeS3';
+import { S3Client } from 'dialogwright/trace/s3/client';
+import { segmentName } from 'dialogwright/trace/store';
 import { defaultTraceSpecs, readTurns, traceFilesOf, turnOf } from './traces';
 
 /**
@@ -499,5 +502,36 @@ describe('the review page\'s Gaps tab', () => {
       await none.close();
     }
     expect(existsSync(dir)).toBe(true);
+  });
+});
+
+describe('reading traces from a trace store (TRACE_STORE=s3://...)', () => {
+  it("reads every call's segments, written by two servers, through the engine's one reader: the same report as from the files", async () => {
+    const keys = { accessKeyId: 'AKIDKBGAPS', secretAccessKey: 'a-secret-only-the-fake-store-knows' };
+    const s3 = await FakeS3.start({ bucket: 'call-traces', region: 'us-east-1', credentials: keys });
+    try {
+      const client = new S3Client({ bucket: 'call-traces', endpoint: s3.endpoint, region: 'us-east-1', credentials: keys, forcePathStyle: true });
+      // Each call's trace in two segments, its first half by one server and the rest by another, as a call that moved.
+      for (const f of files) {
+        const id = basename(f, '.jsonl');
+        const lines = readFileSync(f, 'utf8').trim().split('\n');
+        const half = Math.ceil(lines.length / 2);
+        const parts = [lines.slice(0, half), lines.slice(half)].filter((p) => p.length > 0);
+        for (const [i, part] of parts.entries()) {
+          const turns = part.map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex);
+          const ms = Date.parse((JSON.parse(part[0]!) as { ts: string }).ts);
+          const name = segmentName({ first: turns[0]!, last: Math.max(...turns), ms, server: i === 0 ? 'a-11111111' : 'b-22222222', n: i + 1, kind: 'trace' });
+          await client.put(`prod/${id}/${name}`, part.map((l) => `${l}\n`).join(''));
+        }
+      }
+      const env = { S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY_ID: keys.accessKeyId, S3_SECRET_ACCESS_KEY: keys.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' };
+      const fromStore = await reportFromTraces({ kb, place, label: 'app', traces: ['s3://call-traces/prod'], cwd: dir, env });
+      expect(fromStore.files).toEqual(files.map((f) => `s3://call-traces/prod/${basename(f, '.jsonl')}`).sort());
+      expect(fromStore.report).toEqual(report());
+      // With TRACE_STORE set and no --traces, the store is where the traces are looked for.
+      expect(defaultTraceSpecs({ cwd: dir, appDir: dir, env: { TRACE_STORE: 's3://call-traces/prod', TRACE_DIR: 'elsewhere' } })).toEqual(['s3://call-traces/prod']);
+    } finally {
+      await s3.close();
+    }
   });
 });

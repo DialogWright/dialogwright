@@ -2,8 +2,8 @@ import { SESSION_SCHEMA, type Session } from '../core/session';
 import { appOf } from '../core/app/registry';
 import type { CallLeases, CallStateStore, HeldFrame, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
-import type { TraceWriter } from '../trace/writer';
-import type { FrameLog } from './frameLog';
+import type { TraceSink } from '../trace/writer';
+import type { FrameSink } from './frameLog';
 import type { AuditEntry } from '../audit/types';
 
 /** The subset of a ws.WebSocket the adapter uses, so tests can substitute a fake. */
@@ -15,8 +15,8 @@ export interface SocketLike {
 export interface CallResources {
   session: Session;
   opts: RunOptions;
-  trace: TraceWriter;
-  frames: FrameLog;
+  trace: TraceSink;
+  frames: FrameSink;
 }
 
 export interface CallEntry extends CallResources {

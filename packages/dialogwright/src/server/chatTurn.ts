@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../channel/events';
 import type { Session } from '../core/session';
 import type { AuditEntry } from '../audit/types';
-import { runTurn, type AuditSink, type RunOptions, type TurnRun } from '../run/turn';
+import { runTurn, whenChained, type AuditSink, type RunOptions, type TurnRun } from '../run/turn';
 import type { Action } from '../channel/actions';
 import { appOf } from '../core/app/registry';
 import { spokenText } from '../prompts/render';
@@ -99,8 +99,8 @@ export function fireHandoffSummary(d: ChatTurnDeps, entry: ChatTurnEntry, now: (
     .then((text) => {
       d.bus?.publish({ type: 'handoff_summary', callSid: entry.id, at: now(), text });
       const words = text === null ? 0 : text.trim().split(/\s+/).filter(Boolean).length;
-      const entryOut = d.audit.append(entry.id, 'chat', { type: 'handoff_summary', detail: { generated: text !== null, words } });
-      entry.auditEntries.push(entryOut);
+      whenChained(d.audit.append(entry.id, 'chat', { type: 'handoff_summary', detail: { generated: text !== null, words } }), (entryOut) => entry.auditEntries.push(entryOut),
+        (err: unknown) => d.log(`chat ${entry.id}: the handoff summary's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
     })
     .catch((err: unknown) => d.log(`chat ${entry.id}: handoff summary failed: ${err instanceof Error ? err.message : String(err)}`));
 }

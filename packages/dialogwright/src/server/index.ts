@@ -25,8 +25,10 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
 import type { JevClient } from '../jev/types';
-import { TraceWriter } from '../trace/writer';
-import type { TurnObserver } from '../run/turn';
+import { TraceWriter, type TraceSink } from '../trace/writer';
+import { S3TraceStore } from '../trace/store';
+import type { FrameSink } from './frameLog';
+import { whenChained, type AuditSink, type TurnObserver } from '../run/turn';
 import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
 import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
@@ -117,6 +119,8 @@ export interface ServerOverrides {
    * process. Not a setting: a deployment always connects through the pg driver. The server closes it.
    */
   sessionSql?: SqlClient;
+  /** With TRACE_STORE=s3://..., how the store is reached in place of the global fetch: a test seam, not a setting. */
+  traceFetch?: typeof fetch;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -244,6 +248,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     log(`sessions: ${maskConnectionString(setting.url)} (shared: calls, chats and relay tokens are saved after every turn, and any server the carrier reconnects to takes a call over); this server is ${owner}, holding each call ${leaseMs} ms at a time`);
   }
   const durable: { calls: CallStateStore; chats: ChatStateStore; tokens: ServerTokenStore } | null = files ?? shared;
+  // TRACE_STORE=s3://...: each call's trace and frame log as segments on S3-compatible storage, which
+  // this server writes under its own name and every reader joins. Unset, files in TRACE_DIR, as always.
+  const serverName = owner !== '' ? owner : `${config.serverId ?? 'server'}-${randomBytes(4).toString('hex')}`;
+  const traceStore = config.traceStore
+    ? new S3TraceStore(config.traceStore, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}) })
+    : null;
+  if (traceStore) log(`traces: ${traceStore.label}, written as segments by this server (${serverName}) and read back joined`);
+  /** A call's (or a chat's) trace and frame log: files in TRACE_DIR, or segments on the trace store. */
+  const sinksOf = (file: string, turnOf: () => number): { trace: TraceSink; frames: FrameSink } => {
+    if (traceStore) return traceStore.open(file, turnOf);
+    const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
+    return { trace, frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now) };
+  };
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
   // now, before any call: one unset, or not E.164, stops the server here. Each turn reads these values
   // and nothing else of the environment (TurnContext.env).
@@ -253,13 +270,13 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const store: SessionStore = new SessionStore(
     (callSid) => {
       const file = safeFileStem(callSid);
-      const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
+      const { trace, frames } = sinksOf(file, () => store.get(callSid)?.session.turnIndex ?? 0);
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: newSession(callSid, now(), VOICE_RELAY),
         opts: { client, thresholds, todayIso: todayIso(), trace, now, render, observe, tools, audit, screen: config.screen, env: called },
         trace,
-        frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
+        frames,
       };
     },
     config.sessionTtlMs,
@@ -277,7 +294,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     void store.sweepStored().then((gone) => {
       for (const c of gone) {
         log(`${c.callId}: saved before a restart and never called back; forgotten`);
-        audit.append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } });
+        whenChained(audit.append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
+          (err: unknown) => log(`${c.callId}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     });
   };
@@ -317,12 +335,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
       resources: (id, sessions) => {
         const file = safeFileStem(id);
-        const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
+        const { trace, frames } = sinksOf(file, () => sessions.get(id)?.session.turnIndex ?? 0);
         const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
         // No render context: a chat shows a line's words, never a recorded clip.
         return {
           opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit, screen: config.screen, env: called },
-          frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now),
+          frames,
         };
       },
     })
@@ -338,6 +356,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const inUse = new Set(store.liveCallSids().map(safeFileStem));
     const r = sweepRetention(retention, { now: retentionAt, inUse });
     log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days`);
+    // The traces on the store: a call removed whole once its newest segment is past the days.
+    const traceDays = config.traceRetentionDays;
+    if (traceStore && traceDays !== undefined) {
+      void traceStore.sweep(traceDays, retentionAt, inUse).then(
+        (t) => log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`),
+        (err: unknown) => log(`retention: could not sweep ${traceStore.label}: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
   };
   if (retaining) {
     const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
@@ -366,6 +392,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         },
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
     ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
+    ...(traceStore ? { traces: traceStore.reader(), traceHealth: () => ({ failures: traceStore.failures, dropped: traceStore.dropped }) } : {}),
   };
   const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
@@ -429,7 +456,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // whose socket had already gone would otherwise leave its no-input bookkeeping behind.
       forgetNoInput(sid);
       log(`${sid}: evicted idle session`);
-      if (liveBefore.has(sid)) audit.append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } });
+      if (liveBefore.has(sid)) {
+        whenChained(audit.append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
+          (err: unknown) => log(`${sid}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
+      }
     }
     if (live && wasLive && evicted.includes(live)) {
       bus?.publish({ type: 'ended', callSid: live, at: now(), reason: 'error' });
@@ -644,6 +674,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       consoleAuth?.stop();
       // What the last turns saved is on disk before the process goes.
       await Promise.all([store.settled(), chat?.settled?.()]);
+      // And what the last turns traced is on the store (a few seconds at most).
+      await traceStore?.flush();
       await closeShared();
     },
   };

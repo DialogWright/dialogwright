@@ -14,9 +14,9 @@ import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
 import { JevClientError, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
 import type { RenderContext } from '../prompts/render';
-import { buildTraceRecord, type TraceWriter } from '../trace/writer';
+import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { TraceRecord } from '../trace/types';
-import type { AuditDraft, AuditEntry } from '../audit/types';
+import type { AuditDraft, AuditEntry, Chained } from '../audit/types';
 import { topicsListening } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve } from './retrieve';
@@ -35,16 +35,35 @@ export interface TurnObserver {
   audit?(entries: readonly AuditEntry[], at: number): void;
 }
 
-/** Where a turn's audit drafts are chained: the server's AuditLog, or a test's collector. */
+/**
+ * Where a turn's audit drafts are chained: the server's AuditLog (day files), its Postgres audit
+ * (AUDIT_STORE=postgres, audit/postgres.ts), or a test's collector. A sink that chains at once returns
+ * the entry; one that chains in a database returns a promise of it.
+ */
 export interface AuditSink {
-  append(callId: string, channel: string, d: AuditDraft): AuditEntry;
+  append(callId: string, channel: string, d: AuditDraft): Chained<AuditEntry>;
+  /** A turn's drafts chained together (in one transaction, for a database); absent, each is appended in turn. */
+  appendAll?(callId: string, channel: string, ds: readonly AuditDraft[]): Promise<AuditEntry[]>;
+}
+
+/** `ds` chained in order: at once from a sink that chains at once (as it always was), else a promise of the entries. */
+export function chainDrafts(sink: AuditSink, callId: string, channel: string, ds: readonly AuditDraft[]): Chained<AuditEntry[]> {
+  if (sink.appendAll && ds.length > 0) return sink.appendAll(callId, channel, ds);
+  const out = ds.map((d) => sink.append(callId, channel, d));
+  return out.some((e) => e instanceof Promise) ? Promise.all(out) : (out as AuditEntry[]);
+}
+
+/** `fn` with what was chained: at once when it is there, else once it is (a failure goes to `onError`, never thrown). */
+export function whenChained<T>(x: Chained<T>, fn: (t: T) => void, onError: (err: unknown) => void): void {
+  if (x instanceof Promise) x.then(fn, onError);
+  else fn(x);
 }
 
 export interface RunOptions {
   client: JevClient;
   thresholds: Thresholds;
   todayIso: string;
-  trace?: TraceWriter | null;
+  trace?: TraceSink | null;
   now?: () => number;
   /** Server-only. The text harness scores the words said, not clips, and must leave this unset. */
   render?: RenderContext | null;
@@ -286,7 +305,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t3 = performance.now();
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
-  const audited = opts.audit ? result.audit.map((d) => opts.audit!.append(result.session.sessionId, result.session.channel, d)) : [];
+  const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
+  // A sink that chains in a database is waited for; one that chains at once is not (nothing more to wait for).
+  const audited = Array.isArray(chained) ? chained : await chained;
   // A sensitive digit (the code, the account ID, the date of birth, or one keyed ahead of the
   // question that may ask for one) is recorded as keyed, never as the digit: the trace (and the dashboard, which is fed from it) must not be able to rebuild any
   // of them. The same decision the turn itself acted on, so the frame log, the dashboard and the

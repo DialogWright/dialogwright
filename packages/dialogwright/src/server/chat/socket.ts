@@ -15,12 +15,12 @@ import { newSession, SESSION_SCHEMA } from '../../core/session';
 import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types';
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isAnonymous, type Party } from '../../gate/types';
-import type { RunOptions, TurnRun } from '../../run/turn';
+import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
 import { turnScrubber } from '../../trace/redact';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
 import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
-import type { FrameLog } from '../frameLog';
+import type { FrameSink } from '../frameLog';
 import { originAllowed } from './origins';
 import { jwksKeys } from './jwks';
 import { isDelegate, principalForToken, type ChatSignIn } from './signin';
@@ -58,7 +58,7 @@ export const CHAT_TURN_ERROR = 'Sorry, something went wrong on our side. Please 
 /** What the server makes for a new chat session: its run options (client, tools, trace, audit, console) and its frame log. */
 export interface ChatResources {
   opts: RunOptions;
-  frames: FrameLog;
+  frames: FrameSink;
 }
 
 export interface ChatDeps extends ChatTurnDeps {
@@ -82,7 +82,7 @@ interface ChatEntry extends ChatTurnEntry {
   /** The token `ready` gave the client, to reopen the session after a drop; a new one each time it is used. */
   resume: string;
   socket: WebSocket | null;
-  readonly frames: FrameLog;
+  readonly frames: FrameSink;
   ended: boolean;
   tail: Promise<void>;
   inFlight: number;
@@ -180,12 +180,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   /** Set when the server starts to stop (ChatEndpoint.drain). */
   let draining = false;
 
-  const unwritable = new WeakSet<FrameLog>();
+  const unwritable = new WeakSet<FrameSink>();
   /**
    * One frame log line, where what the client is sent and the session's work must go on whether or
    * not it can be written (a full disk, a removed trace directory): a failure is logged, not thrown.
    */
-  const record = (frames: FrameLog | null, dir: 'in' | 'out' | 'log', msg: unknown): void => {
+  const record = (frames: FrameSink | null, dir: 'in' | 'out' | 'log', msg: unknown): void => {
     if (frames === null) return;
     try {
       frames.write(dir, msg);
@@ -197,7 +197,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   };
 
   /** Send one message on `ws`, and log it to the session's frame log when there is one. */
-  const send = (ws: WebSocket | null, frames: FrameLog | null, m: ServerMessage, scrub: Scrub | null = null): void => {
+  const send = (ws: WebSocket | null, frames: FrameSink | null, m: ServerMessage, scrub: Scrub | null = null): void => {
     const logged = loggedOut(m, scrub);
     if (ws === null || ws.readyState !== WebSocket.OPEN) {
       record(frames, 'log', { dropped: logged });
@@ -626,7 +626,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         if (c === null || sessions.has(id) || c.lastActivityMs > cutoff) continue;
         queueWrite(id, 'remove the saved session', (st) => st.remove(id));
         log(`chat ${id}: saved before a restart and never resumed; ended after ${deps.settings.idleMs} ms idle`);
-        deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
+        whenChained(deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } }), () => {},
+          (err: unknown) => log(`chat ${id}: the abandoned chat's audit entry failed: ${describeError(err)}`));
       }
     } catch (err) {
       log(`chat: could not sweep the session store: ${describeError(err)}`);
@@ -650,8 +651,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         if (e.ended || e.inFlight > 0 || e.lastActivityMs > cutoff) continue;
         log(`chat ${e.id}: ended after ${deps.settings.idleMs} ms idle`);
         try {
-          const entry = deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } });
-          e.auditEntries.push(entry);
+          whenChained(deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } }), (entry) => e.auditEntries.push(entry),
+            (err: unknown) => log(`chat ${e.id}: the idle end's audit entry failed: ${describeError(err)}`));
           deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'abandoned' });
           sendTo(e, { type: 'end' });
         } catch (err) {

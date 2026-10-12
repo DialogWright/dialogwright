@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import type { KbPlace } from 'dialogwright';
 import { acceptTopic, approve, approvedSectionText, confirmApproval, draftReviewProblems, editAndApprove, heldPassages, KB_FILE_ID, mergeTopic, reject, rejectedDrafts, returnToDrafts, reviewerProblem, reviewState, seenOf, type ActionResult, type Edits, type Reviewer } from './actions';
 import { TOPIC_ID } from '../draft/validate';
-import { reportFromFiles, NO_NEAR_TOPIC } from '../gaps/report';
+import { reportFromTraces, NO_NEAR_TOPIC } from '../gaps/report';
 import { gapGroupPage, gapsPage, kbTopicPage, type GapsView } from './gapPages';
 import { heldPassagePage, kbPage, rejectedPage } from './kbPages';
 import { draftPage, esc, indexPage, notFoundPage, page, passagePage, topicPage, type PageContext } from './pages';
@@ -55,6 +55,8 @@ export interface ReviewServerOptions {
   traces?: readonly string[];
   /** Where relative `traces` are from. Default: the process's working directory. */
   cwd?: string;
+  /** Where a trace store's keys are read from (the S3_ variables, for a `traces` entry that is s3://...). Default: the process's environment. */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ReviewServer {
@@ -308,15 +310,16 @@ export async function startReviewServer(options: ReviewServerOptions): Promise<R
       if (!state.kb) return send(res, 200, page(c, 'Gaps', `<h1>Gaps</h1><section class="card" role="alert"><h2>The knowledge base does not load</h2><ul class="problems">${state.problems.map((p) => `<li class="mono">${esc(p)}</li>`).join('')}</ul></section>`), undefined, nonce);
       const cwd = options.cwd ?? process.cwd();
       const specs = options.traces ?? [];
-      const view = (samples: number): GapsView => ({
-        report: reportFromFiles({ kb: state.kb!, place, label: place.label, traces: specs, cwd, samples }).report,
+      // A trace store (s3://...) is read through the engine's one trace reader, with the S3_ variables' keys.
+      const view = async (samples: number): Promise<GapsView> => ({
+        report: (await reportFromTraces({ kb: state.kb!, place, label: place.label, traces: specs, cwd, samples, env: options.env ?? process.env })).report,
         kb: state.kb!,
         withheld: new Set(state.withheld.map((w) => w.passage.id)),
         proposed: new Set(state.proposed.map((t) => t.id)),
-        searched: specs.map((s) => resolve(cwd, s)),
+        searched: specs.map((s) => (/^s3:\/\//i.test(s) ? s : resolve(cwd, s))),
       });
-      if (parts.length === 1) return send(res, 200, gapsPage(c, view(3)), undefined, nonce);
-      const v = view(25);
+      if (parts.length === 1) return send(res, 200, gapsPage(c, await view(3)), undefined, nonce);
+      const v = await view(25);
       const g = v.report.groups.find((x) => x.key === id);
       if (g) return send(res, 200, gapGroupPage(c, v, g), undefined, nonce);
       return send(res, 404, notFoundPage(c, id === NO_NEAR_TOPIC ? 'No gaps are near no topic now.' : `No gaps are listed for ${id ?? ''} now.`), undefined, nonce);

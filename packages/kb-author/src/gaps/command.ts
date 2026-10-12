@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { parseArgs, shown } from '../args';
 import type { Io } from '../cli';
 import { findKb, loadKb } from '../kbPlace';
-import { formatJson, formatMarkdown, reportFromFiles } from './report';
-import { defaultTraceSpecs } from './traces';
+import { formatJson, formatMarkdown, reportFromTraces } from './report';
+import { defaultTraceSpecs, isStoreSpec } from './traces';
 
 /**
  * kb:gaps [dir] [--traces <path|glob>]... [--since YYYY-MM-DD] [--samples N] [--out <file>] [--json]
@@ -21,7 +21,7 @@ export const GAPS_USAGE = [
   '  ranks what callers asked the knowledge base that it did not answer, from the traces of real calls: a topic question answered none,',
   '  words that look like a question with no topic nominated, a passage that could not be said (stale, not in force, no translation, no facts),',
   '  and a close call between two topics; grouped by the nearest topic, with samples of their words and the fix for each kind.',
-  '  --traces: a trace file, a folder of them, or a glob (default: $TRACE_DIR, else <app>/traces, else ./traces); --since: from that day on;',
+  '  --traces: a trace file, a folder of them, a glob, or a trace store s3://<bucket>/<prefix> with the S3_ variables (default: $TRACE_STORE, else $TRACE_DIR, else <app>/traces, else ./traces); --since: from that day on;',
   '  --samples: callers\' words shown per group (default 3); --out writes the report to a file; --json prints JSON for tools.',
   '  The traces hold the callers\' words as spoken (identity values are masked): keep the report as private as they are.',
 ].join('\n');
@@ -72,9 +72,17 @@ export async function gapsCommand(args: readonly string[], io: Io): Promise<numb
   }
   const given = parsed.lists['--traces']!;
   const specs = given.length > 0 ? given : defaultTraceSpecs({ cwd: io.cwd, appDir: place.appDir, env: io.env ?? process.env });
-  const { report, files } = reportFromFiles({ kb: loaded.kb, place, label: place.label, traces: specs, cwd: io.cwd, ...(since !== undefined ? { since } : {}), samples });
+  let found: Awaited<ReturnType<typeof reportFromTraces>>;
+  try {
+    found = await reportFromTraces({ kb: loaded.kb, place, label: place.label, traces: specs, cwd: io.cwd, env: io.env ?? process.env, ...(since !== undefined ? { since } : {}), samples });
+  } catch (error) {
+    // A trace store that cannot be read (its keys, its address): said, never a key.
+    io.err(`kb:gaps: the traces could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+  const { report, files } = found;
   if (files.length === 0) {
-    io.err(`kb:gaps: no trace files found in ${specs.map((s) => shown(io.cwd, resolve(io.cwd, s))).join(', ')}: a server writes them to $TRACE_DIR (default ./traces); give --traces <path|glob>`);
+    io.err(`kb:gaps: no trace files found in ${specs.map((s) => (isStoreSpec(s) ? s : shown(io.cwd, resolve(io.cwd, s)))).join(', ')}: a server writes them to $TRACE_DIR (default ./traces), or to $TRACE_STORE; give --traces <path|glob|s3://bucket/prefix>`);
     return 1;
   }
   const text = parsed.flags.has('--json') ? formatJson(report) : formatMarkdown(report).join('\n');

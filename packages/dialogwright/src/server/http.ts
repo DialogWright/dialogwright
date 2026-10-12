@@ -11,7 +11,8 @@ import { handleDashboardRequest } from './dashboard/routes';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
 import { recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
-import type { AuditSink } from '../run/turn';
+import { whenChained, type AuditSink } from '../run/turn';
+import type { S3TraceReader } from '../trace/store';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
 import { CONSOLE_PATHS, isConsolePath, isDirectLocalRequest, localOnlyPaths } from './localOnly';
 import { ConsoleAuth } from './console/auth';
@@ -78,6 +79,10 @@ export interface HttpDeps {
   chatLive?: () => number;
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
   disk?: () => { traceBytes: number; auditBytes: number };
+  /** TRACE_STORE=s3://...: the one reader of the traces on the store, for the console. Absent, the console reads TRACE_DIR. */
+  traces?: S3TraceReader;
+  /** TRACE_STORE=s3://...: the segment writes that failed and the lines dropped, for `/health`'s `traces`; absent, `/health` has none. */
+  traceHealth?: () => { failures: number; dropped: number };
   /**
    * The console's sign-in, for CONSOLE_AUTH=token (index.ts makes it, and its first link once the server
    * listens). Read only when config.consoleAuth is set; absent then, one is made here, with no link until
@@ -413,10 +418,11 @@ export function decideAction(
       // This is the one end no turn sees, so nothing pushed it onto the entry's own chain either
       // (the observer's audit hook only fires from inside a turn) -- done here instead, so the
       // handoff summary a later call could still read (src/handoff/summary.ts) is never short one.
-      const entry = deps.audit?.append(callSid, live.session.channel, { type: 'call_ended', detail: { reason: 'hangup', completed: [...live.session.completed] } });
-      if (entry) {
-        live.auditEntries.push(entry);
-        deps.bus?.publish({ type: 'audit', callSid, at: Date.now(), entries: [entry] });
+      if (deps.audit) {
+        whenChained(deps.audit.append(callSid, live.session.channel, { type: 'call_ended', detail: { reason: 'hangup', completed: [...live.session.completed] } }), (entry) => {
+          live.auditEntries.push(entry);
+          deps.bus?.publish({ type: 'audit', callSid, at: Date.now(), entries: [entry] });
+        }, (err: unknown) => deps.log(`${callSid}: the hangup's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
       }
       deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() });
     }
@@ -515,7 +521,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         reply(res, 404, 'text/plain', 'not found');
         return;
       }
-      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}) })) return;
+      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}) })) return;
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {
@@ -542,6 +548,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
           ...(deps.draining?.() ? { draining: true } : {}),
           ...(deps.disk ? { disk: deps.disk() } : {}),
+          ...(deps.traceHealth ? { traces: deps.traceHealth() } : {}),
         });
         answerJson(req, res, 200, body);
         return;

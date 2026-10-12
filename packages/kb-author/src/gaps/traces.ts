@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
+import { traceReaderOf } from 'dialogwright';
 
 /**
  * Reading trace files for kb:gaps: which files (a file, a folder, or a glob; by default the folder a
@@ -100,6 +101,8 @@ const isDir = (p: string): boolean => {
 export function traceFilesOf(specs: readonly string[], cwd: string): string[] {
   const found = new Set<string>();
   for (const spec of specs) {
+    // A trace store (s3://...) is read through its reader (storeTurns), not as a path.
+    if (isStoreSpec(spec)) continue;
     const path = resolve(cwd, spec);
     if (GLOB_CHARS.test(path)) {
       for (const f of expandGlob(path)) if (!f.endsWith('.frames.jsonl')) found.add(f);
@@ -115,6 +118,9 @@ export function traceFilesOf(specs: readonly string[], cwd: string): string[] {
  * write to by default). Each as an absolute path, whether or not it is there yet.
  */
 export function defaultTraceSpecs(opts: { cwd: string; appDir: string | null; env: NodeJS.ProcessEnv }): string[] {
+  // The server writes to a trace store when TRACE_STORE names one: read there.
+  const store = opts.env.TRACE_STORE?.trim();
+  if (store) return [store];
   const named = opts.env.TRACE_DIR?.trim();
   if (named) return [resolve(opts.cwd, named)];
   const specs = [...(opts.appDir !== null ? [join(opts.appDir, 'traces')] : []), resolve(opts.cwd, 'traces')];
@@ -271,15 +277,46 @@ export function turnOf(raw: unknown, file: string, line: number): Turn | null {
 
 /** The turns of one trace file, in the order written; lines that do not read as a record are passed over (counted in `skipped`). */
 export function readTurns(file: string): { turns: Turn[]; skipped: number } {
-  const turns: Turn[] = [];
-  let skipped = 0;
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
   } catch {
-    return { turns, skipped };
+    return { turns: [], skipped: 0 };
   }
-  const lines = text.split('\n');
+  return turnsOfLines(text.split('\n'), file);
+}
+
+/** Whether a `--traces` spec names a trace store (TRACE_STORE's `s3://<bucket>/<prefix>`) rather than a path. */
+export function isStoreSpec(spec: string): boolean {
+  return /^s3:\/\//i.test(spec.trim());
+}
+
+/**
+ * The turns of every call on the trace stores `specs` name (`s3://<bucket>/<prefix>`, with the S3_
+ * variables' keys), each call's segments joined by the engine's one reader, as the console reads them.
+ * A call is named `s3://<bucket>/<prefix><call>` where a file would be named by its path.
+ */
+export async function storeTurns(specs: readonly string[], env: NodeJS.ProcessEnv, fetchImpl?: typeof fetch): Promise<{ turns: Turn[]; skipped: number; files: string[] }> {
+  const out = { turns: [] as Turn[], skipped: 0, files: [] as string[] };
+  for (const spec of specs.filter(isStoreSpec)) {
+    const reader = traceReaderOf(spec, env, fetchImpl ? { fetch: fetchImpl } : {})!;
+    for (const call of [...(await reader.calls())].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+      const joined = await reader.read(call.id);
+      if (joined === null) continue;
+      const name = `${reader.label}${call.id}`;
+      const read = turnsOfLines(joined.trace, name);
+      out.turns.push(...read.turns);
+      out.skipped += read.skipped;
+      out.files.push(name);
+    }
+  }
+  return out;
+}
+
+/** The turns of a trace's lines (a file's, or a call's joined segments), named `file`, each with its line number. */
+export function turnsOfLines(lines: readonly string[], file: string): { turns: Turn[]; skipped: number } {
+  const turns: Turn[] = [];
+  let skipped = 0;
   for (let i = 0; i < lines.length; i += 1) {
     const l = lines[i]!;
     if (l.trim() === '') continue;

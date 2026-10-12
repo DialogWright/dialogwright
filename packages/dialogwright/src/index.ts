@@ -84,6 +84,8 @@ export { topicCatalog } from './kb/catalog';
 export type { TurnKnowledge } from './core/knowledge';
 export { RETRIEVE_BUDGET_MS } from './run/retrieve';
 export type { RetrievalRecord } from './trace/types';
+// Traces on S3-compatible storage (TRACE_STORE=s3://...): the one reader the console, replay, kb:gaps and kb:review share.
+export { traceReaderOf, splitCallAddress, S3TraceReader, type JoinedTrace, type StoredTrace } from './trace/store';
 // The engine's retrievers (the default for an app with a kb/ whose code gives none): keyword, BM25 with phrases.
 export { KeywordRetriever } from './kb/keyword';
 export type { KeywordRetrieverOptions } from './kb/keyword';

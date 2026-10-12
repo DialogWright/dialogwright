@@ -15,6 +15,7 @@ import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './cha
 import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
 import { DEFAULT_SQL_TIMEOUT_MS, maskConnectionString } from './stores/sql';
+import { describeTraceStore, traceStoreSettingOf, type S3TraceSetting } from '../trace/store';
 import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -285,6 +286,31 @@ export interface ServerConfig {
    * on whichever server the carrier reconnects to, with one owner per call at a time.
    */
   sessionStore?: SessionStoreSetting;
+  /**
+   * TRACE_STORE, unset by default (absent here: traces and frame logs are files in TRACE_DIR, as
+   * before it existed): `s3://<bucket>/<prefix>` writes each call's trace as segments on S3-compatible
+   * storage (trace/store.ts), with S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and
+   * S3_FORCE_PATH_STYLE, so several servers write one trace per call and every reader joins it.
+   */
+  traceStore?: S3TraceSetting;
+  /**
+   * AUDIT_STORE, unset by default (absent here: the audit is day files in AUDIT_DIR, as before it
+   * existed): `postgres://...` keeps it in Postgres (audit/postgres.ts), a hash chain per call anchored
+   * into a daily chain, so several servers append to one audit without forking a chain. It may be
+   * the database SESSION_STORE names.
+   */
+  auditStore?: AuditStoreSetting;
+  /** SERVER_ID, when set: the name this server goes by (the lease table, the log, its trace segments), a random suffix added per process. */
+  serverId?: string;
+}
+
+/** AUDIT_STORE=postgres://...: the audit in a database. */
+export interface AuditStoreSetting {
+  kind: 'postgres';
+  /** The connection string as given: never logged or said (maskConnectionString). */
+  url: string;
+  /** SESSION_STORE_TIMEOUT_MS: how long one question to the database may take. */
+  timeoutMs: number;
 }
 
 /** Where sessions are kept when it is not the process's memory. */
@@ -621,6 +647,9 @@ export function loadConfig(env: Env): ServerConfig {
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
     ...sessionStoreOf(env),
+    ...traceStoreOf(env),
+    ...auditStoreOf(env),
+    ...(env.SERVER_ID?.trim() ? { serverId: env.SERVER_ID.trim() } : {}),
     ...(chat ? { chat } : {}),
     ...(widget ? { widget } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
@@ -676,6 +705,21 @@ function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
   // Said masked: a value meant for Postgres with its scheme mistyped may hold a password.
   if (dir === '') throw new Error(`SESSION_STORE must be memory, file:<dir> or postgres://..., got "${maskConnectionString(raw)}"`);
   return { sessionStore: { kind: 'file', dir, fsync: fsync === 'on', restartPauseS } };
+}
+
+/** TRACE_STORE (with the S3_ variables) as `{ traceStore }`, or nothing when it is unset. */
+function traceStoreOf(env: Env): { traceStore?: S3TraceSetting } {
+  const setting = traceStoreSettingOf(env);
+  return setting === null ? {} : { traceStore: setting };
+}
+
+/** AUDIT_STORE as `{ auditStore }`, or nothing when it is unset (day files in AUDIT_DIR). */
+function auditStoreOf(env: Env): { auditStore?: AuditStoreSetting } {
+  const raw = env.AUDIT_STORE?.trim() ?? '';
+  if (raw === '') return {};
+  // Said masked: a value meant for Postgres with its scheme mistyped may hold a password.
+  if (!/^postgres(ql)?:\/\//i.test(raw)) throw new Error(`AUDIT_STORE must be postgres://... (or unset, for day files in AUDIT_DIR), got "${maskConnectionString(raw)}"`);
+  return { auditStore: { kind: 'postgres', url: raw, timeoutMs: integer(env, 'SESSION_STORE_TIMEOUT_MS', DEFAULT_SQL_TIMEOUT_MS) } };
 }
 
 /** RESUMED_AFTER_MS as the startup line says it (with a durable store, the only one that resumes a call). */
@@ -882,8 +926,8 @@ export function describeConfig(c: ServerConfig): string {
     `signature check ${c.signatureCheck ? 'on' : 'OFF'}`,
     `today ${c.todayOverride ?? 'wall clock'}`,
     `timezone ${c.timezone}`,
-    `traces ${c.traceDir}`,
-    `audit ${c.auditDir}`,
+    c.traceStore ? `traces ${describeTraceStore(c.traceStore)}` : `traces ${c.traceDir}`,
+    c.auditStore ? `audit ${maskConnectionString(c.auditStore.url)}` : `audit ${c.auditDir}`,
     `reconnect limit ${c.reconnectLimit}`,
     ...(c.relayPingMs !== undefined ? [`relay ping every ${c.relayPingMs} ms`] : []),
     `audio dir ${c.audioDir}`,

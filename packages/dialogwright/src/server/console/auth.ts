@@ -3,6 +3,7 @@ import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rm
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename, dirname, join } from 'node:path';
 import type { AuditSink } from '../../run/turn';
+import type { Chained } from '../../audit/types';
 import { isDirectLocalRequest, isLoopbackHost } from '../localOnly';
 import type { ClientAddressSource, ConsoleAuthSettings } from './settings';
 import { signInPage, type SignInNote } from './pages';
@@ -106,10 +107,10 @@ export interface ConsoleGate {
   sessionOf(req: IncomingMessage): ConsoleSession | null;
   /** Answers a request with no session: the page to the sign-in page (302), anything else 401. */
   refuse(req: IncomingMessage, res: ServerResponse, path: string): void;
-  /** Records the live feed's first open in a session. */
-  noteLive(session: ConsoleSession): void;
-  /** Records a replay of a stored call. */
-  noteReplay(session: ConsoleSession, callId: string): void;
+  /** Records the live feed's first open in a session: at once, or (AUDIT_STORE=postgres) once the database has it. */
+  noteLive(session: ConsoleSession): Chained<void>;
+  /** Records a replay of a stored call, as noteLive. */
+  noteReplay(session: ConsoleSession, callId: string): Chained<void>;
 }
 
 export interface ConsoleAuthOptions {
@@ -296,7 +297,10 @@ export class ConsoleAuth implements ConsoleGate {
     const expiresAt = now + CODE_TTL_MS;
     const hash = shortHash(code);
     const url = `${this.base()}${LOGIN_PATH}?code=${code}`;
-    this.note('console', { event: 'link_made', code: hash, by });
+    const noted = this.note('console', { event: 'link_made', code: hash, by });
+    // AUDIT_STORE=postgres: the link made is recorded once the database has it; the link route waits for it.
+    this.minted = noted instanceof Promise ? noted : null;
+    this.minted?.catch((e: unknown) => this.log(`console: the link made could not be recorded: ${e instanceof Error ? e.message : String(e)}`));
     this.pending = { digest: sha256(code), expiresAt, hash };
     this.writeLinkFile(url, expiresAt);
     this.log(`console: a sign-in link (code ${hash}…, until ${new Date(expiresAt).toISOString().slice(11, 16)} UTC, once) is in ${this.linkFile}; pnpm console:link prints a new one`);
@@ -339,15 +343,16 @@ export class ConsoleAuth implements ConsoleGate {
     res.end(req.method === 'HEAD' ? undefined : body);
   }
 
-  noteLive(session: ConsoleSession): void {
+  noteLive(session: ConsoleSession): Chained<void> {
     if (this.live.has(session.id)) return;
-    this.note('console', { event: 'live', session: session.hash });
+    const noted = this.note('console', { event: 'live', session: session.hash });
     this.live.set(session.id, session.expiresAt);
     prune(this.live, (exp) => exp <= this.now());
+    return noted;
   }
 
-  noteReplay(session: ConsoleSession, callId: string): void {
-    this.note(callId, { event: 'replay', session: session.hash });
+  noteReplay(session: ConsoleSession, callId: string): Chained<void> {
+    return this.note(callId, { event: 'replay', session: session.hash });
   }
 
   handle(req: IncomingMessage, res: ServerResponse, path: string): boolean {
@@ -380,7 +385,8 @@ export class ConsoleAuth implements ConsoleGate {
     const via = local ? 'local' : 'tunnel';
     const lock = this.locked(from, local);
     if (lock !== null) {
-      this.noteLock(lock, from, via);
+      const noted = this.noteLock(lock, from, via);
+      if (noted) await noted;
       return this.page(req, res, 429, { note: 'limited' });
     }
     const form = await readForm(req);
@@ -391,14 +397,16 @@ export class ConsoleAuth implements ConsoleGate {
     // Again, now the form is read: attempts sent side by side all passed the first look before any failed.
     const lockNow = this.locked(from, local);
     if (lockNow !== null) {
-      this.noteLock(lockNow, from, via);
+      const noted = this.noteLock(lockNow, from, via);
+      if (noted) await noted;
       return this.page(req, res, 429, { note: 'limited' });
     }
     const code = (form.get('code') ?? '').slice(0, 256);
     const verdict = this.redeem(code);
     if (verdict !== 'ok') {
       this.fail(from);
-      this.note('console', { event: 'sign_in_refused', reason: verdict, code: shortHash(code), from, via });
+      const noted = this.note('console', { event: 'sign_in_refused', reason: verdict, code: shortHash(code), from, via });
+      if (noted) await noted;
       this.log(`console: sign-in refused (${verdict}, code ${shortHash(code)}…, from ${from})`);
       return this.page(req, res, 403, { note: 'refused' });
     }
@@ -408,7 +416,8 @@ export class ConsoleAuth implements ConsoleGate {
     const payload = `v1.${id}.${expSec}`;
     const session = shortHash(`session:${id}`, 16);
     // Recorded before the cookie is set: a sign-in the audit could not record is not made.
-    this.note('console', { event: 'sign_in', session, code: shortHash(code), from, via });
+    const noted = this.note('console', { event: 'sign_in', session, code: shortHash(code), from, via });
+    if (noted) await noted;
     this.log(`console: signed in (session ${session}, from ${from})`);
     this.writeLinkFile(null, null);
     res.setHeader('set-cookie', `${CONSOLE_COOKIE}=${payload}.${this.sign(payload).toString('base64url')}; ${this.cookieAttributes(req)}; Max-Age=${hours * 3600}`);
@@ -420,7 +429,8 @@ export class ConsoleAuth implements ConsoleGate {
     if (!this.originOk(req)) return this.text(res, 403, 'a sign-out must come from the console');
     const session = this.sessionOf(req);
     if (session) {
-      this.note('console', { event: 'sign_out', session: session.hash });
+      const noted = this.note('console', { event: 'sign_out', session: session.hash });
+      if (noted) await noted;
       this.revoked.set(revocationKey(session.id), session.expiresAt);
       prune(this.revoked, (exp) => exp <= this.now());
       this.saveSignedOut();
@@ -436,10 +446,12 @@ export class ConsoleAuth implements ConsoleGate {
     // pnpm console:link sends no Origin; a browser's page always does.
     const given = header(req, LINK_KEY_HEADER);
     if (header(req, 'origin') !== undefined || given === undefined || !sameSecret(given, this.linkKey)) {
-      this.note('console', { event: 'link_refused', from: this.addressOf(req) });
+      const noted = this.note('console', { event: 'link_refused', from: this.addressOf(req) });
+      if (noted) await noted;
       return this.text(res, 403, 'the link file\'s key is needed: run pnpm console:link');
     }
     const made = this.mint('console:link');
+    if (this.minted) await this.minted;
     const body = JSON.stringify({ url: made.url, expiresAt: new Date(made.expiresAt).toISOString() });
     res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
     res.end(body);
@@ -506,15 +518,16 @@ export class ConsoleAuth implements ConsoleGate {
     this.failuresInAll.push(now);
   }
 
-  private noteLock(lock: string, from: string, via: string): void {
+  private noteLock(lock: string, from: string, via: string): Chained<void> {
     const at = this.locksNoted.get(lock);
     if (at !== undefined && this.now() - at < FAILURE_WINDOW_MS) return;
     this.locksNoted.set(lock, this.now());
     prune(this.locksNoted, (t) => this.now() - t >= FAILURE_WINDOW_MS);
-    this.note('console', { event: 'sign_in_refused', reason: 'rate_limited', limit: lock === '*' ? 'all' : 'address', from, via });
+    const noted = this.note('console', { event: 'sign_in_refused', reason: 'rate_limited', limit: lock === '*' ? 'all' : 'address', from, via });
     this.log(lock === '*'
       ? `console: ${FAILURES_IN_ALL} failed sign-ins in ${FAILURE_WINDOW_MS / 60_000} minutes: sign-in through the tunnel is refused for now`
       : `console: ${FAILURES_PER_ADDRESS} failed sign-ins from ${from}: refused for ${FAILURE_WINDOW_MS / 60_000} minutes`);
+    return noted;
   }
 
   // ---------- answers ----------
@@ -558,8 +571,13 @@ export class ConsoleAuth implements ConsoleGate {
     res.end();
   }
 
-  private note(callId: string, detail: Record<string, string | number | boolean | null>): void {
-    this.audit?.append(callId, 'console', { type: 'console_access', detail });
+  /** The audit's record of the last link made, when it is still being written (AUDIT_STORE=postgres). */
+  private minted: Promise<void> | null = null;
+
+  /** An access recorded: at once to day files, or a promise the database has it (AUDIT_STORE=postgres). */
+  private note(callId: string, detail: Record<string, string | number | boolean | null>): Chained<void> {
+    const entry = this.audit?.append(callId, 'console', { type: 'console_access', detail });
+    return entry instanceof Promise ? entry.then(() => undefined) : undefined;
   }
 
   /** Reads the sign-outs a run before this one kept; a file others may write, or one not the server's, is refused. */

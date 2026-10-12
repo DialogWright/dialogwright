@@ -1,3 +1,6 @@
+/** A value now, or once it is there (an entry a database chains, AUDIT_STORE=postgres). */
+export type Chained<T> = T | Promise<T>;
+
 /** What the pure core emits. No PHI: ids by last four, never a date of birth, code or statement. */
 export interface AuditDraft {
   /**

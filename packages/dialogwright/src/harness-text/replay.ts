@@ -299,6 +299,21 @@ export async function replayFrameLog(
 ): Promise<ReplayResult> {
   const skipped: string[] = [];
   const lines = readFrameLog(path, (lineNumber) => skipped.push(`line ${lineNumber}: unparsable`));
+  return replayFrameLines(lines, skipped, opts, onRun, options);
+}
+
+/**
+ * The same replay over a frame log already read (a call's segments on the trace store, joined by
+ * trace/store.ts S3TraceReader.frameLog), with what was skipped reading it.
+ */
+export async function replayFrameLines(
+  lines: readonly ReadFrameLogLine[],
+  skippedReading: readonly string[],
+  opts: RunOptions,
+  onRun?: (run: TurnRun) => void,
+  options?: { todayIsoOverride?: string },
+): Promise<ReplayResult> {
+  const skipped: string[] = [...skippedReading];
   const runs: TurnRun[] = [];
   let session: Session | null = null;
   let setupDate: string | null = null;

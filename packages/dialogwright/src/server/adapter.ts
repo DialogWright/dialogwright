@@ -9,7 +9,7 @@ import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/re
 import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
 import { callDataFrom } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
-import { arrivalContext, CODE_DIGIT, type Arrival } from '../run/turn';
+import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { localeOf } from '../core/locale';
@@ -1489,8 +1489,10 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
     .then((text) => {
       publish(deps, { type: 'handoff_summary', callSid: entry.callSid, at: Date.now(), text });
       const draft = { type: 'handoff_summary' as const, detail: { generated: text !== null, words: text !== null ? wordCount(text) : 0 } };
-      const audited = entry.opts.audit?.append(entry.session.sessionId, entry.session.channel, draft);
-      if (audited) entry.auditEntries.push(audited);
+      if (entry.opts.audit) {
+        whenChained(entry.opts.audit.append(entry.session.sessionId, entry.session.channel, draft), (audited) => entry.auditEntries.push(audited),
+          (err: unknown) => deps.log(`${entry.callSid}: the handoff summary's audit entry failed: ${describe(err).message}`));
+      }
     })
     .catch((err: unknown) => deps.log(`${entry.callSid}: handoff summary failed: ${describe(err).message}`));
 }

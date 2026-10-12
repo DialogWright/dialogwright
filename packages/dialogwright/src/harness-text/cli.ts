@@ -9,7 +9,8 @@ import { loadCorpus } from '../jev/corpus';
 import { TraceWriter } from '../trace/writer';
 import type { TraceRecord } from '../trace/types';
 import { followEffects, loadScenarios, runCorpusEntry, runScenario, runTurn, saidEvent, type RunOptions, type TurnRun } from './runner';
-import { replayFrameLog } from './replay';
+import { replayFrameLines, replayFrameLog, type ReplayResult } from './replay';
+import { splitCallAddress, traceReaderOf } from '../trace/store';
 import { summarize } from './metrics';
 import { formatAnswers, formatDecision, formatGates, formatMetrics, formatSlots } from './print';
 export { buildThresholds, buildClient, defaultCorpusFile } from '../run/client';
@@ -168,7 +169,17 @@ async function run(): Promise<void> {
     // A replay defaults to the call's own date; --today only overrides it when the flag was
     // actually passed (in either `--today VALUE` or `--today=VALUE` form).
     const replayOptions = args.today !== undefined ? { todayIsoOverride: args.today } : undefined;
-    const r = await replayFrameLog(args.replay, opts, (run) => printRun(run, args.quiet!), replayOptions);
+    // A call on the trace store (TRACE_STORE=s3://...): s3://<bucket>/<prefix>/<call>, its segments joined
+    // by the one reader the console uses, with the S3_ variables' keys. Else a frame-log file.
+    const onStore = splitCallAddress(args.replay);
+    let r: ReplayResult;
+    if (onStore !== null) {
+      const reader = traceReaderOf(onStore.store, process.env)!;
+      const skipped: string[] = [];
+      const lines = await reader.frameLog(onStore.call, (n) => skipped.push(`line ${n}: unparsable`));
+      if (lines === null) throw new Error(`no trace for ${onStore.call} in ${reader.label}`);
+      r = await replayFrameLines(lines, skipped, opts, (run) => printRun(run, args.quiet!), replayOptions);
+    } else r = await replayFrameLog(args.replay, opts, (run) => printRun(run, args.quiet!), replayOptions);
     records.push(...r.records);
     for (const s of r.skipped) console.log(`skipped ${s}`);
   }

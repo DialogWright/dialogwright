@@ -1,7 +1,7 @@
 import { KeywordRetriever, loadAppFolder, type KbPlace, type KbTopic, type KnowledgeBase } from 'dialogwright';
 import { uncitedSections } from '../refresh/refresh';
 import { collectGaps, GAP_KINDS, type CollectContext, type CollectStats, type Gap, type GapKind, type Near, type Unavailable } from './collect';
-import { readTurns, traceFilesOf, type Turn } from './traces';
+import { isStoreSpec, readTurns, storeTurns, traceFilesOf, type Turn } from './traces';
 
 /**
  * The gap report: the gaps (./collect.ts) grouped by their nearest topic, ranked, each group with
@@ -338,6 +338,30 @@ export function reportFromFiles(o: Omit<BuildOptions, 'turns' | 'skipped' | 'fil
   }
   const { traces: _t, cwd: _c, ...rest } = o;
   return { report: buildReport({ ...rest, turns, skipped, files: files.length }), files };
+}
+
+/**
+ * reportFromFiles over files and trace stores alike: a `--traces` spec that is `s3://<bucket>/<prefix>`
+ * (TRACE_STORE's) is read through the engine's one trace reader, every call's segments joined, its
+ * keys from the S3_ variables in `env`. With no store named, the same report as reportFromFiles.
+ */
+export async function reportFromTraces(o: Omit<BuildOptions, 'turns' | 'skipped' | 'files'> & { traces: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; fetch?: typeof fetch }): Promise<{ report: GapReport; files: string[] }> {
+  const { env, fetch: fetchImpl, ...fileOptions } = o;
+  if (!o.traces.some(isStoreSpec)) return reportFromFiles(fileOptions);
+  const files = traceFilesOf(o.traces, o.cwd);
+  const turns: Turn[] = [];
+  let skipped = 0;
+  for (const f of files) {
+    const read = readTurns(f);
+    turns.push(...read.turns);
+    skipped += read.skipped;
+  }
+  const stored = await storeTurns(o.traces, env, fetchImpl);
+  turns.push(...stored.turns);
+  skipped += stored.skipped;
+  const { traces: _t, cwd: _c, ...rest } = fileOptions;
+  const all = [...files, ...stored.files];
+  return { report: buildReport({ ...rest, turns, skipped, files: all.length }), files: all };
 }
 
 // ---------------------------------------------------------------------------------------------

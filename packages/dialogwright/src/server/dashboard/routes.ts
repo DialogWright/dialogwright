@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import type { DashboardBus } from './bus';
 import { redactFrameLine, redactRecord } from './events';
 import { isConsolePath } from '../localOnly';
-import { readFrameLog, type ReadFrameLogLine } from '../frameLog';
+import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog';
+import type { S3TraceReader } from '../../trace/store';
+import type { Chained } from '../../audit/types';
 import type { TraceRecord } from '../../trace/types';
 import { upgradeTraceRecord } from '../../trace/read';
 import { defaultAppId, getApp } from '../../core/app/registry';
@@ -35,6 +37,8 @@ export interface DashboardDeps {
    * log records the live feed and each replay. Absent (CONSOLE_AUTH=local), the routes are as they were.
    */
   auth?: ConsoleGate;
+  /** TRACE_STORE=s3://...: the traces are read from the store, joined across servers, in place of traceDir. */
+  traces?: S3TraceReader;
 }
 
 /** One trace record as `/dashboard/traces/<sid>` returns it: redacted, plus the line the caller heard. */
@@ -74,8 +78,12 @@ function spokenOf(record: TraceRecord): string {
  * truncated line is no reason to fail the whole route, so unparseable lines are dropped.
  */
 function traceLines(path: string): TraceRecord[] {
-  return readFileSync(path, 'utf8')
-    .split('\n')
+  return parseTraceLines(readFileSync(path, 'utf8').split('\n'));
+}
+
+/** The parseable records of a trace's lines (a file's, or a trace store's joined segments). */
+function parseTraceLines(lines: readonly string[]): TraceRecord[] {
+  return lines
     .filter(Boolean)
     .flatMap((line) => {
       try {
@@ -99,15 +107,81 @@ function traceLines(path: string): TraceRecord[] {
  * none.
  */
 function readTrace(traceDir: string, sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
-  const records = traceLines(join(traceDir, `${sid}.jsonl`)).map((raw) => {
-    const record = redactRecord(raw);
+  const framesPath = join(traceDir, `${sid}.frames.jsonl`);
+  return replayOf(traceLines(join(traceDir, `${sid}.jsonl`)), existsSync(framesPath) ? readFrameLog(framesPath) : [], sid);
+}
+
+/** A trace as the replay route answers it: its records redacted with the line each said, its frames redacted, and its delivery facts. */
+function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+  const records = raw.map((r) => {
+    const record = redactRecord(r);
     return { ...record, spokenText: spokenOf(record) };
   });
-  const framesPath = join(traceDir, `${sid}.frames.jsonl`);
   // redactFrameLine widens the type back to FrameLogLine; readFrameLog's line number survives the
   // spread, so it is restored here rather than dropped from what the page gets.
-  const frames = existsSync(framesPath) ? readFrameLog(framesPath).map((l) => ({ ...redactFrameLine(l), line: l.line })) : [];
+  const frames = read.map((l) => ({ ...redactFrameLine(l), line: l.line }));
   return { records, frames, deliveries: deliveriesOf(frames, sid) };
+}
+
+/**
+ * The traces list and one trace's replay read from the trace store (TRACE_STORE=s3://...), through the
+ * one reader every reader shares: the same answers as from TRACE_DIR, a call's segments from every
+ * server joined. A store that cannot be read answers 503, never a crash.
+ */
+function fromStore(res: ServerResponse, head: boolean, reader: S3TraceReader, sid: string | null, onReplay: (() => Chained<void>) | null): void {
+  const work = async (): Promise<void> => {
+    if (sid === null) {
+      const rows = (await reader.calls()).slice(0, MAX_TRACES).map((c) => ({ callSid: c.id, startedAt: c.startedAt, turns: c.turns, sizeBytes: c.sizeBytes }))
+        .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
+      send(res, 200, 'application/json', JSON.stringify(rows), head);
+      return;
+    }
+    const joined = await reader.read(sid);
+    if (joined === null) {
+      send(res, 404, 'text/plain', 'not found', head);
+      return;
+    }
+    const replay = replayOf(parseTraceLines(joined.trace), parseFrameLog(joined.frames.join('\n')), sid);
+    // Recorded before the answer: a replay the audit could not record is not served.
+    const noted = onReplay?.();
+    if (noted instanceof Promise) await noted;
+    send(res, 200, 'application/json', JSON.stringify(replay), head);
+  };
+  work().catch((err: unknown) => {
+    if (!res.headersSent) send(res, 503, 'text/plain', `the trace store could not be read: ${err instanceof Error ? err.message : String(err)}`, head);
+    else res.end();
+  });
+}
+
+/** The live feed: the bus's history, then every event as it comes, while the session (with a sign-in) lasts. */
+function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps, head: boolean, auth: ConsoleGate | undefined): void {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+  // A HEAD is a probe, not a viewer: answer the headers and subscribe nothing.
+  if (head) { res.end(); return; }
+  res.write(': connected\n\n');
+  res.write(`event: boot\ndata: ${JSON.stringify({ bootId: BOOT_ID })}\n\n`);
+  let off: () => void = () => {};
+  let beat: ReturnType<typeof setInterval> | undefined;
+  const end = (): void => { off(); clearInterval(beat); };
+  // With a sign-in, the session is asked again before each write: a feed whose session has signed
+  // out or expired ends rather than send another event.
+  const stillSignedIn = (): boolean => {
+    if (!auth || auth.sessionOf(req) !== null) return true;
+    end();
+    res.end();
+    return false;
+  };
+  off = deps.bus.subscribe((event) => {
+    if (!stillSignedIn()) return;
+    // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
+    // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
+    if (res.writableLength > MAX_STREAM_BACKLOG) return;
+    res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
+  });
+  // A comment line keeps a proxy (and ngrok) from closing an idle stream between calls.
+  beat = setInterval(() => { if (stillSignedIn()) res.write(': hb\n\n'); }, HEARTBEAT_MS);
+  beat.unref?.();
+  req.on('close', end);
 }
 
 /** Returns true when the request was a dashboard route (handled), false to let the caller continue. */
@@ -153,34 +227,17 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   }
   if (path === '/dashboard/events') {
     // Recorded before a byte of the feed is sent: a watch the audit could not record is not served.
-    if (!head && auth && session) auth.noteLive(session);
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-    // A HEAD is a probe, not a viewer: answer the headers and subscribe nothing.
-    if (head) { res.end(); return true; }
-    res.write(': connected\n\n');
-    res.write(`event: boot\ndata: ${JSON.stringify({ bootId: BOOT_ID })}\n\n`);
-    let off: () => void = () => {};
-    let beat: ReturnType<typeof setInterval> | undefined;
-    const end = (): void => { off(); clearInterval(beat); };
-    // With a sign-in, the session is asked again before each write: a feed whose session has signed
-    // out or expired ends rather than send another event.
-    const stillSignedIn = (): boolean => {
-      if (!auth || auth.sessionOf(req) !== null) return true;
-      end();
-      res.end();
-      return false;
-    };
-    off = deps.bus.subscribe((event) => {
-      if (!stillSignedIn()) return;
-      // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
-      // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
-      if (res.writableLength > MAX_STREAM_BACKLOG) return;
-      res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
-    });
-    // A comment line keeps a proxy (and ngrok) from closing an idle stream between calls.
-    beat = setInterval(() => { if (stillSignedIn()) res.write(': hb\n\n'); }, HEARTBEAT_MS);
-    beat.unref?.();
-    req.on('close', end);
+    const noted = !head && auth && session ? auth.noteLive(session) : undefined;
+    if (noted instanceof Promise) {
+      // AUDIT_STORE=postgres: the feed starts once the database has the record.
+      noted.then(() => liveFeed(req, res, deps, head, auth), () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
+      return true;
+    }
+    liveFeed(req, res, deps, head, auth);
+    return true;
+  }
+  if (path === '/dashboard/traces' && deps.traces) {
+    fromStore(res, head, deps.traces, null, null);
     return true;
   }
   if (path === '/dashboard/traces') {
@@ -227,12 +284,21 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
       send(res, 404, 'text/plain', 'not found', head);
       return true;
     }
+    if (SID.test(sid) && deps.traces) {
+      fromStore(res, head, deps.traces, sid, !head && auth && session ? () => auth.noteReplay(session!, sid) : null);
+      return true;
+    }
     if (!SID.test(sid) || !existsSync(join(deps.traceDir, `${sid}.jsonl`))) {
       send(res, 404, 'text/plain', 'not found', head);
       return true;
     }
     const replay = readTrace(deps.traceDir, sid);
-    if (!head && auth && session) auth.noteReplay(session, sid);
+    const noted = !head && auth && session ? auth.noteReplay(session, sid) : undefined;
+    if (noted instanceof Promise) {
+      // AUDIT_STORE=postgres: answered once the database has the record of it.
+      noted.then(() => send(res, 200, 'application/json', JSON.stringify(replay), head), () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
+      return true;
+    }
     send(res, 200, 'application/json', JSON.stringify(replay), head);
     return true;
   }
