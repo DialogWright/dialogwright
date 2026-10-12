@@ -28,6 +28,7 @@ import { localDateIso } from '../run/clock';
 import type { JevClient } from '../jev/types';
 import { TraceWriter, type TraceSink } from '../trace/writer';
 import { S3TraceStore } from '../trace/store';
+import { guardFrames, guardTrace, TraceFailures } from '../trace/guard';
 import type { FrameSink } from './frameLog';
 import { whenChained, type AuditSink, type TurnObserver } from '../run/turn';
 import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
@@ -333,10 +334,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     : null;
   if (traceStore) log(`traces: ${traceStore.label}, written as segments by this server (${serverName}) and read back joined`);
   /** A call's (or a chat's) trace and frame log: files in TRACE_DIR, or segments on the trace store. */
+  // On one machine, a trace or frame log that cannot be written is logged and counted, and never fails a turn.
+  const traceFailures = new TraceFailures(log, now);
   const sinksOf = (file: string, turnOf: () => number): { trace: TraceSink; frames: FrameSink } => {
     if (traceStore) return traceStore.open(file, turnOf);
-    const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
-    return { trace, frames: new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now) };
+    const trace = guardTrace(() => new TraceWriter(join(config.traceDir, `${file}.jsonl`)), traceFailures, `the trace of ${file}`);
+    return { trace, frames: guardFrames(() => new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
   };
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
   // now, before any call: one unset, or not E.164, stops the server here. Each turn reads these values
@@ -478,7 +481,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         },
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
     ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
-    ...(traceStore ? { traces: traceStore.reader(), traceHealth: () => ({ failures: traceStore.failures, dropped: traceStore.dropped }) } : {}),
+    ...(traceStore ? { traces: traceStore.reader() } : {}),
+    // /health's `traces`: always with a trace store; on one machine only once a write has failed, so a
+    // body is as it was while the disk works.
+    traceHealth: () => (traceStore ? { failures: traceStore.failures, dropped: traceStore.dropped } : traceFailures.failures > 0 ? { failures: traceFailures.failures, dropped: 0 } : null),
   };
   const server = createServer(createRequestHandler(deps));
   if (chatSettings) {

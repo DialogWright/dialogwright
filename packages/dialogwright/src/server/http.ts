@@ -82,7 +82,7 @@ export interface HttpDeps {
   /** TRACE_STORE=s3://...: the one reader of the traces on the store, for the console. Absent, the console reads TRACE_DIR. */
   traces?: S3TraceReader;
   /** TRACE_STORE=s3://...: the segment writes that failed and the lines dropped, for `/health`'s `traces`; absent, `/health` has none. */
-  traceHealth?: () => { failures: number; dropped: number };
+  traceHealth?: () => { failures: number; dropped: number } | null;
   /**
    * The console's sign-in, for CONSOLE_AUTH=token (index.ts makes it, and its first link once the server
    * listens). Read only when config.consoleAuth is set; absent then, one is made here, with no link until
@@ -548,7 +548,10 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           ...(deps.chatLive ? { chat: deps.chatLive() } : {}),
           ...(deps.draining?.() ? { draining: true } : {}),
           ...(deps.disk ? { disk: deps.disk() } : {}),
-          ...(deps.traceHealth ? { traces: deps.traceHealth() } : {}),
+          ...(() => {
+            const traces = deps.traceHealth?.() ?? null;
+            return traces === null ? {} : { traces };
+          })(),
         });
         answerJson(req, res, 200, body);
         return;
