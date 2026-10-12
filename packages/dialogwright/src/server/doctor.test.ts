@@ -464,13 +464,13 @@ describe('pnpm diagnose', () => {
         const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, {
           ...deps(),
           postgres: async () => ({
-            query: async () => { throw new Error(`password authentication failed for ${URL_WITH_PASSWORD} (s3cret-pw)`); },
+            query: async () => { throw new Error(`password authentication failed for ${URL_WITH_PASSWORD}`); },
             transaction: async () => { throw new Error('unused'); },
             close: async () => {},
           }),
         }), 'store');
         expect(r).toEqual({
-          id: 'store', status: 'fail', message: `SESSION_STORE ${MASKED} cannot be reached: password authentication failed for ${MASKED} (***)`,
+          id: 'store', status: 'fail', message: `SESSION_STORE ${MASKED} cannot be reached: password authentication failed for ${MASKED}`,
           fix: "check the host, the port, the database, the user and the password in SESSION_STORE, and that this machine may connect to it (the database's allowed hosts, a firewall)",
         });
       });

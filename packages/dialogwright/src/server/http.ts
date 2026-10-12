@@ -620,6 +620,15 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const held = callback.callId && deps.store.durable && loaded !== 'unavailable' && isBlank(callback.handoffData) && wantsReconnect(callback) && (!local || local.ended)
         ? await deps.store.takeHeld(callback.callId)
         : undefined;
+      // A callback that ends the call (its caller hung up) while a transfer was held for its line: the
+      // transfer is no one's now, and is taken from the store so nothing keeps it.
+      if (callback.callId && deps.store.durable && loaded !== 'unavailable' && isBlank(callback.handoffData) && !wantsReconnect(callback) && (!local || local.ended)) {
+        const dropped = await deps.store.takeHeld(callback.callId);
+        if (typeof dropped === 'string') {
+          if (local) local.heldHandoffData = null;
+          deps.log(`${callback.callId}: a transfer held for its line is dropped: its caller hung up first`);
+        }
+      }
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.

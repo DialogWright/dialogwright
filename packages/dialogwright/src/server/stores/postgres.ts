@@ -33,7 +33,12 @@ import {
  * this side of the wire (SESSION_STORE_TIMEOUT_MS), so a database that stops answering fails fast.
  */
 
-/** The version of the tables this code makes and reads. A database at another refuses to open: no migration runs unasked. */
+/**
+ * The version of the tables this code makes and reads. A database at another refuses to open: no
+ * migration runs unasked. Version 1's columns were changed in place while it was built (8b1's review),
+ * since no release had made a database at it; from the first release that ships it, any change to a
+ * table is a new version.
+ */
 export const POSTGRES_SCHEMA_VERSION = 1;
 
 /** The name of the row in dw_schema that holds the session tables' version. */
@@ -58,7 +63,8 @@ const TABLES_V1 = [
     owner text NOT NULL,
     expires_at_ms bigint NOT NULL,
     reconnects integer NOT NULL DEFAULT 0,
-    released text
+    released text,
+    closing boolean NOT NULL DEFAULT false
   )`,
   'CREATE INDEX IF NOT EXISTS dw_call_leases_owner ON dw_call_leases (owner)',
   `CREATE TABLE IF NOT EXISTS dw_chats (
@@ -222,8 +228,8 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
       for (let attempt = 0; attempt < CLAIM_RACE_TRIES; attempt++) {
         // The lease row locked while this claim decides, so no other claim comes between.
         const p1: unknown[] = [callId];
-        const held = await tx.query<{ owner: string; expires_at_ms: Num; reconnects: Num; released: string | null; lapsed: boolean }>(
-          `SELECT owner, expires_at_ms, reconnects, released, expires_at_ms <= ${this.clock(p1)} AS lapsed FROM dw_call_leases WHERE call_id = $1 FOR UPDATE`, p1,
+        const held = await tx.query<{ owner: string; expires_at_ms: Num; reconnects: Num; released: string | null; closing: boolean; lapsed: boolean }>(
+          `SELECT owner, expires_at_ms, reconnects, released, closing, expires_at_ms <= ${this.clock(p1)} AS lapsed FROM dw_call_leases WHERE call_id = $1 FOR UPDATE`, p1,
         );
         const p0: unknown[] = [callId];
         const counted = await tx.query<{ reconnects: Num; silent: Num | null }>(
@@ -248,9 +254,11 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
         if (h.released === 'socket' || h.released === 'stop') took = h.released;
         else if (h.owner === owner) took = 'own';
         else if (h.lapsed) took = 'lapsed';
-        else if (Number(h.reconnects) < reconnects) took = 'reconnected';
+        // A reconnect counted since its holder took it: the carrier gave up the holder's socket. Unless the
+        // holder saw it close and is finishing a turn (closing): then it gives the call up itself.
+        else if (Number(h.reconnects) < reconnects && !h.closing) took = 'reconnected';
         else return { taken: false, owner: h.owner, expiresAtMs: Number(h.expires_at_ms) };
-        await tx.query(`UPDATE dw_call_leases SET owner = $2, expires_at_ms = ${until}, reconnects = $4, released = NULL WHERE call_id = $1`, p2);
+        await tx.query(`UPDATE dw_call_leases SET owner = $2, expires_at_ms = ${until}, reconnects = $4, released = NULL, closing = false WHERE call_id = $1`, p2);
         return { taken: true, call: await this.loadOn(tx, callId), took, silentMs };
       }
       throw new Error(`the lease on ${JSON.stringify(callId)} changed ${CLAIM_RACE_TRIES} times while it was claimed`);
@@ -264,7 +272,11 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
   }
 
   async release(callId: string, owner: string, how: ReleaseKind = 'stop'): Promise<void> {
-    await this.sql.query('UPDATE dw_call_leases SET expires_at_ms = 0, released = $3 WHERE call_id = $1 AND owner = $2 AND released IS NULL', [callId, owner, how]);
+    await this.sql.query('UPDATE dw_call_leases SET expires_at_ms = 0, released = $3, closing = false WHERE call_id = $1 AND owner = $2 AND released IS NULL', [callId, owner, how]);
+  }
+
+  async markClosing(callId: string, owner: string): Promise<void> {
+    await this.sql.query('UPDATE dw_call_leases SET closing = true WHERE call_id = $1 AND owner = $2 AND released IS NULL', [callId, owner]);
   }
 
   async holder(callId: string): Promise<LeaseHolder | null> {

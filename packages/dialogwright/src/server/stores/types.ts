@@ -64,6 +64,12 @@ export interface StoredCall {
    * a store many servers share keeps it with the reconnect count, on the database's clock.
    */
   readonly droppedAtMs?: number;
+  /**
+   * Set when the server holding the call let it go as it stopped (a drain or a close), so the server that
+   * resumes it knows its caller was handed over rather than dropped by a crash. One machine's; optional,
+   * outside the session, like the two above.
+   */
+  readonly stopped?: true;
 }
 
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */
@@ -183,6 +189,14 @@ export interface CallLeases {
   countReconnect(callId: string, limit: number): Awaitable<{ before: number; counted: boolean } | null>;
   /** Remove the call (and its lease) only while `owner` holds its lease: whether it was removed. */
   removeAs(callId: string, owner: string): Awaitable<boolean>;
+  /**
+   * Mark `owner`'s lease closing: the call's socket has closed while a turn still runs, and the holder
+   * will give it up once that turn has saved. It is still held (renewed and saved under), and a reconnect
+   * counted since does not let another take it (as it would a lease whose socket the holder never saw
+   * close): a claimer waits for the release, the lapse, or its own deadline. Taken again by its holder,
+   * the mark goes.
+   */
+  markClosing(callId: string, owner: string): Awaitable<void>;
   /** Remove the call (and its lease) unless someone holds a lease on it that has not lapsed or been given up: whether it was removed. */
   removeUnleased(callId: string): Awaitable<boolean>;
 }

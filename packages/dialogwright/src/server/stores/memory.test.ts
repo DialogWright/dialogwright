@@ -65,6 +65,7 @@ describe('the memory stores', () => {
       'lease: a lapsed lease is taken over, and a released one at once',
       'lease: one given up as its socket closed is taken as a clean hand-off; given up, it is neither renewed nor saved under',
       'lease: a reconnect counted since its holder took it lets another take it at once, and only that once',
+      'lease: one marked closing (its holder finishing a turn) is not taken on a reconnect, but is when given up or lapsed',
       "lease: a claim says how long since the call's last reconnect was counted, the silence its caller is in",
       'lease: a call is removed under its lease only by its holder',
       'lease: renewing keeps a lease, and names the calls its owner holds',

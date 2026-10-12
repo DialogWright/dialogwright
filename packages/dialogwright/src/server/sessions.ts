@@ -67,6 +67,13 @@ export type CallFactory = (callSid: string) => CallResources;
  */
 export const ENDED_GRACE_MS = 60_000;
 
+/**
+ * How long a transfer saved as still owed (endHolding) is kept for a callback that never comes (its
+ * caller hung up in the hold, and the hangup's callback reached a server that could not say): the
+ * sweep removes it after this.
+ */
+export const HELD_TRANSFER_MAX_MS = 120_000;
+
 /** Nothing legitimate keeps one phone call alive this long; past it the entry is a leak. */
 export const DEFAULT_SESSION_MAX_AGE_MS = 7_200_000;
 
@@ -113,9 +120,10 @@ export type RestoreResult = 'held' | 'restored' | 'none' | 'unreadable' | 'unava
 /**
  * What `claim` found (a setup, with a shared store): as `restore`, with the lease taken; or 'busy', the
  * lease not to be had (another server held on to it past the wait, the database could not be asked, or
- * the call is another carrier's), and the caller is put through to a person.
+ * the call is another carrier's), and the caller is put through to a person; or 'ended', the call ended
+ * on the server that held it while this one waited (its last turn ended it), and the socket is closed.
  */
-export type ClaimResult = RestoreResult | 'busy';
+export type ClaimResult = RestoreResult | 'busy' | 'ended';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -165,6 +173,10 @@ export class SessionStore {
   private readonly quiet = new Set<string>();
   /** With a shared store: calls whose lease a setup is taking now, which a renewal must not take for leaked. */
   private readonly claiming = new Set<string>();
+  /** Each call's work queued and not yet done (turns waiting or running), counted as it is queued. */
+  private readonly queued = new WeakMap<CallEntry, number>();
+  /** Calls resumed after their holder let them go cleanly (a stop, a drain): RESUMED_AFTER_MS decides their apology. */
+  private readonly clean = new Set<string>();
   /** Calls ended with a transfer saved as still owed (endHolding): not forgotten until it is sent (heldSent). */
   private readonly holding = new Set<string>();
   /** Set once the server is stopping: a lease given up from now on says so (`stop`), and its next holder apologizes. */
@@ -528,6 +540,8 @@ export class SessionStore {
     if (dropped !== undefined) entry.droppedAtMs = dropped;
     this.calls.set(callId, entry);
     this.restored.add(callId);
+    // One machine: let go by a stopping server (a drain or a close), not lost to a crash.
+    if (c.stopped === true && this.lease === null) this.clean.add(callId);
     return entry;
   }
 
@@ -549,6 +563,8 @@ export class SessionStore {
     // A deadline on the wall clock, whatever each question to the store takes.
     const deadline = Date.now() + (lease.waitMs ?? lease.ttlMs * 1.5);
     let pause = this.pollMs(lease);
+    // Whether another server held the call as this claim began: a call gone by the time it is taken ended there.
+    let waited = false;
     this.claiming.add(callId);
     try {
       for (;;) {
@@ -560,6 +576,7 @@ export class SessionStore {
           return 'busy';
         }
         if (!r.taken) {
+          waited = true;
           const left = deadline - Date.now();
           if (left <= 0) {
             this.log(`${callId}: not taken over: ${r.owner} still holds it`);
@@ -579,6 +596,12 @@ export class SessionStore {
         }
         if (mine !== undefined) this.drop(callId);
         if (r.call === null) {
+          if (waited) {
+            // Its last turn, on the server that held it, ended it while this one waited: nothing goes on here.
+            this.log(`${callId}: ended on the server that held it while its socket waited here`);
+            await this.inOrder(callId, () => lease.leases.removeAs(callId, lease.owner)).catch(() => undefined);
+            return 'ended';
+          }
           this.claimedAt.set(callId, claimedAt);
           return 'none';
         }
@@ -596,12 +619,20 @@ export class SessionStore {
         this.hold(r.call, r.silentMs);
         this.claimedAt.set(callId, claimedAt);
         if (r.took === 'socket') this.quiet.add(callId);
+        // Let go cleanly (a stop, or this server's own): RESUMED_AFTER_MS decides its apology. A lapsed or
+        // overtaken lease is a holder that never let go: its caller always hears the resumed line.
+        if (r.took === 'stop' || r.took === 'own') this.clean.add(callId);
         this.log(`${callId}: taken over from the session store (turn ${r.call.session.turnIndex}, reconnect ${r.call.reconnects}, ${tookSaid(r.took)}) by ${lease.owner}`);
         return 'restored';
       }
     } finally {
       this.claiming.delete(callId);
     }
+  }
+
+  /** Whether a call resumed was let go cleanly by the server before (a stop or a drain), so RESUMED_AFTER_MS decides its apology; true once. */
+  takeClean(callSid: string): boolean {
+    return this.clean.delete(callSid);
   }
 
   /** Whether a call taken over was given up as its socket closed (a clean hand-off), so its caller is not told they were lost; true once. */
@@ -629,6 +660,7 @@ export class SessionStore {
     this.restored.delete(callId);
     this.claimedAt.delete(callId);
     this.quiet.delete(callId);
+    this.clean.delete(callId);
     this.holding.delete(callId);
   }
 
@@ -720,7 +752,14 @@ export class SessionStore {
    */
   async releaseAll(): Promise<void> {
     const lease = this.lease;
-    if (lease === null) return;
+    if (lease === null) {
+      // One machine's durable store: each live call saved as let go by a stop, so the server that resumes
+      // it knows a planned restart from a crash (RESUMED_AFTER_MS applies to the first only).
+      if (this.state === null) return;
+      await Promise.all([...this.calls].filter(([callSid, e]) => !e.ended && !this.holding.has(callSid) && !e.session.ended)
+        .map(([callSid, e]) => this.queueWrite(callSid, 'save the session', (state) => state.save(this.storedOf(e, { stopped: true })))));
+      return;
+    }
     const held = [...this.calls.keys()].filter((callId) => !this.calls.get(callId)!.ended && !this.borrowed.has(callId));
     await Promise.all(held.map(async (callId) => {
       this.drop(callId);
@@ -760,7 +799,9 @@ export class SessionStore {
       }
       // One saved under another schema is kept as long as any call: its callback puts the caller through to a
       // person; so is one that ended with a transfer still owed, for the callback that takes it.
-      const keep = c !== null && (c.schema === SESSION_SCHEMA && c.heldHandoffData === undefined ? this.resumable(c, now) : this.inTime(c, now));
+      const keep = c !== null && (c.heldHandoffData !== undefined
+        ? now - c.lastActivityMs < HELD_TRANSFER_MAX_MS
+        : c.schema === SESSION_SCHEMA ? this.resumable(c, now) : this.inTime(c, now));
       if (c === null || this.calls.has(id) || keep) continue;
       const lease = this.lease;
       if (lease !== null) {
@@ -805,7 +846,14 @@ export class SessionStore {
     // that takes it over sends it again. A turn still running when the call is given up acts on nothing
     // the call shares (the adapter checks it still holds the call before it ends it or revokes its token).
     const waitMs = Math.max(0, (lease.waitMs ?? lease.ttlMs * 1.5) - lease.ttlMs / 4);
-    const waiting = e.pending ? Promise.resolve() : Promise.race([e.tail, sleep(waitMs)]);
+    // A turn still running: the lease is marked closing, so the carrier's reconnect, counted in the store,
+    // does not let another server take the call before this one gives it up with that turn saved.
+    const turning = (this.queued.get(e) ?? 0) > 0 && !e.pending;
+    if (turning) {
+      void this.inOrder(callSid, () => lease.leases.markClosing(callSid, lease.owner))
+        .catch((err: unknown) => this.log(`${callSid}: could not mark the call's lease closing: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    const waiting = turning ? Promise.race([e.tail, sleep(waitMs)]) : Promise.resolve();
     const run = waiting
       .then(() => this.inOrder(callSid, async () => {
         if (this.calls.get(callSid) !== e || e.socket !== null || e.ended) return;
@@ -855,6 +903,8 @@ export class SessionStore {
       });
     e.tail = run.catch(() => {});
     e.lastActivityMs = this.now();
+    this.queued.set(e, (this.queued.get(e) ?? 0) + 1);
+    void e.tail.then(() => this.queued.set(e, (this.queued.get(e) ?? 1) - 1));
     return run;
   }
 

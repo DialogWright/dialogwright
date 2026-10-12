@@ -301,6 +301,10 @@ export class FileCallStateStore implements CallStateStore, CallLeases {
     return this.leases.removeAs(callId, owner);
   }
 
+  markClosing(callId: string, owner: string): void {
+    this.leases.markClosing(callId, owner);
+  }
+
   removeUnleased(callId: string): boolean {
     return this.leases.removeUnleased(callId);
   }

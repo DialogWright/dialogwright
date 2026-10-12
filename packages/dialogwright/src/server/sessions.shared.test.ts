@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SessionStore, type SocketLike } from './sessions';
+import { HELD_TRANSFER_MAX_MS, SessionStore, type SocketLike } from './sessions';
 import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { HeuristicStubClient } from '../jev/heuristicStub';
@@ -302,4 +302,23 @@ describe('a SessionStore over a shared store', () => {
       await db.close();
     }
   });
+
+  it('the sweep keeps a held transfer only a short while for the callback that takes it', async () => {
+    const clock = { t: 1_000_000 };
+    const state = new MemoryCallStateStore(() => clock.t);
+    const a = server('a', state, clock);
+    const b = server('b', state, clock);
+    await a.s.claim('CA1', 'twilio');
+    a.s.create('CA1', sock(), 'twilio');
+    a.s.endHolding('CA1', '{"reasonCode":"live-agent"}');
+    await a.s.settled();
+    await a.s.releaseAll();
+    expect(state.load('CA1')?.heldHandoffData).toBe('{"reasonCode":"live-agent"}');
+    clock.t += HELD_TRANSFER_MAX_MS - 1;
+    expect(await b.s.sweepStored()).toEqual([]);
+    clock.t += 1;
+    expect((await b.s.sweepStored()).map((c) => c.callId)).toEqual(['CA1']);
+    expect(state.load('CA1')).toBeNull();
+  });
 });
+

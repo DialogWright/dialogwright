@@ -1642,6 +1642,12 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   // this server cannot read) is ended toward a person as above.
   if (deps.store.shared) {
     const claimed = await deps.store.claim(callId, ctx.provider);
+    if (claimed === 'ended') {
+      // Its last turn ended it on the server that held it while this socket waited: the carrier's callback hangs up.
+      deps.tokens.revoke(callId);
+      socket.close(1000, 'call ended');
+      return;
+    }
     if (claimed === 'unreadable' || claimed === 'busy') {
       await sendOne(socket, endFrame(claimed), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
       deps.tokens.revoke(callId);
@@ -1701,7 +1707,10 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     // quick hand-off) is not apologized to either; one whose silence no one measured is, as always.
     const silentMs = deps.store.takeSilence(callId);
     const after = deps.resumedAfterMs ?? 0;
-    const brief = after > 0 && silentMs !== undefined && silentMs <= after;
+    // Only for a call its holder let go cleanly (a stop, a drain): one lost to a crash, or overtaken from a
+    // holder that never let go, left its caller in a silence that began before anything measured it.
+    const clean = restarted && deps.store.takeClean(callId);
+    const brief = clean && after > 0 && silentMs !== undefined && silentMs <= after;
     const quiet = handedOff || (restarted && brief);
     entry.frames.write('log', {
       resumed: true, sessionId: parsed.sessionId,

@@ -230,10 +230,11 @@ async function firstHalf(url: string, callSid: string): Promise<FakeRelay> {
 
 /**
  * The carrier's reconnect through the balancer: its callback, then, `waitMs` later, its socket, which
- * hears the question it was on (with the resumed line when the caller was left in silence past
- * RESUMED_AFTER_MS, 1500 by default) and finishes the call.
+ * hears the question it was on, with the resumed line when `apologized` (a call its holder never let go,
+ * or one let go cleanly whose caller was left in silence past RESUMED_AFTER_MS, 1500 by default), and
+ * finishes the call.
  */
-async function reconnect(lb: { base: string; ws: string }, provider: string, callSid: string, waitMs = 0): Promise<{ relay: FakeRelay; ms: number }> {
+async function reconnect(lb: { base: string; ws: string }, provider: string, callSid: string, waitMs = 0, apologized = waitMs > 1500): Promise<{ relay: FakeRelay; ms: number }> {
   const doc = await (await fetch(`${lb.base}/cr-action/${provider}`, form(failed(callSid)))).text();
   expect(doc).toContain('<ConversationRelay');
   expect(doc).not.toContain('<Dial>');
@@ -242,7 +243,7 @@ async function reconnect(lb: { base: string; ws: string }, provider: string, cal
   const relay = await FakeRelay.connect(socketUrl(doc, lb.ws));
   relays.push(relay);
   relay.setup(callSid, 'VX-after');
-  expect(await relay.waitForTexts(1, LEASE_MS * 4)).toEqual([waitMs > 1500 ? `${RESUMED_TEXT} ${ASK_DOB}` : ASK_DOB]);
+  expect(await relay.waitForTexts(1, LEASE_MS * 4)).toEqual([apologized ? `${RESUMED_TEXT} ${ASK_DOB}` : ASK_DOB]);
   const ms = Date.now() - began;
   relay.prompt(DOB);
   const answered = await relay.waitForTexts(4);
@@ -294,7 +295,8 @@ describe('two servers on one Postgres', () => {
       await crash(a);
       // The carrier sees its socket drop, not close.
       expect((await relay.closed).code).toBe(1006);
-      const { ms } = await reconnect(lb, carrier, callSid);
+      // A holder that never let go: the caller's silence began before anything measured it, so the line is said.
+      const { ms } = await reconnect(lb, carrier, callSid, 0, true);
       // A could not give it up; the carrier's reconnect, counted in the store, told B that A's socket was
       // abandoned, so B took it at once rather than wait for A's hold to lapse.
       expect(ms).toBeLessThan(LEASE_MS);
@@ -316,7 +318,7 @@ describe('two servers on one Postgres', () => {
     }, 30_000);
   }
 
-  it('a crash whose caller is left in silence past RESUMED_AFTER_MS (the carrier slow to connect again): the resumed line', async () => {
+  it('a crash whose carrier is slow to connect again: the resumed line, as for a quick one', async () => {
     const db = await PGlite.create();
     cleanups.push(() => db.close());
     const a = await boot('a', db);
@@ -325,7 +327,7 @@ describe('two servers on one Postgres', () => {
     const callSid = 'CA0000000000000000000000000slowcrsh';
     await firstHalf(await answer(lb, 'twilio', callSid), callSid);
     await crash(a);
-    await reconnect(lb, 'twilio', callSid, 1700);
+    await reconnect(lb, 'twilio', callSid, 1700, true);
     expect(b.logs).toContain(`${callSid}: resumed after a restart`);
   }, 30_000);
 
@@ -479,8 +481,8 @@ describe('a write across a server that dies', () => {
     relays.push(again);
     again.setup(callSid, 'VX-after');
     const said = await again.waitForTexts(2, LEASE_MS * 4);
-    // Taken over at once on the carrier's reconnect: too quick a silence to apologize for (RESUMED_AFTER_MS).
-    expect(said[0]!.startsWith(RESUMED_TEXT)).toBe(false);
+    // Taken over from a server that died with the call: the resumed line, however quick.
+    expect(said[0]!.startsWith(RESUMED_TEXT)).toBe(true);
     expect(said.join(' ')).toContain('call you within 2 days');
     // Asked twice, once by each server, with one key: the depot did it once.
     expect(asked.map((x) => x.server)).toEqual(['a', 'b']);
@@ -553,7 +555,7 @@ describe('what the caller hears when a socket moves', () => {
     const again = await FakeRelay.connect(socketUrl(doc, `ws://127.0.0.1:${b.server.port}`));
     relays.push(again);
     again.setup(callSid, 'VX-after');
-    expect(await again.waitForTexts(1)).toEqual([ASK_DOB]);
+    expect(await again.waitForTexts(1)).toEqual([`${RESUMED_TEXT} ${ASK_DOB}`]);
     expect(Date.now() - began).toBeLessThan(LEASE_MS);
     expect(b.logs).toContain(`${callSid}: taken over from the session store (turn 3, reconnect 1, its carrier reconnected since) by ${b.server.store.owner}`);
     // A's next renewal finds the lease is B's, and A closes the socket it was holding.
@@ -742,7 +744,7 @@ describe('a write whose server died after it ran and before it saved', () => {
     relays.push(again);
     again.setup(callSid, 'VX-after');
     // B resumes from A's last save: the summary, asked again, and the caller says yes again.
-    expect((await again.waitForTexts(1, LEASE_MS * 4))[0]).toBe(summary);
+    expect((await again.waitForTexts(1, LEASE_MS * 4))[0]).toBe(`${RESUMED_TEXT} ${summary}`);
     again.prompt('yes');
     await until(() => keys.length === 2, 3000, 'the write on B');
     expect(keys.map((k) => k.server)).toEqual(['a', 'b']);
@@ -750,3 +752,101 @@ describe('a write whose server died after it ran and before it saved', () => {
     expect(keys[1]!.key).toBe(keys[0]!.key);
   }, 30_000);
 });
+
+describe('a turn still running when its socket closes', () => {
+  /** A model the test can slow, turn by turn. */
+  function slowable(): { client: JevClient; slowMs: number } {
+    const o = { slowMs: 0, client: undefined as unknown as JevClient };
+    o.client = { ask: async (r) => {
+      if (o.slowMs) await new Promise((x) => setTimeout(x, o.slowMs));
+      return stub.ask(r);
+    } };
+    return o;
+  }
+
+  it('is finished and saved by the server running it before the other takes the call: no turn run twice, and the caller hears where it got to', async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const model = slowable();
+    // A hold long enough for the turn: the server waits for it, and the other waits for the server.
+    const env: Env = { CALL_LEASE_MS: '3000' };
+    const a = await boot('a', db, env, { client: model.client });
+    const b = await boot('b', db, env);
+    const callSid = 'CA0000000000000000000000000closing';
+    const relay = await firstHalf(await answer({ base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` }, 'twilio', callSid), callSid);
+    // The birth date's turn is slow, and the socket drops while it runs.
+    model.slowMs = 1000;
+    relay.prompt(DOB);
+    await new Promise((x) => setTimeout(x, 100));
+    relay.close();
+    await relay.closed;
+    const doc = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form(failed(callSid)))).text();
+    const again = await FakeRelay.connect(socketUrl(doc, `ws://127.0.0.1:${b.server.port}`));
+    relays.push(again);
+    again.setup(callSid, 'VX-after');
+    // B waited for A to finish the turn and give the call up: the caller hears what that turn asked.
+    const [back] = await again.waitForTexts(1, 5000);
+    expect(back!.endsWith(ANYTHING_ELSE)).toBe(true);
+    expect(back!.startsWith(RESUMED_TEXT)).toBe(false);
+    expect(b.logs).toContain(`${callSid}: taken over from the session store (turn 4, reconnect 1, given up as its socket closed) by ${b.server.store.owner}`);
+    // The birth date's turn ran once, on A; B has run none.
+    expect(turnsIn(a, callSid)).toEqual([1, 2, 3, 4]);
+    expect(turnsIn(b, callSid)).toEqual([]);
+    again.prompt("no, that's all");
+    expect((await again.waitFor((m) => m.type === 'end')).handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
+    expect(turnsIn(b, callSid)).toEqual([5]);
+  }, 30_000);
+
+  it('that ends the call: the other server, having waited, closes the socket, and the carrier\'s callback hangs up', async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const model = slowable();
+    const env: Env = { CALL_LEASE_MS: '3000' };
+    const a = await boot('a', db, env, { client: model.client });
+    const b = await boot('b', db, env);
+    const callSid = 'CA00000000000000000000000000ending';
+    const relay = await firstHalf(await answer({ base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` }, 'twilio', callSid), callSid);
+    relay.prompt(DOB);
+    await relay.waitForTexts(7);
+    model.slowMs = 1000;
+    relay.prompt("no, that's all");
+    await new Promise((x) => setTimeout(x, 100));
+    relay.close();
+    await relay.closed;
+    const doc = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form(failed(callSid)))).text();
+    const again = await FakeRelay.connect(socketUrl(doc, `ws://127.0.0.1:${b.server.port}`));
+    relays.push(again);
+    again.setup(callSid, 'VX-after');
+    expect((await again.closed).reason).toBe('call ended');
+    expect(again.texts()).toEqual([]);
+    expect(b.logs).toContain(`${callSid}: ended on the server that held it while its socket waited here`);
+    const hangup = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form({ CallSid: callSid, CallStatus: 'completed' }))).text();
+    expect(hangup).toContain('<Hangup/>');
+    expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([]);
+  }, 30_000);
+});
+
+describe('a held transfer whose caller hangs up in the hold', () => {
+  it('is dropped by the hangup\'s callback, wherever it lands, and said so', async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const a = await boot('a', db, { END_AFTER_PLAYBACK: 'on' });
+    const b = await boot('b', db, { END_AFTER_PLAYBACK: 'on' });
+    const callSid = 'CA00000000000000000000000000xhang';
+    const relay = await FakeRelay.connect(await answer({ base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` }, 'twilio', callSid));
+    relays.push(relay);
+    relay.setup(callSid);
+    await relay.waitForTexts(1);
+    relay.prompt('i want to talk to a person');
+    await relay.waitForTexts(2);
+    relay.close();
+    await relay.closed;
+    await a.server.store.settled();
+    expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([{ call_id: callSid }]);
+    const doc = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form({ CallSid: callSid, CallStatus: 'completed' }))).text();
+    expect(doc).toContain('<Hangup/>');
+    expect(b.logs).toContain(`${callSid}: a transfer held for its line is dropped: its caller hung up first`);
+    expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([]);
+  }, 20_000);
+});
+

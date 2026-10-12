@@ -12,6 +12,8 @@ interface CallRecords {
 interface Held extends LeaseHolder {
   readonly reconnects: number;
   readonly released: ReleaseKind | null;
+  /** Its socket closed while a turn ran: a reconnect counted since does not let another take it. */
+  readonly closing: boolean;
 }
 
 /**
@@ -37,9 +39,9 @@ export class InProcessLeases implements CallLeases {
     else if (h.released !== null) took = h.released;
     else if (h.owner === owner) took = 'own';
     else if (h.expiresAtMs <= now) took = 'lapsed';
-    else if (h.reconnects < reconnects) took = 'reconnected';
+    else if (h.reconnects < reconnects && !h.closing) took = 'reconnected';
     else return { taken: false, owner: h.owner, expiresAtMs: h.expiresAtMs };
-    this.held.set(callId, { owner, expiresAtMs: now + ttlMs, reconnects, released: null });
+    this.held.set(callId, { owner, expiresAtMs: now + ttlMs, reconnects, released: null, closing: false });
     return { taken: true, call, took, silentMs: call?.droppedAtMs === undefined ? null : now - call.droppedAtMs };
   }
 
@@ -56,7 +58,12 @@ export class InProcessLeases implements CallLeases {
 
   release(callId: string, owner: string, how: ReleaseKind = 'stop'): void {
     const h = this.held.get(callId);
-    if (h?.owner === owner && h.released === null) this.held.set(callId, { ...h, expiresAtMs: 0, released: how });
+    if (h?.owner === owner && h.released === null) this.held.set(callId, { ...h, expiresAtMs: 0, released: how, closing: false });
+  }
+
+  markClosing(callId: string, owner: string): void {
+    const h = this.held.get(callId);
+    if (h?.owner === owner && h.released === null) this.held.set(callId, { ...h, closing: true });
   }
 
   holder(callId: string): LeaseHolder | null {

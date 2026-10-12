@@ -703,8 +703,8 @@ describe('the resumed line, said only past RESUMED_AFTER_MS of silence (default 
   }
 
   for (const [label, waitMs, extra, apologized] of [
-    ['a restart the caller hardly notices (a callback and a socket within 1.5 s): no apology', 0, {}, false],
-    ['a restart that leaves the caller in silence past 1.5 s: the resumed line', 1700, {}, true],
+    ['a planned stop the caller hardly notices (a callback and a socket within 1.5 s): no apology', 0, {}, false],
+    ['a planned stop that leaves the caller in silence past 1.5 s: the resumed line', 1700, {}, true],
     ['RESUMED_AFTER_MS=0: the resumed line whatever the silence, as before the option', 0, { RESUMED_AFTER_MS: '0' }, true],
   ] as const) {
     it(`the file store: ${label}`, async () => {
@@ -719,6 +719,18 @@ describe('the resumed line, said only past RESUMED_AFTER_MS of silence (default 
       expect(second.logs.some((l) => l.includes(apologized ? `${callSid}: resumed after a restart` : `${callSid}: resumed after`) && (apologized || l.includes('no apology')))).toBe(true);
     }, 20_000);
   }
+
+  it('the file store: a crash (the server never let the call go), however quick the return: the resumed line, since the silence began before anything measured it', async () => {
+    const dir = folder();
+    const env = settings(dir, { RESUMED_AFTER_MS: '1500' });
+    const first = await bootChild(env);
+    const callSid = 'CA0000000000000000000000000gapcrash';
+    await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    first.child.kill('SIGKILL');
+    await new Promise((r) => first.child.once('exit', r));
+    const second = await boot(env);
+    expect(await comeBack(second.base, callSid, 0)).toBe(`${RESUMED_TEXT} ${ASK_DOB}`);
+  }, 40_000);
 
   it('a planned restart, its carrier told to wait RESTART_PAUSE_S (default 5 s, past the threshold): the resumed line, as before the option', async () => {
     const dir = folder();

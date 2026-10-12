@@ -333,6 +333,33 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
     },
   },
   {
+    name: 'lease: one marked closing (its holder finishing a turn) is not taken on a reconnect, but is when given up or lapsed',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001', 3, { reconnects: 0 }));
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      await l.markClosing('CA0001', 'server-a');
+      await l.countReconnect('CA0001', 3);
+      if ((await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a lease marked closing was taken on a reconnect');
+      sameJson([...(await l.renew('server-a', CONTRACT_LEASE_TTL_MS))], ['CA0001'], 'the calls a renewal names while one is closing');
+      if (!(await l.saveAs(contractCall('CA0001', 4), 'server-a', CONTRACT_LEASE_TTL_MS))) fail('a save under a lease marked closing was refused');
+      await l.release('CA0001', 'server-a', 'socket');
+      const took = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (!took.taken || took.took !== 'socket' || took.call?.session.turnIndex !== 4) fail(`a closing lease given up was taken as ${JSON.stringify(took)}`);
+      // Taken again by its holder, the mark goes: a reconnect counted then lets another take it.
+      await l.markClosing('CA0001', 'server-b');
+      await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      await l.countReconnect('CA0001', 3);
+      if ((await l.claim('CA0001', 'server-c', CONTRACT_LEASE_TTL_MS)).taken !== true) fail('a mark its holder took back still kept a reconnect from letting another take the lease');
+      // And one that lapses while closing (its holder died finishing the turn) is taken over.
+      await l.markClosing('CA0001', 'server-c');
+      await l.countReconnect('CA0001', 3);
+      c.advance(CONTRACT_LEASE_TTL_MS);
+      if ((await l.claim('CA0001', 'server-d', CONTRACT_LEASE_TTL_MS)).taken !== true) fail('a closing lease that lapsed was not taken over');
+    },
+  },
+  {
     name: 'lease: a claim says how long since the call\'s last reconnect was counted, the silence its caller is in',
     async body(s, c) {
       const l = s.leases;

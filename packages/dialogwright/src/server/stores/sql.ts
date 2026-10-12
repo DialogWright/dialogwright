@@ -178,35 +178,12 @@ export function maskConnectionString(url: string): string {
   return out.replace(/([?&][^=&#]*pass[^=&#]*=)[^&#]*/gi, '$1***');
 }
 
-/** The password a connection string holds, as written and decoded; none when it has none. */
-function passwordsOf(url: string): string[] {
-  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(url);
-  const found: string[] = [];
-  if (scheme) {
-    const rest = url.slice(scheme[0].length);
-    const at = rest.lastIndexOf('@');
-    const userinfo = at >= 0 ? rest.slice(0, at) : '';
-    const colon = userinfo.indexOf(':');
-    if (colon >= 0) found.push(userinfo.slice(colon + 1));
-  }
-  for (const m of url.matchAll(/[?&][^=&#]*pass[^=&#]*=([^&#]*)/gi)) found.push(m[1]!);
-  const all = new Set<string>();
-  for (const p of found) {
-    if (p === '') continue;
-    all.add(p);
-    try {
-      all.add(decodeURIComponent(p));
-    } catch {
-      // Not encoded: as written.
-    }
-  }
-  return [...all];
-}
-
-/** A driver's message with the connection string's password taken out, should it hold it. */
+/**
+ * A line with the connection string's password taken out wherever a connection string stands in it:
+ * the one given, as written, and any other `scheme://...` in it (a driver's message that quotes one).
+ * Nothing else in the line changes, so a short or common password never mangles ordinary words; a
+ * driver does not say a password outside a connection string.
+ */
 export function maskSecrets(message: string, url: string): string {
-  let out = message.split(url).join(maskConnectionString(url));
-  // Longest first, so a password that holds another is taken out whole.
-  for (const password of passwordsOf(url).sort((a, b) => b.length - a.length)) out = out.split(password).join('***');
-  return out;
+  return message.split(url).join(maskConnectionString(url)).replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, (found) => maskConnectionString(found));
 }

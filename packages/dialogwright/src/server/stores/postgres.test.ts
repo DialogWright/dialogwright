@@ -216,9 +216,14 @@ describe('a connection string as it is said', () => {
     expect(maskConnectionString('postgres://dw:s3cret@[bad')).not.toContain('s3cret');
   });
 
-  it("takes the password out of a driver's message", () => {
+  it("takes the password out of every connection string in a line, and changes nothing else", () => {
     const url = 'postgres://dialogwright:p%40ss@db.example:5432/dialogwright';
-    expect(maskSecrets(`could not reach ${url}: password p@ss refused`, url)).toBe('could not reach postgres://dialogwright:***@db.example:5432/dialogwright: password *** refused');
+    expect(maskSecrets(`could not reach ${url}`, url)).toBe('could not reach postgres://dialogwright:***@db.example:5432/dialogwright');
+    // A driver that quotes another form of it.
+    expect(maskSecrets('invalid connection "postgresql://dialogwright:p@ss@db.example/x"', url)).toBe('invalid connection "postgresql://dialogwright:***@db.example/x"');
+    // A short or common password never mangles ordinary words.
+    expect(maskSecrets('auth failed for user "u" at host a', 'postgres://u:a@h/db')).toBe('auth failed for user "u" at host a');
+    expect(maskSecrets('CA1: resumed at https://localhost/cr-action/twilio', 'postgres://u:a@h/db')).toBe('CA1: resumed at https://localhost/cr-action/twilio');
   });
 
   it('names the package to add when the driver is missing', () => {
