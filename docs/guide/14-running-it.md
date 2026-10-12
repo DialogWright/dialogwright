@@ -7,7 +7,8 @@ An app's server is `pnpm --filter <app> serve`, configured by its environment. O
 ```sh
 pnpm configure [--app <name>]                # asks, and writes <app>/.env (mode 600): a laptop with no keys, a laptop with a model's key, or a phone line
 pnpm start [--app <name>] [--tunnel quick|named|none]   # the server with that file; quick opens a tunnel that needs no account
-pnpm diagnose [--app <name>] [--offline]     # what is misconfigured, one line per check with its fix
+pnpm start --host <file>                     # several apps on one server: every app host.yaml lists, the number called choosing each call's app (14.15)
+pnpm diagnose [--app <name> | --host <file>] [--offline]   # what is misconfigured, one line per check with its fix
 ENV_FILE=<path> pnpm service <launchd|systemd> --app <name>   # a service file that keeps it running; prints the install commands, runs none
 pnpm fallback --provider <twilio|telnyx> --number <E.164> --out fallback.xml   # what the carrier plays when it cannot reach the server
 pnpm console:link [--app <name>]             # with CONSOLE_AUTH=token: a new one-time sign-in link for the console, on the server's machine
@@ -142,6 +143,8 @@ Every option here has a default that keeps the behaviour a deployment had before
 | Choice | Where it is set | Default | When to choose otherwise |
 |---|---|---|---|
 | A settings file read at startup | `ENV_FILE` (env), or `--env-file <path>` | none: the environment alone | Always on a machine you own (`pnpm start` sets it to `<app>/.env`). A variable already in the environment wins over the file. |
+| Several apps on one server | `host.yaml` beside the apps, `HOST_FILE` (env), or `--host <file>` (`pnpm start`, `diagnose`, `service`, `check`) | none: a server runs its one app, as before | When several numbers or businesses share one deployment: each number called reaches its app, any other the default ([14.15](#1415-several-apps-on-one-server-hostyaml)). `--app` still runs one app. |
+| An app's own settings under a host | the app's `.env`, or the file `env:` names beside it in `host.yaml` | the app's `.env`, read only for the variables its YAML names | When two apps name one variable (`MAIN_LINE`) for different numbers; what every app shares stays in the server's settings file, the `.env` beside `host.yaml` ([14.15](#1415-several-apps-on-one-server-hostyaml)). |
 | Which tunnel `pnpm start` opens | `--tunnel quick\|named\|none` | `quick` when `PUBLIC_HOST` is unset, `none` when it is set | `named` for a named tunnel that runs as its own service. |
 | How long a stopping server waits for live calls | `DRAIN_MS` (env) | `30000` | Longer for long calls; `0` to close at once. The service's stop timeout is `DRAIN_UNREADY_MS`, `DRAIN_MS` and ten seconds more. |
 | How long a stopping server says 503 on `/ready` before its drain, still answering new calls | `DRAIN_UNREADY_MS` (env) | `0` (off) | 0 to 600000. With a load balancer, at least the time it takes to see a 503 (its check interval times the failures it needs), so no new call reaches the handoff number only because this server is stopping. A stop then takes `DRAIN_UNREADY_MS` and `DRAIN_MS` (`pnpm service` adds both to the stop timeout). |
@@ -263,3 +266,53 @@ A container keeps a server's own records under `/data` (`TRACE_DIR=/data/traces`
 - **The console:** `CONSOLE_AUTH=token` on the servers, or the console kept to an internal network; never `CONSOLE_LOCAL_ONLY=off` with no sign-in, as the test stack has it.
 
 **What holds, and what does not yet.** What the tests show, in one process with two servers on one PGlite and one in-process S3 store behind a balancer (`server/manyServers.e2e.test.ts`): a call survives its server crashing, draining, a half-open socket, a database that stops answering (to a person), a held transfer, and a turn that outlives its server's hold, on Twilio and on Telnyx; and across a crash and a drain, the call has one trace, joined from both servers' segments with no turn dropped or repeated (a late turn of a server that let the call go is kept, marked), one audit chain that verifies and is anchored in the day's chain, a console on the other server that followed it, and a chat resumed on the other server closes its socket on the first. The signing is held to AWS's published test vectors, and the trace store to a fake that checks every signature; AWS S3 and R2 themselves are for a live check. And under Docker (`pnpm multi:test`, run on an arm64 Mac with Colima; the weekly workflow on GitHub's amd64 runners has not run yet): servers in separate containers on a real Postgres with parallel connections and a real S3-compatible store, behind HAProxy, through a crash (SIGKILL) and a drain (SIGTERM) on each carrier, each between turns, with the same checks. Not shown by any test: a real carrier's reconnect timing (a live check) and a hosted platform's balancer. An app's own pages (`AppRouteDeps.traceDir`) still write traces to `TRACE_DIR`.
+
+### 14.15 Several apps on one server: host.yaml
+
+One deployment (one server, or many under [14.14](#1414-many-servers-on-one-database)) can run several apps, each reached by the numbers callers dial: a clinic's two lines and a utility's outage line on one machine, say, all from one owner's carrier accounts. A host file, `host.yaml` beside the apps, lists the apps and points each number at one; a call to any other number, or to none, reaches the default. Each app stays a folder of its own, with its own policy, prompts, tests, traces and audit. A server with no host file runs its one app exactly as before.
+
+```yaml
+# yaml-language-server: $schema=packages/dialogwright/schemas/host.schema.json
+apps:                                     # each known by the id its own app.yaml gives it
+  - apps/utility                          # a folder, from host.yaml's folder
+  - { folder: apps/clinic, env: clinic.env }   # with its own settings file named (default: its .env)
+  - { package: "@acme/repairs-line" }     # an app installed as a package
+numbers:                                  # the number called -> the app's id; several numbers may name one app
+  - { number: env.POWER_LINE, app: utility }
+  - { number: env.CLINIC_LINE, app: clinic }
+  - { number: env.CLINIC_LINE_ES, app: clinic }
+default: utility                          # any other number, or none; default: the first app listed
+```
+
+**How a call finds its app.** The number called, as each carrier delivers it (Twilio's `To`, Telnyx's), is matched as a `called` condition matches it ([13.13](13-channels.md#1313-the-number-the-caller-is-calling-from)): a ten-digit national number matches its `+1` form. The answer webhook picks the app and answers in it (its languages, its `startParameters`, its hints), and its start document names the app as the custom parameter `dialogwright_app` (an app's own `startParameters` may not take that name), so the setup starts the call in the same app on whichever server the socket reaches; a setup without it (a start document written before it) reads its own number called. A reconnect, a callback and a call another server takes over keep the app the call was saved in. The numbers live in the server's settings, never in YAML; the server refuses to start, with the fix, when one is unset or not E.164, or when two variables hold one number (a call to it could reach either app). An app's own `voice.numbers` (the number to the language) and its `called` routes still work inside the app: a host picks the app first, then the app's routes see the same number. Calls never move between apps: a call starts and finishes in its app, and a transfer goes to a person as each app's `transfer` says.
+
+**Settings in two layers.** The server's settings file (the `.env` beside `host.yaml`, or the one `ENV_FILE` names) holds what every app shares: the carrier's secrets, the model and its key, `PUBLIC_HOST`, `PORT`, the stores, retention, the console's and the chat's settings, and the numbers `host.yaml` names. Each app's own `.env` (or the file its entry's `env:` names) is read only for the variables its own YAML names (`env.<NAME>`: its transfer targets, `startParameters`, `called` numbers), and only for that app, so `env.MAIN_LINE` in two apps can be two numbers; a variable an app names and its own file does not set is read from the server's settings, and never from another app's file. The rest of an app's `.env` is not read under a host (`pnpm diagnose --host` names what is there and not read). An app's code that reads `process.env` itself sees the server's settings only. `pnpm configure` still writes one app's `.env`, with the server's settings in it, as for an app alone; for a host, write the server's settings once in the `.env` beside `host.yaml` (copy them from one app's) and keep only each app's own variables in its `.env`, then add the app to `host.yaml`'s `apps` by hand: one line, and `pnpm check` checks it.
+
+**Records per app.** Each app's traces are in `TRACE_DIR/<app id>/`, its audit day files in `AUDIT_DIR/<app id>/` (one hash chain per app per day, each entry naming its app in `app`, hashed with it), and the server's own audit (the console's sign-ins and replays, [14.9](#149-looking-at-calls-from-your-phone)) in `AUDIT_DIR/_server/`. With `AUDIT_STORE`, the audit is a chain per call as always, each entry naming its app; with `TRACE_STORE`, each app's traces are under the prefix `<prefix><app id>/`. Recorded clips (`CLIPS=on`) are in `AUDIO_DIR/<app id>/`, served at `/audio/<app id>/`. Retention is the server's, the same for every app: `TRACE_RETENTION_DAYS` and `AUDIT_RETENTION_DAYS` for each folder, and `TRACE_MAX_GB` bounding each app's traces, so one busy app never removes another's. `pnpm audit:verify AUDIT_DIR` walks every app's folder and the server's, and `pnpm kb:gaps --traces TRACE_DIR/<app id>` reads one app's traces.
+
+**Web chat.** With `CHAT=on`, each app's chat is at `/chat/<app id>`, and the default app's at `/chat` too, as on a server of one; the widget names its app with `data-app` (or `mount({ app })`, [13.7](13-channels.md#137-the-widget)). `CHAT_ALLOWED_ORIGINS`, the sign-in and `CHAT_MAX_SESSIONS` are the server's settings (the session cap counted per app); a chat is resumed only at its own app's path.
+
+**The console.** One console shows every app's calls: each replay row starts with its app's name, the app filter in the header (`/dashboard?app=<id>`) shows one app's calls alone, live and in Replay, and each call is shown in its own app's words. The live feed's `call_started` event names the call's app as `app`.
+
+**The commands.**
+
+```sh
+pnpm check host.yaml                          # its problems (an app folder missing, an app listed twice, an unknown app id, a number listed twice, a default that is no app), then each app's own check
+pnpm start --host host.yaml                   # (or HOST_FILE, or host.yaml beside the apps) every app in one server, with the .env beside it; --app still runs one app
+pnpm diagnose --host host.yaml                # the server's checks, the numbers, and each app's own variables as the server will read them
+ENV_FILE=<path> pnpm service <launchd|systemd> --host host.yaml   # a service that runs the host's server
+pnpm serve --host host.yaml                   # the server alone (dialogwright serve), what start and the service run
+```
+
+A bare `pnpm check` checks the `host.yaml` beside the apps too. The server of a host is `node <the engine's bin> serve --host <file>` (`bin/dialogwright.mjs`), run in the host file's folder, so a relative `TRACE_DIR` or `AUDIT_DIR` is beside it.
+
+**What a host does not run.** Each app's code is imported from its folder (`app.ts` or `src/app.ts`, as `pnpm check` reads it), not its own launcher (`src/serve.ts`): what an app's launcher starts beside the server (its downstream services, its own pages such as the utility's chat demo) does not run under a host, and a request to an app's service is answered with no result. A deployment that needs them writes a launcher of its own, with `loadHost` and `serverMain` from `dialogwright`:
+
+```ts
+import { loadHost, serverMain } from 'dialogwright';
+
+await serverMain(async () => ({ overrides: { apps: await loadHost('host.yaml', process.env), serviceUrls: { scheduler: 'http://localhost:4100' } } }));
+```
+
+**Many servers.** Each server behind the balancer runs the same `host.yaml` with the same settings; a call taken over by another server stays in its app ([14.14](#1414-many-servers-on-one-database)).
+

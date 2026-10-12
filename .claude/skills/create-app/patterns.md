@@ -1442,6 +1442,26 @@ const promptId = callDataOf(s).queue === 'priority' ? 'callback_booked_priority'
 - **Test:** scripted calls with `"callData": { "queue": "priority" }` and without, each with `expect.promptId` naming the line the data chooses; a chat (`"as": "web"`) with the page's key if the app reads one.
 - **Pitfall:** call data is attached by whoever placed the call: a parameter is as trustworthy as the system that set it, never identity and never authorization; route on it only when that system is your own. Data from the page (`chat.`) is the visitor's browser's, which anyone can edit: read it as a hint, as the caller's number is. The call's numbers are never call data (`pnpm check` refuses them): they are `callerNumber`'s ([authoring guide, 13.14](../../../docs/guide/13-channels.md#1314-the-data-a-call-or-chat-comes-with-calldata)).
 
+## Several apps on one server: `host.yaml`
+
+**When:** "we have a second line for the clinic in the same building", "the same server should answer the outage line and the billing line, each its own way", "our Spanish number should reach the same app". Several numbers or businesses on one deployment, one owner. Each business stays its own app (a folder of its own, built and tested as this skill builds one); a `host.yaml` beside the apps points the numbers at them. An app folder names no number and knows nothing of the others.
+
+```yaml
+# host.yaml, beside the apps
+apps:
+  - apps/utility
+  - apps/clinic
+numbers:
+  - { number: env.POWER_LINE, app: utility }   # several numbers may name one app
+  - { number: env.CLINIC_LINE, app: clinic }
+default: utility                               # any other number, or none
+```
+
+- **One app per business, not one app with a branch per number.** Two businesses' policies, prompts and records stay apart only as two apps. Within one app, a number that changes the language or the first line is a `called` route ([Routes](#routes-the-calls-start-after-identity-after-a-form)), not a second app.
+- **Settings:** the numbers are in the server's `.env` beside `host.yaml`, with what every app shares (the carrier, the model, `PUBLIC_HOST`); each app's own `.env` holds only the variables its YAML names (its transfer targets), so two apps may each have a `MAIN_LINE` of their own. Calls never move between apps.
+- **Test:** each app's own tests and regression, as for an app alone; then `pnpm check host.yaml` and `pnpm diagnose --host host.yaml`.
+- **Pitfall:** what an app's own launcher (`src/serve.ts`) starts beside the server (its services, its demo pages) does not run under a host ([authoring guide, 14.15](../../../docs/guide/14-running-it.md#1415-several-apps-on-one-server-hostyaml)).
+
 ## Switches with a safe default
 
 **When:** rarely at first. Each switch below has a default that suits most lines; change one only for a reason the paragraph gives, or one a recording shows, and write the reason in the worksheet.

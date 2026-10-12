@@ -25,4 +25,6 @@ The code lives in `app.ts` in the folder, or in `src/app.ts` when the folder is 
 
 `dialogwright check` imports the folder's app module, and importing a module runs it. Never run `check` on a folder whose code you would not run yourself.
 
+Several apps can run on one server: a `host.yaml` beside the app folders (not inside one) lists them and points the numbers callers dial at each, by the id each `app.yaml` gives it ([14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)). An app folder names no number and knows nothing of the others.
+
 Nothing in the YAML is ever run. Prompt text, model criteria and wording templates are strings; the only expression is a spoken-digits pattern, which becomes a regular expression.

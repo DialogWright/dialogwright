@@ -133,6 +133,8 @@ Choosing it, by words, by its menu key or on the yes to an unsure reading, sets 
 - **A transfer** sends the line, `transfer` and `end`, and closes; what happens next is the site's (the widget's `onTransfer`). The `transfer` message carries the reason, and `data` when the app's `transfer.send.chat` names some ([13.15](#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)).
 - **The language.** `start.locale` asks for a language, matched to the app's locales as a call's is ([section 8](08-locales.md#8-locales)): `es-MX` finds `es`, and a language the app does not speak keeps the default. `ready.locale` names the one chosen, and each `say` carries its line's language.
 
+On a server of several apps ([14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)), each app's chat is at `/chat/<app id>`, and the default app's at `/chat` too; the widget names its app with `app` (`data-app`).
+
 An app may still mount chat pages of its own (`AppRoute`, `chatTurn.ts`); the engine's endpoint does not change them.
 
 ### 13.5 Sign-in on the web chat

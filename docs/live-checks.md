@@ -238,6 +238,18 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** For each carrier: the number called as delivered, whether `called` matched, the start hook's added latency at pickup, each boundary's result (a minute either side), the holiday and the daylight saving change, the restart. A carrier that delivers the number called in a form `sameNumber` does not match is a change to `channel/callerNumber`'s reading with a test; a latency a caller would notice is a note in the guide's start hook section.
 
+## 14. Several apps on one server: two numbers, on Twilio and on Telnyx
+
+**Why.** A host file (`host.yaml`, the guide's [14.15](guide/14-running-it.md#1415-several-apps-on-one-server-hostyaml)) picks each call's app by the number called at the answer webhook, and names the app in the start document's custom parameter `dialogwright_app`, which the setup reads back (else its own number called). Twilio hands custom parameters back in the setup as the tests' frames do; that Telnyx hands back this one as it does callData's `dw_<key>` echoes is not yet seen on a live call.
+
+**Set.** A host file over two apps (the clinic and the utility, say) with a number of each carrier pointing at each, the numbers in the server's settings file beside host.yaml, and `pnpm start --host host.yaml`.
+
+**Do.** On each carrier, call each number, and once a number the host file does not list (or the default's alone).
+
+**Look for.** Each call's greeting is its app's; the server's log has `/voice/<carrier> <call> from ...<last four> (app <id>)`; the call's frame log's setup frame has `dialogwright_app` among its custom parameters; its trace is in `TRACE_DIR/<app id>/` and its audit in `AUDIT_DIR/<app id>/`. The console's replay rows start with each app's name.
+
+**Record.** For each carrier, whether `dialogwright_app` came back in the setup, and the number called as delivered. If Telnyx drops the parameter, the setup's own number still picks the app (the guide's 13.13): record it, and the fallback is what holds there.
+
 ## Results log
 
 One row per check run. Keep earlier rows.
