@@ -345,6 +345,8 @@ export function thresholdFor(id: string, thresholds: Partial<Thresholds>, active
 import type { CallRow, CallEnding, CallStatus } from './rows';
 export type { CallRow, CallEnding, CallStatus } from './rows';
 
+export const STALE_MS: number;
+export function settledRow(row: CallRow, now: number): CallRow;
 export function withMeta<T>(meta: ConsoleMeta | null | undefined, fn: () => T): T;
 export function callRow(events: readonly DashboardEvent[], opts?: { meta?: ConsoleMeta | null }): CallRow;
 export const STATUS_TEXT: Readonly<Record<CallStatus, string>>;

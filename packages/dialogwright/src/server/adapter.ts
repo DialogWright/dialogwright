@@ -1795,7 +1795,14 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
         : brief ? `${callId}: resumed after ${silentMs} ms of silence, within RESUMED_AFTER_MS: no apology`
           : `${callId}: resumed after a restart`);
     }
-    publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
+    // With what a console that never saw the call start (this server just restarted, say) lists it by.
+    publish(deps, {
+      type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects,
+      call: {
+        from: maskNumber(setupCallerOf(ctx.provider, parsed)), startedAt: entry.session.startedAtMs, todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+        channel: 'voice', provider: ctx.provider, ...(deps.host ? { app: entry.session.appId } : {}),
+      },
+    });
     await deps.store.enqueue(callId, async (e) => {
       // The caller hears the question again, so nothing said before the drop is continued (replay
       // resets at the repeated setup too). In the queue, after the turns before it.

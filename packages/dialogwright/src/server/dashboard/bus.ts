@@ -9,10 +9,26 @@ export type Subscriber = (event: PublishedEvent) => void;
 interface CallHistory {
   events: PublishedEvent[];
   ended: boolean;
+  /** How it ended (the `ended` event's reason), and when the bus heard it (its own clock). */
+  endedBy: string | null;
+  endedAtMs: number;
+  /** The clock (the bus's) of its latest event: a call silent for long is taken for ended (markStale). */
+  lastMs: number;
+  /** The history's size as written (its events' JSON), for the byte budget. */
+  bytes: number;
+  /** Events dropped from the history (the bounds), for a viewer who catches up on it to be told. */
+  dropped: number;
 }
 
-/** Events after which a call that said it ended is live again (a reconnect after the hangup webhook). */
-const LIVE_AGAIN = new Set(['reconnect', 'asked', 'turn']);
+/** How long a call handed off stays kept past `maxEnded`: the Live list shows it as with a person that long (view.js HANDED_OFF_SHOWN_MS). */
+const HANDED_OFF_KEPT_MS = 120_000;
+
+export interface BusOptions {
+  /** The bus's clock (default Date.now). */
+  now?: () => number;
+  /** The bytes of history kept in all (each event's JSON), dropping the oldest ended calls' first; default 64 MB. */
+  maxBytes?: number;
+}
 
 /**
  * Fans dashboard events out to subscribers and keeps each call's history, so a page opened mid-call
@@ -36,7 +52,14 @@ export class DashboardBus {
    * that ended are kept, the newest; `maxCalls` how many calls in all, dropping the oldest that ended
    * first, then the oldest.
    */
-  constructor(private readonly maxHistory = 2000, private readonly maxEnded = 20, private readonly maxCalls = 500) {}
+  private readonly now: () => number;
+  private readonly maxBytes: number;
+  private bytes = 0;
+
+  constructor(private readonly maxHistory = 2000, private readonly maxEnded = 20, private readonly maxCalls = 500, opts: BusOptions = {}) {
+    this.now = opts.now ?? Date.now;
+    this.maxBytes = opts.maxBytes ?? 64 * 1024 * 1024;
+  }
 
   /**
    * One delivery to one subscriber. A watcher of a call can never change the call, so a throw is
@@ -70,37 +93,126 @@ export class DashboardBus {
   }
 
   private accept(event: DashboardEvent): void {
+    // A reconnect for a call this bus never saw start (this server restarted, or joined the others
+    // after the call began) starts it here, from what the reconnect carries: the Live list has it.
+    if (event.type === 'reconnect' && event.call && !this.calls.has(event.callSid)) {
+      const c = event.call;
+      this.accept({
+        type: 'call_started', callSid: event.callSid, at: c.startedAt, from: c.from, todayIso: c.todayIso, thresholds: c.thresholds,
+        ...(c.channel !== undefined ? { channel: c.channel } : {}), ...(c.provider !== undefined ? { provider: c.provider } : {}), ...(c.app !== undefined ? { app: c.app } : {}), caller: null,
+      });
+    }
     let call = this.calls.get(event.callSid);
     if (event.type === 'call_started') {
-      this.calls.delete(event.callSid);
-      call = { events: [], ended: false };
+      this.forget(event.callSid);
+      call = { events: [], ended: false, endedBy: null, endedAtMs: 0, lastMs: this.now(), bytes: 0, dropped: 0 };
       this.calls.set(event.callSid, call);
       this.newest = event.callSid;
     } else if (call === undefined) {
       return;
     }
-    if (event.type === 'ended') call.ended = true;
-    else if (LIVE_AGAIN.has(event.type)) call.ended = false;
+    call.lastMs = this.now();
+    if (event.type === 'ended') {
+      call.ended = true;
+      call.endedBy = event.reason;
+      call.endedAtMs = call.lastMs;
+    } else if (event.type === 'reconnect' || call.endedBy === 'stale') {
+      // A reconnect after the hangup webhook makes the call live again, as does any word from a call
+      // only taken for ended for its silence; a turn finishing after an end it was told of (one in
+      // flight when the hangup came) does not.
+      call.ended = false;
+      call.endedBy = null;
+    }
     // `seq` is globally monotonic, not per call: it is the SSE id, and a page that reconnects
     // across a call boundary must never be handed an id it has already seen.
     const numbered: PublishedEvent = { ...event, seq: ++this.seq };
+    const size = JSON.stringify(numbered).length;
     call.events.push(numbered);
-    if (call.events.length > this.maxHistory) {
-      // Keep call_started at index 0, drop the oldest of the rest.
-      call.events.splice(1, call.events.length - this.maxHistory);
-    }
+    call.bytes += size;
+    this.bytes += size;
+    if (call.events.length > this.maxHistory) this.trim(call, call.events.length - this.maxHistory);
     if (event.type === 'call_started' || event.type === 'ended') this.prune();
+    if (this.bytes > this.maxBytes) this.fitBytes(event.callSid);
     for (const s of this.subscribers) this.deliver(s, numbered);
   }
 
-  /** Drops the oldest calls that ended past `maxEnded`, then the oldest calls past `maxCalls`. */
+  /** Drops a call's `n` oldest events after its call_started, counting them. */
+  private trim(call: CallHistory, n: number): void {
+    const gone = call.events.splice(1, n);
+    const size = gone.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
+    call.bytes -= size;
+    this.bytes -= size;
+    call.dropped += gone.length;
+  }
+
+  private forget(callSid: string): void {
+    const call = this.calls.get(callSid);
+    if (!call) return;
+    this.bytes -= call.bytes;
+    this.calls.delete(callSid);
+  }
+
+  /** A call handed off a moment ago, which the Live list still shows as with a person. */
+  private handedOffLately(c: CallHistory): boolean {
+    return c.endedBy === 'handoff' && this.now() - c.endedAtMs < HANDED_OFF_KEPT_MS;
+  }
+
+  /**
+   * Drops the oldest calls that ended past `maxEnded` (a call handed off a moment ago is kept while the
+   * Live list shows it), then the oldest calls past `maxCalls`, those that ended first.
+   */
   private prune(): void {
-    const ended = [...this.calls].filter(([, c]) => c.ended).map(([sid]) => sid);
-    for (const sid of ended.slice(0, Math.max(0, ended.length - this.maxEnded))) this.calls.delete(sid);
+    const ended = [...this.calls].filter(([, c]) => c.ended && !this.handedOffLately(c)).map(([sid]) => sid);
+    for (const sid of ended.slice(0, Math.max(0, ended.length - this.maxEnded))) this.forget(sid);
     while (this.calls.size > this.maxCalls) {
       const oldestEnded = [...this.calls].find(([, c]) => c.ended)?.[0];
-      this.calls.delete(oldestEnded ?? this.calls.keys().next().value!);
+      this.forget(oldestEnded ?? this.calls.keys().next().value!);
     }
+  }
+
+  /**
+   * Over the byte budget: the oldest ended calls go first (not `keep`, the call just written to); then
+   * the oldest events of the calls in progress, oldest call first, each call's call_started kept and its
+   * drops counted, so a viewer who catches up on it is told (routes.ts `event: missed`).
+   */
+  private fitBytes(keep: string): void {
+    for (const [sid, c] of [...this.calls]) {
+      if (this.bytes <= this.maxBytes) return;
+      if (c.ended && sid !== keep) this.forget(sid);
+    }
+    for (const c of this.calls.values()) {
+      while (this.bytes > this.maxBytes && c.events.length > 1) this.trim(c, Math.max(1, Math.ceil((c.events.length - 1) / 2)));
+      if (this.bytes <= this.maxBytes) return;
+    }
+  }
+
+  /**
+   * Takes for ended every call in progress that has had no event for `staleMs` (a server that stopped
+   * with it, a peer that died): it is no longer counted in progress, and is dropped as ended calls are.
+   * Publishes nothing: the Live list settles its row (calls.ts settled). Returns the calls it marked.
+   */
+  markStale(staleMs: number): string[] {
+    const cutoff = this.now() - staleMs;
+    const marked: string[] = [];
+    for (const [sid, c] of this.calls) {
+      if (c.ended || c.lastMs > cutoff) continue;
+      c.ended = true;
+      c.endedBy = 'stale';
+      c.endedAtMs = this.now();
+      marked.push(sid);
+    }
+    if (marked.length > 0) this.prune();
+    return marked;
+  }
+
+  /** How many of a call's events its history no longer holds (its bounds), for a viewer catching up on it. */
+  droppedOf(callSid: string): number {
+    return this.calls.get(callSid)?.dropped ?? 0;
+  }
+
+  /** The bytes of history kept. */
+  sizeInBytes(): number {
+    return this.bytes;
   }
 
   /** Replays every kept call's history in the order it was published, then streams. Returns the unsubscribe function. */

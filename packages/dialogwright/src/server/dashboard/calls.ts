@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { S3TraceReader } from '../../trace/store';
 import { dayOf } from '../../trace/store';
@@ -6,10 +7,10 @@ import type { TraceRecord } from '../../trace/types';
 import { upgradeTraceRecord } from '../../trace/read';
 import type { App } from '../../core/app/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
-import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog';
+import { parseFrameLog, type ReadFrameLogLine } from '../frameLog';
 import { maskNumber, redactFrameLine, redactRecord } from './events';
 import { consoleMetaOf } from './meta';
-import { callRow, replayEvents, withMeta, ENDINGS } from './view.js';
+import { callRow, replayEvents, settledRow, withMeta, ENDINGS } from './view.js';
 import type { CallRow } from './rows';
 import type { ReplayRecord } from './routes';
 
@@ -58,8 +59,7 @@ export const PAGE_SIZE = 25;
 export const MAX_READS = 1000;
 /** How many calls' traces are read at once (the store answers each segment as a request of its own). */
 const READ_CONCURRENCY = 8;
-/** A call with no end recorded and nothing written for this long ended without saying so (an evicted call). */
-export const STALE_MS = 30 * 60_000;
+export { STALE_MS } from './view.js';
 /** The summaries kept in memory. */
 const MAX_KEPT = 20_000;
 
@@ -90,39 +90,51 @@ export function traceLines(path: string): TraceRecord[] {
   return parseTraceLines(readFileSync(path, 'utf8').split('\n'));
 }
 
-/** The names of a folder's traces, with their sizes and last writes; none for a folder not made yet. */
-function folderCandidates(source: CallsSource, fromMs: number | undefined): Candidate[] {
+/** The longest a call lasts, for the names' narrowing: a call last written after a range's end plus this started after it. */
+const MAX_CALL_MS = 86_400_000;
+const DAY_MS = 86_400_000;
+/** How many files are looked at (stat) at once. */
+const STAT_CONCURRENCY = 64;
+
+/** Lets the server's other work (a call's turn) run between batches of a long read. */
+const yieldToOthers = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+/**
+ * The names of a folder's traces, with their sizes and last writes, in the range by their last write:
+ * a call that started in the range was last written at or after its start, and no later than a day
+ * after its end. None for a folder not made yet. Read without blocking the server.
+ */
+async function folderCandidates(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
   let names: string[];
   try {
-    names = readdirSync(source.traceDir);
+    names = (await readdir(source.traceDir)).filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'));
   } catch {
     return [];
   }
-  return names
-    .filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'))
-    .flatMap((f) => {
-      try {
-        const stat = statSync(join(source.traceDir, f));
-        // A call that started in the range was last written in it or after.
-        if (fromMs !== undefined && stat.mtimeMs < fromMs) return [];
-        return [{ source, sid: f.slice(0, -'.jsonl'.length), lastMs: stat.mtimeMs, size: stat.size }];
-      } catch {
-        return [];
-      }
+  const out: Candidate[] = [];
+  for (let i = 0; i < names.length; i += STAT_CONCURRENCY) {
+    const batch = names.slice(i, i + STAT_CONCURRENCY);
+    const stats = await Promise.all(batch.map((f) => stat(join(source.traceDir, f)).catch(() => null)));
+    batch.forEach((f, k) => {
+      const st = stats[k];
+      if (!st) return;
+      if (fromMs !== undefined && st.mtimeMs < fromMs) return;
+      if (toMs !== undefined && st.mtimeMs > toMs + MAX_CALL_MS) return;
+      out.push({ source, sid: f.slice(0, -'.jsonl'.length), lastMs: st.mtimeMs, size: st.size });
     });
+  }
+  return out;
 }
-
-const DAY_MS = 86_400_000;
 
 /** The calls of one source by name: a folder's files, or the store's day folders in the range (a day either side, for the time zones). */
 async function candidatesOf(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
-  if (!source.traces) return folderCandidates(source, fromMs);
+  if (!source.traces) return folderCandidates(source, fromMs, toMs);
   const range = {
     ...(fromMs !== undefined ? { from: dayOf(fromMs - DAY_MS) } : {}),
     ...(toMs !== undefined ? { to: dayOf(toMs + DAY_MS) } : {}),
   };
   return (await source.traces.calls(range))
-    .filter((c) => fromMs === undefined || c.lastModifiedMs >= fromMs)
+    .filter((c) => (fromMs === undefined || c.lastModifiedMs >= fromMs) && (toMs === undefined || c.lastModifiedMs <= toMs + MAX_CALL_MS))
     .map((c) => ({ source, sid: c.id, lastMs: c.lastModifiedMs, size: c.sizeBytes, day: c.day }));
 }
 
@@ -153,7 +165,7 @@ export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: re
   return row.channel === 'chat' && from === null ? { ...row, from: 'web chat' } : row;
 }
 
-/** The summaries read so far, by app, call, size and last write. */
+/** The summaries read so far, by app, call, size and last write, the most recently used last (an LRU). */
 const kept = new Map<string, CallRow | null>();
 
 /** Forgets every summary (tests). */
@@ -166,30 +178,31 @@ const keyOf = (c: Candidate): string => `${c.source.id ?? ''}|${c.sid}|${c.lastM
 /** A candidate's summary: kept, or read from its trace now. */
 async function read(c: Candidate): Promise<CallRow | null> {
   const key = keyOf(c);
-  if (kept.has(key)) return kept.get(key)!;
+  if (kept.has(key)) {
+    // Used: to the end, so the least recently used summary is the one let go.
+    const row = kept.get(key)!;
+    kept.delete(key);
+    kept.set(key, row);
+    return row;
+  }
   let row: CallRow | null = null;
   if (c.source.traces) {
     const joined = await c.source.traces.read(c.sid, c.day);
     if (joined !== null) row = summaryOfTrace(parseTraceLines(joined.trace), parseFrameLog(joined.frames.join('\n')), c.source.app);
   } else {
-    const path = join(c.source.traceDir, `${c.sid}.jsonl`);
-    const frames = join(c.source.traceDir, `${c.sid}.frames.jsonl`);
-    if (existsSync(path)) row = summaryOfTrace(traceLines(path), existsSync(frames) ? readFrameLog(frames) : [], c.source.app);
+    // Read without blocking the server: a voice call's turns run on the same thread.
+    const trace = await readFile(join(c.source.traceDir, `${c.sid}.jsonl`), 'utf8').catch(() => null);
+    const frames = await readFile(join(c.source.traceDir, `${c.sid}.frames.jsonl`), 'utf8').catch(() => '');
+    if (trace !== null) row = summaryOfTrace(parseTraceLines(trace.split('\n')), parseFrameLog(frames), c.source.app);
   }
   kept.set(key, row);
   if (kept.size > MAX_KEPT) kept.delete(kept.keys().next().value!);
   return row;
 }
 
-/**
- * A summary as it stands at `nowMs`: a call with no end recorded that has written nothing for STALE_MS
- * ended without saying so (a server stopped, or the idle sweep evicted it): to a person if a handoff was
- * under way, else an error. A call that wrote more recently is in progress.
- */
+/** A summary as it stands at `nowMs` (view.js settledRow): a call silent for STALE_MS with no end recorded ended without saying so. */
 export function settled(row: CallRow, nowMs: number): CallRow {
-  if (row.ending !== null || row.lastAt === null || nowMs - row.lastAt <= STALE_MS) return row;
-  if (row.status === 'transferring') return { ...row, status: 'with-person', ending: { kind: 'person', reason: row.handoffReason, text: 'to a person · no end recorded' } };
-  return { ...row, status: 'ended', ending: { kind: 'error', text: 'no end recorded' } };
+  return settledRow(row, nowMs);
 }
 
 /** What the Calls page asks for; each field already checked (routes.ts callsQueryOf). */
@@ -228,6 +241,7 @@ async function walk(sources: readonly CallsSource[], fromMs: number | undefined,
     if (reads + fresh > MAX_READS) return { rows, partial: true };
     reads += fresh;
     const read_ = await Promise.all(batch.map(read));
+    if (fresh > 0) await yieldToOthers();
     batch.forEach((c, k) => {
       const row = read_[k];
       if (!row || rows.length >= enough) return;
@@ -245,13 +259,20 @@ export async function listCalls(sources: readonly CallsSource[], q: CallsQuery, 
   return { rows: rows.slice(q.page * PAGE_SIZE, end), page: q.page, pageSize: PAGE_SIZE, more: rows.length > end, partial };
 }
 
-/** The Live page's figures for today: the calls that started since `sinceMs`, how many ended and how, and the decision model's cost. */
+/**
+ * The Live page's figures for today: the calls that started since `sinceMs`, how many ended and how, and
+ * the decision model's cost. Containment is the calls the agent handled to the end with no handoff (an
+ * `ended{completed}`), of every call that ended: a hang-up or an error is not counted as handled (Console
+ * 2's Insights shows them apart).
+ */
 export interface TodayFigures {
   calls: number;
   ended: number;
-  /** Ended with no person: handled, hung up, an error. */
+  /** Ended handled by the agent, with no person. */
   contained: number;
   toPerson: number;
+  hungUp: number;
+  errors: number;
   /** contained / ended, or null with none ended. */
   containment: number | null;
   costUsd: number;
@@ -261,9 +282,10 @@ export interface TodayFigures {
 export async function todayOf(sources: readonly CallsSource[], sinceMs: number, nowMs: number): Promise<TodayFigures> {
   const { rows, partial } = await walk(sources, sinceMs, undefined, nowMs, (r) => r.startedAt !== null && r.startedAt >= sinceMs, Number.POSITIVE_INFINITY);
   const ended = rows.filter((r) => r.ending !== null);
-  const toPerson = ended.filter((r) => r.ending!.kind === 'person').length;
+  const count = (kind: string): number => ended.filter((r) => r.ending!.kind === kind).length;
+  const contained = count('handled');
   const costUsd = Math.round(rows.reduce((s, r) => s + r.costUsd, 0) * 1e6) / 1e6;
-  return { calls: rows.length, ended: ended.length, contained: ended.length - toPerson, toPerson, containment: ended.length === 0 ? null : (ended.length - toPerson) / ended.length, costUsd, partial };
+  return { calls: rows.length, ended: ended.length, contained, toPerson: count('person'), hungUp: count('hangup'), errors: count('error'), containment: ended.length === 0 ? null : contained / ended.length, costUsd, partial };
 }
 
 /** The endings a query may name. */

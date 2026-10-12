@@ -78,14 +78,79 @@ describe('DashboardBus', () => {
     expect(bus.callIds()).toEqual(['CA3', 'CA4', 'CA5']);
   });
 
+  it('keeps a call ended when a turn finishes after the hangup (one in flight); a reconnect makes it live again', () => {
+    const bus = new DashboardBus();
+    bus.publish(started('CA1'));
+    bus.publish({ type: 'ended', callSid: 'CA1', at: 3, reason: 'hangup' });
+    bus.publish({ type: 'turn', callSid: 'CA1', at: 4, record: { turnIndex: 2 } as never, spoken: '' });
+    bus.publish({ type: 'asked', callSid: 'CA1', at: 4, turnIndex: 3, questions: {}, turnState: {} as never });
+    expect(bus.hasEnded('CA1')).toBe(true);
+    bus.publish({ type: 'reconnect', callSid: 'CA1', at: 5, attempt: 1 });
+    expect(bus.hasEnded('CA1')).toBe(false);
+  });
+
+  it('takes a reconnect for a call it never saw start (a server restarted or joining) as its start, from what the reconnect carries', () => {
+    const bus = new DashboardBus();
+    bus.publish({ type: 'reconnect', callSid: 'CA7', at: 50, attempt: 1, call: { from: '…0110', startedAt: 10, todayIso: '2026-10-12', thresholds: {}, channel: 'voice', provider: 'twilio', app: 'routed' } });
+    expect(bus.historyOf('CA7').map((e) => e.type)).toEqual(['call_started', 'reconnect']);
+    expect(bus.historyOf('CA7')[0]).toMatchObject({ at: 10, from: '…0110', provider: 'twilio', app: 'routed' });
+    // One with nothing to start it by (a publisher before it) is still ignored.
+    bus.publish({ type: 'reconnect', callSid: 'CA8', at: 50, attempt: 1 });
+    expect(bus.callIds()).toEqual(['CA7']);
+  });
+
+  it('takes a call silent for long for ended (a server that stopped, a peer that died), and any word from it after makes it live again', () => {
+    let t = 0;
+    const bus = new DashboardBus(2000, 20, 500, { now: () => t });
+    bus.publish(started('CA1'));
+    bus.publish(started('CA2'));
+    t = 60_000;
+    bus.publish(dtmf('CA2', '1'));
+    t = 100_000;
+    expect(bus.markStale(50_000)).toEqual(['CA1']);
+    expect(bus.hasEnded('CA1')).toBe(true);
+    expect(bus.hasEnded('CA2')).toBe(false);
+    bus.publish(dtmf('CA1', '2'));
+    expect(bus.hasEnded('CA1')).toBe(false);
+  });
+
+  it('keeps the calls handed off in the last two minutes past its bound of ended calls, while the Live list shows them', () => {
+    let t = 0;
+    const bus = new DashboardBus(2000, 2, 500, { now: () => t });
+    for (let i = 0; i < 5; i++) {
+      bus.publish(started(`CA${i}`));
+      bus.publish({ type: 'ended', callSid: `CA${i}`, at: 3, reason: 'handoff' });
+    }
+    expect(bus.callIds()).toHaveLength(5);
+    t = 121_000;
+    bus.publish(started('CA9'));
+    bus.publish({ type: 'ended', callSid: 'CA9', at: 3, reason: 'hangup' });
+    // Past the two minutes, the bound holds again: the newest two that ended.
+    expect(bus.callIds()).toEqual(['CA4', 'CA9']);
+  });
+
+  it('keeps its history within a byte budget: the oldest ended calls go first, then a call in progress is trimmed and counts what it lost', () => {
+    const bus = new DashboardBus(2000, 20, 500, { maxBytes: 2_000 });
+    bus.publish(started('CA1'));
+    bus.publish({ type: 'ended', callSid: 'CA1', at: 3, reason: 'hangup' });
+    bus.publish(started('CA2'));
+    for (let i = 0; i < 40; i++) bus.publish(dtmf('CA2', String(i % 10)));
+    expect(bus.callIds()).toEqual(['CA2']);
+    expect(bus.sizeInBytes()).toBeLessThanOrEqual(2_000);
+    expect(bus.historyOf('CA2')[0]!.type).toBe('call_started');
+    expect(bus.droppedOf('CA2')).toBe(41 - bus.historyOf('CA2').length);
+    expect(bus.droppedOf('CA2')).toBeGreaterThan(0);
+  });
+
   it('bounds the history', () => {
     const bus = new DashboardBus(3);
     bus.publish(started('CA1'));
     for (let i = 0; i < 5; i++) bus.publish(dtmf('CA1', String(i), 10 + i));
     const late = vi.fn();
     bus.subscribe(late);
-    // The call_started event is always kept, then the newest two.
+    // The call_started event is always kept, then the newest two; the three dropped are counted.
     expect(late.mock.calls.map((c) => c[0].type)).toEqual(['call_started', 'dtmf', 'dtmf']);
+    expect(bus.droppedOf('CA1')).toBe(3);
   });
 
   it('subscribes a subscriber that throws on the replay, and keeps streaming to it', () => {

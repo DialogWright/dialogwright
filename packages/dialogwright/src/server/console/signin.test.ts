@@ -414,11 +414,15 @@ describe('CONSOLE_AUTH=token: the access log', () => {
     const cookie = cookieOf(signed);
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
-    // The Live list and a call's own feed are the live feed too: recorded on the first open only.
+    // The Live list is the live feed too: recorded on the first open only. A call's own feed is recorded
+    // under the call as well, the first time the session opens it.
     await peek(r.base, '/dashboard/events?view=calls', { ...TUNNEL, cookie });
     await peek(r.base, `/dashboard/events?call=${SID}`, { ...TUNNEL, cookie });
-    // The Calls page's list is a list, as the traces list is: no replay of any call.
+    await peek(r.base, `/dashboard/events?call=${SID}`, { ...TUNNEL, cookie });
+    // The Calls page's list is a list, as the traces list is: no replay of any call; a search by a
+    // caller's last four is recorded, with its range.
     const calls = (await raw(r.base, 'GET', '/dashboard/calls', { ...TUNNEL, cookie })).body;
+    await raw(r.base, 'GET', '/dashboard/calls?last4=0199&from=1790000000000', { ...TUNNEL, cookie });
     expect(calls).toContain(SID);
     expect(calls).toContain('"from":"…0199"');
     expect(calls).not.toContain(CALLER);
@@ -431,9 +435,12 @@ describe('CONSOLE_AUTH=token: the access log', () => {
     expect(access.map((e) => [e.callId, e.detail.event])).toEqual([
       ['console', 'sign_in'],
       ['console', 'live'],
+      [SID, 'live'],
+      ['console', 'calls_search'],
       [SID, 'replay'],
       [SID, 'replay'],
     ]);
+    expect(access[3]!.detail).toMatchObject({ event: 'calls_search', last4: '0199', from: new Date(1790000000000).toISOString(), to: null });
     const session = access[0]!.detail.session as string;
     expect(session).toMatch(/^[0-9a-f]{16}$/);
     for (const e of access) {

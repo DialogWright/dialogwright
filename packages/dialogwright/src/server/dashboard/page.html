@@ -20,6 +20,8 @@
   .mono { font-family:var(--mono); }
   .muted { color:var(--muted); }
   [hidden] { display:none !important; }
+  /* Each page's heading: read by a screen reader, and where focus lands on going to the page; not drawn. */
+  .page-title { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 
   /* ---------- header ---------- */
   header { height:var(--frame-h); display:flex; align-items:center; gap:20px; padding:0 24px; border-bottom:1px solid var(--border); box-sizing:border-box; font-size:15px; white-space:nowrap; background:#0f131a; }
@@ -428,10 +430,11 @@
 </header>
 <!-- Live, the home page: what is happening now. -->
 <section class="page list" id="page-live" hidden>
+  <h1 class="page-title" tabindex="-1">Live: the calls in progress</h1>
   <div class="strip">
     <div class="card stat"><span class="stat-n" id="st-progress">0</span><span class="stat-k">calls in progress</span></div>
     <div class="card stat" id="st-waiting-card"><span class="stat-n" id="st-waiting">0</span><span class="stat-k">waiting for a person or being transferred</span></div>
-    <div class="card stat"><span class="stat-n" id="st-contained">–</span><span class="stat-k">handled with no person today</span><span class="stat-sub" id="st-contained-sub"></span></div>
+    <div class="card stat" title="Calls that ended handled by the agent, with no handoff, of all the calls that ended today. A hang-up or an error is not counted as handled; Insights will show them apart."><span class="stat-n" id="st-contained">–</span><span class="stat-k">handled with no person today</span><span class="stat-sub" id="st-contained-sub"></span></div>
     <div class="card stat"><span class="stat-n" id="st-cost">–</span><span class="stat-k">decision model cost today</span><span class="stat-sub" id="st-cost-sub">the carrier's cost comes with Insights</span></div>
   </div>
   <div class="card listcard">
@@ -443,6 +446,7 @@
 </section>
 <!-- Calls: what happened on a call. -->
 <section class="page list" id="page-calls" hidden>
+  <h1 class="page-title" tabindex="-1">Calls: the calls that happened</h1>
   <form class="card filters" id="calls-filters">
     <label>Caller's last four <input id="f-last4" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0110"></label>
     <label>From <input id="f-from" type="date"></label>
@@ -460,19 +464,23 @@
 </section>
 <!-- The pages still to come (Console 2), each saying what it will show. -->
 <section class="page list placeholder" id="page-insights" hidden>
+  <h1 class="page-title" tabindex="-1">Insights</h1>
   <div class="card"><div class="card-title">Insights · coming next</div><h2>How the line is doing</h2>
     <p>For a date range and an app, or all of them: calls, and calls by hour with the peak; containment (handled with no person); transfers by reason; abandonment by step, the last question a caller heard before hanging up; where callers struggle (re-asks, silences and slots that ran out, per slot and per question); task completion per intent; call length overall and per task; minutes, the decision model's cost, the carrier's cost when a per-minute rate is set, and the cost per call and per handled call; the injection screen's hits and the gate's refusals by rule; after-hours calls; and the knowledge base's unanswered questions.</p></div>
 </section>
 <section class="page list placeholder" id="page-knowledge" hidden>
+  <h1 class="page-title" tabindex="-1">Knowledge</h1>
   <div class="card"><div class="card-title">Knowledge · coming next</div><h2>The knowledge base at a glance</h2>
     <p>Per app: the passages by state (fresh, stale, edited, never approved, drafts), as <code>pnpm kb:status</code> reports them, and the questions callers asked that nothing answered. Read only: approving a passage stays a person at their terminal, or on the local review page.</p></div>
 </section>
 <section class="page list placeholder" id="page-health" hidden>
+  <h1 class="page-title" tabindex="-1">Health</h1>
   <div class="card"><div class="card-title">Health · coming next</div><h2>Is the line healthy</h2>
     <p>The servers seen in the last minutes and their calls; the sessions, trace write failures and disk space that <code>/health</code> reports; the decision model's latency (median and 95th percentile over the last hour); reconnects and fallback dials today; and the audit, verified on demand.</p></div>
 </section>
 <!-- A call's detail: the view the console has always had, live or replayed. -->
 <section class="page" id="page-call" hidden>
+  <h1 class="page-title" tabindex="-1">A call</h1>
 <div class="callbar">
   <a href="#/live" class="backlink" id="call-back" title="Back to the list">← Back</a>
   <div class="live"><i id="dot" class="dot"></i><span id="status">waiting for a call</span></div>
@@ -1176,10 +1184,17 @@
     state.accent = freshAccents();
     showControls();
     if (state.es) state.es.close();
+    // Events this view never received (the server dropped them for a stalled viewer, or the call's kept
+    // history was trimmed): said until the page is reloaded, since a reconnect's catch-up skips what the
+    // view already passed.
+    state.missed = 0;
+    const conn = (reconnecting) => {
+      el('conn').textContent = state.missed > 0 ? `missed ${state.missed} events, reload to catch up` : reconnecting ? 'reconnecting…' : '';
+    };
     const es = new EventSource(sid ? `/dashboard/events?call=${encodeURIComponent(sid)}` : `/dashboard/events${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`);
     state.es = es;
-    es.onopen = () => { el('conn').textContent = ''; };
-    es.onerror = () => { el('conn').textContent = 'reconnecting…'; };
+    es.onopen = () => conn(false);
+    es.onerror = () => conn(true);
     // A reconnect to a restarted server (a new build) reloads the page, so its styles and scripts are never stale.
     es.addEventListener('boot', onBoot);
     // A stalled viewer can have events dropped server-side (routes.ts skips writes once the backlog
@@ -1187,13 +1202,14 @@
     es.addEventListener('missed', (m) => {
       let n = 0;
       try { n = Number(JSON.parse(m.data).count) || 0; } catch { return; }
-      el('conn').textContent = `missed ${n} events, reload to catch up`;
+      state.missed += n;
+      conn(false);
     });
     es.onmessage = (m) => {
       let event;
       try { event = JSON.parse(m.data); } catch { return; }
       if (!event || typeof event !== 'object') return;
-      el('conn').textContent = '';
+      conn(false);
       // On a host showing one app (?app=), another app's calls are not shown; with every app's, each
       // call in its own app's words.
       if (HOST_APPS && event.type === 'call_started' && typeof event.app === 'string') {
@@ -1531,7 +1547,8 @@
   function route() {
     const a = addressOf();
     const page = a.name === 'replay' ? 'call' : Object.hasOwn(PAGES, a.name) ? a.name : 'live';
-    if (current && current !== page) {
+    const moved = current !== null && current !== page;
+    if (moved) {
       PAGES[current].leave?.();
       window.scrollTo(0, 0);
     }
@@ -1539,10 +1556,15 @@
     for (const name of Object.keys(PAGES)) el(`page-${name}`).hidden = name !== page;
     // A call's detail lights the list it was opened from.
     const lit = page === 'call' ? (a.name === 'replay' ? 'calls' : 'live') : page;
-    for (const link of document.querySelectorAll('#menu a')) link.classList.toggle('on', link.dataset.page === lit);
+    for (const link of document.querySelectorAll('#menu a')) {
+      link.classList.toggle('on', link.dataset.page === lit);
+      if (link.dataset.page === lit) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+    }
     if (page !== 'call') document.body.classList.remove('replay');
     PAGES[page].enter?.(a);
     updateTitle();
+    // A keyboard or screen reader user lands on the new page's heading, not on the link they left.
+    if (moved) el(`page-${page}`).querySelector('.page-title')?.focus({ preventScroll: true });
   }
   window.addEventListener('hashchange', route);
 
@@ -1657,10 +1679,10 @@
     const cls = ['lrow', isAlert(r) ? 'alert' : '', r.status === 'frustrated' ? 'frustrated' : ''].filter(Boolean).join(' ');
     const start = r.startedAt ?? now;
     return `<div class="${cls}" role="row" tabindex="0" data-sid="${esc(r.callSid)}" data-href="#/call/${esc(encodeURIComponent(r.callSid))}">`
-      + `<span class="c-app">${esc(appName(r.app))}</span><span class="c-who">${esc(whoText(r))}</span><span class="c-chan">${esc(channelText(r))}</span>`
-      + `<span class="c-task">${task}</span>`
-      + `<span class="c-dur" data-start="${esc(start)}" data-end="${esc(r.endedAt ?? '')}">${durationText((r.endedAt ?? now) - start)}</span>`
-      + `<span class="st st-${esc(r.status)}"${waiting ? ` title="${esc(reasonText(r))}"` : ''}>${esc(STATUS_TEXT[r.status] ?? r.status)}</span></div>`;
+      + `<span role="cell" class="c-app">${esc(appName(r.app))}</span><span role="cell" class="c-who">${esc(whoText(r))}</span><span role="cell" class="c-chan">${esc(channelText(r))}</span>`
+      + `<span role="cell" class="c-task">${task}</span>`
+      + `<span role="cell" class="c-dur" data-start="${esc(start)}" data-end="${esc(r.endedAt ?? '')}">${durationText((r.endedAt ?? now) - start)}</span>`
+      + `<span role="cell" class="st st-${esc(r.status)}"${waiting ? ` title="${esc(reasonText(r))}"` : ''}>${esc(STATUS_TEXT[r.status] ?? r.status)}</span></div>`;
   }
 
   function renderLive(shown) {
@@ -1672,7 +1694,7 @@
     list.classList.toggle('one-app', !HOST_APPS);
     // A row the viewer had reached by keyboard keeps the focus across the redraw.
     const focused = document.activeElement?.closest?.('#live-list .lrow')?.dataset.sid ?? null;
-    const head = '<div class="lhead" role="row"><span class="c-app">App</span><span>Caller</span><span>Channel</span><span>Task · step</span><span>Time</span><span>Status</span></div>';
+    const head = `<div class="lhead" role="row">${['<span class="c-app" role="columnheader">App</span>', ...['Caller', 'Channel', 'Task · step', 'Time', 'Status'].map((h) => `<span role="columnheader">${h}</span>`)].join('')}</div>`;
     const now = Date.now();
     list.innerHTML = head + (shown.length ? shown.map((r) => liveRowHtml(r, now)).join('') : '<div class="empty">No calls in progress.</div>');
     if (focused) list.querySelector(`.lrow[data-sid="${CSS.escape(focused)}"]`)?.focus();
@@ -1805,7 +1827,15 @@
     const query = callsQuery({ ...f, app: FILTER ?? f.app });
     el('calls-note').textContent = 'reading…';
     const asked = ++callsAsked;
-    const data = await json(`/dashboard/calls${query ? `?${query}` : ''}`);
+    // One search at a time per session: one still running is waited out (429), a newer one asked meanwhile wins.
+    let data = null;
+    for (let tries = 0; tries < 60 && asked === callsAsked; tries++) {
+      let res = null;
+      try { res = await fetch(`/dashboard/calls${query ? `?${query}` : ''}`); } catch { break; }
+      if (res.status === 429) { await new Promise((r) => setTimeout(r, 500)); continue; }
+      data = res.ok ? await res.json().catch(() => null) : null;
+      break;
+    }
     if (asked !== callsAsked || current !== 'calls') return;
     renderCalls(data, f);
   }
@@ -1817,21 +1847,21 @@
   };
 
   function pastRowHtml(r) {
-    const ending = r.ending ? `<span class="c-ending end-${esc(r.ending.kind)}">${esc(r.ending.text)}</span>` : '<span class="c-ending end-none">in progress</span>';
+    const ending = r.ending ? `<span role="cell" class="c-ending end-${esc(r.ending.kind)}">${esc(r.ending.text)}</span>` : '<span role="cell" class="c-ending end-none">in progress</span>';
     const tasks = Array.isArray(r.tasks) && r.tasks.length ? r.tasks.map((t) => t.label).join(', ') : '–';
     const until = r.endedAt ?? r.lastAt;
     const length = typeof r.startedAt === 'number' && typeof until === 'number' ? durationText(until - r.startedAt) : '–';
     const href = `#/replay/${encodeURIComponent(r.callSid)}${r.app ? `?app=${encodeURIComponent(r.app)}` : ''}`;
     return `<div class="lrow" role="row" tabindex="0" data-href="${esc(href)}" title="${esc(r.callSid)}">`
-      + `<span class="c-when">${esc(whenText(r.startedAt))}</span><span class="c-app">${esc(r.appName ?? appName(r.app))}</span>`
-      + `<span class="c-who">${esc(whoText(r))}</span><span class="c-chan">${esc(r.channel === 'chat' ? 'Chat' : 'Voice')}</span>`
-      + `<span class="c-tasks">${esc(tasks)}</span>${ending}<span class="c-dur">${length}</span><span class="c-turns">${esc(r.turns)}<span class="unit"> turns</span></span></div>`;
+      + `<span role="cell" class="c-when">${esc(whenText(r.startedAt))}</span><span role="cell" class="c-app">${esc(r.appName ?? appName(r.app))}</span>`
+      + `<span role="cell" class="c-who">${esc(whoText(r))}</span><span role="cell" class="c-chan">${esc(r.channel === 'chat' ? 'Chat' : 'Voice')}</span>`
+      + `<span role="cell" class="c-tasks">${esc(tasks)}</span>${ending}<span role="cell" class="c-dur">${length}</span><span role="cell" class="c-turns">${esc(r.turns)}<span class="unit"> turns</span></span></div>`;
   }
 
   function renderCalls(data, f) {
     const list = el('calls-list');
     list.classList.toggle('one-app', !HOST_APPS);
-    const head = '<div class="lhead" role="row"><span>Started</span><span class="c-app">App</span><span>Caller</span><span>Channel</span><span>Tasks</span><span>Ending</span><span>Length</span><span>Turns</span></div>';
+    const head = `<div class="lhead" role="row"><span role="columnheader">Started</span><span class="c-app" role="columnheader">App</span>${['Caller', 'Channel', 'Tasks', 'Ending', 'Length', 'Turns'].map((h) => `<span role="columnheader">${h}</span>`).join('')}</div>`;
     if (!data) {
       list.innerHTML = `${head}<div class="empty">The traces could not be read.</div>`;
       el('calls-note').textContent = '';
@@ -1839,7 +1869,8 @@
     }
     const rows = Array.isArray(data.rows) ? data.rows : [];
     list.innerHTML = head + (rows.length ? rows.map(pastRowHtml).join('') : '<div class="empty">No calls match.</div>');
-    el('calls-note').textContent = data.partial ? 'searched the newest calls only: narrow the dates to search further' : 'newest first · a call opens its replay';
+    // A search that stopped at its bound keeps what it read: searching again goes on from there.
+    el('calls-note').textContent = data.partial ? 'searched part of the calls: search again to continue, or narrow the dates' : 'newest first · a call opens its replay';
     el('calls-page').textContent = rows.length ? `page ${f.page + 1}` : '';
     el('calls-newer').hidden = f.page === 0;
     el('calls-older').hidden = !data.more;

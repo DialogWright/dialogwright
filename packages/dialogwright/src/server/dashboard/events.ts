@@ -44,7 +44,12 @@ export type DashboardEvent =
   /** A turn's audit entries, as chained: already free of PHI (core/audit.ts). */
   | (Base & { type: 'audit'; entries: readonly AuditEntry[] })
   | (Base & { type: 'interrupt'; utteranceUntilInterrupt: string | null })
-  | (Base & { type: 'reconnect'; attempt: number })
+  /**
+   * `call` is what a console that never saw the call start (a server restarted or joining, Phase 8b)
+   * lists it by: the bus takes a reconnect for a call it does not keep as that call's start (bus.ts).
+   * The caller's number masked, as `call_started.from`. Absent from a publisher before it.
+   */
+  | (Base & { type: 'reconnect'; attempt: number; call?: ResumedCall })
   | (Base & { type: 'handoff'; reason: string; number: string })
   /**
    * Claude Haiku's note for the human agent (src/handoff/summary.ts); null when no key or the switch
@@ -62,6 +67,17 @@ export type DashboardEvent =
   | (Base & { type: 'ended'; reason: 'completed' | 'hangup' | 'handoff' | 'error' | 'abandoned' });
 
 export type DashboardEventType = DashboardEvent['type'];
+
+/** What a reconnect carries of the call, for a console that never saw it start: as `call_started` says it. */
+export interface ResumedCall {
+  from: string;
+  startedAt: number;
+  todayIso: string;
+  thresholds: Partial<Thresholds>;
+  channel?: string;
+  provider?: string;
+  app?: string;
+}
 
 /**
  * One fact about a line's delivery (server/dashboard/delivery.ts): its `kind`, and the fields of the

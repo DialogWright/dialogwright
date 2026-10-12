@@ -112,6 +112,18 @@ export interface ConsoleGate {
   /** Records a replay of a stored call, as noteLive. */
   /** A replay of a stored call; on a server of several apps, `app` names the call's app. */
   noteReplay(session: ConsoleSession, callId: string, app?: string): Chained<void>;
+  /** Records a call's own live feed (a call's detail, `?call=<id>`) the first time a session opens it, under the call's id, as noteLive. */
+  noteCall(session: ConsoleSession, callId: string, app?: string): Chained<void>;
+  /** Records a Calls page search by a caller's last four (what the console already shows of a number), with its date range, as noteLive. */
+  noteSearch(session: ConsoleSession, search: CallsSearch): Chained<void>;
+}
+
+/** A Calls page search as the access log records it. */
+export interface CallsSearch {
+  last4: string;
+  fromMs?: number;
+  toMs?: number;
+  app?: string | null;
 }
 
 export interface ConsoleAuthOptions {
@@ -260,6 +272,8 @@ export class ConsoleAuth implements ConsoleGate {
   private readonly signedOutFile: string | null;
   /** Sessions whose first live feed has been recorded. */
   private readonly live = new Map<string, number>();
+  /** Each call's own feed a session opened (`<session id>|<call id>`), until the session expires. */
+  private readonly callsWatched = new Map<string, number>();
   private readonly failures = new Map<string, number[]>();
   private failuresInAll: number[] = [];
   /** When a lock (an address's, or `*` for all) was last recorded, so one lock is one audit entry. */
@@ -372,6 +386,27 @@ export class ConsoleAuth implements ConsoleGate {
 
   noteReplay(session: ConsoleSession, callId: string, app?: string): Chained<void> {
     return this.note(callId, { event: 'replay', session: session.hash, ...(app !== undefined ? { app } : {}) });
+  }
+
+  noteCall(session: ConsoleSession, callId: string, app?: string): Chained<void> {
+    const key = `${session.id}|${callId}`;
+    if (this.callsWatched.has(key)) return;
+    const noted = this.note(callId, { event: 'live', session: session.hash, ...(app !== undefined ? { app } : {}) });
+    const seen = (): void => {
+      this.callsWatched.set(key, session.expiresAt);
+      prune(this.callsWatched, (exp) => exp <= this.now());
+    };
+    if (noted instanceof Promise) return noted.then(seen);
+    seen();
+    return noted;
+  }
+
+  noteSearch(session: ConsoleSession, search: CallsSearch): Chained<void> {
+    const iso = (ms: number | undefined): string | null => (ms === undefined ? null : new Date(ms).toISOString());
+    return this.note('console', {
+      event: 'calls_search', session: session.hash, last4: search.last4, from: iso(search.fromMs), to: iso(search.toMs),
+      ...(search.app ? { app: search.app } : {}),
+    });
   }
 
   handle(req: IncomingMessage, res: ServerResponse, path: string): boolean {

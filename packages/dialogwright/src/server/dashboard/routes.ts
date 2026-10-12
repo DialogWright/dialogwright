@@ -16,7 +16,7 @@ import { spokenText } from '../../prompts/render';
 import { consoleMetaOf, renderConsolePage, type ConsoleMeta } from './meta';
 import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
-import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type CallsQuery, type CallsSource } from './calls';
+import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type CallsQuery, type CallsSource, type TodayFigures } from './calls';
 import { LiveCalls } from './live';
 import type { PublishedEvent } from './bus';
 
@@ -347,6 +347,8 @@ function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps
     const off = deps.bus.subscribe((event) => {
       if (!shows(event, replaying)) return;
       if (!stillSignedIn()) return;
+      // A history the bus had to trim (its bounds) is caught up on short: the viewer is told how short.
+      if (replaying && event.type === 'call_started') missed += deps.bus.droppedOf(event.callSid);
       // A stalled viewer is dropped frames, not unbounded memory; its next write says how many
       // (`event: missed`), and the page shows a warning rather than reloading on its own. The events'
       // numbers are the bus's across every call, so a feed of one call has gaps that are no loss.
@@ -421,6 +423,53 @@ function answerJson(res: ServerResponse, head: boolean, work: () => Promise<unkn
   });
 }
 
+/** Runs `next` once `first` is recorded (at once, or once a Promise resolves). */
+function chain(first: Chained<void>, next: () => Chained<void>): Chained<void> {
+  return first instanceof Promise ? first.then(next) : next();
+}
+
+/** The app a kept call is in, on a host (its call_started says so); undefined otherwise. */
+function appOfCall(deps: DashboardDeps, callSid: string): string | undefined {
+  const first = deps.bus.historyOf(callSid)[0];
+  return first?.type === 'call_started' ? first.app : undefined;
+}
+
+/** The sessions (or `local`) with a Calls search running. */
+const searching = new Set<string>();
+
+/** How long today's figures are kept before they are worked out again, when no call has ended since. */
+const TODAY_KEPT_MS = 60_000;
+/** Today's figures by bus, app and day start, with the bus's count of ended calls they were worked out at. */
+const todayKept = new WeakMap<DashboardBus, Map<string, { at: number; ends: number; figures: Promise<TodayFigures> }>>();
+/** The calls each bus has seen end, counted, so today's figures are worked out again only when one has. */
+const endsSeen = new WeakMap<DashboardBus, { n: number }>();
+
+/**
+ * Today's figures, kept: worked out again when a call has ended since (the bus says so) or a minute has
+ * passed, never on every poll of every viewer. The summaries under them are kept too (calls.ts), so working
+ * them out again reads only the calls written since.
+ */
+function todayFigures(deps: DashboardDeps, only: string | null, since: number): Promise<TodayFigures> {
+  let ends = endsSeen.get(deps.bus);
+  if (!ends) {
+    const counter = { n: 0 };
+    deps.bus.subscribe((e) => { if (e.type === 'ended') counter.n += 1; });
+    endsSeen.set(deps.bus, counter);
+    ends = counter;
+  }
+  let kept = todayKept.get(deps.bus);
+  if (!kept) { kept = new Map(); todayKept.set(deps.bus, kept); }
+  const key = `${only ?? ''}|${since}`;
+  const now = Date.now();
+  const had = kept.get(key);
+  if (had && had.ends === ends.n && now - had.at < TODAY_KEPT_MS) return had.figures;
+  const figures = todayOf(callsSources(deps, only), since, now);
+  kept.set(key, { at: now, ends: ends.n, figures });
+  figures.catch(() => kept!.delete(key));
+  if (kept.size > 50) kept.delete(kept.keys().next().value!);
+  return figures;
+}
+
 /** Returns true when the request was a dashboard route (handled), false to let the caller continue. */
 export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps): boolean {
   const path = (req.url ?? '/').split('?')[0] ?? '/';
@@ -470,8 +519,12 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     const shows = list ? null : feedFilter(deps, query);
     if (!list && shows === null) { send(res, 404, 'text/plain', 'not found', head); return true; }
     const open = (): void => (list ? listFeed(req, res, deps, head, auth) : liveFeed(req, res, deps, head, auth, shows!));
-    // Recorded before a byte of the feed is sent: a watch the audit could not record is not served.
-    const noted = !head && auth && session ? auth.noteLive(session) : undefined;
+    // Recorded before a byte of the feed is sent: a watch the audit could not record is not served. A
+    // call's own feed is recorded under the call too, the first time a session opens it, as a replay is.
+    const call = query.get('call');
+    const noted = !head && auth && session
+      ? chain(auth.noteLive(session), () => (call !== null ? auth.noteCall(session!, call, appOfCall(deps, call)) : undefined))
+      : undefined;
     if (noted instanceof Promise) {
       // AUDIT_STORE=postgres: the feed starts once the database has the record.
       noted.then(open, () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
@@ -483,14 +536,33 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   // The Calls page: past calls from the traces, filtered and paged (calls.ts).
   if (path === '/dashboard/calls') {
     const only = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
-    answerJson(res, head, () => listCalls(callsSources(deps, only), callsQueryOf(query), Date.now()));
+    const q = callsQueryOf(query);
+    // One search at a time per session (or, with no sign-in, for the console): a second waits for no
+    // one, it is refused, so a console cannot keep the server reading traces.
+    const who = session?.id ?? 'local';
+    if (searching.has(who)) { send(res, 429, 'text/plain', 'a search is already running: try again when it answers', head); return true; }
+    searching.add(who);
+    const done = (): void => { searching.delete(who); };
+    res.once('close', done);
+    // A search by a caller's last four is recorded before it is answered, with its range: who looked for whom.
+    const noted = !head && auth && session && q.last4 !== undefined
+      ? auth.noteSearch(session, { last4: q.last4, ...(q.fromMs !== undefined ? { fromMs: q.fromMs } : {}), ...(q.toMs !== undefined ? { toMs: q.toMs } : {}), app: only })
+      : undefined;
+    answerJson(res, head, async () => {
+      try {
+        if (noted instanceof Promise) await noted;
+        return await listCalls(callsSources(deps, only), q, Date.now());
+      } finally {
+        done();
+      }
+    });
     return true;
   }
   // The Live page's figures for today: since the start of the viewer's day (`?since=<ms>`), from the traces.
   if (path === '/dashboard/today') {
     const only = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
     const since = msOf(query.get('since')) ?? new Date(new Date().setHours(0, 0, 0, 0)).getTime();
-    answerJson(res, head, () => todayOf(callsSources(deps, only), since, Date.now()));
+    answerJson(res, head, () => todayFigures(deps, only, since));
     return true;
   }
   if (path === '/dashboard/traces' && deps.apps && deps.apps.length > 0) {

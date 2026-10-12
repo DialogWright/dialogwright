@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DashboardBus } from './bus';
 import { handleDashboardRequest, type ConsoleApp, type DashboardDeps } from './routes';
-import { forgetSummaries, PAGE_SIZE } from './calls';
+import { forgetSummaries, listCalls, PAGE_SIZE } from './calls';
+import { LiveCalls } from './live';
 import type { CallRow } from './view.js';
 import type { DashboardEvent } from './events';
 import { scripted } from '../../testing/scripted';
@@ -108,6 +109,21 @@ describe('the live feed of one call, and of the newest', () => {
     }
   });
 
+  it('tells a viewer catching up on a call whose kept history was trimmed how many events it lost', async () => {
+    const bus = new DashboardBus(3);
+    bus.publish(started('CA1', 1));
+    for (let i = 0; i < 5; i++) bus.publish(dtmf('CA1', String(i)));
+    const { base } = await serve({ bus });
+    const s = await stream(`${base}/dashboard/events?call=CA1`);
+    try {
+      await s.until(2);
+      expect(s.blocks()[0]).toEqual({ event: 'missed', data: { count: 3 } });
+      expect((s.blocks()[1]!.data as DashboardEvent).type).toBe('call_started');
+    } finally {
+      await s.close();
+    }
+  });
+
   it('on a host with ?app=: the newest of that app\'s calls', async () => {
     const bus = new DashboardBus();
     const app = getApp(defaultAppId());
@@ -132,11 +148,12 @@ describe('the Live list\'s feed (?view=calls)', () => {
   it('sends every kept call\'s row, then each row that changed, then each call no longer kept; no value a caller gave', async () => {
     const bus = new DashboardBus(2000, 0);
     const { base } = await serve({ bus });
-    const { events } = await scripted([OPENER, ACCOUNT_ID], { callSid: 'CA1' });
+    // On the real clock: the list settles a call silent for half an hour as ended (view.js settledRow).
+    const { events } = await scripted([OPENER, ACCOUNT_ID], { callSid: 'CA1', startMs: Date.now() });
     // The first two turns now, the rest once the viewer is watching.
     const cut = events.findIndex((e) => e.type === 'asked');
     for (const e of events.slice(0, cut)) bus.publish(e);
-    bus.publish(started('CA2', 2));
+    bus.publish(started('CA2', Date.now()));
     const s = await stream(`${base}/dashboard/events?view=calls`);
     try {
       await s.until(1);
@@ -174,19 +191,35 @@ describe('the Live list\'s feed (?view=calls)', () => {
 });
 
 /** Writes a scripted call's trace (raw, as the writer would) and a frame log that ends it as `end` says. */
-async function writeCall(dir: string, callSid: string, steps: Parameters<typeof scripted>[0], end: 'hangup' | 'handoff' | 'none', startMs: number, from?: string): Promise<void> {
+async function writeCall(dir: string, callSid: string, steps: Parameters<typeof scripted>[0], end: 'hangup' | 'handoff' | 'completed' | 'none', startMs: number, from?: string): Promise<void> {
   const { records } = await scripted(steps, { callSid, startMs });
   const raw = records.map((r) => (from && r.event.type === 'session.start' ? { ...r, event: { ...r.event, provider: { ...r.event.provider, from } } } : r));
   writeFileSync(join(dir, `${callSid}.jsonl`), raw.map((r) => JSON.stringify(r)).join('\n') + '\n');
   const last = new Date(startMs + 5_000 * steps.length + 1_000).toISOString();
   const frames = end === 'hangup' ? [{ ts: last, dir: 'log', msg: { socketClosed: true, ended: false } }]
-    : end === 'handoff' ? [{ ts: last, dir: 'out', msg: { type: 'end', handoffData: JSON.stringify({ reasonCode: 'live-agent' }) } }]
+    : end === 'handoff' || end === 'completed' ? [{ ts: last, dir: 'out', msg: { type: 'end', handoffData: JSON.stringify({ reasonCode: end === 'handoff' ? 'live-agent' : 'completed' }) } }]
       : [];
   writeFileSync(join(dir, `${callSid}.frames.jsonl`), frames.map((f) => JSON.stringify(f)).join('\n') + (frames.length ? '\n' : ''));
 }
 
 /** A day in the past, so a store's own write times (the real clock's) are after it, as a server's always are. */
 const DAY = Date.parse('2026-09-18T15:00:00Z');
+
+describe('the Live list on the server (live.ts)', () => {
+  it('settles a call silent for half an hour as ended, so a server that stopped with it never leaves it in progress', async () => {
+    let t = Date.parse('2026-10-12T15:00:00Z');
+    const bus = new DashboardBus(2000, 20, 500, { now: () => t });
+    const list = new LiveCalls(bus, () => null, () => t);
+    bus.publish(started('CA1', t));
+    expect(list.snapshot().map((r) => [r.callSid, r.status])).toEqual([['CA1', 'on-track']]);
+    const changes: string[] = [];
+    list.watch((c) => changes.push(c.type === 'row' ? `${c.row.callSid} ${c.row.status} ${c.row.ending?.text ?? ''}` : `gone ${c.callSid}`));
+    t += 31 * 60_000;
+    list.settleStale();
+    expect(changes).toEqual(['CA1 ended no end recorded']);
+    expect(bus.hasEnded('CA1')).toBe(true);
+  });
+});
 
 describe('the Calls page\'s list (/dashboard/calls)', () => {
   it('lists past calls newest first, each with how it ended, filtered by the last four, the ending, the task and the dates; redacted', async () => {
@@ -217,6 +250,32 @@ describe('the Calls page\'s list (/dashboard/calls)', () => {
     expect(text).not.toContain('+1555');
     expect(text).not.toContain(WHOLE);
     expect(text).not.toMatch(/5550123|1234|back door/);
+  });
+
+  it('narrows a date range by the files\' last writes both ways: a day long ago is found without reading the newer calls', async () => {
+    const bus = new DashboardBus();
+    const { dir } = await serve({ bus });
+    const old = DAY - 7 * 86_400_000;
+    await writeCall(dir, 'CA_old', [], 'hangup', old);
+    utimesSync(join(dir, 'CA_old.jsonl'), new Date(old + 10_000), new Date(old + 10_000));
+    for (let i = 0; i < 30; i++) {
+      await writeCall(dir, `CA_new${i}`, [], 'hangup', DAY);
+      utimesSync(join(dir, `CA_new${i}.jsonl`), new Date(DAY + i), new Date(DAY + i));
+    }
+    const source = [{ id: null, app: getApp(defaultAppId()), traceDir: dir }];
+    // Found among the old day's files alone: the newer ones, written after the range and a day, are never read.
+    const found = await listCalls(source, { fromMs: old - 3_600_000, toMs: old + 3_600_000, page: 0 }, Date.now());
+    expect(found.rows.map((r) => r.callSid)).toEqual(['CA_old']);
+    expect(found.partial).toBe(false);
+  });
+
+  it('answers one search at a time per session: a second one while the first runs is refused (429)', async () => {
+    const bus = new DashboardBus();
+    const { base, dir } = await serve({ bus });
+    for (let i = 0; i < 40; i++) await writeCall(dir, `CA_${i}`, [OPENER], 'hangup', DAY + i);
+    const [a, b] = await Promise.all([fetch(`${base}/dashboard/calls?last4=0199`), fetch(`${base}/dashboard/calls?last4=0199`)]);
+    expect([a.status, b.status].sort()).toEqual([200, 429]);
+    expect((await fetch(`${base}/dashboard/calls?last4=0199`)).status).toBe(200);
   });
 
   it('pages', async () => {
@@ -258,7 +317,9 @@ describe('the Calls page on the trace store (TRACE_STORE=s3://...)', () => {
     const s3 = await FakeS3.start({ bucket: 'call-traces', region: 'us-east-1', credentials: keys });
     try {
       const setting = traceStoreSettingOf({ TRACE_STORE: 's3://call-traces/prod/traces', S3_ENDPOINT: s3.endpoint, S3_REGION: 'us-east-1', S3_ACCESS_KEY_ID: keys.accessKeyId, S3_SECRET_ACCESS_KEY: keys.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' })!;
-      for (const [sid, startMs] of [['CA_s1', DAY - 3 * 86_400_000], ['CA_s2', DAY]] as const) {
+      // Near the real clock: the store's own write times are the real clock's, as a server's are.
+      const near = Date.now() - 3_600_000;
+      for (const [sid, startMs] of [['CA_s1', near - 3 * 86_400_000], ['CA_s2', near]] as const) {
         const { records } = await scripted([OPENER], { callSid: sid, startMs });
         // The frame log on the call's own clock, after its last turn, as a server writes it.
         const store = new S3TraceStore(setting, { server: 'a-1', now: () => startMs + 20_000 });
@@ -272,7 +333,12 @@ describe('the Calls page on the trace store (TRACE_STORE=s3://...)', () => {
       expect(all.rows.map((r) => r.callSid).sort()).toEqual(['CA_s1', 'CA_s2']);
       expect(all.rows.map((r) => [r.from, r.ending?.kind])).toEqual([["…0133", "hangup"], ["…0133", "hangup"]]);
       expect(JSON.stringify(all)).not.toContain('+1555');
-      const ranged = (await (await fetch(`${base}/dashboard/calls?from=${DAY - 3_600_000}&to=${DAY + 3_600_000}`)).json()) as { rows: CallRow[] };
+      const ranged = (await (await fetch(`${base}/dashboard/calls?from=${near - 3_600_000}&to=${near + 3_600_000}`)).json()) as { rows: CallRow[] };
+      // A range a week back: its day folders hold nothing, and nothing written since is read.
+      const before = s3.requests.length;
+      const old = (await (await fetch(`${base}/dashboard/calls?from=${near - 9 * 86_400_000}&to=${near - 8 * 86_400_000}`)).json()) as { rows: CallRow[] };
+      expect(old.rows).toEqual([]);
+      expect(s3.requests.slice(before).filter((r) => r.method === 'GET' && /\.jsonl/.test(r.key)).length).toBe(0);
       expect(ranged.rows.map((r) => r.callSid)).toEqual(['CA_s2']);
     } finally {
       await s3.close();
@@ -287,12 +353,22 @@ describe('today\'s figures (/dashboard/today)', () => {
     await writeCall(dir, 'CA_y', [OPENER], 'hangup', DAY - 86_400_000);
     await writeCall(dir, 'CA_1', [OPENER, 'let me talk to a person'], 'handoff', DAY);
     await writeCall(dir, 'CA_2', [OPENER], 'hangup', DAY + 1_000);
-    await writeCall(dir, 'CA_3', [OPENER], 'hangup', DAY + 2_000);
+    await writeCall(dir, 'CA_3', [OPENER], 'completed', DAY + 2_000);
     // Each file last written as its call ended: yesterday's before the viewer's midnight, so it is never read.
     for (const [sid, at] of [['CA_y', DAY - 86_000_000], ['CA_1', DAY + 10_000], ['CA_2', DAY + 11_000], ['CA_3', DAY + 12_000]] as const) utimesSync(join(dir, `${sid}.jsonl`), new Date(at), new Date(at));
     const today = (await (await fetch(`${base}/dashboard/today?since=${DAY - 3_600_000}`)).json()) as { calls: number; ended: number; toPerson: number; containment: number; costUsd: number };
-    expect(today).toMatchObject({ calls: 3, ended: 3, toPerson: 1, contained: 2 });
-    expect(today.containment).toBeCloseTo(2 / 3);
+    // Containment is the calls the agent handled to the end: a hang-up is not counted as handled.
+    expect(today).toMatchObject({ calls: 3, ended: 3, toPerson: 1, hungUp: 1, errors: 0, contained: 1 });
+    expect(today.containment).toBeCloseTo(1 / 3);
     expect(today.costUsd).toBeGreaterThan(0);
+    // Kept: a poll a moment later is answered without reading the traces again, until a call ends.
+    await writeCall(dir, 'CA_4', [OPENER], 'completed', DAY + 3_000);
+    utimesSync(join(dir, 'CA_4.jsonl'), new Date(DAY + 13_000), new Date(DAY + 13_000));
+    const again = (await (await fetch(`${base}/dashboard/today?since=${DAY - 3_600_000}`)).json()) as { calls: number };
+    expect(again.calls).toBe(3);
+    bus.publish(started('CA_4', DAY));
+    bus.publish({ type: 'ended', callSid: 'CA_4', at: DAY, reason: 'completed' });
+    const after = (await (await fetch(`${base}/dashboard/today?since=${DAY - 3_600_000}`)).json()) as { calls: number; contained: number };
+    expect(after).toMatchObject({ calls: 4, contained: 2 });
   });
 });

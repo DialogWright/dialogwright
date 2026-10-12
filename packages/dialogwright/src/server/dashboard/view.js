@@ -774,8 +774,9 @@ export function reduce(events, opts) {
   let held = new Map();
   let turnsSeen = 0;
   /**
-   * The action webhook publishes `ended{hangup}` before a reconnect is known, so anything that
-   * only a live call produces takes the status back.
+   * The action webhook publishes `ended{hangup}` before a reconnect is known, so a reconnect takes
+   * the status back. A turn that finishes after the end (one in flight when the hangup came) does not:
+   * the call stays ended, and the turn is marked as late.
    */
   const live = () => {
     if (!ended) return;
@@ -813,7 +814,6 @@ export function reduce(events, opts) {
         delete v.answeredBy;
         break;
       case 'asked': {
-        live();
         const rows = decisiveRows(null, v.thresholds, [], e.questions, e.turnState?.activeForm ?? null);
         v.jev = {
           header: `Jev · turn ${e.turnIndex} · ${Object.keys(e.questions ?? {}).length} questions · asking…`,
@@ -856,7 +856,7 @@ export function reduce(events, opts) {
         if (consulted && r.error) v.lines.push({ kind: 'marker', text: `model error · ${r.error.name}`, turn: r.turnIndex });
         if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex });
         if (!consulted && !acted) break;
-        live();
+        if (ended && v.callSid !== null) v.lines.push({ kind: 'marker', text: 'a late turn: finished after the call ended', turn: r.turnIndex });
         // The console's per-turn stage row and the level badge. A verification this turn
         // wins: its `identity` audit draft carries the level it left the caller at, which is what
         // a keypad code step (no `turnState`: nothing was asked of the model) would otherwise show
@@ -1501,15 +1501,12 @@ function rowOf(events) {
       const r = e.record;
       const consulted = r.questions !== null && r.questions !== undefined;
       const acted = r.decision?.kind !== 'ignore' && r.decision?.kind !== 'hold';
-      if (consulted || acted) {
-        lastAct = r;
-        // As reduce() reads it: a call that said it ended is live again once a turn acts.
-        endedAt = null;
-        endReason = null;
-      }
+      // A turn finishing after the end (one in flight when the hangup came) never makes the call live again.
+      if ((consulted || acted) && endReason === null) lastAct = r;
       if (frustratedOn(r)) frustrated = true;
       for (const f of [r.form, ...(Array.isArray(r.completed) ? r.completed : [])]) if (f && !forms.includes(f)) forms.push(f);
-    } else if (e.type === 'asked' || e.type === 'reconnect') {
+    } else if (e.type === 'reconnect') {
+      // As reduce() reads it: a reconnect after the hangup webhook makes the call live again.
       endedAt = null;
       endReason = null;
     } else if (e.type === 'handoff') {
@@ -1549,6 +1546,21 @@ function rowOf(events) {
   };
 }
 
+/** A call with no end recorded and no word for this long ended without saying so (a server that stopped, a peer that died, an evicted call). */
+export const STALE_MS = 30 * 60_000;
+
+/**
+ * A row as it stands at `now`: a call with no end recorded that has had no word for STALE_MS ended
+ * without saying so: to a person if a handoff was under way, else an error, "no end recorded". A call
+ * heard from more recently is in progress. The same rule for the Live list and the Calls page.
+ */
+export function settledRow(row, now) {
+  if (!row || row.ending !== null || row.lastAt === null || now - row.lastAt <= STALE_MS) return row;
+  const endedAt = row.lastAt;
+  if (row.status === 'transferring') return { ...row, status: 'with-person', endedAt, ending: { kind: 'person', reason: row.handoffReason, text: 'to a person · no end recorded' } };
+  return { ...row, status: 'ended', endedAt, ending: { kind: 'error', text: 'no end recorded' } };
+}
+
 /** A status in words, as the Live list says it. */
 export const STATUS_TEXT = {
   'on-track': 'on track',
@@ -1572,11 +1584,13 @@ export const HANDED_OFF_SHOWN_MS = 120_000;
 
 /**
  * The Live list: the calls in progress, and calls handed off in the last HANDED_OFF_SHOWN_MS, of one
- * app (`app`) or all (null); alerts first, then the longest-running first.
+ * app (`app`) or all (null); alerts first, then the longest-running first. A call silent for STALE_MS
+ * with no end recorded is not in progress (settledRow), whatever the server last said of it.
  */
 export function liveList(rows, now, app) {
   return (rows ?? [])
     .filter((r) => r && (app == null || r.app === app))
+    .map((r) => settledRow(r, now))
     .filter((r) => r.endedAt === null || (r.status === 'with-person' && now - r.endedAt < HANDED_OFF_SHOWN_MS))
     .sort((a, b) => Number(isAlert(b)) - Number(isAlert(a)) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
 }

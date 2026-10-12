@@ -1327,6 +1327,10 @@ describe('dashboard publishing', () => {
     const second = fakeSocket();
     await handleSocketMessage(d, second, newConnectionContext(token, second), setupMsg('CA1', 'VX2'));
     expect(events.find((e) => e.type === 'reconnect')).toMatchObject({ attempt: 1 });
+    // With what a console that never saw the call start lists it by: the caller masked, as call_started has it.
+    const started = events.find((e) => e.type === 'call_started') as { from: string; provider?: string };
+    expect(events.find((e) => e.type === 'reconnect')).toMatchObject({ call: { from: started.from, channel: 'voice', provider: started.provider, startedAt: expect.any(Number) } });
+    expect(JSON.stringify(events.find((e) => e.type === 'reconnect'))).not.toMatch(/\+1\d{10}/);
     expect(types(events)).not.toContain('ended');
   });
 

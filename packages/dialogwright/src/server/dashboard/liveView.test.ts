@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { scripted, FROM } from '../../testing/scripted';
 import {
   alertCount, alertsRaised, callRow, callsQuery, configure, dayBoundMs, durationText, HANDED_OFF_SHOWN_MS, isAlert, liveList, liveStrip,
-  pageTitle, STATUS_TEXT, withMeta, formLabel, type CallRow,
+  pageTitle, STATUS_TEXT, withMeta, formLabel, reduce, settledRow, STALE_MS, type CallRow,
 } from './view.js';
 import { consoleMetaOf, type ConsoleMeta } from './meta';
 import { testkitApp } from '../../testing/testkit';
@@ -72,6 +72,25 @@ describe('callRow: one call as the Live list shows it', () => {
     const { events } = await scripted([OPENER]);
     const back = callRow([...events, ended('hangup'), { type: 'reconnect', callSid: 'CA1', at: 61_000, attempt: 1 }]);
     expect(back).toMatchObject({ endedAt: null, ending: null, status: 'on-track' });
+  });
+
+  it('stays ended when a turn finishes after the hangup (one in flight when it came), and the detail view marks the turn as late', async () => {
+    const { events } = await scripted([OPENER]);
+    const late = { ...events.filter((e) => e.type === 'turn').at(-1)!, at: 61_000 } as DashboardEvent;
+    expect(callRow([...events, ended('hangup'), late])).toMatchObject({ status: 'ended', endedAt: 60_000, ending: { kind: 'hangup' } });
+    const v = reduce([...events, ended('hangup'), late]);
+    expect(v.status).toBe('ended · hangup');
+    expect(v.lines.at(-1)).toMatchObject({ kind: 'marker', text: 'a late turn: finished after the call ended' });
+  });
+
+  it('settles a call with no end recorded and no word for half an hour as ended (settledRow), and leaves one heard from lately', async () => {
+    const { events } = await scripted([OPENER], { startMs: 1_000 });
+    const row = callRow(events);
+    expect(settledRow(row, row.lastAt! + STALE_MS)).toBe(row);
+    expect(settledRow(row, row.lastAt! + STALE_MS + 1)).toMatchObject({ status: 'ended', endedAt: row.lastAt, ending: { kind: 'error', text: 'no end recorded' } });
+    const { events: moving } = await scripted([OPENER, 'let me talk to a person'], { startMs: 1_000 });
+    const handing = callRow(moving);
+    expect(settledRow(handing, handing.lastAt! + STALE_MS + 1)).toMatchObject({ status: 'with-person', ending: { kind: 'person', reason: 'live-agent' } });
   });
 
   it('never carries a value the caller gave: only what was asked', async () => {
