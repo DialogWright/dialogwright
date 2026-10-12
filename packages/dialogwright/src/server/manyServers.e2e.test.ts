@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { createServer, request, type Server } from 'node:http';
 import { connect, type Socket } from 'node:net';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
@@ -21,6 +21,13 @@ import { RESUMED_TEXT } from './adapter';
 import { testkitApp } from '../testing/testkit';
 import { serviceResultEvent } from '../channel/events';
 import type { ServiceResolveOptions } from '../core/app/types';
+import WebSocket from 'ws';
+import { FakeS3 } from '../testing/fakeS3';
+import { parseSegmentName, traceReaderOf } from '../trace/store';
+import { verifyPostgresAudit } from '../audit/postgres';
+import type { AuditEntry } from '../audit/types';
+import type { PublishedEvent } from './dashboard/bus';
+import type { ServerMessage } from '../channel/chat/protocol';
 
 /**
  * Two servers, one Postgres (SESSION_STORE=postgres, here PGlite in the process), behind a load balancer
@@ -72,11 +79,29 @@ function folder(): string {
   return d;
 }
 
-/** One server on the shared database, with traces and an audit of its own (until 8b2 joins them). */
-async function boot(name: string, db: PGlite, extra: Env = {}, o: { client?: JevClient; sql?: PgliteSql } = {}): Promise<Node> {
+/** The trace store two servers share (TRACE_STORE=s3://...), in the process, and the keys it checks. */
+const S3_KEYS = { accessKeyId: 'AKIDMANYSERVERS', secretAccessKey: 'a-secret-only-the-fake-store-knows' };
+const TRACE_STORE = 's3://call-traces/many';
+const s3Env = (s3: FakeS3): Env => ({
+  TRACE_STORE, S3_ENDPOINT: s3.endpoint, S3_REGION: 'us-east-1', S3_ACCESS_KEY_ID: S3_KEYS.accessKeyId, S3_SECRET_ACCESS_KEY: S3_KEYS.secretAccessKey, S3_FORCE_PATH_STYLE: 'on',
+});
+
+async function traceStore(): Promise<FakeS3> {
+  const s3 = await FakeS3.start({ bucket: 'call-traces', region: 'us-east-1', credentials: S3_KEYS });
+  cleanups.push(() => s3.close());
+  return s3;
+}
+
+/**
+ * One server on the shared database. With `records`, its audit and traces are shared too (8b2): the
+ * audit in the same database (AUDIT_STORE, on the same connection) and the traces on one S3 store
+ * (TRACE_STORE); without, each server has its own audit day files and trace files, as in 8b1.
+ */
+async function boot(name: string, db: PGlite, extra: Env = {}, o: { client?: JevClient; sql?: PgliteSql; records?: FakeS3 } = {}): Promise<Node> {
   const dir = folder();
   const logs: string[] = [];
   const sql = o.sql ?? pgliteSql(db);
+  if (o.records) extra = { AUDIT_STORE: PLACEHOLDER_URL, ...s3Env(o.records), ...extra };
   const env: Env = {
     PUBLIC_HOST: 'localhost',
     TWILIO_AUTH_TOKEN: 't',
@@ -99,7 +124,7 @@ async function boot(name: string, db: PGlite, extra: Env = {}, o: { client?: Jev
     logs.push(l);
     if (process.env.MANY_SERVERS_DEBUG) console.log(name, Date.now() - t0, l);
   };
-  const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: o.client ?? stub, log, sessionSql: sql });
+  const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: o.client ?? stub, log, sessionSql: sql, ...(o.records ? { auditSql: sql } : {}) });
   const node: Node = { name, server, sql, logs, dir, down: false };
   cleanups.push(() => server.close().catch(() => {}));
   return node;
@@ -272,6 +297,54 @@ function auditOf(n: Node, callSid: string): string[] {
     .filter((e) => e.callId === callSid).map((e) => e.type);
 }
 
+/** The call's one trace on the shared store, its segments joined: its turns, and the servers that wrote them. */
+async function joinedTrace(s3: FakeS3, callSid: string): Promise<{ turns: number[]; servers: string[] }> {
+  const stem = callSid.replace(/[^A-Za-z0-9_-]/g, '_');
+  const joined = await traceReaderOf(TRACE_STORE, s3Env(s3))!.read(stem);
+  const servers = [...s3.objects.keys()].filter((k) => k.startsWith(`many/${stem}/`) && k.endsWith('.trace.jsonl'))
+    .map((k) => parseSegmentName(k.split('/').at(-1)!)!.server.replace(/-[0-9a-f]{8}$/, ''));
+  return { turns: (joined?.trace ?? []).map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex), servers: [...new Set(servers)] };
+}
+
+/** The call's one audit chain in the database, the whole audit verified (every chain, every day's anchors), and its newest entry anchored. */
+async function sharedAudit(db: PGlite, callSid: string): Promise<AuditEntry[]> {
+  expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
+  const chain = (await db.query<{ body: string }>('SELECT body FROM dw_audit_entries WHERE chain = $1 ORDER BY seq', [callSid])).rows.map((r) => JSON.parse(r.body) as AuditEntry);
+  const anchors = (await db.query<{ body: string }>('SELECT body FROM dw_audit_anchors')).rows.map((r) => JSON.parse(r.body) as { callId: string; callSeq: number; callHash: string });
+  expect(anchors).toContainEqual(expect.objectContaining({ callId: callSid, callSeq: chain.at(-1)!.seq, callHash: chain.at(-1)!.hash }));
+  return chain;
+}
+
+/** A console's live feed on one server (its /dashboard/events), the events it has sent so far. */
+async function consoleFeed(n: Node): Promise<{ events: PublishedEvent[]; close(): void }> {
+  const ac = new AbortController();
+  const res = await fetch(`http://127.0.0.1:${n.server.port}/dashboard/events`, { signal: ac.signal });
+  const events: PublishedEvent[] = [];
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  void (async () => {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        let at: number;
+        while ((at = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, at);
+          buffer = buffer.slice(at + 2);
+          const data = block.split('\n').find((l) => l.startsWith('data: ') && !block.startsWith('event:'));
+          if (data) events.push(JSON.parse(data.slice('data: '.length)) as PublishedEvent);
+        }
+      }
+    } catch {
+      // closed
+    }
+  })();
+  cleanups.push(() => ac.abort());
+  return { events, close: () => ac.abort() };
+}
+
 async function storedCalls(db: PGlite): Promise<string[]> {
   return (await db.query<{ call_id: string }>('SELECT call_id FROM dw_calls')).rows.map((r) => r.call_id);
 }
@@ -282,12 +355,18 @@ describe('two servers on one Postgres', () => {
       const db = await PGlite.create();
       cleanups.push(() => db.close());
       const env: Env = carrier === 'telnyx' ? { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY } : {};
-      const a = await boot('a', db, env);
-      const b = await boot('b', db, env);
+      const s3 = await traceStore();
+      const a = await boot('a', db, env, { records: s3 });
+      const b = await boot('b', db, env, { records: s3 });
       const lb = await balancer(() => [a, b]);
       const callSid = carrier === 'telnyx' ? 'v2:telnyx-many-servers' : 'CA00000000000000000000000000000one';
+      // A console open on B before the call, which A runs.
+      const onB = await consoleFeed(b);
 
       const relay = await firstHalf(await answer(lb, carrier, callSid), callSid);
+      // B's console has followed the call on A: its start and each of A's turns, as A's console would.
+      await until(() => onB.events.some((e) => e.type === 'turn' && e.callSid === callSid && e.record.turnIndex === 3), 3000, "A's third turn on B's console");
+      expect(onB.events.filter((e) => e.callSid === callSid).map((e) => e.type)).toContain('call_started');
       // A holds the call, and has saved it after the turn that asked for the birth date.
       expect((await db.query<{ owner: string }>('SELECT owner FROM dw_call_leases')).rows.map((r) => r.owner)).toEqual([a.server.store.owner]);
       expect(await storedCalls(db)).toEqual([callSid]);
@@ -308,13 +387,19 @@ describe('two servers on one Postgres', () => {
       await b.server.store.settled();
       expect(await storedCalls(db)).toEqual([]);
       expect((await db.query('SELECT * FROM dw_call_leases')).rows).toEqual([]);
-      // No turn dropped or run twice: A's turns, then B's, one after another.
-      expect([...turnsIn(a, callSid), ...turnsIn(b, callSid)]).toEqual([1, 2, 3, 4, 5]);
-      // Each server's audit chain verifies; the call starts in A's and ends in B's (8b2 joins them).
-      expect(auditOf(a, callSid)[0]).toBe('call_started');
-      expect(auditOf(a, callSid)).not.toContain('call_ended');
-      expect(auditOf(b, callSid).filter((t) => t !== 'handoff_summary').at(-1)).toBe('call_ended');
-      expect(auditOf(b, callSid)).not.toContain('call_started');
+      // No turn dropped or run twice: one trace, A's segments then B's, joined in order.
+      await b.server.close();
+      expect(await joinedTrace(s3, callSid)).toEqual({ turns: [1, 2, 3, 4, 5], servers: ['a', 'b'] });
+      // One audit chain for the call, begun by A and ended by B, verifying, its newest entry anchored in the day's chain.
+      const chain = await sharedAudit(db, callSid);
+      expect(chain[0]!.type).toBe('call_started');
+      expect(chain.filter((e) => e.type !== 'handoff_summary').at(-1)!.type).toBe('call_ended');
+      expect(chain.filter((e) => e.type === 'call_started')).toHaveLength(1);
+      // B's console saw B's own turns of the call too.
+      await until(() => onB.events.some((e) => e.type === 'turn' && e.callSid === callSid && e.record.turnIndex === 5), 3000, "B's last turn on its console");
+      // Nothing of either server's own files: the records are shared.
+      for (const n of [a, b]) expect(existsSync(join(n.dir, 'traces')) ? readdirSync(join(n.dir, 'traces')) : []).toEqual([]);
+      for (const n of [a, b]) expect(existsSync(join(n.dir, 'audit')) ? readdirSync(join(n.dir, 'audit')) : []).toEqual([]);
     }, 30_000);
   }
 
@@ -337,11 +422,16 @@ describe('two servers on one Postgres', () => {
       cleanups.push(() => db.close());
       // A hold far longer than the test: had A not given it up, B could not take the call in time.
       const env: Env = { CALL_LEASE_MS: '60000', RESTART_PAUSE_S: '0', ...(carrier === 'telnyx' ? { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY } : {}) };
-      const a = await boot('a', db, env);
-      const b = await boot('b', db, env);
+      const s3 = await traceStore();
+      const a = await boot('a', db, env, { records: s3 });
+      const b = await boot('b', db, env, { records: s3 });
       const lb = await balancer(() => [a, b]);
+      const seenOnB: PublishedEvent[] = [];
+      b.server.bus!.subscribe((e) => seenOnB.push(e));
       const callSid = carrier === 'telnyx' ? 'v2:telnyx-many-servers-drain' : 'CA0000000000000000000000000000drn';
       const relay = await firstHalf(await answer(lb, carrier, callSid), callSid);
+      // B's console has the call A runs.
+      await until(() => seenOnB.some((e) => e.type === 'turn' && e.callSid === callSid && e.record.turnIndex === 3), 3000, "A's third turn on B's console");
       const drained = a.server.drain(0);
       // Going away: the carrier calls back, and the balancer, which A's /ready now turns away, sends it to B.
       expect((await relay.closed).code).toBe(1001);
@@ -351,9 +441,14 @@ describe('two servers on one Postgres', () => {
       expect(a.logs).toContain(`${callSid}: let go: its socket closed, and the server its carrier reconnects to takes it`);
       expect(a.logs.filter((l) => l.includes('-> dial'))).toEqual([]);
       expect(b.logs).toContain(`${callSid}: taken over from the session store (turn 3, reconnect 1, given up by a stopping server) by ${b.server.store.owner}`);
-      expect([...turnsIn(a, callSid), ...turnsIn(b, callSid)]).toEqual([1, 2, 3, 4, 5]);
       await b.server.store.settled();
       expect(await storedCalls(db)).toEqual([]);
+      await b.server.close();
+      // One trace across the two servers, and one audit chain for the call, verifying and anchored.
+      expect(await joinedTrace(s3, callSid)).toEqual({ turns: [1, 2, 3, 4, 5], servers: ['a', 'b'] });
+      const chain = await sharedAudit(db, callSid);
+      expect(chain[0]!.type).toBe('call_started');
+      expect(chain.filter((e) => e.type !== 'handoff_summary').at(-1)!.type).toBe('call_ended');
     }, 30_000);
   }
 
@@ -382,6 +477,51 @@ describe('two servers on one Postgres', () => {
     expect(await again.waitForTexts(1)).toEqual([`${RESUMED_TEXT} ${ASK_DOB}`]);
     expect(b.logs).toContain(`${callSid}: taken over from the session store (turn 3, reconnect 1, given up by a stopping server) by ${b.server.store.owner}`);
   }, 30_000);
+});
+
+describe('a chat across two servers', () => {
+  const ORIGIN = 'https://www.example.com';
+
+  /** A page's chat socket on one server: what it was sent, and how it closed. */
+  async function chatOn(n: Node): Promise<{ received: ServerMessage[]; send(m: unknown): void; closed: Promise<{ code: number; reason: string }>; until(pred: (r: ServerMessage[]) => boolean): Promise<void> }> {
+    const ws = new WebSocket(`ws://127.0.0.1:${n.server.port}/chat`, { origin: ORIGIN });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    cleanups.push(() => ws.close());
+    const received: ServerMessage[] = [];
+    ws.on('message', (data) => received.push(JSON.parse(data.toString()) as ServerMessage));
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => ws.on('close', (code, reason) => resolve({ code, reason: reason.toString() })));
+    return { received, send: (m) => ws.send(JSON.stringify(m)), closed, until: (pred) => until(() => pred(received), 4000, 'the chat') };
+  }
+
+  it("a chat resumed on another server takes it over: the socket on the first is closed, wherever it is, and the first lets the chat go", async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const env: Env = { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN };
+    const a = await boot('a', db, env);
+    const b = await boot('b', db, env);
+    const first = await chatOn(a);
+    first.send({ type: 'start', v: 1 });
+    await first.until((r) => r.some((m) => m.type === 'say'));
+    const ready = first.received[0] as Extract<ServerMessage, { type: 'ready' }>;
+    // A has saved the chat with its resume token.
+    await a.server.chat!.settled!();
+    // The page opens a second socket, which the balancer sends to B, with the resume token (its first still open on A).
+    const second = await chatOn(b);
+    second.send({ type: 'start', v: 1, resume: ready.resume });
+    await second.until((r) => r.some((m) => m.type === 'ready'));
+    expect((second.received[0] as Extract<ServerMessage, { type: 'ready' }>).session).toBe(ready.session);
+    // A hears of it through the database and closes its socket, as a resume on one server closes the one before it.
+    expect(await first.closed).toEqual({ code: 1000, reason: 'resumed elsewhere' });
+    expect(a.logs).toContain(`chat ${ready.session}: resumed on another server; let go here`);
+    expect(a.server.chat!.liveCount()).toBe(0);
+    expect(b.server.chat!.liveCount()).toBe(1);
+    // The chat goes on on B.
+    second.send({ type: 'ping' });
+    await second.until((r) => r.some((m) => m.type === 'pong'));
+  }, 20_000);
 });
 
 describe('what a shared store cannot do goes to a person, never dead air', () => {
