@@ -57,6 +57,35 @@ export interface SpeechAct {
   };
 }
 
+/**
+ * What the model is given to word one span of a framed line (prompts.yaml's `generate`): the span's
+ * goal and the content it is worded from, quoted as the caller's words, its word budget, the style,
+ * the channel and the language. Never the frame (the line's fixed text around it), the items, the
+ * caller's latest words, the situation or anything else of the call.
+ */
+export interface SpanAct {
+  readonly kind: 'span';
+  /** What the span must say (prompts.yaml's `generate.<span>.goal`). */
+  readonly goal: string;
+  /** The content the span is worded from (its `from`), quoted: the caller's words, never instructions. */
+  readonly content: readonly SpeechItem[];
+  readonly channel: RenderChannel;
+  /** The language the call is in (a language tag). */
+  readonly language: string;
+  readonly style: {
+    readonly persona: string;
+    /** The most words the span may use (`generate.<span>.words`). */
+    readonly words: number;
+    readonly avoid: readonly string[];
+  };
+}
+
+/** What a render client is asked to word: a whole line's speech act, or a framed line's span. */
+export type RenderAct = SpeechAct | SpanAct;
+
+/** Whether `act` is a framed line's span. */
+export const isSpanAct = (act: RenderAct): act is SpanAct => (act as { kind?: unknown }).kind === 'span';
+
 export interface RenderUsage {
   inputTokens: number;
   outputTokens: number;
@@ -89,8 +118,10 @@ export class RenderClientError extends Error {
  */
 export interface RenderRequest {
   readonly promptId: string;
-  readonly act: SpeechAct;
+  readonly act: RenderAct;
   readonly key: string;
+  /** The span of the line it words (a framed line's `generate`), by name; absent for a line worded whole. */
+  readonly span?: string;
 }
 
 /**
@@ -109,6 +140,8 @@ export type RenderFallback =
   | 'timeout' | 'error' | 'cassette-miss' | 'drift-error'
   /** The line adds a negation it was not given, or drops one from words it restates. */
   | 'negation'
+  /** A span speaks as or to someone its content does not (I, we, you...): the agent's own words, or words to the listener, in a summary. */
+  | 'person'
   /** The line names another value of an item's own slot (the wrong recipient, day or kind) that its fixed line does not. */
   | 'conflict'
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
@@ -129,16 +162,24 @@ export type RenderSkip =
   /** The line says a knowledge base's answer, word for word. */
   | 'knowledge'
   /** The core asked for the line word for word (a summary read back exactly, forms.yaml's `summary.onNo: read-back`). */
-  | 'exact';
+  | 'exact'
+  /** A framed line's span whose content is empty: there is nothing to word. */
+  | 'no-content';
 
 /** One line the app generates, as said on a turn (TraceRecord.render.lines). */
 export interface RenderLine {
   /** Its index in the turn's actions. */
   index: number;
   promptId: string;
-  /** `generated`: the model's wording was said; `fixed`: the fixed line was. */
+  /**
+   * A framed line's span (prompts.yaml's `generate`), by name: then this entry is that span alone, its
+   * `fixed` the exact content and its `said` the span's wording, spliced into the line's fixed frame.
+   * A framed line has one entry per span; absent for a line worded whole.
+   */
+  span?: string;
+  /** `generated`: the model's wording was said; `fixed`: the fixed line (for a span, its exact content) was. */
   mode: 'generated' | 'fixed';
-  /** The fixed line, as it would be said. */
+  /** The fixed line, as it would be said; for a span, its exact content. */
   fixed: string;
   /** The generated wording said; only when `mode` is generated. */
   said?: string;

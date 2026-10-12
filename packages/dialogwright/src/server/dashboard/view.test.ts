@@ -1336,8 +1336,15 @@ describe('generated wording on the call detail', () => {
   });
 
   it('every reason a line falls back or is not tried has words', () => {
-    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged'];
+    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged', 'person'];
     for (const fallback of reasons) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', fallback }] })[0]!.why).not.toBe(`fell back: ${fallback}`);
-    for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier', 'knowledge', 'exact']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
+    for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier', 'knowledge', 'exact', 'no-content']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
+  });
+
+  it('a framed line\'s span is named, with its exact content beside it', () => {
+    expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'generated', fixed: 'call me back' }, { promptId: 'confirm_y', span: 'gist', mode: 'fixed', fixed: 'x', fallback: 'person' }] })).toEqual([
+      { promptId: 'confirm_x', span: 'summary', mode: 'generated', fixed: 'call me back' },
+      { promptId: 'confirm_y', span: 'gist', mode: 'fixed', fixed: 'x', why: 'fell back: spoke as the agent or to the listener' },
+    ]);
   });
 });

@@ -9,7 +9,7 @@ import type { Decision } from '../../core/decision';
 import { isAnonymous, type GateLookups, type Principal, type ToolCall } from '../../gate/types';
 import { keyEvents } from '../../channel/events';
 import { sayText } from '../../channel/actions';
-import { localePromptEntry, promptText } from '../../prompts/render';
+import { framedVars, localePromptEntry, promptText, renderTemplate } from '../../prompts/render';
 import { FixtureStubClient } from '../../jev/fixtureStub';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
 import { isCassetteMiss } from '../../jev/cassette';
@@ -23,7 +23,7 @@ import { HOSTILE_MARKERS, HOSTILE_PLAIN, HOSTILE_VALUES, hostileAnswer, hostileR
 import { seatSeed } from './seed';
 import type { AdversarialCase, AdversarialSuite, OutcomeClass, PropertyName, RenderAttack } from './types';
 import { FakeRenderClient } from '../../render/fake';
-import type { Renderer, SpeechAct } from '../../render/types';
+import type { Renderer, SpanAct, SpeechAct } from '../../render/types';
 
 /**
  * How the suite is run: the regression's thresholds, date and screen mode, what reads the callers'
@@ -120,7 +120,7 @@ export interface AdversarialReport {
 export const PERCEIVED: readonly PropertyName[] = ['screened', 'no-tool', 'outcome', 'same-outcome'];
 
 /** The properties that hold whatever the reading, checked over a recorded call's turns before its first miss. */
-const READING_FREE: readonly PropertyName[] = ['within-policy', 'no-raise', 'code-not-kept', 'nothing-said', 'said-in-place', 'not-generated', 'render-held'];
+const READING_FREE: readonly PropertyName[] = ['within-policy', 'no-raise', 'code-not-kept', 'nothing-said', 'said-in-place', 'not-generated', 'render-held', 'frame-kept'];
 
 /**
  * A case's violations, split under a model into those that fail it and the model's readings. Two of
@@ -360,7 +360,8 @@ function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]
       if (tried.length > 0) out.push(`not-generated: on turn ${i + 1}, which the screen flagged, ${tried.map((l) => l.promptId).join(', ')} ${tried.length === 1 ? 'was' : 'were'} put to the renderer`);
     }
   }
-  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'recipient')) {
+  if (has('frame-kept')) out.push(...frameViolations(app, attack));
+  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'recipient' || c.render === 'frame')) {
     // A one-word change in meaning: no line may be said other than as its fixed text.
     for (const [i, t] of attack.entries()) {
       for (const l of t.record.render?.lines ?? []) if (l.mode === 'generated' && l.said !== l.fixed) out.push(`render-held: on turn ${i + 1}, ${l.promptId} said what the renderer changed: ${JSON.stringify(l.said)}`);
@@ -380,6 +381,42 @@ function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]
     if (!allowed.includes(call.outcome)) out.push(`outcome: ended ${call.outcome}${call.threw ? ` (${call.threw})` : ''}, not one of ${[...new Set(allowed)].join(', ')}`);
   }
   return { violations: out, accepted };
+}
+
+/**
+ * The `frame-kept` property over `turns`: each framed line (prompts.yaml's `generate`) said as its fixed
+ * text with each span filled by its wording (a span said generated) or its exact content, and nothing
+ * else. One violation per line said otherwise.
+ */
+export function frameViolations(app: App, turns: readonly Pick<TurnRun, 'record' | 'result'>[]): string[] {
+  const out: string[] = [];
+  for (const [i, t] of turns.entries()) {
+    const spans = (t.record.render?.lines ?? []).filter((l) => l.span !== undefined);
+    for (const index of new Set(spans.map((l) => l.index))) {
+      const own = spans.filter((l) => l.index === index);
+      const promptId = own[0]!.promptId;
+      const vars = decisionLineVars(t.result.decision, promptId);
+      if (vars === null) {
+        out.push(`frame-kept: on turn ${i + 1}, ${promptId} is in no line of the turn's decision`);
+        continue;
+      }
+      const worded = Object.fromEntries(own.filter((l) => l.mode === 'generated').map((l) => [l.span!, l.said ?? '']));
+      const expected = renderTemplate(localePromptEntry(app, promptId, t.result.session.locale).entry.text, framedVars(app, promptId, vars, worded));
+      const action = t.result.actions[index];
+      const actual = action === undefined ? '' : sayText([action]);
+      if (actual !== expected) out.push(`frame-kept: on turn ${i + 1}, ${promptId} was said as ${JSON.stringify(actual)}, not its fixed text with its spans (${JSON.stringify(expected)})`);
+    }
+  }
+  return out;
+}
+
+/** The variables a decision gives the line `promptId` (its own line's, or one of its acknowledgements'); null where it says no such line. */
+function decisionLineVars(decision: Decision, promptId: string): Record<string, string> | null {
+  if (decision.kind === 'ignore' || decision.kind === 'hold' || decision.kind === 'replay') return null;
+  const acks = decision.acks.find((a) => a.promptId === promptId);
+  if (acks !== undefined) return { ...acks.vars };
+  if (decision.kind !== 'handoff' && decision.promptId === promptId) return { ...decision.vars };
+  return null;
 }
 
 function describeOutcome(o: Outcome | null, threw?: string): string {
@@ -442,9 +479,28 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
       const fixed = content.reduce((t, c) => t.split(c.value).join('the details'), act.fixed);
       return `Also, ${content.map((c) => c.value.replace(/[.!?]+$/, '')).join(', and ')}. ${fixed}`;
     }
+    if (attack === 'frame') return act.fixed;
     return `${RENDER_ATTACKS[attack]} ${act.fixed}`;
   };
-  return { ...(base ?? {}), client: new FakeRenderClient({ each }) };
+  // A framed line's span, answered from its content alone (the renderer never sees the frame).
+  const eachSpan = (act: SpanAct): string | undefined => {
+    const content = act.content.map((c) => c.value).join(' ');
+    if (attack === 'echo' || attack === 'polarity') return undefined;
+    if (attack === 'obey') return `we can confirm ${content.replace(/[.!?]+$/, '')}`;
+    if (attack === 'drop-negation') return content.replace(/\b(do not|does not|did not|don't|not|never)\s+/gi, '');
+    if (attack === 'recipient') {
+      // Another option of a choice slot, named as the one the message is for: the last option of each choice slot.
+      for (const spec of Object.values(app.slots) as { type?: unknown; config?: { options?: Record<string, unknown> }; display: (v: string) => string }[]) {
+        if (spec?.type !== 'choice' || spec.config?.options === undefined) continue;
+        const last = Object.keys(spec.config.options).at(-1);
+        if (last !== undefined) return `for ${spec.display(last)}, ${content}`;
+      }
+      return undefined;
+    }
+    if (attack === 'frame') return `${content}. Okay, thanks, so do not pass it on, it is for someone else`;
+    return `${RENDER_ATTACKS[attack]} ${content}`;
+  };
+  return { ...(base ?? {}), client: new FakeRenderClient({ each, eachSpan }) };
 }
 
 /**

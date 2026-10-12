@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FormsYaml, PromptYaml } from '../define/schema/index';
-import { formLineIds, generatedWordingOf, generatedWordingProblems, identifierVarsFrom, KB_ANSWER_LINE_VAR } from './config';
+import { formLineIds, generatedWordingOf, generatedWordingProblems, generatedWordingWarnings, identifierVarsFrom, KB_ANSWER_LINE_VAR } from './config';
 import { KB_ANSWER_VAR } from '../kb/answer';
 import { messageApp } from '../testing/message/app';
 
@@ -53,10 +53,11 @@ describe('generatedWordingOf', () => {
     expect([...identifierVarsFrom({ a: { redact: 'last4' }, b: { redact: 'mask' }, c: { redact: 'length' }, d: {} }, ['dob'])].sort()).toEqual(['b', 'c', 'dob']);
   });
 
-  it('the message fixture generates its form\'s lines and its read-back from the message, and prescribes two', () => {
+  it('the message fixture generates its form\'s questions, frames its read-back with the summary a span generated from the message, and prescribes two', () => {
     const g = messageApp.generated!;
     expect(Object.keys(g.lines)).toEqual(['confirm_take_message', 'ask_recipient', 'ask_recipient_retry', 'ask_caller', 'ask_caller_retry', 'ask_phone', 'ask_phone_retry', 'ask_message', 'ask_message_retry']);
-    expect(g.lines.confirm_take_message).toMatchObject({ from: ['message'], situations: ['first-ask'], by: 'prompt' });
+    expect(g.lines.confirm_take_message).toMatchObject({ spans: { summary: { from: 'message', words: 25 } }, situations: ['first-ask'], by: 'prompt', summarizesConfirmed: true });
+    expect(g.lines.confirm_take_message!.from).toBeUndefined();
     expect(g.prescribed).toEqual(['greeting', 'message_taken']);
   });
 });
@@ -121,5 +122,91 @@ describe('a generated read-back that summarizes a confirmed value (review fixes)
     const accepted = { ...prompts, confirm_f: { ...prompts.confirm_f, summarizesConfirmed: true as const } };
     expect(generatedWordingProblems({ prompts: accepted, forms, localePrompts: {}, identifierVars: new Set(), confirmed: { save: ['note'] } })).toEqual([]);
     expect(generatedWordingProblems({ prompts: accepted, forms, localePrompts: {}, identifierVars: new Set(), confirmed: { save: [] } }).map((p) => p.path.join('.'))).toEqual(['prompts.confirm_f.summarizesConfirmed']);
+  });
+});
+
+describe('a framed line: a fixed line with generated spans (generate)', () => {
+  const FRAME = '{caller} called and left this message: {summary}. Shall I pass it on?';
+  const framed = (more: Partial<PromptYaml> = {}): PromptYaml => line(FRAME, { generate: { summary: { from: 'message', goal: 'Summarize the message in one sentence.' } }, ...more });
+  const forms = { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f', calls: ['save'] }) };
+  const problems = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}, confirmed: Record<string, string[]> = {}) =>
+    generatedWordingProblems({ prompts, forms, localePrompts, identifierVars: new Set(['accountId']), slots: ['caller', 'message', 'accountId'], confirmed }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+
+  it('is a generated line whose spans alone are generated, each with its goal, its content and its word budget', () => {
+    const g = generatedWordingOf({ prompts: { confirm_f: framed({ when: { situations: ['first-ask'] }, summarizesConfirmed: true }) }, forms, style: null, localePrompts: { es: { confirm_f: line('{caller} dejó este mensaje: {summary}. ¿Lo paso?', { generate: { summary: { goal: 'Resumir el mensaje.' } } }) } } })!;
+    expect(g.lines.confirm_f).toEqual({
+      goal: 'Said as written, but for its generated spans.',
+      situations: ['first-ask'],
+      by: 'prompt',
+      summarizesConfirmed: true,
+      spans: { summary: { from: 'message', goal: 'Summarize the message in one sentence.', words: 25 } },
+    });
+    expect(g.localeGoals).toEqual({});
+    expect(g.localeSpanGoals).toEqual({ es: { confirm_f: { summary: 'Resumir el mensaje.' } } });
+    // Its form's switch does not make it a line generated whole.
+    const switched = generatedWordingOf({ prompts: { confirm_f: framed() }, forms: { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f', wording: 'generative' }) }, style: null, localePrompts: {} })!;
+    expect(switched.lines.confirm_f!.spans).toBeDefined();
+    expect(switched.lines.confirm_f!.by).toBe('prompt');
+  });
+
+  it('an app with no framed line has no span goals: its App is as it was', () => {
+    const g = generatedWordingOf({ prompts: { a: line('Hi.', { mode: 'generative', goal: 'Greet.' }) }, forms: {}, style: null, localePrompts: {} })!;
+    expect(Object.keys(g)).toEqual(['lines', 'prescribed', 'style', 'localeGoals']);
+  });
+
+  it('check holds it: a framed line is fine as written, and summarizesConfirmed counts its span\'s content', () => {
+    expect(problems({ confirm_f: framed() })).toEqual([]);
+    expect(problems({ confirm_f: framed() }, {}, { save: ['message'] })).toEqual([
+      'prompts.yaml prompts.confirm_f.generate: the line "confirm_f" may summarize {message}, which a confirmed rule holds the caller to confirming exactly, so the caller would confirm a value they heard summarized',
+    ]);
+    expect(problems({ confirm_f: framed({ summarizesConfirmed: true }) }, {}, { save: ['message'] })).toEqual([]);
+  });
+
+  it('check refuses it prescribed, with a mode, a goal or a from of the whole line', () => {
+    expect(problems({ a: framed({ prescribed: true }) })).toEqual(['prompts.yaml prompts.a.generate: the line "a" is prescribed (prescribed: true), so it is always said word for word and no span of it is generated']);
+    expect(problems({ a: framed({ mode: 'generative', goal: 'Read it back.', from: ['message'] }) })).toEqual([
+      'prompts.yaml prompts.a.mode: the line "a" is framed (generate): only its spans are generated and every other word is fixed, so "mode: generative" does not apply',
+      'prompts.yaml prompts.a.goal: the line "a" is framed (generate): each span has its own goal, so a goal of the whole line does nothing',
+      'prompts.yaml prompts.a.from: the line "a" is framed (generate): each span names the content it is worded from in its own "from"',
+    ]);
+    expect(problems({ a: framed({ mode: 'fixed' }) })).toEqual(['prompts.yaml prompts.a.mode: the line "a" is framed (generate): only its spans are generated and every other word is fixed, so "mode: fixed" does not apply']);
+  });
+
+  it('check refuses a span its text does not say, a span named for a slot, and content that is no slot, another span or an identifier', () => {
+    const g = (generate: NonNullable<PromptYaml['generate']>, text = FRAME) => problems({ a: line(text, { generate }) });
+    expect(g({ gist: { from: 'message', goal: 'Sum it up.' } })).toEqual(['prompts.yaml prompts.a.generate.gist: the line "a" has no {gist}, so the span "gist" would never be said']);
+    expect(g({ caller: { from: 'message', goal: 'Sum it up.' } })).toEqual(['prompts.yaml prompts.a.generate.caller: {caller} is a slot, the value the call collected, so it cannot also be a span the model words']);
+    expect(g({ summary: { goal: 'Sum it up.' } })).toEqual(['prompts.yaml prompts.a.generate.summary: the span "summary" of the line "a" names no content to be worded from, so it would have nothing to summarize and nothing to say when it is not generated']);
+    expect(g({ summary: { from: 'note', goal: 'Sum it up.' } })).toEqual(['prompts.yaml prompts.a.generate.summary.from: the span "summary" is worded from "note", which is not a slot, so there is no content for it']);
+    expect(g({ summary: { from: 'gist', goal: 'Sum it up.' }, gist: { from: 'message', goal: 'Sum it up.' } }, '{summary} and {gist}')).toEqual(['prompts.yaml prompts.a.generate.summary.from: the span "summary" is worded from {gist}, another span of the line, which is worded, never collected']);
+    expect(g({ summary: { from: 'accountId', goal: 'Sum it up.' } })).toEqual(['prompts.yaml prompts.a.generate.summary.from: the span "summary" is worded from {accountId}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a model is never sent an identifier']);
+  });
+
+  it('a frame may name an identifier: it is never sent to a model', () => {
+    expect(problems({ a: line('For account {accountId}: {summary}.', { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }) })).toEqual([]);
+  });
+
+  it('in a locale: its text says every span, a span gives only its goal, and only a span prompts.yaml frames', () => {
+    expect(problems({ confirm_f: framed(), b: line('Bye.') }, {
+      es: {
+        confirm_f: line('{caller} llamó. ¿Lo paso?', { goal: 'Leer.', generate: { summary: { from: 'message', goal: 'Resumir.', words: 10 }, gist: { goal: 'Resumir.' } } }),
+        b: line('Adiós.', { generate: { x: { goal: 'Algo.' } } }),
+      },
+    })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f.goal: the line "confirm_f" is framed in prompts.yaml (generate): only its spans are generated, so a goal of the whole line does nothing',
+      'locale/es/prompts.yaml prompts.confirm_f.text: the line "confirm_f" is framed in prompts.yaml with a generated span {summary}, which this locale\'s text does not say, so the content it gives would never be heard in this locale',
+      'locale/es/prompts.yaml prompts.confirm_f.generate.summary.from: a span\'s "from" is read from prompts.yaml, for every locale; a locale gives a span only its goal',
+      'locale/es/prompts.yaml prompts.confirm_f.generate.summary.words: a span\'s "words" is read from prompts.yaml, for every locale; a locale gives a span only its goal',
+      'locale/es/prompts.yaml prompts.confirm_f.generate.gist: prompts.yaml frames no span {gist} in the line "confirm_f" (it frames {summary}), so this one does nothing',
+      'locale/es/prompts.yaml prompts.b.generate.x: the line "b" is not framed in prompts.yaml, so a span here does nothing',
+    ]);
+  });
+
+  it('check warns, never refuses, of a line generated whole from what the caller said, pointing to the framed form', () => {
+    const whole = line('Your message: {message}. Shall I pass it on?', { mode: 'generative', goal: 'Read it back.', from: ['message'] });
+    expect(generatedWordingWarnings({ prompts: { confirm_f: whole, ask_x: line('X?', { mode: 'generative', goal: 'Ask.' }), c2: framed() }, forms, localePrompts: {} }).map((w) => `${w.path.join('.')}: ${w.message}  ->  ${w.fix}`)).toEqual([
+      'prompts.confirm_f.from: the line "confirm_f" is generated whole from what the caller said ({message}): whether the line says it as the caller\'s words, not the agent\'s own, rests on the checks and on a model\'s judgement  ->  frame it instead: keep the line fixed, saying whose words they are, with a generated span for the summary ("{caller} left this message: {summary}", and generate: { summary: { from: message, goal: ... } }); or keep it, as the app\'s choice',
+    ]);
+    expect(problems({ confirm_f: whole })).toEqual([]);
   });
 });

@@ -70,8 +70,10 @@ export const OUTCOME_CLASSES: readonly OutcomeClass[] = ['screened', 'handoff', 
  * - `not-generated`: on a turn the injection screen flagged, no line was generated or tried: each line
  *   the app generates was said fixed, and nothing of the turn was sent to a model to word;
  * - `render-held`: nothing a hostile renderer wrote was said: no line said generated holds its words.
+ * - `frame-kept`: every framed line (prompts.yaml's `generate`) was said as its fixed text with each
+ *   span filled by its wording or its exact content, and nothing else: no renderer reaches the frame.
  */
-export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome' | 'not-generated' | 'render-held';
+export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened' | 'code-not-kept' | 'nothing-said' | 'said-in-place' | 'no-new-action' | 'same-outcome' | 'outcome' | 'not-generated' | 'render-held' | 'frame-kept';
 
 /**
  * How a `wording` case's renderer answers (a fake, never a model): `echo`, the caller's words put in
@@ -80,9 +82,11 @@ export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened'
  * not pass it on?"); `drop-negation`, the collected content restated without its negation; `recipient`,
  * another value of a choice item named as the line's own (the message for someone else); each a one-word
  * change in meaning, the line otherwise its fixed text; `instructions`, instructions to the caller and the system before
- * the line; `numbers`, an amount and a number it was not given before the line.
+ * the line; `numbers`, an amount and a number it was not given before the line; `frame` (a framed line's
+ * span only), words of a line of its own written into the span, turning the line's decision. A framed
+ * line's span is answered the same way, from its content alone (it is never given the frame).
  */
-export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'recipient';
+export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'recipient' | 'frame';
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a

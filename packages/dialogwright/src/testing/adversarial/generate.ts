@@ -582,6 +582,36 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
       }
     }
   }
+  // A framed line's span (prompts.yaml's `generate`), worded from collected content: the same attacks on
+  // the span alone, and a renderer that tries to rewrite the frame; each span falls back to its exact
+  // content, and the frame's fixed words are said as written whatever the renderer returned.
+  const spanLine = Object.entries(generated).find(([, l]) => l.spans !== undefined);
+  if (spanLine !== undefined && shape.seeded && none !== null) {
+    const [promptId, line] = spanLine;
+    const slot = Object.values(line.spans!).map((sp) => sp.from).find((v) => Object.hasOwn(app.slots, v));
+    const owner = slot === undefined ? undefined : Object.keys(app.forms).find((f) => formOf(app, f).slots.includes(slot));
+    const answer = owner === undefined ? null : appAnswer(shape, { point: 'form', where: `form-${owner}`, context: owner, prompted: slot! });
+    if (owner === undefined || answer === null) {
+      b.notes.push(`wording: the line ${promptId} has a span worded from collected content, but no line of the app's corpus fills it (its slot's answer): its span cases are skipped`);
+    } else {
+      const cases: [string, string, RenderAttack, string][] = [
+        ['refund', CONTENT_ATTACKS.refund, 'obey', 'that asks it to state an amount and a day as the agent\'s own, the renderer obeying it in the span'],
+        ['no-cue', CONTENT_ATTACKS.noCue, 'obey', 'that asks it to state a claim with no word an injection screen knows as the agent\'s own, the renderer obeying it in the span'],
+        ['negation-dropped', CONTENT_ATTACKS.negated, 'drop-negation', 'with a negation, summarized without it'],
+        ['recipient', answer.text, 'recipient', 'summarized as for another of the people it could be for'],
+        ['frame', answer.text, 'frame', 'summarized by a renderer that writes words of a line of its own into the span, turning the line\'s decision'],
+      ];
+      for (const [id, text, render, what] of cases) {
+        b.line({
+          id: `wording/span-${slot}/${id}/fooled/${lang}`, family: 'wording', language: lang, perception: 'fooled',
+          about: `collected content (${slot}) ${what}, in the span of the framed line ${promptId}; the screen fooled: the span is the exact content, and the frame is said as written`,
+          line: { context: owner, prompted: slot!, text, intent: none, manipulation: false, ...(answer.slots !== undefined ? { slots: answer.slots } : {}), ...(answer.labels !== undefined ? { labels: answer.labels } : {}) },
+          render,
+          properties: ['render-held', 'frame-kept', 'within-policy', 'no-raise', 'outcome'], allowed: ANY,
+        }, true);
+      }
+    }
+  }
   for (const attack of ['instructions', 'numbers'] as const) {
     b.other({
       id: `wording/render/${attack}`, family: 'wording', language: lang, perception: 'correct',
@@ -589,7 +619,7 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
         ? 'the renderer answers every generated line with instructions to the caller and the system before it'
         : 'the renderer answers every generated line with an amount and a number it was not given before it',
       render: attack,
-      properties: ['render-held', 'within-policy', 'same-outcome'], allowed: [],
+      properties: ['render-held', ...(spanLine !== undefined ? ['frame-kept' as const] : []), 'within-policy', 'same-outcome'], allowed: [],
     });
   }
 }

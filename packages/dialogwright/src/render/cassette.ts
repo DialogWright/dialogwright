@@ -16,6 +16,8 @@ export interface RenderCassetteLine {
   key: string;
   /** The prompt id the line is, so a person can grep the file. */
   promptId: string;
+  /** The span of a framed line it words, by name; absent for a line worded whole. */
+  span?: string;
   model: string;
   /** The words the model gave, as given (before any check). */
   text: string;
@@ -83,7 +85,7 @@ export class RenderCassette implements RenderClient {
     if (hit) return { text: hit.text, model: hit.model, usage: { ...hit.usage }, latencyMs: 0, source: 'recorded' };
     if (this.opts.mode === 'replay') throw new RenderClientError(`render cassette miss: ${req.key} ${req.promptId} (${this.opts.path})`, 'cassette-miss');
     const g = await this.opts.inner!.generate(req, signal);
-    const line: RenderCassetteLine = { v: 1, key: req.key, promptId: req.promptId, model: g.model, text: g.text, usage: { ...g.usage }, recordedAt: new Date((this.opts.now ?? Date.now)()).toISOString() };
+    const line: RenderCassetteLine = { v: 1, key: req.key, promptId: req.promptId, ...(req.span !== undefined ? { span: req.span } : {}), model: g.model, text: g.text, usage: { ...g.usage }, recordedAt: new Date((this.opts.now ?? Date.now)()).toISOString() };
     mkdirSync(dirname(this.opts.path), { recursive: true });
     appendFileSync(this.opts.path, `${JSON.stringify(line)}\n`);
     this.load().set(req.key, line);

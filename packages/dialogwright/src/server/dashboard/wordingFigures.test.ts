@@ -41,7 +41,8 @@ async function call(sid: string, share: number, failSummary = false): Promise<Ca
   const corpus = loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp);
   const client = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY, app: messageApp }), app: messageApp });
   let at = T0;
-  const renderer = { client: new FakeRenderClient(failSummary ? { say: { confirm_take_message: 'For Dana Reyes on 555 555 0199. Shall I pass it on?' } } : {}), share };
+  // The read-back is framed: its summary span, worded with a number its message does not have, falls back.
+  const renderer = { client: new FakeRenderClient(failSummary ? { spans: { confirm_take_message: 'a call back on 555 555 0199' } } : {}), share };
   const run = await runScenario({ id: sid, steps: STEPS, expect: { decision: 'any' } }, { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => (at += 5_000), renderer });
   const records = run.runs.map((r) => r.record);
   const last = new Date(at + 1_000).toISOString();

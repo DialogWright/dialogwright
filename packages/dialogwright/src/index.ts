@@ -250,12 +250,12 @@ export { resolveJevProvider, JEV_PROVIDERS } from './jev/provider';
 // the OpenRouter and Anthropic adapters and their settings, the render cassette, the checks, and what a turn records.
 export { ModelRenderClient, resolveRenderProvider, renderSettings, RENDER_PROVIDERS } from './render/providers';
 export { RenderCassette, renderCassettePath } from './render/cassette';
-export { checkGenerated, renderDriftQuestion, DRIFT_FIRE } from './render/checks';
+export { checkGenerated, checkSpan, renderDriftQuestion, renderSpanDriftQuestion, DRIFT_FIRE } from './render/checks';
 export { generatesLines } from './render/config';
 export { RenderClientError, DEFAULT_RENDER_TIMEOUT_MS, DEFAULT_RENDER_PRICE } from './render/types';
-export type { Renderer, RenderClient, RenderRequest, SpeechAct, SpeechItem, Generation, RenderRecord, RenderLine, RenderFallback, RenderSkip, RenderPrice } from './render/types';
+export type { Renderer, RenderClient, RenderRequest, SpeechAct, SpanAct, RenderAct, SpeechItem, Generation, RenderRecord, RenderLine, RenderFallback, RenderSkip, RenderPrice } from './render/types';
 export type { RenderProvider, RenderProviderName } from './render/providers';
-export type { GeneratedLine, GeneratedWording, RenderStyle, RenderSituation, RenderChannel } from './core/app/types';
+export type { GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyle, RenderSituation, RenderChannel } from './core/app/types';
 export type { JevProvider, JevProviderName } from './jev/provider';
 export { defaultCorpusFile, scenariosDir } from './run/fixtures';
 export { loadScenarios } from './harness-text/runner';

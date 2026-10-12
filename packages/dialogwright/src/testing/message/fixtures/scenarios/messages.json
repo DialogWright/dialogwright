@@ -55,7 +55,7 @@
     "expect": {
       "decision": "replay",
       "form": "take_message",
-      "text": "Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+      "text": "called and left this message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
     }
   },
   {
@@ -81,7 +81,7 @@
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "Here it is exactly as I took it down. For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+      "text": "Here it is exactly as I took it down. Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
     }
   },
   {
@@ -108,7 +108,7 @@
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "Here it is exactly as I took it down. For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+      "text": "Here it is exactly as I took it down. Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
     }
   },
   {
@@ -140,7 +140,7 @@
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+      "text": "called and left this message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
     }
   },
   {

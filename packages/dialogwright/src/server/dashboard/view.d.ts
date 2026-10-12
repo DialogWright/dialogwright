@@ -60,6 +60,8 @@ export interface Line {
 /** One line an app generates, as the console shows it (wordingOf). */
 export interface WordingLine {
   promptId: string;
+  /** A framed line's span, by name: then `fixed` is its exact content. */
+  span?: string;
   mode: 'generated' | 'fixed';
   /** The fixed line: beside a generated one, what it stands for. */
   fixed: string;
@@ -68,7 +70,7 @@ export interface WordingLine {
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';

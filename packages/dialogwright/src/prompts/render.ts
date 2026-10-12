@@ -49,7 +49,27 @@ export function promptEntry(app: App, id: string, locale?: string): PromptEntry 
 }
 
 export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string): string {
-  return renderTemplate(promptEntry(app, id, locale).text, vars);
+  return renderTemplate(promptEntry(app, id, locale).text, framedVars(app, id, vars));
+}
+
+/**
+ * A line's variables with each generated span of a framed line (prompts.yaml's `generate`) filled: by
+ * `spans`' wording where it gives one (the renderer's, once every check passed), else by the span's
+ * exact content (its `from` value), word for word. That exact content is the line's fixed text: what
+ * is said with no renderer, on a fallback, a repeat or a read-back word for word. `vars` itself for
+ * every line that is not framed. A span is the engine's variable: a value the code gave under its name
+ * is not used.
+ */
+export function framedVars(app: App, id: string, vars: Record<string, string>, spans: Readonly<Record<string, string>> = {}): Record<string, string> {
+  const framed = app.generated?.lines[id]?.spans;
+  if (framed === undefined) return vars;
+  const out = { ...vars };
+  for (const [name, span] of Object.entries(framed)) {
+    const value = Object.hasOwn(spans, name) ? spans[name] : vars[span.from];
+    if (value === undefined) delete out[name];
+    else out[name] = value;
+  }
+  return out;
 }
 
 export function handoffPromptId(reason: string): string {
@@ -75,6 +95,7 @@ export function lineLang(app: App, locale?: string): string | undefined {
  */
 export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
+  vars = framedVars(app, promptId, vars);
   const segments = segmentTemplate(promptId, entry.text);
   // A line that carries data is spoken whole by TTS, even when clips are on.
   const lang = lineLang(app, locale);

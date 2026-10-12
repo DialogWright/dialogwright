@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import type { App, CompletionContext } from '../../core/app/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
@@ -16,8 +16,11 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
+import { messageVariants, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
+import { frameViolations } from './run';
+import { sayAction, sayText } from '../../channel/actions';
 import { HOSTILE_TEXT, textPaths, withField, withNote } from './hostile';
 import { FixtureStubClient } from '../../jev/fixtureStub';
 import { CASSETTE_MISS } from '../../jev/cassette';
@@ -298,12 +301,23 @@ describe('a hostile reply', () => {
 
 describe('generated wording under the suite (the wording family, on the message fixture and the fake renderer)', () => {
   const fake = (): AdversarialRunOptions['renderer'] => ({ client: new FakeRenderClient() });
+  const variants = messageVariants();
+  afterAll(() => variants.remove());
+  /** The message fixture with its read-back generated whole from the message (the path an app may still choose). */
+  const whole = variants.variant(WHOLE_LINE);
 
   it('holds, every family with it, and an app that generates nothing gets no wording case', async () => {
     const report = await run(messageApp, { renderer: fake() });
     expect(failing(report)).toEqual([]);
     expect(families(report)).toEqual(['hostile-reply', 'injection', 'off-scope', 'wording']);
     expect(report.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
+      'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en',
+      'wording/span-message/refund/fooled/en', 'wording/span-message/no-cue/fooled/en', 'wording/span-message/negation-dropped/fooled/en',
+      'wording/span-message/recipient/fooled/en', 'wording/span-message/frame/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
+    ]);
+    const wholeReport = await run(whole, { renderer: fake() });
+    expect(failing(wholeReport)).toEqual([]);
+    expect(wholeReport.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
       'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en',
       'wording/from-message/refund/fooled/en', 'wording/from-message/no-cue/fooled/en', 'wording/from-message/polarity/fooled/en',
       'wording/from-message/negation-dropped/fooled/en', 'wording/from-message/recipient/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
@@ -313,8 +327,49 @@ describe('generated wording under the suite (the wording family, on the message 
     expect(adversarialSuite(callbackApp).cases.some((c) => c.family === 'wording')).toBe(false);
   });
 
-  it('a hostile renderer is tried on every generated line, and every line falls back: nothing it wrote is said', async () => {
+  it('a framed line\'s span falls back to its exact content under every attack, each held deterministically, and the frame is said as written', async () => {
     const report = await run(messageApp, { renderer: fake() });
+    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['recipient', 'conflict'], ['frame', 'negation']];
+    for (const [id, reason] of reasons) {
+      const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
+      expect(r.status, id).toBe('hold');
+      const last = r.calls[0]!.turns.at(-1)!;
+      const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
+      expect(span, id).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
+      // The span said is the content word for word, inside the frame's own words.
+      expect(sayText(last.result.actions), id).toContain(`called and left this message: ${span.fixed}. Shall I pass it on?`);
+    }
+    // The hostile renderers: every span falls back too, by a deterministic check.
+    for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
+      const r = report.results.find((x) => x.case.id === id)!;
+      const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
+      expect(spans.length, id).toBeGreaterThan(0);
+      expect(spans.every((l) => l.mode === 'fixed' && (l.fallback === 'person' || l.fallback === 'foreign')), id).toBe(true);
+    }
+  });
+
+  it('frame-kept holds a framed line said as its frame with its span, and fails one whose fixed words were changed', async () => {
+    resetAppsForTest();
+    registerApp(messageApp);
+    const { suite, opts } = stubRun(messageApp);
+    // The case's line with a well-behaved renderer in place of its hostile one: the span said generated, the frame as written.
+    const cases = suite.cases.filter((c) => c.id === 'wording/span-message/recipient/fooled/en').map(({ render: _, ...c }) => c);
+    const good = await runAdversarialSuite({ ...suite, cases }, { ...opts, renderer: { client: new FakeRenderClient() } });
+    expect(good.results[0]!.status).toBe('hold');
+    const turns = good.results[0]!.calls[0]!.turns;
+    const last = turns.at(-1)!;
+    expect(last.record.render!.lines.find((l) => l.span === 'summary')).toMatchObject({ mode: 'generated' });
+    expect(frameViolations(messageApp, turns)).toEqual([]);
+    // The same turn with one fixed word of the frame changed: frame-kept fails it.
+    const index = last.record.render!.lines.find((l) => l.span === 'summary')!.index;
+    const actions = [...last.result.actions];
+    actions[index] = sayAction([{ text: sayText([actions[index]!]).replace('Shall I pass it on?', 'Shall I not pass it on?') }], true);
+    const changed = { ...last, result: { ...last.result, actions } };
+    expect(frameViolations(messageApp, [...turns.slice(0, -1), changed])).toEqual([expect.stringMatching(/^frame-kept: on turn \d+, confirm_take_message was said as ".*Shall I not pass it on\?"/)]);
+  });
+
+  it('a hostile renderer is tried on every generated line, and every line falls back: nothing it wrote is said (a read-back generated whole)', async () => {
+    const report = await run(whole, { renderer: fake() });
     for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
       const r = report.results.find((x) => x.case.id === id)!;
       const lines = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.skipped === undefined);
@@ -343,8 +398,8 @@ describe('generated wording under the suite (the wording family, on the message 
 
   it('render-held catches a line said from a hostile renderer: here, a drift check that misses instructions the other checks let by', async () => {
     resetAppsForTest();
-    registerApp(messageApp);
-    const { suite, opts } = stubRun(messageApp);
+    registerApp(whole);
+    const { suite, opts } = stubRun(whole);
     const blind: JevClient = { ask: async () => ({ answers: { renderDrift: { type: 'noul', noul: 0.01 }, manipulation: { type: 'noul', noul: 0.01 } }, model: 'blind', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:heuristic' }) };
     const cases = suite.cases.filter((c) => c.id === 'wording/render/instructions');
     const caught = await runAdversarialSuite({ ...suite, cases }, { ...opts, renderer: { client: new FakeRenderClient(), drift: blind } });

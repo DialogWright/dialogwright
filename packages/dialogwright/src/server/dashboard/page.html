@@ -757,9 +757,11 @@
 
   /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why. */
   function wordingHtml(l) {
+    // A framed line's span is named after its line ({summary}), its exact content beside a generated one.
+    const named = (w) => (w.span !== undefined ? `${esc(w.promptId)} {${esc(w.span)}}` : esc(w.promptId));
     return (l.wording ?? []).map((w) => w.mode === 'generated'
-      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${esc(w.promptId)}</span>fixed line: ${esc(w.fixed)}</span>`
-      : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${esc(w.promptId)}</span>${esc(w.why ?? '')}</span>`).join('');
+      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}</span>`
+      : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${named(w)}</span>${esc(w.why ?? '')}</span>`).join('');
   }
 
   function inputHtml(l, turn) {

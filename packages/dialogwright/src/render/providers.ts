@@ -1,4 +1,4 @@
-import { RENDER_INSTRUCTIONS, actMessage } from './prompt';
+import { actMessage, instructionsOf } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
@@ -99,11 +99,13 @@ export class ModelRenderClient implements RenderClient {
   async generate(req: RenderRequest, signal: AbortSignal): Promise<Generation> {
     const started = performance.now();
     const content = actMessage(req.act);
+    // A line's instructions, or a framed line's span's.
+    const system = instructionsOf(req.act);
     const anthropic = this.p.provider === 'anthropic';
     const body = anthropic
-      ? { model: this.p.model, max_tokens: MAX_TOKENS, system: RENDER_INSTRUCTIONS, messages: [{ role: 'user', content }], thinking: { type: 'disabled' } }
+      ? { model: this.p.model, max_tokens: MAX_TOKENS, system, messages: [{ role: 'user', content }], thinking: { type: 'disabled' } }
       // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed per model).
-      : { model: this.p.model, max_tokens: MAX_TOKENS, reasoning: { enabled: false }, messages: [{ role: 'system', content: RENDER_INSTRUCTIONS }, { role: 'user', content }] };
+      : { model: this.p.model, max_tokens: MAX_TOKENS, reasoning: { enabled: false }, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
     const headers: Record<string, string> = anthropic
       ? { 'x-api-key': this.p.apiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
       : { authorization: `Bearer ${this.p.apiKey!}`, 'content-type': 'application/json' };

@@ -46,7 +46,6 @@ These lines are worded by a model for the moment (generated wording). Each is ch
 
 | Line | Fixed text | Goal | Generated | Carries word for word | Sent whole, though recorded masked | May summarize |
 | --- | --- | --- | --- | --- | --- | --- |
-| `confirm_take_message` | For {recipient}, from {caller}, call back on {phone}. Your message: {message}. Shall I pass it on? | Read back who the message is for, who it is from and the number to call, then a short summary of the message in your own words, and ask whether to pass it on. | the first time it is said | `{recipient}`, `{caller}`, `{phone}` | `{phone}` | `{message}`, a value the caller confirms |
 | `ask_recipient` | Who is the message for, Dana Reyes or Lee Park? | Ask who the message is for, Dana Reyes or Lee Park; briefly acknowledge what the caller just said. | every situation (its form `take_message`) | nothing | nothing | nothing |
 | `ask_recipient_retry` | Sorry, is the message for Dana Reyes or Lee Park? | Ask again, kindly, whether the message is for Dana Reyes or Lee Park. | every situation (its form `take_message`) | nothing | nothing | nothing |
 | `ask_caller` | And who is the message from? | Ask for the caller's name. | every situation (its form `take_message`) | nothing | nothing | nothing |
@@ -55,6 +54,12 @@ These lines are worded by a model for the moment (generated wording). Each is ch
 | `ask_phone_retry` | Sorry, what's the ten-digit number to call you back on? | Say what the fixed line says, in words that fit this moment. | every situation (its form `take_message`) | nothing | nothing | nothing |
 | `ask_message` | What's the message? | Ask the caller for their message; you may acknowledge their name. | every situation (its form `take_message`) | nothing | nothing | nothing |
 | `ask_message_retry` | Sorry, what message should I pass on? | Say what the fixed line says, in words that fit this moment. | every situation (its form `take_message`) | nothing | nothing | nothing |
+
+These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation and drops none from its content; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole, the transcript, or anything a tool returned.
+
+| Line | Fixed text | Span | Goal | Generated | Worded from | Words |
+| --- | --- | --- | --- | --- | --- | --- |
+| `confirm_take_message` | Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on? | `{summary}` | Summarize the caller's message in one sentence, in their own terms. | the first time it is said | `{message}`, a value the caller confirms | 25 |
 
 Prescribed lines (`prescribed: true`): always said word for word, never generated.
 

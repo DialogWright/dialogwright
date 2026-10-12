@@ -21,6 +21,7 @@ import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProbl
 import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks';
 import { moveCycles, slotOutcomeForm, slotOutcomesOf } from '../core/app/next';
 import { digitsMayBeShort } from '../slots/digits/fill';
+import { generatedWordingWarnings } from '../render/config';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -361,6 +362,11 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  // A line generated whole from what the caller said: the framed form is the pattern (render/config.ts).
+  for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: {} })) {
+    const at = (w.atKey === true && loaded.locateKey ? loaded.locateKey(w.file, w.path) : locate(w.file, w.path)) ?? { line: 1, column: 1 };
+    warnings.push({ file: w.file, line: at.line, column: at.column, path: formatPath(w.path), message: w.message, fix: w.fix });
+  }
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));

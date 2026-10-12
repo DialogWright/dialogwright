@@ -37,6 +37,26 @@ const when = z
   })
   .describe('Where a generated line is generated; everywhere else its fixed text is said. Both parts must hold.');
 
+/** The most words a generated span may use when it does not say (a framed line's `generate.<span>.words`). */
+export const DEFAULT_SPAN_WORDS = 25;
+
+const span = z
+  .strictObject({
+    from: identifier()
+      .optional()
+      .describe(
+        'The slot whose content the span is worded from (the message, the note): the caller\'s words, collected. The model is sent only this content, quoted, with the span\'s goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. Required in prompts.yaml; a locale gives a span only its goal.',
+      ),
+    goal: text().describe('What the span must say, for the model that words it ("Summarize the caller\'s message in one sentence, in their own terms."). In a locale\'s prompts.yaml: the span is generated in that locale only where its goal is given there.'),
+    words: z
+      .int({ error: 'must be a whole number' })
+      .min(3, { error: 'must be at least 3' })
+      .max(100, { error: 'must be at most 100' })
+      .optional()
+      .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}.`),
+  })
+  .describe('One generated span of a fixed line.');
+
 const prompt = z
   .strictObject({
     text: text().describe('The words said. Variables go in braces ({first}); the engine fills them. Said exactly as written unless the line is generated, and then the fallback and the meaning a generated wording is held to.'),
@@ -66,7 +86,15 @@ const prompt = z
       .literal(true, { error: 'must be true, or left out' })
       .optional()
       .describe(
-        'true: the app accepts that this generated line, a read-back, may summarize a value named in `from` that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.',
+        'true: the app accepts that this generated line, a read-back, may summarize a value named in `from` (or in a span\'s `from`) that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.',
+      ),
+    generate: z
+      .record(identifier(), span, { error: 'must be a map from a variable of the line to its span' })
+      .refine((m) => Object.keys(m).length > 0, { error: 'must name at least one span' })
+      .optional()
+      .describe(
+        'A fixed line with generated spans (the framed form): each key is one of the line\'s {variables}, worded by a model from the content its `from` names; every other word of the line is the app\'s fixed text, never sent to a model and never changed. The frame says whose words the span gives ("{caller} called and left this message: {summary}"), so attribution is by design. ' +
+          'A span that is not generated, or fails a check, is the exact content, word for word. Not with `mode` or a line\'s own `goal` or `from`.',
       ),
   })
   .describe('One line the agent says.');

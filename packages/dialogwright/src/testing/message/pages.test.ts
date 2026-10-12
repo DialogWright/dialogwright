@@ -23,7 +23,10 @@ describe('the message fixture\'s pages', () => {
   it('the policy card lists every line a model words, and the prescribed lines', () => {
     const card = policyCardText(messageApp, MESSAGE_DIR);
     expect(card).toContain('## Lines a model words');
-    expect(card).toContain('| `confirm_take_message` |');
+    // The read-back is framed: its summary a span a model words from the message, every other word fixed.
+    expect(card).toContain('| Line | Fixed text | Span | Goal | Generated | Worded from | Words |');
+    expect(card).toContain("| `confirm_take_message` | Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on? | `{summary}` |");
+    expect(card).toContain('| `ask_caller` |');
     expect(card).toContain('| `message_taken` | Thanks, {caller}. Your message for {recipient} has been passed on. Your reference is {ref}. |');
     expect(card).not.toContain('| `ask_phone_dtmf` |');
   });

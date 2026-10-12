@@ -61,6 +61,29 @@ export function stubDrift(state: unknown): boolean {
   return false;
 }
 
+/** First- and second-person words: a summary that uses one its quoted words do not speaks as the agent or to the listener. */
+const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', 'we', "we're", "we'll", "we've", 'us', 'our', 'ours', 'you', "you're", "you'll", "you've", "you'd", 'your', 'yours']);
+
+/**
+ * The stub's span drift judge (render/checks.ts renderSpanDriftQuestion), deterministic, holding a
+ * framed line's span to the question's criteria by its words: a span is a faithful summary of the
+ * quoted words when every word of it of its own (not filler, not in its goal) is in them, it speaks in
+ * no person they do not, states no figure or name they do not, and carries no words of an injection.
+ * A real model is asked the question itself.
+ */
+export function stubSpanDrift(state: unknown): boolean {
+  const s = state as { span?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
+  const said = typeof s?.span?.said === 'string' ? s.span.said : '';
+  const goal = new Set(tokens(typeof s?.span?.goal === 'string' ? s.span.goal : ''));
+  const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
+  const own = tokens(said).filter((w) => !quoted.has(w));
+  if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
+  if (own.some((w) => PERSON.has(w) || isFigureWord(w))) return true;
+  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => w.toLowerCase());
+  if (capitalized.some((w) => !quoted.has(w))) return true;
+  return own.filter((w) => !FILLER.has(w) && !goal.has(w)).length >= 2;
+}
+
 const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
 
 function has(text: string, re: RegExp): boolean {
@@ -168,6 +191,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'manipulation': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) ? 0.9 : 0.04);
     // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
     case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)
+    case 'renderSpanDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubSpanDrift)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -196,6 +220,8 @@ export class HeuristicStubClient implements JevClient {
     for (const [id, q] of Object.entries(req.questions)) answers[id] = answerHeuristically(id, q, text, this.todayIso, this.app === undefined ? defaultAppOrNull() : this.app);
     // Generated wording's drift check reads the line, its fixed text and the caller's quoted words, not a caller's turn.
     if (Object.hasOwn(req.questions, 'renderDrift')) answers.renderDrift = noulAnswer(stubDrift(req.state) ? 0.9 : 0.04);
+    // A framed line's span: held to the content it summarizes alone.
+    if (Object.hasOwn(req.questions, 'renderSpanDrift')) answers.renderSpanDrift = noulAnswer(stubSpanDrift(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

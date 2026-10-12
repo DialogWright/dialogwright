@@ -1,10 +1,12 @@
 # yaml-language-server: $schema=../../../schemas/prompts.schema.json
-# Every line a caller can hear. Most are said word for word. The message form's lines are generated
-# (forms.yaml's wording: generative): a model words each for the moment, held to its fixed text's data
-# and meaning, and the fixed text is said whenever a check fails or the model is slow. The read-back
-# of the message is generated from the message itself (from: [message]) the first time it is said, and
-# read word for word after that. The greeting and the line said when the message is passed on are
-# prescribed: always said exactly as written.
+# Every line a caller can hear. Most are said word for word. The message form's questions are
+# generated (forms.yaml's wording: generative): a model words each for the moment, held to its fixed
+# text's data and meaning, and the fixed text is said whenever a check fails or the model is slow. The
+# read-back of the message is a framed line: its words are fixed, and say whose words follow, and only
+# the summary inside it is generated, from the message itself (generate: summary, from: message), the
+# first time it is said; after that, and whenever a check fails, the message is read word for word. The
+# greeting and the line said when the message is passed on are prescribed: always said exactly as
+# written.
 # Every line a caller can hear, word for word. The agent says exactly these and never composes its
 # own. Braces are filled in by the engine ({intentLabel}) or by the code ({ref}); `interruptible`
 # says whether a caller may talk over it. `pnpm check` lists any line the engine needs that is
@@ -136,17 +138,21 @@ prompts:
     text: Sorry, what message should I pass on?
     interruptible: true
 
-  # The read-back: the first time, a short summary of the message (generated from it); after that,
-  # and whenever a check fails, the message word for word, as stored. A caller who says no hears it
-  # word for word (forms.yaml's summary.onNo: read-back, after read_back_exact), and so does one who
-  # asks to hear it again (repeat_prompt). The caller confirms the message kept, word for word, after
-  # hearing its summary: summarizesConfirmed says the app accepts that.
+  # The read-back, a framed line: every word of it is fixed, and it says whose words the summary
+  # gives, but for {summary}, which the first time is a short summary of the message (generated from
+  # it, and never sent anything else); after that, and whenever a check fails, the message word for
+  # word, as stored. The frame reads true either way. A caller who says no hears it word for word
+  # (forms.yaml's summary.onNo: read-back, after read_back_exact), and so does one who asks to hear it
+  # again (repeat_prompt). The caller confirms the message kept, word for word, after hearing its
+  # summary: summarizesConfirmed says the app accepts that.
   confirm_take_message:
-    text: "For {recipient}, from {caller}, call back on {phone}. Your message: {message}. Shall I pass it on?"
+    text: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on?"
     interruptible: true
-    mode: generative
-    goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message in your own words, and ask whether to pass it on.
-    from: [message]
+    generate:
+      summary:
+        from: message
+        goal: Summarize the caller's message in one sentence, in their own terms.
+        words: 25
     summarizesConfirmed: true
     when:
       situations: [first-ask]

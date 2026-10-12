@@ -1,5 +1,5 @@
-import type { Generation, RenderClient, RenderRequest, SpeechAct } from './types';
-import { RenderClientError } from './types';
+import type { Generation, RenderClient, RenderRequest, SpanAct, SpeechAct } from './types';
+import { isSpanAct, RenderClientError } from './types';
 import { wordCount } from './checks';
 
 /**
@@ -19,6 +19,13 @@ export interface FakeRenderOptions {
   say?: Readonly<Record<string, string | Error | ((act: SpeechAct) => string)>>;
   /** For every line it does not answer through `say`: its wording, instead of the fake's own. */
   each?: (act: SpeechAct, promptId: string) => string | Error | undefined;
+  /**
+   * By prompt id: what the fake says for a framed line's span instead of its own wording (a string, a
+   * function of the span's act and name, or an Error).
+   */
+  spans?: Readonly<Record<string, string | Error | ((act: SpanAct, span: string) => string)>>;
+  /** For every span it does not answer through `spans`: its wording, instead of the fake's own. */
+  eachSpan?: (act: SpanAct, promptId: string, span: string) => string | Error | undefined;
   /** How long each generation takes, ms; default none. */
   delayMs?: number;
 }
@@ -47,16 +54,30 @@ export function fakeWording(act: SpeechAct): string {
   return wordCount(led) <= act.style.words ? led : line;
 }
 
+/**
+ * The fake's own wording of a span, deterministic: its content cut to its first few words, with no
+ * question mark and no closing punctuation (the frame has its own), as a short summary would be.
+ */
+export function fakeSpanWording(act: SpanAct): string {
+  const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');
+  const words = text.split(/\s+/).filter((w) => w !== '');
+  const kept = words.slice(0, Math.min(SUMMARY_WORDS, act.style.words)).join(' ');
+  return kept.replace(/[,.;:!]+$/, '');
+}
+
 export class FakeRenderClient implements RenderClient {
   readonly model = FAKE_RENDER_MODEL;
   /** The acts it was asked to word, in order, with their prompt ids: what a test reads back. */
   readonly asked: { promptId: string; act: SpeechAct }[] = [];
+  /** The framed lines' spans it was asked to word, in order: what a test reads back. */
+  readonly askedSpans: { promptId: string; span: string; act: SpanAct }[] = [];
 
   constructor(private readonly opts: FakeRenderOptions = {}) {}
 
   async generate(req: RenderRequest, signal: AbortSignal): Promise<Generation> {
     const { promptId, act } = req;
-    this.asked.push({ promptId, act });
+    if (isSpanAct(act)) this.askedSpans.push({ promptId, span: req.span ?? '', act });
+    else this.asked.push({ promptId, act });
     if (this.opts.delayMs !== undefined && this.opts.delayMs > 0) {
       await new Promise<void>((resolve, reject) => {
         const t = setTimeout(resolve, this.opts.delayMs);
@@ -66,10 +87,17 @@ export class FakeRenderClient implements RenderClient {
         });
       });
     }
-    const own = this.opts.say && Object.hasOwn(this.opts.say, promptId) ? this.opts.say[promptId] : this.opts.each?.(act, promptId);
-    const said = typeof own === 'function' ? own(act) : own;
+    let said: string | Error | undefined;
+    if (isSpanAct(act)) {
+      const span = req.span ?? '';
+      const own = this.opts.spans && Object.hasOwn(this.opts.spans, promptId) ? this.opts.spans[promptId] : this.opts.eachSpan?.(act, promptId, span);
+      said = typeof own === 'function' ? own(act, span) : own;
+    } else {
+      const own = this.opts.say && Object.hasOwn(this.opts.say, promptId) ? this.opts.say[promptId] : this.opts.each?.(act, promptId);
+      said = typeof own === 'function' ? own(act) : own;
+    }
     if (said instanceof Error) throw new RenderClientError(said.message);
-    const text = said ?? fakeWording(act);
+    const text = said ?? (isSpanAct(act) ? fakeSpanWording(act) : fakeWording(act));
     return { text, model: FAKE_RENDER_MODEL, usage: { inputTokens: Math.ceil(JSON.stringify(act).length / 4), outputTokens: Math.ceil(text.length / 4) }, latencyMs: this.opts.delayMs ?? 0, source: 'fake' };
   }
 }

@@ -1461,6 +1461,22 @@ export interface GeneratedLine {
   readonly by: 'prompt' | { readonly form: FormId };
   /** The app accepts that the line may summarize a value a `confirmed` rule holds the caller to (prompts.yaml's `summarizesConfirmed`). */
   readonly summarizesConfirmed?: true;
+  /**
+   * A framed line (prompts.yaml's `generate`): only these spans of it are generated, each a variable
+   * of its text, by name; every other word is its fixed text, never sent to a model. Its `goal` is
+   * then unused (each span has its own) and it has no `from` of its own. Absent for a line generated whole.
+   */
+  readonly spans?: Readonly<Record<string, GeneratedSpan>>;
+}
+
+/** One generated span of a framed line (prompts.yaml's `generate.<span>`). */
+export interface GeneratedSpan {
+  /** The slot whose content the span is worded from; its exact value fills the span whenever the span is not generated. */
+  readonly from: string;
+  /** What the span must say, told to the model. */
+  readonly goal: string;
+  /** The most words the span may use. */
+  readonly words: number;
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
@@ -1482,6 +1498,12 @@ export interface GeneratedWording {
    * generated in another locale only where that locale gives its goal; elsewhere its fixed line is said.
    */
   readonly localeGoals: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * Each other locale's span goals (locale/<tag>/prompts.yaml's `generate.<span>.goal`), by locale, prompt
+   * id and span: a span is generated in another locale only where that locale gives its goal; elsewhere
+   * it is its exact content. Absent for an app with no framed line.
+   */
+  readonly localeSpanGoals?: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
 }
 
 /**

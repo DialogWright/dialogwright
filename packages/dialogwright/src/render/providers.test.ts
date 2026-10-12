@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { RenderCassette, loadRenderCassette, renderCassettePath } from './cassette';
 import { FakeRenderClient } from './fake';
-import { RENDER_INSTRUCTIONS, renderKey } from './prompt';
+import { RENDER_INSTRUCTIONS, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
 import { ModelRenderClient, renderLines, renderSettings, resolveRenderProvider } from './providers';
-import { RenderClientError, type RenderRequest, type SpeechAct } from './types';
+import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
 /**
  * The render providers (OpenRouter and Anthropic, with the author's own key from its own variable),
@@ -100,6 +100,24 @@ describe('ModelRenderClient', () => {
     const cut = await new ModelRenderClient(or, answering(200, { choices: [{ message: { content: 'Who is it' }, finish_reason: 'length' }] })).generate(req, signal).catch((x: unknown) => x);
     expect((cut as Error).message).toBe('openrouter: the answer had no line');
     expect(await fails((async () => { throw new TypeError(`fetch failed with ${KEY}`); }) as typeof fetch)).toBe('anthropic: TypeError');
+  });
+
+  it('a framed line\'s span: its own instructions and its span act alone, the frame never sent', async () => {
+    sent.length = 0;
+    const span: SpanAct = { kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
+    const spanReq: RenderRequest = { promptId: 'confirm_take_message', span: 'summary', act: span, key: spanKey('confirm_take_message', 'summary', span) };
+    for (const [provider, keyVar, answer] of [['anthropic', 'ANTHROPIC_API_KEY', { content: [{ type: 'text', text: 'a call about the invoice' }], stop_reason: 'end_turn' }], ['openrouter', 'OPENROUTER_API_KEY', { choices: [{ message: { content: 'a call about the invoice' } }] }]] as const) {
+      const p = resolveRenderProvider({ RENDER_PROVIDER: provider, [keyVar]: KEY })!;
+      expect((await new ModelRenderClient(p, answering(200, answer)).generate(spanReq, signal)).text).toBe('a call about the invoice');
+    }
+    const [a, o] = sent.map((x) => JSON.parse(String(x.init.body)));
+    expect(a.system).toBe(SPAN_INSTRUCTIONS);
+    expect(o.messages[0]).toEqual({ role: 'system', content: SPAN_INSTRUCTIONS });
+    expect(JSON.parse(a.messages[0].content)).toEqual(JSON.parse(JSON.stringify(span)));
+    expect(String(sent[0]!.init.body)).not.toContain('confirm_take_message');
+    // A span's key is its own: never a line's, and it changes with its span and its act.
+    expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'gist', span));
+    expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'summary', { ...span, goal: 'Sum it up.' }));
   });
 
   it('says which model, from where, never the key', () => {

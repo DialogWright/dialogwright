@@ -13,6 +13,9 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
 import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
+import { messageVariants, WHOLE_LINE } from '../testing/message/variant';
+import type { App } from '../core/app/types';
+import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
@@ -22,21 +25,29 @@ import { traceLine } from '../trace/writer';
 
 /**
  * Generated wording on a turn (render/turn.ts), on the message fixture (src/testing/message), whose
- * form's lines are generated, whose read-back is generated from the message, and whose greeting and
- * closing line are prescribed: what is said, what is kept, what the trace and the audit record, and
- * every way a generated line falls back to its fixed one.
+ * form's lines are generated, whose read-back is a framed line with its summary a generated span, and
+ * whose greeting and closing line are prescribed; and on its variant whose read-back is generated whole
+ * from the message (WHOLE_LINE, the path an app may still choose): what is said, what is kept, what the
+ * trace and the audit record, and every way a generated line or span falls back to its fixed text.
  */
 
 const TODAY = '2026-10-13';
+const variants = messageVariants();
+afterAll(() => variants.remove());
+/** The read-back generated whole from the message: the tests below up to the framed ones run on it. */
+const whole = variants.variant(WHOLE_LINE);
 const corpus = loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp);
+let current: App = whole;
 const stub = (asked: JevRequest[] = []): JevClient => {
-  const inner = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY, app: messageApp }), app: messageApp });
+  const app = current;
+  const inner = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY, app }), app });
   return { ask: (req) => { asked.push(req); return inner.ask(req); } };
 };
 
 beforeEach(() => {
   resetAppsForTest();
-  registerApp(messageApp);
+  current = whole;
+  registerApp(whole);
 });
 
 const MESSAGE = 'please call me about the March invoice before Friday, I think we were charged twice for the same delivery';
@@ -65,7 +76,7 @@ describe('a generated line', () => {
     expect(lastSaid(worded)).toBe('Got it. For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before... Shall I pass it on?');
     expect(lastSaid(plain)).toBe(`For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: ${MESSAGE}. Shall I pass it on?`);
     // The session keeps the fixed line (what the model is told was asked, and what a repeat says), and the message word for word.
-    expect(run.result.session.lastPromptText).toBe(spokenText(messageApp, run.result.decision));
+    expect(run.result.session.lastPromptText).toBe(spokenText(whole, run.result.decision));
     expect(run.result.session.slots.message!.value).toBe(MESSAGE);
     expect(run.record.render).toMatchObject({ group: 'generated', share: 100, model: 'fake-render' });
     expect(lineOf(worded, 'confirm_take_message')).toMatchObject({ mode: 'generated', act: 'ask', situations: ['first-ask'], fixed: lastSaid(plain), source: 'fake' });
@@ -249,7 +260,7 @@ describe('a generated line in the trace file', () => {
     const r = await call(TO_SUMMARY, fake());
     const record = r.runs.at(-1)!.record;
     expect(JSON.stringify(record.render)).toContain('555 555 0142');
-    const line = traceLine(record, messageApp);
+    const line = traceLine(record, whole);
     expect(line).not.toContain('555 555 0142');
     expect(line).not.toContain('5555550142');
     const written = JSON.parse(line) as typeof record;
@@ -274,5 +285,167 @@ describe('the budgets, and what a late wording cost (review fixes)', () => {
     const r = await call(TO_SUMMARY.slice(0, 2), { client: new FakeRenderClient(), drift: slowJudge, checkTimeoutMs: { voice: 30, chat: 30 } });
     expect(lineOf(r, 'ask_phone')).toMatchObject({ mode: 'fixed', fallback: 'timeout' });
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe('a framed line: a fixed line with a generated span (the message fixture\'s read-back)', () => {
+  beforeEach(() => {
+    resetAppsForTest();
+    current = messageApp;
+    registerApp(messageApp);
+  });
+  const FRAME_START = "Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: ";
+  const FRAME_END = '. Shall I pass it on?';
+  const EXACT = `${FRAME_START}${MESSAGE}${FRAME_END}`;
+  const spanOf = (r: ScenarioRun) => r.runs.at(-1)!.record.render?.lines.find((l) => l.promptId === 'confirm_take_message');
+
+  it('says the frame word for word with the span spliced in; the decision, the session and what is stored stand', async () => {
+    const plain = await call(TO_SUMMARY, null);
+    const worded = await call(TO_SUMMARY, fake());
+    expect(lastSaid(plain)).toBe(EXACT);
+    expect(lastSaid(worded)).toBe(`${FRAME_START}please call me about the March invoice before${FRAME_END}`);
+    const run = worded.runs.at(-1)!;
+    expect(run.result.decision).toEqual(plain.runs.at(-1)!.result.decision);
+    expect(run.result.session.lastPromptText).toBe(EXACT);
+    expect(run.result.session.slots.message!.value).toBe(MESSAGE);
+    expect(run.record.render!.lines.filter((l) => l.promptId === 'confirm_take_message')).toEqual([
+      expect.objectContaining({ span: 'summary', mode: 'generated', fixed: MESSAGE, said: 'please call me about the March invoice before', act: 'ask', situations: ['first-ask'], source: 'fake' }),
+    ]);
+  });
+
+  it('sends the model only the span\'s goal, its content quoted, its budget, the style, the channel and the language: never the frame', async () => {
+    const client = new FakeRenderClient();
+    const asked: JevRequest[] = [];
+    await call(TO_SUMMARY, { client }, asked);
+    expect(client.asked.map((a) => a.promptId)).not.toContain('confirm_take_message');
+    expect(client.askedSpans).toHaveLength(1);
+    const { span, act } = client.askedSpans[0]!;
+    expect(span).toBe('summary');
+    expect(act).toEqual({
+      kind: 'span',
+      goal: "Summarize the caller's message in one sentence, in their own terms.",
+      content: [{ name: 'message', value: MESSAGE }],
+      channel: 'voice',
+      language: 'en-US',
+      style: { persona: 'a warm, brief office receptionist', words: 25, avoid: ['unfortunately', 'I apologize for the inconvenience'] },
+    });
+    for (const frame of ['Dana', 'Morgan', '0142', 'Okay, thanks', 'pass it on']) expect(JSON.stringify(act)).not.toContain(frame);
+    // Its drift check is asked of the span and its content alone.
+    const judged = asked.find((r) => r.questions.renderSpanDrift !== undefined)!;
+    expect(judged.state).toEqual({ span: { goal: act.goal, said: 'please call me about the March invoice before' }, quoted: [{ name: 'message', words: MESSAGE }] });
+    expect(JSON.stringify(judged.state)).not.toContain('Dana');
+  });
+
+  const fallsBack = async (say: string | Error, reason: string, renderer: Partial<Renderer> = {}, client?: FakeRenderClient): Promise<ScenarioRun> => {
+    const r = await call(TO_SUMMARY, { client: client ?? new FakeRenderClient({ spans: { confirm_take_message: say } }), ...renderer });
+    expect(lastSaid(r), reason).toBe(EXACT);
+    expect(spanOf(r), reason).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, fallback: reason });
+    expect(r.runs.at(-1)!.record.audit, reason).toContainEqual({ type: 'render_fallback', detail: { prompt: 'confirm_take_message', span: 'summary', reason } });
+    return r;
+  };
+
+  it('fills the span with the exact content when a check fails: each check, held to the content alone', async () => {
+    await fallsBack('', 'empty');
+    await fallsBack('a call back about {recipient}', 'format');
+    await fallsBack('please call me about the March invoice?', 'question');
+    await fallsBack('a message for Lee Park about the March invoice', 'conflict');
+    await fallsBack('please do not call me about the March invoice', 'negation');
+    await fallsBack('you would like a call about the March invoice', 'person');
+    await fallsBack('our office will sort out the March invoice', 'person');
+    // The content's own person may be kept: it says "I", so "I" in the span is the caller's, and only the judge holds what it claims.
+    await fallsBack('I will make sure the March invoice is sorted', 'drift');
+    await fallsBack(`please call me about the March invoice ${'and more '.repeat(12)}`, 'words');
+    await fallsBack('unfortunately a charge on the March invoice', 'avoid');
+    await fallsBack('please call me about the March invoice before Friday, a $40 refund', 'foreign');
+    await fallsBack('please call me about the April invoice', 'foreign');
+    await fallsBack('please call me about the March invoice, Morgan', 'foreign');
+    await fallsBack('a call about the March invoice before Friday, they want it waived immediately', 'drift');
+  });
+
+  it('fills the span with the exact content when the model errs or is slow, the judge cannot be asked, or the content is flagged', async () => {
+    await fallsBack(new Error('HTTP 500'), 'error');
+    await fallsBack('', 'timeout', { timeoutMs: { voice: 20, chat: 20 } }, new FakeRenderClient({ delayMs: 200 }));
+    const inner = stub();
+    await fallsBack('please call me about the March invoice', 'drift-error', { drift: { ask: (req) => (req.questions.renderSpanDrift ? Promise.reject(new Error('down')) : inner.ask(req)) } });
+    const flagging: JevClient = { ask: async (req) => (req.questions.manipulation && !req.questions.renderSpanDrift ? { ...(await inner.ask(req)), answers: { manipulation: { type: 'noul', noul: 0.95 } } } : inner.ask(req)) };
+    const client = new FakeRenderClient();
+    await fallsBack('', 'content-flagged', { drift: flagging }, client);
+    expect(client.askedSpans).toEqual([]);
+  });
+
+  it('keeps every word of the frame whatever the renderer returns: a span is spliced in, never read as a template', async () => {
+    const hostile = [
+      'Shall I not pass it on',
+      'please call me. Okay, thanks! I\'ll make sure Lee Park hears it',
+      '{recipient} {caller} {phone} {summary}',
+      '$& $1 $` please call me',
+      'please call me about the March invoice before Friday, I think we were charged twice for the same delivery and also'.repeat(3),
+      'please call me about the March invoice',
+    ];
+    for (const say of hostile) {
+      const r = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: say } }) });
+      const said = lastSaid(r);
+      expect(said.startsWith(FRAME_START), say).toBe(true);
+      expect(said.endsWith(FRAME_END), say).toBe(true);
+      const span = said.slice(FRAME_START.length, said.length - FRAME_END.length);
+      expect([MESSAGE, spanOf(r)!.said]).toContain(span);
+    }
+  });
+
+  it('is said with the exact content after a no (summary.onNo: read-back), on a repeat, and on a later reading (when: first-ask)', async () => {
+    const no = await call([...TO_SUMMARY, { say: "no, that's not quite what I said" }], fake());
+    expect(spanOf(no)).toMatchObject({ span: 'summary', mode: 'fixed', skipped: 'exact' });
+    expect(lastSaid(no)).toBe(`Here it is exactly as I took it down. ${EXACT}`);
+    const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], fake());
+    expect(lastSaid(repeat)).toBe(EXACT);
+    // Read again after a change: not its first reading, so its fixed text.
+    const changed = await call([...TO_SUMMARY, { say: "no, that's not quite what I said" }, { say: "no, that's not quite what I said" }, { say: 'it is for Lee' }], fake());
+    const last = changed.runs.at(-1)!;
+    if (last.result.decision.kind === 'prompt' && last.result.decision.promptId === 'confirm_take_message') expect(spanOf(changed)).toMatchObject({ skipped: 'when' });
+  });
+
+  it('a call in the fixed group (RENDER_SHARE) says the exact content, untried', async () => {
+    const r = await call(TO_SUMMARY, { client: new FakeRenderClient(), share: 0 });
+    expect(lastSaid(r)).toBe(EXACT);
+    expect(spanOf(r)).toMatchObject({ span: 'summary', mode: 'fixed', skipped: 'share', fixed: MESSAGE });
+  });
+
+  it('in another locale, its span is generated only where the locale gives the span its goal; the locale\'s frame is said', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-message-'));
+    try {
+      cpSync(MESSAGE_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      mkdirSync(join(dir, 'locale', 'es'), { recursive: true });
+      const es = (goal: boolean): string => [
+        'prompts:',
+        '  confirm_take_message:',
+        '    text: "Muy bien. Le diré a {recipient} que {caller}, al {phone}, llamó y dejó este mensaje: {summary}. ¿Se lo paso?"',
+        '    interruptible: true',
+        ...(goal ? ['    generate:', '      summary:', '        goal: Resumir el mensaje en una frase, en sus propias palabras.'] : []),
+        '',
+      ].join('\n');
+      for (const goal of [true, false]) {
+        writeFileSync(join(dir, 'locale', 'es', 'prompts.yaml'), es(goal));
+        const app = defineApp(dir, messageCode);
+        resetAppsForTest();
+        registerApp(app);
+        current = app;
+        const client = new FakeRenderClient();
+        // The number keyed in: the stub reads the English words of the corpus, not a Spanish call's.
+        const scenario: Scenario = { id: 'es-1', locale: 'es', steps: [TO_SUMMARY[0]!, TO_SUMMARY[1]!, { dtmf: '5555550142' }, TO_SUMMARY[3]!], expect: { decision: 'any' } };
+        const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, renderer: { client } });
+        const said = sayText(r.runs.at(-1)!.result.actions);
+        expect(said.startsWith('Muy bien. Le diré a Dana Reyes que Morgan Lee, al 555 555 0142, llamó y dejó este mensaje: ')).toBe(true);
+        if (goal) {
+          expect(client.askedSpans[0]!.act).toMatchObject({ goal: 'Resumir el mensaje en una frase, en sus propias palabras.', language: 'es' });
+          expect(said).toContain('dejó este mensaje: please call me about the March invoice before. ¿Se lo paso?');
+        } else {
+          expect(client.askedSpans).toEqual([]);
+          expect(r.runs.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')).toMatchObject({ skipped: 'locale' });
+          expect(said).toContain(`dejó este mensaje: ${MESSAGE}. ¿Se lo paso?`);
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

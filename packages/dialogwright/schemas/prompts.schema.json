@@ -81,9 +81,43 @@
             }
           },
           "summarizesConfirmed": {
-            "description": "true: the app accepts that this generated line, a read-back, may summarize a value named in `from` that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.",
+            "description": "true: the app accepts that this generated line, a read-back, may summarize a value named in `from` (or in a span's `from`) that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.",
             "type": "boolean",
             "const": true
+          },
+          "generate": {
+            "description": "A fixed line with generated spans (the framed form): each key is one of the line's {variables}, worded by a model from the content its `from` names; every other word of the line is the app's fixed text, never sent to a model and never changed. The frame says whose words the span gives (\"{caller} called and left this message: {summary}\"), so attribution is by design. A span that is not generated, or fails a check, is the exact content, word for word. Not with `mode` or a line's own `goal` or `from`.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "description": "The slot whose content the span is worded from (the message, the note): the caller's words, collected. The model is sent only this content, quoted, with the span's goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. Required in prompts.yaml; a locale gives a span only its goal.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                },
+                "goal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What the span must say, for the model that words it (\"Summarize the caller's message in one sentence, in their own terms.\"). In a locale's prompts.yaml: the span is generated in that locale only where its goal is given there."
+                },
+                "words": {
+                  "description": "The most words the span may use; a longer one is not said (the exact content is). Default 25.",
+                  "type": "integer",
+                  "minimum": 3,
+                  "maximum": 100
+                }
+              },
+              "required": [
+                "goal"
+              ],
+              "additionalProperties": false,
+              "description": "One generated span of a fixed line."
+            }
           }
         },
         "required": [

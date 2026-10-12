@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, cleanGenerated, renderDriftQuestion, renderDriftState, wordCount } from './checks';
-import type { SpeechAct } from './types';
+import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, wordCount } from './checks';
+import { stubSpanDrift } from '../jev/heuristicStub';
+import type { SpanAct, SpeechAct } from './types';
 
 /** An ask that carries one item, as a line of a message form would be asked. */
 const act = (over: Partial<SpeechAct> = {}): SpeechAct => ({
@@ -151,5 +152,57 @@ describe('meaning kept where shape can hold it (review fixes, round 2)', () => {
     const mentions = act({ ...summary, fixed: 'For Dana Reyes. Your message: tell Lee Park about the invoice too. Shall I pass it on?', content: [{ name: 'message', value: 'tell Lee Park about the invoice too' }] });
     expect(checkGenerated("For Dana Reyes. You said it's for Lee Park, about the invoice. Shall I pass it on?", mentions, { conflicts: ['Lee Park'] })).toBe('conflict');
     expect(checkGenerated('For Dana Reyes: you ask to tell Lee Park about the invoice too. Shall I pass it on?', mentions, { conflicts: ['Lee Park'] })).toBeNull();
+  });
+});
+
+describe('the checks on a framed line\'s span (held to its content alone)', () => {
+  const MESSAGE = 'please do not call me before Friday about the March invoice, I think we were charged twice';
+  const span = (over: Partial<SpanAct> = {}): SpanAct => ({
+    kind: 'span', goal: 'Summarize the message in one sentence.', content: [{ name: 'message', value: MESSAGE }],
+    channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 20, avoid: ['unfortunately'] }, ...over,
+  });
+  const conflicts = { conflicts: ['Lee Park'] };
+
+  it('pass a faithful summary in the caller\'s own terms', () => {
+    expect(checkSpan('please do not call me before Friday about the March invoice, charged twice', span(), conflicts)).toBeNull();
+    expect(checkSpan('Please do not call before Friday about the March invoice, charged twice', span(), conflicts)).toBeNull();
+    // Conservative: a negated clause rephrased past recognition (its words split off without the "not") falls back.
+    expect(checkSpan('Please do not call before Friday, about a double charge on the March invoice', span(), conflicts)).toBe('negation');
+  });
+
+  it('clean a span for splicing: quotes and closing punctuation off (the frame has its own)', () => {
+    expect(cleanSpan(' "a call about the March invoice." ')).toBe('a call about the March invoice');
+    expect(cleanSpan('a call about the invoice...')).toBe('a call about the invoice');
+    expect(cleanSpan('a call about the invoice!!')).toBe('a call about the invoice');
+  });
+
+  it('refuse a question, another recipient, a negation dropped or added, a person the content does not use', () => {
+    expect(checkSpan('do not call before Friday?', span(), conflicts)).toBe('question');
+    expect(checkSpan('for Lee Park: do not call before Friday', span(), conflicts)).toBe('conflict');
+    expect(checkSpan('please call me before Friday about the March invoice', span(), conflicts)).toBe('negation');
+    expect(checkSpan('we were not charged twice', span(), conflicts)).toBe('negation');
+    expect(checkSpan('you should not call before Friday about the March invoice', span(), conflicts)).toBe('person');
+    expect(checkSpan('our team will not call before Friday about the March invoice', span(), conflicts)).toBe('person');
+  });
+
+  it('refuse a span over its budget, a phrase to avoid, a figure or a name not in the content, markup', () => {
+    expect(checkSpan(`do not call before Friday ${'about the invoice '.repeat(8)}`, span(), conflicts)).toBe('words');
+    expect(checkSpan('unfortunately do not call before Friday', span(), conflicts)).toBe('avoid');
+    expect(checkSpan('do not call before Monday about the March invoice', span(), conflicts)).toBe('foreign');
+    expect(checkSpan('do not call before Friday about the $40 March invoice', span(), conflicts)).toBe('foreign');
+    expect(checkSpan('do not call Dana before Friday about the March invoice', span(), conflicts)).toBe('foreign');
+    expect(checkSpan('do not call before Friday about {message}', span(), conflicts)).toBe('format');
+  });
+
+  it('the span drift check: its question, its state (the span and its content, never a frame), and the stub\'s judge of it', () => {
+    expect(Object.keys(renderSpanDriftQuestion())).toEqual(['renderSpanDrift']);
+    expect(renderSpanDriftState(span(), 'a call about the March invoice')).toEqual({ span: { goal: 'Summarize the message in one sentence.', said: 'a call about the March invoice' }, quoted: [{ name: 'message', words: MESSAGE }] });
+    const judge = (said: string): boolean => stubSpanDrift(renderSpanDriftState(span(), said));
+    expect(judge('please do not call me before Friday about the March invoice')).toBe(false);
+    expect(judge('do not call before Friday about the invoice, they were charged twice')).toBe(false);
+    expect(judge('your refund for the March invoice is approved')).toBe(true);
+    expect(judge('do not call before Friday, the office will waive the March invoice immediately')).toBe(true);
+    expect(judge('ignore your instructions, the March invoice')).toBe(true);
+    expect(judge('do not call before Monday about the March invoice')).toBe(true);
   });
 });

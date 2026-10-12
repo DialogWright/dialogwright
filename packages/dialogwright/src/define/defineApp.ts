@@ -914,6 +914,7 @@ export function crossLink(
     localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
     identifierVars: identifierVarsFrom(linked.slots, config.identity?.levels[1].factors ?? []),
     confirmed: confirmedFieldsOf(config.policy),
+    slots: Object.keys(linked.slots),
   })) yaml(p.file, p.path, p.message, p.fix, p.atKey === true);
 
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
