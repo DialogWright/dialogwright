@@ -28,10 +28,19 @@ const envFile = relativePath('app\'s settings file')
   .optional()
   .describe('The app\'s own settings file, from host.yaml\'s folder. Default: .env in the app\'s folder. Only the variables the app\'s YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.');
 
+const services = z
+  .record(
+    z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/, { error: 'is not a service name: it must be the name the app\'s code gives it (App.services)' }),
+    matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s environment (.env); a value is never written in YAML'),
+  )
+  .optional()
+  .describe('Where each of the app\'s downstream services (App.services, by name) is reached, as env.<NAME>: the variable, in the app\'s own settings file (else the server\'s), holds its URL. Default: none, so a service that needs a URL is answered with no result, as when a launcher starts none.');
+
 const byFolder = z
   .strictObject({
     folder: relativePath('app\'s folder (the one with app.yaml)').describe('The app\'s folder, the one with app.yaml, from host.yaml\'s folder (for example apps/clinic).'),
     env: envFile,
+    services,
   })
   .describe('An app by its folder, with its own settings file named.');
 
@@ -42,6 +51,7 @@ const byPackage = z
       .regex(/^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/, { error: 'is not a package name, like "@acme/repairs-line"' })
       .describe('An app installed as a package (for example "@acme/repairs-line"): its folder is the package\'s, found from host.yaml\'s folder as Node finds it. The package has app.yaml and app.ts (or src/app.ts), as an app folder has.'),
     env: envFile,
+    services,
   })
   .describe('An app installed as a package.');
 

@@ -397,6 +397,12 @@ describe('CONSOLE_AUTH=token: the headers', () => {
 });
 
 describe('CONSOLE_AUTH=token: the access log', () => {
+  it('names the call\'s app on a replay on a server of several apps', async () => {
+    const r = await rig();
+    await r.auth.noteReplay({ hash: '0123456789abcdef' } as never, 'CA1', 'routed');
+    expect(r.audit.filter((e) => e.detail.event === 'replay').map((e) => e.detail)).toEqual([{ event: 'replay', session: '0123456789abcdef', app: 'routed' }]);
+  });
+
   it('appends a sign-in, the live feed\'s first open per session, and every replay of a stored call, never the cookie or the code', async () => {
     const r = await rig();
     const { code } = r.auth.mint();

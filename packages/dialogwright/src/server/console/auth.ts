@@ -110,7 +110,8 @@ export interface ConsoleGate {
   /** Records the live feed's first open in a session: at once, or (AUDIT_STORE=postgres) once the database has it. */
   noteLive(session: ConsoleSession): Chained<void>;
   /** Records a replay of a stored call, as noteLive. */
-  noteReplay(session: ConsoleSession, callId: string): Chained<void>;
+  /** A replay of a stored call; on a server of several apps, `app` names the call's app. */
+  noteReplay(session: ConsoleSession, callId: string, app?: string): Chained<void>;
 }
 
 export interface ConsoleAuthOptions {
@@ -369,8 +370,8 @@ export class ConsoleAuth implements ConsoleGate {
     return noted;
   }
 
-  noteReplay(session: ConsoleSession, callId: string): Chained<void> {
-    return this.note(callId, { event: 'replay', session: session.hash });
+  noteReplay(session: ConsoleSession, callId: string, app?: string): Chained<void> {
+    return this.note(callId, { event: 'replay', session: session.hash, ...(app !== undefined ? { app } : {}) });
   }
 
   handle(req: IncomingMessage, res: ServerResponse, path: string): boolean {

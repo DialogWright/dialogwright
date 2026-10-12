@@ -1,3 +1,4 @@
+import type { App } from '../core/app/types';
 import { parseOverride, withOverrides, type Thresholds } from '../core/thresholds';
 import { defaultAppOrNull } from '../core/app/registry';
 import { loadCorpus } from '../jev/corpus';
@@ -80,10 +81,13 @@ export function recordedCassette(provider: JevProvider = resolveJevProvider(proc
  *
  * `provider` is where jev, record and recorded reach the model (jev/provider.ts); left out, it is
  * resolved from the environment, a key required for jev and record. The stubs never read it.
+ *
+ * `app` is the app the stubs answer for (a server of several apps builds one client of each per app);
+ * left out, the default app, at each ask, as always. The clients that ask a model never read it.
  */
-export function buildClient(kind: string, corpusFile: string | undefined, thresholds: Thresholds, todayIso?: string, provider?: JevProvider): JevClient {
+export function buildClient(kind: string, corpusFile: string | undefined, thresholds: Thresholds, todayIso?: string, provider?: JevProvider, app?: App): JevClient {
   if (!isClientKind(kind)) throw new Error(`unknown client kind "${kind}"; expected one of ${CLIENT_KINDS.join(', ')}`);
-  const heuristic = (): HeuristicStubClient => new HeuristicStubClient(todayIso === undefined ? {} : { todayIso });
+  const heuristic = (): HeuristicStubClient => new HeuristicStubClient({ ...(todayIso === undefined ? {} : { todayIso }), ...(app === undefined ? {} : { app }) });
   const endpoint = (needKey: boolean): JevProvider => provider ?? resolveJevProvider(process.env, { needKey });
   const live = (p: JevProvider): SdkJevClient => {
     // A provider resolved for a replay has no key; an official one is never sent an empty one.
@@ -92,7 +96,7 @@ export function buildClient(kind: string, corpusFile: string | undefined, thresh
   };
   switch (kind) {
     case 'stub':
-      return new FixtureStubClient(loadCorpus(corpusFile ?? defaultCorpusFile()), { sharpness: thresholds.STUB_SHARPNESS, fallback: heuristic() });
+      return new FixtureStubClient(loadCorpus(corpusFile ?? defaultCorpusFile(app), app), { sharpness: thresholds.STUB_SHARPNESS, fallback: heuristic(), ...(app === undefined ? {} : { app }) });
     case 'heuristic':
       return heuristic();
     case 'jev':

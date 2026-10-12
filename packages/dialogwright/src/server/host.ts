@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { App } from '../core/app/types';
 import { getApp, registerApp } from '../core/app/registry';
-import { sameNumber } from '../core/conditions';
+import { digitsOf, sameNumber } from '../core/conditions';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { resolveHostFile, type HostAppRef, type ResolvedHost } from '../define/host';
 import { formatProblem } from '../define/problems';
@@ -38,7 +38,16 @@ export interface HostApp {
   readonly own: readonly string[];
   /** The variables in its own file it does not name, which are not read (a server setting left in an app's .env, say). */
   readonly ignored: readonly string[];
+  /** The variable that holds each of its services' URLs (host.yaml's `services`), by service name; absent, none. */
+  readonly services?: Readonly<Record<string, string>>;
 }
+
+/**
+ * The server settings an app may give its own value under a host, in its own settings file: where its
+ * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and whom its chat's sign-in tokens are
+ * for (CHAT_AUDIENCE, CHAT_ISSUER). Absent there, the server's.
+ */
+export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER'];
 
 /** One number a host routes: the variable that holds it, its value, and the app it reaches. */
 export interface HostNumber {
@@ -55,6 +64,11 @@ export interface HostRouting {
   readonly numbers: readonly HostNumber[];
   /** The app a call to `called` reaches: the one its number points at, else the default. */
   appFor(called: string | null | undefined): string;
+  /**
+   * What the server says as it starts about the numbers: a ten-digit national number that would match
+   * two of them (a +1 number and another country's ending in the same ten digits) reaches the first.
+   */
+  readonly warnings: readonly string[];
   /** Whether the host runs an app of this id. */
   has(id: string): boolean;
   /** The app of this id; throws for one the host does not run. */
@@ -77,8 +91,11 @@ export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { v
     numbers,
     appFor(called) {
       if (called === null || called === undefined || called.trim() === '') return o.defaultApp;
-      return numbers.find((n) => sameNumber(called, n.value))?.app ?? o.defaultApp;
+      // Digit for digit first; a ten-digit national number's match only when none is exact.
+      const digits = digitsOf(called);
+      return (numbers.find((n) => digitsOf(n.value) === digits) ?? numbers.find((n) => sameNumber(called, n.value)))?.app ?? o.defaultApp;
     },
+    warnings: nationalTwins(numbers),
     has: (id) => byId.has(id),
     get(id) {
       const app = byId.get(id);
@@ -86,6 +103,21 @@ export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { v
       return app;
     },
   };
+}
+
+/** The pairs of numbers whose last ten digits are the same: a call delivered as that ten-digit number matches both. */
+function nationalTwins(numbers: readonly HostNumber[]): string[] {
+  const out: string[] = [];
+  numbers.forEach((n, i) => {
+    for (const m of numbers.slice(0, i)) {
+      const a = digitsOf(n.value);
+      const b = digitsOf(m.value);
+      if (a.length > 10 && b.length > 10 && a.slice(-10) === b.slice(-10)) {
+        out.push(`${m.variable} and ${n.variable} end in the same ten digits: a call whose number called comes as those ten digits alone reaches "${m.app}", the first listed`);
+      }
+    }
+  });
+  return out;
 }
 
 /**
@@ -169,6 +201,14 @@ export async function importApp(dir: string, id: string): Promise<App> {
   throw new Error(`${dir}: ${tried.length === 0 ? `no module (${APP_MODULE_FILES.join(', ')})` : tried.join(' or ')} exports the app "${id}" (its app.yaml's id): export the App defineApp builds (export const app = defineApp(...))`);
 }
 
+/**
+ * Every variable an app's own settings file is read for under a host: those its YAML names, its
+ * services' (host.yaml), and the server settings an app may give its own value (APP_OWN_SETTINGS).
+ */
+export function ownVariablesOf(ref: Pick<HostAppRef, 'dir' | 'services'>): string[] {
+  return [...new Set([...variablesOf(ref.dir), ...Object.values(ref.services), ...APP_OWN_SETTINGS])];
+}
+
 /** The variables an app's YAML names (env.<NAME>), by name. */
 export function variablesOf(dir: string): string[] {
   return [...new Set((appYamlEnvReferences(dir) ?? []).map((r) => r.variable))];
@@ -205,8 +245,8 @@ export async function loadHost(file: string, server: Env): Promise<HostRouting &
 async function hostApp(ref: HostAppRef, server: Env): Promise<HostApp> {
   const app = ensureRegistered(await importApp(ref.dir, ref.id));
   const own = existsSync(ref.envFile) ? readEnvFile(ref.envFile) : null;
-  const env = appEnvironment(server, own, variablesOf(ref.dir));
-  return { id: app.id, app, dir: ref.dir, env: env.env, own: env.own, ignored: env.ignored };
+  const env = appEnvironment(server, own, ownVariablesOf(ref));
+  return { id: app.id, app, dir: ref.dir, env: env.env, own: env.own, ignored: env.ignored, services: ref.services };
 }
 
 /** What a server's log says of a host, a line each: the apps, and which numbers reach each. Names only, never a number. */

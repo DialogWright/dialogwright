@@ -241,6 +241,9 @@ describe('a host of two apps', () => {
     const replay = (await (await fetch(`${s.base}/dashboard/traces/CA0000000000000000000000000000sl08`)).json()) as { app?: string; records: { spokenText: string }[] };
     expect(replay.app).toBe('routed');
     expect(replay.records[0]!.spokenText).toBe(ROUTED_GREETING);
+    // Addressed by its app, as its row says: the same id is not looked for in another app's records.
+    expect((await fetch(`${s.base}/dashboard/traces/CA0000000000000000000000000000sl08?app=routed`)).status).toBe(200);
+    expect((await fetch(`${s.base}/dashboard/traces/CA0000000000000000000000000000sl08?app=callback`)).status).toBe(404);
     // The page knows every app's console words and names; the live feed names each call's app.
     const page = await (await fetch(`${s.base}/dashboard`)).text();
     expect(page).toContain('"apps":[{"id":"callback","name":"Example Callbacks"');

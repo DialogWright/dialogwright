@@ -1,4 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostFileOf } from '../define/host';
 import { loadHost } from './host';
@@ -8,7 +9,8 @@ import type { ServerConfig } from './config';
 /**
  * `[ENV_FILE=<path>] dialogwright serve [--host <file>]` (in this repository, `pnpm serve`): the server of a
  * host file (host.yaml: several apps on one server), every app it lists in this one process, with the
- * server's settings (ENV_FILE, `--env-file`, or the environment) and each app's own. It is what `pnpm start
+ * server's settings (ENV_FILE, `--env-file`, else the .env beside host.yaml when there is one) and each
+ * app's own. It is what `pnpm start
  * --host` and a service file for a host run; an app alone runs its own launcher (`pnpm --filter <app>
  * serve`), as before. The host file is `--host`, else HOST_FILE, else host.yaml in the folder it is run in.
  *
@@ -31,13 +33,16 @@ export interface ServeDeps {
 /** The command; resolves with 0 once the server listens (it then runs until stopped), 1 or 2 when it cannot start. */
 export async function main(argv: readonly string[], deps: ServeDeps): Promise<number> {
   let flag: string | undefined;
+  let envFileGiven = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     const v = argv[i + 1];
     if (a === '--host' && v !== undefined) flag = argv[++i];
     // Read by the server itself (index.ts main), from the process's own arguments.
-    else if (a === '--env-file' && v !== undefined) i++;
-    else if (a.startsWith('--env-file=')) continue;
+    else if (a === '--env-file' && v !== undefined) {
+      i++;
+      envFileGiven = true;
+    } else if (a.startsWith('--env-file=')) envFileGiven = true;
     else {
       deps.out(SERVE_USAGE);
       return 2;
@@ -52,6 +57,10 @@ export async function main(argv: readonly string[], deps: ServeDeps): Promise<nu
     deps.out(`no host file at ${file}`);
     return 1;
   }
+  // The server's settings: the file ENV_FILE or --env-file names, else the .env beside host.yaml, as
+  // `pnpm start --host` reads it, when there is one.
+  const beside = join(dirname(file), '.env');
+  if (!envFileGiven && !deps.env.ENV_FILE?.trim() && existsSync(beside)) deps.env.ENV_FILE = beside;
   // The apps are read once the server's settings are (ENV_FILE first): the numbers are among them.
   await deps.serve(async () => ({ overrides: { apps: await loadHost(file, deps.env) } }));
   return 0;

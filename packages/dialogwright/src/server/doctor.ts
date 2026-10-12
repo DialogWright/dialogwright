@@ -19,7 +19,9 @@ import { describeTraceStore, type S3TraceSetting } from '../trace/store';
 import { S3Client } from '../trace/s3/client';
 import { randomBytes } from 'node:crypto';
 import { hostFileOf, resolveHostFile, type ResolvedHost } from '../define/host';
-import { appEnvironment, hostNumbers, variablesOf } from './host';
+import { appEnvironment, hostNumbers, hostRouting, ownVariablesOf } from './host';
+import { parse as parseYaml } from 'yaml';
+import type { App } from '../core/app/types';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -691,9 +693,14 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(numbers.length === 0
       ? { id: 'host', status: 'ok', message: `host.yaml names no number: every call reaches ${host.defaultApp}, the default` }
       : { id: 'host', status: 'ok', message: `host.yaml's numbers: ${numbers.map((n) => `${n.variable} (${n.app})`).join(', ')}, each set and its own; any other number reaches ${host.defaultApp}` });
+    for (const twin of hostRouting({ apps: host.apps.map((a) => ({ id: a.id, app: {} as App, env: {}, own: [], ignored: [] })), numbers: host.numbers, defaultApp: host.defaultApp, env }).warnings) {
+      out.push({ id: 'host', status: 'warn', message: twin, fix: 'deliver the number called in E.164 (the carrier\'s number settings), or give the two apps numbers that differ in their last ten digits' });
+    }
   } catch (e) {
     out.push({ id: 'host', status: 'fail', message: `${e instanceof Error ? e.message : String(e)}: the server will not start`, fix: 'set the number in the server\'s settings file' });
   }
+  const signIn = env.CHAT?.trim() === 'on' && env.CHAT_SIGNIN?.trim() === 'jwt';
+  const audiences = new Map<string, string[]>();
   for (const app of host.apps) {
     const tag = (r: CheckResult): CheckResult => ({ ...r, message: `app ${app.id}: ${r.message}` });
     let own: Record<string, string> | null = null;
@@ -703,13 +710,47 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     } else if (app.envNamed) {
       out.push(tag({ id: 'settings', status: 'fail', message: `${app.envFile} does not exist`, fix: 'create it with the app\'s own variables, or take "env" out of host.yaml' }));
     }
-    const read = appEnvironment(env, own, variablesOf(app.dir));
+    const read = appEnvironment(env, own, ownVariablesOf(app));
     out.push(...variableChecks(app.dir, read.env).map(tag));
+    // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
+    for (const [name, variable] of Object.entries(app.services)) {
+      const url = read.env[variable]?.trim();
+      let parsed: URL | null = null;
+      try {
+        parsed = url ? new URL(url) : null;
+      } catch {
+        parsed = null;
+      }
+      out.push(tag(parsed !== null && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        ? { id: 'variables', status: 'ok', message: `host.yaml's services.${name} reads ${variable}: set, ${parsed.host}` }
+        : { id: 'variables', status: 'warn', message: `host.yaml's services.${name} reads ${variable}, which is ${url ? 'not an http(s) URL' : 'not set'}: the service's requests are answered with no result`, fix: `set ${variable} to the service's URL in the app's own settings file` }));
+    }
+    // With several apps, one with no transfer targets and no HANDOFF_NUMBER of its own hands off to the server's.
+    if (host.apps.length > 1 && !hasTransfer(app.dir) && !read.own.includes('HANDOFF_NUMBER')) {
+      out.push(tag({ id: 'handoff', status: 'warn', message: 'no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server\'s HANDOFF_NUMBER', fix: 'set HANDOFF_NUMBER in the app\'s own settings file, or give it transfer targets (app.yaml)' }));
+    }
+    if (signIn) {
+      const key = `${read.env.CHAT_ISSUER ?? ''} ${read.env.CHAT_AUDIENCE ?? ''}`;
+      audiences.set(key, [...(audiences.get(key) ?? []), app.id]);
+    }
     if (read.ignored.length > 0) {
       out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host an app's own file is read for its own variables alone`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file, and delete the rest here' }));
     }
   }
+  for (const ids of audiences.values()) {
+    if (ids.length > 1) out.push({ id: 'host', status: 'warn', message: `CHAT_SIGNIN=jwt: ${ids.join(', ')} take tokens for one audience, so a token for one's portal signs in at the others' chats`, fix: 'give each app its own CHAT_AUDIENCE in its own settings file' });
+  }
   return out;
+}
+
+/** Whether an app folder's app.yaml has transfer targets (`transfer:`), read from the YAML alone. */
+function hasTransfer(dir: string): boolean {
+  try {
+    const doc = parseYaml(readFileSync(join(dir, 'app.yaml'), 'utf8')) as { transfer?: unknown } | null;
+    return doc?.transfer !== undefined && doc.transfer !== null;
+  } catch {
+    return false;
+  }
 }
 
 /** The command; returns its exit code (0 nothing failed, 1 something did, 2 a command line it does not understand). */

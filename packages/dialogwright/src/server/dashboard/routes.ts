@@ -130,12 +130,12 @@ function readTrace(traceDir: string, sid: string, app?: App): { records: ReplayR
 /** A trace as the replay route answers it: its records redacted with the line each said, its frames redacted, and its delivery facts. */
 function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string, app?: App): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
   const records = raw.map((r) => {
-    const record = redactRecord(r);
+    const record = app === undefined ? redactRecord(r) : redactRecord(r, app);
     return { ...record, spokenText: spokenOf(record, app) };
   });
   // redactFrameLine widens the type back to FrameLogLine; readFrameLog's line number survives the
   // spread, so it is restored here rather than dropped from what the page gets.
-  const frames = read.map((l) => ({ ...redactFrameLine(l), line: l.line }));
+  const frames = read.map((l) => ({ ...(app === undefined ? redactFrameLine(l) : redactFrameLine(l, app)), line: l.line }));
   return { records, frames, deliveries: deliveriesOf(frames, sid) };
 }
 
@@ -241,9 +241,11 @@ function hostRows(res: ServerResponse, head: boolean, apps: readonly ConsoleApp[
 }
 
 /** On a host: one call's replay, from the app whose traces have it, with that app's lines and its id. */
-function hostReplay(res: ServerResponse, head: boolean, apps: readonly ConsoleApp[], sid: string, onReplay: (() => Chained<void>) | null): void {
+function hostReplay(res: ServerResponse, head: boolean, apps: readonly ConsoleApp[], sid: string, only: string | null, onReplay: ((app: string) => Chained<void>) | null): void {
+  // Addressed by its app (`?app=<id>`, as the list's rows say): an id two apps' records both hold is never ambiguous.
+  const chosen = only === null ? apps : apps.filter((a) => a.id === only);
   const work = async (): Promise<void> => {
-    for (const a of apps) {
+    for (const a of chosen) {
       let replay: ReturnType<typeof replayOf> | null = null;
       if (a.traces) {
         const joined = await a.traces.read(sid);
@@ -252,8 +254,8 @@ function hostReplay(res: ServerResponse, head: boolean, apps: readonly ConsoleAp
         replay = readTrace(a.traceDir, sid, a.app);
       }
       if (replay === null) continue;
-      // Recorded before the answer: a replay the audit could not record is not served.
-      const noted = onReplay?.();
+      // Recorded before the answer, with the call's app: a replay the audit could not record is not served.
+      const noted = onReplay?.(a.id);
       if (noted instanceof Promise) await noted;
       send(res, 200, 'application/json', JSON.stringify({ ...replay, app: a.id }), head);
       return;
@@ -387,7 +389,7 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
     if (SID.test(sid) && deps.apps && deps.apps.length > 0) {
-      hostReplay(res, head, deps.apps, sid, !head && auth && session ? () => auth.noteReplay(session!, sid) : null);
+      hostReplay(res, head, deps.apps, sid, query.get('app'), !head && auth && session ? (app: string) => auth.noteReplay(session!, sid, app) : null);
       return true;
     }
     if (SID.test(sid) && deps.traces) {

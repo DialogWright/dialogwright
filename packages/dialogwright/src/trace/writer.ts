@@ -7,6 +7,7 @@ import type { AnsweredBy, JevResponse, JevUsage, QuestionMap } from '../jev/type
 import type { TurnError, TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { appOf } from '../core/app/registry';
+import type { App } from '../core/app/types';
 import { recordedEffect } from '../core/recording';
 import { usesCallerNumber } from '../core/callerNumber';
 
@@ -15,13 +16,18 @@ export interface TraceSink {
   write(record: TraceRecord): void;
 }
 
-/** A trace record as a line is written, without its newline, wherever it is kept: its identity fields masked (redactRecordSlots). */
-export function traceLine(record: TraceRecord): string {
-  return JSON.stringify(redactRecordSlots(record, 'length'));
+/**
+ * A trace record as a line is written, without its newline, wherever it is kept: its identity fields
+ * masked (redactRecordSlots) by `app`'s slots, the call's own app on a server of several; left out,
+ * the default app's, as always.
+ */
+export function traceLine(record: TraceRecord, app?: App): string {
+  return JSON.stringify(app === undefined ? redactRecordSlots(record, 'length') : redactRecordSlots(record, 'length', app));
 }
 
 export class TraceWriter implements TraceSink {
-  constructor(private readonly path: string) {
+  /** `app`: the app whose slots mask the record (traceLine); left out, the default app. */
+  constructor(private readonly path: string, private readonly app?: App) {
     mkdirSync(dirname(path), { recursive: true });
   }
 
@@ -36,7 +42,7 @@ export class TraceWriter implements TraceSink {
    * and the harness read it.
    */
   write(record: TraceRecord): void {
-    appendFileSync(this.path, traceLine(record) + '\n');
+    appendFileSync(this.path, traceLine(record, this.app) + '\n');
   }
 }
 

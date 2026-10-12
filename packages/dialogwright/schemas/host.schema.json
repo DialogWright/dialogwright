@@ -24,6 +24,18 @@
                 "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
                 "type": "string",
                 "minLength": 1
+              },
+              "services": {
+                "description": "Where each of the app's downstream services (App.services, by name) is reached, as env.<NAME>: the variable, in the app's own settings file (else the server's), holds its URL. Default: none, so a service that needs a URL is answered with no result, as when a launcher starts none.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                }
               }
             },
             "required": [
@@ -44,6 +56,18 @@
                 "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
                 "type": "string",
                 "minLength": 1
+              },
+              "services": {
+                "description": "Where each of the app's downstream services (App.services, by name) is reached, as env.<NAME>: the variable, in the app's own settings file (else the server's), holds its URL. Default: none, so a service that needs a URL is answered with no result, as when a launcher starts none.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+                }
               }
             },
             "required": [

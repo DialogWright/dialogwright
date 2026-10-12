@@ -1,9 +1,10 @@
 import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
-import { join, resolve as resolvePath } from 'node:path';
+import { dirname, join, resolve as resolvePath } from 'node:path';
+import { existsSync } from 'node:fs';
 import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
-import { consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
 import { createRequestHandler, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
@@ -39,7 +40,8 @@ import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
 import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
 import type { RenderContext } from '../prompts/render';
-import { demoTools } from '../core/tools';
+import { demoTools, mockCodeVerifier, type Tools } from '../core/tools';
+import { defaultCorpusFile } from '../run/fixtures';
 import { AuditLog } from '../audit/log';
 import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
 import { PostgresNotices } from './stores/notices';
@@ -206,6 +208,61 @@ function postgresFailure(setting: string, url: string, err: unknown): Error {
   return new Error(`${setting} ${maskConnectionString(url)}: ${maskSecrets(err instanceof Error ? err.message : String(err), url)}`);
 }
 
+/** HANDOFF_NUMBER as an app's environment gives it (its own file's, else the server's), held to E.164 as the server's is. */
+function handoffNumberOf(env: Env, server: string): string {
+  const own = env.HANDOFF_NUMBER?.trim();
+  if (own === undefined || own === '') return server;
+  if (!/^\+\d{8,15}$/.test(own)) throw new Error(`HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${own}"`);
+  return own;
+}
+
+/** Whether an app's own settings file gave a variable its value under a host (not the server's). */
+function hostOwns(a: { readonly own?: readonly string[] }, variable: string): boolean {
+  return a.own?.includes(variable) === true;
+}
+
+/**
+ * The chat's settings for one app of a host: the sign-in's audience and issuer its own settings file
+ * gives (CHAT_AUDIENCE, CHAT_ISSUER), else the server's, so a token for one app's portal is not taken
+ * at another's chat.
+ */
+function chatSettingsOf(settings: ChatSettings, env: Env): ChatSettings {
+  if (settings.signIn.method !== 'jwt') return settings;
+  const audience = env.CHAT_AUDIENCE?.trim() || settings.signIn.audience;
+  const issuer = env.CHAT_ISSUER?.trim() || settings.signIn.issuer;
+  return { ...settings, signIn: { ...settings.signIn, audience, issuer } };
+}
+
+/**
+ * On a host of several apps whose chats sign in with tokens (CHAT_SIGNIN=jwt): each audience two or more
+ * apps share, said with the apps, since a token for one app's portal would sign in at the others' chats.
+ */
+export function sharedAudiences(settings: ChatSettings, apps: readonly { readonly id: string; readonly env: Env }[]): string[] {
+  if (settings.signIn.method !== 'jwt' || apps.length < 2) return [];
+  const byAudience = new Map<string, string[]>();
+  for (const a of apps) {
+    const signIn = chatSettingsOf(settings, a.env).signIn;
+    if (signIn.method !== 'jwt') continue;
+    const key = `${signIn.issuer} ${signIn.audience}`;
+    byAudience.set(key, [...(byAudience.get(key) ?? []), a.id]);
+  }
+  return [...byAudience.values()].filter((ids) => ids.length > 1).map((ids) => `${ids.join(', ')} take tokens for one audience, so a token for one's portal signs in at the others' chats: give each app its own CHAT_AUDIENCE in its own settings file`);
+}
+
+/** The corpus of an app's fixtures (App.fixtures, a path from its package's folder), or null when it has none. */
+function corpusOf(app: App, dir: string | undefined): string | null {
+  if (!app.fixtures) return null;
+  let base = dir;
+  for (let at = dir; at !== undefined; at = dirname(at) === at ? undefined : dirname(at)) {
+    if (existsSync(join(at, 'package.json'))) {
+      base = at;
+      break;
+    }
+  }
+  const file = resolvePath(base ?? process.cwd(), defaultCorpusFile(app));
+  return existsSync(file) ? file : null;
+}
+
 /**
  * On a host, the folder (in AUDIT_DIR) of the server's own audit, beside each app's: the console's
  * sign-ins and replays, which are no app's. An app id starts with a letter, so none is this.
@@ -233,7 +290,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The one threshold the phone line sets from its environment: the ask budget is a property of the
   // deployment's network and the day's question count, not of the dialogue policy.
   const thresholds = { ...DEFAULT_THRESHOLDS, JEV_TIMEOUT_MS: config.jevTimeoutMs };
-  const client = overrides.client ?? buildClient(config.jevClient, undefined, thresholds, undefined, config.jevProvider ?? undefined);
+  // A client that answers by an app's own heuristics (JEV_CLIENT=heuristic or stub) is one per app on a
+  // host (below); every other client asks a model, which knows no app, and is shared.
+  const perAppClient = overrides.apps !== undefined && overrides.client === undefined && (config.jevClient === 'heuristic' || config.jevClient === 'stub');
+  const client: JevClient | null = overrides.client ?? (perAppClient ? null : buildClient(config.jevClient, undefined, thresholds, undefined, config.jevProvider ?? undefined));
   // Which model answers, and once, for a model that is not Jev, that the thresholds were measured on Jev.
   for (const line of modelHeader(config.jevClient, config.jevProvider)) log(line);
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
@@ -243,8 +303,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
   // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
   const host = overrides.apps ?? null;
-  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env }[] = host
-    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env }))
+  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env; readonly dir?: string; readonly services?: Readonly<Record<string, string>>; readonly ignored?: readonly string[]; readonly own?: readonly string[] }[] = host
+    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
     : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env }];
   const tag = (id: string): string => (host ? `app ${id}: ` : '');
   /** A call's app: on a host, the one of this id (the default for one it does not run); on a server of one, its one app. */
@@ -258,7 +318,33 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       throw new Error(`app "${id}": ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-  if (host) for (const line of describeHost(host)) log(line);
+  if (host) {
+    for (const line of describeHost(host)) log(line);
+    for (const warning of host.warnings) log(`WARNING: ${warning}`);
+    // What an app's own settings file sets and does not name: not read under a host, said by name only.
+    for (const a of appsRun) if (a.ignored && a.ignored.length > 0) log(`${tag(a.id)}its own settings file sets ${a.ignored.join(', ')}, which it does not name: not read under a host (the server's settings file holds what every app shares)`);
+  }
+  // Each app's client, when it answers by the app's own heuristics: its own fixtures' corpus for the stub
+  // (from the app's package, as its regression reads it), the heuristics alone where it has none.
+  const clients = new Map<string, JevClient>();
+  if (perAppClient) {
+    for (const a of appsRun) {
+      const corpus = config.jevClient === 'stub' ? corpusOf(a.app, a.dir) : null;
+      if (config.jevClient === 'stub' && corpus === null) log(`${tag(a.id)}JEV_CLIENT=stub: no corpus in its fixtures, so its heuristics answer alone`);
+      clients.set(a.id, buildClient(corpus === null ? 'heuristic' : 'stub', corpus ?? undefined, thresholds, undefined, config.jevProvider ?? undefined, a.app));
+    }
+  }
+  /** The client a call in this app asks: its own (above), else the server's one. */
+  const clientOf = (id: string): JevClient => clients.get(id) ?? client!;
+  // Each app's own tools: its systems (and the gate's lookups over them), with the code verifier, made
+  // once for the process so a record made on one call can be read on the next, as for one app.
+  const toolsByApp = new Map(appsRun.map((a) => [a.id, host ? { ...a.app.systems(), codes: mockCodeVerifier } : demoTools()]));
+  /** A call's tools: its app's. */
+  const toolsOf = (id: string): Tools => toolsByApp.get(appRun(id).id)!;
+  // Where a handoff goes when an app has no transfer target: HANDOFF_NUMBER, on a host the app's own when
+  // its settings file gives one, else the server's.
+  const handoffs = new Map(appsRun.map((a) => [a.id, host ? forApp(a.id, () => handoffNumberOf(a.env, config.handoffNumber)) : config.handoffNumber]));
+  const handoffOf = (id: string): string => handoffs.get(appRun(id).id)!;
   /** Where an app's recorded clips are: AUDIO_DIR; on a host, a folder per app in it, served at /audio/<app id>/. */
   const audioDirOf = (id: string): string => (host ? join(config.audioDir, id) : config.audioDir);
   /** Each clip's length, by its file name (on a host, `<app id>/<file>`), for the no-input wait after a played line. */
@@ -302,10 +388,27 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const renderOf = (id: string): RenderContext | null => renders.get(id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
+  // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
+  // from host.yaml's `services` (each variable read from the app's own settings), and the launcher's for the
+  // default app alone, so two apps' services of one name never share a URL.
+  const servicesByApp = new Map<string, ServiceUrls>(appsRun.map((a) => {
+    if (!host) return [a.id, serviceUrls];
+    const own: Record<string, string> = {};
+    for (const [name, variable] of Object.entries(a.services ?? {})) {
+      const url = a.env[variable]?.trim();
+      if (url) own[name] = url;
+    }
+    return [a.id, { ...(a.id === host.defaultApp ? serviceUrls : {}), ...own }];
+  }));
+  const serviceUrlsOf = (id: string): ServiceUrls => servicesByApp.get(appRun(id).id)!;
   for (const a of appsRun) {
     for (const name of Object.keys(a.app.services ?? {})) {
-      const url = serviceUrls[name] ?? null;
-      log(url ? `${tag(a.id)}service ${name}: ${url}` : `${tag(a.id)}service ${name}: off (its requests are answered with no result)`);
+      const url = serviceUrlsOf(a.id)[name] ?? null;
+      // On a host, a service with no URL is worth a warning: unless it needs none (one in the process), its
+      // requests are answered with no result, and nothing else would say so.
+      log(url ? `${tag(a.id)}service ${name}: ${url}` : host
+        ? `WARNING: ${tag(a.id)}service ${name}: no URL (host.yaml's services names none for it), so its requests are answered with no result unless it needs none`
+        : `${tag(a.id)}service ${name}: off (its requests are answered with no result)`);
     }
   }
 
@@ -314,8 +417,6 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
 
   // Annotated because the factory below hands `store` to `makeObserver`, and an inferred type
   // would be circular: the initializer references the very binding it is initializing.
-  // One set of tools (the app's systems) for the process, so a record made on one call can be read on the next.
-  const tools = demoTools();
   // SESSION_STORE=postgres://...: the connection, opened now (the pg driver connects on the first
   // question), so AUDIT_STORE may share it; the stores on it are opened below, with the file store's.
   const setting0 = config.sessionStore;
@@ -427,7 +528,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (config.traceStore) {
     for (const a of appsRun) {
       const setting = host ? { ...config.traceStore, prefix: `${config.traceStore.prefix}${a.id}/` } : config.traceStore;
-      const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}) });
+      const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}), ...(host ? { app: a.app } : {}) });
       traceStores.set(a.id, store);
       log(`${tag(a.id)}traces: ${store.label}, written as segments by this server (${serverName}) and read back joined`);
     }
@@ -441,7 +542,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const store = traceStores.get(appId);
     if (store) return store.open(file, meta);
     const dir = traceDirOf(appId);
-    const trace = guardTrace(() => new TraceWriter(join(dir, `${file}.jsonl`)), traceFailures, `the trace of ${file}`);
+    // On a host, each record masked by its own app's slots; on a server of one, by its one app's, as always.
+    const trace = guardTrace(() => (host ? new TraceWriter(join(dir, `${file}.jsonl`), appRun(appId).app) : new TraceWriter(join(dir, `${file}.jsonl`))), traceFailures, `the trace of ${file}`);
     return { trace, frames: guardFrames(() => new FrameLog(join(dir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
   };
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
@@ -475,7 +577,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client, thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), observe, tools, audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
         trace,
         frames,
       };
@@ -501,9 +603,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     });
   };
   if (durable) sweepSaved();
-  // The app's pages share the phone line's client, book of business, audit chain and console.
+  // The app's pages share the phone line's client, book of business, audit chain and console. On a host,
+  // a launcher's own pages are its default app's: that app's client, tools, audit, traces and services.
+  const routesApp = appsRun[0]!.id;
   const mounted = overrides.routes?.({
-    config, client, thresholds, todayIso, tools, audit, bus, traceDir: config.traceDir, serviceUrls, log, now,
+    config, client: clientOf(routesApp), thresholds, todayIso, tools: toolsOf(routesApp), audit: auditOf(routesApp), bus, traceDir: traceDirOf(routesApp), serviceUrls: serviceUrlsOf(routesApp), log, now,
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
   }) ?? { routes: [] };
   const routes = mounted.routes;
@@ -517,11 +621,16 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   for (const a of appsRun) {
     const startParameters = forApp(a.id, () => startParametersFrom(a.app, a.env));
     if (Object.keys(startParameters).length > 0) log(`${tag(a.id)}start parameters: ${Object.keys(startParameters).join(', ')}`);
-    const transfer = forApp(a.id, () => transferTargetsFrom(a.app, a.env, config.handoffNumber));
+    const transfer = forApp(a.id, () => transferTargetsFrom(a.app, a.env, handoffOf(a.id)));
     if (transfer) log(`${tag(a.id)}transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
     const called = calledOf(a.id);
     if (Object.keys(called).length > 0) log(`${tag(a.id)}called numbers: ${Object.keys(called).join(', ')}`);
-    httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id) });
+    httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id), handoffNumber: handoffOf(a.id) });
+    // On a host of several apps, an app with no transfer targets and no HANDOFF_NUMBER of its own puts its
+    // callers through to the server's: worth saying, since another business's desk may answer.
+    if (host && appsRun.length > 1 && !transfer && !hostOwns(a, 'HANDOFF_NUMBER')) {
+      log(`WARNING: ${tag(a.id)}no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER, as every such app's do; set HANDOFF_NUMBER in its own settings file`);
+    }
   }
   const app = appsRun[0]!.app;
   const startParameters = httpApps.get(appsRun[0]!.id)!.startParameters;
@@ -541,7 +650,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // On a host, each app's at /chat/<app id>, and the default's at /chat too.
   const chatSettings = config.chat;
   const chatOf = (a: (typeof appsRun)[number]): ChatEndpoint => chatEndpoint({
-    settings: chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls,
+    settings: host ? chatSettingsOf(chatSettings!, a.env) : chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls: serviceUrlsOf(a.id),
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
     startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
     ...(host ? { appId: a.id } : {}),
@@ -555,7 +664,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
         frames,
       };
     },
@@ -683,6 +792,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${one.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
       }
     }
+    // On a host, one audience for two apps' chats means a token for one app's portal signs in at the other's.
+    for (const shared of sharedAudiences(chatSettings, appsRun)) log(`WARNING: CHAT_SIGNIN=jwt: ${shared}`);
   }
   const wss = attachWebSocketServer(
     server,
@@ -697,7 +808,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       ...(transfer ? { transfer } : {}),
       // On a host, a new call starts in the app its number reached, with that app's transfer targets.
-      ...(host ? { host: { appOfSetup: (named: string | undefined, called: string | null) => appOfSetup(host, named, called), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null } } : {}),
+      ...(host ? { host: { appOfSetup: (named: string | undefined, called: string | null) => appOfSetup(host, named, called), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null, handoffOf, serviceUrlsOf } } : {}),
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.

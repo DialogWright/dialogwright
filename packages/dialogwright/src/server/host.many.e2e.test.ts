@@ -13,7 +13,6 @@ import { FakeRelay } from '../testing/fakeRelay';
 import { FakeS3 } from '../testing/fakeS3';
 import { startBalancer } from '../testing/multi/balancer';
 import { useTestkit } from '../testing/apps';
-import { HeuristicStubClient } from '../jev/heuristicStub';
 import { verifyPostgresAudit } from '../audit/postgres';
 import type { AuditEntry } from '../audit/types';
 import { HOST_APP_PARAMETER } from '../channel/callData';
@@ -62,11 +61,13 @@ async function boot(name: string, db: PGlite, s3: FakeS3, extra: Env): Promise<N
   const config = loadConfig({
     PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', SIGNATURE_CHECK: 'off',
     TODAY_OVERRIDE: '2026-09-18', TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, NO_INPUT_MS: '0',
+    JEV_CLIENT: 'stub',
     SESSION_STORE: PLACEHOLDER_URL, CALL_LEASE_MS: String(LEASE_MS), SERVER_ID: name, AUDIT_STORE: PLACEHOLDER_URL,
     TRACE_STORE: 's3://call-traces/many', S3_ENDPOINT: s3.endpoint, S3_REGION: 'us-east-1', S3_ACCESS_KEY_ID: S3_KEYS.accessKeyId, S3_SECRET_ACCESS_KEY: S3_KEYS.secretAccessKey, S3_FORCE_PATH_STYLE: 'on',
     ...extra,
   });
-  const server = await startServer(config, { host: '127.0.0.1', apps: host, client: new HeuristicStubClient({ todayIso: '2026-09-18' }), log: (l) => logs.push(l), now: () => OPEN, sessionSql: sql, auditSql: sql });
+  // Each app's own client (JEV_CLIENT=stub: its corpus, its heuristics), as a server builds them.
+  const server = await startServer(config, { host: '127.0.0.1', apps: host, log: (l) => logs.push(l), now: () => OPEN, sessionSql: sql, auditSql: sql });
   cleanups.push(() => server.close().catch(() => {}));
   return { server, sql, logs, down: false };
 }
@@ -117,6 +118,14 @@ describe('a host on two servers sharing one Postgres', () => {
       after.setup(callSid, 'VX-after', { to: null, customParameters: {} });
       expect((await after.waitForTexts(1, LEASE_MS * 4))[0]).toContain(ROUTED_GREETING);
       expect(b.server.store.get(callSid)!.session.appId).toBe('routed');
+      // The call goes on in its app on B: a report filed with routed's own systems, its gate routed's.
+      for (const line of ["I'd like to report a problem", 'nothing is working at all', 'no, no one is at risk', 'yes, file it']) {
+        const n = after.texts().length;
+        after.prompt(line);
+        await after.waitFor(() => after.texts().length > n, 4000);
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      expect(after.texts().join(' ')).toContain('Your report number is P201');
       await b.server.store.settled();
       after.close();
       await b.server.close();
@@ -130,6 +139,7 @@ describe('a host on two servers sharing one Postgres', () => {
       const chain = (await db.query<{ body: string }>('SELECT body FROM dw_audit_entries')).rows.map((r) => JSON.parse(r.body) as AuditEntry).filter((e) => e.callId === callSid);
       expect(chain.length).toBeGreaterThan(0);
       expect(chain.every((e) => e.app === 'routed')).toBe(true);
+      expect(chain.some((e) => e.type === 'gate' && e.detail.tool === 'reportProblem' && e.detail.verdict === 'ALLOW')).toBe(true);
     }, 30_000);
   }
 });

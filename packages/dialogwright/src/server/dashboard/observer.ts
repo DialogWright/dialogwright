@@ -31,7 +31,7 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
   const askedTurnIndex = () => (store.get(callSid)?.session.turnIndex ?? 0) + 1;
   return {
     // The model is shown the identity slots' displays; the page is shown them masked, as in the record.
-    asked: (questions, turnState, at) => bus.publish({ type: 'asked', callSid, at, turnIndex: askedTurnIndex(), questions, turnState: redactTurnState(turnState, 'keep')! }),
+    asked: (questions, turnState, at) => bus.publish({ type: 'asked', callSid, at, turnIndex: askedTurnIndex(), questions, turnState: redactTurnState(turnState, 'keep', appOf(store.get(callSid)?.session ?? {}))! }),
     // The published record is redacted: the dashboard route is unauthenticated, and a setup
     // record carries the caller's whole number. The trace file on disk (written by opts.trace)
     // keeps the caller's number, with the identity slots masked by the writer.
@@ -39,7 +39,7 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
     // are (trace/redact.ts recordScrubber): a readback of a redacted slot shows its masked form.
     turn: (record, at) => {
       const app = appOf(store.get(callSid)?.session ?? {});
-      const redacted = redactRecord(record);
+      const redacted = redactRecord(record, app);
       const scrub = recordScrubber(record, 'keep', app);
       const spoken = spokenText(app, redacted.decision, record.locale);
       bus.publish({ type: 'turn', callSid, at, record: redacted, spoken: scrub === null ? spoken : scrub(spoken) });

@@ -36,6 +36,8 @@ export interface HttpApp {
   readonly startParameters?: Readonly<Record<string, string>>;
   readonly transfer?: ServerTransfer | null;
   readonly audit?: AuditSink;
+  /** Where a call put through with no transfer target goes: on a host, the app's HANDOFF_NUMBER; absent, the server's (config). */
+  readonly handoffNumber?: string;
 }
 
 /**
@@ -271,7 +273,7 @@ function hostEcho(id: string | null): Record<string, string> {
 
 /** Where a call put through with no handoff decision goes: the app's transfer default, HANDOFF_NUMBER without one. */
 function fallbackTarget(deps: HttpDeps, s: HttpApp = deps): DialTarget {
-  return defaultTarget(s.transfer ?? null, deps.config.handoffNumber);
+  return defaultTarget(s.transfer ?? null, s.handoffNumber ?? deps.config.handoffNumber);
 }
 
 /**
@@ -281,7 +283,7 @@ function fallbackTarget(deps: HttpDeps, s: HttpApp = deps): DialTarget {
  * as it was.
  */
 function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, handoff: PostedHandoff, s: HttpApp = deps): { document: string; note: string } {
-  const plan = dialPlan(s.transfer ?? null, deps.config.handoffNumber, handoff);
+  const plan = dialPlan(s.transfer ?? null, s.handoffNumber ?? deps.config.handoffNumber, handoff);
   const document = provider.dialDocument(plan.target);
   if (!s.transfer) return { document, note: `dial:${handoff.reasonCode}` };
   deps.store.get(callSid)?.frames.write('log', { transfer: recordedPlan(plan) });

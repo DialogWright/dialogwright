@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { S3Client, S3Error, type S3ClientOptions, type S3Settings } from './s3/client';
 import { traceLine, type TraceSink } from './writer';
+import type { App } from '../core/app/types';
 import type { TraceRecord } from './types';
 import { frameLine, parseFrameLog, type FrameDir, type FrameSink, type ReadFrameLogLine } from '../server/frameLog';
 
@@ -195,7 +196,7 @@ class CallSegments implements TraceSink {
     const m = this.meta();
     // A record written after this server let the call go: kept, marked, in a segment of its own.
     const late = !m.held;
-    this.keep(late ? 'late' : 'trace', { line: traceLine(late ? { ...record, outlivedHold: true } : record), turn: record.turnIndex, gen: m.gen, ms: Date.parse(record.ts) || this.store.now() });
+    this.keep(late ? 'late' : 'trace', { line: traceLine(late ? { ...record, outlivedHold: true } : record, this.store.app), turn: record.turnIndex, gen: m.gen, ms: Date.parse(record.ts) || this.store.now() });
     // A turn's record goes out at once, with the frames before it.
     void this.flush();
   }
@@ -295,6 +296,8 @@ class FrameSegments implements FrameSink {
 export interface S3TraceStoreOptions extends S3ClientOptions {
   /** The name this server's segments carry (the lease owner with SESSION_STORE=postgres); default `server-<random>`. */
   server?: string;
+  /** The app whose slots mask each record (writer.ts traceLine): on a server of several apps, the store's own; left out, the default app. */
+  app?: App;
   log?: (line: string) => void;
 }
 
@@ -304,6 +307,8 @@ const FAILURE_LOG_EVERY_MS = 60_000;
 /** The traces of this server's calls written as segments on S3-compatible storage, and read back joined. */
 export class S3TraceStore {
   readonly client: S3Client;
+  /** The app whose slots mask each record; undefined, the default app. */
+  readonly app: App | undefined;
   readonly prefix: string;
   readonly server: string;
   readonly now: () => number;
@@ -322,6 +327,7 @@ export class S3TraceStore {
     this.client = new S3Client(setting, o);
     this.prefix = setting.prefix;
     this.server = o.server ?? `server-${randomBytes(4).toString('hex')}`;
+    this.app = o.app;
     this.now = o.now ?? Date.now;
     this.log = o.log ?? (() => {});
   }

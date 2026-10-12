@@ -47,4 +47,16 @@ describe('dialogwright check with a host file', () => {
     writeFileSync(join(root, 'hosts.yaml'), 'apps: [.]\n');
     expect(loadAppFolder(root).problems.map((p) => p.file)).toContain('hosts.yaml');
   });
+
+  it('reads a file as a host file by its name or its shape, and any other file as before', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-shape-'));
+    dirs.push(root);
+    writeFileSync(join(root, 'deploy.yaml'), 'apps: [missing]\n');
+    writeFileSync(join(root, 'notes.yaml'), 'title: not a host\n');
+    const shaped = await check(['deploy.yaml'], root);
+    expect(shaped.out.at(-1)).toBe('1 problem in deploy.yaml');
+    const other = await check(['notes.yaml'], root);
+    expect(other.code).toBe(1);
+    expect(other.out.join('\n')).toContain('is not a directory');
+  });
 });

@@ -28,6 +28,8 @@ export interface HostAppRef {
   readonly envFile: string;
   /** Whether host.yaml names the file (then it must exist); a folder's own .env may be absent. */
   readonly envNamed: boolean;
+  /** The variable that holds each of the app's services' URLs (host.yaml's `services`), by service name. */
+  readonly services: Readonly<Record<string, string>>;
 }
 
 /** One number a host file lists: the variable that holds it and the app it reaches. */
@@ -134,7 +136,8 @@ export function resolveHostFile(file: string): { host: ResolvedHost | null; prob
     }
     seen.set(id.id, label);
     const named = typeof entry === 'string' ? undefined : entry.env;
-    apps.push({ label, dir, id: id.id, envFile: named === undefined ? join(dir, '.env') : resolve(hostDir, named), envNamed: named !== undefined });
+    const services = Object.fromEntries(Object.entries((typeof entry === 'string' ? undefined : entry.services) ?? {}).map(([name, ref]) => [name, envVariableOf(ref)!]));
+    apps.push({ label, dir, id: id.id, envFile: named === undefined ? join(dir, '.env') : resolve(hostDir, named), envNamed: named !== undefined, services });
     if (named !== undefined && !existsSync(resolve(hostDir, named))) {
       at(['apps', i, 'env'], `the settings file ${named} does not exist`, `create it with the app's own variables, or delete "env" to read ${shown(hostDir, join(dir, '.env'))}`);
     }

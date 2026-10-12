@@ -720,6 +720,22 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(out.find((l) => l.startsWith('fail  host.yaml'))).toContain("host.yaml's numbers name ONE_LINE, which is not set");
   });
 
+  it('warns of an app that hands off to the server\'s HANDOFF_NUMBER, a service with no URL, and two apps sharing a sign-in audience', async () => {
+    const dir = hosted({ CHAT: 'on', CHAT_SIGNIN: 'jwt', CHAT_JWKS_URL: 'https://id.example.com/jwks', CHAT_ISSUER: 'https://id.example.com', CHAT_AUDIENCE: 'portal' });
+    writeFileSync(join(dir, 'apps', 'two', 'app.yaml'), 'id: two\n');
+    writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, { folder: apps/two, services: { scheduler: env.SCHEDULER_URL } }]\n');
+    const out: string[] = [];
+    await main(['--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps());
+    expect(out).toContain("warn  app two: no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER  ->  set HANDOFF_NUMBER in the app's own settings file, or give it transfer targets (app.yaml)");
+    expect(out).toContain("warn  app two: host.yaml's services.scheduler reads SCHEDULER_URL, which is not set: the service's requests are answered with no result  ->  set SCHEDULER_URL to the service's URL in the app's own settings file");
+    expect(out.find((l) => l.includes('take tokens for one audience'))).toContain('one, two');
+    writeFileSync(join(dir, 'apps', 'two', '.env'), 'HANDOFF_NUMBER=+15555550299\nSCHEDULER_URL=https://scheduler.example.com/agent\nCHAT_AUDIENCE=two-portal\n', { mode: 0o600 });
+    const again: string[] = [];
+    await main(['--offline'], { out: (l) => again.push(l), env: {}, invokedFrom: dir, root: dir }, deps());
+    expect(again.filter((l) => l.includes('no transfer targets') || l.includes('take tokens for one audience'))).toEqual([]);
+    expect(again).toContain("ok    app two: host.yaml's services.scheduler reads SCHEDULER_URL: set, scheduler.example.com");
+  });
+
   it('takes --app for one app as before, and says a host file\'s problems', async () => {
     const dir = hosted();
     writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/nowhere]\n');

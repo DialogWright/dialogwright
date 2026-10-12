@@ -166,7 +166,7 @@ describe('redactFrameLine', () => {
     };
     const logLine: FrameLogLine = { ts: '2026-09-21T00:00:02.000Z', dir: 'log', msg: { noInputArmedMs: 4000, socketClosed: true } };
 
-    const redacted = [setupLine, actionLine, logLine].map(redactFrameLine);
+    const redacted = [setupLine, actionLine, logLine].map((l) => redactFrameLine(l));
     const json = JSON.stringify(redacted);
     // Nothing anywhere in the payload is still a whole number or an account id.
     expect(json).not.toMatch(WHOLE_NUMBER);

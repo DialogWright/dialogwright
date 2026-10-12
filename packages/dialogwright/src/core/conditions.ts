@@ -152,9 +152,14 @@ export function factAt(facts: unknown, path: string): unknown {
   return at;
 }
 
-/** The digits of a number as a carrier or a variable writes it: `+1 (555) 555-0100` is `15555550100`. */
-function digitsOf(n: string): string {
-  return n.replace(/\D/g, '');
+/**
+ * The digits of a number as a carrier or a variable writes it: `+1 (555) 555-0100` is `15555550100`. A
+ * SIP address (`sip:+15555550100@pbx.example.com:5060;transport=udp`) is its user part's, so the host's
+ * address and port are never read as part of the number.
+ */
+export function digitsOf(n: string): string {
+  const sip = /^sips?:([^@;]*)/i.exec(n.trim());
+  return (sip ? sip[1]! : n).replace(/\D/g, '');
 }
 
 /**

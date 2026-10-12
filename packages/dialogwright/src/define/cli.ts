@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { appFolderAt } from './appFolder';
 import { HOST_FILE_NAME, resolveHostFile } from './host';
@@ -272,15 +273,26 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   let hosts: { label: string; path: string }[] = [];
   let discovered = false;
   if (given.length > 0) {
-    const isFile = (d: string): boolean => {
+    // A file is read as a host file by its name (host.yaml, or the one HOST_FILE names) or its shape (a
+    // top-level `apps` list); anything else is checked as an app folder, as it always was.
+    const isHost = (d: string): boolean => {
+      const path = resolve(io.cwd, d);
       try {
-        return statSync(resolve(io.cwd, d)).isFile();
+        if (!statSync(path).isFile()) return false;
+      } catch {
+        return false;
+      }
+      const named = (io.env ?? process.env).HOST_FILE?.trim();
+      if (basename(path) === HOST_FILE_NAME || (named && resolve(io.cwd, named) === path)) return true;
+      try {
+        const doc = parseYaml(readFileSync(path, 'utf8')) as { apps?: unknown } | null;
+        return Array.isArray(doc?.apps);
       } catch {
         return false;
       }
     };
-    hosts = given.filter(isFile).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
-    dirs = given.filter((d) => !isFile(d)).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
+    hosts = given.filter(isHost).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
+    dirs = given.filter((d) => !isHost(d)).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
   } else {
     const found = findAppFolders(io.cwd);
     discovered = true;

@@ -52,6 +52,13 @@ describe('resolveHostFile', () => {
     expect(host!.apps[0]!.envNamed).toBe(false);
   });
 
+  it('reads each app\'s services\' variables, and refuses a URL written in YAML', () => {
+    const dir = project('apps: [apps/one, { folder: apps/two, services: { scheduler: env.SCHEDULER_URL } }]\n');
+    const { host } = resolveHostFile(join(dir, 'host.yaml'));
+    expect(host!.apps.map((a) => a.services)).toEqual([{}, { scheduler: 'SCHEDULER_URL' }]);
+    expect(problemsOf(project('apps: [{ folder: apps/one, services: { scheduler: "http://localhost:4100" } }]\n'))).toEqual([expect.stringMatching(/apps\[0\]\.services\.scheduler  .*is not an environment variable/)]);
+  });
+
   it('finds an app installed as a package in node_modules', () => {
     const dir = project('apps: [{ package: "@acme/repairs-line" }]\n', {});
     const pkg = join(dir, 'node_modules', '@acme', 'repairs-line');

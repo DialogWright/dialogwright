@@ -29,7 +29,7 @@ import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
 import { lineLang, promptText } from '../prompts/render';
-import type { HandoffWording, SpokenDigitRule } from '../core/app/types';
+import type { App, HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
@@ -1175,6 +1175,10 @@ export interface AdapterHost {
   appOfSetup(named: string | undefined, called: string | null): string;
   /** An app's transfer targets, by its id. */
   transferOf(appId: string): ServerTransfer | null;
+  /** An app's HANDOFF_NUMBER (its own, else the server's), by its id. */
+  handoffOf(appId: string): string;
+  /** Where each of an app's services is reached, by its id. */
+  serviceUrlsOf(appId: string): ServiceUrls;
 }
 
 export interface AdapterDeps {
@@ -1356,8 +1360,9 @@ function sendOne(socket: SocketLike, frame: OutboundFrame, timeoutMs: number): P
  * the way the trace writer masks it, so the file can never hold an identity value whatever a future
  * decision puts in it, even one an app sends the carrier as it is.
  */
-export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null): OutboundFrame {
-  if (frame.type === 'end') return { ...frame, handoffData: redactHandoffData(frame.handoffData, 'length') };
+export function loggedFrame(frame: OutboundFrame, scrub: Scrub | null, app?: App): OutboundFrame {
+  // By the call's own app's slots (a server of several apps); left out, the default app's, as always.
+  if (frame.type === 'end') return { ...frame, handoffData: app === undefined ? redactHandoffData(frame.handoffData, 'length') : redactHandoffData(frame.handoffData, 'length', app) };
   // A text frame says our line, which may read a redacted slot back (a readback, a summary): its
   // raw value, display and digits as the wire spells them out are masked as the trace masks them.
   if (frame.type === 'text' && scrub !== null) return { ...frame, token: scrub(frame.token) };
@@ -1396,7 +1401,7 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
       ? { ...original, token: spaced(spokenDigits(original.token, voice?.spokenDigits), joined), ...(joined ? { last: false } : {}) }
       : original;
     const frame = bargeInFrame(respelled(spoken, respell), deps.bargeIn ?? 'any');
-    const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub), respell), deps.bargeIn ?? 'any');
+    const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub, appOf(entry.session)), respell), deps.bargeIn ?? 'any');
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);
@@ -1440,7 +1445,7 @@ function queueService(deps: AdapterDeps, entry: CallEntry, effect: Effect, pendi
   // key (and its scrub). Sent after that save, since the request waits for the turn to finish.
   entry.pending = pending;
   void enqueueUnsettled(deps, entry.callSid, async (e) => {
-    const answer = await resolveService(appOf(e.session), effect, deps.serviceUrls, deps.serviceTimeoutMs, pending.idempotencyKey);
+    const answer = await resolveService(appOf(e.session), effect, deps.host ? deps.host.serviceUrlsOf(e.session.appId) : deps.serviceUrls, deps.serviceTimeoutMs, pending.idempotencyKey);
     // The caller hung up while the service was thinking: there is no one to tell.
     if (e.ended) {
       e.frames.write('log', { serviceAfterEnd: true });
@@ -1554,7 +1559,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       // The number the server dials for the target the engine chose (its transfer), masked; HANDOFF_NUMBER's without one.
       const chosen = run.result.decision.transfer;
       const transfer = deps.host ? deps.host.transferOf(entry.session.appId) : deps.transfer;
-      const number = chosen !== undefined && transfer ? maskTarget(targetNumber(transfer, deps.handoffNumber ?? '', chosen.target)) : maskNumber(deps.handoffNumber);
+      const handoffNumber = deps.host ? deps.host.handoffOf(entry.session.appId) : deps.handoffNumber;
+      const number = chosen !== undefined && transfer ? maskTarget(targetNumber(transfer, handoffNumber ?? '', chosen.target)) : maskNumber(handoffNumber);
       publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number });
       fireHandoffSummary(deps, entry);
     }

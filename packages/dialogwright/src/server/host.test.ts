@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { appEnvironment, describeHost, hostRouting, loadHost, type HostApp } from './host';
+import { sharedAudiences } from './index';
 import { useTestkit } from '../testing/apps';
 import { defaultAppId } from '../core/app/registry';
 
@@ -39,6 +40,31 @@ describe('hostRouting', () => {
     expect(() => hostRouting({ ...base, numbers: [{ variable: 'ONE_LINE', app: 'one' }, { variable: 'TWO_LINE', app: 'two' }], env: { ONE_LINE: '+15555550100', TWO_LINE: '+15555550100' } }))
       .toThrow('TWO_LINE and ONE_LINE hold the same number, so a call to it could reach "one" or "two"');
     expect(() => hostRouting({ ...base, numbers: [{ variable: 'X', app: 'three' }], env: { X: '+15555550100' } })).toThrow('"three", which is not one of the apps');
+  });
+});
+
+describe('the number called', () => {
+  it('is read from a SIP address by its user part, and a ten-digit number matching two numbers is warned of and reaches the first', () => {
+    const r = hostRouting({
+      apps: [stubApp('one'), stubApp('two'), stubApp('three')],
+      numbers: [{ variable: 'US_LINE', app: 'one' }, { variable: 'UK_LINE', app: 'two' }],
+      defaultApp: 'three',
+      env: { US_LINE: '+15555550100', UK_LINE: '+445555550100' },
+    });
+    expect(r.appFor('sip:+15555550100@10.0.0.5:5060')).toBe('one');
+    expect(r.appFor('sips:+445555550100@pbx.example.com;transport=tls')).toBe('two');
+    expect(r.appFor('+445555550100')).toBe('two');
+    expect(r.appFor('5555550100')).toBe('one');
+    expect(r.warnings).toEqual(['US_LINE and UK_LINE end in the same ten digits: a call whose number called comes as those ten digits alone reaches "one", the first listed']);
+  });
+});
+
+describe('chat sign-in per app', () => {
+  const jwt = { origins: { any: false, set: new Set(['https://www.example.com']) }, idleMs: 1, maxSessions: 1, signIn: { method: 'jwt' as const, jwksUrl: 'https://id.example.com/jwks', issuer: 'https://id.example.com', audience: 'portal' } };
+  it('takes an app\'s own CHAT_AUDIENCE and CHAT_ISSUER, and warns of two apps sharing one', () => {
+    expect(sharedAudiences(jwt, [{ id: 'one', env: {} }, { id: 'two', env: {} }])).toEqual(['one, two take tokens for one audience, so a token for one\'s portal signs in at the others\' chats: give each app its own CHAT_AUDIENCE in its own settings file']);
+    expect(sharedAudiences(jwt, [{ id: 'one', env: { CHAT_AUDIENCE: 'one-portal' } }, { id: 'two', env: {} }])).toEqual([]);
+    expect(sharedAudiences(jwt, [{ id: 'one', env: {} }])).toEqual([]);
   });
 });
 

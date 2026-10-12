@@ -1,3 +1,4 @@
+import type { App } from '../../core/app/types';
 import type { QuestionMap } from '../../jev/types';
 import type { TurnState } from '../../core/state';
 import type { TraceRecord } from '../../trace/types';
@@ -127,17 +128,17 @@ export function redactSetupFrame(frame: unknown, spec: CallDataSpec): unknown {
  * identifier to its last four, a date to its year. A slot redacted only by length stays, because
  * the console shows the caller's words; the audit log never has them.
  */
-export function redactRecord(record: TraceRecord): TraceRecord {
-  const slots = redactRecordSlots(record, 'keep');
+export function redactRecord(record: TraceRecord, app: App | null = defaultAppOrNull()): TraceRecord {
+  const slots = redactRecordSlots(record, 'keep', app);
   // Whom a passage answered (the caller's facts) only as policy.yaml's audit: declares each fact.
-  const kb = slots.kb ? { kb: consoleKbSource(slots.kb) } : {};
+  const kb = slots.kb ? { kb: consoleKbSource(slots.kb, app) } : {};
   // The call data the app names is already masked by each key's own redact (redactRecordSlots): its
   // keys are the app's words, not the carrier's, so the masking by key name below is not for them.
   // Its floor is the console's masking by name, read off the name each key's source has (a number by its last four, a name redacted).
   const event = slots.event;
   if (event.type === 'session.start' && event.callData !== undefined) {
     const { callData, ...rest } = event;
-    const spec = defaultAppOrNull()?.callData;
+    const spec = app?.callData;
     const floored: Record<string, string> = {};
     for (const [key, v] of Object.entries(callData)) {
       const def = spec !== undefined && Object.hasOwn(spec, key) ? spec[key] : undefined;
@@ -155,14 +156,14 @@ export function redactRecord(record: TraceRecord): TraceRecord {
  * lines. Applied to every line whatever its `dir`: the `/cr-action` form post that `http.ts` logs
  * carries no `type` and spells the caller's number four different ways.
  */
-export function redactFrameLine(line: FrameLogLine): FrameLogLine {
+export function redactFrameLine(line: FrameLogLine, app: App | null = defaultAppOrNull()): FrameLogLine {
   // A setup's custom parameters as the frame log writes them now; one written before callData had them as sent.
   const setup = typeof line.msg === 'object' && line.msg !== null && (line.msg as { type?: unknown }).type === 'setup';
-  const msg = setup ? redactSetupFrame(line.msg, defaultAppOrNull()?.callData) : redactDeep(line.msg);
+  const msg = setup ? redactSetupFrame(line.msg, app?.callData) : redactDeep(line.msg);
   // The `end` frame's handoff data carries what the call collected, identity slots included.
   if (typeof msg === 'object' && msg !== null && (msg as { type?: unknown }).type === 'end') {
     const end = msg as { handoffData?: unknown };
-    if (typeof end.handoffData === 'string') return { ...line, msg: { ...end, handoffData: redactHandoffData(end.handoffData, 'keep') } };
+    if (typeof end.handoffData === 'string') return { ...line, msg: { ...end, handoffData: redactHandoffData(end.handoffData, 'keep', app) } };
   }
   return { ...line, msg };
 }

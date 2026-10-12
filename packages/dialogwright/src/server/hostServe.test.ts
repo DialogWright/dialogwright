@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dirname, join } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { main, SERVE_USAGE } from './hostServe';
 import type { Sidecars } from './index';
@@ -25,6 +27,22 @@ describe('dialogwright serve', () => {
       const { code, sidecars } = await run([...argv], { ...NUMBERS, ...env });
       expect(code).toBe(0);
       expect(sidecars!.overrides!.apps!.apps.map((a) => a.id)).toEqual(['callback', 'routed']);
+    }
+  });
+
+  it('reads the .env beside host.yaml when neither ENV_FILE nor --env-file names a settings file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'serve-'));
+    try {
+      writeFileSync(join(dir, 'host.yaml'), 'apps: [../nowhere]\n');
+      writeFileSync(join(dir, '.env'), 'PORT=3000\n');
+      const env: NodeJS.ProcessEnv = {};
+      await run(['--host', join(dir, 'host.yaml')], env).catch(() => undefined);
+      expect(env.ENV_FILE).toBe(join(dir, '.env'));
+      const named: NodeJS.ProcessEnv = { ENV_FILE: '/elsewhere.env' };
+      await run(['--host', join(dir, 'host.yaml')], named).catch(() => undefined);
+      expect(named.ENV_FILE).toBe('/elsewhere.env');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

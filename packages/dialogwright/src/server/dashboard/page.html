@@ -387,10 +387,21 @@
     if (!HOST_APPS) return;
     const found = HOST_APPS.find((a) => a.id === id);
     if (!found || APP === found.meta) return;
+    const before = APP;
     APP = found.meta;
     configure(APP);
     document.querySelector('.brand .mark').textContent = APP.brand.mark;
     document.querySelector('.brand .title').firstChild.textContent = `${APP.brand.name} `;
+    // The header's links are the app's: the last app's go, this one's come, before Presenter.
+    for (const link of before.links) el(link.id)?.remove();
+    for (const link of APP.links) {
+      const b = document.createElement('button');
+      b.id = link.id;
+      b.title = link.title;
+      b.textContent = link.label;
+      b.addEventListener('click', () => { window.open(link.href, link.target, link.features); });
+      el('presenter').before(b);
+    }
   }
 
   /**
@@ -1138,7 +1149,10 @@
     if (!sid) { render(reduce([])); el('pos').textContent = ''; return; }
     // Re-fetched every time, including a trace this page already showed: entering Replay while a
     // call is still in progress must pick up whatever turns have landed since.
-    const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}`);
+    // On a host, by its app as its row names it: one id in two apps' records is never ambiguous.
+    const row = (state.traceRows ?? []).find((r) => String(r.callSid) === sid);
+    const byApp = row && typeof row.app === 'string' ? `?app=${encodeURIComponent(row.app)}` : '';
+    const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}${byApp}`);
     // On a host, the replay in its own app's words.
     if (data && typeof data.app === 'string') useApp(data.app);
     const records = data && Array.isArray(data.records) ? data.records : [];

@@ -146,6 +146,7 @@ describe('app.yaml startParameters', () => {
     expect((await problemsOf(add('startParameters:\n  line-1: env.LINE')))[0]).toContain('the key "line-1" is not a valid id');
     expect((await problemsOf(add('startParameters:\n  locale: env.LOCALE')))[0]).toContain('the custom parameter "locale" is the engine\'s own');
     expect((await problemsOf(add('startParameters:\n  dw_line: env.LINE')))[0]).toContain('the server\'s echoes of webhook fields');
+    expect((await problemsOf(add('startParameters:\n  dialogwright_app: env.LINE')))[0]).toContain('the custom parameter "dialogwright_app" is the engine\'s own');
   });
 });
 
@@ -163,7 +164,7 @@ describe('validateApp (an app written in code)', () => {
         field: { from: 'setup.to' },
         masked: { from: 'param.y', redact: 'hidden' as never },
       },
-      startParameters: { line: '+15555550100', locale: 'env.LOCALE' },
+      startParameters: { line: '+15555550100', locale: 'env.LOCALE', dialogwright_app: 'env.APP' },
     })).toEqual([
       'callData key "bad-key" is not a plain word (letters, digits and underscores, starting with a letter)',
       'callData key "nofrom" has no from',
@@ -172,6 +173,7 @@ describe('validateApp (an app written in code)', () => {
       'callData key "masked" redact "hidden" is not one of last4, mask, length, secret, keep',
       'startParameters "line" is not env.<NAME>',
       'startParameters name "locale" is one the engine writes itself',
+      'startParameters name "dialogwright_app" is one the engine writes itself',
     ]);
   });
 });

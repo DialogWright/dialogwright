@@ -156,6 +156,10 @@ describe('the subjects routes add (design 2026-10-09-routes, decision 4)', () =>
     expect(conditionHolds({ kind: 'called', variables: ['BLANK'] }, { calledNumber: '+15555550188', env })).toBe(false);
     expect(sameNumber('+44 555 555 0100', '+445555550100')).toBe(true);
     expect(sameNumber('555-0100', '+15555550100')).toBe(false);
+    // A SIP address the carrier delivers as the number called: its user part, never its host or port.
+    expect(sameNumber('sip:+15555550100@10.0.0.5:5060', '+15555550100')).toBe(true);
+    expect(sameNumber('sip:5555550100@pbx.example.com;transport=udp', '+15555550100')).toBe(true);
+    expect(sameNumber('sip:desk@10.0.0.5:5060', '+15555550100')).toBe(false);
   });
 
   it('named: the app\'s predicate, false where there is none', () => {
