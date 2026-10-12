@@ -13,6 +13,8 @@ import type { TraceRecord } from '../../trace/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import type { App } from '../../core/app/types';
 import { spokenText } from '../../prompts/render';
+import { generatedSaid } from '../../render/said';
+import { sayText } from '../../channel/actions';
 import { consoleMetaOf, renderConsolePage, type ConsoleMeta } from './meta';
 import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
@@ -106,6 +108,8 @@ function spokenOf(record: TraceRecord, app: App = getApp(defaultAppId())): strin
   // A trace record does not carry its session's app, so a stored trace is read as the default app's,
   // or on a host as the app whose folder it is in.
   try {
+    // A turn that said a generated line (generated wording) said its actions' words.
+    if (generatedSaid(record)) return sayText(record.actions);
     const text = spokenText(app, record.decision, record.locale);
     return typeof text === 'string' ? text : '';
   } catch {

@@ -416,6 +416,18 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
       return scrub === null ? a : (scrubSay(a, scrub) as typeof a);
     });
   }
+  // Generated wording: each line's fixed text, the wording said and any wording refused, scrubbed as the say actions are.
+  if (record.render !== undefined && scrub !== null) {
+    out.render = {
+      ...record.render,
+      lines: record.render.lines.map((l) => ({
+        ...l,
+        fixed: scrub(l.fixed),
+        ...(l.said !== undefined ? { said: scrub(l.said) } : {}),
+        ...(l.refused !== undefined ? { refused: scrub(l.refused) } : {}),
+      })),
+    };
+  }
   return out;
 }
 

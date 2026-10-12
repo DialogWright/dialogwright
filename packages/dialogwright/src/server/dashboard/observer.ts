@@ -4,6 +4,8 @@ import type { Session } from '../../core/session';
 import type { TurnObserver } from '../../run/turn';
 import { appOf } from '../../core/app/registry';
 import { spokenText } from '../../prompts/render';
+import { generatedSaid } from '../../render/said';
+import { sayText } from '../../channel/actions';
 import { recordScrubber, redactTurnState } from '../../trace/redact';
 
 /**
@@ -41,7 +43,8 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
       const app = appOf(store.get(callSid)?.session ?? {});
       const redacted = redactRecord(record, app);
       const scrub = recordScrubber(record, 'keep', app);
-      const spoken = spokenText(app, redacted.decision, record.locale);
+      // A turn that said a generated line (generated wording) said its actions' words; the record's render keeps each fixed line beside.
+      const spoken = generatedSaid(record) ? sayText(redacted.actions) : spokenText(app, redacted.decision, record.locale);
       bus.publish({ type: 'turn', callSid, at, record: redacted, spoken: scrub === null ? spoken : scrub(spoken) });
     },
     // Entries are built free of PHI in the core, so they are published as chained. The call's own

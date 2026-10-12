@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defineApp } from '../define/defineApp';
 import { runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
 import { loadCorpus } from '../jev/corpus';
 import { FixtureStubClient } from '../jev/fixtureStub';
@@ -9,7 +12,7 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
-import { MESSAGE_DIR, messageApp } from '../testing/message/app';
+import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
@@ -183,5 +186,38 @@ describe('the audit rows of a turn that rendered', () => {
     const render: AuditDraft[] = [{ type: 'render_group', detail: { group: 'generated', share: 100 } }, { type: 'render_fallback', detail: { prompt: 'p', reason: 'items' } }];
     expect(withRenderAudit(drafts, render).map((d) => d.type)).toEqual(['call_started', 'render_group', 'gate', 'render_fallback', 'call_ended']);
     expect(withRenderAudit(drafts, [])).toEqual(drafts);
+  });
+});
+
+describe('a generated line in another locale', () => {
+  it('is generated only where the locale gives its goal; elsewhere its fixed line is said', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-message-'));
+    try {
+      cpSync(MESSAGE_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      mkdirSync(join(dir, 'locale', 'es'), { recursive: true });
+      writeFileSync(join(dir, 'locale', 'es', 'prompts.yaml'), [
+        'prompts:',
+        '  ask_caller:',
+        '    text: "¿Y de parte de quién es el mensaje?"',
+        '    interruptible: true',
+        '    goal: Preguntar el nombre de quien llama.',
+        '  ask_phone:',
+        '    text: "¿A qué número le devolvemos la llamada?"',
+        '    interruptible: true',
+        '',
+      ].join('\n'));
+      const app = defineApp(dir, messageCode);
+      resetAppsForTest();
+      registerApp(app);
+      const client = new FakeRenderClient();
+      const scenario: Scenario = { id: 'es-1', locale: 'es', steps: TO_SUMMARY.slice(0, 2), expect: { decision: 'any' } };
+      const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, renderer: { client } });
+      expect(r.runs[1]!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'generated', fixed: '¿Y de parte de quién es el mensaje?' });
+      expect(client.asked.find((a) => a.promptId === 'ask_caller')!.act).toMatchObject({ goal: 'Preguntar el nombre de quien llama.', language: 'es' });
+      expect(r.runs[2]!.record.render!.lines).toEqual([expect.objectContaining({ promptId: 'ask_phone', mode: 'fixed', skipped: 'locale' })]);
+      expect(sayText(r.runs[2]!.result.actions)).toBe('¿A qué número le devolvemos la llamada?');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

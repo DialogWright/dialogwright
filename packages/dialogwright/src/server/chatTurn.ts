@@ -1,8 +1,9 @@
 import type { SessionEvent } from '../channel/events';
 import type { Session } from '../core/session';
 import type { AuditEntry } from '../audit/types';
+import { generatedSaid } from '../render/said';
 import { runTurn, whenChained, type AuditSink, type RunOptions, type TurnRun } from '../run/turn';
-import type { Action } from '../channel/actions';
+import { sayText, type Action } from '../channel/actions';
 import { appOf } from '../core/app/registry';
 import { spokenText } from '../prompts/render';
 import { resolveService, type ServiceUrls } from './services';
@@ -40,9 +41,10 @@ export interface ChatTurnDeps {
  */
 export async function runChatTurn(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string): Promise<string[]> {
   const out: string[] = [];
-  // Each turn's words from its decision, the defined source of what was said (prompts/render.ts spokenText).
+  // Each turn's words from its decision, the defined source of what was said (prompts/render.ts spokenText);
+  // a turn that said a generated line (generated wording) said its actions' words.
   for (const r of await runChatTurnRuns(d, entry, event, now, handoffTo)) {
-    const text = spokenText(appOf(r.result.session), r.result.decision, r.result.session.locale);
+    const text = generatedSaid(r.record) ? sayText(r.result.actions) : spokenText(appOf(r.result.session), r.result.decision, r.result.session.locale);
     if (text) out.push(text);
   }
   return out;

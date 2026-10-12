@@ -576,7 +576,7 @@
   // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
   import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
     STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery,
-    insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText } from '/dashboard/view.js';
+    insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText, wordingRows } from '/dashboard/view.js';
 
   /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
   const PAGE = {{meta}};
@@ -751,7 +751,15 @@
 
   /** A line's delivery notes (view.js DELIVERY_NOTES), one muted row each under it; spans, as a script line is a paragraph. */
   function notesHtml(l) {
-    return (l.notes ?? []).map((n) => `<span class="dnote k-${esc(n.kind)}"><span class="lbl-d">on the line</span>${esc(n.text)}</span>`).join('');
+    return (l.notes ?? []).map((n) => `<span class="dnote k-${esc(n.kind)}"><span class="lbl-d">on the line</span>${esc(n.text)}</span>`).join('')
+      + wordingHtml(l);
+  }
+
+  /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why. */
+  function wordingHtml(l) {
+    return (l.wording ?? []).map((w) => w.mode === 'generated'
+      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${esc(w.promptId)}</span>fixed line: ${esc(w.fixed)}</span>`
+      : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${esc(w.promptId)}</span>${esc(w.why ?? '')}</span>`).join('');
   }
 
   function inputHtml(l, turn) {
@@ -2055,7 +2063,8 @@
       + `<details class="astable"><summary>As a table</summary>${tableHtml('', ['Length', 'Calls#'], buckets.map((b) => [esc(b.label), n(b.v)]))}</details>`);
 
     const carrierRows = i.carrier ? i.carrier.byCarrier.map((c) => [esc(CARRIERS[c.carrier] ?? c.carrier), n(c.minutes), esc(moneyText(c.ratePerMin)), esc(moneyText(c.usd))]) : [];
-    const cost = card('Cost', `<dl class="kv2"><dt>Decision model</dt><dd>${esc(moneyText(i.cost.modelUsd))}</dd>`
+    const cost = card('Cost', `<dl class="kv2"><dt>${i.wording ? 'Models' : 'Decision model'}</dt><dd>${esc(moneyText(i.cost.modelUsd))}</dd>`
+      + (i.wording ? `<dt>Of which generated lines</dt><dd>${esc(moneyText(i.wording.costUsd))}</dd>` : '')
       + (i.carrier ? `<dt>Carrier (estimate)</dt><dd>${esc(moneyText(i.carrier.usd))}</dd>` : '')
       + `<dt>In all</dt><dd>${esc(moneyText(i.cost.totalUsd))}</dd><dt>A call</dt><dd>${esc(moneyText(i.cost.perCall))}</dd><dt>A handled call</dt><dd>${esc(moneyText(i.cost.perHandled))}</dd></dl>`
       + (i.carrier
@@ -2069,6 +2078,13 @@
     const hours = card('Calls routed on business hours', `<p class="figs-note">${n(t.hoursRouted)} ${t.hoursRouted === 1 ? 'call was' : 'calls were'} routed by a rule that reads the business hours (routes.yaml), by where, whether the rule asked for open or closed, and what followed.</p>`
       + tableHtml('', withApp(['Route', 'Calls#']), i.hours.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No route read the hours.'));
 
+    // Generated wording: the calls served generated beside those served fixed (RENDER_SHARE), and each generated line.
+    const w = i.wording ? wordingRows(i.wording) : null;
+    const wording = w ? card('Generated wording', `<p class="figs-note">The calls whose generated lines were worded by a model, beside the calls served the fixed lines (RENDER_SHARE). The lines cost ${esc(moneyText(i.wording.costUsd))} in this range, in the cost above.</p>`
+      + tableHtml('Generated beside fixed', ['', 'Generated', 'Fixed'], w.compare.map((r) => r.map(esc)), 'No calls.')
+      + tableHtml('Each generated line', withApp(['Line', 'Tried#', 'Said generated#', 'Fell back#', 'Time#']), w.prompts.map((r) => [...(MANY() ? [esc(r.app ?? '')] : []), `<code>${esc(r.cells[0])}</code>`, ...r.cells.slice(1).map(esc)]), 'No line was tried.')
+      + '<p class="figs-note">Fell back is the share said fixed because a check failed, the model was slow or erred; time is the line\'s wording and checks, on average.</p>') : '';
+
     const kb = d.knowledge ? card('Knowledge base', `<p class="figs-note"><b>${n(t.gaps)}</b> ${t.gaps === 1 ? 'question' : 'questions'} the knowledge base did not answer. Their topics are on the <a class="follow" href="#/knowledge">Knowledge</a> page; the callers' words, ranked with the fix for each, are <code>${esc(d.knowledge.command)}</code> at the terminal.</p>`) : '';
 
     const notes = [
@@ -2076,7 +2092,7 @@
       ...(i.unreadable?.length ? [`Left out, their figures could not be read: ${i.unreadable.map(esc).join(', ')}.`] : []),
       ...(i.expired?.length ? [`Not shown, older than the figures are kept (FIGURES_RETENTION_DAYS): ${i.expired.length} ${i.expired.length === 1 ? 'day' : 'days'}, ${esc(i.expired[0])} to ${esc(i.expired.at(-1))}.`] : []),
     ];
-    el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${kb}</div>`
+    el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${wording}${kb}</div>`
       + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end, and a day is final once its traces can no longer change. Hours are counted as the server counts them (UTC), shown in your time. The most at once is to the minute (the most calls in progress in any one minute), of the calls that started in the range: one already going when it began is not counted.</p>';
   }
 

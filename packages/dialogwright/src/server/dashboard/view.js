@@ -79,6 +79,27 @@ function secs(ms) {
   return typeof ms === 'number' && Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : '?';
 }
 
+/** What a fallback reason (render/types.ts RenderFallback) or a line left untried (RenderSkip) means, in a few words. */
+const WORDING_WHY = {
+  empty: 'the model said nothing', format: 'markup or a link', words: 'over its word budget', question: 'not one question', avoid: 'a phrase to avoid',
+  items: 'a value left out', foreign: 'a number, date or name it was not given', drift: 'did more than its goal', timeout: 'too slow',
+  error: 'the model failed', 'cassette-miss': 'not recorded', 'drift-error': 'the drift check failed',
+  share: 'this call is in the fixed group', when: 'not generated in this situation', locale: 'no goal in this language', screen: 'the words were flagged or unread', identifier: 'names an identifier',
+};
+
+/**
+ * Generated wording on a turn (TraceRecord.render), as the console shows it under the agent's line:
+ * each line the app generates, said generated (with the fixed line it stands for) or fixed, and why.
+ */
+export function wordingOf(render) {
+  return render.lines.map((l) => ({
+    promptId: l.promptId,
+    mode: l.mode,
+    fixed: l.fixed,
+    ...(l.mode === 'generated' ? {} : { why: l.fallback !== undefined ? `fell back: ${WORDING_WHY[l.fallback] ?? l.fallback}` : WORDING_WHY[l.skipped] ?? 'not tried' }),
+  }));
+}
+
 /**
  * Delivery notes: what happened on the line to what the agent said, as a short sentence under the line
  * it concerns (the console otherwise shows none of it; the frame log has it). One entry per kind of fact
@@ -854,7 +875,8 @@ export function reduce(events, opts) {
         // The batch went out and came back empty: say so between the caller and what the system
         // fell back to, or the panel is 32 blank bars with no explanation.
         if (consulted && r.error) v.lines.push({ kind: 'marker', text: `model error · ${r.error.name}`, turn: r.turnIndex });
-        if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex });
+        // Generated wording: each line the app generates, said generated or fixed (and why), with its fixed line beside.
+        if (e.spoken) v.lines.push({ kind: 'system', text: e.spoken, promptId: r.decision.promptId ?? r.decision.kind, turn: r.turnIndex, ...(r.render && r.render.lines.length ? { wording: wordingOf(r.render) } : {}) });
         if (!consulted && !acted) break;
         if (ended && v.callSid !== null) v.lines.push({ kind: 'marker', text: 'a late turn: finished after the call ended', turn: r.turnIndex });
         // The console's per-turn stage row and the level badge. A verification this turn
@@ -908,7 +930,8 @@ export function reduce(events, opts) {
         v.asking = askingLine(r, v.thresholds);
         v.totals.askMs += r.timing?.askMs ?? 0;
         v.totals.tokens += tokensOf(r.usage);
-        v.totals.usd += r.usage?.costUsd ?? 0;
+        // Every model's cost: the decision model's, and a generated line's (generated wording).
+        v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0);
         const decision = decisionLine(r, changed);
         if (consulted) {
           // Both the tick the intent row draws and the groups belong to the batch, so they read
@@ -1323,7 +1346,7 @@ export function scriptOf(lines, turnsView) {
   for (const l of lines ?? []) {
     const notes = { ...(l.notes?.length ? { notes: l.notes } : {}), ...(l.unsaid ? { unsaid: true } : {}) };
     if (l.kind === 'caller') out.push({ who: 'caller', text: l.text, screened: screened.has(l.turn), codeMasked: l.text.includes(CODE_MASK), ...notes });
-    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes });
+    else if (l.kind === 'system') out.push({ who: 'agent', text: l.text, ...notes, ...(l.wording ? { wording: l.wording } : {}) });
     else if (l.kind === 'handoff') out.push({ who: 'handoff', text: l.text });
     else if (/^keypad /.test(l.text)) out.push({ who: 'keypad', text: l.text.slice('keypad '.length) });
     else if (/^silence\b/.test(l.text) || l.text === 'interrupted') out.push({ who: 'note', text: l.text });
@@ -1822,4 +1845,27 @@ export function bytesText(n) {
   let u = 0;
   while (v >= 1024 && u < units.length - 1) { v /= 1024; u += 1; }
   return `${u === 0 ? v : v.toFixed(1)} ${units[u]}`;
+}
+
+/**
+ * Insights' generated wording (figures.ts Insights.wording) as the rows the page draws: the two groups
+ * RENDER_SHARE serves side by side (containment, re-asks, frustration, call length, cost), and each
+ * generated line's fallback rate and latency. Plain text, for the page to escape.
+ */
+export function wordingRows(w) {
+  const g = w.generated;
+  const f = w.fixed;
+  const rate = (v) => (v === null ? '–' : v.toFixed(2));
+  const ms = (v) => (v === null ? '–' : durationText(v));
+  return {
+    compare: [
+      ['Calls', String(g.calls), String(f.calls)],
+      ['Handled with no person', percentText(g.containment), percentText(f.containment)],
+      ['Re-asks a call', rate(g.reasksPerCall), rate(f.reasksPerCall)],
+      ['Calls with a frustrated caller', percentText(g.frustratedShare), percentText(f.frustratedShare)],
+      ['Call length, on average', ms(g.meanLengthMs), ms(f.meanLengthMs)],
+      ['Model cost a call', moneyText(g.costPerCall), moneyText(f.costPerCall)],
+    ],
+    prompts: w.prompts.map((p) => ({ app: p.app, cells: [p.promptId, String(p.tried), String(p.generated), percentText(p.fallbackRate), p.meanMs === null ? '–' : `${p.meanMs} ms`] })),
+  };
 }

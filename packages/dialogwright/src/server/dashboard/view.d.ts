@@ -53,7 +53,22 @@ export interface Line {
   notes?: LineNote[];
   /** An agent line the turn decided but that was never said (a reply held for a caller who went on). */
   unsaid?: boolean;
+  /** Generated wording: each line of the turn the app generates, its mode, its fixed line, and why one was said fixed. */
+  wording?: WordingLine[];
 }
+
+/** One line an app generates, as the console shows it (wordingOf). */
+export interface WordingLine {
+  promptId: string;
+  mode: 'generated' | 'fixed';
+  /** The fixed line: beside a generated one, what it stands for. */
+  fixed: string;
+  /** Why it was said fixed: a fallback, or why it was not tried. */
+  why?: string;
+}
+
+/** Generated wording on a turn (TraceRecord.render), for the console. */
+export function wordingOf(render: { lines: readonly { promptId: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';
@@ -323,6 +338,8 @@ export interface ScriptLine {
   screened?: boolean;
   /** A caller line that held a one-time code said aloud, masked on arrival. */
   codeMasked?: boolean;
+  /** An agent line's generated wording (Line.wording), when the turn had any. */
+  wording?: WordingLine[];
 }
 export const CODE_MASK: string;
 /** What an identifier of four digits or fewer is shown as (gate/principal.ts SHORT_MASK). */
@@ -376,3 +393,6 @@ export function percentText(share: number | null | undefined): string;
 export function moneyText(usd: number | null | undefined): string;
 export function lengthBucketText(i: number, edges: readonly number[]): string;
 export function bytesText(n: number | null | undefined): string;
+
+/** Insights' generated wording, as the rows the page draws (wordingRows). */
+export function wordingRows(w: import('./wordingFigures').WordingInsights): { compare: [string, string, string][]; prompts: { app: string | null; cells: string[] }[] };

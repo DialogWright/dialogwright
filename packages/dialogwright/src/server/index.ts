@@ -58,6 +58,9 @@ import { CHAT_PATH, chatByApp, chatEndpoint, type ChatEndpoint } from './chat/so
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
+import { generatesLines } from '../render/config';
+import { ModelRenderClient, renderSettings, resolveRenderProvider } from '../render/providers';
+import type { Renderer } from '../render/types';
 
 export interface RunningServer {
   server: Server;
@@ -106,6 +109,13 @@ export interface RunningServer {
 
 export interface ServerOverrides {
   client?: JevClient;
+  /**
+   * How lines an app generates are worded (generated wording, render/types.ts): tests give a fake
+   * renderer. Left out, each app that generates a line has one from its own settings (RENDER_PROVIDER,
+   * RENDER_MODEL, the provider's key, RENDER_SHARE, RENDER_TIMEOUT_MS), and none with RENDER_PROVIDER
+   * unset: every line is then its fixed text. An app that generates no line never has one.
+   */
+  renderer?: Renderer;
   now?: () => number;
   log?: (line: string) => void;
   /**
@@ -392,6 +402,26 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const noInputMs = overrides.noInputMs ?? config.noInputMs;
   log(noInputMs > 0 ? `no-input: ${noInputMs} ms after playback (${durations.size} clip durations)` : 'no-input: off');
   const renderOf = (id: string): RenderContext | null => renders.get(id) ?? null;
+  // Generated wording: each app that generates a line (App.generated) words it through its renderer,
+  // from its own settings; an app that generates none has none, and every line of it is as it was.
+  const renderers = new Map<string, Renderer>();
+  for (const a of appsRun) {
+    if (!generatesLines(a.app)) continue;
+    const lines = Object.keys(a.app.generated!.lines).length;
+    if (overrides.renderer) {
+      renderers.set(a.id, overrides.renderer);
+      continue;
+    }
+    const provider = forApp(a.id, () => resolveRenderProvider(a.env));
+    if (provider === null) {
+      log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} generated, RENDER_PROVIDER unset: every line said fixed`);
+      continue;
+    }
+    const settings = forApp(a.id, () => renderSettings(a.env));
+    renderers.set(a.id, { client: new ModelRenderClient(provider), share: settings.share, timeoutMs: settings.timeoutMs, price: settings.price });
+    log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider}, ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat`);
+  }
+  const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
   // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
@@ -602,7 +632,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
         trace,
         frames,
       };
@@ -700,7 +730,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
         frames,
       };
     },

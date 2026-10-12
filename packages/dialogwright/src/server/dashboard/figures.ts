@@ -7,6 +7,7 @@ import { collectGaps, turnOf, GAP_KINDS, type CollectContext, type GapKind, type
 import { consoleMetaOf, type ConsoleMeta } from './meta';
 import { askedWords, formLabel, handoffReasonText, withMeta } from './view.js';
 import type { CallRow } from './rows';
+import { addRenderCall, emptyRenderFigures, renderFactsOf, renderFiguresOf, sumRender, wordingInsightsOf, type RenderCallFacts, type RenderFigures, type WordingInsights } from './wordingFigures';
 
 /**
  * The console's Insights (and the Knowledge page's unanswered questions): figures worked out from the
@@ -59,6 +60,8 @@ export interface CallFacts {
   gaps: Partial<Record<GapKind, number>>;
   /** By nearest topic: how many, and the hour (UTC, ISO) of the latest. */
   gapTopics: Record<string, { n: number; latest: string }>;
+  /** Generated wording (wordingFigures.ts): only for a call with a render record (an app that generates lines, run with a renderer). */
+  render?: RenderCallFacts;
 }
 
 /** The figures of the calls that started in one hour (or, summed, a range): counts, durations and dollars only. */
@@ -95,6 +98,8 @@ export interface HourFigures {
   gaps: number;
   gapKinds: Partial<Record<GapKind, number>>;
   gapTopics: Record<string, { n: number; latest: string }>;
+  /** Generated wording's figures (wordingFigures.ts): only in an hour with a call of an app that generates lines; absent otherwise, and in figures written before. */
+  render?: RenderFigures;
 }
 
 /** The minutes a day's calls in progress are counted over: the day's own and the next day's (a call of the day going on past midnight; a call lasts at most a day). */
@@ -235,6 +240,9 @@ export function factsOfTrace(records: readonly TraceRecord[], app: App): CallFac
       facts.gapTopics[key] = { n: had.n + 1, latest: hour > had.latest ? hour : had.latest };
     }
   }
+  // Generated wording: the call's group, and what the two groups are compared on (only a call with a render record).
+  const render = renderFactsOf(records, Object.values(facts.asked).reduce((n, s) => n + s.reasks, 0));
+  if (render !== null) facts.render = render;
   return facts;
 }
 
@@ -305,6 +313,7 @@ function addCall(h: HourFigures, { row, facts }: CallSummary): void {
   addRecord(h.hours, facts.hours);
   for (const [k, n] of Object.entries(facts.gaps) as [GapKind, number][]) { h.gaps += n; h.gapKinds[k] = (h.gapKinds[k] ?? 0) + n; }
   mergeTopics(h.gapTopics, facts.gapTopics);
+  if (facts.render) addRenderCall((h.render ??= emptyRenderFigures()), facts.render, { ending: row.ending?.kind ?? null, lengthMs: length, costUsd: row.costUsd });
 }
 
 function mergeTopics(into: HourFigures['gapTopics'], from: HourFigures['gapTopics']): void {
@@ -428,6 +437,7 @@ export function sumHours(hours: readonly HourFigures[]): HourFigures {
     addRecord(s.hours, h.hours);
     for (const [k, n] of Object.entries(h.gapKinds) as [GapKind, number][]) s.gapKinds[k] = (s.gapKinds[k] ?? 0) + n;
     mergeTopics(s.gapTopics, h.gapTopics);
+    if (h.render) sumRender((s.render ??= emptyRenderFigures()), h.render);
   }
   s.costUsd = Math.round(s.costUsd * 1e6) / 1e6;
   return s;
@@ -469,6 +479,12 @@ export function hourFiguresOf(raw: unknown, older = false): HourFigures | null {
     gapKinds: Object.fromEntries(Object.entries(raw.gapKinds as Record<string, number>).filter(([k]) => (GAP_KINDS as readonly string[]).includes(k))),
     gapTopics: Object.fromEntries(Object.entries(raw.gapTopics as Record<string, { n: number; latest: string }>).map(([k, g]) => [k, { n: g.n, latest: g.latest }])),
   };
+  // Generated wording's figures, where the hour has them.
+  if (raw.render !== undefined) {
+    const render = renderFiguresOf(raw.render);
+    if (render === null) return null;
+    h.render = render;
+  }
   return h;
 }
 
@@ -533,7 +549,7 @@ export interface CarrierCost {
 
 /** What /dashboard/insights answers: the range's figures, totalled and in each app's words. */
 export interface Insights {
-  totals: Omit<HourFigures, 'asked' | 'tasks' | 'transfers' | 'abandoned' | 'refusals' | 'hours' | 'gapTopics'> & { peak: number };
+  totals: Omit<HourFigures, 'asked' | 'tasks' | 'transfers' | 'abandoned' | 'refusals' | 'hours' | 'gapTopics' | 'render'> & { peak: number };
   containment: number | null;
   /** The length of the calls that ended, on average (null with none). */
   meanLengthMs: number | null;
@@ -550,6 +566,12 @@ export interface Insights {
   refusals: LabelledRow<number>[];
   hours: LabelledRow<number>[];
   gapTopics: LabelledRow<{ n: number; latest: string }>[];
+  /**
+   * Generated wording (wordingFigures.ts): the calls served generated beside those served fixed
+   * (RENDER_SHARE), each generated line's fallback rate and latency, and what the lines cost (in
+   * `cost.modelUsd` too). Only when a call in the range had generated lines; absent otherwise.
+   */
+  wording?: WordingInsights;
   /** Days shown from figures of an older version, days whose figures could not be read (left out), and days older than FIGURES_RETENTION_DAYS (left out). */
   older: string[];
   unreadable: string[];
@@ -619,7 +641,8 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
     const had = hourly.get(h) ?? { calls: 0, peak: 0 };
     hourly.set(h, { ...had, peak: Math.max(had.peak, p) });
   }
-  const { asked: _a, tasks: _t, transfers: _tr, abandoned: _ab, refusals: _r, hours: _h, gapTopics: _g, ...rest } = all;
+  const { asked: _a, tasks: _t, transfers: _tr, abandoned: _ab, refusals: _r, hours: _h, gapTopics: _g, render: _render, ...rest } = all;
+  const wording = wordingInsightsOf(apps.map((a) => ({ name: named ? (a.app.brand?.name ?? a.id) : null, render: a.figures.render })));
   const totals = { ...rest, peak: Math.max(0, ...[...hourly.values()].map((h) => h.peak)) };
   return {
     totals,
@@ -641,6 +664,7 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
     // Ranked as kb:gaps ranks its groups: how many, then the latest, then the topic.
     gapTopics: labelled((a) => Object.entries(a.figures.gapTopics).map(([topic, g]) => [topic, topicTitle(a.app, topic), g] as [string, string, { n: number; latest: string }]))
       .sort((x, y) => y.value.n - x.value.n || (y.value.latest > x.value.latest ? 1 : y.value.latest < x.value.latest ? -1 : 0) || x.key.localeCompare(y.key)),
+    ...(wording !== null ? { wording } : {}),
     older: [...new Set(apps.flatMap((a) => a.older))].sort(),
     unreadable: [...new Set(apps.flatMap((a) => a.unreadable))].sort(),
     expired: [...new Set(apps.flatMap((a) => a.expired ?? []))].sort(),

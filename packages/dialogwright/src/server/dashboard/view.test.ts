@@ -9,7 +9,7 @@ import { ALL_SLOTS as REAL_ALL_SLOTS } from '../../testing/testkit/domain/slots'
 import type { AuditEntry } from '../../audit/types';
 import type { FrameDir, FrameLogLine } from '../frameLog';
 import { CALL, FROM, TODAY, replayRecords, scripted, type Step } from '../../testing/scripted';
-import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges, nowChipLabel, SHORT_MASK } from './view.js';
+import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges, nowChipLabel, SHORT_MASK, wordingOf } from './view.js';
 import { consoleMetaOf } from './meta';
 import { testkitApp } from '../../testing/testkit';
 import { useTestkit } from '../../testing/apps';
@@ -1308,5 +1308,36 @@ describe('a slot shown as said (SlotSpec.displayFrom) in the console', () => {
     } finally {
       configure(meta);
     }
+  });
+});
+
+describe('generated wording on the call detail', () => {
+  const render = {
+    group: 'generated', share: 100,
+    lines: [
+      { index: 0, promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?', said: 'Thanks. When was it due to arrive?', act: 'ask', situations: ['first-ask'] },
+      { index: 1, promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', act: 'ask', situations: ['first-ask'], fallback: 'foreign' },
+    ],
+  };
+
+  it('each line the app generates is shown under the agent line: generated with its fixed line beside it, or fixed and why', () => {
+    const v = reduce([started, { ...turnEvent({ render }), spoken: 'Thanks. When was it due to arrive?' } as DashboardEvent]);
+    const line = v.lines.find((l) => l.kind === 'system')!;
+    expect(line.wording).toEqual([
+      { promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?' },
+      { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', why: 'fell back: a number, date or name it was not given' },
+    ]);
+    expect(scriptOf(v.lines, v.turnsView).find((l) => l.who === 'agent')!.wording).toHaveLength(2);
+  });
+
+  it('a turn of an app that generates nothing carries no wording', () => {
+    const v = reduce([started, { ...turnEvent({}), spoken: 'When was it due?' } as DashboardEvent]);
+    expect(v.lines.find((l) => l.kind === 'system')!.wording).toBeUndefined();
+  });
+
+  it('every reason a line falls back or is not tried has words', () => {
+    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error'];
+    for (const fallback of reasons) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', fallback }] })[0]!.why).not.toBe(`fell back: ${fallback}`);
+    for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
   });
 });
