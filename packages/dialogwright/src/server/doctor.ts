@@ -18,6 +18,8 @@ import { AUDIT_SCHEMA_VERSION, AUDIT_TABLES, probeAuditWrite } from '../audit/po
 import { describeTraceStore, type S3TraceSetting } from '../trace/store';
 import { S3Client } from '../trace/s3/client';
 import { randomBytes } from 'node:crypto';
+import { hostFileOf, resolveHostFile, type ResolvedHost } from '../define/host';
+import { appEnvironment, hostNumbers, variablesOf } from './host';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -56,7 +58,7 @@ import { randomBytes } from 'node:crypto';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -673,25 +675,70 @@ export interface DoctorIo {
   root?: string;
 }
 
-export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]   (ENV_FILE names a settings file other than <app>/.env)';
+export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>] pnpm diagnose [--app <name> | --host <file>] [--offline]   (ENV_FILE names a settings file other than <app>/.env, or for a host file the .env beside it)';
+
+/**
+ * The checks of a host file's apps (host.yaml: several apps on one server), after the server's own: the
+ * numbers it names, each set, E.164 and its own; then, for each app, its own settings file and every
+ * variable its YAML names, as the server will read it for that app (its own file's value, else the
+ * server's), and the variables its own file sets that are not read under a host. Names and lengths only,
+ * never a value.
+ */
+export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platform = process.platform): CheckResult[] {
+  const out: CheckResult[] = [];
+  try {
+    const numbers = hostNumbers(host.numbers, host.apps.map((a) => a.id), env);
+    out.push(numbers.length === 0
+      ? { id: 'host', status: 'ok', message: `host.yaml names no number: every call reaches ${host.defaultApp}, the default` }
+      : { id: 'host', status: 'ok', message: `host.yaml's numbers: ${numbers.map((n) => `${n.variable} (${n.app})`).join(', ')}, each set and its own; any other number reaches ${host.defaultApp}` });
+  } catch (e) {
+    out.push({ id: 'host', status: 'fail', message: `${e instanceof Error ? e.message : String(e)}: the server will not start`, fix: 'set the number in the server\'s settings file' });
+  }
+  for (const app of host.apps) {
+    const tag = (r: CheckResult): CheckResult => ({ ...r, message: `app ${app.id}: ${r.message}` });
+    let own: Record<string, string> | null = null;
+    if (existsSync(app.envFile)) {
+      own = readEnvFile(app.envFile);
+      out.push(tag(settingsFileCheck(app.envFile, platform)));
+    } else if (app.envNamed) {
+      out.push(tag({ id: 'settings', status: 'fail', message: `${app.envFile} does not exist`, fix: 'create it with the app\'s own variables, or take "env" out of host.yaml' }));
+    }
+    const read = appEnvironment(env, own, variablesOf(app.dir));
+    out.push(...variableChecks(app.dir, read.env).map(tag));
+    if (read.ignored.length > 0) {
+      out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host an app's own file is read for its own variables alone`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file, and delete the rest here' }));
+    }
+  }
+  return out;
+}
 
 /** The command; returns its exit code (0 nothing failed, 1 something did, 2 a command line it does not understand). */
 export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDeps = defaultDoctorDeps): Promise<number> {
   let appName: string | undefined;
+  let hostFlag: string | undefined;
   let envFileArg: string | undefined;
   let offline = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--offline') offline = true;
-    else if ((a === '--app' || a === '--env-file') && argv[i + 1] !== undefined) {
+    else if ((a === '--app' || a === '--env-file' || a === '--host') && argv[i + 1] !== undefined) {
       if (a === '--app') appName = argv[++i];
+      else if (a === '--host') hostFlag = argv[++i];
       else envFileArg = argv[++i];
     } else {
       io.out(DOCTOR_USAGE);
       return 2;
     }
   }
-  const apps = workspaceApps(io.root ?? projectRoot(io.invokedFrom));
+  if (appName !== undefined && hostFlag !== undefined) {
+    io.out('--app diagnoses one app and --host a host file\'s apps: give one of them');
+    return 2;
+  }
+  const root = io.root ?? projectRoot(io.invokedFrom);
+  // A host file (host.yaml: several apps on one server): --host, else HOST_FILE, else host.yaml beside the apps.
+  const hostFile = appName === undefined ? hostFileOf(hostFlag, io.env, io.invokedFrom, root) : null;
+  if (hostFile !== null) return hostMain(hostFile, envFileArg, offline, io, deps);
+  const apps = workspaceApps(root);
   let app: WorkspaceApp | null = null;
   if (appName !== undefined) {
     app = findApp(apps, appName, io.invokedFrom);
@@ -730,6 +777,37 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
   }
   io.out(`${app ? `${app.name}: ` : ''}settings from ${file}${offline ? ' (offline)' : ''}`);
   const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline, ...(app ? { appDir: app.dir } : {}) }, deps))];
+  for (const r of results) io.out(formatResult(r));
+  const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
+  const skipped = count('skip');
+  io.out(`${results.length} checks: ${count('ok')} ok, ${count('warn')} warn, ${count('fail')} fail${skipped ? `, ${skipped} skipped` : ''}`);
+  return count('fail') > 0 ? 1 : 0;
+}
+
+/** `pnpm diagnose` for a host file: the server's checks with its settings, then the host's and each app's. */
+async function hostMain(hostFile: string, envFileArg: string | undefined, offline: boolean, io: DoctorIo, deps: DoctorDeps): Promise<number> {
+  if (!existsSync(hostFile)) {
+    io.out(formatResult({ status: 'fail', message: `no host file at ${hostFile}`, fix: 'name one with --host <file>, or HOST_FILE' }));
+    return 1;
+  }
+  const { host, problems } = resolveHostFile(hostFile);
+  if (host === null) {
+    for (const p of problems) io.out(formatResult({ status: 'fail', message: `${p.file}:${p.line}:${p.column}  ${p.message}`, fix: p.fix }));
+    return 1;
+  }
+  const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
+  const file = named === undefined ? join(host.dir, '.env') : isAbsolute(named) ? named : resolve(io.invokedFrom, named);
+  let fromFile: Record<string, string>;
+  try {
+    fromFile = readEnvFile(file);
+  } catch (e) {
+    io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'write the server\'s settings there (what every app shares), or name the file: ENV_FILE=<path> pnpm diagnose --host <file>' }));
+    return 1;
+  }
+  const env: Env = { ...fromFile };
+  for (const [k, v] of Object.entries(io.env)) if (v !== undefined) env[k] = v;
+  io.out(`the apps of ${hostFile} (${host.apps.map((a) => a.id).join(', ')}): settings from ${file}${offline ? ' (offline)' : ''}`);
+  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: host.dir, offline }, deps)), ...hostChecks(host, env)];
   for (const r of results) io.out(formatResult(r));
   const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
   const skipped = count('skip');

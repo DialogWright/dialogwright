@@ -54,6 +54,20 @@ describe('pnpm audit:verify', () => {
     expect(lines).toEqual(['2026-10-01.jsonl: BROKEN at line 2 of 3 (hash mismatch)']);
   });
 
+  it('verifies each app\'s folder of a server of several apps (host.yaml), entries naming their app, and exits 1 at a break in any', () => {
+    for (const app of ['clinic', 'utility']) {
+      const log = new AuditLog(join(dir, app), () => Date.UTC(2026, 9, 1, 17, 0, 0));
+      log.append(`CA-${app}`, 'voice', { type: 'call_started', detail: {}, app });
+    }
+    expect(main([dir])).toBe(0);
+    expect(lines).toEqual(['clinic/2026-10-01.jsonl: 1 entries, chain intact', 'utility/2026-10-01.jsonl: 1 entries, chain intact']);
+    const file = join(dir, 'utility', '2026-10-01.jsonl');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('"app":"utility"', '"app":"clinic"'));
+    lines = [];
+    expect(main([dir])).toBe(1);
+    expect(lines[1]).toMatch(/^utility\/2026-10-01\.jsonl: BROKEN at line 1 of 1/);
+  });
+
   it('reads a relative folder from where pnpm was run (INIT_CWD), not from the engine package', () => {
     chain();
     expect(main([relative(tmpdir(), dir)], { INIT_CWD: tmpdir() })).toBe(0);

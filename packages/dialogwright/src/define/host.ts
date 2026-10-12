@@ -110,7 +110,7 @@ export function resolveHostFile(file: string): { host: ResolvedHost | null; prob
       label = typeof entry === 'string' ? entry : entry.folder;
       const wanted = resolve(hostDir, label);
       if (!existsSync(wanted) || !statSync(wanted).isDirectory()) {
-        at(path, `the app folder ${label} does not exist (from ${shown(process.cwd(), hostDir)})`, 'write the path of the app\'s folder (the one with app.yaml) from host.yaml\'s folder');
+        at(path, `the app folder ${label} does not exist`, 'write the path of the app\'s folder (the one with app.yaml) from host.yaml\'s folder');
         return;
       }
       dir = realpathSync(wanted);

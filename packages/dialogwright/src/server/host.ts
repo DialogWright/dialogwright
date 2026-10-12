@@ -71,18 +71,7 @@ export interface HostRouting {
 export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { variable: string; app: string }[]; defaultApp: string; env: Env }): HostRouting {
   const byId = new Map(o.apps.map((a) => [a.id, a]));
   if (!byId.has(o.defaultApp)) throw new Error(`host: the default app "${o.defaultApp}" is not one of the apps (${[...byId.keys()].join(', ')})`);
-  const numbers: HostNumber[] = [];
-  for (const n of o.numbers) {
-    if (!byId.has(n.app)) throw new Error(`host: ${n.variable} points at "${n.app}", which is not one of the apps (${[...byId.keys()].join(', ')})`);
-    const value = o.env[n.variable]?.trim();
-    if (value === undefined || value === '') throw new Error(`host.yaml's numbers name ${n.variable}, which is not set: set ${n.variable} in the server's settings file to the E.164 number callers dial for "${n.app}", or take it out of host.yaml`);
-    if (!E164.test(value)) throw new Error(`${n.variable} (a number in host.yaml) is not an E.164 number: set it to the number callers dial, like +15551234567`);
-    const twin = numbers.find((m) => sameNumber(m.value, value));
-    if (twin !== undefined) {
-      throw new Error(`${n.variable} and ${twin.variable} hold the same number, so a call to it could reach "${twin.app}" or "${n.app}": give each its own number, or list the number once in host.yaml`);
-    }
-    numbers.push({ variable: n.variable, value, app: n.app });
-  }
+  const numbers = hostNumbers(o.numbers, [...byId.keys()], o.env);
   const ordered = [byId.get(o.defaultApp)!, ...o.apps.filter((a) => a.id !== o.defaultApp)];
   return {
     apps: ordered,
@@ -99,6 +88,27 @@ export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { v
       return app;
     },
   };
+}
+
+/**
+ * The numbers a host routes, each read from `env` (the server's settings): throws, with the fix, for one
+ * unset or not E.164, for one that points at an app not among `apps`, and for two variables holding one
+ * number. What the server checks as it starts, and `pnpm diagnose` before.
+ */
+export function hostNumbers(wanted: readonly { variable: string; app: string }[], apps: readonly string[], env: Env): HostNumber[] {
+  const numbers: HostNumber[] = [];
+  for (const n of wanted) {
+    if (!apps.includes(n.app)) throw new Error(`host: ${n.variable} points at "${n.app}", which is not one of the apps (${apps.join(', ')})`);
+    const value = env[n.variable]?.trim();
+    if (value === undefined || value === '') throw new Error(`host.yaml's numbers name ${n.variable}, which is not set: set ${n.variable} in the server's settings file to the E.164 number callers dial for "${n.app}", or take it out of host.yaml`);
+    if (!E164.test(value)) throw new Error(`${n.variable} (a number in host.yaml) is not an E.164 number: set it to the number callers dial, like +15551234567`);
+    const twin = numbers.find((m) => sameNumber(m.value, value));
+    if (twin !== undefined) {
+      throw new Error(`${n.variable} and ${twin.variable} hold the same number, so a call to it could reach "${twin.app}" or "${n.app}": give each its own number, or list the number once in host.yaml`);
+    }
+    numbers.push({ variable: n.variable, value, app: n.app });
+  }
+  return numbers;
 }
 
 /**
@@ -163,7 +173,7 @@ export async function importApp(dir: string, id: string): Promise<App> {
 }
 
 /** The variables an app's YAML names (env.<NAME>), by name. */
-function variablesOf(dir: string): string[] {
+export function variablesOf(dir: string): string[] {
   return [...new Set((appYamlEnvReferences(dir) ?? []).map((r) => r.variable))];
 }
 

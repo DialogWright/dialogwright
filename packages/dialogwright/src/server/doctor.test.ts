@@ -679,3 +679,54 @@ describe('pnpm diagnose', () => {
     expect(root.scripts.diagnose).toBe('tsx packages/dialogwright/src/define/cli.ts diagnose');
   });
 });
+
+describe('pnpm diagnose with a host file (host.yaml: several apps on one server)', () => {
+  /** Two apps that both name MAIN_LINE, each with its own; the server's settings beside host.yaml. */
+  function hosted(serverExtra: Record<string, string> = {}): string {
+    const dir = tempDir();
+    for (const id of ['one', 'two']) {
+      mkdirSync(join(dir, 'apps', id), { recursive: true });
+      writeFileSync(join(dir, 'apps', id, 'app.yaml'), `id: ${id}\ntransfer:\n  default: env.MAIN_LINE\n`);
+    }
+    writeFileSync(join(dir, 'apps', 'one', '.env'), 'MAIN_LINE=+447700900201\n', { mode: 0o600 });
+    // An app's .env from before the host, with a server setting in it: not read under a host.
+    writeFileSync(join(dir, 'apps', 'two', '.env'), 'MAIN_LINE=sip:desk@pbx.example.com\nTWILIO_AUTH_TOKEN=not-read\n', { mode: 0o600 });
+    writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/two]\nnumbers:\n  - { number: env.ONE_LINE, app: one }\n');
+    writeFileSync(join(dir, '.env'), Object.entries({ ...goodEnv(dir), ONE_LINE: '+447700900301', ...serverExtra }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
+    return dir;
+  }
+
+  it('checks the server, then the numbers, then each app with its own variables, never a value', async () => {
+    const dir = hosted();
+    const out: string[] = [];
+    const code = await main(['--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps());
+    expect(code).toBe(0);
+    expect(out[0]).toBe(`the apps of ${join(dir, 'host.yaml')} (one, two): settings from ${join(dir, '.env')} (offline)`);
+    expect(out).toContain("ok    host.yaml's numbers: ONE_LINE (one), each set and its own; any other number reaches one");
+    expect(out).toContain("ok    app one: app.yaml's transfer.default reads MAIN_LINE: set, a phone number");
+    expect(out).toContain("ok    app two: app.yaml's transfer.default reads MAIN_LINE: set, a SIP address");
+    expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^warn  app two: .*sets TWILIO_AUTH_TOKEN, which the app's YAML does not name/);
+    expect(out.join('\n')).not.toContain('+447700900201');
+    expect(out.join('\n')).not.toContain('not-read');
+  });
+
+  it('fails an app variable that only another app sets, and a number unset', async () => {
+    const dir = hosted();
+    rmSync(join(dir, 'apps', 'one', '.env'));
+    writeFileSync(join(dir, '.env'), Object.entries(goodEnv(dir)).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
+    const out: string[] = [];
+    expect(await main(['--host', 'host.yaml', '--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps())).toBe(1);
+    expect(out).toContain("fail  app one: app.yaml's transfer.default reads MAIN_LINE, which is not set: the server will not start  ->  set MAIN_LINE in the settings file");
+    expect(out.find((l) => l.startsWith('fail  host.yaml'))).toContain("host.yaml's numbers name ONE_LINE, which is not set");
+  });
+
+  it('takes --app for one app as before, and says a host file\'s problems', async () => {
+    const dir = hosted();
+    writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/nowhere]\n');
+    const out: string[] = [];
+    expect(await main(['--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps())).toBe(1);
+    expect(out[0]).toMatch(/^fail  .*host\.yaml:1:18  the app folder apps\/nowhere does not exist/);
+    expect(await main(['--app', 'one', '--host', 'host.yaml'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps())).toBe(2);
+  });
+});
+

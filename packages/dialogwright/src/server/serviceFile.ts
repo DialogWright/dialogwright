@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_DRAIN_MS, integer, type Env } from './config';
 import { readEnvFile } from './envFile';
 import { findOnPath } from './tunnel';
-import { findApp, projectRoot, workspaceApps } from './workspace';
+import { ENGINE_BIN, findApp, projectRoot, workspaceApps } from './workspace';
+import { hostFileOf, resolveHostFile, type ResolvedHost } from '../define/host';
+import { formatProblem } from '../define/problems';
 
 /**
  * `ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>] [--force]`
@@ -42,6 +44,11 @@ export interface ServiceInputs {
   stopSeconds: number;
   /** A project of its own (no pnpm-workspace.yaml at its root), whose file says so; this repository by default. */
   project?: boolean;
+  /**
+   * A host file's apps (host.yaml: several apps on one server) in place of one app: the service runs
+   * `<node> <the engine's bin> serve --host <file>` in the host file's folder. `app` then names it.
+   */
+  host?: { file: string; dir: string; node: string; bin: string };
 }
 
 const TEMPLATES = fileURLToPath(new URL('../../templates/service/', import.meta.url));
@@ -55,10 +62,14 @@ const unitWord = (s: string) => (/[\s"'\\]/.test(s) ? `"${unitValue(s).replace(/
 /** The file for these inputs, from its template. */
 export function renderService(i: ServiceInputs): string {
   const template = readFileSync(join(TEMPLATES, i.kind === 'launchd' ? 'launchd.plist' : 'systemd.service'), 'utf8');
+  // What it runs: the app's own launcher through pnpm, or a host file's server through the engine's bin.
+  const words = i.host ? [i.host.node, i.host.bin, 'serve', '--host', i.host.file] : [i.pnpm, '--filter', i.app, 'serve'];
+  const what = i.host ? `host file ${i.host.file} (${i.app})` : `app ${i.app}`;
+  const root = i.host ? i.host.dir : i.root;
   const values: Record<string, string> =
     i.kind === 'launchd'
-      ? { label: xml(i.label), app: xml(i.app), root: xml(i.root), envFile: xml(i.envFile), pnpm: xml(i.pnpm), path: xml(i.path), logDir: xml(i.logDir), stopSeconds: String(i.stopSeconds) }
-      : { label: unitValue(i.label), app: unitValue(i.app), root: unitValue(i.root), envFile: unitValue(i.envFile).replace(/"/g, '\\"'), path: unitValue(i.path), pnpm: unitWord(i.pnpm), logDir: unitValue(i.logDir), stopSeconds: String(i.stopSeconds) };
+      ? { label: xml(i.label), app: xml(i.app), what: xml(what), root: xml(root), envFile: xml(i.envFile), pnpm: xml(i.pnpm), path: xml(i.path), logDir: xml(i.logDir), stopSeconds: String(i.stopSeconds), programArguments: words.map((w) => `    <string>${xml(w)}</string>`).join('\n') }
+      : { label: unitValue(i.label), app: unitValue(i.app), what: unitValue(what), root: unitValue(root), envFile: unitValue(i.envFile).replace(/"/g, '\\"'), path: unitValue(i.path), pnpm: unitWord(i.pnpm), logDir: unitValue(i.logDir), stopSeconds: String(i.stopSeconds), exec: words.map(unitWord).join(' ') };
   const text = template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
     const v = values[key];
     if (v === undefined) throw new Error(`the ${i.kind} template names {{${key}}}, which pnpm service does not fill`);
@@ -129,7 +140,7 @@ export interface ServiceIo {
   nodeDir?: string;
 }
 
-export const SERVICE_USAGE = 'usage: ENV_FILE=<path> pnpm service <launchd|systemd> --app <name> [--label <label>] [--out <file>] [--force]   (or --env-file <path>)';
+export const SERVICE_USAGE = 'usage: ENV_FILE=<path> pnpm service <launchd|systemd> (--app <name> | --host <file>) [--label <label>] [--out <file>] [--force]   (or --env-file <path>)';
 
 /** The command; returns its exit code (2 for a command line it does not understand). */
 export async function main(argv: readonly string[], io: ServiceIo): Promise<number> {
@@ -138,12 +149,13 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out(SERVICE_USAGE);
     return 2;
   }
-  const flags: { app?: string; envFile?: string; label?: string; out?: string; force: boolean } = { force: false };
+  const flags: { app?: string; host?: string; envFile?: string; label?: string; out?: string; force: boolean } = { force: false };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     const v = rest[i + 1];
     if (a === '--force') flags.force = true;
     else if (a === '--app' && v !== undefined) flags.app = rest[++i];
+    else if (a === '--host' && v !== undefined) flags.host = rest[++i];
     else if (a === '--env-file' && v !== undefined) flags.envFile = rest[++i];
     else if (a === '--label' && v !== undefined) flags.label = rest[++i];
     else if (a === '--out' && v !== undefined) flags.out = rest[++i];
@@ -152,8 +164,15 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
       return 2;
     }
   }
-  if (flags.app === undefined) {
-    io.out('--app <name> is needed: the app the service runs');
+  if (flags.app !== undefined && flags.host !== undefined) {
+    io.out('--app runs one app and --host a host file\'s apps: give one of them');
+    return 2;
+  }
+  const root = io.root ?? projectRoot(io.invokedFrom);
+  // A host file (host.yaml: several apps on one server): --host, else HOST_FILE, else host.yaml beside the apps.
+  const hostFile = flags.app === undefined ? hostFileOf(flags.host, io.env ?? process.env, io.invokedFrom, root) : null;
+  if (flags.app === undefined && hostFile === null) {
+    io.out('--app <name> is needed: the app the service runs (or --host <file>, a host file\'s apps)');
     return 2;
   }
   const named = flags.envFile ?? ((io.env ?? process.env).ENV_FILE?.trim() || undefined);
@@ -161,8 +180,16 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out('the settings file the service reads is needed: ENV_FILE=<path> pnpm service ... (keep it outside the repository, mode 600)');
     return 2;
   }
-  const root = io.root ?? projectRoot(io.invokedFrom);
-  const app = findApp(workspaceApps(root), flags.app, io.invokedFrom);
+  let host: ResolvedHost | null = null;
+  if (hostFile !== null) {
+    const resolved = existsSync(hostFile) ? resolveHostFile(hostFile) : null;
+    if (resolved === null || resolved.host === null) {
+      io.out(resolved === null ? `no host file at ${hostFile}` : resolved.problems.map(formatProblem).join('\n'));
+      return 1;
+    }
+    host = resolved.host;
+  }
+  const app = host !== null ? { name: `${basename(host.file)}: ${host.apps.map((a) => a.id).join(', ')}`, dir: host.dir } : findApp(workspaceApps(root), flags.app!, io.invokedFrom);
   if (app === null) {
     io.out(`no app "${flags.app}" in this workspace`);
     return 2;
@@ -189,7 +216,7 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
   const platform = io.platform ?? process.platform;
   const standard = platform === 'darwin' ? ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'] : ['/usr/local/bin', '/usr/bin', '/bin'];
   const path = [...new Set([nodeDir, dirname(pnpm), ...standard])].join(':');
-  const label = flags.label ?? `com.dialogwright.${basename(app.dir)}`;
+  const label = flags.label ?? (host !== null ? 'com.dialogwright.host' : `com.dialogwright.${basename(app.dir)}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label)) {
     io.out(`--label must be letters, digits, dots, hyphens and underscores, like com.example.ivr, got "${label}"`);
     return 2;
@@ -200,11 +227,14 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out(`${file} exists: pnpm service ... --force replaces it`);
     return 1;
   }
-  const text = renderService({ kind, label, app: app.name, root, envFile, pnpm, path, logDir, stopSeconds: Math.ceil(drainMs / 1000) + 10, project: !existsSync(join(root, 'pnpm-workspace.yaml')) });
+  const text = renderService({
+    kind, label, app: app.name, root, envFile, pnpm, path, logDir, stopSeconds: Math.ceil(drainMs / 1000) + 10, project: !existsSync(join(root, 'pnpm-workspace.yaml')),
+    ...(host !== null ? { host: { file: host.file, dir: host.dir, node: process.execPath, bin: ENGINE_BIN } } : {}),
+  });
   mkdirSync(dirname(file), { recursive: true });
   // It names the settings file and holds no secret, so it is an ordinary file.
   writeFileSync(file, text, { mode: 0o644 });
-  io.out(`wrote ${file}: ${app.name} from ${root}, settings from ${envFile}, ${Math.ceil(drainMs / 1000) + 10} s to stop`);
+  io.out(`wrote ${file}: ${app.name} from ${host !== null ? host.dir : root}, settings from ${envFile}, ${Math.ceil(drainMs / 1000) + 10} s to stop`);
   if (platform !== 'win32' && statSync(envFile).mode & 0o077) {
     io.out(`WARNING: ${envFile} can be read by others, and it holds keys: chmod 600 ${shellWord(envFile)}`);
   }

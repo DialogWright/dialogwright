@@ -32,6 +32,7 @@
     "diagnose": "tsx packages/dialogwright/src/define/cli.ts diagnose",
     "configure": "tsx packages/dialogwright/src/define/cli.ts configure",
     "start": "tsx packages/dialogwright/src/define/cli.ts start",
+    "serve": "tsx packages/dialogwright/src/define/cli.ts serve",
     "service": "tsx packages/dialogwright/src/define/cli.ts service",
     "fallback": "tsx packages/dialogwright/src/define/cli.ts fallback",
     "console:link": "tsx packages/dialogwright/src/define/cli.ts console:link"

@@ -196,6 +196,22 @@ describe('pnpm service', () => {
     expect(r.out).toContain(`mkdir -p ${join(w.home, 'Library/Logs/com.example.ivr')}`);
   });
 
+  it('runs a host file\'s apps (host.yaml) through the engine\'s bin, in the host file\'s folder', async () => {
+    const w = workspace();
+    mkdirSync(join(w.root, 'deploy'));
+    writeFileSync(join(w.root, 'deploy', 'host.yaml'), 'apps: [../apps/myline]\n');
+    const r = await run(['systemd', '--host', 'deploy/host.yaml', '--env-file', 'myline.env', '--out', 'host.service'], w);
+    expect(r.code).toBe(0);
+    const unit = readFileSync(join(w.root, 'host.service'), 'utf8');
+    const host = join(w.root, 'deploy', 'host.yaml');
+    expect(unit).toContain(`# Written by pnpm service: the DialogWright host file ${host} (host.yaml: myline), run from`);
+    expect(unit).toContain(`WorkingDirectory=${join(w.root, 'deploy')}\n`);
+    expect(unit).toMatch(new RegExp(`\\nExecStart=\\S+node \\S+/bin/dialogwright\\.mjs serve --host ${host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`));
+    expect(r.out).toContain('com.dialogwright.host');
+    const both = await run(['systemd', '--host', 'deploy/host.yaml', '--app', 'myline', '--env-file', 'myline.env'], w);
+    expect(both.code).toBe(2);
+  });
+
   it('gives a stop DRAIN_UNREADY_MS too, when it is set, before the drain\'s DRAIN_MS and the ten seconds', async () => {
     const w = workspace();
     writeFileSync(w.envFile, 'DRAIN_MS=50000\nDRAIN_UNREADY_MS=5000\n');

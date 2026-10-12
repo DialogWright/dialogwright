@@ -7,7 +7,8 @@ import { schemaVersion } from '../server/stores/postgres';
 import { AUDIT_SCHEMA_VERSION, AUDIT_TABLES, verifyPostgresAudit } from './postgres';
 
 /**
- * Re-walk every audit day-file's hash chain and report. The server writes where AUDIT_DIR points
+ * Re-walk every audit day-file's hash chain and report, and on a server of several apps (host.yaml) each
+ * app's folder's in turn (AUDIT_DIR/<app id>, and AUDIT_DIR/_server). The server writes where AUDIT_DIR points
  * (src/server/config.ts), so this reads the same place; a directory argument overrides both. A
  * relative one is from where the command was run (pnpm's INIT_CWD: `pnpm audit:verify` runs this in
  * the engine package's folder), else from the working directory. It is `pnpm audit:verify [dir]` at
@@ -27,10 +28,18 @@ export function main(argv: string[] = process.argv.slice(2), env: NodeJS.Process
     return 0;
   }
   let bad = 0;
-  for (const f of readdirSync(dir).filter((n) => n.endsWith('.jsonl')).sort()) {
-    const r = verifyChain(join(dir, f));
-    if (r.ok) console.log(`${f}: ${r.entries} entries, chain intact`);
-    else { bad++; console.log(`${f}: BROKEN at line ${r.brokenAt} of ${r.entries} (${r.why})`); }
+  const walk = (folder: string, prefix: string): void => {
+    for (const f of readdirSync(folder).filter((n) => n.endsWith('.jsonl')).sort()) {
+      const r = verifyChain(join(folder, f));
+      if (r.ok) console.log(`${prefix}${f}: ${r.entries} entries, chain intact`);
+      else { bad++; console.log(`${prefix}${f}: BROKEN at line ${r.brokenAt} of ${r.entries} (${r.why})`); }
+    }
+  };
+  walk(dir, '');
+  // A server of several apps (host.yaml) keeps each app's day files in a folder of its own (AUDIT_DIR/<app
+  // id>), and the server's own in AUDIT_DIR/_server: each folder's chains, by its name.
+  for (const sub of readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && /^(_server|[a-z][a-z0-9_-]*)$/.test(e.name)).map((e) => e.name).sort()) {
+    walk(join(dir, sub), `${sub}/`);
   }
   return bad ? 1 : 0;
 }

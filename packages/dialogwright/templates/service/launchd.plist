@@ -1,16 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file. -->
+<!-- Written by pnpm service: the DialogWright {{what}}, run from the repository with its settings file. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>{{label}}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{{pnpm}}</string>
-    <string>--filter</string>
-    <string>{{app}}</string>
-    <string>serve</string>
+{{programArguments}}
   </array>
   <key>WorkingDirectory</key>
   <string>{{root}}</string>

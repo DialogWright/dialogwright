@@ -196,6 +196,8 @@ export { candidateSpans, candidateWordSpans, FILLER_WORDS, MAX_WORD_NGRAM } from
 
 // The server: the phone line, the console and the app's own routes.
 export { startServer, main as serverMain } from './server/index';
+export { loadHost } from './server/host';
+export type { HostApp, HostRouting } from './server/host';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';
 export { routeOwns, validateRoutes } from './server/appRoutes';
 export type { AppRoute, AppRoutes, AppRouteDeps, AppRoutesFactory } from './server/appRoutes';

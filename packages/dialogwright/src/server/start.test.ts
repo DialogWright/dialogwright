@@ -264,4 +264,60 @@ describe('pnpm start', () => {
     expect(scripts.start).toBe('tsx packages/dialogwright/src/define/cli.ts start');
     expect(scripts.configure).toBe('tsx packages/dialogwright/src/define/cli.ts configure');
   });
+
+  describe('with a host file (host.yaml: several apps on one server)', () => {
+    /** The workspace with a second app, `beta`, a host file over both, and the server's settings beside it. */
+    function hosted(settings: string | null = PHONE, host = 'apps: [apps/alpha, apps/beta]\ndefault: beta\n'): { root: string } {
+      const { root } = workspace(`${PHONE}PUBLIC_HOST=ivr.example.com\nPRIORITY_LINE=+15555550101\n`);
+      mkdirSync(join(root, 'apps', 'beta'), { recursive: true });
+      writeFileSync(join(root, 'apps', 'beta', 'package.json'), JSON.stringify({ name: '@example/beta', scripts: { serve: 'tsx src/serve.ts' } }));
+      writeFileSync(join(root, 'apps', 'beta', 'app.yaml'), 'id: beta\n');
+      writeFileSync(join(root, 'host.yaml'), host);
+      if (settings !== null) writeFileSync(join(root, '.env'), settings);
+      return { root };
+    }
+    const SELF = { command: '/usr/local/bin/node', args: ['--import', 'tsx', '/repo/cli.ts'] };
+
+    it('runs every app the host file beside the apps lists, as this command line\'s serve, with the .env beside it', async () => {
+      const { root } = hosted(`${PHONE}PUBLIC_HOST=ivr.example.com\n`);
+      const h = harness(root);
+      h.deps.self = SELF;
+      const done = main([], h.deps);
+      await until(() => h.spawned.length === 1);
+      const server = h.spawned[0]!;
+      expect([server.command, ...server.args]).toEqual(['/usr/local/bin/node', '--import', 'tsx', '/repo/cli.ts', 'serve', '--host', join(root, 'host.yaml')]);
+      expect(server.options.cwd).toBe(root);
+      expect(server.options.env!.ENV_FILE).toBe(join(root, '.env'));
+      expect(h.out[0]).toBe(`[start] the apps of ${join(root, 'host.yaml')} (alpha, beta; default beta), settings from ${join(root, '.env')}`);
+      expect(h.out).toContain('[start] telnyx voice webhook (POST): https://ivr.example.com/voice/telnyx');
+      server.exit(0);
+      expect(await done).toBe(0);
+    });
+
+    it('takes --host, and --app for one app as before; not both', async () => {
+      const { root } = hosted(`${PHONE}PUBLIC_HOST=ivr.example.com\n`);
+      const h = harness(root);
+      h.deps.self = SELF;
+      const one = main(['--app', 'alpha'], h.deps);
+      await until(() => h.spawned.length === 1);
+      expect([h.spawned[0]!.command, ...h.spawned[0]!.args]).toEqual(['pnpm', '--filter', '@example/alpha', 'serve']);
+      h.spawned[0]!.exit(0);
+      await one;
+      const both = harness(root);
+      expect(await main(['--app', 'alpha', '--host', 'host.yaml'], both.deps)).toBe(2);
+      expect(both.out[0]).toContain('give one of them');
+    });
+
+    it('says the host file\'s problems, and a missing settings file, before it starts anything', async () => {
+      const bad = hosted(PHONE, 'apps: [apps/alpha, apps/gone]\n');
+      const h = harness(bad.root);
+      expect(await main([], h.deps)).toBe(1);
+      expect(h.out[0]).toMatch(/host\.yaml:1:20  apps\[1\]  the app folder apps\/gone does not exist/);
+      expect(h.spawned).toEqual([]);
+      const none = hosted(null);
+      const n = harness(none.root);
+      expect(await main([], n.deps)).toBe(1);
+      expect(n.out[0]).toContain(`no settings file at ${join(none.root, '.env')}: write the server's settings there`);
+    });
+  });
 });

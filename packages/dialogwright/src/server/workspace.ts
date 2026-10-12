@@ -24,6 +24,13 @@ export interface WorkspaceApp {
 /** The repository root: the folder with pnpm-workspace.yaml above this package (../define/home.ts). */
 export const WORKSPACE_ROOT = REPO_ROOT;
 
+/**
+ * The engine's own command line as a file node runs (bin/dialogwright.mjs, which registers tsx's loader
+ * and runs src/define/cli.ts here, or its build in a package): what runs a host file's server, `node
+ * <it> serve --host <file>`, from `pnpm start --host` and a service file alike, in any folder.
+ */
+export const ENGINE_BIN = fileURLToPath(new URL('../../bin/dialogwright.mjs', import.meta.url));
+
 /** Whether the engine runs from the DialogWright repository (src/, or a build beside it), not installed in a project's node_modules. */
 export const ENGINE_IN_REPOSITORY = IN_REPOSITORY;
 

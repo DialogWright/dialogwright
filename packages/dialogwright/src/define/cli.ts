@@ -1,9 +1,10 @@
 #!/usr/bin/env tsx
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { appFolderAt } from './appFolder';
+import { HOST_FILE_NAME, resolveHostFile } from './host';
 import { INSTALLED } from './home';
 import { checkAppFully } from './check';
 import { createApp, CreateAppError, displayNameOf, REPO_ROOT } from './createApp';
@@ -28,7 +29,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright kb:model | kb:index | kb:bakeoff   (../kb/commands.ts: the knowledge base's retrieval)
  *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
  *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
- *   dialogwright configure | start | diagnose | service | fallback | console:link   (../server: running an app)
+ *   dialogwright configure | start | serve | diagnose | service | fallback | console:link   (../server: running an app, or a host file's apps)
  *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
  *   dialogwright help
  *
@@ -44,7 +45,7 @@ import { formatProblem, type Problem } from './problems';
  * it is `pnpm create-app` at the repository root. It exits 1 for a name it refuses or a folder that
  * exists, and 2 for a command line it does not understand.
  *
- * The commands that run an app (configure, start, diagnose, service, fallback, console:link) and
+ * The commands that run an app (configure, start, serve, diagnose, service, fallback, console:link) and
  * audit:verify are their modules' own, given this process's terminal, environment and folder; each
  * prints its own usage.
  */
@@ -59,7 +60,8 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
   ['policy:convert', 'policy.yaml and identity.yaml from the old table shape to the current one'],
   ['configure', "ask, and write the app's .env: a laptop with no keys, or a phone line"],
-  ['start', "the app's server with its .env, through a quick tunnel when PUBLIC_HOST is unset"],
+  ['start', "the app's server with its .env (or a host file's apps: --host), through a quick tunnel when PUBLIC_HOST is unset"],
+  ['serve', "the server of a host file (host.yaml: several apps on one server), the process pnpm start --host runs"],
   ['diagnose', 'what is misconfigured, one line per check with its fix (--offline: no requests)'],
   ['service', 'a launchd or systemd service file with this machine\'s paths; prints the install commands'],
   ['fallback', 'the document a carrier plays when it cannot reach the server'],
@@ -74,8 +76,9 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
 ];
 
 export const USAGE = [
-  'usage: dialogwright check [--json] [dir...]',
-  '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace',
+  'usage: dialogwright check [--json] [dir... | host.yaml...]',
+  '  dir: an app folder (one with app.yaml); with none, the working directory, or the app folders under apps/ of the workspace (and host.yaml beside them)',
+  '  host.yaml: a host file (several apps on one server): its apps exist, each passes its own check, no number twice, the default is one of them',
   '       dialogwright create-app <name> [--identity] [--dir path] [--display text] [--no-install] [--standalone [--dialogwright spec]]',
   '  name: lowercase letters, digits and hyphens; the new app is apps/<name> unless --dir says where',
   '  --standalone: a project of its own, outside this repository, depending on the dialogwright package (<name> in the folder it is run in, unless --dir);',
@@ -111,7 +114,7 @@ export const USAGE = [
   '  dir: an app folder with a kb/, or a kb folder; lists the passages by state (fresh, stale, unapproved) and the drafts, with the fix for each',
   '       dialogwright regress [dir] [options]',
   '  the app\'s regression run, as its src/regress.ts runs it (dialogwright regress --help: the options)',
-  '       dialogwright configure | start | diagnose | service | fallback | console:link | audit:verify [options]',
+  '       dialogwright configure | start | serve | diagnose | service | fallback | console:link | audit:verify [options]',
   '  running an app: each prints its own usage; dialogwright help lists every command',
 ].join('\n');
 
@@ -125,6 +128,7 @@ export function helpText(): string {
 const PROCESS_COMMANDS: Readonly<Record<string, () => Promise<(argv: readonly string[]) => Promise<number> | number>>> = {
   configure: async () => (await import('../server/setup')).commandLine,
   start: async () => (await import('../server/start')).commandLine,
+  serve: async () => (await import('../server/hostServe')).commandLine,
   diagnose: async () => (await import('../server/doctor')).commandLine,
   service: async () => (await import('../server/serviceFile')).commandLine,
   fallback: async () => (await import('../server/fallback')).commandLine,
@@ -164,6 +168,15 @@ const stdio = (): Io => ({
   cwd: process.cwd(),
   ...(process.env.INIT_CWD ? { invokedFrom: process.env.INIT_CWD } : {}),
 });
+
+/** A folder's real path, or the path as given when it cannot be resolved. */
+function realOrSame(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
 
 const pnpmInstall = (root: string): number => spawnSync('pnpm', ['install'], { cwd: root, stdio: 'inherit' }).status ?? 1;
 
@@ -255,19 +268,46 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   }
   const given = rest.filter((a) => !a.startsWith('-'));
   let dirs: { label: string; path: string }[];
+  /** Host files (host.yaml: several apps on one server): one named, or the one beside the apps. */
+  let hosts: { label: string; path: string }[] = [];
   let discovered = false;
   if (given.length > 0) {
-    dirs = given.map((d) => ({ label: d, path: resolve(io.cwd, d) }));
+    const isFile = (d: string): boolean => {
+      try {
+        return statSync(resolve(io.cwd, d)).isFile();
+      } catch {
+        return false;
+      }
+    };
+    hosts = given.filter(isFile).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
+    dirs = given.filter((d) => !isFile(d)).map((d) => ({ label: d, path: resolve(io.cwd, d) }));
   } else {
     const found = findAppFolders(io.cwd);
     discovered = true;
     dirs = found.dirs.map((path) => ({ label: relative(found.root, path) || '.', path }));
-    if (dirs.length === 0 && !json) {
+    if (existsSync(join(found.root, HOST_FILE_NAME))) hosts = [{ label: HOST_FILE_NAME, path: join(found.root, HOST_FILE_NAME) }];
+    if (dirs.length === 0 && hosts.length === 0 && !json) {
       io.out('no app folders found: no folder under apps/ has an app.yaml');
+    }
+  }
+  // A host file's own problems, and each app it lists that is not checked already, checked as its own.
+  const hostProblems = new Map<string, Problem[]>();
+  for (const h of hosts) {
+    const { host, problems } = resolveHostFile(h.path);
+    hostProblems.set(h.label, problems.map((p) => ({ ...p, file: h.label })));
+    for (const app of host?.apps ?? []) {
+      if (dirs.some((d) => realOrSame(d.path) === app.dir)) continue;
+      dirs.push({ label: relative(io.cwd, app.dir) || '.', path: app.dir });
     }
   }
 
   const results: Record<string, Problem[]> = {};
+  for (const [label, problems] of hostProblems) {
+    results[label] = problems;
+    if (json) continue;
+    for (const problem of problems) io.out(formatProblem(problem));
+    io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);
+  }
   for (const { label, path } of dirs) {
     const { problems, codeChecked, warnings } = await checkAppFully(path);
     results[label] = problems;
@@ -281,7 +321,7 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
     io.out(problems.length === 0 ? `${label}: ok` : `${problems.length} problem${problems.length === 1 ? '' : 's'} in ${label}`);
     if (!codeChecked && problems.length === 0) io.err(`${label}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`);
   }
-  if (json) io.out(JSON.stringify(dirs.length === 1 && !discovered ? results[dirs[0]!.label] : results, null, 2));
+  if (json) io.out(JSON.stringify(dirs.length === 1 && hosts.length === 0 && !discovered ? results[dirs[0]!.label] : results, null, 2));
   return Object.values(results).some((problems) => problems.length > 0) ? 1 : 0;
 }
 
