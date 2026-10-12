@@ -491,3 +491,25 @@ describe('startParametersFrom (app.yaml startParameters)', () => {
     expect(() => startParametersFrom({ startParameters: { line: 'env.LINE' } }, { LINE: 'east\nwest' })).toThrow('LINE (app.yaml\'s startParameters "line") has a control character');
   });
 });
+
+describe("the carriers' rates a minute (CARRIER_RATE_PER_MIN_<CARRIER>), for the console's Insights", () => {
+  it('unset by default: no rate, and Insights shows no carrier cost', () => {
+    expect(loadConfig(base).carrierRates).toBeUndefined();
+    expect(describeConfig(loadConfig(base))).not.toContain('carrier rates');
+  });
+
+  it('each carrier set on its own, in dollars a minute, said at start', () => {
+    const c = loadConfig({ ...base, CARRIER_RATE_PER_MIN_TWILIO: '0.014' });
+    expect(c.carrierRates).toEqual({ twilio: 0.014 });
+    expect(loadConfig({ ...base, CARRIER_RATE_PER_MIN_TWILIO: '0.014', CARRIER_RATE_PER_MIN_TELNYX: ' 0.007 ' }).carrierRates).toEqual({ twilio: 0.014, telnyx: 0.007 });
+    expect(loadConfig({ ...base, CARRIER_RATE_PER_MIN_TELNYX: '0' }).carrierRates).toEqual({ telnyx: 0 });
+    expect(describeConfig(c)).toContain('carrier rates twilio $0.014/min');
+  });
+
+  it('refuses a rate that is not a plain number of dollars from 0 to 100, naming the variable', () => {
+    for (const bad of ['-0.01', 'abc', '1e-2', '$0.01', '101', '0.01/min']) {
+      expect(() => loadConfig({ ...base, CARRIER_RATE_PER_MIN_TWILIO: bad }), bad).toThrow(`CARRIER_RATE_PER_MIN_TWILIO must be the carrier's charge a minute in dollars, a number from 0 to 100 (like 0.014), got "${bad}"`);
+    }
+    expect(() => loadConfig({ ...base, CARRIER_RATE_PER_MIN_TELNYX: 'x' })).toThrow('CARRIER_RATE_PER_MIN_TELNYX must be');
+  });
+});

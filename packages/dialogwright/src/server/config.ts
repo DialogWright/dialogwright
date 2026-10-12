@@ -296,6 +296,13 @@ export interface ServerConfig {
    * folder is on, /health's `disk` says `low` and the log warns once an hour. In bytes. Absent when unset.
    */
   diskWarnFreeBytes?: number;
+  /**
+   * CARRIER_RATE_PER_MIN_TWILIO and CARRIER_RATE_PER_MIN_TELNYX, unset by default: what each carrier
+   * charges a minute, in dollars, for the console's Insights (the carrier's cost of the calls it carried,
+   * each call's length rounded up to the minute, as carriers bill). Only the carriers with a rate set are
+   * here; absent when neither is, and Insights then shows no carrier cost at all.
+   */
+  carrierRates?: Readonly<Partial<Record<'twilio' | 'telnyx', number>>>;
   /** LOG_FILE (with LOG_MAX_MB and LOG_KEEP), unset by default: the server's own log, rolled (server/logFile.ts). */
   logFile?: LogFileSetting;
   /**
@@ -670,6 +677,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
     ...gigabytesOf(env, 'TRACE_MAX_GB', 'traceMaxBytes'),
     ...gigabytesOf(env, 'DISK_WARN_FREE_GB', 'diskWarnFreeBytes'),
+    ...carrierRatesOf(env),
     ...(() => {
       const logFile = logFileSettingOf(env);
       return logFile === null ? {} : { logFile };
@@ -783,6 +791,21 @@ function gigabytesOf<K extends 'traceMaxBytes' | 'diskWarnFreeBytes'>(env: Env, 
   const gb = Number(raw);
   if (!Number.isFinite(gb) || gb <= 0 || gb > 100_000 || !/^\d+(\.\d+)?$/.test(raw)) throw new Error(`${name} must be a number of gigabytes above 0 (like 5 or 0.5), got "${env[name]}"`);
   return { [key]: Math.round(gb * 1024 ** 3) } as { [k in K]?: number };
+}
+
+/** The carriers' rates a minute (CARRIER_RATE_PER_MIN_<CARRIER>), each a number of dollars from 0 up to 100; nothing when none is set. */
+export const CARRIER_RATE_VARIABLES = { twilio: 'CARRIER_RATE_PER_MIN_TWILIO', telnyx: 'CARRIER_RATE_PER_MIN_TELNYX' } as const;
+
+function carrierRatesOf(env: Env): { carrierRates?: Partial<Record<'twilio' | 'telnyx', number>> } {
+  const rates: Partial<Record<'twilio' | 'telnyx', number>> = {};
+  for (const [carrier, name] of Object.entries(CARRIER_RATE_VARIABLES) as ['twilio' | 'telnyx', string][]) {
+    const raw = env[name]?.trim();
+    if (raw === undefined || raw === '') continue;
+    const rate = Number(raw);
+    if (!/^\d+(\.\d+)?$/.test(raw) || !Number.isFinite(rate) || rate > 100) throw new Error(`${name} must be the carrier's charge a minute in dollars, a number from 0 to 100 (like 0.014), got "${env[name]}"`);
+    rates[carrier] = rate;
+  }
+  return Object.keys(rates).length === 0 ? {} : { carrierRates: rates };
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
@@ -1004,6 +1027,7 @@ export function describeConfig(c: ServerConfig): string {
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}${c.traceMaxBytes !== undefined ? `, at most ${gb(c.traceMaxBytes)}` : ''}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
     ...(c.diskWarnFreeBytes !== undefined ? [`warn below ${gb(c.diskWarnFreeBytes)} free`] : []),
+    ...(c.carrierRates ? [`carrier rates ${Object.entries(c.carrierRates).map(([k, v]) => `${k} $${v}/min`).join(', ')}`] : []),
     ...(c.logFile ? [`log ${c.logFile.file} (rolled at ${Math.round(c.logFile.maxBytes / 1024 ** 2)} MB, ${c.logFile.keep} kept)`] : []),
     ...(c.sessionStore ? [describeSessionStore(c.sessionStore), describeResumedAfter(c.resumedAfterMs ?? DEFAULT_RESUMED_AFTER_MS)] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
