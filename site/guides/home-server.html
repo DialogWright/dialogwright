@@ -78,7 +78,7 @@
           <li><a href="#phone">Looking at calls from your phone</a></li>
           <li><a href="#care">Updating, the disk, backups, security</a></li>
           <li><a href="#by-hand">By hand, without the commands</a></li>
-          <li><a href="#coming">What is coming</a></li>
+          <li><a href="#beyond">Beyond one machine, and several lines</a></li>
           <li><a href="#sources">Sources</a></li>
         </ol>
       </nav>
@@ -1093,18 +1093,18 @@ curl -s http://localhost:3000/ready
 curl -s -o /dev/null -w '%{http_code}\n' https://ivr.example.com/dashboard   # 404, or 302 to the sign-in with CONSOLE_AUTH=token</code></pre>
       </section>
 
-      <section id="coming" aria-labelledby="coming-title">
-        <h2 id="coming-title">13. What is coming</h2>
+      <section id="beyond" aria-labelledby="beyond-title">
+        <h2 id="beyond-title">13. Beyond one machine, and several lines</h2>
         <p>
-          Everything on this page is built: one machine, run for months. When one machine is no longer enough (a deploy that must
-          never drop a call, more calls than one machine answers), the same app folder is designed to run on many servers: the
-          session stores this page uses sit behind interfaces with one contract suite, so a store many servers share is a drop-in,
-          beside a shared audit, traces in object storage and a console with roles. That is Phase 8b, designed and not built yet.
+          When one machine is no longer enough (a deploy that must never drop a call, more calls than one machine answers), the
+          same app folder runs on many servers: the session stores this page uses sit behind interfaces with one contract suite,
+          and a Postgres store many servers share is a drop-in, beside the audit in Postgres, traces on S3-compatible storage and
+          one console across the servers. That is built (Phase 8b); the scaling guide tells it step by step.
         </p>
         <p>
           One machine can also answer several lines, each its own app: a <code>host.yaml</code> beside the apps points each number
           callers dial at an app (any other number reaches the default), each app keeping its own settings, records and chat, and one
-          console showing them all. <code>pnpm start --host host.yaml</code> runs them in one server.
+          console showing them all. <code>pnpm start --host host.yaml</code> runs them in one server. That is built too.
         </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">The roadmap</a>

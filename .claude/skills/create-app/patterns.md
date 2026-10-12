@@ -1458,7 +1458,7 @@ default: utility                               # any other number, or none
 ```
 
 - **One app per business, not one app with a branch per number.** Two businesses' policies, prompts and records stay apart only as two apps. Within one app, a number that changes the language or the first line is a `called` route ([Routes](#routes-the-calls-start-after-identity-after-a-form)), not a second app.
-- **Settings:** the numbers are in the server's `.env` beside `host.yaml`, with what every app shares (the carrier, the model, `PUBLIC_HOST`); each app's own `.env` holds only the variables its YAML names (its transfer targets), so two apps may each have a `MAIN_LINE` of their own. Calls never move between apps.
+- **Settings:** the numbers are in the server's `.env` beside `host.yaml`, with what every app shares (the carrier, the model, `PUBLIC_HOST`); each app's own `.env` holds only the variables its YAML names (its transfer targets), its services' URLs (`services:` in `host.yaml`) and its own `HANDOFF_NUMBER` (and `CHAT_AUDIENCE`), so two apps may each have a `MAIN_LINE`, and a person to hand off to, of their own. An app with no transfer targets should set its own `HANDOFF_NUMBER`, or its callers reach the server's. Calls never move between apps.
 - **Test:** each app's own tests and regression, as for an app alone; then `pnpm check host.yaml` and `pnpm diagnose --host host.yaml`.
 - **Pitfall:** what an app's own launcher (`src/serve.ts`) starts beside the server (its services, its demo pages) does not run under a host ([authoring guide, 14.15](../../../docs/guide/14-running-it.md#1415-several-apps-on-one-server-hostyaml)).
 
