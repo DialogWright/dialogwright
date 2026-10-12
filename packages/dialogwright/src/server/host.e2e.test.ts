@@ -14,6 +14,7 @@ import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { AuditEntry } from '../audit/types';
 import type { ServerMessage } from '../channel/chat/protocol';
 import { HOST_APP_PARAMETER } from '../channel/callData';
+import { alertCount, liveList, type CallRow } from './dashboard/view.js';
 
 /**
  * Several apps on one server (host.yaml, server/host.ts), end to end over the host fixture
@@ -95,11 +96,11 @@ function startOf(doc: string, ws: string): { url: string; parameters: Record<str
 }
 
 /** A whole call's start: answered for `to`, the socket opened, the setup sent (with what the carrier echoes back), the first line heard. */
-async function call(s: { base: string; ws: string }, callSid: string, to?: string, setupTo: string | undefined = to): Promise<{ relay: FakeRelay; first: string; parameters: Record<string, string> }> {
+async function call(s: { base: string; ws: string }, callSid: string, to?: string, setupTo: string | undefined = to, from?: string): Promise<{ relay: FakeRelay; first: string; parameters: Record<string, string> }> {
   const { url, parameters } = startOf(await answer(s.base, callSid, to), s.ws);
   const relay = await FakeRelay.connect(url);
   relays.push(relay);
-  relay.setup(callSid, `VX-${callSid}`, { ...(setupTo !== undefined ? { to: setupTo } : { to: '' }), customParameters: parameters });
+  relay.setup(callSid, `VX-${callSid}`, { ...(setupTo !== undefined ? { to: setupTo } : { to: '' }), ...(from !== undefined ? { from } : {}), customParameters: parameters });
   const [first] = await relay.waitForTexts(1);
   return { relay, first: first!, parameters };
 }
@@ -254,5 +255,63 @@ describe('a host of two apps', () => {
       { type: 'call_started', callSid: 'CA0000000000000000000000000000cb05', app: 'callback' },
       { type: 'call_started', callSid: 'CA0000000000000000000000000000sl08', app: 'routed' },
     ]);
+  });
+
+  it('shows both apps\' calls in progress on the console\'s Live list, raises an alert when one turns frustrated, and finds them on the Calls page by the last four and by how they ended', async () => {
+    const s = await start();
+    const a = await call(s, 'CA0000000000000000000000000000cb06', NUMBERS.CALLBACK_LINE, NUMBERS.CALLBACK_LINE, '+15555550144');
+    const b = await call(s, 'CA0000000000000000000000000000sl09', NUMBERS.SERVICE_LINE, NUMBERS.SERVICE_LINE, '+15555550155');
+    // The Live list's feed, as the console's home page reads it: every row first, then each change.
+    const ac = new AbortController();
+    const res = await fetch(`${s.base}/dashboard/events?view=calls`, { signal: ac.signal });
+    const reader = res.body!.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    const rows = new Map<string, CallRow>();
+    let read = 0;
+    const take = (): void => {
+      const blocks = buf.split('\n\n').slice(0, -1);
+      for (const block of blocks.slice(read)) {
+        const event = /^event: (\S+)$/m.exec(block)?.[1];
+        const data = block.split('data: ')[1];
+        if (event === 'rows') for (const r of (JSON.parse(data!) as { rows: CallRow[] }).rows) rows.set(r.callSid!, r);
+        if (event === 'row') { const r = JSON.parse(data!) as CallRow; rows.set(r.callSid!, r); }
+      }
+      read = blocks.length;
+    };
+    const until = async (ok: () => boolean): Promise<void> => {
+      const deadline = Date.now() + 4000;
+      while (!ok() && Date.now() < deadline) { buf += dec.decode((await reader.read()).value, { stream: true }); take(); }
+      expect(ok()).toBe(true);
+    };
+    try {
+      await until(() => rows.size === 2);
+      const shown = () => liveList([...rows.values()], Date.now(), null);
+      expect(shown().map((r) => [r.callSid, r.app, r.from, r.channel, r.provider, r.status]).sort()).toEqual([
+        ['CA0000000000000000000000000000cb06', 'callback', '…0144', 'voice', 'twilio', 'on-track'],
+        ['CA0000000000000000000000000000sl09', 'routed', '…0155', 'voice', 'twilio', 'on-track'],
+      ]);
+      expect(alertCount(shown())).toBe(0);
+      // The service line's caller loses patience: the row turns frustrated, and the alerts count it.
+      b.relay.prompt('this is ridiculous, I already told you');
+      await until(() => rows.get('CA0000000000000000000000000000sl09')?.status === 'frustrated');
+      expect(alertCount(shown())).toBe(1);
+      expect(JSON.stringify([...rows.values()])).not.toContain('+1555');
+    } finally {
+      ac.abort();
+      await reader.cancel().catch(() => {});
+    }
+    // Both hang up: the carrier's action webhook says so.
+    for (const [relay, sid] of [[a.relay, 'CA0000000000000000000000000000cb06'], [b.relay, 'CA0000000000000000000000000000sl09']] as const) {
+      relay.close();
+      await fetch(`${s.base}/cr-action/twilio`, form({ CallSid: sid, CallStatus: 'completed', SessionStatus: 'completed' }));
+    }
+    const calls = async (q: string) => ((await (await fetch(`${s.base}/dashboard/calls${q}`)).json()) as { rows: (CallRow & { appName?: string })[] }).rows;
+    const deadline = Date.now() + 4000;
+    while ((await calls('?ending=hangup')).length < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    expect((await calls('?last4=0155')).map((r) => [r.callSid, r.app, r.appName, r.ending?.kind])).toEqual([['CA0000000000000000000000000000sl09', 'routed', 'Example Service Line', 'hangup']]);
+    expect((await calls('?ending=hangup')).map((r) => r.callSid).sort()).toEqual(['CA0000000000000000000000000000cb06', 'CA0000000000000000000000000000sl09']);
+    expect(await calls('?ending=person')).toEqual([]);
+    expect((await calls('?app=callback&last4=0144')).map((r) => r.callSid)).toEqual(['CA0000000000000000000000000000cb06']);
   });
 });
