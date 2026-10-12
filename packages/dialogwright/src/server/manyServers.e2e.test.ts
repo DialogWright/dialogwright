@@ -11,7 +11,6 @@ import { loadConfig, type Env } from './config';
 import { pgliteSql, type PgliteSql } from './stores/pgliteSql';
 import { FakeRelay } from '../testing/fakeRelay';
 import { useTestkit } from '../testing/apps';
-import { verifyChain } from '../audit/verify';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { loadCorpus } from '../jev/corpus';
@@ -288,14 +287,6 @@ function turnsIn(n: Node, callSid: string): number[] {
   return readFileSync(join(traces, file), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex);
 }
 
-/** A server's audit entries for the call, its chains verified. */
-function auditOf(n: Node, callSid: string): string[] {
-  const dir = join(n.dir, 'audit');
-  const files = readdirSync(dir);
-  for (const f of files) expect(verifyChain(join(dir, f))).toMatchObject({ ok: true });
-  return files.flatMap((f) => readFileSync(join(dir, f), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { type: string; callId: string }))
-    .filter((e) => e.callId === callSid).map((e) => e.type);
-}
 
 /** The call's one trace on the shared store, its segments joined: its turns, and the servers that wrote them. */
 async function joinedTrace(s3: FakeS3, callSid: string): Promise<{ turns: number[]; servers: string[] }> {

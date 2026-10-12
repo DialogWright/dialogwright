@@ -86,10 +86,8 @@ describe('TRACE_STORE=s3://... on a server', () => {
     const joined = (await reader.read('CA0000000000000000000000000000s3a'))!;
     expect(joined.trace.map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex)).toEqual([1, 2, 3]);
 
-    // The console, on a server reading the same store.
-    const again = await boot({ S3_ENDPOINT: s3.endpoint });
-    // The second boot made a store of its own; point it at the first's objects.
-    for (const [k, o] of s3.objects) again.s3.objects.set(k, o);
+    // The console, on another server reading the same store.
+    const again = await boot({ S3_ENDPOINT: s3.endpoint, SERVER_ID: 'web-2' });
     const base = `http://127.0.0.1:${again.server.port}`;
     const list = await (await fetch(`${base}/dashboard/traces`)).json() as { callSid: string; turns: number; startedAt: string }[];
     expect(list).toEqual([expect.objectContaining({ callSid: 'CA0000000000000000000000000000s3a', turns: 3 })]);
