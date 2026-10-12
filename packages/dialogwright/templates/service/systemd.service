@@ -1,4 +1,4 @@
-# Written by pnpm service: the DialogWright {{what}}, run from the repository with its settings file.
+# Written by pnpm service: the DialogWright app {{app}}, run from the repository with its settings file.
 [Unit]
 Description=DialogWright: {{app}}
 After=network-online.target
@@ -10,7 +10,7 @@ WorkingDirectory={{root}}
 Environment="ENV_FILE={{envFile}}"
 Environment="PATH={{path}}"
 Environment="COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
-ExecStart={{exec}}
+ExecStart={{pnpm}} --filter {{app}} serve
 Restart=always
 RestartSec=10
 # On stop: SIGTERM to pnpm, which passes it to the server and waits while it drains; the rest of

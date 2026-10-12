@@ -60,8 +60,26 @@ const unitValue = (s: string) => s.replace(/%/g, '%%');
 const unitWord = (s: string) => (/[\s"'\\]/.test(s) ? `"${unitValue(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : unitValue(s));
 
 /** The file for these inputs, from its template. */
+/**
+ * The template for a host file's server: the one app's, its command (`<pnpm> --filter <app> serve`) and
+ * the words naming the app replaced with the host's. Throws when the template no longer has them.
+ */
+function hostTemplate(kind: ServiceKind, template: string): string {
+  const swaps: [string, string][] = kind === 'launchd'
+    ? [
+      ['the DialogWright app {{app}}', 'the DialogWright {{what}}'],
+      ['    <string>{{pnpm}}</string>\n    <string>--filter</string>\n    <string>{{app}}</string>\n    <string>serve</string>', '{{programArguments}}'],
+    ]
+    : [['the DialogWright app {{app}}', 'the DialogWright {{what}}'], ['ExecStart={{pnpm}} --filter {{app}} serve', 'ExecStart={{exec}}']];
+  return swaps.reduce((text, [from, to]) => {
+    if (!text.includes(from)) throw new Error(`the ${kind} template has no "${from}" for a host file's server to replace`);
+    return text.replace(from, to);
+  }, template);
+}
+
 export function renderService(i: ServiceInputs): string {
-  const template = readFileSync(join(TEMPLATES, i.kind === 'launchd' ? 'launchd.plist' : 'systemd.service'), 'utf8');
+  const own = readFileSync(join(TEMPLATES, i.kind === 'launchd' ? 'launchd.plist' : 'systemd.service'), 'utf8');
+  const template = i.host ? hostTemplate(i.kind, own) : own;
   // What it runs: the app's own launcher through pnpm, or a host file's server through the engine's bin.
   const words = i.host ? [i.host.node, i.host.bin, 'serve', '--host', i.host.file] : [i.pnpm, '--filter', i.app, 'serve'];
   const what = i.host ? `host file ${i.host.file} (${i.app})` : `app ${i.app}`;

@@ -147,6 +147,18 @@ describe('the service files', () => {
     expect(unit).toContain('WorkingDirectory=/Users/alex/R&D <lines>');
   });
 
+  it('runs a host file\'s server, in place of an app\'s, through the engine\'s bin in the host file\'s folder', () => {
+    const host = { file: '/Users/alex/ivr/host.yaml', dir: '/Users/alex/ivr', node: '/opt/homebrew/opt/node@24/bin/node', bin: '/Users/alex/dialogwright/packages/dialogwright/bin/dialogwright.mjs' };
+    const plist = renderService({ kind: 'launchd', ...INPUTS, app: 'host.yaml: clinic, utility', host });
+    expect(plist).toContain('<!-- Written by pnpm service: the DialogWright host file /Users/alex/ivr/host.yaml (host.yaml: clinic, utility), run from');
+    expect(plist).toContain(`  <array>\n    <string>${host.node}</string>\n    <string>${host.bin}</string>\n    <string>serve</string>\n    <string>--host</string>\n    <string>${host.file}</string>\n  </array>`);
+    expect(plist).toContain('<key>WorkingDirectory</key>\n  <string>/Users/alex/ivr</string>');
+    expect(plist).not.toContain('--filter');
+    const unit = renderService({ kind: 'systemd', ...INPUTS, app: 'host.yaml: clinic, utility', host });
+    expect(unit).toContain(`ExecStart=${host.node} ${host.bin} serve --host ${host.file}\n`);
+    expect(unit).toContain('WorkingDirectory=/Users/alex/ivr\n');
+  });
+
   it('puts each in the place its manager reads, by label', () => {
     expect(servicePath('launchd', 'com.example.ivr', '/Users/alex')).toBe('/Users/alex/Library/LaunchAgents/com.example.ivr.plist');
     expect(servicePath('systemd', 'com.example.ivr', '/home/alex')).toBe('/home/alex/.config/systemd/user/com.example.ivr.service');

@@ -10,9 +10,7 @@ import { formatProblem } from '../define/problems';
 import type { Env } from './config';
 import { readEnvFile } from './envFile';
 import { E164 } from './transfer';
-import { HOST_APP_PARAMETER } from '../channel/callData';
-import type { SetupFrame } from '../channel/relay/frames';
-import { setupCalledOf } from './voice/registry';
+
 
 /**
  * Several apps on one server (host.yaml, ../define/host.ts): the apps it runs, each with the
@@ -116,10 +114,9 @@ export function hostNumbers(wanted: readonly { variable: string; app: string }[]
  * answer webhook chose by the number called and the carrier hands back), else the one the setup's own
  * number called reaches, else the default. So the setup agrees with the answer on whichever server it lands.
  */
-export function appOfSetup(host: Pick<HostRouting, 'appFor' | 'has'>, provider: string, setup: SetupFrame): string {
-  const named = setup.customParameters?.[HOST_APP_PARAMETER];
+export function appOfSetup(host: Pick<HostRouting, 'appFor' | 'has'>, named: string | undefined, called: string | null): string {
   if (typeof named === 'string' && host.has(named)) return named;
-  return host.appFor(setupCalledOf(provider, setup));
+  return host.appFor(called);
 }
 
 /**

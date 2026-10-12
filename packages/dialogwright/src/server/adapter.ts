@@ -7,7 +7,7 @@ import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFA
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
-import { callDataFrom } from '../channel/callData';
+import { callDataFrom, HOST_APP_PARAMETER } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
 import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
@@ -1168,8 +1168,11 @@ export interface ConnectionContext {
 
 /** A host's side of the adapter (AdapterDeps.host). */
 export interface AdapterHost {
-  /** The app a new call starts in: the one its start document named (HOST_APP_PARAMETER), else the one the setup's number called reaches, else the default. */
-  appOfSetup(provider: string, setup: SetupFrame): string;
+  /**
+   * The app a new call starts in, from its setup: the one its start document named (`named`, the setup's
+   * HOST_APP_PARAMETER), else the one the number called (`called`) reaches, else the default.
+   */
+  appOfSetup(named: string | undefined, called: string | null): string;
   /** An app's transfer targets, by its id. */
   transferOf(appId: string): ServerTransfer | null;
 }
@@ -1811,7 +1814,9 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     return;
   }
   // On a host, the app its number reached; on a server of one, the default, as before.
-  const entry = deps.host ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(ctx.provider, parsed)) : deps.store.create(callId, socket, ctx.provider);
+  const entry = deps.host
+    ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)))
+    : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
   entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));

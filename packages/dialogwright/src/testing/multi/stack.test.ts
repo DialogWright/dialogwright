@@ -102,14 +102,18 @@ const NEVER = ['.env', '.env.production', 'prod.env', 'secrets/prod.env', 'serve
 describe('the repository\'s .dockerignore, an allowlist', () => {
   const ignored = dockerIgnored(read('.dockerignore').split('\n'));
 
-  it('keeps every tracked file of the workspace\'s manifests, its packages and its apps but two, and nothing else', () => {
+  it('keeps every tracked file of the workspace\'s manifests, its packages and its apps but four, and nothing else', () => {
     const kept = tracked.filter((f) => !ignored(f));
     const manifests = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'tsconfig.base.json'];
     expect(kept.filter((f) => !/^(packages|apps)\//.test(f)).sort()).toEqual([...manifests].sort());
     const inside = tracked.filter((f) => /^(packages|apps)\//.test(f));
     expect(inside.length).toBeGreaterThan(500);
-    // A test fixture of a dotfile and a package's own .gitignore: neither is read by a server.
-    expect(inside.filter(ignored).sort()).toEqual(['packages/kb-author/src/__fixtures__/folder/.draft.md', 'packages/widget/.gitignore']);
+    // A test fixture of a dotfile, the host fixture's two app settings files (an env file under any name
+    // stays out), and a package's own .gitignore: none is read by a server.
+    expect(inside.filter(ignored).sort()).toEqual([
+      'packages/dialogwright/src/testing/host/callback.env', 'packages/dialogwright/src/testing/host/routed.env',
+      'packages/kb-author/src/__fixtures__/folder/.draft.md', 'packages/widget/.gitignore',
+    ]);
     for (const f of ['apps/clinic/.env.example', 'apps/utility/kb/.index/potion-base-8M.json', 'packages/dialogwright/src/audit/postgres.ts']) expect(ignored(f), f).toBe(false);
   });
 

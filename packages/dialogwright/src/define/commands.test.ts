@@ -50,7 +50,7 @@ describe('dialogwright: one command line', () => {
     const viaEntry = (line: string): string | null => /src\/define\/cli\.ts (\S+)/.exec(line)?.[1] ?? null;
     const rootCommands = Object.values(scripts(ROOT)).map(viaEntry).filter((c): c is string => c !== null);
     const packageCommands = Object.values(scripts(PACKAGE_DIR)).map(viaEntry).filter((c): c is string => c !== null);
-    expect(rootCommands.sort()).toEqual(['audit:verify', 'configure', 'console:link', 'diagnose', 'fallback', 'service', 'start']);
+    expect(rootCommands.sort()).toEqual(['audit:verify', 'configure', 'console:link', 'diagnose', 'fallback', 'serve', 'service', 'start']);
     for (const command of [...rootCommands, ...packageCommands]) expect(names, command).toContain(command);
     // The root's other engine scripts go through the package's, which run the entry.
     for (const [script, line] of Object.entries(scripts(ROOT))) {

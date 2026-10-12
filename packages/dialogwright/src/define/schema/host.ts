@@ -51,7 +51,8 @@ const appEntry = z
 
 const numberEntry = z
   .strictObject({
-    number: matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s settings file to the E.164 number callers dial; a number is never written in YAML')
+    // The same message and fix as app.yaml's references: the fix is kept by the pattern (common.ts matching).
+    number: matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable in the server\'s environment (.env); a value is never written in YAML')
       .describe('The number callers dial, as env.<NAME>: the variable in the server\'s settings file holds it, an E.164 number like +15551234567.'),
     app: appId().describe('The app a call to this number reaches: the id its app.yaml gives it.'),
   })

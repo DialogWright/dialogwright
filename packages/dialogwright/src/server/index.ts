@@ -39,7 +39,6 @@ import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
 import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
 import type { RenderContext } from '../prompts/render';
-import type { SetupFrame } from '../channel/relay/frames';
 import { demoTools } from '../core/tools';
 import { AuditLog } from '../audit/log';
 import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
@@ -698,7 +697,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       ...(transfer ? { transfer } : {}),
       // On a host, a new call starts in the app its number reached, with that app's transfer targets.
-      ...(host ? { host: { appOfSetup: (provider: string, setup: SetupFrame) => appOfSetup(host, provider, setup), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null } } : {}),
+      ...(host ? { host: { appOfSetup: (named: string | undefined, called: string | null) => appOfSetup(host, named, called), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null } } : {}),
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.
