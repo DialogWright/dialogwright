@@ -88,6 +88,13 @@ export interface TraceRecord {
    */
   configHash?: string;
   /**
+   * Written by a server after it had let the call go (TRACE_STORE=s3://..., trace/store.ts): a turn that
+   * outlived its server's hold on the call, whose record is kept for what it did, but whose turn the
+   * server that took the call over ran too. Readers show it marked, and kb:gaps and the turn counts pass
+   * over it. Absent on every other record (and always on one machine).
+   */
+  outlivedHold?: true;
+  /**
    * What answers the call's asks (JevClient.answeredBy): the provider, the model id, and whether it
    * is TypeSafe's Jev (`official`), whose probabilities the thresholds were measured on. Only on the
    * session start's record, so a run says what answered it; absent for a stub, which asks no model,

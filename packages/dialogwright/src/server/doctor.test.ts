@@ -532,9 +532,9 @@ describe('pnpm diagnose', () => {
         try {
           const env = { ...goodEnv(dir), TRACE_STORE: 's3://call-traces/prod', S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY_ID: KEYS.accessKeyId, S3_SECRET_ACCESS_KEY: KEYS.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' };
           const ok = byId(await runDoctor({ env, cwd: dir }, deps()), 'traces');
-          expect(ok).toEqual({ id: 'traces', status: 'ok', message: `TRACE_STORE s3://call-traces/prod/ at 127.0.0.1:${s3.port} (us-east-1) takes a test object, gives it back and deletes it: each server writes its calls' segments there` });
+          expect(ok).toEqual({ id: 'traces', status: 'ok', message: `TRACE_STORE s3://call-traces/prod/ at 127.0.0.1:${s3.port} (us-east-1) takes a test object, lists it, gives it back and deletes it: each server writes its calls' segments there` });
           expect(s3.objects.size).toBe(0);
-          expect(s3.requests.map((r) => r.method)).toEqual(['PUT', 'GET', 'DELETE']);
+          expect(s3.requests.map((r) => r.method)).toEqual(['PUT', 'GET', 'GET', 'DELETE']);
           expect(s3.requests[0]!.key).toMatch(/^prod\/dw-diagnose-[0-9a-f]{8}\.txt$/);
           const wrong = byId(await runDoctor({ env: { ...env, S3_SECRET_ACCESS_KEY: 'not-the-secret' }, cwd: dir }, deps()), 'traces');
           expect(wrong.status).toBe('fail');

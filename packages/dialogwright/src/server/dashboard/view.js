@@ -825,6 +825,12 @@ export function reduce(events, opts) {
       }
       case 'turn': {
         const r = e.record;
+        // A record a server wrote after it had let the call go (TRACE_STORE, trace/store.ts): the server
+        // that took the call ran this turn too, so it is shown as a marker and changes nothing on screen.
+        if (r.outlivedHold === true) {
+          v.lines.push({ kind: 'marker', text: 'a late turn: written after its server let the call go', turn: r.turnIndex });
+          break;
+        }
         turnsSeen += 1;
         // The language the session speaks, which only an app that declares locales records.
         if (typeof r.locale === 'string') v.locale = r.locale;

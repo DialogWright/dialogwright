@@ -520,14 +520,21 @@ describe('reading traces from a trace store (TRACE_STORE=s3://...)', () => {
         for (const [i, part] of parts.entries()) {
           const turns = part.map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex);
           const ms = Date.parse((JSON.parse(part[0]!) as { ts: string }).ts);
-          const name = segmentName({ first: turns[0]!, last: Math.max(...turns), ms, server: i === 0 ? 'a-11111111' : 'b-22222222', n: i + 1, kind: 'trace' });
-          await client.put(`prod/${id}/${name}`, part.map((l) => `${l}\n`).join(''));
+          const name = segmentName({ first: turns[0]!, last: Math.max(...turns), gen: i, ms, server: i === 0 ? 'a-11111111' : 'b-22222222', n: i + 1, kind: 'trace' });
+          await client.put(`prod/${new Date(ms).toISOString().slice(0, 10)}/${id}/${name}`, part.map((l) => `${l}\n`).join(''));
+          // A record a server wrote after it let the call go is passed over, as a line that is not a turn.
+          if (i === 0) {
+            const late = { ...(JSON.parse(part[0]!) as object), outlivedHold: true };
+            await client.put(`prod/${new Date(ms).toISOString().slice(0, 10)}/${id}/${segmentName({ first: turns[0]!, last: turns[0]!, gen: 0, ms, server: 'a-11111111', n: 99, kind: 'late' })}`, `${JSON.stringify(late)}\n`);
+          }
         }
       }
       const env = { S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY_ID: keys.accessKeyId, S3_SECRET_ACCESS_KEY: keys.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' };
       const fromStore = await reportFromTraces({ kb, place, label: 'app', traces: ['s3://call-traces/prod'], cwd: dir, env });
       expect(fromStore.files).toEqual(files.map((f) => `s3://call-traces/prod/${basename(f, '.jsonl')}`).sort());
-      expect(fromStore.report).toEqual(report());
+      // The same report, but for the late records passed over (one a call), counted as lines skipped.
+      expect(fromStore.report.traces.skipped).toBe(files.length);
+      expect({ ...fromStore.report, traces: { ...fromStore.report.traces, skipped: 0 } }).toEqual(report());
       // With TRACE_STORE set and no --traces, the store is where the traces are looked for.
       expect(defaultTraceSpecs({ cwd: dir, appDir: dir, env: { TRACE_STORE: 's3://call-traces/prod', TRACE_DIR: 'elsewhere' } })).toEqual(['s3://call-traces/prod']);
     } finally {

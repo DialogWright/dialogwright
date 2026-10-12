@@ -131,7 +131,7 @@ function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[]
 function fromStore(res: ServerResponse, head: boolean, reader: S3TraceReader, sid: string | null, onReplay: (() => Chained<void>) | null): void {
   const work = async (): Promise<void> => {
     if (sid === null) {
-      const rows = (await reader.calls()).slice(0, MAX_TRACES).map((c) => ({ callSid: c.id, startedAt: c.startedAt, turns: c.turns, sizeBytes: c.sizeBytes }))
+      const rows = (await reader.calls({ limit: MAX_TRACES })).slice(0, MAX_TRACES).map((c) => ({ callSid: c.id, startedAt: c.startedAt, turns: c.turns, sizeBytes: c.sizeBytes }))
         .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
       send(res, 200, 'application/json', JSON.stringify(rows), head);
       return;

@@ -27,7 +27,7 @@ import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
 import type { JevClient } from '../jev/types';
 import { TraceWriter, type TraceSink } from '../trace/writer';
-import { S3TraceStore } from '../trace/store';
+import { S3TraceStore, type CallMeta } from '../trace/store';
 import { guardFrames, guardTrace, TraceFailures } from '../trace/guard';
 import type { FrameSink } from './frameLog';
 import { whenChained, type AuditSink, type TurnObserver } from '../run/turn';
@@ -336,8 +336,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   /** A call's (or a chat's) trace and frame log: files in TRACE_DIR, or segments on the trace store. */
   // On one machine, a trace or frame log that cannot be written is logged and counted, and never fails a turn.
   const traceFailures = new TraceFailures(log, now);
-  const sinksOf = (file: string, turnOf: () => number): { trace: TraceSink; frames: FrameSink } => {
-    if (traceStore) return traceStore.open(file, turnOf);
+  const sinksOf = (file: string, meta: () => CallMeta): { trace: TraceSink; frames: FrameSink } => {
+    if (traceStore) return traceStore.open(file, meta);
     const trace = guardTrace(() => new TraceWriter(join(config.traceDir, `${file}.jsonl`)), traceFailures, `the trace of ${file}`);
     return { trace, frames: guardFrames(() => new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
   };
@@ -350,7 +350,22 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const store: SessionStore = new SessionStore(
     (callSid) => {
       const file = safeFileStem(callSid);
-      const { trace, frames } = sinksOf(file, () => store.get(callSid)?.session.turnIndex ?? 0);
+      // What the trace store names this call's segments by. Held while the entry the store has for the call
+      // is this one: once it was and is no longer (let go, taken over), what it still writes is marked late.
+      let mine: TraceSink | null = null;
+      let seen = false;
+      let last: Omit<CallMeta, 'held'> = { turn: 0, gen: 0, startedAtMs: now() };
+      const meta = (): CallMeta => {
+        const e = store.get(callSid);
+        const isMine = e !== undefined && mine !== null && e.trace === mine;
+        if (isMine) {
+          seen = true;
+          last = { turn: e.session.turnIndex, gen: e.reconnects, startedAtMs: e.session.startedAtMs };
+        }
+        return { ...last, held: !store.shared || isMine || !seen };
+      };
+      const { trace, frames } = sinksOf(file, meta);
+      mine = trace;
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: newSession(callSid, now(), VOICE_RELAY),
@@ -416,7 +431,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string) => void) => void notices!.subscribe('chat', (id) => fn(id)) } } : {}),
       resources: (id, sessions) => {
         const file = safeFileStem(id);
-        const { trace, frames } = sinksOf(file, () => sessions.get(id)?.session.turnIndex ?? 0);
+        const { trace, frames } = sinksOf(file, () => {
+          const s = sessions.get(id)?.session;
+          return { turn: s?.turnIndex ?? 0, gen: 0, startedAtMs: s?.startedAtMs ?? now(), held: true };
+        });
         const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
         // No render context: a chat shows a line's words, never a recorded clip.
         return {

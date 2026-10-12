@@ -11,22 +11,27 @@ import { frameLine, parseFrameLog, type FrameDir, type FrameSink, type ReadFrame
  * (S3TraceReader), so they all agree. Unset, traces are files in TRACE_DIR, as they always were
  * (TraceWriter, FrameLog), and nothing here runs.
  *
- * A call's objects, under `<prefix><call>/` (the call's id as its trace file is named: safeFileStem):
+ * A call's objects, under `<prefix><day>/<call>/`, `day` the UTC day the call started (its session's
+ * startedAtMs, which moves with the call, so a call that crosses midnight or moves server stays in one
+ * folder) and `call` its id as its trace file is named (safeFileStem):
  *
- *   <first>-<last>-<ms>-<server>-<n>.trace.jsonl    trace records, each line as a trace file's
- *   <turn>-<turn>-<ms>-<server>-<n>.frames.jsonl    frame-log lines, each as a frame log's
+ *   <first>-<last>-<gen>-<ms>-<server>-<n>.trace.jsonl    trace records, each line as a trace file's
+ *   <turn>-<turn>-<gen>-<ms>-<server>-<n>.frames.jsonl    frame-log lines, each as a frame log's
+ *   <first>-<last>-<gen>-<ms>-<server>-<n>.late.jsonl     records written after the server let the call go
  *
- * `first` and `last` are the turn indexes of a segment's first and last record (six digits), `ms` the
- * time of its first line (thirteen digits), `server` the server that wrote it (SERVER_ID and its
- * suffix), `n` its count in that server's run (six digits). A frames segment carries the call's turn
- * when its first line was written. Sorted by name, a call's segments are in the order they were
- * written: the turn index comes first, and it is the call's own (the session moves with the call), so
- * a takeover reads on in order whatever the two servers' clocks say. A segment is never rewritten.
+ * `first` and `last` are the turn indexes of a segment's first and last record (six digits; a frames
+ * segment carries the call's turn when its first line was written), `gen` the call's reconnect count
+ * when it was written (four digits), `ms` the time of its first line (thirteen digits), `server` the
+ * server that wrote it (SERVER_ID and its suffix), `n` its count in that server's run (six digits).
+ * Sorted by name, a call's segments are in the order they were written: by turn, and within a turn by
+ * the reconnect that moved the call (every takeover follows a reconnect the database counted, which
+ * the call carries), then by the writing server's own count; no server's clock is compared. A segment
+ * is named once and never rewritten: one that fails is tried again under the same name.
  *
  * Writing never stops a call: a segment is written when a turn's record is (at once) and when frames
  * have waited a second, in the background; one that fails is kept and tried again (up to a bound per
- * call), logged and counted, and the call goes on. A process that dies loses what it had not yet
- * written: at most the last second of frame lines, and a record whose write was under way.
+ * call and for the server), logged and counted, and the call goes on. A process that dies loses what it
+ * had not yet written: at most the last second of frame lines, and a record whose write was under way.
  */
 
 /** How long frame-log lines wait to go out with others, when no record takes them sooner. */
@@ -34,7 +39,7 @@ export const FRAME_FLUSH_MS = 1_000;
 /** The wait before a failed segment is tried again, doubled each time up to RETRY_MAX_MS. */
 const RETRY_MS = 2_000;
 const RETRY_MAX_MS = 30_000;
-/** The most bytes a call keeps waiting to be written; past it the oldest lines are dropped (and counted). */
+/** The most bytes a call keeps waiting to be written; past it a new line is dropped (and counted). */
 const MAX_PENDING_BYTES = 4 * 1024 * 1024;
 /** How many of a call's segments are read at once. */
 const READ_CONCURRENCY = 8;
@@ -101,11 +106,13 @@ export function traceStoreSettingOf(env: Readonly<Record<string, string | undefi
 // Segment names
 // ---------------------------------------------------------------------------------------------
 
-export type SegmentKind = 'trace' | 'frames';
+export type SegmentKind = 'trace' | 'frames' | 'late';
 
 export interface SegmentName {
   first: number;
   last: number;
+  /** The call's reconnect count when the segment's first line was written. */
+  gen: number;
   ms: number;
   server: string;
   n: number;
@@ -115,45 +122,78 @@ export interface SegmentName {
 const pad = (v: number, width: number): string => String(Math.max(0, Math.min(v, 10 ** width - 1))).padStart(width, '0');
 
 export function segmentName(s: SegmentName): string {
-  return `${pad(s.first, 6)}-${pad(s.last, 6)}-${pad(s.ms, 13)}-${s.server}-${pad(s.n, 6)}.${s.kind}.jsonl`;
+  return `${pad(s.first, 6)}-${pad(s.last, 6)}-${pad(s.gen, 4)}-${pad(s.ms, 13)}-${s.server}-${pad(s.n, 6)}.${s.kind}.jsonl`;
 }
 
-const SEGMENT = /^(\d{6})-(\d{6})-(\d{13})-([A-Za-z0-9._-]+)-(\d{6})\.(trace|frames)\.jsonl$/;
+const SEGMENT = /^(\d{6})-(\d{6})-(\d{4})-(\d{13})-([A-Za-z0-9._-]+)-(\d{6})\.(trace|frames|late)\.jsonl$/;
 
 /** A segment's name read back, or null for anything else in the folder. */
 export function parseSegmentName(name: string): SegmentName | null {
   const m = SEGMENT.exec(name);
   if (!m) return null;
-  return { first: Number(m[1]), last: Number(m[2]), ms: Number(m[3]), server: m[4]!, n: Number(m[5]), kind: m[6] as SegmentKind };
+  return { first: Number(m[1]), last: Number(m[2]), gen: Number(m[3]), ms: Number(m[4]), server: m[5]!, n: Number(m[6]), kind: m[7] as SegmentKind };
 }
+
+/** A UTC day as a folder is named: YYYY-MM-DD. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+export const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 // ---------------------------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------------------------
 
+/** What a call's segments are named by, read as each line is written. */
+export interface CallMeta {
+  /** The session's turn index now. */
+  turn: number;
+  /** The call's reconnect count now (0 for a chat). */
+  gen: number;
+  /** When the call started (its session's startedAtMs): the day its folder is under. */
+  startedAtMs: number;
+  /** Whether this server still holds the call (always, on one machine and for a chat). */
+  held: boolean;
+}
+
 interface Pending {
   line: string;
   turn: number;
+  gen: number;
   ms: number;
 }
 
+/** A batch of lines named once: written under that name, and tried again under it until it lands. */
+interface Batch {
+  key: string;
+  body: string;
+  bytes: number;
+}
+
+/** The most bytes all calls on this server keep waiting to be written; past it a new line is dropped (and counted). */
+const MAX_TOTAL_PENDING_BYTES = 64 * 1024 * 1024;
+
 /** One call's segments from this server: lines kept until they are written, in order. */
 class CallSegments implements TraceSink {
-  private trace: Pending[] = [];
-  private frames: Pending[] = [];
+  private open: Record<SegmentKind, Pending[]> = { trace: [], frames: [], late: [] };
+  private readonly batches: Batch[] = [];
   private bytes = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running: Promise<void> | null = null;
   private retryMs = RETRY_MS;
+  private failedLast = false;
+  /** The call's folder (`<day>/<call>`), fixed by its first batch. */
+  private folder: string | null = null;
 
-  constructor(private readonly store: S3TraceStore, private readonly folder: string, private readonly turnOf: () => number) {}
+  constructor(private readonly store: S3TraceStore, private readonly call: string, private readonly meta: () => CallMeta) {}
 
   get pending(): boolean {
-    return this.trace.length > 0 || this.frames.length > 0 || this.running !== null;
+    return this.bytes > 0 || this.running !== null;
   }
 
   write(record: TraceRecord): void {
-    this.keep(this.trace, { line: traceLine(record), turn: record.turnIndex, ms: Date.parse(record.ts) || this.store.now() });
+    const m = this.meta();
+    // A record written after this server let the call go: kept, marked, in a segment of its own.
+    const late = !m.held;
+    this.keep(late ? 'late' : 'trace', { line: traceLine(late ? { ...record, outlivedHold: true } : record), turn: record.turnIndex, gen: m.gen, ms: Date.parse(record.ts) || this.store.now() });
     // A turn's record goes out at once, with the frames before it.
     void this.flush();
   }
@@ -161,22 +201,21 @@ class CallSegments implements TraceSink {
   /** As FrameSink: the frame-log line, out within FRAME_FLUSH_MS (or with the next record). */
   writeFrame(dir: FrameDir, msg: unknown): void {
     const at = this.store.now();
-    this.keep(this.frames, { line: frameLine(at, dir, msg), turn: this.turnOf(), ms: at });
+    const m = this.meta();
+    this.keep('frames', { line: frameLine(at, dir, msg), turn: m.turn, gen: m.gen, ms: at });
     if (this.timer === null && this.running === null) this.schedule(FRAME_FLUSH_MS);
   }
 
-  private keep(into: Pending[], p: Pending): void {
-    into.push(p);
-    this.bytes += p.line.length + 1;
-    this.store.track(this);
-    // Bounded: a store that stays down loses the oldest lines of a long call, never the server's memory.
-    while (this.bytes > MAX_PENDING_BYTES) {
-      const from = this.frames.length > 0 ? this.frames : this.trace;
-      const gone = from.shift();
-      if (gone === undefined) break;
-      this.bytes -= gone.line.length + 1;
+  private keep(kind: SegmentKind, p: Pending): void {
+    const size = p.line.length + 1;
+    // Bounded, per call and for the server: a store that stays down drops new lines (counted), never the server's memory.
+    if (this.bytes + size > MAX_PENDING_BYTES || !this.store.reserve(size)) {
       this.store.dropped += 1;
+      return;
     }
+    this.open[kind].push(p);
+    this.bytes += size;
+    this.store.track(this);
   }
 
   private schedule(ms: number): void {
@@ -188,6 +227,21 @@ class CallSegments implements TraceSink {
     this.timer.unref?.();
   }
 
+  /** The lines kept since the last batch, named now as batches; a batch being tried again is never added to. */
+  private seal(): void {
+    for (const kind of ['trace', 'frames', 'late'] as const) {
+      const lines = this.open[kind];
+      if (lines.length === 0) continue;
+      this.open[kind] = [];
+      if (this.folder === null) this.folder = `${dayOf(this.meta().startedAtMs)}/${this.call}`;
+      const name = segmentName({
+        first: lines[0]!.turn, last: Math.max(...lines.map((p) => p.turn)), gen: lines[0]!.gen, ms: lines[0]!.ms, server: this.store.server, n: this.store.nextSegment(), kind,
+      });
+      const body = lines.map((p) => `${p.line}\n`).join('');
+      this.batches.push({ key: `${this.store.prefix}${this.folder}/${name}`, body, bytes: lines.reduce((n, p) => n + p.line.length + 1, 0) });
+    }
+  }
+
   /** Everything kept so far, written (or kept to try again); resolves when this pass is done. */
   flush(): Promise<void> {
     if (this.timer !== null) {
@@ -197,7 +251,7 @@ class CallSegments implements TraceSink {
     if (this.running === null) {
       this.running = this.drain().finally(() => {
         this.running = null;
-        if (this.trace.length > 0 || this.frames.length > 0) {
+        if (this.bytes > 0) {
           if (this.timer === null) this.schedule(this.failedLast ? this.retryMs : FRAME_FLUSH_MS);
         } else this.store.untrack(this);
       });
@@ -205,31 +259,25 @@ class CallSegments implements TraceSink {
     return this.running;
   }
 
-  private failedLast = false;
-
   private async drain(): Promise<void> {
     this.failedLast = false;
-    while (this.trace.length > 0 || this.frames.length > 0) {
-      for (const kind of ['trace', 'frames'] as const) {
-        const lines = kind === 'trace' ? this.trace : this.frames;
-        if (lines.length === 0) continue;
-        const batch = lines.splice(0);
-        const name = segmentName({
-          first: batch[0]!.turn, last: Math.max(...batch.map((p) => p.turn)), ms: batch[0]!.ms, server: this.store.server, n: this.store.nextSegment(), kind,
-        });
-        try {
-          await this.store.client.put(`${this.store.prefix}${this.folder}/${name}`, batch.map((p) => `${p.line}\n`).join(''));
-          this.bytes -= batch.reduce((n, p) => n + p.line.length + 1, 0);
-          this.retryMs = RETRY_MS;
-        } catch (err) {
-          // Kept, in order, ahead of anything written since, and tried again later.
-          lines.unshift(...batch);
-          this.failedLast = true;
-          this.retryMs = Math.min(this.retryMs * 2, RETRY_MAX_MS);
-          this.store.failed(this.folder, err);
-          return;
-        }
+    for (;;) {
+      this.seal();
+      const batch = this.batches[0];
+      if (batch === undefined) return;
+      try {
+        await this.store.client.put(batch.key, batch.body);
+      } catch (err) {
+        // Kept, under its name, ahead of anything written since, and tried again later.
+        this.failedLast = true;
+        this.retryMs = Math.min(this.retryMs * 2, RETRY_MAX_MS);
+        this.store.failed(this.call, err);
+        return;
       }
+      this.batches.shift();
+      this.bytes -= batch.bytes;
+      this.store.release(batch.bytes);
+      this.retryMs = RETRY_MS;
     }
   }
 }
@@ -259,9 +307,10 @@ export class S3TraceStore {
   readonly now: () => number;
   /** Segment writes that failed (each tried again), since start. */
   failures = 0;
-  /** Lines dropped because a call's waiting lines passed their bound. */
+  /** Lines dropped because a call's (or the server's) waiting lines passed their bound. */
   dropped = 0;
   private n = 0;
+  private pendingBytes = 0;
   private readonly live = new Set<CallSegments>();
   private readonly log: (line: string) => void;
   private loggedAt: number | null = null;
@@ -279,9 +328,17 @@ export class S3TraceStore {
     return describeTraceStore(this.setting);
   }
 
-  /** The trace and the frame log of one call on this server, under `folder` (safeFileStem of its id); `turnOf` reads its turn index now. */
-  open(folder: string, turnOf: () => number): { trace: TraceSink; frames: FrameSink } {
-    const segments = new CallSegments(this, folder, turnOf);
+  /**
+   * The trace and the frame log of one call on this server, under `call` (safeFileStem of its id); `meta`
+   * reads the call as it is now (its turn, its reconnect count, when it started, whether this server
+   * still holds it). A number in place of `meta` is a fixed turn source, for a caller with no call.
+   */
+  open(call: string, meta: (() => CallMeta) | (() => number)): { trace: TraceSink; frames: FrameSink } {
+    const read = (): CallMeta => {
+      const m = meta();
+      return typeof m === 'number' ? { turn: m, gen: 0, startedAtMs: this.now(), held: true } : m;
+    };
+    const segments = new CallSegments(this, call, read);
     return { trace: segments, frames: new FrameSegments(segments) };
   }
 
@@ -295,6 +352,17 @@ export class S3TraceStore {
     return this.n;
   }
 
+  /** Room for `bytes` more waiting lines on this server, taken if there is. */
+  reserve(bytes: number): boolean {
+    if (this.pendingBytes + bytes > MAX_TOTAL_PENDING_BYTES) return false;
+    this.pendingBytes += bytes;
+    return true;
+  }
+
+  release(bytes: number): void {
+    this.pendingBytes = Math.max(0, this.pendingBytes - bytes);
+  }
+
   track(s: CallSegments): void {
     this.live.add(s);
   }
@@ -304,7 +372,7 @@ export class S3TraceStore {
   }
 
   /** A segment could not be written: counted, and logged (the first at once, then once a minute with how many since). */
-  failed(folder: string, err: unknown): void {
+  failed(call: string, err: unknown): void {
     this.failures += 1;
     const t = this.now();
     if (this.loggedAt !== null && t - this.loggedAt < FAILURE_LOG_EVERY_MS) {
@@ -313,7 +381,7 @@ export class S3TraceStore {
     }
     const why = err instanceof S3Error ? err.message : err instanceof Error ? err.message : String(err);
     const since = this.unlogged > 0 ? ` (${this.unlogged} more since the last said)` : '';
-    this.log(`traces: a segment of ${folder} could not be written to ${this.label}: ${why}; kept to try again${since}`);
+    this.log(`traces: a segment of ${call} could not be written to ${this.label}: ${why}; kept to try again${since}`);
     this.loggedAt = t;
     this.unlogged = 0;
   }
@@ -340,36 +408,85 @@ export class S3TraceStore {
     }
   }
 
+  /** The day folders under the prefix, oldest first. */
+  private async days(): Promise<string[]> {
+    const { prefixes } = await this.client.list(this.prefix, { delimiter: '/' });
+    return prefixes.map((p) => p.slice(this.prefix.length, -1)).filter((d) => DAY.test(d)).sort();
+  }
+
+  /** Every key given deleted, a few at a time. */
+  private async remove(keys: readonly string[]): Promise<void> {
+    await mapLimit(keys, READ_CONCURRENCY, (key) => this.client.delete(key));
+  }
+
   /**
-   * TRACE_RETENTION_DAYS on the store: every call whose last segment is older than `days`, and not in
-   * `inUse`, removed whole, never in part. Returns the objects and calls removed.
+   * TRACE_RETENTION_DAYS on the store: every day folder older than `days` removed, never a call in
+   * `inUse`; only those days are listed. Returns the objects and calls removed. A bucket's own lifecycle
+   * rule (expiration on the prefix after N days) does the same without the server, and is the native way.
    */
   async sweep(days: number, nowMs: number, inUse: ReadonlySet<string>): Promise<{ objects: number; calls: number }> {
-    const cutoff = nowMs - days * 86_400_000;
-    const { objects } = await this.client.list(this.prefix);
-    const byCall = new Map<string, { keys: string[]; newest: number }>();
-    for (const o of objects) {
-      const rest = o.key.slice(this.prefix.length);
-      const slash = rest.indexOf('/');
-      if (slash <= 0) continue;
-      const call = rest.slice(0, slash);
-      const c = byCall.get(call) ?? { keys: [], newest: 0 };
-      c.keys.push(o.key);
-      c.newest = Math.max(c.newest, o.lastModifiedMs);
-      byCall.set(call, c);
-    }
-    let removed = 0;
+    const cutoff = dayOf(nowMs - days * 86_400_000);
+    let objects = 0;
     let calls = 0;
-    for (const [call, c] of byCall) {
-      if (c.newest >= cutoff || inUse.has(call)) continue;
-      for (const key of c.keys) {
-        await this.client.delete(key);
-        removed += 1;
+    for (const day of await this.days()) {
+      if (day >= cutoff) break;
+      const { objects: found } = await this.client.list(`${this.prefix}${day}/`);
+      const byCall = groupByCall(found.map((o) => o.key), `${this.prefix}${day}/`);
+      for (const [call, keys] of byCall) {
+        if (inUse.has(call)) continue;
+        await this.remove(keys);
+        objects += keys.length;
+        calls += 1;
       }
+    }
+    return { objects, calls };
+  }
+
+  /**
+   * TRACE_MAX_GB on the store: while its traces are larger than `maxBytes`, the calls written least
+   * recently are removed whole, never a call in `inUse`. Returns the objects and calls removed, and the
+   * bytes left.
+   */
+  async trim(maxBytes: number, inUse: ReadonlySet<string>): Promise<{ objects: number; calls: number; bytes: number }> {
+    const { objects: all } = await this.client.list(this.prefix);
+    const byCall = new Map<string, { keys: string[]; size: number; newest: number }>();
+    let total = 0;
+    for (const o of all) {
+      const rest = o.key.slice(this.prefix.length).split('/');
+      if (rest.length !== 3 || !DAY.test(rest[0]!)) continue;
+      const id = `${rest[0]}/${rest[1]}`;
+      const c = byCall.get(id) ?? { keys: [], size: 0, newest: 0 };
+      c.keys.push(o.key);
+      c.size += o.size;
+      c.newest = Math.max(c.newest, o.lastModifiedMs);
+      byCall.set(id, c);
+      total += o.size;
+    }
+    let objects = 0;
+    let calls = 0;
+    for (const [id, c] of [...byCall].sort((a, b) => a[1].newest - b[1].newest)) {
+      if (total <= maxBytes) break;
+      if (inUse.has(id.split('/')[1]!)) continue;
+      await this.remove(c.keys);
+      total -= c.size;
+      objects += c.keys.length;
       calls += 1;
     }
-    return { objects: removed, calls };
+    return { objects, calls, bytes: total };
   }
+}
+
+/** Keys under `under` (`<prefix><day>/`) grouped by the call folder they are in. */
+function groupByCall(keys: readonly string[], under: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const key of keys) {
+    const rest = key.slice(under.length);
+    const slash = rest.indexOf('/');
+    if (slash <= 0) continue;
+    const call = rest.slice(0, slash);
+    out.set(call, [...(out.get(call) ?? []), key]);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -380,9 +497,14 @@ export class S3TraceStore {
 export interface StoredTrace {
   /** The call's folder: its id as its trace file is named. */
   id: string;
+  /** The UTC day the call started, which its folder is under. */
+  day: string;
   /** Its first record's time, or null when it has none. */
   startedAt: string | null;
-  /** The turns its records span (their turn indexes are consecutive, so last minus first, plus one). */
+  /**
+   * The turns its records span (their turn indexes are consecutive, so last minus first, plus one),
+   * not counting records written after a server let the call go (`late`).
+   */
   turns: number;
   sizeBytes: number;
   lastModifiedMs: number;
@@ -390,7 +512,7 @@ export interface StoredTrace {
 
 /** One call's trace, joined across the servers that wrote it. */
 export interface JoinedTrace {
-  /** The trace records' lines, in order. */
+  /** The trace records' lines, in order, a record written after its server let the call go marked `outlivedHold`. */
   trace: string[];
   /** The frame log's lines, in order. */
   frames: string[];
@@ -404,12 +526,19 @@ export class S3TraceReader {
     return `s3://${this.client.settings.bucket}/${this.prefix}`;
   }
 
-  /** Every call with segments in the store, newest first by its last write. */
-  async calls(): Promise<StoredTrace[]> {
-    const { objects } = await this.client.list(this.prefix);
+  /** The day folders under the prefix, newest first. */
+  async days(): Promise<string[]> {
+    const { prefixes } = await this.client.list(this.prefix, { delimiter: '/' });
+    return prefixes.map((p) => p.slice(this.prefix.length, -1)).filter((d) => DAY.test(d)).sort().reverse();
+  }
+
+  /** The calls with records in one day's folder. */
+  private async callsOn(day: string): Promise<StoredTrace[]> {
+    const under = `${this.prefix}${day}/`;
+    const { objects } = await this.client.list(under);
     const byCall = new Map<string, { size: number; newest: number; segments: SegmentName[] }>();
     for (const o of objects) {
-      const rest = o.key.slice(this.prefix.length);
+      const rest = o.key.slice(under.length);
       const slash = rest.indexOf('/');
       if (slash <= 0) continue;
       const seg = parseSegmentName(rest.slice(slash + 1));
@@ -428,27 +557,47 @@ export class S3TraceReader {
       const first = Math.min(...records.map((s) => s.first));
       const last = Math.max(...records.map((s) => s.last));
       const earliest = records.reduce((a, b) => (segmentName(a) <= segmentName(b) ? a : b));
-      out.push({ id, startedAt: new Date(earliest.ms).toISOString(), turns: last - first + 1, sizeBytes: c.size, lastModifiedMs: c.newest });
+      out.push({ id, day, startedAt: new Date(earliest.ms).toISOString(), turns: last - first + 1, sizeBytes: c.size, lastModifiedMs: c.newest });
+    }
+    return out;
+  }
+
+  /**
+   * The calls with records in the store, newest first by their last write: the newest days' folders
+   * only, until at least `limit` calls are found (every day when `limit` is unset).
+   */
+  async calls(o: { limit?: number } = {}): Promise<StoredTrace[]> {
+    const out: StoredTrace[] = [];
+    for (const day of await this.days()) {
+      out.push(...(await this.callsOn(day)));
+      if (o.limit !== undefined && out.length >= o.limit) break;
     }
     return out.sort((a, b) => b.lastModifiedMs - a.lastModifiedMs);
   }
 
-  /** One call's trace and frame log, each segment's lines in name order; null when the call has no trace records. */
-  async read(id: string): Promise<JoinedTrace | null> {
-    const folder = `${this.prefix}${id}/`;
-    const { objects } = await this.client.list(folder);
-    const named = objects
-      .map((o) => ({ key: o.key, seg: parseSegmentName(o.key.slice(folder.length)) }))
-      .filter((x): x is { key: string; seg: SegmentName } => x.seg !== null)
-      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    if (!named.some((x) => x.seg.kind === 'trace')) return null;
-    const texts = await mapLimit(named, READ_CONCURRENCY, (x) => this.client.get(x.key));
-    const joined: JoinedTrace = { trace: [], frames: [] };
-    named.forEach((x, i) => {
-      const lines = (texts[i] ?? '').split('\n').filter((l) => l.trim() !== '');
-      (x.seg.kind === 'trace' ? joined.trace : joined.frames).push(...lines);
-    });
-    return joined;
+  /**
+   * One call's trace and frame log, each segment's lines in name order; null when the call has no trace
+   * records. The call's day folder is looked for from the newest day back, unless `day` names it.
+   */
+  async read(id: string, day?: string): Promise<JoinedTrace | null> {
+    for (const d of day !== undefined ? [day] : await this.days()) {
+      const folder = `${this.prefix}${d}/${id}/`;
+      const { objects } = await this.client.list(folder);
+      const named = objects
+        .map((o) => ({ key: o.key, seg: parseSegmentName(o.key.slice(folder.length)) }))
+        .filter((x): x is { key: string; seg: SegmentName } => x.seg !== null)
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      if (named.length === 0) continue;
+      if (!named.some((x) => x.seg.kind !== 'frames')) return null;
+      const texts = await mapLimit(named, READ_CONCURRENCY, (x) => this.client.get(x.key));
+      const joined: JoinedTrace = { trace: [], frames: [] };
+      named.forEach((x, i) => {
+        const lines = (texts[i] ?? '').split('\n').filter((l) => l.trim() !== '');
+        (x.seg.kind === 'frames' ? joined.frames : joined.trace).push(...lines);
+      });
+      return joined;
+    }
+    return null;
   }
 
   /** One call's frame log, joined, as replay reads a frame-log file (each line numbered in the joined log); null when there is none. */

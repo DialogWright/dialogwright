@@ -46,8 +46,8 @@ import { randomBytes } from 'node:crypto';
  *  11. with AUDIT_STORE=postgres://... (not with --offline), the database answers, its audit tables are at
  *      the version this server reads (or not made yet), and an entry can be written (in a transaction
  *      rolled back, so the audit is never written to by a check);
- *  12. with TRACE_STORE=s3://... (not with --offline), the bucket takes a small test object, gives it
- *      back and deletes it, under the prefix and outside any call's folder. Neither key is ever said.
+ *  12. with TRACE_STORE=s3://... (not with --offline), the bucket takes a small test object, lists it,
+ *      gives it back and deletes it, under the prefix and outside any call's folder. Neither key is ever said.
  *
  * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address
  * (three with CONSOLE_AUTH=token), one HEAD with no key and no body to a host the setup already relies
@@ -554,9 +554,11 @@ async function traceStoreCheck(setting: S3TraceSetting, offline: boolean, deps: 
   try {
     await client.put(key, 'dialogwright diagnose\n');
     const back = await client.get(key);
+    const listed = await client.list(key, { maxPages: 1 });
     await client.delete(key);
     if (back !== 'dialogwright diagnose\n') return { id: 'traces', status: 'fail', message: `${named}: a test object came back other than it was written`, fix };
-    return { id: 'traces', status: 'ok', message: `${named} takes a test object, gives it back and deletes it: each server writes its calls' segments there` };
+    if (!listed.objects.some((o) => o.key === key)) return { id: 'traces', status: 'fail', message: `${named}: a test object was written but a listing does not show it`, fix };
+    return { id: 'traces', status: 'ok', message: `${named} takes a test object, lists it, gives it back and deletes it: each server writes its calls' segments there` };
   } catch (err) {
     return { id: 'traces', status: 'fail', message: `${named}: ${err instanceof Error ? err.message : String(err)}`, fix };
   }

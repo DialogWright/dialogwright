@@ -184,7 +184,8 @@ const MASKED_VALUE = /^(?:\.\.\.\d{4}|••\/••\/(?:\d{4}|••••)|<\d
 
 /** A record as a Turn, or null when it does not read as a v2 record with a session and a turn. */
 export function turnOf(raw: unknown, file: string, line: number): Turn | null {
-  if (!isObject(raw) || raw.v !== 2) return null;
+  // A record a server wrote after it had let the call go (trace/store.ts): the server that took the call ran that turn too.
+  if (!isObject(raw) || raw.v !== 2 || raw.outlivedHold === true) return null;
   const sessionId = str(raw.sessionId);
   const ts = str(raw.ts);
   if (sessionId === null || ts === null || typeof raw.turnIndex !== 'number') return null;

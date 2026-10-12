@@ -292,7 +292,7 @@ function turnsIn(n: Node, callSid: string): number[] {
 async function joinedTrace(s3: FakeS3, callSid: string): Promise<{ turns: number[]; servers: string[] }> {
   const stem = callSid.replace(/[^A-Za-z0-9_-]/g, '_');
   const joined = await traceReaderOf(TRACE_STORE, s3Env(s3))!.read(stem);
-  const servers = [...s3.objects.keys()].filter((k) => k.startsWith(`many/${stem}/`) && k.endsWith('.trace.jsonl'))
+  const servers = [...s3.objects.keys()].filter((k) => /^many\/\d{4}-\d{2}-\d{2}\//.test(k) && k.includes(`/${stem}/`) && k.endsWith('.trace.jsonl'))
     .map((k) => parseSegmentName(k.split('/').at(-1)!)!.server.replace(/-[0-9a-f]{8}$/, ''));
   return { turns: (joined?.trace ?? []).map((l) => (JSON.parse(l) as { turnIndex: number }).turnIndex), servers: [...new Set(servers)] };
 }
@@ -759,8 +759,9 @@ describe('a server that let a call go acts on it no more', () => {
       if (slowMs) await new Promise((x) => setTimeout(x, slowMs));
       return stub.ask(r);
     } };
-    const a = await boot('a', db, {}, { client: slow });
-    const b = await boot('b', db);
+    const s3 = await traceStore();
+    const a = await boot('a', db, {}, { client: slow, records: s3 });
+    const b = await boot('b', db, {}, { records: s3 });
     const callSid = 'CA000000000000000000000000000slw';
     const relay = await firstHalf(await answer({ base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` }, 'twilio', callSid), callSid);
     relay.prompt(DOB);
@@ -791,6 +792,18 @@ describe('a server that let a call go acts on it no more', () => {
     again.prompt("no, that's all");
     const end = await again.waitFor((m) => m.type === 'end');
     expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
+    await a.server.close();
+    await b.server.close();
+    // A's late turn is in the call's one trace, marked as written after A let the call go, and not counted as a turn.
+    const joined = (await traceReaderOf(TRACE_STORE, s3Env(s3))!.read(callSid))!;
+    const records = joined.trace.map((l) => JSON.parse(l) as { turnIndex: number; outlivedHold?: true });
+    expect(records.filter((r) => r.outlivedHold)).toHaveLength(1);
+    const late = records.find((r) => r.outlivedHold)!;
+    expect(records.filter((r) => !r.outlivedHold).map((r) => r.turnIndex)).toContain(late.turnIndex);
+    const listed = (await traceReaderOf(TRACE_STORE, s3Env(s3))!.calls()).find((c) => c.id === callSid)!;
+    expect(listed.turns).toBe(new Set(records.filter((r) => !r.outlivedHold).map((r) => r.turnIndex)).size);
+    // Its audit entries are chained in the call's one chain, which verifies.
+    await sharedAudit(db, callSid);
   }, 30_000);
 });
 

@@ -443,6 +443,16 @@ describe('stages, gate, source, audit and handoff', () => {
     expect(capped.auditTail[0]!.seq).toBe(11);
   });
 
+  it('a late record (written after its server let the call go) is a marker, and changes nothing else', async () => {
+    const { records } = await scripted([OPENER]);
+    const plain = reduce(replayEvents(replayRecords(records), []));
+    const late = { ...records.at(-1)!, outlivedHold: true as const };
+    const marked = reduce(replayEvents(replayRecords([...records, late]), []));
+    expect(marked.lines.at(-1)).toEqual({ kind: 'marker', text: 'a late turn: written after its server let the call go', turn: late.turnIndex });
+    expect(marked.turnsView).toEqual(plain.turnsView);
+    expect(marked.turnCount).toBe(plain.turnCount);
+  });
+
   it('replays a chat as a chat: the session id names the channel', async () => {
     const { records } = await scripted([OPENER]);
     const call = replayEvents(replayRecords(records), [])[0];
