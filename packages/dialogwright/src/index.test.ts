@@ -33,6 +33,8 @@ describe('the package entry', () => {
       'loadCorpus', 'parseCorpus', 'normalizeText', 'buildClient', 'buildThresholds', 'defaultCorpusFile', 'scenariosDir', 'loadScenarios',
       // where the decision model is reached
       'resolveJevProvider', 'JEV_PROVIDERS',
+      // generated wording (opt-in)
+      'ModelRenderClient', 'resolveRenderProvider', 'renderSettings', 'RENDER_PROVIDERS', 'RenderCassette', 'renderCassettePath', 'checkGenerated', 'generatesLines', 'RenderClientError',
       'readBaseline', 'REGRESS_TODAY', 'runAll',
     ]) expect(typeof (entry as Record<string, unknown>)[name], name).not.toBe('undefined');
   });

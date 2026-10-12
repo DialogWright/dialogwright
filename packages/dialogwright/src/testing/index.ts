@@ -84,8 +84,11 @@ export {
 } from './adversarial/index';
 export type {
   AdversarialCase, AdversarialFamily, AdversarialReport, AdversarialRunOptions, AdversarialSuite, AdversarialSuiteOptions,
-  CaseCall, CaseResult, CaseStatus, CodePrompt, HostileMode, HostileTarget, OutcomeClass, Perception, PropertyName,
+  CaseCall, CaseResult, CaseStatus, CodePrompt, HostileMode, HostileTarget, OutcomeClass, Perception, PropertyName, RenderAttack,
 } from './adversarial/index';
+// Generated wording in an app's tests: a renderer that asks no model, its own wording or the test's.
+export { FakeRenderClient, fakeWording, FAKE_RENDER_MODEL } from '../render/fake';
+export type { FakeRenderOptions } from '../render/fake';
 // Whether a saved session resumes exactly: the corpus and scenarios run with the session put through
 // JSON before every turn, against the same run as it is (sessionRoundTrip.ts).
 export { sessionRoundTrip, jsonTrip } from './sessionRoundTrip';

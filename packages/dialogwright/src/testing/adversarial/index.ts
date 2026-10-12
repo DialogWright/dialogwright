@@ -11,5 +11,5 @@ export { formatAdversarialReport, adversarialTranscript } from './print';
 export { HOSTILE_TEXT, HOSTILE_MARKERS, saysHostile } from './hostile';
 export type { HostileMode } from './hostile';
 export { FAMILIES, OUTCOME_CLASSES } from './types';
-export type { AdversarialCase, AdversarialFamily, AdversarialSuite, OutcomeClass, Perception, PropertyName, HostileTarget, CodePrompt } from './types';
+export type { AdversarialCase, AdversarialFamily, AdversarialSuite, OutcomeClass, Perception, PropertyName, HostileTarget, CodePrompt, RenderAttack } from './types';
 export { TEMPLATES } from './templates';
