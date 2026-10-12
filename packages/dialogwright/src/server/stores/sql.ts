@@ -41,7 +41,10 @@ interface PgPool {
   on(event: 'error', listener: (err: Error) => void): unknown;
 }
 interface PgModule {
-  Pool: new (config: { connectionString: string; max?: number; connectionTimeoutMillis?: number; application_name?: string }) => PgPool;
+  Pool: new (config: {
+    connectionString: string; max?: number; connectionTimeoutMillis?: number; application_name?: string;
+    query_timeout?: number; statement_timeout?: number; keepAlive?: boolean;
+  }) => PgPool;
 }
 
 /** The `pg` package, imported on first use; a PgUnavailableError when it is not there. */
@@ -64,8 +67,51 @@ export interface PgClientOptions {
   max?: number;
   /** How long a connection may take to open; default 5000 ms. */
   connectTimeoutMs?: number;
+  /**
+   * How long a query may take, on the client (query_timeout: a database that stops answering, its
+   * connection kept alive but silent) and on the server (statement_timeout); default 2000 ms
+   * (SESSION_STORE_TIMEOUT_MS). TCP keepalive is on, so a dead connection is found too.
+   */
+  queryTimeoutMs?: number;
   /** Where a connection's own failure (one the pool held idle) is said: masked, never thrown. */
   log?: (line: string) => void;
+}
+
+/** How long a query to the session store may take, unless SESSION_STORE_TIMEOUT_MS says otherwise. */
+export const DEFAULT_SQL_TIMEOUT_MS = 2_000;
+
+/** A query to the session store that did not answer in time. */
+export class SqlTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`the session store did not answer within ${ms} ms`);
+    this.name = 'SqlTimeoutError';
+  }
+}
+
+/** `p`, or a SqlTimeoutError once `ms` have passed (the work itself may still finish, unseen). */
+export function within<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new SqlTimeoutError(ms)), ms);
+      timer.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * `sql` with a deadline on every query and transaction, on this side of the wire: whatever the driver
+ * does, a store that stops answering fails in `ms` rather than hold a caller in silence. A transaction
+ * that times out here may still commit there; what depends on one (a lease) is made safe for it by
+ * its renewal (a lease this server holds but does not run is given up).
+ */
+export function boundedSql(sql: SqlClient, ms: number): SqlClient {
+  return {
+    query: (text, params) => within(sql.query(text, params), ms),
+    transaction: (fn) => within(sql.transaction(fn), ms),
+    close: () => sql.close(),
+  };
 }
 
 /**
@@ -74,7 +120,11 @@ export interface PgClientOptions {
  */
 export async function openPgClient(url: string, o: PgClientOptions = {}): Promise<SqlClient> {
   const { Pool } = await loadPg();
-  const pool = new Pool({ connectionString: url, max: o.max ?? 10, connectionTimeoutMillis: o.connectTimeoutMs ?? 5_000, application_name: 'dialogwright' });
+  const queryTimeoutMs = o.queryTimeoutMs ?? DEFAULT_SQL_TIMEOUT_MS;
+  const pool = new Pool({
+    connectionString: url, max: o.max ?? 10, connectionTimeoutMillis: o.connectTimeoutMs ?? 5_000, application_name: 'dialogwright',
+    query_timeout: queryTimeoutMs, statement_timeout: queryTimeoutMs, keepAlive: true,
+  });
   pool.on('error', (err) => o.log?.(`sessions: a Postgres connection failed while idle: ${maskSecrets(err.message, url)}`));
   const query = async <R>(text: string, params?: readonly unknown[]): Promise<{ rows: R[] }> => {
     const r = await pool.query(text, params as unknown[] | undefined);
@@ -111,31 +161,52 @@ export async function openPgClient(url: string, o: PgClientOptions = {}): Promis
  * `password=` parameter, as `***`. Never the string itself.
  */
 export function maskConnectionString(url: string): string {
-  try {
-    const u = new URL(url);
-    const keys = [...u.searchParams.keys()].filter((key) => /pass/i.test(key));
-    // Nothing secret in it: said exactly as given.
-    if (u.password === '' && keys.length === 0) return url;
-    if (u.password !== '') u.password = '***';
-    for (const key of keys) u.searchParams.set(key, '***');
-    // URLSearchParams writes `*` as `%2A`: said as typed.
-    return u.toString().replace(/%2A%2A%2A/g, '***');
-  } catch {
-    // Not a URL: everything between the scheme and an @ could be a password.
-    return url.replace(/\/\/[^@/]*@/, '//***@').replace(/(pass[^=&]*=)[^&]*/gi, '$1***');
+  // Read by hand, not with URL: a password may hold characters a URL would take for its end (`/`, `#`,
+  // `?`, a space), and a parser that stopped early would leave the rest of it in the open.
+  let out = url;
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(url);
+  if (scheme) {
+    const rest = url.slice(scheme[0].length);
+    // Everything up to the last @ is the user's part; a password is whatever follows its first colon.
+    const at = rest.lastIndexOf('@');
+    if (at >= 0) {
+      const userinfo = rest.slice(0, at);
+      const colon = userinfo.indexOf(':');
+      if (colon >= 0) out = `${scheme[0]}${userinfo.slice(0, colon)}:***${rest.slice(at)}`;
+    }
   }
+  return out.replace(/([?&][^=&#]*pass[^=&#]*=)[^&#]*/gi, '$1***');
+}
+
+/** The password a connection string holds, as written and decoded; none when it has none. */
+function passwordsOf(url: string): string[] {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(url);
+  const found: string[] = [];
+  if (scheme) {
+    const rest = url.slice(scheme[0].length);
+    const at = rest.lastIndexOf('@');
+    const userinfo = at >= 0 ? rest.slice(0, at) : '';
+    const colon = userinfo.indexOf(':');
+    if (colon >= 0) found.push(userinfo.slice(colon + 1));
+  }
+  for (const m of url.matchAll(/[?&][^=&#]*pass[^=&#]*=([^&#]*)/gi)) found.push(m[1]!);
+  const all = new Set<string>();
+  for (const p of found) {
+    if (p === '') continue;
+    all.add(p);
+    try {
+      all.add(decodeURIComponent(p));
+    } catch {
+      // Not encoded: as written.
+    }
+  }
+  return [...all];
 }
 
 /** A driver's message with the connection string's password taken out, should it hold it. */
 export function maskSecrets(message: string, url: string): string {
   let out = message.split(url).join(maskConnectionString(url));
-  try {
-    const u = new URL(url);
-    for (const password of new Set([u.password, decodeURIComponent(u.password)])) {
-      if (password !== '') out = out.split(password).join('***');
-    }
-  } catch {
-    // Not a URL: nothing more is known of it.
-  }
+  // Longest first, so a password that holds another is taken out whole.
+  for (const password of passwordsOf(url).sort((a, b) => b.length - a.length)) out = out.split(password).join('***');
   return out;
 }

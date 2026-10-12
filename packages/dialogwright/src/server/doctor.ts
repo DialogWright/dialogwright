@@ -12,7 +12,7 @@ import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
 import { maskConnectionString, maskSecrets, openPgClient, PgUnavailableError, type SqlClient } from './stores/sql';
-import { POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } from './stores/postgres';
+import { databaseNowMs, POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } from './stores/postgres';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -464,11 +464,20 @@ async function postgresCheck(url: string, offline: boolean, deps: DoctorDeps): P
       };
     }
     try {
-      await probeLease(sql, deps.now);
+      await probeLease(sql);
     } catch (err) {
       return { id: 'store', status: 'fail', message: `${named}: a test lease could not be taken and given up: ${maskSecrets(dbMessage(err), url)}`, fix: 'give the user in SESSION_STORE the right to read and write the dw_ tables' };
     }
-    return { id: 'store', status: 'ok', message: `${named} answers, its session tables are version ${version}, and a test lease was taken and given up: the servers on it share their calls` };
+    // For information: leases are timed by the database's clock, so this machine's may differ; a large
+    // difference still says one of the two clocks is wrong.
+    let offset = '';
+    try {
+      const off = (await databaseNowMs(sql)) - deps.now();
+      offset = `; its clock is ${(off / 1000).toFixed(1)} s from this machine's (leases are timed by the database's)`;
+    } catch {
+      // Said without it.
+    }
+    return { id: 'store', status: 'ok', message: `${named} answers, its session tables are version ${version}, and a test lease was taken and given up: the servers on it share their calls${offset}` };
   } finally {
     await sql.close().catch(() => undefined);
   }

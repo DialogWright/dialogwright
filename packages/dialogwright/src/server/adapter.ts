@@ -19,9 +19,10 @@ import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
 import type { CallEntry, SessionStore, SocketLike } from './sessions';
 import type { ServerTokenStore } from './stores/types';
+import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
-import { maskTarget, targetNumber, type ServerTransfer } from './transfer';
+import { maskTarget, parseHandoff, targetNumber, type ServerTransfer } from './transfer';
 import { deliveryFactOf, interruptFact } from './dashboard/delivery';
 import { redactHandoffData, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
@@ -940,10 +941,16 @@ function onHeldEndEvent(callSid: string, ev: PlaybackEvent): void {
 function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: OutboundFrame[], sent: readonly OutboundFrame[], decision: unknown): boolean {
   if (entry.socket === null || !sent.some((f) => f.type === 'text' || f.type === 'play')) return false;
   const callSid = entry.callSid;
-  deps.store.end(callSid);
-  deps.tokens.revoke(callSid);
   // A transfer still owed should the socket close first with the caller on the line (http.ts decideAction).
   const handoffData = end.find((f) => f.type === 'end')?.handoffData;
+  // With a store many servers share, only a server that still holds the call ends it.
+  if (holds(deps, entry)) {
+    // With a durable store the transfer is saved with the call until it is sent, so whichever server the
+    // carrier's callback reaches puts the caller through (SessionStore.endHolding); a goodbye is not owed.
+    if (handoffData !== undefined && deps.store.durable && isTransfer(handoffData)) deps.store.endHolding(callSid, handoffData);
+    else deps.store.end(callSid);
+    deps.tokens.revoke(callSid);
+  }
   if (handoffData !== undefined) entry.heldHandoffData = handoffData;
   const done: Promise<void> = holdEnd(deps, callSid, sent)
     .then(async ({ after, heldMs, expectedMs }) => {
@@ -953,7 +960,10 @@ function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: Outbound
         deps.log(`${callSid}: end sent after ${seconds(heldMs, 2)} with no report the lines finished (~${seconds(expectedMs, 1)} estimated)`);
       }
       const out = await sendFrames(deps, entry, end, decision);
-      if (out.some((f) => f.type === 'end')) entry.heldHandoffData = null;
+      if (out.some((f) => f.type === 'end')) {
+        entry.heldHandoffData = null;
+        deps.store.heldSent(callSid);
+      }
       armEndGrace(deps, entry);
     })
     .catch((err: unknown) => deps.log(`${callSid}: sending the held end failed: ${describe(err).message}`))
@@ -962,6 +972,24 @@ function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: Outbound
     });
   endSends.set(callSid, { entry, done });
   return true;
+}
+
+/**
+ * Whether this server may end the call `entry` is for: always with the memory and file stores; with a
+ * store many servers share, only while it still holds the call (a turn that outlived its hold, the call
+ * since taken over by another server, ends nothing and revokes no token the other minted).
+ */
+function holds(deps: AdapterDeps, entry: CallEntry): boolean {
+  return !deps.store.shared || deps.store.get(entry.callSid) === entry;
+}
+
+/** Whether an `end`'s handoff puts the caller through (a goodbye's does not). */
+function isTransfer(handoffData: string): boolean {
+  try {
+    return parseHandoff(handoffData).reasonCode !== 'completed';
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -1114,6 +1142,10 @@ export interface AdapterDeps {
   store: SessionStore;
   tokens: ServerTokenStore;
   log: (line: string) => void;
+  /** RELAY_PING_MS: how often each relay socket is pinged, and one that missed the last ping closed (ws.ts); absent, never. */
+  pingMs?: number;
+  /** RESUMED_AFTER_MS: a resumed call's caller hears the `resumed` line only past this much silence; absent or 0, whenever it was said before. */
+  resumedAfterMs?: number;
   /** Overridable so a test can prove the timeout fires without waiting five seconds. */
   sendTimeoutMs?: number;
   /** Overridable so a test can prove the end-close backstop fires without waiting 30 seconds. */
@@ -1537,9 +1569,11 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     return false;
   } finally {
     // Runs even when sending the decision failed: the call is over either way.
-    if (ending) {
+    if (ending && holds(deps, entry)) {
       deps.store.end(entry.callSid);
       deps.tokens.revoke(entry.callSid);
+    }
+    if (ending) {
       // Twilio closes the socket after it has played the queued frames and processed `end`;
       // closing here drops the completion (live call, error 64105). A held `end` arms it once sent.
       if (!endHeld) armEndGrace(deps, entry);
@@ -1660,14 +1694,31 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
     // nothing for a moment, and is told so before the question is asked again.
     const restarted = deps.store.takeRestored(callId);
-    entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
-    if (restarted) deps.log(`${callId}: resumed after a restart`);
+    // Taken over from a server that gave it up as its socket closed (a store many servers share): a
+    // relay's reconnect, as on one machine, with no word of being lost. Its request still waiting is sent again.
+    const handedOff = restarted && deps.store.takeQuiet(callId);
+    // A call resumed from the store whose caller was left in silence no longer than RESUMED_AFTER_MS (a
+    // quick hand-off) is not apologized to either; one whose silence no one measured is, as always.
+    const silentMs = deps.store.takeSilence(callId);
+    const after = deps.resumedAfterMs ?? 0;
+    const brief = after > 0 && silentMs !== undefined && silentMs <= after;
+    const quiet = handedOff || (restarted && brief);
+    entry.frames.write('log', {
+      resumed: true, sessionId: parsed.sessionId,
+      ...(restarted ? (quiet ? { handedOver: true } : { afterRestart: true }) : {}),
+      ...(restarted && silentMs !== undefined ? { silentMs } : {}),
+    });
+    if (restarted) {
+      deps.log(handedOff ? `${callId}: resumed where its socket moved`
+        : brief ? `${callId}: resumed after ${silentMs} ms of silence, within RESUMED_AFTER_MS: no apology`
+          : `${callId}: resumed after a restart`);
+    }
     publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
     await deps.store.enqueue(callId, async (e) => {
       // The caller hears the question again, so nothing said before the drop is continued (replay
       // resets at the repeated setup too). In the queue, after the turns before it.
       continuations.get(callId)?.reset();
-      const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
+      const again = restarted && !quiet ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
       if (!again) return;
       // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
       const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
@@ -1785,10 +1836,15 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     if (typeof checked !== 'boolean') {
       ctx.setupDone = new Promise<void>((resolve) => (ctx.setupReady = resolve));
       try {
-        const verified = await checked.catch((err: unknown) => {
+        const verified = await within(checked, deps.store.timeoutMs).catch((err: unknown) => {
           deps.log(`${callId}: setup token could not be checked: ${err instanceof Error ? err.message : String(err)}`);
-          return false;
+          return null;
         });
+        if (verified === null) {
+          // The store could not say (it is down or slow): the caller is put through to a person, never left in silence.
+          await sendOne(socket, endFrame('unavailable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+          return;
+        }
         return await setupVerified(deps, socket, ctx, parsed, callId, verified);
       } finally {
         ctx.setupReady?.();

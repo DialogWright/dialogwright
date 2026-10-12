@@ -3,7 +3,7 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readd
 import { dirname, join } from 'node:path';
 import { CallTokens, type TokenEntry } from '../tokens';
 import { InProcessLeases } from './leases';
-import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, StoredCall, StoredChat } from './types';
+import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, ReleaseKind, StoredCall, StoredChat } from './types';
 
 /**
  * The file stores (SESSION_STORE=file:<dir>): one machine's calls, chats and tokens in a folder, so a
@@ -281,8 +281,8 @@ export class FileCallStateStore implements CallStateStore, CallLeases {
     return this.leases.renew(owner, ttlMs);
   }
 
-  release(callId: string, owner: string): void {
-    this.leases.release(callId, owner);
+  release(callId: string, owner: string, how?: ReleaseKind): void {
+    this.leases.release(callId, owner, how);
   }
 
   holder(callId: string): LeaseHolder | null {
@@ -297,8 +297,16 @@ export class FileCallStateStore implements CallStateStore, CallLeases {
     return this.leases.countReconnect(callId, limit);
   }
 
+  removeAs(callId: string, owner: string): boolean {
+    return this.leases.removeAs(callId, owner);
+  }
+
   removeUnleased(callId: string): boolean {
     return this.leases.removeUnleased(callId);
+  }
+
+  takeHeld(callId: string): string | null {
+    return this.leases.takeHeld(callId);
   }
 
   load(callId: string): StoredCall | null {

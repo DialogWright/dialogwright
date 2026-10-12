@@ -49,17 +49,42 @@ describe('SESSION_STORE', () => {
 
   it('takes postgres:// and postgresql://, with CALL_LEASE_MS (default 5000) and SERVER_ID, and says it at startup without its password', () => {
     const url = 'postgres://dialogwright:s3cret@db.example:5432/dialogwright';
-    expect(loadConfig({ ...base, SESSION_STORE: url }).sessionStore).toEqual({ kind: 'postgres', url, restartPauseS: 5, leaseMs: 5000 });
-    expect(loadConfig({ ...base, SESSION_STORE: 'postgresql://db.example/dw', CALL_LEASE_MS: '8000', SERVER_ID: 'web-1', RESTART_PAUSE_S: '0' }).sessionStore)
-      .toEqual({ kind: 'postgres', url: 'postgresql://db.example/dw', restartPauseS: 0, leaseMs: 8000, serverId: 'web-1' });
+    expect(loadConfig({ ...base, SESSION_STORE: url }).sessionStore).toEqual({ kind: 'postgres', url, restartPauseS: 5, leaseMs: 5000, timeoutMs: 2000 });
+    expect(loadConfig({ ...base, SESSION_STORE: 'postgresql://db.example/dw', CALL_LEASE_MS: '8000', SERVER_ID: 'web-1', RESTART_PAUSE_S: '0', SESSION_STORE_TIMEOUT_MS: '1500' }).sessionStore)
+      .toEqual({ kind: 'postgres', url: 'postgresql://db.example/dw', restartPauseS: 0, leaseMs: 8000, timeoutMs: 1500, serverId: 'web-1' });
+    expect(() => loadConfig({ ...base, SESSION_STORE: url, SESSION_STORE_TIMEOUT_MS: '50' })).toThrow('SESSION_STORE_TIMEOUT_MS must be a whole number of milliseconds from 100 to 30000, got "50"');
     const said = describeConfig(loadConfig({ ...base, SESSION_STORE: url, SERVER_ID: 'web-1' }));
-    expect(said).toContain('sessions postgres://dialogwright:***@db.example:5432/dialogwright (restart pause 5 s, lease 5000 ms, server web-1)');
+    expect(said).toContain('sessions postgres://dialogwright:***@db.example:5432/dialogwright (restart pause 5 s, lease 5000 ms, timeout 2000 ms, server web-1)');
     expect(said).not.toContain('s3cret');
     expect(() => loadConfig({ ...base, SESSION_STORE: url, CALL_LEASE_MS: '100' })).toThrow('CALL_LEASE_MS must be a whole number of milliseconds from 500 to 60000, got "100"');
     expect(() => loadConfig({ ...base, SESSION_STORE: url, SERVER_ID: 'web 1' })).toThrow('SERVER_ID must be 1 to 40 letters, digits, dots, dashes or underscores, got "web 1"');
     // Checked with any store, as SESSION_FSYNC is.
     expect(() => loadConfig({ ...base, CALL_LEASE_MS: 'soon' })).toThrow('CALL_LEASE_MS must be a non-negative integer, got "soon"');
     expect('sessionStore' in loadConfig({ ...base, CALL_LEASE_MS: '9000', SERVER_ID: 'web-1' })).toBe(false);
+  });
+});
+
+describe('RESUMED_AFTER_MS', () => {
+  it('is 1500 unless set, 0 to 60000, and said at startup with a durable store only', () => {
+    expect(loadConfig(base).resumedAfterMs).toBe(1500);
+    expect(loadConfig({ ...base, RESUMED_AFTER_MS: '0' }).resumedAfterMs).toBe(0);
+    expect(loadConfig({ ...base, RESUMED_AFTER_MS: '3000' }).resumedAfterMs).toBe(3000);
+    expect(() => loadConfig({ ...base, RESUMED_AFTER_MS: '60001' })).toThrow('RESUMED_AFTER_MS must be a whole number of milliseconds from 0 to 60000, got "60001"');
+    expect(() => loadConfig({ ...base, RESUMED_AFTER_MS: 'soon' })).toThrow('RESUMED_AFTER_MS must be a non-negative integer, got "soon"');
+    expect(describeConfig(loadConfig(base))).not.toContain('resumed line');
+    expect(describeConfig(loadConfig({ ...base, SESSION_STORE: 'file:sessions' }))).toContain('resumed line after 1500 ms of silence');
+    expect(describeConfig(loadConfig({ ...base, SESSION_STORE: 'file:sessions', RESUMED_AFTER_MS: '0' }))).toContain('resumed line always');
+  });
+});
+
+describe('RELAY_PING_MS', () => {
+  it('is off unless set, and the config is then as it always was; set, from one to 120 seconds, said at startup', () => {
+    expect('relayPingMs' in loadConfig(base)).toBe(false);
+    expect('relayPingMs' in loadConfig({ ...base, RELAY_PING_MS: '0' })).toBe(false);
+    expect(describeConfig(loadConfig(base))).not.toContain('relay ping');
+    expect(loadConfig({ ...base, RELAY_PING_MS: '15000' }).relayPingMs).toBe(15000);
+    expect(describeConfig(loadConfig({ ...base, RELAY_PING_MS: '15000' }))).toContain('relay ping every 15000 ms');
+    expect(() => loadConfig({ ...base, RELAY_PING_MS: '500' })).toThrow('RELAY_PING_MS must be 0 (off) or a whole number of milliseconds from 1000 to 120000, got "500"');
   });
 });
 

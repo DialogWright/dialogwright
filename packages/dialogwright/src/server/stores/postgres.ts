@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { sameToken } from '../tokens';
 import { storedCallProblem, storedChatProblem } from './file';
-import type { SqlClient, SqlQueryable } from './sql';
+import { boundedSql, DEFAULT_SQL_TIMEOUT_MS, type SqlClient, type SqlQueryable } from './sql';
 import {
-  tokenHash, type CallLeases, type CallStateStore, type ChatStateStore, type LeaseClaim, type LeaseHolder, type ServerTokenStore, type StoredCall, type StoredChat,
+  tokenHash, type CallLeases, type CallStateStore, type ChatStateStore, type LeaseClaim, type LeaseHolder, type LeaseTook, type ReleaseKind,
+  type ServerTokenStore, type StoredCall, type StoredChat,
 } from './types';
 
 /**
@@ -13,8 +14,11 @@ import {
  * runStoreContract), run in the suite on PGlite and in the two-server test by two servers at once.
  *
  *   dw_schema        the version of these tables: made on first use, never changed silently
- *   dw_calls         one row per live call: the call as saved (JSON, as it was given) and its reconnect count
- *   dw_call_leases   one row per call a server holds: its owner and until when (ms, the servers' clock)
+ *   dw_calls         one row per live call: the call as saved (JSON, as it was given), its reconnect
+ *                    count, and a transfer held for its line to play (held_handoff)
+ *   dw_call_leases   one row per call a server holds or gave up: its owner, until when (ms, the
+ *                    database's clock), the call's reconnect count when it was taken, and how it was
+ *                    given up (released: socket or stop)
  *   dw_chats         one row per live chat: the chat as saved and its resume token's hash
  *   dw_tokens        one row per live relay token: its hash, carrier and expiry, never the token
  *
@@ -23,8 +27,10 @@ import {
  * on any server counts a reconnect in one statement (countReconnect), and it is what a load reads.
  * A record that cannot be read is logged once and loads as absent, never a crash.
  *
- * Times are the servers' clocks (`now`), as the other stores', so the clocks of servers that share a
- * database are to agree within a second (pnpm diagnose checks the clock).
+ * A lease's times are the database's clock, so no two servers' clocks are ever compared (a test may
+ * give its own: PostgresStoreOptions.leaseNow). A relay token's expiry is the server's clock, as on one
+ * machine: ten minutes, beside which a skew of seconds does not matter. Every query has a deadline on
+ * this side of the wire (SESSION_STORE_TIMEOUT_MS), so a database that stops answering fails fast.
  */
 
 /** The version of the tables this code makes and reads. A database at another refuses to open: no migration runs unasked. */
@@ -36,16 +42,23 @@ const SCHEMA_ROW = 'sessions';
 /** The key of the advisory lock two servers starting at once take while they make the tables. */
 const SCHEMA_LOCK = 0x6477_5f73; // "dw_s"
 
+/** The database's clock, in ms since the epoch: what every lease is timed by. */
+const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
+
 const TABLES_V1 = [
   `CREATE TABLE IF NOT EXISTS dw_calls (
     call_id text PRIMARY KEY,
     body text NOT NULL,
-    reconnects integer NOT NULL
+    reconnects integer NOT NULL,
+    held_handoff text,
+    dropped_at_ms bigint
   )`,
   `CREATE TABLE IF NOT EXISTS dw_call_leases (
     call_id text PRIMARY KEY,
     owner text NOT NULL,
-    expires_at_ms bigint NOT NULL
+    expires_at_ms bigint NOT NULL,
+    reconnects integer NOT NULL DEFAULT 0,
+    released text
   )`,
   'CREATE INDEX IF NOT EXISTS dw_call_leases_owner ON dw_call_leases (owner)',
   `CREATE TABLE IF NOT EXISTS dw_chats (
@@ -73,7 +86,7 @@ export class SchemaVersionError extends Error {
   }
 }
 
-/** The version the database's session tables are at, or null when they have not been made. */
+/** The version the database's session tables are at, or null when they have not been made. Reads only. */
 export async function schemaVersion(sql: SqlQueryable): Promise<number | null> {
   const exists = await sql.query<{ t: string | null }>("SELECT to_regclass('dw_schema')::text AS t");
   if (exists.rows[0]?.t == null) return null;
@@ -82,16 +95,22 @@ export async function schemaVersion(sql: SqlQueryable): Promise<number | null> {
 }
 
 /**
- * Make the session tables if they are not there, under a lock so two servers starting at once make
- * them once; then the version they are at must be this code's. Returns whether they were made now.
+ * The session tables at this code's version. Read first, with no lock and no DDL, so a server whose user
+ * may only read and write the tables starts once they are made; made only when they are not there,
+ * under a lock so two servers starting at once make them once. Returns whether they were made now.
  */
 export async function ensureSchema(sql: SqlClient): Promise<boolean> {
+  const found = await schemaVersion(sql);
+  if (found !== null) {
+    if (found !== POSTGRES_SCHEMA_VERSION) throw new SchemaVersionError(found, POSTGRES_SCHEMA_VERSION);
+    return false;
+  }
   return sql.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock($1)', [SCHEMA_LOCK]);
     await tx.query('CREATE TABLE IF NOT EXISTS dw_schema (name text PRIMARY KEY, version integer NOT NULL)');
-    const found = await schemaVersion(tx);
-    if (found !== null) {
-      if (found !== POSTGRES_SCHEMA_VERSION) throw new SchemaVersionError(found, POSTGRES_SCHEMA_VERSION);
+    const again = await schemaVersion(tx);
+    if (again !== null) {
+      if (again !== POSTGRES_SCHEMA_VERSION) throw new SchemaVersionError(again, POSTGRES_SCHEMA_VERSION);
       return false;
     }
     for (const statement of TABLES_V1) await tx.query(statement);
@@ -100,12 +119,22 @@ export async function ensureSchema(sql: SqlClient): Promise<boolean> {
   });
 }
 
+/** The database's clock, in ms since the epoch (pnpm diagnose compares it with this machine's). */
+export async function databaseNowMs(sql: SqlQueryable): Promise<number> {
+  const r = await sql.query<{ t: number | string }>(`SELECT ${DB_NOW} AS t`);
+  return Number(r.rows[0]!.t);
+}
+
 /** What the Postgres stores are made with. */
 export interface PostgresStoreOptions {
   /** How long a relay token lives. */
   tokenTtlMs: number;
-  /** The clock (default Date.now): leases' and tokens' times. */
+  /** The clock of a relay token's expiry (default Date.now). */
   now?: () => number;
+  /** A test's clock for the leases in place of the database's (the contract moves it); absent, the database's. */
+  leaseNow?: () => number;
+  /** The deadline on every query, on this side of the wire (SESSION_STORE_TIMEOUT_MS); default 2000 ms. */
+  timeoutMs?: number;
   /** Where a record that cannot be read, or a token write that failed, is said. */
   log?: (line: string) => void;
 }
@@ -122,12 +151,24 @@ class Reported {
   }
 }
 
+type Num = number | string;
+
+/** How often a claim looks again for a row a racing claim made between its read and its write. */
+const CLAIM_RACE_TRIES = 3;
+
 /** The calls, and their leases (one owner per call at a time). */
 export class PostgresCallStateStore implements CallStateStore, CallLeases {
-  constructor(private readonly sql: SqlClient, private readonly now: () => number, private readonly reported: Reported) {}
+  constructor(private readonly sql: SqlClient, private readonly leaseNow: (() => number) | null, private readonly reported: Reported) {}
+
+  /** The lease clock as a query's parameter (a test's) or the database's own, pushing onto `params` as it needs. */
+  private clock(params: unknown[]): string {
+    if (this.leaseNow === null) return DB_NOW;
+    params.push(this.leaseNow());
+    return `$${params.length}::bigint`;
+  }
 
   /** The call in a row, with its reconnect count from its column, or null when it is not a call (logged once). */
-  private read(callId: string, row: { body: string; reconnects: number | string }): StoredCall | null {
+  private read(callId: string, row: { body: string; reconnects: Num }): StoredCall | null {
     let parsed: unknown;
     try {
       parsed = JSON.parse(row.body);
@@ -147,7 +188,7 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
   }
 
   private async loadOn(q: SqlQueryable, callId: string): Promise<StoredCall | null> {
-    const r = await q.query<{ body: string; reconnects: number | string }>('SELECT body, reconnects FROM dw_calls WHERE call_id = $1', [callId]);
+    const r = await q.query<{ body: string; reconnects: Num }>('SELECT body, reconnects FROM dw_calls WHERE call_id = $1', [callId]);
     return r.rows.length === 0 ? null : this.read(callId, r.rows[0]!);
   }
 
@@ -157,9 +198,9 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
 
   async save(call: StoredCall): Promise<void> {
     await this.sql.query(
-      `INSERT INTO dw_calls (call_id, body, reconnects) VALUES ($1, $2, $3)
-       ON CONFLICT (call_id) DO UPDATE SET body = EXCLUDED.body, reconnects = EXCLUDED.reconnects`,
-      [call.callId, JSON.stringify(call), call.reconnects],
+      `INSERT INTO dw_calls (call_id, body, reconnects, held_handoff) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (call_id) DO UPDATE SET body = EXCLUDED.body, reconnects = EXCLUDED.reconnects, held_handoff = EXCLUDED.held_handoff`,
+      [call.callId, JSON.stringify(call), call.reconnects, call.heldHandoffData ?? null],
     );
   }
 
@@ -178,35 +219,56 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
 
   async claim(callId: string, owner: string, ttlMs: number): Promise<LeaseClaim> {
     return this.sql.transaction(async (tx) => {
-      const now = this.now();
-      // One statement: a row locked by another claim makes this one wait, then read the row it left.
-      const took = await tx.query<{ owner: string }>(
-        `INSERT INTO dw_call_leases (call_id, owner, expires_at_ms) VALUES ($1, $2, $3)
-         ON CONFLICT (call_id) DO UPDATE SET owner = EXCLUDED.owner, expires_at_ms = EXCLUDED.expires_at_ms
-         WHERE dw_call_leases.owner = EXCLUDED.owner OR dw_call_leases.expires_at_ms <= $4
-         RETURNING owner`,
-        [callId, owner, now + ttlMs, now],
-      );
-      if (took.rows.length === 0) {
-        const held = await tx.query<{ owner: string; expires_at_ms: number | string }>('SELECT owner, expires_at_ms FROM dw_call_leases WHERE call_id = $1', [callId]);
-        const h = held.rows[0]!;
-        return { taken: false, owner: h.owner, expiresAtMs: Number(h.expires_at_ms) };
+      for (let attempt = 0; attempt < CLAIM_RACE_TRIES; attempt++) {
+        // The lease row locked while this claim decides, so no other claim comes between.
+        const p1: unknown[] = [callId];
+        const held = await tx.query<{ owner: string; expires_at_ms: Num; reconnects: Num; released: string | null; lapsed: boolean }>(
+          `SELECT owner, expires_at_ms, reconnects, released, expires_at_ms <= ${this.clock(p1)} AS lapsed FROM dw_call_leases WHERE call_id = $1 FOR UPDATE`, p1,
+        );
+        const p0: unknown[] = [callId];
+        const counted = await tx.query<{ reconnects: Num; silent: Num | null }>(
+          `SELECT reconnects, ${this.clock(p0)} - dropped_at_ms AS silent FROM dw_calls WHERE call_id = $1`, p0,
+        );
+        const reconnects = counted.rows.length === 0 ? 0 : Number(counted.rows[0]!.reconnects);
+        const silent = counted.rows[0]?.silent;
+        const silentMs = silent === null || silent === undefined ? null : Number(silent);
+        const h = held.rows[0];
+        const p2: unknown[] = [callId, owner, ttlMs, reconnects];
+        const until = `${this.clock(p2)} + $3::bigint`;
+        if (h === undefined) {
+          const made = await tx.query(
+            `INSERT INTO dw_call_leases (call_id, owner, expires_at_ms, reconnects, released) VALUES ($1, $2, ${until}, $4, NULL)
+             ON CONFLICT (call_id) DO NOTHING RETURNING owner`, p2,
+          );
+          // Another claim made the row between this one's read and its write: read it again.
+          if (made.rows.length === 0) continue;
+          return { taken: true, call: await this.loadOn(tx, callId), took: 'new', silentMs };
+        }
+        let took: LeaseTook;
+        if (h.released === 'socket' || h.released === 'stop') took = h.released;
+        else if (h.owner === owner) took = 'own';
+        else if (h.lapsed) took = 'lapsed';
+        else if (Number(h.reconnects) < reconnects) took = 'reconnected';
+        else return { taken: false, owner: h.owner, expiresAtMs: Number(h.expires_at_ms) };
+        await tx.query(`UPDATE dw_call_leases SET owner = $2, expires_at_ms = ${until}, reconnects = $4, released = NULL WHERE call_id = $1`, p2);
+        return { taken: true, call: await this.loadOn(tx, callId), took, silentMs };
       }
-      return { taken: true, call: await this.loadOn(tx, callId) };
+      throw new Error(`the lease on ${JSON.stringify(callId)} changed ${CLAIM_RACE_TRIES} times while it was claimed`);
     });
   }
 
   async renew(owner: string, ttlMs: number): Promise<string[]> {
-    const r = await this.sql.query<{ call_id: string }>('UPDATE dw_call_leases SET expires_at_ms = $2 WHERE owner = $1 RETURNING call_id', [owner, this.now() + ttlMs]);
+    const p: unknown[] = [owner, ttlMs];
+    const r = await this.sql.query<{ call_id: string }>(`UPDATE dw_call_leases SET expires_at_ms = ${this.clock(p)} + $2::bigint WHERE owner = $1 AND released IS NULL RETURNING call_id`, p);
     return r.rows.map((row) => row.call_id);
   }
 
-  async release(callId: string, owner: string): Promise<void> {
-    await this.sql.query('DELETE FROM dw_call_leases WHERE call_id = $1 AND owner = $2', [callId, owner]);
+  async release(callId: string, owner: string, how: ReleaseKind = 'stop'): Promise<void> {
+    await this.sql.query('UPDATE dw_call_leases SET expires_at_ms = 0, released = $3 WHERE call_id = $1 AND owner = $2 AND released IS NULL', [callId, owner, how]);
   }
 
   async holder(callId: string): Promise<LeaseHolder | null> {
-    const r = await this.sql.query<{ owner: string; expires_at_ms: number | string }>('SELECT owner, expires_at_ms FROM dw_call_leases WHERE call_id = $1', [callId]);
+    const r = await this.sql.query<{ owner: string; expires_at_ms: Num }>('SELECT owner, expires_at_ms FROM dw_call_leases WHERE call_id = $1 AND released IS NULL', [callId]);
     const h = r.rows[0];
     return h === undefined ? null : { owner: h.owner, expiresAtMs: Number(h.expires_at_ms) };
   }
@@ -214,35 +276,55 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
   async saveAs(call: StoredCall, owner: string, ttlMs: number): Promise<boolean> {
     return this.sql.transaction(async (tx) => {
       // The lease row stays locked until the save is in: a claim by another server waits for it.
-      const held = await tx.query('UPDATE dw_call_leases SET expires_at_ms = $3 WHERE call_id = $1 AND owner = $2 RETURNING owner', [call.callId, owner, this.now() + ttlMs]);
+      const p: unknown[] = [call.callId, owner, ttlMs];
+      const held = await tx.query(`UPDATE dw_call_leases SET expires_at_ms = ${this.clock(p)} + $3::bigint WHERE call_id = $1 AND owner = $2 AND released IS NULL RETURNING owner`, p);
       if (held.rows.length === 0) return false;
       await tx.query(
-        `INSERT INTO dw_calls (call_id, body, reconnects) VALUES ($1, $2, $3)
-         ON CONFLICT (call_id) DO UPDATE SET body = EXCLUDED.body, reconnects = GREATEST(dw_calls.reconnects, EXCLUDED.reconnects)`,
-        [call.callId, JSON.stringify(call), call.reconnects],
+        `INSERT INTO dw_calls (call_id, body, reconnects, held_handoff) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (call_id) DO UPDATE SET body = EXCLUDED.body, reconnects = GREATEST(dw_calls.reconnects, EXCLUDED.reconnects), held_handoff = EXCLUDED.held_handoff`,
+        [call.callId, JSON.stringify(call), call.reconnects, call.heldHandoffData ?? null],
       );
       return true;
     });
   }
 
   async countReconnect(callId: string, limit: number): Promise<{ before: number; counted: boolean } | null> {
-    const counted = await this.sql.query<{ reconnects: number | string }>('UPDATE dw_calls SET reconnects = reconnects + 1 WHERE call_id = $1 AND reconnects < $2 RETURNING reconnects', [callId, limit]);
+    const p: unknown[] = [callId, limit];
+    const counted = await this.sql.query<{ reconnects: Num }>(`UPDATE dw_calls SET reconnects = reconnects + 1, dropped_at_ms = ${this.clock(p)} WHERE call_id = $1 AND reconnects < $2 RETURNING reconnects`, p);
     if (counted.rows.length > 0) return { before: Number(counted.rows[0]!.reconnects) - 1, counted: true };
-    const r = await this.sql.query<{ reconnects: number | string }>('SELECT reconnects FROM dw_calls WHERE call_id = $1', [callId]);
+    const r = await this.sql.query<{ reconnects: Num }>('SELECT reconnects FROM dw_calls WHERE call_id = $1', [callId]);
     return r.rows.length === 0 ? null : { before: Number(r.rows[0]!.reconnects), counted: false };
+  }
+
+  async removeAs(callId: string, owner: string): Promise<boolean> {
+    return this.sql.transaction(async (tx) => {
+      const held = await tx.query('DELETE FROM dw_call_leases WHERE call_id = $1 AND owner = $2 AND released IS NULL RETURNING owner', [callId, owner]);
+      if (held.rows.length === 0) return false;
+      return (await tx.query('DELETE FROM dw_calls WHERE call_id = $1 RETURNING call_id', [callId])).rows.length > 0;
+    });
   }
 
   async removeUnleased(callId: string): Promise<boolean> {
     return this.sql.transaction(async (tx) => {
-      const now = this.now();
+      const p: unknown[] = [callId];
+      const now = this.clock(p);
       const gone = await tx.query(
         `DELETE FROM dw_calls WHERE call_id = $1
-         AND NOT EXISTS (SELECT 1 FROM dw_call_leases WHERE call_id = $1 AND expires_at_ms > $2)
-         RETURNING call_id`,
-        [callId, now],
+         AND NOT EXISTS (SELECT 1 FROM dw_call_leases WHERE call_id = $1 AND released IS NULL AND expires_at_ms > ${now})
+         RETURNING call_id`, p,
       );
-      await tx.query('DELETE FROM dw_call_leases WHERE call_id = $1 AND expires_at_ms <= $2', [callId, now]);
+      const q: unknown[] = [callId];
+      await tx.query(`DELETE FROM dw_call_leases WHERE call_id = $1 AND (released IS NOT NULL OR expires_at_ms <= ${this.clock(q)})`, q);
       return gone.rows.length > 0;
+    });
+  }
+
+  async takeHeld(callId: string): Promise<string | null> {
+    return this.sql.transaction(async (tx) => {
+      const r = await tx.query<{ held_handoff: string }>('DELETE FROM dw_calls WHERE call_id = $1 AND held_handoff IS NOT NULL RETURNING held_handoff', [callId]);
+      if (r.rows.length === 0) return null;
+      await tx.query('DELETE FROM dw_call_leases WHERE call_id = $1', [callId]);
+      return r.rows[0]!.held_handoff;
     });
   }
 }
@@ -386,8 +468,8 @@ export class PostgresTokenStore implements ServerTokenStore {
  * Take a lease on a call no one has and give it up, as a server does (pnpm diagnose): it throws, saying
  * what failed, when either cannot be done. The probe's call id and owner are its own, never a caller's.
  */
-export async function probeLease(sql: SqlClient, now: () => number = Date.now): Promise<void> {
-  const calls = new PostgresCallStateStore(sql, now, new Reported(() => {}));
+export async function probeLease(sql: SqlClient): Promise<void> {
+  const calls = new PostgresCallStateStore(sql, null, new Reported(() => {}));
   const suffix = randomBytes(4).toString('hex');
   const callId = `dw-diagnose-${suffix}`;
   const owner = `diagnose-${suffix}`;
@@ -395,6 +477,7 @@ export async function probeLease(sql: SqlClient, now: () => number = Date.now): 
   if (!taken.taken) throw new Error(`a test lease was refused: ${taken.owner} holds it`);
   await calls.release(callId, owner);
   if ((await calls.holder(callId)) !== null) throw new Error('a test lease could not be given up');
+  await calls.remove(callId);
 }
 
 /** The Postgres stores over one client, as SESSION_STORE=postgres://... opens them. */
@@ -410,15 +493,16 @@ export interface PostgresStores {
  * The stores over `sql`, once the session tables are there at this code's version (made on first use;
  * a SchemaVersionError for any other). The client is the caller's: `close` closes it.
  */
-export async function openPostgresStores(sql: SqlClient, o: PostgresStoreOptions): Promise<PostgresStores> {
+export async function openPostgresStores(given: SqlClient, o: PostgresStoreOptions): Promise<PostgresStores> {
   const log = o.log ?? (() => {});
   const now = o.now ?? Date.now;
+  const sql = boundedSql(given, o.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS);
   const made = await ensureSchema(sql);
   if (made) log(`sessions: made the session tables in Postgres (version ${POSTGRES_SCHEMA_VERSION})`);
   const reported = new Reported(log);
   const tokens = new PostgresTokenStore(sql, o.tokenTtlMs, now, log);
   return {
-    calls: new PostgresCallStateStore(sql, now, reported),
+    calls: new PostgresCallStateStore(sql, o.leaseNow ?? null, reported),
     chats: new PostgresChatStateStore(sql, reported),
     tokens,
     close: async () => {

@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { handleSocketClose, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
 import type { SocketLike } from './sessions';
 import { LEGACY_PROVIDER, providerIdForPath } from './voice/registry';
+import { within } from './stores/sql';
 
 /** A connection that has not identified itself with a setup message by now is not ConversationRelay. */
 export const SETUP_TIMEOUT_MS = 10_000;
@@ -62,6 +63,22 @@ export function attachWebSocketServer(
     deadline.unref();
     // A setup whose token is checked in a shared store says so when it passes (below covers the others).
     ctx.identified = () => clearTimeout(deadline);
+    // RELAY_PING_MS: a socket that has not answered the last ping by the next is closed, as one the carrier
+    // abandoned without closing it would otherwise be held open, and its call with it. Off by default.
+    let answered = true;
+    const pinger = deps.pingMs !== undefined && deps.pingMs > 0
+      ? setInterval(() => {
+        if (!answered) {
+          deps.log(`${ctx.callSid ?? 'unknown'}: relay socket closed: no answer to a ping in ${deps.pingMs} ms`);
+          ws.terminate();
+          return;
+        }
+        answered = false;
+        ws.ping();
+      }, deps.pingMs)
+      : null;
+    pinger?.unref();
+    if (pinger) ws.on('pong', () => (answered = true));
     ws.on('message', (data) => {
       const handled = handleSocketMessage(deps, sock, ctx, data.toString());
       // handleSocketMessage assigns ctx.callSid synchronously, before its first await, once a setup
@@ -74,6 +91,7 @@ export function attachWebSocketServer(
     });
     ws.on('close', () => {
       clearTimeout(deadline);
+      if (pinger) clearInterval(pinger);
       void handleSocketClose(deps, ctx).catch((err: unknown) =>
         deps.log(`${ctx.callSid ?? 'unknown'}: close handler failed: ${err instanceof Error ? err.message : String(err)}`),
       );
@@ -111,7 +129,13 @@ export function attachWebSocketServer(
     // A well-shaped token that was never minted, has expired, or was minted for another carrier's
     // call cannot pass the `setup` check either, so it gets no socket. The binding to a particular
     // call SID is still checked there.
-    const upgrade = (live: boolean): void => {
+    const upgrade = (live: boolean | 'unknown'): void => {
+      if (live === 'unknown') {
+        // The store could not say: the carrier calls back, and its callback puts the caller through.
+        socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       if (!live) {
         deps.log('upgrade refused: unknown or expired token');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -124,9 +148,9 @@ export function attachWebSocketServer(
     // A store across the network answers with a promise (SESSION_STORE=postgres); the others at once, as always.
     if (typeof live === 'boolean') upgrade(live);
     else {
-      live.then(upgrade, (err: unknown) => {
+      within(live, deps.store.timeoutMs).then(upgrade, (err: unknown) => {
         deps.log(`upgrade refused: the token could not be checked: ${err instanceof Error ? err.message : String(err)}`);
-        upgrade(false);
+        upgrade('unknown');
       });
     }
   });

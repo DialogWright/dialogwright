@@ -11,6 +11,9 @@ import { FrameLog } from './frameLog';
 import { VOICE_RELAY } from '../channel/caps';
 import { useTestkit } from '../testing/apps';
 import { MemoryCallStateStore } from './stores/memory';
+import { PGlite } from '@electric-sql/pglite';
+import { pgliteSql } from './stores/pgliteSql';
+import { openPostgresStores } from './stores/postgres';
 
 /**
  * SessionStore over a store many servers share (SessionStoreOptions.lease): two servers' stores over one
@@ -74,10 +77,11 @@ describe('a SessionStore over a shared store', () => {
     expect(b.s.get('CA1')).toBeUndefined();
   });
 
-  it('a call whose socket closed is given up once its turn is done, and the next server takes it, as resumed', async () => {
+  it('a call whose socket closed is given up once its turn is done, and the next server takes it as a clean hand-off', async () => {
     const clock = { t: 1_000_000 };
     const state = new MemoryCallStateStore(() => clock.t);
-    const a = server('a', state, clock);
+    // A claimer waits up to two seconds: the turn running is waited for up to that less a quarter of a hold.
+    const a = server('a', state, clock, { waitMs: 2_000 });
     const b = server('b', state, clock);
     await a.s.claim('CA1', 'twilio');
     const e = a.s.create('CA1', sock(), 'twilio');
@@ -97,6 +101,8 @@ describe('a SessionStore over a shared store', () => {
     expect(await b.s.claim('CA1', 'twilio')).toBe('restored');
     expect(b.s.get('CA1')!.session.turnIndex).toBe(2);
     expect(b.s.takeRestored('CA1')).toBe(true);
+    // Given up as its socket closed: the caller is not told they were lost (no resumed line).
+    expect(b.s.takeQuiet('CA1')).toBe(true);
     expect(state.holder('CA1')?.owner).toBe('b');
   });
 
@@ -130,7 +136,8 @@ describe('a SessionStore over a shared store', () => {
     await new Promise((r) => setTimeout(r, 30));
     clock.t += TTL;
     expect(await taking).toBe('restored');
-    expect(b.logs).toContain('CA1: taken over from the session store (turn 0, reconnect 0) by b');
+    expect(b.logs).toContain('CA1: taken over from the session store (turn 0, reconnect 0, its lease lapsed) by b');
+    expect(b.s.takeQuiet('CA1')).toBe(false);
   });
 
   it('a server whose call was taken over lets it go: its save is refused, its socket closed, and it is never saved from there again', async () => {
@@ -252,5 +259,47 @@ describe('a SessionStore over a shared store', () => {
     const [fromB, fromC] = await Promise.all([b.s.sweepStored(), c.s.sweepStored()]);
     expect([...fromB, ...fromC].map((x) => x.callId)).toEqual(['CA-gone']);
     expect(state.list()).toEqual(['CA-live']);
+  });
+
+  it('a server that lost a call never removes it: its end leaves the call the new holder runs, on Postgres', async () => {
+    const db = await PGlite.create();
+    try {
+      const clock = { t: 1_000_000 };
+      const stores = await Promise.all([0, 1].map(() => openPostgresStores(pgliteSql(db), { tokenTtlMs: 600_000, now: () => clock.t, leaseNow: () => clock.t })));
+      const on = (owner: string, i: number) => {
+        const dir = mkdtempSync(join(tmpdir(), 'shared-'));
+        dirs.push(dir);
+        const logs: string[] = [];
+        const now = (): number => clock.t;
+        const s = new SessionStore((callSid) => ({
+          session: newSession(callSid, now(), VOICE_RELAY),
+          opts: { client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now },
+          trace: new TraceWriter(join(dir, `${callSid}.jsonl`)),
+          frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`), now),
+        }), 60_000, now, 7_200_000, { state: stores[i]!.calls, lease: { leases: stores[i]!.calls, owner, ttlMs: TTL, pollMs: 5, waitMs: 50 }, log: (l) => logs.push(l) });
+        return { s, logs };
+      };
+      const a = on('a', 0);
+      const b = on('b', 1);
+      expect(await a.s.claim('CA1', 'twilio')).toBe('none');
+      a.s.create('CA1', sock(), 'twilio');
+      await a.s.persist('CA1');
+      // A could not renew (a stall): its hold lapses, and B takes the call.
+      clock.t += TTL * 2;
+      expect(await b.s.claim('CA1', 'twilio')).toBe('restored');
+      const bs = sock();
+      b.s.attach('CA1', bs);
+      // A, not yet aware, ends the call: nothing of B's goes.
+      a.s.end('CA1');
+      await a.s.settled();
+      expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([{ call_id: 'CA1' }]);
+      expect((await db.query<{ owner: string }>('SELECT owner FROM dw_call_leases')).rows).toEqual([{ owner: 'b' }]);
+      await b.s.persist('CA1');
+      await b.s.settled();
+      expect(b.s.get('CA1')).toBeDefined();
+      expect(bs.closedWith).toBeNull();
+    } finally {
+      await db.close();
+    }
   });
 });

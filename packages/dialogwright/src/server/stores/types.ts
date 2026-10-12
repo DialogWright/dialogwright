@@ -50,6 +50,20 @@ export interface StoredCall {
   readonly auditTail: readonly AuditEntry[];
   /** The service request the call is waiting on, when it waits on one (the session's pendingService). */
   readonly pending?: PendingEffect;
+  /**
+   * The handoff of a transfer whose `end` is held for its line to play (END_AFTER_PLAYBACK), saved while
+   * it is held so that whichever server the carrier's callback reaches puts the caller through, once
+   * (CallStateStore.takeHeld). Outside the session, and optional: a server that does not know it reads
+   * the record as an ended call and forgets it, as it did before, so SESSION_SCHEMA is unchanged.
+   */
+  readonly heldHandoffData?: string;
+  /**
+   * When the carrier last reported the relay lost (its callback asking to reconnect), by the clock of the
+   * one machine that counted it: how long the caller has been in silence is measured from it, for the
+   * `resumed` line (RESUMED_AFTER_MS). Outside the session, optional, read by one machine's stores only;
+   * a store many servers share keeps it with the reconnect count, on the database's clock.
+   */
+  readonly droppedAtMs?: number;
 }
 
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */
@@ -74,6 +88,12 @@ export interface CallStateStore {
   remove(callId: string): Awaitable<void>;
   /** The ids of every call saved and not removed, for the sweep. */
   list(): Awaitable<readonly string[]>;
+  /**
+   * The held transfer of a call saved with one (StoredCall.heldHandoffData), taken with the call in one
+   * step, so that of many servers taking it exactly one has it; null when there is none (never held,
+   * sent, or taken already). Absent, the server loads and removes the call itself, as one process may.
+   */
+  takeHeld?(callId: string): Awaitable<string | null>;
 }
 
 /** Where web chats are kept between turns. */
@@ -126,37 +146,49 @@ export interface ServerTokenStore extends TokenStore {
  * (one machine is the only owner there is), so the contract holds every store to the same rules, and
  * the server reads a lease only from a shared store (SessionStoreOptions.lease).
  *
- * Every time is the store's clock (the `now` it was made with): servers that share a store keep their
- * clocks within a second of each other, as `pnpm diagnose` checks.
+ * Every time is one clock for every server: the database's for the Postgres store (so no two servers'
+ * clocks are ever compared), the process's for the in-process ones; a test may give its own.
  */
 export interface CallLeases {
   /**
    * Take the call's lease for `owner` until now plus `ttlMs`, and read the call as saved, in one step
-   * no other server's claim can come between: taken when no one holds it, its holder's lease has
-   * lapsed, it was released, or `owner` holds it already (which renews it). Not taken, it says who
-   * holds it and until when. A call never saved is taken with `call` null (a new call).
+   * no other server's claim can come between. Taken when no one holds it, `owner` holds it already
+   * (which renews it), its holder gave it up (released), its holder's lease has lapsed, or a reconnect
+   * has been counted for the call since its holder took it (the carrier gave up the holder's socket, so
+   * the holder is not running the call, alive or not). `took` says which. Not taken, it says who holds
+   * it and until when. A call never saved is taken with `call` null (a new call).
    */
   claim(callId: string, owner: string, ttlMs: number): Awaitable<LeaseClaim>;
-  /** Extend every lease `owner` holds to now plus `ttlMs`; the ids of the calls it holds. */
+  /** Extend every lease `owner` holds and has not given up to now plus `ttlMs`; the ids of the calls it holds. */
   renew(owner: string, ttlMs: number): Awaitable<readonly string[]>;
-  /** Give the call's lease up, when `owner` holds it; anything else is no error. */
-  release(callId: string, owner: string): Awaitable<void>;
-  /** Who holds the call's lease and until when, lapsed or not; null when no one does. */
+  /**
+   * Give the call's lease up, when `owner` holds it, saying how: `socket` when the call's socket closed
+   * and its carrier will reconnect wherever it lands (a clean hand-off, which the next holder need not
+   * apologize for), `stop` when its server is stopping. Anything else is no error.
+   */
+  release(callId: string, owner: string, how?: ReleaseKind): Awaitable<void>;
+  /** Who holds the call's lease and until when, lapsed or not; null when no one does or it was given up. */
   holder(callId: string): Awaitable<LeaseHolder | null>;
   /**
-   * Save the call only while `owner` holds its lease, lapsed or not, and renew the lease: false, saving
-   * nothing, when another owner holds it or there is none (the call was taken over, or ended and
-   * removed). Its reconnect count never goes down (one counted elsewhere is kept).
+   * Save the call only while `owner` holds its lease (lapsed or not, but not given up), and renew the
+   * lease: false, saving nothing, when another owner holds it or there is none (the call was taken over,
+   * or ended and removed). Its reconnect count never goes down (one counted elsewhere is kept).
    */
   saveAs(call: StoredCall, owner: string, ttlMs: number): Awaitable<boolean>;
   /**
    * Count one reconnect of the call, at once and for all servers, while its count is under `limit`:
-   * the count before, and whether it was counted. Null when the call is not saved.
+   * the count before, and whether it was counted. Null when the call is not saved. A reconnect counted
+   * also records when (the store's clock): the moment its carrier reported the relay lost.
    */
   countReconnect(callId: string, limit: number): Awaitable<{ before: number; counted: boolean } | null>;
-  /** Remove the call (and its lease) unless someone holds a lease on it that has not lapsed: whether it was removed. */
+  /** Remove the call (and its lease) only while `owner` holds its lease: whether it was removed. */
+  removeAs(callId: string, owner: string): Awaitable<boolean>;
+  /** Remove the call (and its lease) unless someone holds a lease on it that has not lapsed or been given up: whether it was removed. */
   removeUnleased(callId: string): Awaitable<boolean>;
 }
+
+/** How a lease was given up: its socket closed (a clean hand-off), or its server stopped. */
+export type ReleaseKind = 'socket' | 'stop';
 
 /** A call's lease: who holds it, and until when (the store's clock, in ms). */
 export interface LeaseHolder {
@@ -164,9 +196,22 @@ export interface LeaseHolder {
   readonly expiresAtMs: number;
 }
 
-/** What `claim` found: the lease taken, with the call as saved (null for a call never saved), or held by another. */
+/**
+ * How a lease was taken: `new` (no one had it), `own` (the claimer held it), `socket` or `stop` (given
+ * up so), `lapsed` (its holder stopped renewing it: a crash, or a server that could not reach the
+ * store), `reconnected` (a reconnect counted since its holder took it).
+ */
+export type LeaseTook = 'new' | 'own' | ReleaseKind | 'lapsed' | 'reconnected';
+
+/** What `claim` found: the lease taken, with the call as saved (null for a call never saved) and how, or held by another. */
 export type LeaseClaim =
-  | { readonly taken: true; readonly call: StoredCall | null }
+  | {
+    readonly taken: true;
+    readonly call: StoredCall | null;
+    readonly took: LeaseTook;
+    /** How long since the call's last reconnect was counted (the store's clock), or null when none was: the silence its caller is in. */
+    readonly silentMs: number | null;
+  }
   | ({ readonly taken: false } & LeaseHolder);
 
 /** A token's SHA-256, in hex: what a store keeps of a token, so the store holds nothing that opens a socket. */

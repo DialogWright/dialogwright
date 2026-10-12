@@ -266,12 +266,13 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       if (l === undefined) return;
       await s.calls.save(contractCall('CA0001'));
       const a = await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
-      if (!a.taken) fail(`a free lease was not taken: ${JSON.stringify(a)}`);
+      if (!a.taken || a.took !== 'new') fail(`a free lease was not taken as new: ${JSON.stringify(a)}`);
       const b = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
       if (b.taken) fail('a second owner took a lease that is held');
       if (b.owner !== 'server-a' || b.expiresAtMs !== c.now() + CONTRACT_LEASE_TTL_MS) fail(`a lease held says ${JSON.stringify(b)}`);
       c.advance(CONTRACT_LEASE_TTL_MS / 2);
-      if (!(await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS)).taken) fail('the holder could not take its own lease again');
+      const again = await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!again.taken || again.took !== 'own') fail(`the holder could not take its own lease again: ${JSON.stringify(again)}`);
       sameJson(await l.holder('CA0001'), { owner: 'server-a', expiresAtMs: c.now() + CONTRACT_LEASE_TTL_MS }, 'the lease after its holder took it again');
       if ((await l.claim('CA0002', 'server-b', CONTRACT_LEASE_TTL_MS)).taken !== true) fail("one call's lease kept another call's from being taken");
     },
@@ -285,14 +286,78 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       c.advance(CONTRACT_LEASE_TTL_MS - 1);
       if ((await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a lease was taken over before it lapsed');
       c.advance(1);
-      if (!(await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a lapsed lease was not taken over');
+      const over = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (!over.taken || over.took !== 'lapsed') fail(`a lapsed lease was not taken over as lapsed: ${JSON.stringify(over)}`);
       if ((await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS)).taken) fail('the old holder took back a lease another had taken over');
       await l.release('CA0001', 'server-a');
       if ((await l.holder('CA0001'))?.owner !== 'server-b') fail("a release by one who does not hold the lease gave it up");
       await l.release('CA0001', 'server-b');
       await l.release('CA-none', 'server-b');
       if ((await l.holder('CA0001')) !== null) fail('a released lease is still held');
-      if (!(await l.claim('CA0001', 'server-c', CONTRACT_LEASE_TTL_MS)).taken) fail('a released lease was not taken at once');
+      const freed = await l.claim('CA0001', 'server-c', CONTRACT_LEASE_TTL_MS);
+      if (!freed.taken || freed.took !== 'stop') fail(`a released lease was not taken at once, as given up by a stop: ${JSON.stringify(freed)}`);
+    },
+  },
+  {
+    name: 'lease: one given up as its socket closed is taken as a clean hand-off; given up, it is neither renewed nor saved under',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      await l.release('CA0001', 'server-a', 'socket');
+      sameJson([...(await l.renew('server-a', CONTRACT_LEASE_TTL_MS))], [], 'the calls a renewal names after a release');
+      if (await l.saveAs(contractCall('CA0001', 9), 'server-a', CONTRACT_LEASE_TTL_MS)) fail('a save under a lease given up was kept');
+      // The one that gave it up may take it back as anyone may, and is told it was a clean hand-off.
+      const back = await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!back.taken || back.took !== 'socket') fail(`a lease given up by its socket was taken as ${JSON.stringify(back)}`);
+      await l.release('CA0001', 'server-a', 'socket');
+      const moved = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (!moved.taken || moved.took !== 'socket' || moved.call?.session.turnIndex !== 3) fail(`a lease given up by its socket was taken by another as ${JSON.stringify(moved)}`);
+    },
+  },
+  {
+    name: 'lease: a reconnect counted since its holder took it lets another take it at once, and only that once',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001', 3, { reconnects: 0 }));
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if ((await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail('a held lease was taken with no reconnect counted');
+      // The carrier gave up the holder's socket: its callback, on any server, counts a reconnect.
+      await l.countReconnect('CA0001', 3);
+      const took = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (!took.taken || took.took !== 'reconnected') fail(`a lease whose call reconnected since was taken as ${JSON.stringify(took)}`);
+      if (await l.saveAs(contractCall('CA0001', 9), 'server-a', CONTRACT_LEASE_TTL_MS)) fail("the old holder's save was kept after the call reconnected elsewhere");
+      if ((await l.claim('CA0001', 'server-c', CONTRACT_LEASE_TTL_MS)).taken) fail('the same reconnect let a third owner take the lease too');
+    },
+  },
+  {
+    name: 'lease: a claim says how long since the call\'s last reconnect was counted, the silence its caller is in',
+    async body(s, c) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001', 3, { reconnects: 0 }));
+      const first = await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (!first.taken || first.silentMs !== null) fail(`a call never reconnected was claimed with a silence: ${JSON.stringify(first)}`);
+      await l.countReconnect('CA0001', 3);
+      c.advance(1_200);
+      const after = await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS);
+      if (!after.taken || after.silentMs !== 1_200) fail(`a claim 1200 ms after a reconnect was counted says ${JSON.stringify(after.taken ? after.silentMs : after)}`);
+    },
+  },
+  {
+    name: 'lease: a call is removed under its lease only by its holder',
+    async body(s) {
+      const l = s.leases;
+      if (l === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      await l.claim('CA0001', 'server-a', CONTRACT_LEASE_TTL_MS);
+      if (await l.removeAs('CA0001', 'server-b')) fail("a call was removed by one who does not hold its lease");
+      if ((await s.calls.load('CA0001')) === null) fail("a removal by one who does not hold the lease removed the call");
+      if (!(await l.removeAs('CA0001', 'server-a'))) fail('the holder could not remove its call');
+      if ((await s.calls.load('CA0001')) !== null || (await l.holder('CA0001')) !== null) fail('a call its holder removed, or its lease, is still there');
+      if (!(await l.claim('CA0001', 'server-b', CONTRACT_LEASE_TTL_MS)).taken) fail("a removed call's lease was not free");
     },
   },
   {
@@ -389,6 +454,22 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       if (winners.length !== 1) fail(`${winners.length} owners took one lease: ${winners.join(', ')}`);
       if ((await l.holder('CA0001'))?.owner !== winners[0]) fail('the lease is not held by the one claim that took it');
       for (const cl of claims) if (!cl.taken && cl.owner !== winners[0]) fail(`a claim that lost names ${cl.owner}, not ${winners[0]}`);
+    },
+  },
+  {
+    name: 'a transfer held with a call is taken once, with the call, and never from a call without one',
+    async body(s) {
+      if (s.calls.takeHeld === undefined) return;
+      await s.calls.save(contractCall('CA0001'));
+      if ((await s.calls.takeHeld('CA0001')) !== null) fail('a call with no held transfer gave one');
+      if ((await s.calls.load('CA0001')) === null) fail('taking a transfer from a call without one removed the call');
+      const handoff = '{"reasonCode":"agent_requested"}';
+      const held = { ...contractCall('CA0002'), heldHandoffData: handoff };
+      await s.calls.save(held);
+      sameJson(await s.calls.load('CA0002'), held, 'a call saved with a held transfer');
+      const taken = await Promise.all([s.calls.takeHeld('CA0002'), s.calls.takeHeld('CA0002')]);
+      sameJson(taken.filter((t) => t !== null), [handoff], 'the held transfers taken at once');
+      if ((await s.calls.load('CA0002')) !== null) fail('a call whose held transfer was taken is still saved');
     },
   },
   {

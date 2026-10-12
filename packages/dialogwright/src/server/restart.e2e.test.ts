@@ -76,6 +76,9 @@ function settings(dir: string, extra: Record<string, string> = {}): Env {
     AUDIO_DIR: dir,
     NO_INPUT_MS: '0',
     SESSION_STORE: `file:${join(dir, 'sessions')}`,
+    // The resumed line whenever it is said today: these calls come back faster than a caller would notice,
+    // and what they show is the restart, not the silence (RESUMED_AFTER_MS's own tests are below).
+    RESUMED_AFTER_MS: '0',
     ...extra,
   };
 }
@@ -687,3 +690,66 @@ describe('a web chat across a restart with the file session store', () => {
     expect(e.received[0]).toMatchObject({ type: 'error', code: 'session_unknown' });
   }, 20_000);
 });
+
+describe('the resumed line, said only past RESUMED_AFTER_MS of silence (default 1500)', () => {
+  /** The carrier's callback, then its socket `waitMs` later: the first thing the caller hears. */
+  async function comeBack(base: string, callSid: string, waitMs: number): Promise<string> {
+    const doc = await (await fetch(`${base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    await new Promise((r) => setTimeout(r, waitMs));
+    const relay = await FakeRelay.connect(socketUrl(doc, base));
+    sockets.push(relay);
+    relay.setup(callSid, 'VX-after');
+    return (await relay.waitForTexts(1))[0]!;
+  }
+
+  for (const [label, waitMs, extra, apologized] of [
+    ['a restart the caller hardly notices (a callback and a socket within 1.5 s): no apology', 0, {}, false],
+    ['a restart that leaves the caller in silence past 1.5 s: the resumed line', 1700, {}, true],
+    ['RESUMED_AFTER_MS=0: the resumed line whatever the silence, as before the option', 0, { RESUMED_AFTER_MS: '0' }, true],
+  ] as const) {
+    it(`the file store: ${label}`, async () => {
+      const dir = folder();
+      const env = settings(dir, { RESUMED_AFTER_MS: '1500', ...extra });
+      const first = await boot(env);
+      const callSid = `CA00000000000000000000000000gap${waitMs}${apologized ? 'y' : 'n'}`;
+      await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+      await first.server.close();
+      const second = await boot(env);
+      expect(await comeBack(second.base, callSid, waitMs)).toBe(apologized ? `${RESUMED_TEXT} ${ASK_DOB}` : ASK_DOB);
+      expect(second.logs.some((l) => l.includes(apologized ? `${callSid}: resumed after a restart` : `${callSid}: resumed after`) && (apologized || l.includes('no apology')))).toBe(true);
+    }, 20_000);
+  }
+
+  it('a planned restart, its carrier told to wait RESTART_PAUSE_S (default 5 s, past the threshold): the resumed line, as before the option', async () => {
+    const dir = folder();
+    // A pause of two seconds stands for the default five: what matters is that it is longer than 1.5 s.
+    const env = settings(dir, { RESUMED_AFTER_MS: '1500', RESTART_PAUSE_S: '2' });
+    const first = await boot(env);
+    const callSid = 'CA0000000000000000000000000gappause';
+    const relay = await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    const drained = first.server.drain(0);
+    await relay.closed;
+    const doc = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    expectPauseThenConnect(doc, 'twilio', 2);
+    await drained;
+    await first.server.close();
+    const second = await boot(env);
+    // The carrier waits the pause before it connects.
+    await new Promise((r) => setTimeout(r, 2000));
+    const again = await FakeRelay.connect(socketUrl(doc, second.base));
+    sockets.push(again);
+    again.setup(callSid, 'VX-after');
+    expect(await again.waitForTexts(1)).toEqual([`${RESUMED_TEXT} ${ASK_DOB}`]);
+  }, 20_000);
+
+  it('the memory store: a relay blip never hears it, whatever the silence (as before)', async () => {
+    const dir = folder();
+    const live = await boot(settings(dir, { SESSION_STORE: 'memory', RESUMED_AFTER_MS: '1500' }));
+    const callSid = 'CA0000000000000000000000000gapmem';
+    const relay = await firstHalf(await answer(live.base, 'twilio', callSid), callSid);
+    relay.close();
+    await relay.closed;
+    expect(await comeBack(live.base, callSid, 1700)).toBe(ASK_DOB);
+  }, 20_000);
+});
+

@@ -419,10 +419,9 @@ describe('pnpm diagnose', () => {
           const p = pg(db);
           const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...p });
           expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'clock']);
-          expect(byId(results, 'store')).toEqual({
-            id: 'store', status: 'ok',
-            message: `SESSION_STORE ${MASKED} answers, its session tables are version 1, and a test lease was taken and given up: the servers on it share their calls`,
-          });
+          expect(byId(results, 'store')).toMatchObject({ id: 'store', status: 'ok' });
+          // The test's clock is fixed in 2026; PGlite's is this machine's: the offset is said, for information.
+          expect(byId(results, 'store').message).toMatch(new RegExp(`^SESSION_STORE ${MASKED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} answers, its session tables are version 1, and a test lease was taken and given up: the servers on it share their calls; its clock is -?\\d+\\.\\d s from this machine's \\(leases are timed by the database's\\)$`));
           expect(p.asked).toEqual([URL_WITH_PASSWORD]);
           expect(results.map(said).join('\n')).not.toContain('s3cret-pw');
           // The test lease leaves nothing behind.

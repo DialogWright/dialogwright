@@ -5,6 +5,7 @@ import { recognitionFor, voiceFor, type ServerConfig } from './config';
 import { connectRelayTwiml } from './twiml';
 import type { SessionStore } from './sessions';
 import type { ServerTokenStore } from './stores/types';
+import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest } from './dashboard/routes';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
@@ -364,13 +365,16 @@ export function decideActionTwiml(deps: HttpDeps, params: Record<string, string>
 /**
  * The `<Connect action>` callback decision, in the provider's documents. Pure apart from store and
  * token side effects. `start` writes a reconnect's start document: the provider's own, or the legacy
- * one for a call that came in on the unprefixed `/voice`.
+ * one for a call that came in on the unprefixed `/voice`. `held`, with a durable store, is the transfer
+ * the store said the call still owes (taken from it, so one server dials it), in place of the entry's
+ * own; 'unknown' when the store could not say. Absent, the entry in memory says, as it always did.
  */
 export function decideAction(
   deps: HttpDeps,
   provider: VoiceProvider,
   params: CallbackParams,
   start: (o: StartDocumentOptions) => string = (o) => provider.startDocument(o),
+  held?: string | null | 'unknown',
 ): { document: string; note: string } {
   const callSid = params.callId;
 
@@ -435,6 +439,8 @@ export function decideAction(
     }
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
+      // When the caller's silence began: the `resumed` line is said only past RESUMED_AFTER_MS of it.
+      deps.store.markDropped(callSid);
       entry.reconnects += 1;
       // Saved with its new count, so a restart before the socket comes back does not hand out another.
       void deps.store.persist(callSid);
@@ -456,23 +462,35 @@ export function decideAction(
   // A transfer whose `end` was held for its line to play (END_AFTER_PLAYBACK, server/adapter.ts) and never
   // sent: the socket closed first with the caller still on the line. The call has ended, but the
   // transfer it decided is still owed; a goodbye's held `end` hangs up, as any ended call.
-  const held = entry?.heldHandoffData;
-  if (entry && held && !isBlank(held)) {
-    const handoff = parseHandoff(held);
+  // With a durable store, the store's word is the one that counts: it hands the transfer to one server.
+  if (held === 'unknown') {
+    if (entry) entry.heldHandoffData = null;
+    // The store could not say whether a transfer is owed to a caller still on the line: a person, never a hangup.
+    deps.tokens.revoke(callSid);
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:store-unavailable' };
+  }
+  const owed = held !== undefined ? held : entry?.heldHandoffData;
+  if (owed && !isBlank(owed)) {
+    const handoff = parseHandoff(owed);
     if (handoff.reasonCode !== 'completed') {
       // Owed once: a second callback for the call hangs up.
-      entry.heldHandoffData = null;
+      if (entry) entry.heldHandoffData = null;
       deps.tokens.revoke(callSid);
       return dialHandoff(deps, provider, callSid, handoff);
     }
   }
+  if (entry && held !== undefined) entry.heldHandoffData = null;
   return { document: provider.hangupDocument(), note: 'hangup' };
 }
 
-/** Whether the call's token writes have landed in a store that writes behind (ServerTokenStore.settled); false, logged, when one failed. */
+/**
+ * Whether the call's token writes have landed in a store that writes behind (ServerTokenStore.settled),
+ * within the store's time (SESSION_STORE_TIMEOUT_MS); false, logged, when one failed or took longer, so
+ * the carrier's webhook is answered (with a person) rather than left to time out.
+ */
 async function landed(deps: HttpDeps, callId: string): Promise<boolean> {
   try {
-    await deps.tokens.settled?.(callId);
+    await within(deps.tokens.settled?.(callId) ?? Promise.resolve(), deps.store.timeoutMs);
     return true;
   } catch (err) {
     deps.log(`${callId}: the relay token could not be saved (${err instanceof Error ? err.message : String(err)}): the caller is put through to a person`);
@@ -592,15 +610,27 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       const loaded = callback.callId ? await deps.store.restore(callback.callId, provider.id) : 'none';
       // Shared with other servers (SESSION_STORE=postgres): a reconnect is counted in the store, at once for
       // every server, before it is decided on.
-      if (deps.store.shared && callback.callId && loaded !== 'unreadable' && wantsReconnect(callback)) {
+      if (deps.store.shared && callback.callId && loaded !== 'unreadable' && loaded !== 'unavailable' && wantsReconnect(callback)) {
         await deps.store.countReconnect(callback.callId, deps.config.reconnectLimit);
       }
+      // A callback that would reconnect a call no longer live here: with a durable store, a transfer it
+      // still owes (END_AFTER_PLAYBACK, its socket closed before the `end` went) is taken from the store,
+      // wherever the call ran. With the memory store there is none to take.
+      const local = deps.store.get(callback.callId);
+      const held = callback.callId && deps.store.durable && loaded !== 'unavailable' && isBlank(callback.handoffData) && wantsReconnect(callback) && (!local || local.ended)
+        ? await deps.store.takeHeld(callback.callId)
+        : undefined;
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
       deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(deps.app?.callData, callback.raw) }));
       const start = legacy ? connectRelayTwiml : undefined;
-      let { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
+      let { document, note } = loaded === 'unreadable'
+        ? decideUnreadable(deps, provider, callback, start)
+        : loaded === 'unavailable' && wantsReconnect(callback)
+          // The store could not be asked in time: the caller is put through rather than at a reconnect no server can resume.
+          ? { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:store-unavailable' }
+          : decideAction(deps, provider, callback, start, held);
       if (deps.store.shared && callback.callId) {
         // Loaded only to answer: the call is taken where its socket lands.
         deps.store.dropBorrowed(callback.callId);

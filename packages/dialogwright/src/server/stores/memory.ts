@@ -1,5 +1,5 @@
 import { InProcessLeases } from './leases';
-import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, StoredCall, StoredChat } from './types';
+import type { CallLeases, CallStateStore, ChatStateStore, LeaseClaim, LeaseHolder, ReleaseKind, StoredCall, StoredChat } from './types';
 
 /**
  * The memory stores: what a process keeps in itself, gone when it stops. The tokens are today's class
@@ -53,8 +53,8 @@ export class MemoryCallStateStore implements CallStateStore, CallLeases {
     return this.leases.renew(owner, ttlMs);
   }
 
-  release(callId: string, owner: string): void {
-    this.leases.release(callId, owner);
+  release(callId: string, owner: string, how?: ReleaseKind): void {
+    this.leases.release(callId, owner, how);
   }
 
   holder(callId: string): LeaseHolder | null {
@@ -69,8 +69,16 @@ export class MemoryCallStateStore implements CallStateStore, CallLeases {
     return this.leases.countReconnect(callId, limit);
   }
 
+  removeAs(callId: string, owner: string): boolean {
+    return this.leases.removeAs(callId, owner);
+  }
+
   removeUnleased(callId: string): boolean {
     return this.leases.removeUnleased(callId);
+  }
+
+  takeHeld(callId: string): string | null {
+    return this.leases.takeHeld(callId);
   }
 }
 

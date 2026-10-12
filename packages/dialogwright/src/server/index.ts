@@ -3,7 +3,7 @@ import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
 import { calledVariablesFrom, transferTargetsFrom } from './transfer';
-import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
@@ -151,10 +151,10 @@ export function safeFileStem(callSid: string): string {
  * gives): a failure to connect, or tables at another version, stops the server here with the reason,
  * the connection string's password never in it.
  */
-async function openShared(url: string, given: SqlClient | undefined, now: () => number, log: (line: string) => void) {
-  const sql = given ?? (await openPgClient(url, { log }));
+async function openShared(url: string, timeoutMs: number, given: SqlClient | undefined, now: () => number, log: (line: string) => void) {
+  const sql = given ?? (await openPgClient(url, { log, queryTimeoutMs: timeoutMs }));
   try {
-    return await openPostgresStores(sql, { tokenTtlMs: TOKEN_TTL_MS, now, log });
+    return await openPostgresStores(sql, { tokenTtlMs: TOKEN_TTL_MS, now, log, timeoutMs });
   } catch (err) {
     await sql.close().catch(() => undefined);
     throw new Error(`SESSION_STORE ${maskConnectionString(url)}: ${maskSecrets(err instanceof Error ? err.message : String(err), url)}`);
@@ -162,7 +162,11 @@ async function openShared(url: string, given: SqlClient | undefined, now: () => 
 }
 
 export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
-  const log = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
+  const said = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
+  // With SESSION_STORE=postgres, every line is said with the connection string's password taken out,
+  // whatever a driver's message held. Otherwise every line as it was.
+  const storeUrl = config.sessionStore?.kind === 'postgres' ? config.sessionStore.url : null;
+  const log = storeUrl === null ? said : (line: string): void => said(maskSecrets(line, storeUrl));
   const now = overrides.now ?? (() => Date.now());
   // The one threshold the phone line sets from its environment: the ask budget is a property of the
   // deployment's network and the day's question count, not of the dialogue policy.
@@ -233,7 +237,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (files) log(`sessions: file:${files.dir} (calls, chats and relay tokens are saved after every turn, and a restart resumes them)`);
   // SESSION_STORE=postgres://...: the same in a database many servers share, each call held by one
   // server at a time under a lease this server renews while the call is live.
-  const shared = setting?.kind === 'postgres' ? await openShared(setting.url, overrides.sessionSql, now, log) : null;
+  const shared = setting?.kind === 'postgres' ? await openShared(setting.url, setting.timeoutMs, overrides.sessionSql, now, log) : null;
   const leaseMs = setting?.kind === 'postgres' ? setting.leaseMs : 0;
   const owner = setting?.kind === 'postgres' ? `${setting.serverId ?? 'server'}-${randomBytes(4).toString('hex')}` : '';
   if (shared && setting?.kind === 'postgres') {
@@ -261,7 +265,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config.sessionTtlMs,
     now,
     config.sessionMaxAgeMs,
-    { state: durable?.calls ?? null, lease: shared ? { leases: shared.calls, owner, ttlMs: leaseMs } : null, log },
+    { state: durable?.calls ?? null, lease: shared && setting?.kind === 'postgres' ? { leases: shared.calls, owner, ttlMs: leaseMs, timeoutMs: setting.timeoutMs } : null, log },
   );
   const tokens: ServerTokenStore = durable?.tokens ?? new CallTokens(TOKEN_TTL_MS, now);
   /**
@@ -375,6 +379,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     server,
     {
       store, tokens, log, endCloseGraceMs: overrides.endCloseGraceMs, noInputMs, clipDurations: durations, bus,
+      ...(config.relayPingMs !== undefined ? { pingMs: config.relayPingMs } : {}),
+      ...(config.sessionStore ? { resumedAfterMs: config.resumedAfterMs ?? DEFAULT_RESUMED_AFTER_MS } : {}),
       ...(config.noInputAfterSpeechMs !== undefined ? { noInputAfterSpeechMs: config.noInputAfterSpeechMs } : {}),
       ...(config.keyWaitMs !== undefined ? { keyWaitMs: config.keyWaitMs } : {}),
       ...(config.resumeAfterPauseMs !== undefined ? { resumeAfterPauseMs: config.resumeAfterPauseMs } : {}),
@@ -498,6 +504,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     },
     drain: async (ms = config.drainMs ?? DEFAULT_DRAIN_MS) => {
       draining = true;
+      // A call let go from now on is given up by a stop: the server that takes it says the caller was lost a moment.
+      store.markStopping();
       chat?.drain();
       // A call whose goodbye or transfer line plays before its held `end` (END_AFTER_PLAYBACK) has ended
       // for the store, but is waited for as a live call: closing its socket would cut the line short.
@@ -605,6 +613,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     close: async () => {
       draining = true;
       closing = true;
+      store.markStopping();
       clearInterval(evictor);
       if (renewer) clearInterval(renewer);
       // With the calls saved, a carrier's callback belongs to the restarted server: none is taken here.

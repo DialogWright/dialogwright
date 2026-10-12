@@ -1,4 +1,4 @@
-import type { CallLeases, LeaseClaim, LeaseHolder, StoredCall } from './types';
+import type { CallLeases, LeaseClaim, LeaseHolder, LeaseTook, ReleaseKind, StoredCall } from './types';
 
 /** The part of a call store the in-process leases read and write through: its records, without their leases. */
 interface CallRecords {
@@ -8,56 +8,66 @@ interface CallRecords {
   removeRecord(callId: string): void;
 }
 
+/** A lease as kept: its holder, until when, the call's reconnect count when it was taken, and how it was given up. */
+interface Held extends LeaseHolder {
+  readonly reconnects: number;
+  readonly released: ReleaseKind | null;
+}
+
 /**
  * Leases kept in this process (the memory and file stores'): one machine is the only owner there is,
  * so a lease means nothing to it, and the server reads none from these stores. They keep the rules all
  * the same, in one Map, so the contract (dialogwright/testing runStoreContract) holds every store to
- * them: one owner at a time, a lapsed or released lease taken over, a save kept only from the holder,
- * the reconnect count never lowered. They are not saved: a restarted process holds no lease, as a
- * crashed server holds none once its leases lapse.
+ * them: one owner at a time; a lease given up, lapsed, or overtaken by a reconnect taken over; a save
+ * or a removal kept only from the holder; the reconnect count never lowered. They are not saved: a
+ * restarted process holds no lease, as a crashed server holds none once its leases lapse.
  */
 export class InProcessLeases implements CallLeases {
-  private readonly held = new Map<string, LeaseHolder>();
+  private readonly held = new Map<string, Held>();
 
   constructor(private readonly calls: CallRecords, private readonly now: () => number) {}
 
-  /** The lease on `callId` when it is live at `now` and held by someone other than `owner`. */
-  private heldByOther(callId: string, owner: string, now: number): LeaseHolder | null {
-    const h = this.held.get(callId);
-    return h !== undefined && h.owner !== owner && h.expiresAtMs > now ? h : null;
-  }
-
   claim(callId: string, owner: string, ttlMs: number): LeaseClaim {
     const now = this.now();
-    const other = this.heldByOther(callId, owner, now);
-    if (other !== null) return { taken: false, owner: other.owner, expiresAtMs: other.expiresAtMs };
-    this.held.set(callId, { owner, expiresAtMs: now + ttlMs });
-    return { taken: true, call: this.calls.load(callId) };
+    const h = this.held.get(callId);
+    const call = this.calls.load(callId);
+    const reconnects = call?.reconnects ?? 0;
+    let took: LeaseTook;
+    if (h === undefined) took = 'new';
+    else if (h.released !== null) took = h.released;
+    else if (h.owner === owner) took = 'own';
+    else if (h.expiresAtMs <= now) took = 'lapsed';
+    else if (h.reconnects < reconnects) took = 'reconnected';
+    else return { taken: false, owner: h.owner, expiresAtMs: h.expiresAtMs };
+    this.held.set(callId, { owner, expiresAtMs: now + ttlMs, reconnects, released: null });
+    return { taken: true, call, took, silentMs: call?.droppedAtMs === undefined ? null : now - call.droppedAtMs };
   }
 
   renew(owner: string, ttlMs: number): string[] {
     const until = this.now() + ttlMs;
     const ids: string[] = [];
     for (const [callId, h] of this.held) {
-      if (h.owner !== owner) continue;
-      this.held.set(callId, { owner, expiresAtMs: until });
+      if (h.owner !== owner || h.released !== null) continue;
+      this.held.set(callId, { ...h, expiresAtMs: until });
       ids.push(callId);
     }
     return ids;
   }
 
-  release(callId: string, owner: string): void {
-    if (this.held.get(callId)?.owner === owner) this.held.delete(callId);
+  release(callId: string, owner: string, how: ReleaseKind = 'stop'): void {
+    const h = this.held.get(callId);
+    if (h?.owner === owner && h.released === null) this.held.set(callId, { ...h, expiresAtMs: 0, released: how });
   }
 
   holder(callId: string): LeaseHolder | null {
     const h = this.held.get(callId);
-    return h === undefined ? null : { owner: h.owner, expiresAtMs: h.expiresAtMs };
+    return h === undefined || h.released !== null ? null : { owner: h.owner, expiresAtMs: h.expiresAtMs };
   }
 
   saveAs(call: StoredCall, owner: string, ttlMs: number): boolean {
-    if (this.held.get(call.callId)?.owner !== owner) return false;
-    this.held.set(call.callId, { owner, expiresAtMs: this.now() + ttlMs });
+    const h = this.held.get(call.callId);
+    if (h?.owner !== owner || h.released !== null) return false;
+    this.held.set(call.callId, { ...h, expiresAtMs: this.now() + ttlMs });
     const before = this.calls.load(call.callId);
     // The spread keeps the key where it was, so the call reads back as it was saved.
     this.calls.save(before !== null && before.reconnects > call.reconnects ? { ...call, reconnects: before.reconnects } : call);
@@ -68,7 +78,7 @@ export class InProcessLeases implements CallLeases {
     const c = this.calls.load(callId);
     if (c === null) return null;
     if (c.reconnects >= limit) return { before: c.reconnects, counted: false };
-    this.calls.save({ ...c, reconnects: c.reconnects + 1 });
+    this.calls.save({ ...c, reconnects: c.reconnects + 1, droppedAtMs: this.now() });
     return { before: c.reconnects, counted: true };
   }
 
@@ -77,12 +87,30 @@ export class InProcessLeases implements CallLeases {
     this.held.delete(callId);
   }
 
-  removeUnleased(callId: string): boolean {
+  removeAs(callId: string, owner: string): boolean {
     const h = this.held.get(callId);
-    if (h !== undefined && h.expiresAtMs > this.now()) return false;
+    if (h?.owner !== owner || h.released !== null) return false;
     const existed = this.calls.load(callId) !== null;
     this.calls.removeRecord(callId);
     this.held.delete(callId);
     return existed;
+  }
+
+  removeUnleased(callId: string): boolean {
+    const h = this.held.get(callId);
+    if (h !== undefined && h.released === null && h.expiresAtMs > this.now()) return false;
+    const existed = this.calls.load(callId) !== null;
+    this.calls.removeRecord(callId);
+    this.held.delete(callId);
+    return existed;
+  }
+
+  /** The held transfer of a call saved with one, removed with the call (CallStateStore.takeHeld). */
+  takeHeld(callId: string): string | null {
+    const c = this.calls.load(callId);
+    if (c?.heldHandoffData === undefined) return null;
+    this.calls.removeRecord(callId);
+    this.held.delete(callId);
+    return c.heldHandoffData;
   }
 }

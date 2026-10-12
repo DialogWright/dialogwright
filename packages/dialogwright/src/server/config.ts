@@ -14,7 +14,7 @@ import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
-import { maskConnectionString } from './stores/sql';
+import { DEFAULT_SQL_TIMEOUT_MS, maskConnectionString } from './stores/sql';
 import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -82,6 +82,22 @@ export interface ServerConfig {
   auditDir: string;
   signatureCheck: boolean;
   reconnectLimit: number;
+  /**
+   * RESUMED_AFTER_MS, default 1500 (DEFAULT_RESUMED_AFTER_MS), 0 to 60000: a call resumed from a store
+   * (after a restart, or taken over by another server) hears the `resumed` line ("Sorry, I lost you for a
+   * moment.") only when its caller was left in silence longer than this: from its carrier's callback,
+   * which reports the relay lost the moment it is, to the setup of the socket that resumes it. 0 says it
+   * whenever it was said before the option. It never adds the line where none was said (a reconnect to
+   * the server that has the call, a clean hand-off). Read only with a durable store.
+   */
+  resumedAfterMs?: number;
+  /**
+   * RELAY_PING_MS, default 0 (off, as before it existed): how often the server pings each relay socket
+   * (a WebSocket ping, which RFC 6455 has every endpoint answer). A socket that has not answered the
+   * last ping by the next is closed, so a connection the carrier abandoned without closing it (half
+   * open) is let go rather than held. Absent when 0.
+   */
+  relayPingMs?: number;
   sessionTtlMs: number;
   sessionMaxAgeMs: number;
   timezone: string;
@@ -309,6 +325,12 @@ export interface PostgresSessionStoreSetting {
   leaseMs: number;
   /** SERVER_ID, when set: the name this server goes by in the lease table and the log (a random suffix is added per process). */
   serverId?: string;
+  /**
+   * SESSION_STORE_TIMEOUT_MS, default 2000 (DEFAULT_SQL_TIMEOUT_MS), 100 to 30000: how long one question to
+   * the database may take, on both sides of the wire. Past it the server goes on without the answer: a
+   * caller whose call cannot be read or taken is put through to a person, never left in silence.
+   */
+  timeoutMs: number;
 }
 
 /** Under this fraction of its estimated length, a playback the carrier reports finished was cut short, unless RESAY_MIN_FRACTION says otherwise. */
@@ -566,6 +588,8 @@ export function loadConfig(env: Env): ServerConfig {
     auditDir: env.AUDIT_DIR?.trim() || 'audit',
     signatureCheck: sig === 'on',
     reconnectLimit: integer(env, 'RECONNECT_LIMIT', 2),
+    resumedAfterMs: resumedAfterOf(env),
+    ...relayPingOf(env),
     sessionTtlMs: integer(env, 'SESSION_TTL_MS', 1_800_000),
     sessionMaxAgeMs: integer(env, 'SESSION_MAX_AGE_MS', 7_200_000),
     timezone: timeZone(env),
@@ -603,6 +627,24 @@ export function loadConfig(env: Env): ServerConfig {
   };
 }
 
+/** The silence after which a resumed call hears the `resumed` line, unless RESUMED_AFTER_MS says otherwise. */
+export const DEFAULT_RESUMED_AFTER_MS = 1_500;
+
+/** RESUMED_AFTER_MS, checked: 0 to 60000. */
+function resumedAfterOf(env: Env): number {
+  const ms = integer(env, 'RESUMED_AFTER_MS', DEFAULT_RESUMED_AFTER_MS);
+  if (ms > 60_000) throw new Error(`RESUMED_AFTER_MS must be a whole number of milliseconds from 0 to 60000, got "${env.RESUMED_AFTER_MS}"`);
+  return ms;
+}
+
+/** RELAY_PING_MS as `{ relayPingMs }`, or nothing when 0 (the default). */
+function relayPingOf(env: Env): { relayPingMs?: number } {
+  const ms = integer(env, 'RELAY_PING_MS', 0);
+  if (ms === 0) return {};
+  if (ms < 1_000 || ms > 120_000) throw new Error(`RELAY_PING_MS must be 0 (off) or a whole number of milliseconds from 1000 to 120000, got "${env.RELAY_PING_MS}"`);
+  return { relayPingMs: ms };
+}
+
 /** SESSION_STORE as `{ sessionStore }`, or nothing for memory (unset, or `memory`). */
 function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
   // Checked whatever the store, so a typo is found before the file store is switched on.
@@ -621,10 +663,14 @@ function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
   if (serverId !== '' && !SERVER_ID_SHAPE.test(serverId)) {
     throw new Error(`SERVER_ID must be 1 to 40 letters, digits, dots, dashes or underscores, got "${env.SERVER_ID}"`);
   }
+  const timeoutMs = integer(env, 'SESSION_STORE_TIMEOUT_MS', DEFAULT_SQL_TIMEOUT_MS);
+  if (timeoutMs < 100 || timeoutMs > 30_000) {
+    throw new Error(`SESSION_STORE_TIMEOUT_MS must be a whole number of milliseconds from 100 to 30000, got "${env.SESSION_STORE_TIMEOUT_MS}"`);
+  }
   const raw = env.SESSION_STORE?.trim() ?? '';
   if (raw === '' || raw.toLowerCase() === 'memory') return {};
   if (/^postgres(ql)?:\/\//i.test(raw)) {
-    return { sessionStore: { kind: 'postgres', url: raw, restartPauseS, leaseMs, ...(serverId !== '' ? { serverId } : {}) } };
+    return { sessionStore: { kind: 'postgres', url: raw, restartPauseS, leaseMs, timeoutMs, ...(serverId !== '' ? { serverId } : {}) } };
   }
   const dir = raw.startsWith('file:') ? raw.slice('file:'.length).trim() : '';
   // Said masked: a value meant for Postgres with its scheme mistyped may hold a password.
@@ -632,10 +678,15 @@ function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
   return { sessionStore: { kind: 'file', dir, fsync: fsync === 'on', restartPauseS } };
 }
 
+/** RESUMED_AFTER_MS as the startup line says it (with a durable store, the only one that resumes a call). */
+function describeResumedAfter(ms: number): string {
+  return ms === 0 ? 'resumed line always' : `resumed line after ${ms} ms of silence`;
+}
+
 /** The session store as the startup line says it: never a password. */
 function describeSessionStore(s: SessionStoreSetting): string {
   const pause = s.restartPauseS > 0 ? `restart pause ${s.restartPauseS} s` : 'restart pause off';
-  if (s.kind === 'postgres') return `sessions ${maskConnectionString(s.url)} (${pause}, lease ${s.leaseMs} ms${s.serverId ? `, server ${s.serverId}` : ''})`;
+  if (s.kind === 'postgres') return `sessions ${maskConnectionString(s.url)} (${pause}, lease ${s.leaseMs} ms, timeout ${s.timeoutMs} ms${s.serverId ? `, server ${s.serverId}` : ''})`;
   return `sessions file:${s.dir} (${s.fsync ? `${pause}, fsync on` : pause})`;
 }
 
@@ -834,6 +885,7 @@ export function describeConfig(c: ServerConfig): string {
     `traces ${c.traceDir}`,
     `audit ${c.auditDir}`,
     `reconnect limit ${c.reconnectLimit}`,
+    ...(c.relayPingMs !== undefined ? [`relay ping every ${c.relayPingMs} ms`] : []),
     `audio dir ${c.audioDir}`,
     c.noInputMs > 0 ? `no-input ${c.noInputMs} ms` : 'no-input off',
     // Held while the caller is heard speaking only on a carrier that reports it (VoiceProvider.readEvent).
@@ -853,7 +905,7 @@ export function describeConfig(c: ServerConfig): string {
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
-    ...(c.sessionStore ? [describeSessionStore(c.sessionStore)] : []),
+    ...(c.sessionStore ? [describeSessionStore(c.sessionStore), describeResumedAfter(c.resumedAfterMs ?? DEFAULT_RESUMED_AFTER_MS)] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
