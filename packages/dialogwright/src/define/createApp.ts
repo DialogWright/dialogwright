@@ -25,7 +25,8 @@ import { packagePathOf, REPOSITORY_PAGES, relinkMarkdown } from './shipped';
  * With `standalone`, the app is a project of its own, outside this repository, on the installed
  * package: the standalone overlay (templates/standalone) replaces the files that name this
  * repository (package.json, tsconfig.json, README.md, CLAUDE.md) and adds a .gitignore (`gitignore`
- * in the template, since a package's .gitignore is not packed); src/regress.ts is left out
+ * in the template, since a package's .gitignore is not packed), a Dockerfile and a .dockerignore (the
+ * project's image: `dockerignore` in the template); src/regress.ts is left out
  * (`dialogwright regress` runs the regression); and the create-app skill is copied into
  * .claude/skills/create-app, its links to the guide pointing at the installed package's copy.
  */
@@ -200,6 +201,9 @@ function yamlValueKept(line: string): string {
   return `${m[1]}${JSON.stringify(value)}`;
 }
 
+/** The standalone overlay's files written as dotfiles: kept without the dot in the template, since a package's .gitignore is not packed. */
+const DOTFILES: Readonly<Record<string, string>> = { gitignore: '.gitignore', dockerignore: '.dockerignore' };
+
 /** What goes where: the template's files by path, with the identity overlay applied, and the standalone overlay with `standalone`. */
 export function templateFiles(identity: boolean, standalone = false): Map<string, string> {
   const files = new Map<string, string>();
@@ -217,7 +221,7 @@ export function templateFiles(identity: boolean, standalone = false): Map<string
   }
   if (standalone) {
     for (const file of STANDALONE_DROPS) files.delete(file);
-    for (const file of listFiles(STANDALONE_TEMPLATE_DIR)) files.set(file === 'gitignore' ? '.gitignore' : file, readFileSync(join(STANDALONE_TEMPLATE_DIR, file), 'utf8'));
+    for (const file of listFiles(STANDALONE_TEMPLATE_DIR)) files.set(DOTFILES[file] ?? file, readFileSync(join(STANDALONE_TEMPLATE_DIR, file), 'utf8'));
   }
   return files;
 }

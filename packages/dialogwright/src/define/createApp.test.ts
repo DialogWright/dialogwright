@@ -320,7 +320,7 @@ describe('dialogwright create-app --standalone: a project of its own', () => {
   const PROJECT_FILES = [
     '.claude/skills/create-app/SKILL.md', '.claude/skills/create-app/corpus.md', '.claude/skills/create-app/options.md',
     '.claude/skills/create-app/patterns.md', '.claude/skills/create-app/triage.md', '.claude/skills/create-app/worksheet.md',
-    '.gitignore', ...PLAIN_FILES.filter((f) => f !== 'src/regress.ts'),
+    '.dockerignore', '.gitignore', 'Dockerfile', ...PLAIN_FILES.filter((f) => f !== 'src/regress.ts'),
   ].sort();
 
   it('writes the app folder as the scaffold does, as a project on the installed package, with the skill beside it', () => {
@@ -349,6 +349,13 @@ describe('dialogwright create-app --standalone: a project of its own', () => {
       expect(text, file).not.toContain('pnpm --filter');
     }
     expect(readFileSync(join(dir, '.gitignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['node_modules/', '.env', '!.env.example']));
+    // The project's image: its keys and its records never in it, a non-root user, the server under an init.
+    expect(readFileSync(join(dir, '.dockerignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['node_modules', '.env', '.env.*', '!.env.example', 'traces', 'audit', 'sessions']));
+    const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toContain('docker build -t my-line .');
+    expect(dockerfile).toMatch(/^USER node$/m);
+    expect(dockerfile).toMatch(/^HEALTHCHECK .*\n.*\/ready/m);
+    expect(dockerfile).toContain('CMD ["node", "--import", "tsx", "src/serve.ts"]');
     const tsconfig = JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8')) as { extends?: string; compilerOptions: Record<string, unknown> };
     expect(tsconfig.extends).toBeUndefined();
     const base = JSON.parse(readFileSync(join(REPO_ROOT, 'tsconfig.base.json'), 'utf8')) as { compilerOptions: Record<string, unknown> };

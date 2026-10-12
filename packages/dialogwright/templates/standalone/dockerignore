@@ -1,0 +1,13 @@
+# What the image never takes from this folder (Dockerfile): the installed packages (the image installs its
+# own), the settings file and its keys, and what a server or the harness writes where it runs.
+node_modules
+.git
+.env
+.env.*
+!.env.example
+traces
+audit
+sessions
+.console-link
+*.log
+.DS_Store

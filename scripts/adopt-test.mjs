@@ -92,7 +92,7 @@ for (const name of PACKAGES) {
 
 // What the packed engine carries, and how a project reaches it.
 const listing = run('tar', ['-tzf', tarball.dialogwright], base, { quiet: true }).split('\n');
-for (const file of ['package/bin/dialogwright.mjs', 'package/dist/index.js', 'package/dist/index.d.ts', 'package/dist/testing/index.js', 'package/dist/server/dashboard/page.html', 'package/dist/slots/digits/examples.yaml', 'package/schemas/app.schema.json', 'package/templates/standalone/gitignore', 'package/templates/app/.env.example', 'package/docs/authoring-an-app.md', 'package/docs/guide/README.md', 'package/docs/guide/15-the-adversarial-suite.md', 'package/docs/first-app.md', 'package/skills/create-app/SKILL.md']) {
+for (const file of ['package/bin/dialogwright.mjs', 'package/dist/index.js', 'package/dist/index.d.ts', 'package/dist/testing/index.js', 'package/dist/server/dashboard/page.html', 'package/dist/slots/digits/examples.yaml', 'package/schemas/app.schema.json', 'package/templates/standalone/gitignore', 'package/templates/standalone/dockerignore', 'package/templates/standalone/Dockerfile', 'package/templates/app/.env.example', 'package/docs/authoring-an-app.md', 'package/docs/guide/README.md', 'package/docs/guide/15-the-adversarial-suite.md', 'package/docs/first-app.md', 'package/skills/create-app/SKILL.md']) {
   check(listing.includes(file), `the packed dialogwright has ${file.slice('package/'.length)}`);
 }
 check(!listing.some((f) => f.startsWith('package/src/')), 'the packed dialogwright has no src/');
@@ -220,6 +220,13 @@ function brokenLinks(dir) {
 async function exercise(dir) {
   const { count, broken } = brokenLinks(dir);
   check(count > 50 && broken.length === 0, `the project's README, CLAUDE.md and skill link only to pages it has (${count} links), the installed guide's chapters among them${broken.length > 0 ? `: ${broken.slice(0, 5).map(([p, l]) => `${p} -> ${l}`).join(', ')}` : ''}`);
+  // The project's image, not built here (its dependency on a packed tarball outside the project is not
+  // in its build context): a Dockerfile and a .dockerignore that keep
+  // the keys and the records out, run as a non-root user, check /ready, and start the server under an init.
+  const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
+  const dockerignore = readFileSync(join(dir, '.dockerignore'), 'utf8').split('\n');
+  check(['node_modules', '.env', '.env.*', '!.env.example', 'traces', 'audit', 'sessions'].every((l) => dockerignore.includes(l)), "the project's .dockerignore keeps node_modules, .env and the records out");
+  check(/^ARG NODE_IMAGE=node:22[.\d]*-[a-z]+-slim@sha256:[0-9a-f]{64}$/m.test(dockerfile) && /^USER node$/m.test(dockerfile) && /^HEALTHCHECK [^\n]*\\\n[^\n]*\/ready/m.test(dockerfile) && dockerfile.includes('ENTRYPOINT ["/usr/bin/tini", "--"]') && dockerfile.includes('CMD ["node", "--import", "tsx", "src/serve.ts"]') && !/\{\{/.test(dockerfile), "the project's Dockerfile: Node 22 pinned by digest, a non-root user, /ready as its health check, the server under tini");
   const checked = run('npx', ['dialogwright', 'check'], dir);
   check(checked.trim().endsWith(': ok'), `npx dialogwright check: ${checked.trim().split('\n').at(-1)}`);
   run('npm', ['run', 'typecheck'], dir);
