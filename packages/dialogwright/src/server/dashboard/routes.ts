@@ -343,12 +343,15 @@ function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps
   if (!openStream(res, head)) return;
   keepStream(req, res, auth, (stillSignedIn) => {
     let replaying = true;
+    let missed = 0;
     const off = deps.bus.subscribe((event) => {
       if (!shows(event, replaying)) return;
       if (!stillSignedIn()) return;
-      // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
-      // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
-      if (res.writableLength > MAX_STREAM_BACKLOG) return;
+      // A stalled viewer is dropped frames, not unbounded memory; its next write says how many
+      // (`event: missed`), and the page shows a warning rather than reloading on its own. The events'
+      // numbers are the bus's across every call, so a feed of one call has gaps that are no loss.
+      if (res.writableLength > MAX_STREAM_BACKLOG) { missed += 1; return; }
+      if (missed > 0) { res.write(`event: missed\ndata: ${JSON.stringify({ count: missed })}\n\n`); missed = 0; }
       res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
     });
     replaying = false;
@@ -365,10 +368,14 @@ function listFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps
   if (!openStream(res, head)) return;
   const list = liveCallsOf(deps);
   keepStream(req, res, auth, (stillSignedIn) => {
-    res.write(`event: rows\ndata: ${JSON.stringify({ rows: list.snapshot() })}\n\n`);
+    const whole = (): void => { res.write(`event: rows\ndata: ${JSON.stringify({ rows: list.snapshot() })}\n\n`); };
+    whole();
+    // A stalled viewer is dropped changes, not unbounded memory; its next write is the whole list again.
+    let behind = false;
     return list.watch((change) => {
       if (!stillSignedIn()) return;
-      if (res.writableLength > MAX_STREAM_BACKLOG) return;
+      if (res.writableLength > MAX_STREAM_BACKLOG) { behind = true; return; }
+      if (behind) { behind = false; whole(); return; }
       res.write(change.type === 'row' ? `event: row\ndata: ${JSON.stringify(change.row)}\n\n` : `event: gone\ndata: ${JSON.stringify({ callSid: change.callSid })}\n\n`);
     });
   });

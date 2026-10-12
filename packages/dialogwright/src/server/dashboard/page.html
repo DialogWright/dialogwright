@@ -9,6 +9,9 @@
     --warn:#f2b54a; --warn-bg:rgba(242,181,74,.13); --idle:#6b7385; --idle-bg:rgba(107,115,133,.12);
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   }
+  /* The bars above a call's panels: the console's own header, the call's bar, the replay bar. */
+  :root { --frame-h:64px; --callbar-h:52px; --replay-h:48px; }
+  body.presenter { --frame-h:72px; --callbar-h:60px; --replay-h:60px; }
   html { font-size:16px; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--text); }
   body { font:1rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
@@ -19,13 +22,14 @@
   [hidden] { display:none !important; }
 
   /* ---------- header ---------- */
-  header { height:64px; display:flex; align-items:center; gap:20px; padding:0 24px; border-bottom:1px solid var(--border); box-sizing:border-box; font-size:15px; white-space:nowrap; background:#0f131a; }
-  body.presenter header { height:72px; font-size:18px; }
+  header { height:var(--frame-h); display:flex; align-items:center; gap:20px; padding:0 24px; border-bottom:1px solid var(--border); box-sizing:border-box; font-size:15px; white-space:nowrap; background:#0f131a; }
+  body.presenter header { font-size:18px; }
   .brand { display:flex; align-items:center; gap:12px; font-weight:600; letter-spacing:.01em; }
   .brand .mark { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,#2f5fb8,#1d3d7a); display:grid; place-items:center; font-size:13px; font-weight:700; color:#dfe9ff; }
   body.presenter .brand .mark { width:34px; height:34px; font-size:14px; }
-  .brand .title { font-size:1.12em; }
-  .brand .title span { color:var(--muted); font-weight:500; }
+  .brand { min-width:0; }
+  .brand .title { font-size:1.12em; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .brand .title .sub { color:var(--muted); font-weight:500; }
   .live { display:flex; align-items:center; gap:8px; color:var(--muted); }
   .dot { width:10px; height:10px; border-radius:50%; background:var(--idle); flex:none; }
   .dot.on { background:var(--pass); box-shadow:0 0 0 0 rgba(62,207,142,.6); animation:beat 2s infinite; }
@@ -54,11 +58,77 @@
   button, select, input { font:inherit; font-size:.93em; background:#1f2632; color:var(--text); border:1px solid var(--border-2); border-radius:7px; padding:5px 12px; cursor:pointer; }
   button:hover { border-color:#46526a; }
   button.on { border-color:var(--accent); color:#d6e3ff; background:#1c2a44; }
-  #conn { color:var(--warn); font-size:13px; }
+  #conn, #live-conn { color:var(--warn); font-size:13px; }
+
+  /* ---------- the console's frame: its menu, and the bar above a call ---------- */
+  .menu { display:flex; gap:4px; }
+  .menu a { color:var(--muted); text-decoration:none; padding:6px 12px; border-radius:7px; border:1px solid transparent; display:inline-flex; align-items:center; gap:6px; }
+  .menu a:hover { color:var(--text); border-color:var(--border-2); }
+  .menu a.on { color:#d6e3ff; background:#1c2a44; border-color:var(--accent); }
+  .menu .count { min-width:1.4em; padding:0 .4em; border-radius:999px; background:var(--fail); color:#fff; font-size:.8em; font-weight:700; text-align:center; }
+  .callbar { height:var(--callbar-h); display:flex; align-items:center; gap:16px; padding:0 24px; border-bottom:1px solid var(--border); box-sizing:border-box; font-size:15px; white-space:nowrap; background:#0f131a; }
+  body.presenter .callbar { font-size:18px; }
+  .callbar .controls { margin-left:auto; }
+  .backlink { color:var(--sys); text-decoration:none; font-weight:600; }
+  .backlink:hover { text-decoration:underline; }
+  .page { box-sizing:border-box; }
+  .page.list { padding:20px 24px; display:flex; flex-direction:column; gap:16px; max-width:1500px; }
+
+  /* ---------- Live: the strip, the calls in progress ---------- */
+  .strip { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+  .stat { display:flex; flex-direction:column; gap:.15em; }
+  .stat-n { font-size:1.9em; font-weight:650; font-family:var(--mono); line-height:1.1; }
+  .stat-k { color:var(--muted); font-size:.9em; }
+  .stat-sub { color:var(--faint); font-size:.78em; }
+  .stat.warnish .stat-n { color:var(--warn); }
+  .listcard .card-head { flex-wrap:wrap; }
+  .listcard .card-head .tools { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .follow { color:var(--sys); text-decoration:none; font-size:.9em; }
+  .follow:hover { text-decoration:underline; }
+  .rows { display:flex; flex-direction:column; }
+  .lrow, .lhead { display:grid; gap:.4em 1em; align-items:baseline; padding:.55em .6em; border-bottom:1px solid #1d2430; }
+  /* The header's columns are sized in the rows' em: its smaller type is on its cells, not on the row. */
+  .lhead { padding-top:0; }
+  .lhead > span { color:var(--faint); font-size:.72em; letter-spacing:.09em; text-transform:uppercase; font-weight:600; }
+  .lrow { cursor:pointer; border-left:3px solid transparent; }
+  .lrow:hover, .lrow:focus { background:var(--panel-2); outline:none; }
+  .lrow:focus-visible { box-shadow:inset 0 0 0 1px var(--accent); }
+  .lrow.alert { border-left-color:var(--warn); background:linear-gradient(90deg, var(--warn-bg), transparent 55%); }
+  .lrow.alert.frustrated { border-left-color:var(--fail); background:linear-gradient(90deg, var(--fail-bg), transparent 55%); }
+  .rows.current .lrow, .rows.current .lhead { grid-template-columns:minmax(9em,1.3fr) 6.5em minmax(6em,.9fr) minmax(10em,3fr) 4.5em 8.5em; }
+  .rows.current.one-app .lrow, .rows.current.one-app .lhead { grid-template-columns:6.5em minmax(6em,.9fr) minmax(10em,3fr) 4.5em 8.5em; }
+  .rows.past .lrow, .rows.past .lhead { grid-template-columns:9.5em minmax(7em,1.1fr) 6.5em 4.5em minmax(8em,2fr) minmax(9em,2.4fr) 4.5em 3.5em; }
+  .rows.past.one-app .lrow, .rows.past.one-app .lhead { grid-template-columns:9.5em 6.5em 4.5em minmax(8em,2fr) minmax(9em,2.4fr) 4.5em 3.5em; }
+  .rows.one-app .c-app { display:none; }
+  .lrow > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .c-who, .c-dur, .c-turns, .c-when { font-family:var(--mono); font-size:.92em; }
+  .c-task .step { color:var(--caller); }
+  .c-turns .unit { display:none; }
+  .st { justify-self:start; font-size:.82em; font-weight:600; padding:.12em .65em; border-radius:999px; border:1px solid; }
+  .st-on-track { color:var(--pass); border-color:rgba(62,207,142,.35); background:var(--pass-bg); }
+  .st-second-try { color:var(--caller); border-color:rgba(243,207,142,.35); }
+  .st-frustrated { color:var(--fail); border-color:rgba(242,100,112,.45); background:var(--fail-bg); }
+  .st-transferring, .st-with-person { color:var(--warn); border-color:rgba(242,181,74,.45); background:var(--warn-bg); }
+  .st-ended { color:var(--muted); border-color:var(--border-2); }
+  .end-handled { color:var(--pass); } .end-person { color:var(--warn); } .end-hangup { color:var(--caller); } .end-error { color:var(--fail); } .end-none { color:var(--muted); }
+  .empty { color:var(--muted); padding:1.4em .6em; }
+
+  /* ---------- Calls: the filters, the list, the pager ---------- */
+  .filters { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; }
+  .filters label { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:.85em; }
+  .filters input, .filters select { cursor:auto; }
+  .filters input[type=date] { color-scheme:dark; }
+  #f-last4 { width:6em; font-family:var(--mono); }
+  .pager { display:flex; gap:12px; align-items:center; justify-content:flex-end; padding-top:.8em; color:var(--muted); }
+
+  /* ---------- the pages still to come ---------- */
+  .placeholder .card { max-width:60em; }
+  .placeholder h2 { margin:.2em 0 .5em; font-size:1.2em; }
+  .placeholder p, .placeholder li { color:var(--muted); line-height:1.55; }
   #note { color:var(--muted); font-size:13px; }
   /* An option's full ISO timestamp made this ~485px wide and overflowed the header at 1920; the
      option label is shortened to match (see startReplay in the script below). */
-  .replaybar { display:none; height:48px; align-items:center; gap:10px; padding:0 24px; border-bottom:1px solid var(--border); background:#10151d; font-size:14px; color:var(--muted); box-sizing:border-box; }
+  .replaybar { display:none; height:var(--replay-h); align-items:center; gap:10px; padding:0 24px; border-bottom:1px solid var(--border); background:#10151d; font-size:14px; color:var(--muted); box-sizing:border-box; }
   body.replay .replaybar { display:flex; }
   .replaybar .card-title { font-size:12px; margin-right:6px; }
   .replaybar .hint { margin-left:auto; color:var(--faint); }
@@ -68,17 +138,17 @@
      but only what a presenter mid-call actually reaches for -- the trace picker, back/step/play,
      and where the call is now. Reset, speed, the narration beat, the keyboard hint and the
      thresholds note are a keypress or a glance away and just crowd the bar at this size. */
-  body.presenter .replaybar { height:60px; font-size:20px; padding:0 24px; gap:16px; }
+  body.presenter .replaybar { font-size:20px; padding:0 24px; gap:16px; }
   body.presenter .replaybar button, body.presenter .replaybar select { font-size:20px; padding:9px 18px; }
   body.presenter .replaybar #trace { max-width:480px; }
   body.presenter .replaybar #reset, body.presenter .replaybar #rename, body.presenter .replaybar #speedwrap, body.presenter .replaybar #beatwrap,
   body.presenter .replaybar .hint, body.presenter .replaybar #note { display:none; }
-  body.presenter.replay main { height:calc(100vh - 72px - 60px); }
+  body.presenter.replay main { height:calc(100vh - var(--frame-h) - var(--callbar-h) - var(--replay-h)); }
 
   /* ---------- layout ---------- */
-  main { display:grid; grid-template-columns:minmax(0,45fr) minmax(0,55fr); gap:20px; padding:20px 24px; height:calc(100vh - 64px); box-sizing:border-box; }
-  body.replay main { height:calc(100vh - 64px - 48px); }
-  body.presenter main { height:calc(100vh - 72px); gap:18px; padding:16px 20px; }
+  main { display:grid; grid-template-columns:minmax(0,45fr) minmax(0,55fr); gap:20px; padding:20px 24px; height:calc(100vh - var(--frame-h) - var(--callbar-h)); box-sizing:border-box; }
+  body.replay main { height:calc(100vh - var(--frame-h) - var(--callbar-h) - var(--replay-h)); }
+  body.presenter main { height:calc(100vh - var(--frame-h) - var(--callbar-h)); gap:18px; padding:16px 20px; }
   .col { display:flex; flex-direction:column; gap:16px; min-height:0; }
   .right { overflow-y:auto; padding-right:4px; scrollbar-width:thin; }
   .fit-hidden { display:none !important; }
@@ -298,8 +368,24 @@
      bar wrap, so Sign out stays on screen; the audit and perception lists scroll sideways inside their
      own boxes; and buttons are a finger's height. Wider than that, nothing here applies. */
   @media (max-width: 820px) {
-    header, body.presenter header { height:auto; min-height:56px; flex-wrap:wrap; white-space:normal; gap:8px 12px; padding:8px 12px; }
-    .brand .title span { display:none; }
+    header, body.presenter header, .callbar, body.presenter .callbar { height:auto; min-height:56px; flex-wrap:wrap; white-space:normal; gap:8px 12px; padding:8px 12px; }
+    .brand .title .sub { display:none; }
+    .menu { flex-wrap:wrap; order:3; width:100%; }
+    .menu { gap:2px; }
+    .menu a { min-height:36px; padding:6px 8px; }
+    .callbar .controls { margin-left:0; }
+    .page.list { padding:12px; gap:12px; }
+    .strip { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    /* The lists as cards: who and the status on top, the task under, the rest below. */
+    .lhead { display:none; }
+    .rows.current .lrow, .rows.past .lrow, .rows.current.one-app .lrow, .rows.past.one-app .lrow { grid-template-columns:minmax(0,1fr) auto; padding:.7em .6em; }
+    .lrow > span { white-space:normal; }
+    .rows.current .c-app, .rows.past .c-app { grid-column:1 / -1; color:var(--muted); font-size:.85em; }
+    .rows.one-app .c-app { display:none; }
+    .rows.current .c-task, .rows.past .c-tasks, .rows.past .c-ending { grid-column:1 / -1; }
+    .c-turns .unit { display:inline; }
+    .filters label { flex:1 1 9em; }
+    .filters input, .filters select { width:100%; box-sizing:border-box; }
     .totals { flex-wrap:wrap; gap:4px 12px; }
     .actions { flex-wrap:wrap; margin-left:0; }
     .controls { flex-wrap:wrap; }
@@ -327,20 +413,77 @@
 </style></head>
 <body>
 <header>
-  <div class="brand"><span class="mark">{{mark}}</span><span class="title">{{name}} <span>· virtual agent console</span></span></div>
+  <div class="brand"><span class="mark">{{mark}}</span><span class="title"><span class="appname">{{name}}</span> <span class="sub">· virtual agent console</span></span></div>
+  <nav class="menu" id="menu" aria-label="Console pages">
+    <a href="#/live" data-page="live">Live <span class="count" id="menu-alerts" hidden></span></a>
+    <a href="#/calls" data-page="calls">Calls</a>
+    <a href="#/insights" data-page="insights">Insights</a>
+    <a href="#/knowledge" data-page="knowledge">Knowledge</a>
+    <a href="#/health" data-page="health">Health</a>
+  </nav>
+  <select id="appfilter" hidden title="Which app's calls to show"></select>
+  <div class="actions">
+{{links}}    <button id="presenter" title="Larger type for a screen share">Presenter (P)</button>
+  </div>
+</header>
+<!-- Live, the home page: what is happening now. -->
+<section class="page list" id="page-live" hidden>
+  <div class="strip">
+    <div class="card stat"><span class="stat-n" id="st-progress">0</span><span class="stat-k">calls in progress</span></div>
+    <div class="card stat" id="st-waiting-card"><span class="stat-n" id="st-waiting">0</span><span class="stat-k">waiting for a person or being transferred</span></div>
+    <div class="card stat"><span class="stat-n" id="st-contained">–</span><span class="stat-k">handled with no person today</span><span class="stat-sub" id="st-contained-sub"></span></div>
+    <div class="card stat"><span class="stat-n" id="st-cost">–</span><span class="stat-k">decision model cost today</span><span class="stat-sub" id="st-cost-sub">the carrier's cost comes with Insights</span></div>
+  </div>
+  <div class="card listcard">
+    <div class="card-head"><span class="card-title">Calls in progress</span><span id="live-conn" class="mono"></span>
+      <span class="tools"><a class="follow" href="#/call/latest" title="The view that follows each new call as it starts">Follow the newest call</a>
+      <button id="sound" title="A short sound when a call turns frustrated or starts waiting for a person; remembered in this browser">Sound: off</button></span></div>
+    <div class="rows current" id="live-list" role="table" aria-label="Calls in progress"></div>
+  </div>
+</section>
+<!-- Calls: what happened on a call. -->
+<section class="page list" id="page-calls" hidden>
+  <form class="card filters" id="calls-filters">
+    <label>Caller's last four <input id="f-last4" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0110"></label>
+    <label>From <input id="f-from" type="date"></label>
+    <label>To <input id="f-to" type="date"></label>
+    <label id="f-app-wrap" hidden>App <select id="f-app"></select></label>
+    <label>Task <select id="f-task"></select></label>
+    <label>Ending <select id="f-ending"><option value="">Any</option><option value="handled">Handled</option><option value="person">To a person</option><option value="hangup">Hung up</option><option value="error">An error</option></select></label>
+    <button type="submit">Search</button><button type="button" id="f-clear">Clear</button>
+  </form>
+  <div class="card listcard">
+    <div class="card-head"><span class="card-title">Calls</span><span class="aside" id="calls-note"></span></div>
+    <div class="rows past" id="calls-list" role="table" aria-label="Calls"></div>
+    <div class="pager"><button id="calls-newer" hidden>◀ Newer</button><span id="calls-page"></span><button id="calls-older" hidden>Older ▶</button></div>
+  </div>
+</section>
+<!-- The pages still to come (Console 2), each saying what it will show. -->
+<section class="page list placeholder" id="page-insights" hidden>
+  <div class="card"><div class="card-title">Insights · coming next</div><h2>How the line is doing</h2>
+    <p>For a date range and an app, or all of them: calls, and calls by hour with the peak; containment (handled with no person); transfers by reason; abandonment by step, the last question a caller heard before hanging up; where callers struggle (re-asks, silences and slots that ran out, per slot and per question); task completion per intent; call length overall and per task; minutes, the decision model's cost, the carrier's cost when a per-minute rate is set, and the cost per call and per handled call; the injection screen's hits and the gate's refusals by rule; after-hours calls; and the knowledge base's unanswered questions.</p></div>
+</section>
+<section class="page list placeholder" id="page-knowledge" hidden>
+  <div class="card"><div class="card-title">Knowledge · coming next</div><h2>The knowledge base at a glance</h2>
+    <p>Per app: the passages by state (fresh, stale, edited, never approved, drafts), as <code>pnpm kb:status</code> reports them, and the questions callers asked that nothing answered. Read only: approving a passage stays a person at their terminal, or on the local review page.</p></div>
+</section>
+<section class="page list placeholder" id="page-health" hidden>
+  <div class="card"><div class="card-title">Health · coming next</div><h2>Is the line healthy</h2>
+    <p>The servers seen in the last minutes and their calls; the sessions, trace write failures and disk space that <code>/health</code> reports; the decision model's latency (median and 95th percentile over the last hour); reconnects and fallback dials today; and the audit, verified on demand.</p></div>
+</section>
+<!-- A call's detail: the view the console has always had, live or replayed. -->
+<section class="page" id="page-call" hidden>
+<div class="callbar">
+  <a href="#/live" class="backlink" id="call-back" title="Back to the list">← Back</a>
   <div class="live"><i id="dot" class="dot"></i><span id="status">waiting for a call</span></div>
   <span id="channel" class="badge" hidden></span>
   <span id="level" class="badge level l0"></span>
   <div id="totals" class="totals"></div>
-  <div class="actions">
-{{links}}    <button id="presenter" title="Larger type for a screen share">Presenter (P)</button>
-  </div>
   <div class="controls">
-    <select id="appfilter" hidden title="Which app's calls to show"></select>
     <span id="conn" class="mono"></span>
     <span class="rc"><button id="mode-live" class="on">Live</button> <button id="mode-replay">Replay</button></span>
   </div>
-</header>
+</div>
 <!-- The replay controls get a bar of their own: at 1920 they no longer fit beside the header's badges. -->
 <div class="replaybar rc" id="replaybar">
   <span class="card-title">Replay</span>
@@ -368,10 +511,12 @@
     <div class="card perception" id="perception"></div>
   </section>
 </main>
+</section>
 <script type="module">
   // The page is served at /dashboard, so the module is loaded by absolute path: a relative
   // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
-  import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK } from '/dashboard/view.js';
+  import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
+    STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery } from '/dashboard/view.js';
 
   /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
   const PAGE = {{meta}};
@@ -382,16 +527,29 @@
   const HOST_APPS = Array.isArray(PAGE.apps) ? PAGE.apps : null;
   /** On a host, the app the page shows alone (`?app=<id>`), or null for every app's calls. */
   const FILTER = HOST_APPS ? (PAGE.filter ?? null) : null;
+  /**
+   * The name the console's header and title carry away from a call: the app's; on a host showing every
+   * app's calls, the apps' names together.
+   */
+  const FRAME_NAME = HOST_APPS && FILTER === null ? HOST_APPS.map((a) => a.name).join(' · ') : PAGE.brand.name;
+  document.querySelector('.brand .appname').textContent = FRAME_NAME;
   /** On a host: shows a call in its own app's words, its name and mark in the header. */
   function useApp(id) {
     if (!HOST_APPS) return;
     const found = HOST_APPS.find((a) => a.id === id);
-    if (!found || APP === found.meta) return;
+    if (found) useMeta(found.meta, found.meta.brand.name);
+  }
+  /** Back to the page's own app and the frame's name, away from a call. */
+  function usePage() {
+    if (HOST_APPS) useMeta(PAGE, FRAME_NAME);
+  }
+  function useMeta(meta, name) {
+    document.querySelector('.brand .appname').textContent = name;
+    if (APP === meta) return;
     const before = APP;
-    APP = found.meta;
+    APP = meta;
     configure(APP);
     document.querySelector('.brand .mark').textContent = APP.brand.mark;
-    document.querySelector('.brand .title').firstChild.textContent = `${APP.brand.name} `;
     // The header's links are the app's: the last app's go, this one's come, before Presenter.
     for (const link of before.links) el(link.id)?.remove();
     for (const link of APP.links) {
@@ -1005,25 +1163,31 @@
 
   // ---------- live ----------
 
-  function startLive() {
+  /**
+   * A call's detail, live: the call `sid` (opened from the Live list), or with none the newest call,
+   * switching to each call as it starts, as the console has always followed calls.
+   */
+  function startLive(sid = state.followSid) {
     stopPlay();
     state.mode = 'live';
+    state.followSid = sid ?? null;
     state.events = []; state.lastSeq = -1; state.callSid = null;
     state.all = []; state.stops = [0]; state.cursor = 0; state.sid = null;
     state.accent = freshAccents();
     showControls();
     if (state.es) state.es.close();
-    const es = new EventSource('/dashboard/events');
+    const es = new EventSource(sid ? `/dashboard/events?call=${encodeURIComponent(sid)}` : `/dashboard/events${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`);
     state.es = es;
     es.onopen = () => { el('conn').textContent = ''; };
     es.onerror = () => { el('conn').textContent = 'reconnecting…'; };
     // A reconnect to a restarted server (a new build) reloads the page, so its styles and scripts are never stale.
-    es.addEventListener('boot', (m) => {
-      let id;
-      try { id = JSON.parse(m.data).bootId; } catch { return; }
-      if (typeof id !== 'string') return;
-      if (state.bootId && state.bootId !== id) { location.reload(); return; }
-      state.bootId = id;
+    es.addEventListener('boot', onBoot);
+    // A stalled viewer can have events dropped server-side (routes.ts skips writes once the backlog
+    // passes 1 MB); the server says how many with its next write.
+    es.addEventListener('missed', (m) => {
+      let n = 0;
+      try { n = Number(JSON.parse(m.data).count) || 0; } catch { return; }
+      el('conn').textContent = `missed ${n} events, reload to catch up`;
     });
     es.onmessage = (m) => {
       let event;
@@ -1047,11 +1211,8 @@
       const seq = num(event.seq);
       if (seq !== null) {
         if (seq <= state.lastSeq) return;
-        // A stalled viewer can have events dropped server-side (routes.ts skips writes once the
-        // backlog passes 1 MB); a gap in the sequence is the only sign of that reaching the page.
-        if (state.lastSeq > 0 && seq > state.lastSeq + 1) {
-          el('conn').textContent = `missed ${seq - state.lastSeq - 1} events, reload to catch up`;
-        }
+        // The numbers are the bus's, across every call: a feed of one call skips the others', so a gap
+        // here is no sign of a loss. A loss is said by the server itself (the `missed` event below).
         state.lastSeq = seq;
       }
       state.events.push(event);
@@ -1079,21 +1240,28 @@
     }
   }
 
-  async function startReplay() {
+  /**
+   * A call's replay: the call `sid` (from the Calls page, in its app `app` on a host), or with none the
+   * most recent trace, as the console's Replay always opened.
+   */
+  async function startReplay(sid = null, app = null) {
     state.mode = 'replay';
     if (state.es) { state.es.close(); state.es = null; }
     el('conn').textContent = '';
     showControls();
     const rows = (await json(`/dashboard/traces${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`)) ?? [];
     const list = Array.isArray(rows) ? rows : [];
+    // A call from the Calls page may be older than the picker's newest: it joins the picker.
+    if (sid && !list.some((r) => String(r.callSid) === sid)) list.push({ callSid: sid, startedAt: null, turns: 0, ...(app ? { app } : {}) });
     state.traceRows = list;
     fillTraces();
     // "Replay this call": the most recent trace is the call that just happened, or, if the
     // dashboard is still live-following one, that call's trace as recorded so far -- either way
     // the row the traces route already put first (latestTrace just names it).
     const latest = latestTrace(list);
-    el('trace').value = latest ? String(latest.callSid) : '';
-    await pick(latest ? String(latest.callSid) : '');
+    const chosen = sid ?? (latest ? String(latest.callSid) : '');
+    el('trace').value = chosen;
+    await pick(chosen, app);
   }
 
   // ---------- run names ----------
@@ -1142,7 +1310,7 @@
     render(state.view);
   });
 
-  async function pick(sid) {
+  async function pick(sid, app = null) {
     stopPlay();
     state.sid = sid; state.all = []; state.stops = [0]; state.cursor = 0; state.totalTurns = 0;
     state.accent = freshAccents();
@@ -1150,8 +1318,9 @@
     // Re-fetched every time, including a trace this page already showed: entering Replay while a
     // call is still in progress must pick up whatever turns have landed since.
     // On a host, by its app as its row names it: one id in two apps' records is never ambiguous.
-    const row = (state.traceRows ?? []).find((r) => String(r.callSid) === sid);
-    const byApp = row && typeof row.app === 'string' ? `?app=${encodeURIComponent(row.app)}` : '';
+    const row = (state.traceRows ?? []).find((r) => String(r.callSid) === sid && (app === null || r.app === app));
+    const rowApp = app ?? (row && typeof row.app === 'string' ? row.app : null);
+    const byApp = rowApp ? `?app=${encodeURIComponent(rowApp)}` : '';
     const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}${byApp}`);
     // On a host, the replay in its own app's words.
     if (data && typeof data.app === 'string') useApp(data.app);
@@ -1161,6 +1330,9 @@
     state.all = replayEvents(records, frames, { from: 'replay', thresholds: DEFAULTS, deliveries });
     state.stops = replayStops(state.all);
     state.totalTurns = reduce(state.all).turnCount;
+    // A replay's place, kept across a restart's reload of the page.
+    if (state.resume && state.resume.sid === sid) state.cursor = Math.max(0, Math.min(state.all.length, Number(state.resume.cursor) || 0));
+    state.resume = null;
     draw();
   }
 
@@ -1251,9 +1423,15 @@
     pickApp.hidden = false;
     pickApp.addEventListener('change', () => { location.search = pickApp.value ? `?app=${encodeURIComponent(pickApp.value)}` : ''; });
   }
-  el('mode-live').addEventListener('click', () => { if (state.mode !== 'live') startLive(); });
-  el('mode-replay').addEventListener('click', () => { if (state.mode !== 'replay') void startReplay(); });
-  el('trace').addEventListener('change', (e) => void pick(e.target.value));
+  el('mode-live').addEventListener('click', () => { if (state.mode !== 'live') toggleMode(); });
+  el('mode-replay').addEventListener('click', () => { if (state.mode !== 'replay') toggleMode(); });
+  el('trace').addEventListener('change', (e) => {
+    const sid = e.target.value;
+    const row = (state.traceRows ?? []).find((r) => String(r.callSid) === sid);
+    // The address names the call shown, without opening it twice.
+    history.replaceState(null, '', `#/replay/${encodeURIComponent(sid)}${row && typeof row.app === 'string' ? `?app=${encodeURIComponent(row.app)}` : ''}`);
+    void pick(sid);
+  });
   el('reset').addEventListener('click', () => { stopPlay(); state.cursor = 0; draw(); });
   el('back').addEventListener('click', () => step(-1));
   el('step').addEventListener('click', () => step(1));
@@ -1269,6 +1447,8 @@
       setPresenter(!document.body.classList.contains('presenter'));
       return;
     }
+    // The rest are a call's keys: on a list page they are left to the page.
+    if (current !== 'call') return;
     if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       setConvView(state.convView === 'script' ? 'turns' : 'script');
@@ -1286,7 +1466,7 @@
     // guarded against the modifiers so cmd/ctrl+R still reloads the page as usual.
     if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       deactivate();
-      if (state.mode === 'replay') startLive(); else void startReplay();
+      toggleMode();
       return;
     }
     if (state.mode !== 'replay') return;
@@ -1304,7 +1484,7 @@
   const RESUME_KEY = `${APP.brand.key}.console.resume`;
   const BOOT_POLL_MS = 4000;
   setInterval(async () => {
-    if (state.mode !== 'replay') return;
+    if (current !== 'call' || state.mode !== 'replay') return;
     const b = await json('/dashboard/boot');
     const id = b && typeof b.bootId === 'string' ? b.bootId : null;
     if (!id) return;
@@ -1316,23 +1496,390 @@
     state.bootId = id;
   }, BOOT_POLL_MS);
 
-  (async () => {
-    let resume = null;
-    try {
-      resume = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null');
-      sessionStorage.removeItem(RESUME_KEY);
-    } catch { /* storage blocked or bad value: start live */ }
-    if (!resume || resume.mode !== 'replay') { startLive(); return; }
-    const b = await json('/dashboard/boot');
-    if (b && typeof b.bootId === 'string') state.bootId = b.bootId;
-    await startReplay();
-    const sid = typeof resume.sid === 'string' ? resume.sid : '';
-    if (sid && [...el('trace').options].some((o) => o.value === sid)) {
-      el('trace').value = sid;
-      await pick(sid);
-      state.cursor = Math.max(0, Math.min(state.all.length, Number(resume.cursor) || 0));
-      draw();
+
+  // ---------- the console's pages ----------
+
+  /**
+   * The pages, by the name the address gives them (#/live, #/calls, ...); a call's detail is #/call/<id>
+   * live (#/call/latest follows the newest call), and #/replay/<id> replayed. Insights, Knowledge and
+   * Health say what they will show; each gets an `enter` of its own when it is built.
+   */
+  const PAGES = {
+    live: { title: 'Live', enter: enterLive },
+    calls: { title: 'Calls', enter: (a) => void enterCalls(a) },
+    insights: { title: 'Insights' },
+    knowledge: { title: 'Knowledge' },
+    health: { title: 'Health' },
+    call: { title: 'Call', enter: enterCall, leave: leaveCall },
+  };
+  /** The page shown, by its name in PAGES. */
+  let current = null;
+  /** The Calls page as it was last shown (its filters and page), for a replay's Back link. */
+  let lastCallsHash = '#/calls';
+
+  /** The address after `#/`: the page's name, the id after it, and its query. */
+  function addressOf() {
+    const h = location.hash.replace(/^#\/?/, '');
+    const q = h.indexOf('?');
+    const path = q < 0 ? h : h.slice(0, q);
+    const [name, ...rest] = path.split('/');
+    let id = null;
+    try { id = rest.length ? decodeURIComponent(rest.join('/')) : null; } catch { id = null; }
+    return { name: name || 'live', id: id || null, query: new URLSearchParams(q < 0 ? '' : h.slice(q + 1)) };
+  }
+
+  function route() {
+    const a = addressOf();
+    const page = a.name === 'replay' ? 'call' : Object.hasOwn(PAGES, a.name) ? a.name : 'live';
+    if (current && current !== page) {
+      PAGES[current].leave?.();
+      window.scrollTo(0, 0);
     }
+    current = page;
+    for (const name of Object.keys(PAGES)) el(`page-${name}`).hidden = name !== page;
+    // A call's detail lights the list it was opened from.
+    const lit = page === 'call' ? (a.name === 'replay' ? 'calls' : 'live') : page;
+    for (const link of document.querySelectorAll('#menu a')) link.classList.toggle('on', link.dataset.page === lit);
+    if (page !== 'call') document.body.classList.remove('replay');
+    PAGES[page].enter?.(a);
+    updateTitle();
+  }
+  window.addEventListener('hashchange', route);
+
+  /** The tab's title: the alert count first, then the page, then the console's name. */
+  function updateTitle() {
+    document.title = pageTitle(PAGES[current]?.title ?? 'Live', live.alerts, FRAME_NAME);
+  }
+
+  /** A reconnect to a restarted server (a new build) reloads the page, so its styles and scripts are never stale. */
+  function onBoot(m) {
+    let id;
+    try { id = JSON.parse(m.data).bootId; } catch { return; }
+    if (typeof id !== 'string') return;
+    if (state.bootId && state.bootId !== id) { location.reload(); return; }
+    state.bootId = id;
+  }
+
+  // ---------- a call's detail ----------
+
+  function enterCall(a) {
+    el('call-back').href = a.name === 'replay' ? lastCallsHash : '#/live';
+    if (a.name === 'replay') { void startReplay(a.id, a.query.get('app')); return; }
+    startLive(a.id === 'latest' ? null : a.id);
+  }
+
+  function leaveCall() {
+    stopPlay();
+    if (state.es) { state.es.close(); state.es = null; }
+    state.mode = 'live';
+    usePage();
+  }
+
+  /**
+   * Live and Replay on a call's detail (the buttons, and R): live, its replay as recorded so far; replayed,
+   * the call live again while the console still has it, else the newest call. With no call named, the
+   * newest call and the newest trace, as the console's Live and Replay always were.
+   */
+  function toggleMode() {
+    if (state.mode === 'replay') {
+      location.hash = state.sid && live.rows.has(state.sid) ? `#/call/${encodeURIComponent(state.sid)}` : '#/call/latest';
+      return;
+    }
+    const sid = state.followSid;
+    const app = sid ? live.rows.get(sid)?.app : null;
+    location.hash = sid ? `#/replay/${encodeURIComponent(sid)}${app ? `?app=${encodeURIComponent(app)}` : ''}` : '#/replay';
+  }
+
+  // ---------- Live: the calls in progress ----------
+
+  /** The Live list: every call's row as the server last sent it, each call's status as last seen (for the alerts), the alerts now. */
+  const live = { rows: new Map(), statuses: null, alerts: 0, todayTimer: null };
+
+  /** The Live list's feed, open on every page: the alerts count in the title wherever the viewer is. */
+  function startRows() {
+    const es = new EventSource('/dashboard/events?view=calls');
+    es.onopen = () => { el('live-conn').textContent = ''; };
+    es.onerror = () => { el('live-conn').textContent = 'reconnecting…'; };
+    es.addEventListener('boot', onBoot);
+    const parse = (m) => { try { return JSON.parse(m.data); } catch { return null; } };
+    es.addEventListener('rows', (m) => {
+      const d = parse(m);
+      if (!d || !Array.isArray(d.rows)) return;
+      live.rows = new Map(d.rows.filter((r) => r && typeof r.callSid === 'string').map((r) => [r.callSid, r]));
+      onRows();
+    });
+    es.addEventListener('row', (m) => {
+      const r = parse(m);
+      if (!r || typeof r.callSid !== 'string') return;
+      const was = live.rows.get(r.callSid);
+      live.rows.set(r.callSid, r);
+      // A call that just ended changes today's figures.
+      if (r.endedAt !== null && (!was || was.endedAt === null)) soonToday();
+      onRows();
+    });
+    es.addEventListener('gone', (m) => {
+      const d = parse(m);
+      if (d && live.rows.delete(d.callSid)) onRows();
+    });
+  }
+
+  const shownRows = () => liveList([...live.rows.values()], Date.now(), FILTER);
+
+  /** The rows changed (or time passed): the alerts, the title, the menu's count, and the list when it is shown. */
+  function onRows() {
+    const shown = shownRows();
+    const { statuses, raised } = alertsRaised(live.statuses, shown);
+    live.statuses = statuses;
+    if (raised.length) chime();
+    live.alerts = alertCount(shown);
+    const badge = el('menu-alerts');
+    badge.hidden = live.alerts === 0;
+    badge.textContent = String(live.alerts);
+    updateTitle();
+    if (current === 'live') renderLive(shown);
+  }
+
+  const CARRIERS = { twilio: 'Twilio', telnyx: 'Telnyx' };
+  const metaOfApp = (id) => (HOST_APPS && id ? HOST_APPS.find((a) => a.id === id)?.meta : null) ?? PAGE;
+  const appName = (id) => (HOST_APPS && id ? HOST_APPS.find((a) => a.id === id)?.name ?? id : '');
+  const channelText = (r) => (r.channel === 'chat' ? 'Chat' : `Voice${r.provider ? ` · ${CARRIERS[r.provider] ?? r.provider}` : ''}`);
+  const whoText = (r) => (r.channel === 'chat' && r.caller ? `${r.from} · ${r.caller}` : r.from);
+  /** Why a call went to a person, in its own app's words. */
+  function reasonText(r) {
+    const own = metaOfApp(r.app).handoffReasons ?? {};
+    return Object.hasOwn(own, r.handoffReason) ? own[r.handoffReason] : handoffReasonText(r.handoffReason);
+  }
+
+  function liveRowHtml(r, now) {
+    const step = r.step ? `<span class="step">${esc(r.step)}</span>` : '';
+    const task = r.task?.label ? `${esc(r.task.label)}${step ? ` · ${step}` : ''}` : step || '<span class="muted">starting</span>';
+    const waiting = (r.status === 'transferring' || r.status === 'with-person') && r.handoffReason;
+    const cls = ['lrow', isAlert(r) ? 'alert' : '', r.status === 'frustrated' ? 'frustrated' : ''].filter(Boolean).join(' ');
+    const start = r.startedAt ?? now;
+    return `<div class="${cls}" role="row" tabindex="0" data-sid="${esc(r.callSid)}" data-href="#/call/${esc(encodeURIComponent(r.callSid))}">`
+      + `<span class="c-app">${esc(appName(r.app))}</span><span class="c-who">${esc(whoText(r))}</span><span class="c-chan">${esc(channelText(r))}</span>`
+      + `<span class="c-task">${task}</span>`
+      + `<span class="c-dur" data-start="${esc(start)}" data-end="${esc(r.endedAt ?? '')}">${durationText((r.endedAt ?? now) - start)}</span>`
+      + `<span class="st st-${esc(r.status)}"${waiting ? ` title="${esc(reasonText(r))}"` : ''}>${esc(STATUS_TEXT[r.status] ?? r.status)}</span></div>`;
+  }
+
+  function renderLive(shown) {
+    const strip = liveStrip(shown);
+    el('st-progress').textContent = String(strip.inProgress);
+    el('st-waiting').textContent = String(strip.waiting);
+    el('st-waiting-card').classList.toggle('warnish', strip.waiting > 0);
+    const list = el('live-list');
+    list.classList.toggle('one-app', !HOST_APPS);
+    // A row the viewer had reached by keyboard keeps the focus across the redraw.
+    const focused = document.activeElement?.closest?.('#live-list .lrow')?.dataset.sid ?? null;
+    const head = '<div class="lhead" role="row"><span class="c-app">App</span><span>Caller</span><span>Channel</span><span>Task · step</span><span>Time</span><span>Status</span></div>';
+    const now = Date.now();
+    list.innerHTML = head + (shown.length ? shown.map((r) => liveRowHtml(r, now)).join('') : '<div class="empty">No calls in progress.</div>');
+    if (focused) list.querySelector(`.lrow[data-sid="${CSS.escape(focused)}"]`)?.focus();
+  }
+
+  function enterLive() {
+    renderLive(shownRows());
+    void loadToday();
+  }
+
+  // The time on each row ticks; a handed-off call leaves the list once its moment has passed.
+  setInterval(() => {
+    if (current !== 'live') return;
+    const now = Date.now();
+    for (const d of document.querySelectorAll('#live-list .c-dur')) {
+      const end = d.dataset.end ? Number(d.dataset.end) : now;
+      d.textContent = durationText(end - Number(d.dataset.start));
+    }
+  }, 1000);
+  setInterval(onRows, 10_000);
+
+  /** The viewer's midnight, the start of "today". */
+  function midnight() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  const money = (usd) => (usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`);
+
+  /** Today's containment and cost, from the traces (`/dashboard/today`). */
+  async function loadToday() {
+    const t = await json(`/dashboard/today?since=${midnight()}${FILTER ? `&app=${encodeURIComponent(FILTER)}` : ''}`);
+    if (!t) return;
+    el('st-contained').textContent = t.containment === null ? '–' : `${Math.round(t.containment * 100)}%`;
+    el('st-contained-sub').textContent = t.ended ? `${t.contained} of ${t.ended} ended calls${t.partial ? ', the newest' : ''}` : 'no call has ended today';
+    el('st-cost').textContent = money(Number(t.costUsd) || 0);
+    el('st-cost-sub').textContent = `${t.calls} ${t.calls === 1 ? 'call' : 'calls'} today · the carrier's cost comes with Insights`;
+  }
+  function soonToday() {
+    clearTimeout(live.todayTimer);
+    live.todayTimer = setTimeout(() => { if (current === 'live') void loadToday(); }, 2000);
+  }
+  setInterval(() => { if (current === 'live') void loadToday(); }, 60_000);
+
+  // ---------- the alert sound ----------
+
+  /** Where the sound choice is remembered, per browser; off until the viewer turns it on. */
+  const SOUND_KEY = `${PAGE.brand.key}-console-sound`;
+  let soundOn = false;
+  try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch { /* storage blocked: off */ }
+  let audio = null;
+  /** The page's audio, made (or woken) on a viewer's gesture, as a browser asks. */
+  function wakeAudio() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      audio ??= new Ctx();
+      if (audio.state === 'suspended') void audio.resume();
+    } catch { audio = null; }
+    return audio;
+  }
+  /** A short two-note chime, made here: no audio file. */
+  function chime() {
+    if (!soundOn) return;
+    const ctx = wakeAudio();
+    if (!ctx) return;
+    try {
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, t);
+      osc.frequency.setValueAtTime(660, t + 0.14);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.36);
+    } catch { /* no sound is no reason to stop the page */ }
+  }
+  function showSound() {
+    el('sound').textContent = soundOn ? 'Sound: on' : 'Sound: off';
+    el('sound').classList.toggle('on', soundOn);
+  }
+  showSound();
+  el('sound').addEventListener('click', (e) => {
+    e.currentTarget.blur();
+    soundOn = !soundOn;
+    try { localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0'); } catch { /* storage blocked: the choice lasts this page only */ }
+    showSound();
+    if (soundOn) chime();
+  });
+  // A sound remembered on waits for the viewer's first touch of the page, which lets the browser play it.
+  window.addEventListener('pointerdown', () => { if (soundOn) wakeAudio(); });
+
+  // ---------- Calls: the calls that happened ----------
+
+  /** Every task the Calls page can filter by: each app's forms, in its words (the app the page shows, or every app). */
+  function taskChoices() {
+    const metas = HOST_APPS ? HOST_APPS.filter((a) => FILTER === null || a.id === FILTER).map((a) => a.meta) : [PAGE];
+    const seen = new Map();
+    for (const m of metas) for (const id of Object.keys(m.formSlots ?? {})) if (!seen.has(id)) seen.set(id, Object.hasOwn(m.formLabels ?? {}, id) ? m.formLabels[id] : id.replace(/_/g, ' '));
+    return [...seen];
+  }
+  el('f-task').innerHTML = ['<option value="">Any</option>', ...taskChoices().map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`)].join('');
+  if (HOST_APPS && FILTER === null) {
+    el('f-app-wrap').hidden = false;
+    el('f-app').innerHTML = ['<option value="">All apps</option>', ...HOST_APPS.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)].join('');
+  }
+  el('f-last4').pattern = '[0-9]{4}';
+  el('f-last4').title = 'The last four digits of the caller\'s number';
+
+  const FILTER_KEYS = ['last4', 'from', 'to', 'app', 'task', 'ending'];
+  const filtersOf = (q) => ({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, q.get(k) ?? ''])), page: Math.max(0, Number(q.get('page')) || 0) });
+  function callsHash(f) {
+    const q = new URLSearchParams();
+    for (const k of FILTER_KEYS) if (f[k]) q.set(k, f[k]);
+    if (f.page > 0) q.set('page', String(f.page));
+    const text = q.toString();
+    return `#/calls${text ? `?${text}` : ''}`;
+  }
+  /** So an answer to an older search never draws over a newer one. */
+  let callsAsked = 0;
+
+  async function enterCalls(a) {
+    lastCallsHash = location.hash || '#/calls';
+    const f = filtersOf(a.query);
+    for (const k of FILTER_KEYS) el(`f-${k}`).value = f[k];
+    const query = callsQuery({ ...f, app: FILTER ?? f.app });
+    el('calls-note').textContent = 'reading…';
+    const asked = ++callsAsked;
+    const data = await json(`/dashboard/calls${query ? `?${query}` : ''}`);
+    if (asked !== callsAsked || current !== 'calls') return;
+    renderCalls(data, f);
+  }
+
+  const whenText = (ms) => {
+    if (typeof ms !== 'number') return '—';
+    const d = new Date(ms);
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
+  function pastRowHtml(r) {
+    const ending = r.ending ? `<span class="c-ending end-${esc(r.ending.kind)}">${esc(r.ending.text)}</span>` : '<span class="c-ending end-none">in progress</span>';
+    const tasks = Array.isArray(r.tasks) && r.tasks.length ? r.tasks.map((t) => t.label).join(', ') : '—';
+    const until = r.endedAt ?? r.lastAt;
+    const length = typeof r.startedAt === 'number' && typeof until === 'number' ? durationText(until - r.startedAt) : '—';
+    const href = `#/replay/${encodeURIComponent(r.callSid)}${r.app ? `?app=${encodeURIComponent(r.app)}` : ''}`;
+    return `<div class="lrow" role="row" tabindex="0" data-href="${esc(href)}" title="${esc(r.callSid)}">`
+      + `<span class="c-when">${esc(whenText(r.startedAt))}</span><span class="c-app">${esc(r.appName ?? appName(r.app))}</span>`
+      + `<span class="c-who">${esc(whoText(r))}</span><span class="c-chan">${esc(r.channel === 'chat' ? 'Chat' : 'Voice')}</span>`
+      + `<span class="c-tasks">${esc(tasks)}</span>${ending}<span class="c-dur">${length}</span><span class="c-turns">${esc(r.turns)}<span class="unit"> turns</span></span></div>`;
+  }
+
+  function renderCalls(data, f) {
+    const list = el('calls-list');
+    list.classList.toggle('one-app', !HOST_APPS);
+    const head = '<div class="lhead" role="row"><span>Started</span><span class="c-app">App</span><span>Caller</span><span>Channel</span><span>Tasks</span><span>Ending</span><span>Length</span><span>Turns</span></div>';
+    if (!data) {
+      list.innerHTML = `${head}<div class="empty">The traces could not be read.</div>`;
+      el('calls-note').textContent = '';
+      return;
+    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    list.innerHTML = head + (rows.length ? rows.map(pastRowHtml).join('') : '<div class="empty">No calls match.</div>');
+    el('calls-note').textContent = data.partial ? 'searched the newest calls only: narrow the dates to search further' : 'newest first · a call opens its replay';
+    el('calls-page').textContent = rows.length ? `page ${f.page + 1}` : '';
+    el('calls-newer').hidden = f.page === 0;
+    el('calls-older').hidden = !data.more;
+    el('calls-newer').onclick = () => { location.hash = callsHash({ ...f, page: f.page - 1 }); };
+    el('calls-older').onclick = () => { location.hash = callsHash({ ...f, page: f.page + 1 }); };
+  }
+
+  el('calls-filters').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = { ...Object.fromEntries(FILTER_KEYS.map((k) => [k, el(`f-${k}`).value.trim()])), page: 0 };
+    const next = callsHash(f);
+    if (location.hash === next) void enterCalls(addressOf()); else location.hash = next;
+  });
+  el('f-clear').addEventListener('click', () => { location.hash = '#/calls'; });
+
+  // A row of either list opens its call: the detail live, or the replay.
+  for (const id of ['live-list', 'calls-list']) {
+    el(id).addEventListener('click', (e) => {
+      const row = e.target.closest?.('.lrow');
+      if (row?.dataset.href) location.hash = row.dataset.href;
+    });
+    el(id).addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest?.('.lrow');
+      if (!row?.dataset.href) return;
+      e.preventDefault();
+      location.hash = row.dataset.href;
+    });
+  }
+
+  (() => {
+    try {
+      state.resume = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null');
+      sessionStorage.removeItem(RESUME_KEY);
+    } catch { /* storage blocked or bad value: no place to go back to */ }
+    if (!state.resume || state.resume.mode !== 'replay') state.resume = null;
+    // A reload during a replay came from the replay's own address (#/replay/<call>), which route() opens again.
+    if (state.resume && state.resume.sid && !location.hash.startsWith('#/replay/')) location.hash = `#/replay/${encodeURIComponent(state.resume.sid)}`;
+    startRows();
+    route();
   })();
 </script>
 </body></html>
