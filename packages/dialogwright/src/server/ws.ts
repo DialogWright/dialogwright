@@ -60,6 +60,8 @@ export function attachWebSocketServer(
       ws.close(1008, 'setup timeout');
     }, setupTimeoutMs);
     deadline.unref();
+    // A setup whose token is checked in a shared store says so when it passes (below covers the others).
+    ctx.identified = () => clearTimeout(deadline);
     ws.on('message', (data) => {
       const handled = handleSocketMessage(deps, sock, ctx, data.toString());
       // handleSocketMessage assigns ctx.callSid synchronously, before its first await, once a setup
@@ -109,13 +111,24 @@ export function attachWebSocketServer(
     // A well-shaped token that was never minted, has expired, or was minted for another carrier's
     // call cannot pass the `setup` check either, so it gets no socket. The binding to a particular
     // call SID is still checked there.
-    if (!deps.tokens.has(token, provider)) {
-      deps.log('upgrade refused: unknown or expired token');
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
+    const upgrade = (live: boolean): void => {
+      if (!live) {
+        deps.log('upgrade refused: unknown or expired token');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, token, provider));
+    };
+    const live = deps.tokens.has(token, provider);
+    // A store across the network answers with a promise (SESSION_STORE=postgres); the others at once, as always.
+    if (typeof live === 'boolean') upgrade(live);
+    else {
+      live.then(upgrade, (err: unknown) => {
+        deps.log(`upgrade refused: the token could not be checked: ${err instanceof Error ? err.message : String(err)}`);
+        upgrade(false);
+      });
     }
-    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, token, provider));
   });
 
   return wss;

@@ -41,9 +41,25 @@ describe('SESSION_STORE', () => {
     expect('sessionStore' in loadConfig({ ...base, RESTART_PAUSE_S: '3', SESSION_FSYNC: 'on' })).toBe(false);
   });
 
-  it('refuses anything else, saying what it takes', () => {
-    expect(() => loadConfig({ ...base, SESSION_STORE: 'file:' })).toThrow('SESSION_STORE must be memory or file:<dir>, got "file:"');
-    expect(() => loadConfig({ ...base, SESSION_STORE: 'redis://localhost:6379' })).toThrow('SESSION_STORE must be memory or file:<dir>, got "redis://localhost:6379"');
+  it('refuses anything else, saying what it takes, and never a password it was given', () => {
+    expect(() => loadConfig({ ...base, SESSION_STORE: 'file:' })).toThrow('SESSION_STORE must be memory, file:<dir> or postgres://..., got "file:"');
+    expect(() => loadConfig({ ...base, SESSION_STORE: 'redis://localhost:6379' })).toThrow('SESSION_STORE must be memory, file:<dir> or postgres://..., got "redis://localhost:6379"');
+    expect(() => loadConfig({ ...base, SESSION_STORE: 'postgress://dw:s3cret@db.example/dw' })).toThrow('SESSION_STORE must be memory, file:<dir> or postgres://..., got "postgress://dw:***@db.example/dw"');
+  });
+
+  it('takes postgres:// and postgresql://, with CALL_LEASE_MS (default 5000) and SERVER_ID, and says it at startup without its password', () => {
+    const url = 'postgres://dialogwright:s3cret@db.example:5432/dialogwright';
+    expect(loadConfig({ ...base, SESSION_STORE: url }).sessionStore).toEqual({ kind: 'postgres', url, restartPauseS: 5, leaseMs: 5000 });
+    expect(loadConfig({ ...base, SESSION_STORE: 'postgresql://db.example/dw', CALL_LEASE_MS: '8000', SERVER_ID: 'web-1', RESTART_PAUSE_S: '0' }).sessionStore)
+      .toEqual({ kind: 'postgres', url: 'postgresql://db.example/dw', restartPauseS: 0, leaseMs: 8000, serverId: 'web-1' });
+    const said = describeConfig(loadConfig({ ...base, SESSION_STORE: url, SERVER_ID: 'web-1' }));
+    expect(said).toContain('sessions postgres://dialogwright:***@db.example:5432/dialogwright (restart pause 5 s, lease 5000 ms, server web-1)');
+    expect(said).not.toContain('s3cret');
+    expect(() => loadConfig({ ...base, SESSION_STORE: url, CALL_LEASE_MS: '100' })).toThrow('CALL_LEASE_MS must be a whole number of milliseconds from 500 to 60000, got "100"');
+    expect(() => loadConfig({ ...base, SESSION_STORE: url, SERVER_ID: 'web 1' })).toThrow('SERVER_ID must be 1 to 40 letters, digits, dots, dashes or underscores, got "web 1"');
+    // Checked with any store, as SESSION_FSYNC is.
+    expect(() => loadConfig({ ...base, CALL_LEASE_MS: 'soon' })).toThrow('CALL_LEASE_MS must be a non-negative integer, got "soon"');
+    expect('sessionStore' in loadConfig({ ...base, CALL_LEASE_MS: '9000', SERVER_ID: 'web-1' })).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { recognitionFor, voiceFor, type ServerConfig } from './config';
 import { connectRelayTwiml } from './twiml';
 import type { SessionStore } from './sessions';
-import type { CallTokens } from './tokens';
+import type { ServerTokenStore } from './stores/types';
 import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest } from './dashboard/routes';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
@@ -26,7 +26,7 @@ import { DEFAULT_LOCALE, localesOf, speechLanguagesOf } from '../core/locale';
 export interface HttpDeps {
   config: ServerConfig;
   store: SessionStore;
-  tokens: CallTokens;
+  tokens: ServerTokenStore;
   hints: string;
   log: (line: string) => void;
   /** The dashboard's event bus, absent when DASHBOARD=off; without it the routes 404 like any other path. */
@@ -469,6 +469,17 @@ export function decideAction(
   return { document: provider.hangupDocument(), note: 'hangup' };
 }
 
+/** Whether the call's token writes have landed in a store that writes behind (ServerTokenStore.settled); false, logged, when one failed. */
+async function landed(deps: HttpDeps, callId: string): Promise<boolean> {
+  try {
+    await deps.tokens.settled?.(callId);
+    return true;
+  } catch (err) {
+    deps.log(`${callId}: the relay token could not be saved (${err instanceof Error ? err.message : String(err)}): the caller is put through to a person`);
+    return false;
+  }
+}
+
 export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const routes = deps.routes ?? [];
   validateRoutes(routes);
@@ -559,6 +570,13 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           return;
         }
         const token = deps.tokens.mint(params.callId, provider.id);
+        // A token written behind its answer (SESSION_STORE=postgres) is in the store before the carrier has
+        // it, so the server its socket reaches can read it; one that could not be written puts the caller
+        // through to a person rather than at a socket no server will open.
+        if (deps.tokens.settled && !(await landed(deps, params.callId))) {
+          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps)));
+          return;
+        }
         deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
         // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they come back with the setup.
         const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined, webhookParameters(deps.app?.callData, params.raw));
@@ -572,12 +590,25 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // loaded first, so a reconnect resumes it and a hangup records its end. With the memory store
       // (the default) there is never one to load.
       const loaded = callback.callId ? await deps.store.restore(callback.callId, provider.id) : 'none';
+      // Shared with other servers (SESSION_STORE=postgres): a reconnect is counted in the store, at once for
+      // every server, before it is decided on.
+      if (deps.store.shared && callback.callId && loaded !== 'unreadable' && wantsReconnect(callback)) {
+        await deps.store.countReconnect(callback.callId, deps.config.reconnectLimit);
+      }
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
       deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(deps.app?.callData, callback.raw) }));
       const start = legacy ? connectRelayTwiml : undefined;
-      const { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
+      let { document, note } = loaded === 'unreadable' ? decideUnreadable(deps, provider, callback, start) : decideAction(deps, provider, callback, start);
+      if (deps.store.shared && callback.callId) {
+        // Loaded only to answer: the call is taken where its socket lands.
+        deps.store.dropBorrowed(callback.callId);
+        if (deps.tokens.settled && !(await landed(deps, callback.callId))) {
+          document = provider.apologizeAndDialDocument(fallbackTarget(deps));
+          note = `${note}, then dial:token-not-saved`;
+        }
+      }
       deps.log(`${path} ${callback.callId || '?'} ${callback.sessionStatus ?? ''} -> ${note}`);
       if (callback.callId) deps.handover?.()?.answered(callback.callId);
       reply(res, 200, provider.contentType, document);

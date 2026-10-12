@@ -287,7 +287,7 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   );
 
   // 10. The session store's folder, when there is one (the memory store has none to check).
-  if (config.sessionStore) results.push(storeCheck(resolve(o.cwd, config.sessionStore.dir), deps.temporary ?? onTemporaryFilesystem));
+  if (config.sessionStore?.kind === 'file') results.push(storeCheck(resolve(o.cwd, config.sessionStore.dir), deps.temporary ?? onTemporaryFilesystem));
 
   // 8. The space.
   const free = [traceDir, auditDir].map((d) => deps.freeBytes(nearestExisting(d))).filter((n): n is number => n !== null);

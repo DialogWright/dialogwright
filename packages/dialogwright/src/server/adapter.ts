@@ -1,7 +1,7 @@
 import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
 import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import type { PlaybackEvent } from './voice/provider';
-import type { InboundFrame, OutboundFrame } from '../channel/relay/frames';
+import type { InboundFrame, OutboundFrame, SetupFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
@@ -18,7 +18,7 @@ import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
 import type { CallEntry, SessionStore, SocketLike } from './sessions';
-import type { CallTokens } from './tokens';
+import type { ServerTokenStore } from './stores/types';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
 import { maskTarget, targetNumber, type ServerTransfer } from './transfer';
@@ -1100,11 +1100,17 @@ export interface ConnectionContext {
   partialLogged: boolean;
   /** The voice provider whose socket path this connection came in on (server/voice/registry.ts). */
   provider: string;
+  /** Told once the setup's token has passed and `callSid` is set, when that waited on the store (ws.ts disarms its setup deadline). */
+  identified?: () => void;
+  /** While a setup waits on a shared store (its token, its lease): what a message after it waits for, so none is dropped as before setup. */
+  setupDone?: Promise<void>;
+  /** Settles `setupDone`: once the call is held here (attached or begun), or the setup is over. */
+  setupReady?: () => void;
 }
 
 export interface AdapterDeps {
   store: SessionStore;
-  tokens: CallTokens;
+  tokens: ServerTokenStore;
   log: (line: string) => void;
   /** Overridable so a test can prove the timeout fires without waiting five seconds. */
   sendTimeoutMs?: number;
@@ -1577,6 +1583,152 @@ export function messageShape(raw: string): string {
   return `{${fields.join(' ')}}`;
 }
 
+/** A setup whose token has been checked: refused, or its call taken up (resumed, or begun). */
+async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, parsed: SetupFrame, callId: string, verified: boolean): Promise<void> {
+  if (!verified) {
+    deps.log(`${callId}: setup refused, bad token`);
+    await sendOne(socket, endFrame('unauthorized'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+    socket.close(1008, 'unauthorized');
+    return;
+  }
+  ctx.callSid = callId;
+  ctx.identified?.();
+  // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
+  // planned restart's handover answered its carrier's callback there, so its socket comes here with no
+  // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
+  // person (the carrier's callback with that handoff, which names no target, dials the app's transfer
+  // default, HANDOFF_NUMBER for an app without one: server/transfer.ts dialPlan), never begun again as a
+  // new call. With the memory store there is never one to load.
+  //
+  // A store many servers share (SESSION_STORE=postgres): the call's lease is taken here, with the call read
+  // in the same step, waiting while another server holds it (one that crashed, until its hold lapses).
+  // Loaded, it resumes as after a restart; new, it is begun; a lease not to be had (or a call in a shape
+  // this server cannot read) is ended toward a person as above.
+  if (deps.store.shared) {
+    const claimed = await deps.store.claim(callId, ctx.provider);
+    if (claimed === 'unreadable' || claimed === 'busy') {
+      await sendOne(socket, endFrame(claimed), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+      deps.tokens.revoke(callId);
+      return;
+    }
+  } else if (deps.store.get(callId) === undefined && deps.store.durable) {
+    const loaded = await deps.store.restore(callId, ctx.provider);
+    if (loaded === 'unreadable') {
+      await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
+      deps.tokens.revoke(callId);
+      return;
+    }
+  }
+  const existing = deps.store.get(callId);
+  if (existing) {
+    // Masked at write time, not only when the dashboard reads it back: the setup frame carries
+    // the caller's whole number, and the file on disk must never hold it either.
+    existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
+    if (existing.ended) {
+      deps.log(`${callId}: setup for an ended call, closing`);
+      socket.close(1000, 'call ended');
+      return;
+    }
+    // The wait the old connection was counting down no longer means anything. The replay below
+    // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
+    clearNoInput(callId);
+    // Nor do the lines it was playing, or what it heard of the caller.
+    unwatch(callId);
+    callerSpeaking.delete(callId);
+    forgetResumed(callId);
+    settleHeard(callId);
+    releaseReply(callId, 'sent');
+    const previous = existing.socket;
+    if (previous && previous !== socket) {
+      // Twilio reconnected before the old socket's close reached us; retire it explicitly so
+      // nothing is written to two sockets for one call.
+      deps.log(`${callId}: reconnect replaced a live socket`);
+      existing.frames.write('log', { replacedSocket: true });
+      previous.close(1000, 'replaced by reconnect');
+    }
+    const entry = deps.store.attach(callId, socket) ?? existing;
+    ctx.setupReady?.();
+    // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
+    // nothing for a moment, and is told so before the question is asked again.
+    const restarted = deps.store.takeRestored(callId);
+    entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
+    if (restarted) deps.log(`${callId}: resumed after a restart`);
+    publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
+    await deps.store.enqueue(callId, async (e) => {
+      // The caller hears the question again, so nothing said before the drop is continued (replay
+      // resets at the repeated setup too). In the queue, after the turns before it.
+      continuations.get(callId)?.reset();
+      const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
+      if (!again) return;
+      // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
+      const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
+      // A request the call was waiting on when its server went away: sent again, with the same key, and its
+      // answer is the next turn, which arms the wait itself.
+      const pending = restarted ? e.pending : null;
+      if (pending && e.session.pendingService === pending.effect.service) {
+        deps.log(`${e.callSid}: sending the ${pending.effect.service} request again, with the same key`);
+        e.frames.write('log', { serviceResent: pending.effect.service });
+        queueService(deps, e, revived(pending), pending);
+        return;
+      }
+      // The replay is a question the caller has to answer, so it starts a wait of its own; the
+      // reconnect is not a turn, so nothing else would.
+      armNoInput(deps, e, sent);
+    });
+    return;
+  }
+  const entry = deps.store.create(callId, socket, ctx.provider);
+  ctx.setupReady?.();
+  // Its custom parameters too: only those the app's callData keys keep are written as they came.
+  entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
+  const caller = setupCallerOf(ctx.provider, parsed);
+  // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
+  // which joins where this call does by it; a log without the line is one that never joined.
+  const within = continueWithinMsOf(appOf(entry.session));
+  continuations.set(callId, new Continuation(within));
+  if (within > 0) entry.frames.write('log', { continueWithinMs: within });
+  // That the session keeps the caller's number, by its last four only, for replay (harness-text/replay.ts),
+  // which stands a made-up number ending in them in for it and so makes the offer (or the lookup) this
+  // call makes. Only for an app with a slot that offers it or that keeps it for its code
+  // (core/callerNumber.ts), and only for a number it keeps.
+  const offers = usesCallerNumber(appOf(entry.session));
+  if (offers && keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller) });
+  // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
+  publish(deps, {
+    type: 'call_started', callSid: callId, at: Date.now(),
+    // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked.
+    from: maskNumber(caller), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+    // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
+    // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
+    channel: 'voice', provider: ctx.provider, caller: null,
+  });
+  // Open the connection to the model while the greeting plays, so the caller's first answer does
+  // not pay for its setup. Not awaited and never allowed to fail the call; a reconnect keeps the
+  // connection the call already had, so only a new call warms.
+  try {
+    void entry.opts.client.warm?.(requestsPerTurn(entry.opts.screen ?? DEFAULT_SCREEN_MODE)).catch(() => undefined);
+  } catch {
+    // A client whose warm throws synchronously is no reason to drop the call.
+  }
+  // The number the caller is calling from goes to the core only for an app with a slot that offers
+  // it or that keeps it for its code, and the number called only for an app that keeps it
+  // (core/callerNumber.ts); every other app's start event is as it was.
+  const called = usesCalledNumber(appOf(entry.session)) ? setupCalledOf(ctx.provider, parsed) : null;
+  // The data the call came with that the app names (app.yaml's callData, channel/callData.ts): its
+  // custom parameters, setup fields and the answer webhook's fields echoed as dw_<key>. None for
+  // every other app, whose start event is as it was.
+  const setup = frameToEvent(parsed);
+  const data = setup.type === 'session.start' ? callDataFrom(appOf(entry.session).callData, setup.provider) : {};
+  // Which keys the call came with, by name only, for replay (harness-text/replay.ts), which then names
+  // those the log holds masked or not at all (a secret one, a field the frame log drops).
+  if (Object.keys(data).length > 0) entry.frames.write('log', { callData: Object.keys(data) });
+  const start = withCallData(withCalledNumber(withCallerNumber(setup, offers ? caller : null), called), data);
+  await enqueueUnsettled(deps, callId, async (e) => {
+    await turn(deps, e, start);
+  });
+  return;
+}
+
 /** Handle one raw socket message for a connection. Safe to call concurrently; turns are serialized per call by the store. */
 export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, raw: string): Promise<void> {
   const parsed = parseInbound(raw);
@@ -1619,135 +1771,24 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
 
   if (parsed.type === 'setup') {
     const callId = setupCallIdOf(ctx.provider, parsed);
-    if (!ctx.token || !deps.tokens.verify(ctx.token, callId, ctx.provider)) {
-      deps.log(`${callId}: setup refused, bad token`);
-      await sendOne(socket, endFrame('unauthorized'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
-      socket.close(1008, 'unauthorized');
-      return;
-    }
-    ctx.callSid = callId;
-    // A call this server does not hold may have been saved by the one before it (SESSION_STORE=file): a
-    // planned restart's handover answered its carrier's callback there, so its socket comes here with no
-    // callback first. Loaded, it resumes; one saved in a shape this server cannot read is ended toward a
-    // person (the carrier's callback with that handoff, which names no target, dials the app's transfer
-    // default, HANDOFF_NUMBER for an app without one: server/transfer.ts dialPlan), never begun again as a
-    // new call. With the memory store there is never one to load.
-    if (deps.store.get(callId) === undefined && deps.store.durable) {
-      const loaded = await deps.store.restore(callId, ctx.provider);
-      if (loaded === 'unreadable') {
-        await sendOne(socket, endFrame('unreadable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
-        deps.tokens.revoke(callId);
-        return;
+    const checked = ctx.token ? deps.tokens.verify(ctx.token, callId, ctx.provider) : false;
+    // A store across the network answers with a promise (SESSION_STORE=postgres); the others at once, as always.
+    if (typeof checked !== 'boolean') {
+      ctx.setupDone = new Promise<void>((resolve) => (ctx.setupReady = resolve));
+      try {
+        const verified = await checked.catch((err: unknown) => {
+          deps.log(`${callId}: setup token could not be checked: ${err instanceof Error ? err.message : String(err)}`);
+          return false;
+        });
+        return await setupVerified(deps, socket, ctx, parsed, callId, verified);
+      } finally {
+        ctx.setupReady?.();
       }
     }
-    const existing = deps.store.get(callId);
-    if (existing) {
-      // Masked at write time, not only when the dashboard reads it back: the setup frame carries
-      // the caller's whole number, and the file on disk must never hold it either.
-      existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
-      if (existing.ended) {
-        deps.log(`${callId}: setup for an ended call, closing`);
-        socket.close(1000, 'call ended');
-        return;
-      }
-      // The wait the old connection was counting down no longer means anything. The replay below
-      // starts a fresh one; this clear is what covers a reconnect with no prompt to replay yet.
-      clearNoInput(callId);
-      // Nor do the lines it was playing, or what it heard of the caller.
-      unwatch(callId);
-      callerSpeaking.delete(callId);
-      forgetResumed(callId);
-      settleHeard(callId);
-      releaseReply(callId, 'sent');
-      const previous = existing.socket;
-      if (previous && previous !== socket) {
-        // Twilio reconnected before the old socket's close reached us; retire it explicitly so
-        // nothing is written to two sockets for one call.
-        deps.log(`${callId}: reconnect replaced a live socket`);
-        existing.frames.write('log', { replacedSocket: true });
-        previous.close(1000, 'replaced by reconnect');
-      }
-      const entry = deps.store.attach(callId, socket) ?? existing;
-      // A call loaded from the session store after a restart (SESSION_STORE=file): its caller heard
-      // nothing for a moment, and is told so before the question is asked again.
-      const restarted = deps.store.takeRestored(callId);
-      entry.frames.write('log', { resumed: true, sessionId: parsed.sessionId, ...(restarted ? { afterRestart: true } : {}) });
-      if (restarted) deps.log(`${callId}: resumed after a restart`);
-      publish(deps, { type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects });
-      await deps.store.enqueue(callId, async (e) => {
-        // The caller hears the question again, so nothing said before the drop is continued (replay
-        // resets at the repeated setup too). In the queue, after the turns before it.
-        continuations.get(callId)?.reset();
-        const again = restarted ? [resumedLine(e.session), e.session.lastPromptText].filter(Boolean).join(' ') : e.session.lastPromptText;
-        if (!again) return;
-        // In the language the call is in, as the line was said (Say.lang); en-US for an app without locales.
-        const sent = await sendFrames(deps, e, [textFrame(again, true, lineLang(appOf(e.session), e.session.locale))]);
-        // A request the call was waiting on when its server went away: sent again, with the same key, and its
-        // answer is the next turn, which arms the wait itself.
-        const pending = restarted ? e.pending : null;
-        if (pending && e.session.pendingService === pending.effect.service) {
-          deps.log(`${e.callSid}: sending the ${pending.effect.service} request again, with the same key`);
-          e.frames.write('log', { serviceResent: pending.effect.service });
-          queueService(deps, e, revived(pending), pending);
-          return;
-        }
-        // The replay is a question the caller has to answer, so it starts a wait of its own; the
-        // reconnect is not a turn, so nothing else would.
-        armNoInput(deps, e, sent);
-      });
-      return;
-    }
-    const entry = deps.store.create(callId, socket, ctx.provider);
-    // Its custom parameters too: only those the app's callData keys keep are written as they came.
-    entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
-    const caller = setupCallerOf(ctx.provider, parsed);
-    // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
-    // which joins where this call does by it; a log without the line is one that never joined.
-    const within = continueWithinMsOf(appOf(entry.session));
-    continuations.set(callId, new Continuation(within));
-    if (within > 0) entry.frames.write('log', { continueWithinMs: within });
-    // That the session keeps the caller's number, by its last four only, for replay (harness-text/replay.ts),
-    // which stands a made-up number ending in them in for it and so makes the offer (or the lookup) this
-    // call makes. Only for an app with a slot that offers it or that keeps it for its code
-    // (core/callerNumber.ts), and only for a number it keeps.
-    const offers = usesCallerNumber(appOf(entry.session));
-    if (offers && keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller) });
-    // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
-    publish(deps, {
-      type: 'call_started', callSid: callId, at: Date.now(),
-      // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked.
-      from: maskNumber(caller), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
-      // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
-      // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
-      channel: 'voice', provider: ctx.provider, caller: null,
-    });
-    // Open the connection to the model while the greeting plays, so the caller's first answer does
-    // not pay for its setup. Not awaited and never allowed to fail the call; a reconnect keeps the
-    // connection the call already had, so only a new call warms.
-    try {
-      void entry.opts.client.warm?.(requestsPerTurn(entry.opts.screen ?? DEFAULT_SCREEN_MODE)).catch(() => undefined);
-    } catch {
-      // A client whose warm throws synchronously is no reason to drop the call.
-    }
-    // The number the caller is calling from goes to the core only for an app with a slot that offers
-    // it or that keeps it for its code, and the number called only for an app that keeps it
-    // (core/callerNumber.ts); every other app's start event is as it was.
-    const called = usesCalledNumber(appOf(entry.session)) ? setupCalledOf(ctx.provider, parsed) : null;
-    // The data the call came with that the app names (app.yaml's callData, channel/callData.ts): its
-    // custom parameters, setup fields and the answer webhook's fields echoed as dw_<key>. None for
-    // every other app, whose start event is as it was.
-    const setup = frameToEvent(parsed);
-    const data = setup.type === 'session.start' ? callDataFrom(appOf(entry.session).callData, setup.provider) : {};
-    // Which keys the call came with, by name only, for replay (harness-text/replay.ts), which then names
-    // those the log holds masked or not at all (a secret one, a field the frame log drops).
-    if (Object.keys(data).length > 0) entry.frames.write('log', { callData: Object.keys(data) });
-    const start = withCallData(withCalledNumber(withCallerNumber(setup, offers ? caller : null), called), data);
-    await enqueueUnsettled(deps, callId, async (e) => {
-      await turn(deps, e, start);
-    });
-    return;
+    return setupVerified(deps, socket, ctx, parsed, callId, checked);
   }
 
+  if (ctx.setupDone) await ctx.setupDone;
   if (!ctx.callSid) {
     deps.log(`message of type ${parsed.type} before setup, ignored`);
     return;

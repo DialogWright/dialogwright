@@ -8,9 +8,13 @@ import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
+import { randomBytes } from 'node:crypto';
 import { SessionStore } from './sessions';
 import { CallTokens } from './tokens';
 import { openFileStores } from './stores/file';
+import { openPostgresStores } from './stores/postgres';
+import { maskConnectionString, maskSecrets, openPgClient, type SqlClient } from './stores/sql';
+import type { CallStateStore, ChatStateStore, ServerTokenStore } from './stores/types';
 import { FrameLog } from './frameLog';
 import { buildHints } from './hints';
 import { DashboardBus } from './dashboard/bus';
@@ -40,7 +44,7 @@ export interface RunningServer {
   server: Server;
   port: number;
   store: SessionStore;
-  tokens: CallTokens;
+  tokens: ServerTokenStore;
   /** The dashboard's event bus, or undefined when DASHBOARD=off. */
   bus?: DashboardBus;
   /** The app's own pages its launcher mounted (ServerOverrides.routes), in the order they are asked. */
@@ -107,6 +111,12 @@ export interface ServerOverrides {
   summarizeHandoff?: AdapterDeps['summarizeHandoff'];
   /** How the engine's web chat fetches the identity provider's published keys (CHAT_SIGNIN=jwt); tests serve their own. */
   chatFetch?: typeof fetch;
+  /**
+   * With SESSION_STORE=postgres://..., the connection to use in place of the one the setting names: the
+   * engine's tests give one on PGlite (stores/pgliteSql.ts), so two servers share one database in one
+   * process. Not a setting: a deployment always connects through the pg driver. The server closes it.
+   */
+  sessionSql?: SqlClient;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -134,6 +144,21 @@ const GOING_AWAY_MS = 3_000;
 export function safeFileStem(callSid: string): string {
   const cleaned = callSid.replace(/[^A-Za-z0-9_-]/g, '_');
   return cleaned.length ? cleaned.slice(0, 64) : 'unknown';
+}
+
+/**
+ * The Postgres stores SESSION_STORE=postgres://... names, through the pg driver (or the connection a test
+ * gives): a failure to connect, or tables at another version, stops the server here with the reason,
+ * the connection string's password never in it.
+ */
+async function openShared(url: string, given: SqlClient | undefined, now: () => number, log: (line: string) => void) {
+  const sql = given ?? (await openPgClient(url, { log }));
+  try {
+    return await openPostgresStores(sql, { tokenTtlMs: TOKEN_TTL_MS, now, log });
+  } catch (err) {
+    await sql.close().catch(() => undefined);
+    throw new Error(`SESSION_STORE ${maskConnectionString(url)}: ${maskSecrets(err instanceof Error ? err.message : String(err), url)}`);
+  }
 }
 
 export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
@@ -201,15 +226,25 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
   // SESSION_STORE=file:<dir>: calls, chats and relay tokens saved in a folder, so a restart resumes a
   // call whose carrier calls back. Unset (memory), nothing is saved, as it always was.
-  const files = config.sessionStore
-    ? openFileStores(resolvePath(config.sessionStore.dir), { tokenTtlMs: TOKEN_TTL_MS, now, log, fsync: config.sessionStore.fsync === true })
+  const setting = config.sessionStore;
+  const files = setting?.kind === 'file'
+    ? openFileStores(resolvePath(setting.dir), { tokenTtlMs: TOKEN_TTL_MS, now, log, fsync: setting.fsync === true })
     : null;
   if (files) log(`sessions: file:${files.dir} (calls, chats and relay tokens are saved after every turn, and a restart resumes them)`);
+  // SESSION_STORE=postgres://...: the same in a database many servers share, each call held by one
+  // server at a time under a lease this server renews while the call is live.
+  const shared = setting?.kind === 'postgres' ? await openShared(setting.url, overrides.sessionSql, now, log) : null;
+  const leaseMs = setting?.kind === 'postgres' ? setting.leaseMs : 0;
+  const owner = setting?.kind === 'postgres' ? `${setting.serverId ?? 'server'}-${randomBytes(4).toString('hex')}` : '';
+  if (shared && setting?.kind === 'postgres') {
+    log(`sessions: ${maskConnectionString(setting.url)} (shared: calls, chats and relay tokens are saved after every turn, and any server the carrier reconnects to takes a call over); this server is ${owner}, holding each call ${leaseMs} ms at a time`);
+  }
+  const durable: { calls: CallStateStore; chats: ChatStateStore; tokens: ServerTokenStore } | null = files ?? shared;
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
   // now, before any call: one unset, or not E.164, stops the server here. Each turn reads these values
   // and nothing else of the environment (TurnContext.env).
   const called = calledVariablesFrom(getApp(defaultAppId()), overrides.env ?? process.env);
-  /** RESTART_PAUSE_S with the file store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
+  /** RESTART_PAUSE_S with a durable store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
   const restartPauseS = config.sessionStore?.restartPauseS ?? 0;
   const store: SessionStore = new SessionStore(
     (callSid) => {
@@ -226,9 +261,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config.sessionTtlMs,
     now,
     config.sessionMaxAgeMs,
-    { state: files?.calls ?? null, log },
+    { state: durable?.calls ?? null, lease: shared ? { leases: shared.calls, owner, ttlMs: leaseMs } : null, log },
   );
-  const tokens: CallTokens = files?.tokens ?? new CallTokens(TOKEN_TTL_MS, now);
+  const tokens: ServerTokenStore = durable?.tokens ?? new CallTokens(TOKEN_TTL_MS, now);
   /**
    * The calls saved before a restart whose carrier never called back, forgotten once past their time:
    * the one end of such a call nothing else sees, so it is recorded here, as the idle sweep records an
@@ -242,7 +277,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       }
     });
   };
-  if (files) sweepSaved();
+  if (durable) sweepSaved();
   // The app's pages share the phone line's client, book of business, audit chain and console.
   const mounted = overrides.routes?.({
     config, client, thresholds, todayIso, tools, audit, bus, traceDir: config.traceDir, serviceUrls, log, now,
@@ -275,7 +310,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     ? chatEndpoint({
       settings: chatSettings, now, log, audit, bus, serviceUrls,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: files?.chats ?? null,
+      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
       resources: (id, sessions) => {
         const file = safeFileStem(id);
         const trace = new TraceWriter(join(config.traceDir, `${file}.jsonl`));
@@ -395,13 +430,25 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     for (const r of routes) r.sweep?.();
     chat?.sweep();
-    if (files) sweepSaved();
+    if (durable) sweepSaved();
     const swept = tokens.evictExpired();
-    if (swept) log(`swept ${swept} expired call tokens`);
+    const sayExpired = (n: number): void => {
+      if (n) log(`swept ${n} expired call tokens`);
+    };
+    if (typeof swept === 'number') sayExpired(swept);
+    else void swept.then(sayExpired, (err: unknown) => log(`could not sweep the expired call tokens: ${err instanceof Error ? err.message : String(err)}`));
     if (retaining && now() - retentionAt >= RETENTION_EVERY_MS) sweepDisk();
   };
   const evictor = setInterval(sweep, EVICT_EVERY_MS);
   evictor.unref();
+  // With a shared store: every hold this server has, renewed every third of a hold, in one statement.
+  const renewer = shared ? setInterval(() => void store.renewLeases(), Math.max(100, Math.floor(leaseMs / 3))) : null;
+  renewer?.unref();
+  /** The shared store's connection, closed once (a failed start, or close()). */
+  const closeShared = async (): Promise<void> => {
+    if (renewer) clearInterval(renewer);
+    await shared?.close().catch((err: unknown) => log(`sessions: could not close the Postgres connection: ${err instanceof Error ? err.message : String(err)}`));
+  };
 
   // listen reports failure as an 'error' event, which is unhandled (and fatal) unless it is awaited here.
   try {
@@ -418,6 +465,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   } catch (err) {
     clearInterval(evictor);
     wss.close();
+    await closeShared();
     throw err;
   }
   const port = (server.address() as { port: number }).port;
@@ -432,6 +480,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     chat?.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => wss.close(() => server.close(() => resolve())));
+    await closeShared();
     throw err;
   }
 
@@ -557,6 +606,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       draining = true;
       closing = true;
       clearInterval(evictor);
+      if (renewer) clearInterval(renewer);
       // With the calls saved, a carrier's callback belongs to the restarted server: none is taken here.
       if (store.durable) void stopListening();
       // Let turns that are already running finish (and flush their frames) before the sockets go away.
@@ -572,6 +622,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         ]);
         if (timer) clearTimeout(timer);
       }
+      // With a shared store, every call this server still holds is given up, after what its turns saved,
+      // so the server its carrier reconnects to takes it at once rather than wait for the hold to lapse.
+      await store.releaseAll();
       for (const c of wss.clients) c.terminate();
       chat?.close();
       // `server.close` only stops new connections and then waits for the idle ones; an open SSE
@@ -582,6 +635,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       consoleAuth?.stop();
       // What the last turns saved is on disk before the process goes.
       await Promise.all([store.settled(), chat?.settled?.()]);
+      await closeShared();
     },
   };
 }

@@ -113,8 +113,11 @@ export async function openPgClient(url: string, o: PgClientOptions = {}): Promis
 export function maskConnectionString(url: string): string {
   try {
     const u = new URL(url);
+    const keys = [...u.searchParams.keys()].filter((key) => /pass/i.test(key));
+    // Nothing secret in it: said exactly as given.
+    if (u.password === '' && keys.length === 0) return url;
     if (u.password !== '') u.password = '***';
-    for (const key of [...u.searchParams.keys()]) if (/pass/i.test(key)) u.searchParams.set(key, '***');
+    for (const key of keys) u.searchParams.set(key, '***');
     // URLSearchParams writes `*` as `%2A`: said as typed.
     return u.toString().replace(/%2A%2A%2A/g, '***');
   } catch {

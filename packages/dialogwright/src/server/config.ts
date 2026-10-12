@@ -14,6 +14,7 @@ import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
+import { maskConnectionString } from './stores/sql';
 import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -263,13 +264,18 @@ export interface ServerConfig {
    * SESSION_STORE, default memory (absent here, as before it existed): where calls, chats and relay
    * tokens are kept between turns (server/stores). `file:<dir>` keeps them in a folder on this machine
    * (server/stores/file.ts), so a restart resumes a call whose carrier calls back after it; a relative
-   * folder is from where the server runs, as TRACE_DIR is.
+   * folder is from where the server runs, as TRACE_DIR is. `postgres://...` (or `postgresql://...`)
+   * keeps them in a Postgres database many servers share (server/stores/postgres.ts), so a call goes on
+   * on whichever server the carrier reconnects to, with one owner per call at a time.
    */
   sessionStore?: SessionStoreSetting;
 }
 
 /** Where sessions are kept when it is not the process's memory. */
-export interface SessionStoreSetting {
+export type SessionStoreSetting = FileSessionStoreSetting | PostgresSessionStoreSetting;
+
+/** SESSION_STORE=file:<dir>: one machine's sessions in a folder. */
+export interface FileSessionStoreSetting {
   kind: 'file';
   dir: string;
   /**
@@ -286,6 +292,23 @@ export interface SessionStoreSetting {
    * callback that finds no server goes to the carrier's fallback document.
    */
   restartPauseS: number;
+}
+
+/** SESSION_STORE=postgres://...: sessions in a database many servers share. */
+export interface PostgresSessionStoreSetting {
+  kind: 'postgres';
+  /** The connection string as given: never logged or said (maskConnectionString, server/stores/sql.ts). */
+  url: string;
+  /** RESTART_PAUSE_S, as for the file store: a server that drains with a call live hands it over this way. */
+  restartPauseS: number;
+  /**
+   * CALL_LEASE_MS, default 5000 (DEFAULT_CALL_LEASE_MS), 500 to 60000: how long a server's hold on a call
+   * lasts unless it renews it (it renews every third of it while the call is live). After a crash, the
+   * longest the call waits before another server may take it over.
+   */
+  leaseMs: number;
+  /** SERVER_ID, when set: the name this server goes by in the lease table and the log (a random suffix is added per process). */
+  serverId?: string;
 }
 
 /** Under this fraction of its estimated length, a playback the carrier reports finished was cut short, unless RESAY_MIN_FRACTION says otherwise. */
@@ -371,6 +394,19 @@ function incompleteWaitOf(env: Env): { incompleteWaitMs: number; incompleteWaitB
 export function reportsCallerVoice(c: Pick<ServerConfig, 'voiceProviders' | 'telnyxEvents'>): boolean {
   return c.voiceProviders.includes('telnyx') && (c.telnyxEvents ?? '').toLowerCase().split(/\s+/).includes('speaker-events');
 }
+
+/**
+ * How long a server's hold on a call lasts unless renewed, unless CALL_LEASE_MS says otherwise. It bounds
+ * the silence after a crash (the carrier's reconnect waits at most this long for the dead server's hold
+ * to lapse), and a renewal every third of it, one statement per server for all its calls, leaves room
+ * for two missed. A hold that lapses while its server lives costs nothing unless the carrier has
+ * reconnected elsewhere, and then the call is that server's anyway.
+ */
+export const DEFAULT_CALL_LEASE_MS = 5_000;
+const MIN_CALL_LEASE_MS = 500;
+const MAX_CALL_LEASE_MS = 60_000;
+/** What SERVER_ID may be: a name for logs and the lease table, nothing that needs quoting. */
+const SERVER_ID_SHAPE = /^[A-Za-z0-9._-]{1,40}$/;
 
 /** The pause a planned restart's handover asks of each carrier, unless RESTART_PAUSE_S says otherwise. */
 export const DEFAULT_RESTART_PAUSE_S = 5;
@@ -576,17 +612,31 @@ function sessionStoreOf(env: Env): { sessionStore?: SessionStoreSetting } {
   if (restartPauseS > MAX_RESTART_PAUSE_S) {
     throw new Error(`RESTART_PAUSE_S must be a whole number of seconds from 0 to ${MAX_RESTART_PAUSE_S}, got "${env.RESTART_PAUSE_S}"`);
   }
+  // Checked whatever the store too, as SESSION_FSYNC is.
+  const leaseMs = integer(env, 'CALL_LEASE_MS', DEFAULT_CALL_LEASE_MS);
+  if (leaseMs < MIN_CALL_LEASE_MS || leaseMs > MAX_CALL_LEASE_MS) {
+    throw new Error(`CALL_LEASE_MS must be a whole number of milliseconds from ${MIN_CALL_LEASE_MS} to ${MAX_CALL_LEASE_MS}, got "${env.CALL_LEASE_MS}"`);
+  }
+  const serverId = env.SERVER_ID?.trim() ?? '';
+  if (serverId !== '' && !SERVER_ID_SHAPE.test(serverId)) {
+    throw new Error(`SERVER_ID must be 1 to 40 letters, digits, dots, dashes or underscores, got "${env.SERVER_ID}"`);
+  }
   const raw = env.SESSION_STORE?.trim() ?? '';
   if (raw === '' || raw.toLowerCase() === 'memory') return {};
+  if (/^postgres(ql)?:\/\//i.test(raw)) {
+    return { sessionStore: { kind: 'postgres', url: raw, restartPauseS, leaseMs, ...(serverId !== '' ? { serverId } : {}) } };
+  }
   const dir = raw.startsWith('file:') ? raw.slice('file:'.length).trim() : '';
-  if (dir === '') throw new Error(`SESSION_STORE must be memory or file:<dir>, got "${env.SESSION_STORE}"`);
+  // Said masked: a value meant for Postgres with its scheme mistyped may hold a password.
+  if (dir === '') throw new Error(`SESSION_STORE must be memory, file:<dir> or postgres://..., got "${maskConnectionString(raw)}"`);
   return { sessionStore: { kind: 'file', dir, fsync: fsync === 'on', restartPauseS } };
 }
 
-/** The file store's two settings, as the startup line says them. */
+/** The session store as the startup line says it: never a password. */
 function describeSessionStore(s: SessionStoreSetting): string {
   const pause = s.restartPauseS > 0 ? `restart pause ${s.restartPauseS} s` : 'restart pause off';
-  return s.fsync ? `${pause}, fsync on` : pause;
+  if (s.kind === 'postgres') return `sessions ${maskConnectionString(s.url)} (${pause}, lease ${s.leaseMs} ms${s.serverId ? `, server ${s.serverId}` : ''})`;
+  return `sessions file:${s.dir} (${s.fsync ? `${pause}, fsync on` : pause})`;
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
@@ -803,7 +853,7 @@ export function describeConfig(c: ServerConfig): string {
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
-    ...(c.sessionStore ? [`sessions file:${c.sessionStore.dir} (${describeSessionStore(c.sessionStore)})`] : []),
+    ...(c.sessionStore ? [describeSessionStore(c.sessionStore)] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,
     c.handoffSummary ? `handoff note on${c.anthropicApiKey ? '' : ' (no key: none generated)'}` : 'handoff note OFF',
