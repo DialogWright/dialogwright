@@ -1,6 +1,6 @@
 # Phase 9, generated wording (opt-in): design, for review
 
-Date: 2026-10-13. Status: **proposal for the maintainer to review; nothing here is built.** Source: [design.md section 5](../design.md#5-generated-wording) and the roadmap's Phase 9 ("the model chooses the words, never the content, and the difference is measured"). The maintainer, 2026-10-02: keep generated wording as an option to try and measure, per prompt or per state, with the prompt and the data items it must carry, and the fixed line as its fallback; not a headline feature.
+Date: 2026-10-13. Status: **decided (the maintainer, 2026-10-13); being built.** The decisions at the end replace the proposals above where they differ. Source: [design.md section 5](../design.md#5-generated-wording) and the roadmap's Phase 9 ("the model chooses the words, never the content, and the difference is measured"). The maintainer, 2026-10-02: keep generated wording as an option to try and measure, per prompt or per state, with the prompt and the data items it must carry, and the fixed line as its fallback; not a headline feature.
 
 ## At a glance
 
@@ -40,3 +40,11 @@ avoid: ["unfortunately", "I apologize for the inconvenience"]
 2. The default model: a current Claude Haiku through the Anthropic API with the author's key, or provider-neutral from the start (OpenRouter and compatible endpoints, as the decision model already is)?
 3. Should the measuring split (`RENDER_SHARE`) be in the first build, or later once there is something to compare?
 4. Per prompt only, or also per state (a form's prompts generated only in some states, such as after a re-ask)?
+
+## Decisions (the maintainer, 2026-10-13)
+
+1. **Which lines may be generated is the app's choice, never the framework's.** The default is prescribed text; a line is generated only where the app explicitly asks for it, and an app may choose a mostly or entirely generated experience. What is regulated is the app designer's call, not the framework's: a prompt the designer marks prescriptive (`prescribed: true`) is never generated, whatever a form or state setting says, and `pnpm check` refuses `mode: generative` on it. The framework's list in proposal 2 becomes guidance in the skill, not a refusal. The policy card lists every generated line, so a reviewer sees exactly which lines a model words. CLAUDE.md's rule changes to say this.
+2. **Generating from what was collected.** Beside rephrasing a prompt, an app may have a line generated from content the call holds: the maintainer's example is a secretary app that takes a message and reads back a summary of it, as a real secretary would, and, if the caller pushes back, offers to read the exact stored note word for word; another is summarizing a long transaction. The input is named by the app (slots, a stored note), the exact content is always kept, and reading it back word for word is always available as the fallback.
+3. **Providers: OpenRouter and Anthropic from the start**, with the author's own keys (`RENDER_PROVIDER=openrouter|anthropic`, `RENDER_MODEL`, the key from its own variable, never a flag). OpenRouter gives access to every model, which also lets the maintainer compare decision models there.
+4. **`RENDER_SHARE` is available; unset, generative prompts are generated for every call (100).**
+5. **How finely an app chooses** (all three, app's choice): per prompt (`mode: generative`); per prompt and situation (`when:` first ask, re-ask, after a correction, a frustrated caller, a channel); and per form (a form's switch makes its prompts generative unless a prompt says otherwise or is prescribed).
