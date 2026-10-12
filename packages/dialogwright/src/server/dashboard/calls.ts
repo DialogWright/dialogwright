@@ -162,8 +162,11 @@ export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: re
   const from = callerOf(records, frames);
   const events = withMeta(meta, () => replayEvents(records, frames, { from: from ?? 'unknown', thresholds: DEFAULT_THRESHOLDS }));
   const row = callRow(events, { meta });
+  // The carrier, as the adapter logs it at the call's setup (a call recorded before it names none).
+  const carrier = row.channel === 'chat' ? null : frames.find((f) => f.dir === 'log' && typeof (f.msg as { provider?: unknown } | null)?.provider === 'string')?.msg as { provider: string } | undefined;
+  const withCarrier = carrier && row.provider === null ? { ...row, provider: carrier.provider } : row;
   // A chat names itself as the live console does.
-  return row.channel === 'chat' && from === null ? { ...row, from: 'web chat' } : row;
+  return withCarrier.channel === 'chat' && from === null ? { ...withCarrier, from: 'web chat' } : withCarrier;
 }
 
 /** The summaries read so far (with what each call adds to Insights' figures), by app, call, size and last write, the most recently used last (an LRU). */

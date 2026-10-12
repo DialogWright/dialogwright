@@ -1677,3 +1677,149 @@ export function dayBoundMs(day, end) {
   if (!Number.isFinite(start)) return null;
   return end ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1).getTime() - 1 : start;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Insights, Knowledge and Health: ranges, series and charts (inline SVG, drawn by the page itself)
+// ---------------------------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+/** The ranges Insights offers, by the name its picker gives each. */
+export const RANGES = ['today', 'yesterday', '7d', '30d', '90d', 'custom'];
+
+/**
+ * A range Insights reads, as the viewer's local days: `today`, `yesterday`, the last 7, 30 or 90 days
+ * (today included), or `custom` from one YYYY-MM-DD to another; null for a custom range not well
+ * formed, backwards, or longer than 92 days (the server's bound).
+ */
+export function insightsRange(preset, custom, now) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const midnight = start.getTime();
+  const daysBack = (n) => new Date(start.getFullYear(), start.getMonth(), start.getDate() - n).getTime();
+  if (preset === 'today') return { from: midnight, to: now };
+  if (preset === 'yesterday') return { from: daysBack(1), to: midnight - 1 };
+  const n = { '7d': 7, '30d': 30, '90d': 90 }[preset];
+  if (n !== undefined) return { from: daysBack(n - 1), to: now };
+  const from = dayBoundMs(custom?.from, false);
+  const to = dayBoundMs(custom?.to, true);
+  if (from === null || to === null || to < from || to - from > 92 * DAY_MS) return null;
+  return { from, to };
+}
+
+/** A local hour as a list says it: `14:00`. */
+function hourLabel(ms) {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:00`;
+}
+/** A local day as a list says it: `Sep 18`. */
+function dayLabel(ms) {
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Calls over a range, for the chart: by the hour for a range of two days or less, else by the viewer's
+ * day; every hour or day of the range there, a quiet one at zero. Each point has its calls and the most
+ * at once in it. `byHour` is the server's (hours keyed by their first millisecond, UTC).
+ */
+export function callsSeries(byHour, from, to) {
+  const hours = new Map((byHour ?? []).map((h) => [h.hour, h]));
+  if (to - from <= 2 * DAY_MS) {
+    const points = [];
+    for (let t = Math.floor(from / HOUR_MS) * HOUR_MS; t <= to; t += HOUR_MS) {
+      const h = hours.get(t);
+      points.push({ at: t, label: hourLabel(t), calls: h?.calls ?? 0, peak: h?.peak ?? 0 });
+    }
+    return { unit: 'hour', points };
+  }
+  const days = new Map();
+  const first = new Date(from);
+  first.setHours(0, 0, 0, 0);
+  for (let d = new Date(first); d.getTime() <= to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) days.set(d.getTime(), { at: d.getTime(), label: dayLabel(d.getTime()), calls: 0, peak: 0 });
+  for (const h of byHour ?? []) {
+    const d = new Date(h.hour);
+    d.setHours(0, 0, 0, 0);
+    const p = days.get(d.getTime());
+    if (!p) continue;
+    p.calls += h.calls;
+    p.peak = Math.max(p.peak, h.peak);
+  }
+  return { unit: 'day', points: [...days.values()] };
+}
+
+/** The busiest point of a series (the most at once), or null with no call. */
+export function peakOf(series) {
+  let best = null;
+  for (const p of series.points) if (p.peak > 0 && (best === null || p.peak > best.peak)) best = p;
+  return best;
+}
+
+const ESC_CHART = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escChart = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC_CHART[c]);
+
+/**
+ * A bar chart as inline SVG: one bar per point, its height its value, each with a tooltip (`titleOf`);
+ * stretched to the box it is put in (the page sets its size), so its labels are the page's own HTML.
+ * `label` names the chart for a screen reader, which the page's table view says in full.
+ */
+export function barsSvg(points, opts) {
+  const values = points.map((p) => Math.max(0, Number(opts.valueOf(p)) || 0));
+  const max = Math.max(1, ...values);
+  const n = Math.max(1, points.length);
+  const W = 1000;
+  const H = 100;
+  const step = W / n;
+  const gap = Math.min(step * 0.2, 6);
+  const bars = values.map((v, i) => {
+    const h = v === 0 ? 0 : Math.max(1.5, (v / max) * H);
+    return `<rect x="${(i * step + gap / 2).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(0.5, step - gap).toFixed(2)}" height="${h.toFixed(2)}" class="bar"><title>${escChart(opts.titleOf(points[i]))}</title></rect>`;
+  }).join('');
+  return `<svg class="chart bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escChart(opts.label)}"><line x1="0" y1="${H}" x2="${W}" y2="${H}" class="base"/>${bars}</svg>`;
+}
+
+/**
+ * One bar split into its parts (how calls ended, say), each part's share its width and a class of its
+ * own; parts with nothing are left out. The page's legend beside it names each part with its count, so
+ * no part is told by its color alone.
+ */
+export function splitSvg(parts, label) {
+  const total = parts.reduce((s, p) => s + Math.max(0, p.value), 0);
+  if (total === 0) return '';
+  let x = 0;
+  const rects = parts.filter((p) => p.value > 0).map((p) => {
+    const w = (p.value / total) * 1000;
+    const r = `<rect x="${x.toFixed(2)}" y="0" width="${Math.max(0, w - 2).toFixed(2)}" height="20" class="part ${escChart(p.cls)}"><title>${escChart(`${p.label}: ${p.value}`)}</title></rect>`;
+    x += w;
+    return r;
+  }).join('');
+  return `<svg class="chart split" viewBox="0 0 1000 20" preserveAspectRatio="none" role="img" aria-label="${escChart(label)}">${rects}</svg>`;
+}
+
+/** A share as a whole percent (`42%`), or an en dash with none. */
+export function percentText(share) {
+  return typeof share === 'number' && Number.isFinite(share) ? `${Math.round(share * 100)}%` : '–';
+}
+
+/** Dollars as the console says them: four places under a dollar, two above; an en dash for none. */
+export function moneyText(usd) {
+  if (typeof usd !== 'number' || !Number.isFinite(usd)) return '–';
+  return usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
+}
+
+/** A call-length bucket in words, from its upper edge in seconds (LENGTH_EDGES_S) and the one before. */
+export function lengthBucketText(i, edges) {
+  const s = (n) => (n < 60 ? `${n} s` : `${n / 60} min`);
+  if (i === 0) return `under ${s(edges[0])}`;
+  if (i >= edges.length) return `${s(edges[edges.length - 1])} or more`;
+  return `${s(edges[i - 1])} to ${s(edges[i])}`;
+}
+
+/** A byte count in words: `512 B`, `3.4 MB`, `1.2 GB`. */
+export function bytesText(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '–';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) { v /= 1024; u += 1; }
+  return `${u === 0 ? v : v.toFixed(1)} ${units[u]}`;
+}

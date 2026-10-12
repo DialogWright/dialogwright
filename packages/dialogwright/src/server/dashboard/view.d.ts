@@ -364,3 +364,15 @@ export const ENDINGS: readonly CallEnding['kind'][];
 export interface CallsFilters { last4?: string; from?: string; to?: string; app?: string; task?: string; ending?: string; page?: number }
 export function callsQuery(f: CallsFilters): string;
 export function dayBoundMs(day: string | null | undefined, end?: boolean): number | null;
+/** The ranges Insights offers. */
+export const RANGES: readonly string[];
+export function insightsRange(preset: string, custom: { from?: string; to?: string } | null | undefined, now: number): { from: number; to: number } | null;
+export interface SeriesPoint { at: number; label: string; calls: number; peak: number }
+export function callsSeries(byHour: readonly { hour: number; calls: number; peak: number }[] | null | undefined, from: number, to: number): { unit: 'hour' | 'day'; points: SeriesPoint[] };
+export function peakOf(series: { points: readonly SeriesPoint[] }): SeriesPoint | null;
+export function barsSvg<P>(points: readonly P[], opts: { label: string; valueOf: (p: P) => number; titleOf: (p: P) => string }): string;
+export function splitSvg(parts: readonly { label: string; value: number; cls: string }[], label: string): string;
+export function percentText(share: number | null | undefined): string;
+export function moneyText(usd: number | null | undefined): string;
+export function lengthBucketText(i: number, edges: readonly number[]): string;
+export function bytesText(n: number | null | undefined): string;

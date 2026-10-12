@@ -18,6 +18,8 @@ export interface WrittenCall {
   from?: string;
   /** The handoff's reason code (`end: 'handoff'`), default `live-agent`. */
   reason?: string;
+  /** The carrier, as the adapter logs it at setup (default twilio); null for a call recorded before it was logged. */
+  provider?: string | null;
 }
 
 /** The frame lines that end a call as `end` says, at `at`. */
@@ -35,7 +37,8 @@ export async function writeFolderCall(dir: string, callSid: string, steps: Step[
   const trace = join(dir, `${callSid}.jsonl`);
   const frames = join(dir, `${callSid}.frames.jsonl`);
   writeFileSync(trace, raw.map((r) => JSON.stringify(r)).join('\n') + '\n');
-  const lines = endFrames(end, new Date(endMs).toISOString(), o.reason ?? 'live-agent');
+  const carrier = o.provider === undefined ? 'twilio' : o.provider;
+  const lines = [...(carrier === null ? [] : [{ ts: new Date(startMs).toISOString(), dir: 'log', msg: { provider: carrier } }]), ...endFrames(end, new Date(endMs).toISOString(), o.reason ?? 'live-agent')];
   writeFileSync(frames, lines.map((f) => JSON.stringify(f)).join('\n') + (lines.length ? '\n' : ''));
   utimesSync(trace, endMs / 1000, endMs / 1000);
   utimesSync(frames, endMs / 1000, endMs / 1000);
@@ -47,6 +50,8 @@ export async function writeStoreCall(setting: S3TraceSetting, callSid: string, s
   const store = new S3TraceStore(setting, { server: 'a-1', now: () => startMs + 5_000 * steps.length + 1_000 });
   const sinks = store.open(callSid, () => ({ turn: 1, gen: 0, startedAtMs: startMs, held: true }));
   for (const r of records) sinks.trace.write(o.from && r.event.type === 'session.start' ? { ...r, event: { ...r.event, provider: { ...r.event.provider, from: o.from } } } : r);
+  const carrier = o.provider === undefined ? 'twilio' : o.provider;
+  if (carrier !== null) sinks.frames.write('log', { provider: carrier });
   for (const f of endFrames(end, '', o.reason ?? 'live-agent')) sinks.frames.write(f.dir as FrameDir, f.msg);
   await store.flush();
 }

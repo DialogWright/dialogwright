@@ -20,7 +20,7 @@ import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type Ca
 import { LiveCalls } from './live';
 import type { PublishedEvent } from './bus';
 import { FiguresCache } from './figuresCache';
-import { insightsOf, type Insights } from './figures';
+import { insightsOf, LENGTH_EDGES_S, type Insights } from './figures';
 import { knowledgeStatusOf, type KnowledgeStatus } from './knowledge';
 import { AuditVerifier, latencyOf, type AuditCheck, type HealthNumbers, type HealthSource, type ServerSeen } from './health';
 import type { ConsolePage } from '../console/auth';
@@ -531,6 +531,8 @@ export interface InsightsAnswer {
   from: number;
   to: number;
   insights: Insights;
+  /** The call-length buckets' upper edges, in seconds (figures.ts LENGTH_EDGES_S). */
+  lengthEdgesS: readonly number[];
   /** Whether any app has a knowledge base, so the unanswered questions are counted; and the command that ranks them. */
   knowledge: { apps: number; command: string } | null;
 }
@@ -568,7 +570,7 @@ function insightsRoute(req: IncomingMessage, res: ServerResponse, deps: Dashboar
       const sources = callsSources(deps, only);
       const apps = await figuresOf(deps).range(sources, from, to);
       const withKb = sources.filter((s) => s.app.knowledge !== undefined).length;
-      const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates), knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
+      const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates), lengthEdgesS: LENGTH_EDGES_S, knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
       return answer;
     } finally {
       done();

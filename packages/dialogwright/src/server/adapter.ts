@@ -1833,6 +1833,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   ctx.setupReady?.();
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
   entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
+  // The carrier the call came in on, which the trace does not name: the console's Insights price its minutes by it.
+  entry.frames.write('log', { provider: ctx.provider });
   const caller = setupCallerOf(ctx.provider, parsed);
   // The call's window for a caller who had not finished, once, for replay (harness-text/replay.ts),
   // which joins where this call does by it; a log without the line is one that never joined.

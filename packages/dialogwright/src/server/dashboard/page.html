@@ -123,6 +123,40 @@
   #f-last4 { width:6em; font-family:var(--mono); }
   .pager { display:flex; gap:12px; align-items:center; justify-content:flex-end; padding-top:.8em; color:var(--muted); }
 
+  /* ---------- Insights, Knowledge, Health: cards of figures, charts, tables ---------- */
+  .grid2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; align-items:start; }
+  .fig { min-width:0; }
+  .fig h2 { margin:0; font-size:inherit; font-weight:inherit; }
+  .chart { display:block; width:100%; }
+  .chart.bars { height:140px; }
+  .chart.split { height:22px; border-radius:6px; }
+  .chart .base { stroke:var(--border-2); stroke-width:1; vector-effect:non-scaling-stroke; }
+  .chart .bar { fill:var(--accent); }
+  .chart .bar:hover { fill:var(--sys); }
+  .chart .part.k-handled { fill:var(--pass); } .chart .part.k-person { fill:var(--warn); } .chart .part.k-hangup { fill:var(--caller); } .chart .part.k-error { fill:var(--fail); } .chart .part.k-open { fill:var(--idle); }
+  .axis { display:flex; justify-content:space-between; color:var(--faint); font-size:.75em; font-family:var(--mono); margin-top:.3em; }
+  .chart-max { color:var(--faint); font-size:.75em; font-family:var(--mono); margin-bottom:.2em; }
+  .legend { display:flex; flex-wrap:wrap; gap:.3em 1.1em; margin:.6em 0 0; padding:0; list-style:none; font-size:.88em; }
+  .legend li { display:flex; align-items:center; gap:.4em; }
+  .legend i { width:.8em; height:.8em; border-radius:3px; flex:none; }
+  .legend i.k-handled { background:var(--pass); } .legend i.k-person { background:var(--warn); } .legend i.k-hangup { background:var(--caller); } .legend i.k-error { background:var(--fail); } .legend i.k-open { background:var(--idle); }
+  .legend b { font-family:var(--mono); font-weight:600; }
+  .tablewrap { overflow-x:auto; }
+  table.figs { width:100%; border-collapse:collapse; font-size:.9em; }
+  table.figs th { text-align:left; color:var(--faint); font-size:.78em; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:.3em .5em; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.figs td { padding:.4em .5em; border-bottom:1px solid #1d2430; vertical-align:top; }
+  table.figs td.n, table.figs th.n { text-align:right; font-family:var(--mono); white-space:nowrap; }
+  table.figs caption { text-align:left; color:var(--muted); font-size:.85em; padding:.2em 0 .4em; }
+  details.astable { margin-top:.6em; }
+  details.astable summary { color:var(--sys); cursor:pointer; font-size:.85em; }
+  .figs-note { color:var(--muted); font-size:.85em; line-height:1.5; margin:.5em 0 0; }
+  .figs-note code, .card code { font-family:var(--mono); font-size:.92em; color:var(--text); background:var(--panel-2); padding:.05em .35em; border-radius:4px; }
+  .kv2 { display:grid; grid-template-columns:auto 1fr; gap:.35em 1.2em; margin:0; font-size:.92em; }
+  .kv2 dt { color:var(--muted); } .kv2 dd { margin:0; font-family:var(--mono); }
+  .ok { color:var(--pass); } .bad { color:var(--fail); } .warnt { color:var(--warn); }
+  .reading { color:var(--faint); font-size:.85em; }
+  #pf-dates[hidden] { display:none !important; }
+
   /* ---------- the pages still to come ---------- */
   .placeholder .card { max-width:60em; }
   .placeholder h2 { margin:.2em 0 .5em; font-size:1.2em; }
@@ -386,6 +420,9 @@
     .rows.one-app .c-app { display:none; }
     .rows.current .c-task, .rows.past .c-tasks, .rows.past .c-ending { grid-column:1 / -1; }
     .c-turns .unit { display:inline; }
+    .grid2 { grid-template-columns:minmax(0,1fr); gap:12px; }
+    table.figs { font-size:.85em; }
+    .chart.bars { height:110px; }
     .filters label { flex:1 1 9em; }
     .filters input, .filters select { width:100%; box-sizing:border-box; }
     .totals { flex-wrap:wrap; gap:4px 12px; }
@@ -434,8 +471,8 @@
   <div class="strip">
     <div class="card stat"><span class="stat-n" id="st-progress">0</span><span class="stat-k">calls in progress</span></div>
     <div class="card stat" id="st-waiting-card"><span class="stat-n" id="st-waiting">0</span><span class="stat-k">waiting for a person or being transferred</span></div>
-    <div class="card stat" title="Calls that ended handled by the agent, with no handoff, of all the calls that ended today. A hang-up or an error is not counted as handled; Insights will show them apart."><span class="stat-n" id="st-contained">–</span><span class="stat-k">handled with no person today</span><span class="stat-sub" id="st-contained-sub"></span></div>
-    <div class="card stat"><span class="stat-n" id="st-cost">–</span><span class="stat-k">decision model cost today</span><span class="stat-sub" id="st-cost-sub">the carrier's cost comes with Insights</span></div>
+    <div class="card stat" title="Calls that ended handled by the agent, with no handoff, of all the calls that ended today. A hang-up or an error is not counted as handled; Insights shows them apart."><span class="stat-n" id="st-contained">–</span><span class="stat-k">handled with no person today</span><span class="stat-sub" id="st-contained-sub"></span></div>
+    <div class="card stat"><span class="stat-n" id="st-cost">–</span><span class="stat-k" id="st-cost-k">decision model cost today</span><span class="stat-sub" id="st-cost-sub"></span></div>
   </div>
   <div class="card listcard">
     <div class="card-head"><span class="card-title">Calls in progress</span><span id="live-conn" class="mono"></span>
@@ -462,21 +499,30 @@
     <div class="pager"><button id="calls-newer" hidden>◀ Newer</button><span id="calls-page"></span><button id="calls-older" hidden>Older ▶</button></div>
   </div>
 </section>
-<!-- The pages still to come (Console 2), each saying what it will show. -->
-<section class="page list placeholder" id="page-insights" hidden>
-  <h1 class="page-title" tabindex="-1">Insights</h1>
-  <div class="card"><div class="card-title">Insights · coming next</div><h2>How the line is doing</h2>
-    <p>For a date range and an app, or all of them: calls, and calls by hour with the peak; containment (handled with no person); transfers by reason; abandonment by step, the last question a caller heard before hanging up; where callers struggle (re-asks, silences and slots that ran out, per slot and per question); task completion per intent; call length overall and per task; minutes, the decision model's cost, the carrier's cost when a per-minute rate is set, and the cost per call and per handled call; the injection screen's hits and the gate's refusals by rule; after-hours calls; and the knowledge base's unanswered questions.</p></div>
+<!-- Insights: how the line is doing, from the daily figures. -->
+<section class="page list" id="page-insights" hidden>
+  <h1 class="page-title" tabindex="-1">Insights: how the line is doing</h1>
+  <form class="card filters" id="insights-filters">
+    <label>Range <select id="i-range"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="custom">Dates…</option></select></label>
+    <span id="pf-dates" class="filters" hidden><label>From <input id="i-from" type="date"></label><label>To <input id="i-to" type="date"></label></span>
+    <label id="i-app-wrap" hidden>App <select id="i-app"></select></label>
+    <button type="submit">Show</button><span class="reading" id="insights-note" role="status"></span>
+  </form>
+  <div id="insights-body"></div>
 </section>
-<section class="page list placeholder" id="page-knowledge" hidden>
-  <h1 class="page-title" tabindex="-1">Knowledge</h1>
-  <div class="card"><div class="card-title">Knowledge · coming next</div><h2>The knowledge base at a glance</h2>
-    <p>Per app: the passages by state (fresh, stale, edited, never approved, drafts), as <code>pnpm kb:status</code> reports them, and the questions callers asked that nothing answered. Read only: approving a passage stays a person at their terminal, or on the local review page.</p></div>
+<!-- Knowledge: each app's knowledge base at a glance, read only. -->
+<section class="page list" id="page-knowledge" hidden>
+  <h1 class="page-title" tabindex="-1">Knowledge: the knowledge base at a glance</h1>
+  <form class="card filters" id="knowledge-filters">
+    <label>Unanswered questions of <select id="k-days"><option value="7">the last 7 days</option><option value="30">the last 30 days</option><option value="90">the last 90 days</option></select></label>
+    <span class="reading" id="knowledge-note" role="status"></span>
+  </form>
+  <div id="knowledge-body"></div>
 </section>
-<section class="page list placeholder" id="page-health" hidden>
-  <h1 class="page-title" tabindex="-1">Health</h1>
-  <div class="card"><div class="card-title">Health · coming next</div><h2>Is the line healthy</h2>
-    <p>The servers seen in the last minutes and their calls; the sessions, trace write failures and disk space that <code>/health</code> reports; the decision model's latency (median and 95th percentile over the last hour); reconnects and fallback dials today; and the audit, verified on demand.</p></div>
+<!-- Health: is the line healthy. -->
+<section class="page list" id="page-health" hidden>
+  <h1 class="page-title" tabindex="-1">Health: is the line healthy</h1>
+  <div id="health-body"><div class="card reading">reading…</div></div>
 </section>
 <!-- A call's detail: the view the console has always had, live or replayed. -->
 <section class="page" id="page-call" hidden>
@@ -524,7 +570,8 @@
   // The page is served at /dashboard, so the module is loaded by absolute path: a relative
   // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
   import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
-    STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery } from '/dashboard/view.js';
+    STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery,
+    insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText } from '/dashboard/view.js';
 
   /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
   const PAGE = {{meta}};
@@ -1517,15 +1564,15 @@
 
   /**
    * The pages, by the name the address gives them (#/live, #/calls, ...); a call's detail is #/call/<id>
-   * live (#/call/latest follows the newest call), and #/replay/<id> replayed. Insights, Knowledge and
-   * Health say what they will show; each gets an `enter` of its own when it is built.
+   * live (#/call/latest follows the newest call), and #/replay/<id> replayed; Insights keeps its range
+   * and app in the address (#/insights?range=7d), so Back keeps them.
    */
   const PAGES = {
     live: { title: 'Live', enter: enterLive },
     calls: { title: 'Calls', enter: (a) => void enterCalls(a) },
-    insights: { title: 'Insights' },
-    knowledge: { title: 'Knowledge' },
-    health: { title: 'Health' },
+    insights: { title: 'Insights', enter: (a) => void enterInsights(a) },
+    knowledge: { title: 'Knowledge', enter: (a) => void enterKnowledge(a) },
+    health: { title: 'Health', enter: () => void enterHealth(), leave: leaveHealth },
     call: { title: 'Call', enter: enterCall, leave: leaveCall },
   };
   /** The page shown, by its name in PAGES. */
@@ -1730,8 +1777,10 @@
     if (!t) return;
     el('st-contained').textContent = t.containment === null ? '–' : `${Math.round(t.containment * 100)}%`;
     el('st-contained-sub').textContent = t.ended ? `${t.contained} of ${t.ended} ended calls${t.partial ? ', the newest' : ''}` : 'no call has ended today';
-    el('st-cost').textContent = money(Number(t.costUsd) || 0);
-    el('st-cost-sub').textContent = `${t.calls} ${t.calls === 1 ? 'call' : 'calls'} today · the carrier's cost comes with Insights`;
+    const carrier = typeof t.carrierUsd === 'number' ? t.carrierUsd : null;
+    el('st-cost').textContent = money((Number(t.costUsd) || 0) + (carrier ?? 0));
+    el('st-cost-k').textContent = carrier === null ? 'decision model cost today' : 'cost today';
+    el('st-cost-sub').textContent = `${t.calls} ${t.calls === 1 ? 'call' : 'calls'} today · ${carrier === null ? 'the decision model\'s; no carrier rate is set' : `model ${money(Number(t.costUsd) || 0)}, carrier ${money(carrier)} (est.)`}`;
   }
   function soonToday() {
     clearTimeout(live.todayTimer);
@@ -1885,6 +1934,240 @@
     if (location.hash === next) void enterCalls(addressOf()); else location.hash = next;
   });
   el('f-clear').addEventListener('click', () => { location.hash = '#/calls'; });
+
+  // ---------- Insights, Knowledge and Health: shared pieces ----------
+
+  /** Whether the pages of figures name each row's app: on a host showing every app. */
+  const MANY = () => HOST_APPS !== null && FILTER === null;
+  /** A table of figures: its caption, its headers (a header ending in `#` is a number, right-aligned), its rows of cells already escaped. */
+  function tableHtml(caption, headers, rows, empty = 'None.') {
+    if (!rows.length) return `<p class="figs-note">${esc(empty)}</p>`;
+    const head = headers.map((h) => (h.endsWith('#') ? `<th scope="col" class="n">${esc(h.slice(0, -1))}</th>` : `<th scope="col">${esc(h)}</th>`)).join('');
+    const body = rows.map((r) => `<tr>${r.map((c, i) => (headers[i]?.endsWith('#') ? `<td class="n">${c}</td>` : `<td>${c}</td>`)).join('')}</tr>`).join('');
+    return `<div class="tablewrap"><table class="figs">${caption ? `<caption>${esc(caption)}</caption>` : ''}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  /** Rows with their app first when the page shows every app's. */
+  const withApp = (headers) => (MANY() ? ['App', ...headers] : headers);
+  const appCell = (r) => (MANY() ? [esc(r.app ?? '')] : []);
+  const n = (v) => esc(String(v ?? 0));
+  const card = (title, inner, aside = '') => `<div class="card fig"><div class="card-head"><h2 class="card-title">${esc(title)}</h2>${aside ? `<span class="aside">${aside}</span>` : ''}</div>${inner}</div>`;
+  const stat = (num, label, sub) => `<div class="card stat"><span class="stat-n">${esc(num)}</span><span class="stat-k">${esc(label)}</span>${sub ? `<span class="stat-sub">${esc(sub)}</span>` : ''}</div>`;
+  /** A JSON answer and its status: 429 means one is already being read for this session. */
+  async function fetchJson(url) {
+    try {
+      const res = await fetch(url);
+      return { status: res.status, body: res.ok ? await res.json().catch(() => null) : null };
+    } catch {
+      return { status: 0, body: null };
+    }
+  }
+
+  // ---------- Insights ----------
+
+  if (HOST_APPS && FILTER === null) {
+    el('i-app-wrap').hidden = false;
+    el('i-app').innerHTML = ['<option value="">All apps</option>', ...HOST_APPS.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)].join('');
+  }
+  el('i-range').addEventListener('change', () => { el('pf-dates').hidden = el('i-range').value !== 'custom'; });
+  el('insights-filters').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = new URLSearchParams({ range: el('i-range').value });
+    if (el('i-range').value === 'custom') { q.set('from', el('i-from').value); q.set('to', el('i-to').value); }
+    if (el('i-app').value) q.set('app', el('i-app').value);
+    const next = `#/insights?${q}`;
+    if (location.hash === next) void enterInsights(addressOf()); else location.hash = next;
+  });
+  /** So an answer to an older choice never draws over a newer one. */
+  let insightsAsked = 0;
+
+  async function enterInsights(a) {
+    const preset = ['today', 'yesterday', '7d', '30d', '90d', 'custom'].includes(a.query.get('range')) ? a.query.get('range') : '7d';
+    const custom = { from: a.query.get('from') ?? '', to: a.query.get('to') ?? '' };
+    el('i-range').value = preset;
+    el('pf-dates').hidden = preset !== 'custom';
+    el('i-from').value = custom.from;
+    el('i-to').value = custom.to;
+    const app = FILTER ?? (HOST_APPS?.some((x) => x.id === a.query.get('app')) ? a.query.get('app') : '');
+    el('i-app').value = app ?? '';
+    const range = insightsRange(preset, custom, Date.now());
+    if (!range) { el('insights-note').textContent = 'choose a range of 92 days or less, its start before its end'; return; }
+    el('insights-note').textContent = 'reading…';
+    const asked = ++insightsAsked;
+    let got = null;
+    // One read at a time per session: one still running is waited out (429).
+    for (let tries = 0; tries < 120 && asked === insightsAsked; tries++) {
+      got = await fetchJson(`/dashboard/insights?from=${range.from}&to=${range.to}${app ? `&app=${encodeURIComponent(app)}` : ''}`);
+      if (got.status !== 429) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (asked !== insightsAsked || current !== 'insights') return;
+    if (!got?.body) { el('insights-note').textContent = 'the figures could not be read'; el('insights-body').innerHTML = ''; return; }
+    el('insights-note').textContent = '';
+    renderInsights(got.body, range);
+  }
+
+  const ENDING_PARTS = [['handled', 'k-handled', 'Handled with no person'], ['toPerson', 'k-person', 'To a person'], ['hungUp', 'k-hangup', 'Hung up'], ['errors', 'k-error', 'An error']];
+
+  function renderInsights(d, range) {
+    const i = d.insights;
+    const t = i.totals;
+    const series = callsSeries(i.byHour, range.from, range.to);
+    const busiest = peakOf(series);
+    const unit = series.unit === 'hour' ? 'hour' : 'day';
+    const open = t.calls - t.ended;
+    const carrierUsd = i.cost.carrierUsd;
+    const strip = `<div class="strip">${[
+      stat(String(t.calls), t.calls === 1 ? 'call' : 'calls', busiest ? `at most ${busiest.peak} at once (${busiest.label})` : 'none at once'),
+      stat(percentText(i.containment), 'handled with no person', t.ended ? `${t.contained} of ${t.ended} that ended` : 'no call ended'),
+      stat(String(Math.round(i.minutes)), 'minutes on voice calls', `${t.voice} voice ${t.voice === 1 ? 'call' : 'calls'}`),
+      stat(moneyText(i.cost.totalUsd), carrierUsd === null ? 'decision model cost' : 'cost, model and carrier', i.cost.perCall === null ? '' : `${moneyText(i.cost.perCall)} a call · ${i.cost.perHandled === null ? 'none handled' : `${moneyText(i.cost.perHandled)} a handled call`}`),
+    ].join('')}</div>`;
+
+    const max = Math.max(0, ...series.points.map((p) => p.calls));
+    const callsChart = card(`Calls by ${unit}`, `<div class="chart-max" aria-hidden="true">${max} ${max === 1 ? 'call' : 'calls'}</div>`
+      + barsSvg(series.points, { label: `Calls by ${unit}: ${t.calls} in all${busiest ? `, at most ${busiest.peak} at once` : ''}. The table below gives each ${unit}.`, valueOf: (p) => p.calls, titleOf: (p) => `${p.label}: ${p.calls} ${p.calls === 1 ? 'call' : 'calls'}, at most ${p.peak} at once` })
+      + `<div class="axis" aria-hidden="true"><span>${esc(series.points[0]?.label ?? '')}</span><span>${esc(series.points.at(-1)?.label ?? '')}</span></div>`
+      + `<details class="astable"><summary>As a table</summary>${tableHtml('', [unit === 'hour' ? 'Hour' : 'Day', 'Calls#', 'Most at once#'], series.points.filter((p) => p.calls > 0).map((p) => [esc(p.label), n(p.calls), n(p.peak)]), 'No calls in this range.')}</details>`);
+
+    const parts = ENDING_PARTS.map(([key, cls, label]) => ({ label, cls, value: key === 'handled' ? t.contained : t[key] })).concat(open > 0 ? [{ label: 'In progress', cls: 'k-open', value: open }] : []);
+    const endings = card('How calls ended', (splitSvg(parts, `How calls ended: ${parts.map((p) => `${p.label} ${p.value}`).join(', ')}`) || '<p class="figs-note">No calls in this range.</p>')
+      + `<ul class="legend">${parts.map((p) => `<li><i class="${p.cls}" aria-hidden="true"></i>${esc(p.label)} <b>${p.value}</b></li>`).join('')}</ul>`
+      + `<p class="figs-note">Handled with no person is the calls the agent handled to the end, of the calls that ended; a hang-up or an error is not counted as handled.</p>`
+      + tableHtml('To a person, by reason', withApp(['Reason', 'Calls#']), i.transfers.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No call went to a person.')
+      + tableHtml('Hung up, by the last question they heard', withApp(['Where', 'Calls#']), i.abandoned.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No caller hung up.'));
+
+    const struggles = card('Where callers struggle', tableHtml('', withApp(['Asked', 'Re-asks#', 'Silences#', 'Ran out#']), i.struggles.map((r) => [...appCell(r), esc(r.label), n(r.value.reasks), n(r.value.silences), n(r.value.ranOut)]), 'No re-asks, silences or attempts run out.')
+      + '<p class="figs-note">A re-ask is a slot asked again after an answer that did not fill it; a silence is counted on the question asked before it; ran out is a slot past its attempts.</p>');
+
+    const tasks = card('Tasks', tableHtml('', withApp(['Task', 'Started#', 'Finished#', 'Finished %#', 'Time to finish#']), i.tasks.map((r) => [...appCell(r), esc(r.label), n(r.value.started), n(r.value.finished), esc(percentText(r.value.started ? r.value.finished / r.value.started : null)), esc(r.value.meanMs === null ? '–' : durationText(r.value.meanMs))]), 'No task was started.'));
+
+    const edges = d.lengthEdgesS ?? [];
+    const buckets = (t.lengths ?? []).map((v, k) => ({ label: lengthBucketText(k, edges), v }));
+    const length = card('Call length', `<p class="figs-note">On average ${esc(i.meanLengthMs === null ? '–' : durationText(i.meanLengthMs))}, of the calls that ended.</p>`
+      + barsSvg(buckets, { label: `Call length: how many calls ended in each band. The table below gives each band.`, valueOf: (b) => b.v, titleOf: (b) => `${b.label}: ${b.v}` })
+      + `<div class="axis" aria-hidden="true"><span>${esc(buckets[0]?.label ?? '')}</span><span>${esc(buckets.at(-1)?.label ?? '')}</span></div>`
+      + `<details class="astable"><summary>As a table</summary>${tableHtml('', ['Length', 'Calls#'], buckets.map((b) => [esc(b.label), n(b.v)]))}</details>`);
+
+    const carrierRows = i.carrier ? i.carrier.byCarrier.map((c) => [esc(CARRIERS[c.carrier] ?? c.carrier), n(c.minutes), esc(moneyText(c.ratePerMin)), esc(moneyText(c.usd))]) : [];
+    const cost = card('Cost', `<dl class="kv2"><dt>Decision model</dt><dd>${esc(moneyText(i.cost.modelUsd))}</dd>`
+      + (i.carrier ? `<dt>Carrier (estimate)</dt><dd>${esc(moneyText(i.carrier.usd))}</dd>` : '')
+      + `<dt>In all</dt><dd>${esc(moneyText(i.cost.totalUsd))}</dd><dt>A call</dt><dd>${esc(moneyText(i.cost.perCall))}</dd><dt>A handled call</dt><dd>${esc(moneyText(i.cost.perHandled))}</dd></dl>`
+      + (i.carrier
+        ? tableHtml('The carrier, by the minutes it bills', ['Carrier', 'Minutes#', 'A minute#', 'Cost#'], carrierRows, 'No voice calls on a carrier with a rate.')
+          + `<p class="figs-note">Carriers bill each call rounded up to the minute, so each call is counted that way here.${i.carrier.unpriced ? ` ${i.carrier.unpriced} minutes on a carrier with no rate set are not priced.` : ''} An estimate: the carrier's invoice is the bill.</p>`
+        : '<p class="figs-note">The decision model\'s cost is exact, from the traces. The carrier\'s is shown when its rate a minute is set: <code>CARRIER_RATE_PER_MIN_TWILIO</code>, <code>CARRIER_RATE_PER_MIN_TELNYX</code>.</p>'));
+
+    const safety = card('Safety', `<dl class="kv2"><dt>The injection screen fired</dt><dd>${n(t.screenHits)}</dd><dt>Verify first (step-ups)</dt><dd>${n(t.stepUps)}</dd></dl>`
+      + tableHtml('The gate\'s refusals, by the rule that refused', withApp(['Rule', 'Refusals#']), i.refusals.map((r) => [...appCell(r), `<code>${esc(r.label)}</code>`, n(r.value)]), 'The gate refused nothing.'));
+
+    const hours = card('Business hours', `<p class="figs-note">${n(t.afterHours)} ${t.afterHours === 1 ? 'call was' : 'calls were'} routed by a rule that reads the business hours (routes.yaml).</p>`
+      + tableHtml('', withApp(['Route', 'Calls#']), i.hours.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No route read the hours.'));
+
+    const kb = d.knowledge ? card('Knowledge base', `<p class="figs-note"><b>${n(t.gaps)}</b> ${t.gaps === 1 ? 'question' : 'questions'} the knowledge base did not answer. Their topics are on the <a class="follow" href="#/knowledge">Knowledge</a> page; the callers' words, ranked with the fix for each, are <code>${esc(d.knowledge.command)}</code> at the terminal.</p>`) : '';
+
+    el('insights-body').innerHTML = `${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${kb}</div>`
+      + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end. Hours are counted as the server counts them (UTC), shown in your time.</p>';
+  }
+
+  // ---------- Knowledge ----------
+
+  el('k-days').addEventListener('change', () => { location.hash = `#/knowledge?days=${el('k-days').value}`; });
+
+  async function enterKnowledge(a) {
+    const days = ['7', '30', '90'].includes(a.query.get('days')) ? a.query.get('days') : '30';
+    el('k-days').value = days;
+    el('knowledge-note').textContent = 'reading…';
+    const got = await fetchJson(`/dashboard/knowledge?days=${days}${FILTER ? `&app=${encodeURIComponent(FILTER)}` : ''}`);
+    if (current !== 'knowledge') return;
+    el('knowledge-note').textContent = got.body ? '' : 'the knowledge base could not be read';
+    if (got.body) renderKnowledge(got.body);
+  }
+
+  function renderKnowledge(d) {
+    const apps = d.apps ?? [];
+    const parts = apps.map((x) => {
+      const s = x.status;
+      const title = HOST_APPS ? x.name : 'Knowledge base';
+      if (s.kind === 'none') return card(title, '<p class="figs-note">No knowledge base: this app answers no general questions from passages.</p>');
+      const p = s.passages;
+      const states = p ? `<dl class="kv2">
+        <dt>Approved and fresh</dt><dd class="ok">${n(p.fresh)}</dd>
+        <dt>Stale: its source changed (withheld)</dt><dd class="${p.sourceChanged ? 'bad' : ''}">${n(p.sourceChanged)}</dd>
+        <dt>Stale: edited after approval (withheld)</dt><dd class="${p.edited ? 'bad' : ''}">${n(p.edited)}</dd>
+        <dt>Never approved (never said)</dt><dd class="${p.unapproved ? 'warnt' : ''}">${n(p.unapproved)}</dd>
+        ${p.outside ? `<dt>Approved outside kb:approve</dt><dd class="bad">${n(p.outside)}</dd>` : ''}
+        <dt>Drafts waiting for review</dt><dd>${s.drafts === null ? '–' : n(s.drafts)}</dd>
+        ${s.proposedTopics ? '<dt>Topics proposed</dt><dd>waiting in kb/pending</dd>' : ''}
+      </dl>` : `<p class="figs-note">${n(s.topics)} topics, answered by the app's own code.</p>`;
+      const top = x.unanswered.top;
+      const unanswered = tableHtml(`Unanswered questions of the last ${d.days} days: ${x.unanswered.total}`, ['Nearest topic', 'Asked#', 'Latest'], top.map((g) => [esc(g.label), n(g.n), esc(g.latest ? new Date(g.latest).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–')]), `No unanswered questions in the last ${d.days} days.`);
+      return card(title, `${p ? `<p class="figs-note">${n(p.total)} passages in ${n(s.topics)} topics, as this server loaded them.</p>` : ''}${states}${unanswered}`);
+    });
+    el('knowledge-body').innerHTML = `<div class="grid2">${parts.join('')}</div>`
+      + '<p class="figs-note">Read only. Approving a passage stays a person\'s: <code>pnpm kb:approve</code> at the terminal, or the local review page, <code>pnpm kb:review</code>. <code>pnpm kb:status</code> lists each passage with its fix; <code>pnpm kb:gaps</code> ranks the unanswered questions with the callers\' words. A passage approved since this server started is said once it starts again.</p>';
+  }
+
+  // ---------- Health ----------
+
+  let healthTimer = null;
+  async function enterHealth() {
+    clearInterval(healthTimer);
+    healthTimer = setInterval(() => { if (current === 'health') void loadHealth(); }, 15_000);
+    await loadHealth();
+  }
+  function leaveHealth() {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+  let auditShown = null;
+  async function loadHealth() {
+    const got = await fetchJson('/dashboard/health');
+    if (current !== 'health') return;
+    if (!got.body) { el('health-body').innerHTML = card('Health', '<p class="figs-note">The server could not be asked.</p>'); return; }
+    renderHealth(got.body);
+  }
+  const agoText = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 5 ? 'now' : s < 120 ? `${s} s ago` : `${Math.round(s / 60)} min ago`;
+  };
+  function auditHtml(a, last) {
+    if (!a.available) return '<p class="figs-note">This server has no audit to verify.</p>';
+    const result = last ? `<p class="figs-note ${last.ok ? 'ok' : 'bad'}">${last.ok ? 'Intact' : 'BROKEN'}: ${n(last.chains)} ${last.kind === 'postgres' ? 'chains' : 'day files'}, ${n(last.entries)} entries, verified ${esc(new Date(last.at).toLocaleTimeString())} in ${n(last.tookMs)} ms.</p>${last.breaks.length ? `<ul class="figs-note">${last.breaks.map((b) => `<li><code>${esc(b)}</code></li>`).join('')}</ul>` : ''}` : '<p class="figs-note">Not verified since this server started.</p>';
+    return `<p class="figs-note">The audit at <code>${esc(a.label ?? '')}</code>, every hash chain walked as <code>pnpm audit:verify</code> walks it.</p>${result}<button type="button" id="audit-verify"${a.running ? ' disabled' : ''}>${a.running ? 'Verifying…' : 'Verify the audit now'}</button>`;
+  }
+  function renderHealth(h) {
+    const servers = h.servers ?? [];
+    const calls = servers.reduce((sum, x) => sum + x.calls, 0);
+    const lat = h.latency;
+    const self = servers.find((x) => x.self);
+    const strip = `<div class="strip">${[
+      stat(String(servers.length), servers.length === 1 ? 'server' : 'servers', h.shared ? 'heard from in the last two minutes' : 'this one'),
+      stat(String(calls), 'calls held now', h.numbers?.chat !== undefined ? `${h.numbers.chat} chats on this server` : ''),
+      stat(lat.medianMs === null ? '–' : `${lat.medianMs} ms`, 'decision model, median', lat.p95Ms === null ? 'no ask in the last hour' : `95th percentile ${lat.p95Ms} ms · ${lat.asks} asks in the last hour`),
+      stat(`${self?.reconnects ?? 0} · ${self?.fallbacks ?? 0}`, 'reconnects · fallback dials today', 'on this server'),
+    ].join('')}</div>`;
+    const list = card('Servers', tableHtml('', ['Server', 'Calls#', 'Chats#', 'Reconnects today#', 'Fallback dials today#', 'Heard'], servers.map((x) => [`${esc(x.server)}${x.self ? ' <span class="muted">(this one)</span>' : ''}`, n(x.calls), n(x.chats), n(x.reconnects), n(x.fallbacks), esc(agoText(h.at - x.lastSeenMs))]))
+      + `<p class="figs-note">${h.shared ? 'Every server on the shared database says it is up every 30 seconds; one not heard from for two minutes leaves the list.' : 'One server: the others are listed with a shared database (SESSION_STORE=postgres).'} A fallback dial is a call the server put through to a person itself (stopping, a store it could not reach, a call past its reconnects).</p>`);
+    const num = h.numbers;
+    const disk = num?.disk;
+    const health = card('This server (/health)', num ? `<dl class="kv2"><dt>Sessions live</dt><dd>${n(num.sessions)}</dd><dt>Ended, kept a while</dt><dd>${n(num.retained)}</dd>
+      ${num.chat !== undefined ? `<dt>Chats</dt><dd>${n(num.chat)}</dd>` : ''}${num.draining ? '<dt>Draining</dt><dd class="warnt">yes</dd>' : ''}
+      ${disk ? `<dt>Traces</dt><dd>${esc(bytesText(disk.traceBytes))}</dd><dt>Audit</dt><dd>${esc(bytesText(disk.auditBytes))}</dd>${disk.freeBytes !== undefined ? `<dt>Free</dt><dd class="${disk.low ? 'bad' : ''}">${esc(bytesText(disk.freeBytes))}${disk.low ? ' (low)' : ''}</dd>` : ''}` : ''}
+      ${num.traces ? `<dt>Trace writes failed</dt><dd class="${num.traces.failures ? 'bad' : ''}">${n(num.traces.failures)}</dd><dt>Trace lines dropped</dt><dd class="${num.traces.dropped ? 'bad' : ''}">${n(num.traces.dropped)}</dd>` : ''}</dl>` : '<p class="figs-note">Not known.</p>');
+    auditShown = h.audit;
+    const audit = card('Audit', `<div id="audit-box">${auditHtml(h.audit, h.audit.last)}</div>`);
+    el('health-body').innerHTML = `${strip}<div class="grid2">${list}${health}${audit}</div>`;
+  }
+  // The audit verified on demand: the server runs one at a time, and records each asking.
+  document.addEventListener('click', async (e) => {
+    if (e.target?.id !== 'audit-verify') return;
+    e.target.disabled = true;
+    e.target.textContent = 'Verifying…';
+    const got = await fetchJson('/dashboard/health/audit');
+    if (!el('audit-box')) return;
+    if (got.body) el('audit-box').innerHTML = auditHtml({ ...auditShown, running: false }, got.body);
+    else el('audit-box').innerHTML = `${auditHtml({ ...auditShown, running: false }, auditShown?.last ?? null)}<p class="figs-note bad">The audit could not be verified.</p>`;
+  });
 
   // A row of either list opens its call: the detail live, or the replay.
   for (const id of ['live-list', 'calls-list']) {

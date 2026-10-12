@@ -44,12 +44,14 @@ const SUBJECT_KIND = /^[a-z][a-z0-9_]*$/;
  * checks this list against the page, so it cannot go stale unseen.
  */
 export const CONSOLE_ELEMENT_IDS: readonly string[] = [
-  'appfilter', 'audit', 'back', 'beat', 'beatwrap', 'call-back', 'calls-filters', 'calls-list', 'calls-newer', 'calls-note', 'calls-older', 'calls-page',
-  'channel', 'conn', 'conv-aside', 'conv-script', 'conv-turns', 'conversation', 'dot', 'f-app', 'f-app-wrap', 'f-clear', 'f-ending', 'f-from', 'f-last4',
-  'f-task', 'f-to', 'gate', 'handoff', 'level', 'live-conn', 'live-list', 'menu', 'menu-alerts', 'mode-live', 'mode-replay', 'note', 'now',
-  'page-call', 'page-calls', 'page-health', 'page-insights', 'page-knowledge', 'page-live', 'perception', 'play', 'pos', 'presenter', 'rename',
-  'replaybar', 'reset', 'sound', 'source', 'speed', 'speedwrap', 'st-contained', 'st-contained-sub', 'st-cost', 'st-cost-sub', 'st-progress',
-  'st-waiting', 'st-waiting-card', 'status', 'step', 'totals', 'trace',
+  'appfilter', 'audit', 'audit-box', 'audit-verify', 'back', 'beat', 'beatwrap', 'call-back', 'calls-filters', 'calls-list', 'calls-newer',
+  'calls-note', 'calls-older', 'calls-page', 'channel', 'conn', 'conv-aside', 'conv-script', 'conv-turns', 'conversation', 'dot', 'f-app',
+  'f-app-wrap', 'f-clear', 'f-ending', 'f-from', 'f-last4', 'f-task', 'f-to', 'gate', 'handoff', 'health-body', 'i-app', 'i-app-wrap', 'i-from',
+  'i-range', 'i-to', 'insights-body', 'insights-filters', 'insights-note', 'k-days', 'knowledge-body', 'knowledge-filters', 'knowledge-note',
+  'level', 'live-conn', 'live-list', 'menu', 'menu-alerts', 'mode-live', 'mode-replay', 'note', 'now', 'page-call', 'page-calls', 'page-health',
+  'page-insights', 'page-knowledge', 'page-live', 'perception', 'pf-dates', 'play', 'pos', 'presenter', 'rename', 'replaybar', 'reset', 'sound',
+  'source', 'speed', 'speedwrap', 'st-contained', 'st-contained-sub', 'st-cost', 'st-cost-k', 'st-cost-sub', 'st-progress', 'st-waiting',
+  'st-waiting-card', 'status', 'step', 'totals', 'trace',
 ];
 
 /** A console link's id becomes an element id: a lowercase word, hyphens allowed. */

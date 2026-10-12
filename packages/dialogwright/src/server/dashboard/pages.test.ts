@@ -77,9 +77,12 @@ describe('Insights (/dashboard/insights)', () => {
   it('the carrier\'s cost only with a rate set', async () => {
     const { base, dir } = await serve({ carrierRates: { twilio: 0.02 } });
     await writeFolderCall(dir, 'CA_1', [OPENER], 'hangup', D);
+    await writeFolderCall(dir, 'CA_2', [OPENER], 'hangup', D + 1_000, { provider: 'telnyx' });
+    // A call recorded before the carrier was logged names none: its minute is counted, not priced.
+    await writeFolderCall(dir, 'CA_3', [OPENER], 'hangup', D + 2_000, { provider: null });
     const a = await getJson<InsightsAnswer>(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`);
-    // The scripted call has no carrier of its own: its minute is counted, not priced.
-    expect(a.insights.carrier).toEqual({ usd: 0, byCarrier: [], unpriced: 1 });
+    expect(a.insights.carrier).toEqual({ usd: 0.02, byCarrier: [{ carrier: 'twilio', minutes: 1, ratePerMin: 0.02, usd: 0.02 }], unpriced: 2 });
+    expect(a.insights.totals.billedMinutes).toEqual({ twilio: 1, telnyx: 1, unknown: 1 });
   });
 
   it('refuses a range that is missing, backwards, malformed or longer than a quarter', async () => {
@@ -128,10 +131,10 @@ describe('today\'s figures: the carrier\'s cost beside the model\'s when a rate 
     expect((await getJson<{ carrierUsd: number | null }>(`${plain.base}/dashboard/today?since=0`)).carrierUsd).toBeNull();
     server!.close();
     server = null;
-    const rated = await serve({ carrierRates: { unknown: 0.5 } });
+    const rated = await serve({ carrierRates: { twilio: 0.5 } });
     await writeFolderCall(rated.dir, 'CA_1', [OPENER], 'hangup', Date.now() - 60_000);
     const t = await getJson<{ carrierUsd: number | null; billedMinutes: Record<string, number> }>(`${rated.base}/dashboard/today?since=${Date.now() - 3_600_000}`);
-    expect(t.billedMinutes).toEqual({ unknown: 1 });
+    expect(t.billedMinutes).toEqual({ twilio: 1 });
     expect(t.carrierUsd).toBe(0.5);
   });
 });
