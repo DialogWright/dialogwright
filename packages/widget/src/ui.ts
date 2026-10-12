@@ -10,6 +10,12 @@ export type Position = (typeof POSITIONS)[number];
 export interface WidgetOptions {
   /** The chat endpoint, `wss://host/chat`. */
   endpoint: string;
+  /**
+   * On a server of several apps (a host file): the app to chat with, by the id its app.yaml gives it,
+   * reached at `<endpoint>/<app>` (`wss://host/chat/clinic`). Default: none, the endpoint as given,
+   * which on such a server is the default app's chat.
+   */
+  app?: string;
   /** The language to ask for. Default: the page's `<html lang>`, else none (the app's default). */
   locale?: string;
   /**
@@ -74,6 +80,21 @@ export function positionOf(value: string | undefined): Position | undefined {
  * The endpoint as a socket URL: ws: or wss: as given; an http(s) or relative one (`/chat`) is read
  * against the page and given the socket scheme. Anything else cannot be a chat endpoint.
  */
+/** An app's id, as app.yaml writes it: what `app` may be. */
+const APP_ID = /^[a-z][a-z0-9_-]*$/;
+
+/**
+ * The endpoint of `app`'s chat on a server of several apps: the endpoint's path with `/<app>` after it
+ * (`wss://host/chat` and `clinic` is `wss://host/chat/clinic`). No app, the endpoint as it is.
+ */
+export function appEndpointOf(endpoint: string, app: string | undefined): string {
+  if (app === undefined || app.trim() === '') return endpoint;
+  if (!APP_ID.test(app.trim())) throw new Error(`DialogWright widget: app must be an app's id, like clinic (lowercase letters, digits, hyphens and underscores); got "${app}"`);
+  const url = new URL(endpoint);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/${app.trim()}`;
+  return url.href;
+}
+
 export function endpointOf(raw: string): string {
   let url: URL | null;
   try {
@@ -121,7 +142,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   if (typeof options.endpoint !== 'string' || options.endpoint.trim() === '') {
     throw new Error('DialogWright widget: endpoint is required (data-endpoint, or mount({ endpoint }))');
   }
-  const endpoint = endpointOf(options.endpoint);
+  const endpoint = appEndpointOf(endpointOf(options.endpoint), options.app);
   const position: Position = positionOf(options.position) ?? 'bottom-right';
   const inline = position === 'inline';
   let parent: Element = document.body;

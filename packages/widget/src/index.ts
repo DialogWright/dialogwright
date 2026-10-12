@@ -4,7 +4,7 @@ import { mountWidget, positionOf, type WidgetOptions } from './ui';
 export { createChatClient, DEFAULT_BACKOFF_MS, DEFAULT_MAX_RECONNECTS } from './client';
 export type { ChatClient, ChatClientEvent, ChatClientOptions, ConnectionState } from './client';
 export type { ChatErrorCode } from './protocol';
-export { mountWidget, POSITIONS } from './ui';
+export { appEndpointOf, mountWidget, POSITIONS } from './ui';
 export type { Position, Widget, WidgetOptions } from './ui';
 export { DEFAULT_STRINGS } from './strings';
 export type { WidgetStrings } from './strings';
@@ -13,7 +13,8 @@ export type { WidgetStrings } from './strings';
 export const mount = mountWidget;
 
 /**
- * The options a `<script data-endpoint=...>` tag sets: data-endpoint, data-locale, data-title,
+ * The options a `<script data-endpoint=...>` tag sets: data-endpoint, data-app (on a server of several
+ * apps, the app to chat with), data-locale, data-title,
  * data-position, data-container, data-start-open, data-strings (JSON) and data-context (JSON, the
  * page's own data an app's callData may read). What cannot be read is
  * left out, with a warning, so the default applies. Code-only options (getToken, onTransfer) need
@@ -22,6 +23,7 @@ export const mount = mountWidget;
 export function optionsFromScript(script: HTMLScriptElement): WidgetOptions {
   const d = script.dataset;
   const o: WidgetOptions = { endpoint: d.endpoint ?? '' };
+  if (d.app) o.app = d.app;
   if (d.locale) o.locale = d.locale;
   if (d.title) o.title = d.title;
   const position = positionOf(d.position);

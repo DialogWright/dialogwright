@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { endpointOf, mountWidget, type WidgetOptions } from './ui';
+import { appEndpointOf, endpointOf, mountWidget, type WidgetOptions } from './ui';
 import { optionsFromScript } from './index';
 import { DEFAULT_STRINGS, stringsOf } from './strings';
 import { STYLES } from './styles';
@@ -300,6 +300,15 @@ describe('the widget', () => {
     expect(root.activeElement).toBe($('button.close'));
   });
 
+  it('chats with the app it names on a server of several apps, at <endpoint>/<app>', () => {
+    expect(appEndpointOf('wss://chat.example.com/chat', 'clinic')).toBe('wss://chat.example.com/chat/clinic');
+    expect(appEndpointOf('wss://chat.example.com/chat/', 'clinic')).toBe('wss://chat.example.com/chat/clinic');
+    expect(appEndpointOf('wss://chat.example.com/chat', undefined)).toBe('wss://chat.example.com/chat');
+    expect(() => appEndpointOf('wss://chat.example.com/chat', '../admin')).toThrow("app must be an app's id");
+    const { f } = mount({ endpoint: 'https://chat.example.com/chat', app: 'utility', startOpen: true });
+    expect(f.made[0]!.endpoint).toBe('wss://chat.example.com/chat/utility');
+  });
+
   it('takes the endpoint as a socket URL, from a page-relative or http(s) one too', () => {
     expect(endpointOf('wss://chat.example.com/chat')).toBe('wss://chat.example.com/chat');
     expect(endpointOf('https://chat.example.com/chat')).toBe('wss://chat.example.com/chat');
@@ -376,6 +385,7 @@ describe('options from the script tag', () => {
       endpoint: 'wss://x/chat', locale: 'es', startOpen: true, position: 'inline', container: '#help', strings: { send: 'Enviar' },
     });
     expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-start-open="false"'))).toEqual({ endpoint: 'wss://x/chat', startOpen: false });
+    expect(optionsFromScript(script('data-endpoint="wss://x/chat" data-app="clinic"'))).toEqual({ endpoint: 'wss://x/chat', app: 'clinic' });
   });
 
   it('reads data-context as the page\'s context, and sends none, with a warning, for one it cannot read', () => {

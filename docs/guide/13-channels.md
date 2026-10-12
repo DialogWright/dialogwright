@@ -190,6 +190,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 | Option | `data-` attribute | Default | What it does |
 |---|---|---|---|
 | `endpoint` | `data-endpoint` | required | The chat endpoint, `wss://host/chat`; an `https:` or page-relative URL is given the socket scheme. |
+| `app` | `data-app` | none | On a server of several apps ([14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)), the app to chat with, by its id: the widget connects to `<endpoint>/<app>`. None is the endpoint as given, the default app's chat. |
 | `locale` | `data-locale` | the page's `<html lang>`, else none | The language asked for; the server answers in the app's closest one. |
 | `title` | `data-title` | "Chat with us" | The panel's heading. |
 | `strings` | `data-strings` (JSON) | English | Any of the widget's 21 words (`packages/widget/src/strings.ts`). |
