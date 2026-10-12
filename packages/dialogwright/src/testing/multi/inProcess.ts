@@ -95,7 +95,7 @@ export async function inProcessStack(o: InProcessOptions = {}): Promise<InProces
   for (const name of MULTI_SERVERS) await boot(name);
   let turn = 0;
   const lb = await startBalancer(() => {
-    const up = MULTI_SERVERS.map((n) => nodes.get(n)).filter((n): n is Node => n !== undefined && !n.down && !n.server.draining);
+    const up = MULTI_SERVERS.map((n) => nodes.get(n)).filter((n): n is Node => n !== undefined && !n.down && n.server.ready);
     if (up.length === 0) return undefined;
     return up[turn++ % up.length]!.server.port;
   });
@@ -117,6 +117,8 @@ export async function inProcessStack(o: InProcessOptions = {}): Promise<InProces
     },
     async stop(name) {
       const n = nodeOf(name);
+      // As a SIGTERM runs them (server/index.ts main): unready first (DRAIN_UNREADY_MS), then the drain.
+      await n.server.unready();
       await n.server.drain();
       n.down = true;
       await n.server.close();

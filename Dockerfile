@@ -4,7 +4,10 @@
 # configured by its environment as on any machine (guide section 14). Build it from the repository root:
 #
 #   docker build --build-arg APP=clinic -t dialogwright-clinic .
-#   docker run --rm -p 3000:3000 -e PUBLIC_HOST=<your hostname> -e TWILIO_AUTH_TOKEN=... -e HANDOFF_NUMBER=+1555... dialogwright-clinic
+#   docker run --rm --stop-timeout 45 -p 3000:3000 -e PUBLIC_HOST=<your hostname> -e TWILIO_AUTH_TOKEN=... -e HANDOFF_NUMBER=+1555... dialogwright-clinic
+#
+# --stop-timeout: Docker kills a container 10 s after `docker stop` unless told otherwise, and the drain
+# takes up to DRAIN_UNREADY_MS and DRAIN_MS (30 s by default): give it those and about 15 s more.
 #
 # The workspace runs its apps from src/ with tsx (each package's exports point at src/, and an app is
 # TypeScript): the image does the same rather than build dist/, which only a project that installs the

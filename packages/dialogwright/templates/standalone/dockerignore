@@ -1,13 +1,31 @@
-# What the image never takes from this folder (Dockerfile): the installed packages (the image installs its
-# own), the settings file and its keys, and what a server or the harness writes where it runs.
-node_modules
-.git
-.env
-.env.*
-!.env.example
+# What the image is built from (Dockerfile), as an allowlist: everything is left out, then the project's
+# manifest and lockfile, its YAML and generated pages, and its folders are let back in, and, within
+# those, what is never the image's is left out again: dotfiles (the settings file and keys, an editor's
+# or an assistant's local settings), env files under any name, keys and certificates, logs, and what a
+# server writes where it runs. A file only your own global gitignore hides still never reaches the image.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!*.yaml
+!policy.matrix
+!POLICY.md
+!APP-MAP.md
+!src
+!fixtures
+!kb
+!locale
+!assets
+**/node_modules
+**/.*
+!**/.env.example
+!kb/.index
+**/*.env
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.log
 traces
 audit
 sessions
-.console-link
-*.log
-.DS_Store

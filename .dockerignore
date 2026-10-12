@@ -1,27 +1,37 @@
-# What the image never takes from the repository (Dockerfile): installed packages and builds (the image
-# installs its own), settings files and keys, and what a server or the harness writes where it runs
-# (traces, audit logs, saved calls, the console's link, logs). A test reads this file against what git
-# tracks: every source file the image needs is kept.
-.git
+# What the image is built from (Dockerfile), as an allowlist: everything is left out, then the
+# workspace's manifests and lockfile and the packages and apps are let back in, and, within those, what
+# is never the image's is left out again: installed packages and builds (the image installs its own),
+# dotfiles (settings files and keys, an editor's or an assistant's local settings), env files under any
+# name (ENV_FILE may name one), keys and certificates, logs, and what a server writes where it runs. A
+# file only a developer's own global gitignore hides still never reaches the image. A test reads this
+# file against what git tracks.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!packages
+!apps
 **/node_modules
 **/dist
-**/.env
-**/.env.*
+# The engine package's copies of the guide and the skill, which its build writes for a packed package.
+packages/dialogwright/docs
+packages/dialogwright/skills
+**/.*
+!.npmrc
 !**/.env.example
-traces
-audit
-sessions
+!apps/*/kb/.index
+**/*.env
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.log
+**/*.tmp
+**/coverage
 apps/*/traces
 apps/*/audit
 apps/*/sessions
 packages/*/traces
 packages/*/audit
-**/.console-link
-**/*.log
-**/coverage
-**/*.tmp
-**/.DS_Store
-deploy/compose/logs
-# Not needed to run an app.
-site
-.github
+packages/*/sessions

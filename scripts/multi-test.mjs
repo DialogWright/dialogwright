@@ -27,8 +27,12 @@ const PROJECT = 'dialogwright-multi';
 const DRIVER = join(ROOT, 'packages', 'dialogwright', 'src', 'testing', 'multi', 'cli.ts');
 const TSX = join(ROOT, 'node_modules', '.bin', 'tsx');
 const USAGE = 'usage: pnpm multi:test [--in-process] [--keep] [--app <name>] [--scenario <id>] [--go-after <n>]';
-/** The call each takeover places, unless the flags name another: the clinic's cancellation, its server going once the birth date is asked. */
-const DEFAULTS = { app: 'clinic', scenario: 'cancel-happy', goAfter: '2' };
+/**
+ * The call each takeover places, unless the flags name another: the clinic's cancellation, its server
+ * going once the summary is read back, so the server that goes has run a tool (the lookup) and the one
+ * that takes the call over runs the write (the cancellation): a turn run twice would show in the audit.
+ */
+const DEFAULTS = { app: 'clinic', scenario: 'cancel-happy', goAfter: '3' };
 
 export const NO_DOCKER = [
   'pnpm multi:test needs Docker with Compose (`docker compose`), and it is not available here:',
@@ -115,6 +119,10 @@ function captured(...rest) {
   return `${r.stdout ?? ''}${r.stderr ?? ''}`;
 }
 
+/** The untagged images there are now. */
+const danglingImages = () => (probe(['images', '--filter', 'dangling=true', '--quiet', '--no-trunc']).stdout ?? '').split('\n').filter(Boolean);
+const danglingBefore = new Set(danglingImages());
+
 let down = false;
 function takeDown() {
   if (down) return;
@@ -128,8 +136,18 @@ function takeDown() {
     say(`left up (--keep): take it down with  docker compose -p ${PROJECT} -f ${COMPOSE_FILE} down --volumes --remove-orphans  (the variables it names must be set, any values)`);
     return;
   }
-  // Only this stack's own: its containers, its volumes, its network. The image stays (cached for the next run).
+  // Only this stack's own: its containers, its volumes, its network, and the images of its earlier builds
+  // that this build left untagged (by the stack's label). The image itself stays, cached for the next run.
   compose('down', '--volumes', '--remove-orphans', '--timeout', '10');
+  spawnSync('docker', ['image', 'prune', '--force', '--filter', 'label=dialogwright.multi-test=1'], { env, stdio: 'ignore' });
+  // Docker's legacy builder (no BuildKit) also leaves each stage and layer of a changed build as an untagged
+  // image, unlabelled: those that were not untagged before this run are this run's own (removing one may
+  // leave its parent untagged, which is its own too). One at a time: one that cannot go stops nothing else.
+  for (let round = 0; round < 500; round += 1) {
+    const left = danglingImages().filter((id) => !danglingBefore.has(id));
+    const gone = left.filter((id) => spawnSync('docker', ['image', 'rm', id], { env, stdio: 'ignore' }).status === 0);
+    if (gone.length === 0) break;
+  }
   say('the stack is down, its volumes and network removed');
 }
 for (const signal of ['SIGINT', 'SIGTERM']) {

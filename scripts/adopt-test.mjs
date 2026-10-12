@@ -225,7 +225,7 @@ async function exercise(dir) {
   // the keys and the records out, run as a non-root user, check /ready, and start the server under an init.
   const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
   const dockerignore = readFileSync(join(dir, '.dockerignore'), 'utf8').split('\n');
-  check(['node_modules', '.env', '.env.*', '!.env.example', 'traces', 'audit', 'sessions'].every((l) => dockerignore.includes(l)), "the project's .dockerignore keeps node_modules, .env and the records out");
+  check(['*', '!src', '**/node_modules', '**/.*', '!**/.env.example', '**/*.env', 'traces', 'audit', 'sessions'].every((l) => dockerignore.includes(l)), "the project's .dockerignore is an allowlist that keeps node_modules, dotfiles, env files and the records out");
   check(/^ARG NODE_IMAGE=node:22[.\d]*-[a-z]+-slim@sha256:[0-9a-f]{64}$/m.test(dockerfile) && /^USER node$/m.test(dockerfile) && /^HEALTHCHECK [^\n]*\\\n[^\n]*\/ready/m.test(dockerfile) && dockerfile.includes('ENTRYPOINT ["/usr/bin/tini", "--"]') && dockerfile.includes('CMD ["node", "--import", "tsx", "src/serve.ts"]') && !/\{\{/.test(dockerfile), "the project's Dockerfile: Node 22 pinned by digest, a non-root user, /ready as its health check, the server under tini");
   const checked = run('npx', ['dialogwright', 'check'], dir);
   check(checked.trim().endsWith(': ok'), `npx dialogwright check: ${checked.trim().split('\n').at(-1)}`);

@@ -47,7 +47,10 @@ export const MULTI_SERVER_ENV: Readonly<Record<string, string>> = {
   // The driver reads each server's console from outside it (a test stack, its ports on 127.0.0.1 only).
   CONSOLE_LOCAL_ONLY: 'off',
   CALL_LEASE_MS: '5000',
-  // Longer than the balancer takes to see a stopping server's /ready say 503.
+  // A stopping server says 503 on /ready for this long while still answering new calls, before its drain:
+  // longer than HAProxy takes to see it (a check every 500 ms, down at the first failure).
+  DRAIN_UNREADY_MS: '2000',
+  // How long the drain waits for live calls before it hands them on.
   DRAIN_MS: '4000',
   // With several servers a drained call goes straight to another.
   RESTART_PAUSE_S: '0',
@@ -347,7 +350,10 @@ export async function takeover(stack: Stack, carrier: Carrier, going: Going, scr
 
     let stopped: Promise<void> | null = null;
     if (going === 'crash') await stack.kill(holder);
-    else stopped = stack.stop(holder);
+    else {
+      stopped = stack.stop(holder);
+      await newCallsWhileStopping(stack.direct(holder), carrier, say, opts.timeoutMs);
+    }
     const closed = await Promise.race([relay.closed, sleep(opts.timeoutMs).then(() => null)]);
     expectThat(closed !== null, `the carrier's socket was not closed within ${opts.timeoutMs} ms of ${holder} going`);
     // A crash drops the socket with no close frame (1006); a drain closes it as going away (1001).
@@ -413,6 +419,8 @@ export async function takeover(stack: Stack, carrier: Carrier, going: Going, scr
     expectThat(chain.filter((e) => e.type !== 'handoff_summary').at(-1)!.type === 'call_ended', `${callSid}'s audit chain does not end with call_ended`);
     const twice = repeatedResults(chain);
     expectThat(twice.length === 0, `a tool ran twice in ${callSid}'s audit: ${twice.join('; ')}`);
+    const tools = chain.filter((e) => e.type === 'tool_result').map((e) => String(e.detail.tool));
+    say(`tools run, once each: ${tools.length > 0 ? tools.join(', ') : 'none'}`);
 
     // The survivor's console followed the whole call: its start, and every turn, the holder's among them.
     const feed = feedOf.get(survivor)!;
@@ -427,6 +435,40 @@ export async function takeover(stack: Stack, carrier: Carrier, going: Going, scr
     for (const r of relays) r.close();
     for (const f of feeds) f.close();
   }
+}
+
+/** What a server's /ready says now: its status and body, or null when it does not answer. */
+async function readiness(base: string): Promise<{ status: number; body: { ready?: boolean; stopping?: boolean; draining?: boolean } } | null> {
+  try {
+    const res = await fetch(`${base}/ready`, { signal: AbortSignal.timeout(2000) });
+    return { status: res.status, body: (await res.json()) as { ready?: boolean; stopping?: boolean; draining?: boolean } };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stopping server, asked for a new call directly (past the balancer, which has stopped sending it
+ * any): while /ready says it is stopping (DRAIN_UNREADY_MS) it answers the call as usual, and once it
+ * drains it puts the caller through to the handoff number. With DRAIN_UNREADY_MS=0 the first is skipped.
+ */
+async function newCallsWhileStopping(base: string, carrier: Carrier, say: (line: string) => void, timeoutMs: number): Promise<void> {
+  const ring = async (): Promise<string> => (await fetch(`${base}/voice/${carrier}`, form({ CallSid: newCallSid(carrier), From: '+15555550110', To: '+15555550111', CallStatus: 'ringing' }))).text();
+  const unreadyMs = Number(MULTI_SERVER_ENV.DRAIN_UNREADY_MS ?? 0);
+  if (unreadyMs > 0) {
+    const first = await until(async () => {
+      const r = await readiness(base);
+      return r === null || r.status !== 200 ? r : undefined;
+    }, timeoutMs, `${base}/ready to say 503 once the stop began`);
+    expectThat(first !== null && first.body.stopping === true, `before its drain, the stopping server's /ready said ${JSON.stringify(first)}, not 503 {"ready":false,"stopping":true}`);
+    const doc = await ring();
+    expectThat(doc.includes('<ConversationRelay') && !doc.includes('<Dial>'), `a new call reaching the server while /ready said it was stopping was not answered as usual: ${doc.slice(0, 300)}`);
+    say('a new call while /ready said 503, before the drain: answered as usual');
+  }
+  await until(async () => ((await readiness(base))?.body.draining === true ? true : undefined), timeoutMs, `${base}/ready to say it is draining`);
+  const doc = await ring();
+  expectThat(doc.includes('<Dial>') && !doc.includes('<ConversationRelay'), `a new call reaching the draining server was not put through to the handoff number: ${doc.slice(0, 300)}`);
+  say('a new call while draining: put through to the handoff number');
 }
 
 /** Every takeover (each carrier, a crash and a drain), each server that went started again after; the reports. */

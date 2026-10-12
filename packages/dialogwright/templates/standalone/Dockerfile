@@ -5,7 +5,10 @@
 # and run it from this folder:
 #
 #   docker build -t {{name}} .
-#   docker run --rm -p 3000:3000 -e PUBLIC_HOST=<your hostname> -e TWILIO_AUTH_TOKEN=... -e HANDOFF_NUMBER=+1555... {{name}}
+#   docker run --rm --stop-timeout 45 -p 3000:3000 -e PUBLIC_HOST=<your hostname> -e TWILIO_AUTH_TOKEN=... -e HANDOFF_NUMBER=+1555... {{name}}
+#
+# --stop-timeout: Docker kills a container 10 s after `docker stop` unless told otherwise, and the drain
+# takes up to DRAIN_UNREADY_MS and DRAIN_MS (30 s by default): give it those and about 15 s more.
 #
 # The server is node itself with tsx's loader (no npm or tsx process in between), under tini, so a
 # `docker stop` (SIGTERM) reaches it and its drain runs: live calls finish or move to another server,

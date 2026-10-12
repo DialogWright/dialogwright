@@ -31,8 +31,8 @@ afterEach(async () => {
 });
 
 async function stack(): Promise<InProcessStack> {
-  // A drain shorter than the compose stack's: this balancer sees a draining server at once.
-  const s = await inProcessStack({ env: { DRAIN_MS: '500' }, ...(process.env.MULTI_SERVERS_DEBUG ? { log: (n: string, l: string) => console.log(n, l) } : {}) });
+  // A stop shorter than the compose stack's: this balancer sees a server's /ready at once.
+  const s = await inProcessStack({ env: { DRAIN_UNREADY_MS: '300', DRAIN_MS: '500' }, ...(process.env.MULTI_SERVERS_DEBUG ? { log: (n: string, l: string) => console.log(n, l) } : {}) });
   stacks.push(s);
   return s;
 }
@@ -51,6 +51,11 @@ describe('the takeover driver, on two servers in this process', () => {
     // A crash always hears the resumed line.
     expect(reports.filter((r) => r.going === 'crash').every((r) => r.heard.startsWith('Sorry, I lost you for a moment.'))).toBe(true);
     expect(lines.filter((l) => l.includes('] ok: taken over by'))).toHaveLength(4);
+    // Each drain: a new call while /ready said 503 before the drain answered as usual, and one during it put through.
+    expect(lines.filter((l) => l.endsWith('before the drain: answered as usual'))).toHaveLength(2);
+    expect(lines.filter((l) => l.endsWith('while draining: put through to the handoff number'))).toHaveLength(2);
+    // The server that went had run tools (the lookups), and the one that took over ran the rest, each once.
+    expect(lines.filter((l) => l.includes('tools run, once each: getAccount, getWindows'))).toHaveLength(4);
     // Both servers are up again at the end.
     for (const name of s.servers) expect(s.server(name).draining).toBe(false);
   }, 120_000);

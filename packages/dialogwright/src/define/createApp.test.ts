@@ -350,7 +350,7 @@ describe('dialogwright create-app --standalone: a project of its own', () => {
     }
     expect(readFileSync(join(dir, '.gitignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['node_modules/', '.env', '!.env.example']));
     // The project's image: its keys and its records never in it, a non-root user, the server under an init.
-    expect(readFileSync(join(dir, '.dockerignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['node_modules', '.env', '.env.*', '!.env.example', 'traces', 'audit', 'sessions']));
+    expect(readFileSync(join(dir, '.dockerignore'), 'utf8').split('\n')).toEqual(expect.arrayContaining(['*', '!src', '**/node_modules', '**/.*', '!**/.env.example', '**/*.env', 'traces', 'audit', 'sessions']));
     const dockerfile = readFileSync(join(dir, 'Dockerfile'), 'utf8');
     expect(dockerfile).toContain('docker build -t my-line .');
     expect(dockerfile).toMatch(/^USER node$/m);

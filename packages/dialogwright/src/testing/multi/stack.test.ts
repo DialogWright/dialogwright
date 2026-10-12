@@ -58,6 +58,8 @@ describe('the images\' Dockerfiles', () => {
         for (const i of ins.filter((x) => x.op === 'ARG' || x.op === 'ENV')) expect(i.rest, `${i.op} ${i.rest}`).not.toMatch(/KEY|SECRET|TOKEN|PASSWORD|AUTH/i);
         for (const i of ins.filter((x) => x.op === 'COPY')) expect(i.rest).not.toMatch(/\.env\b/);
         expect(text).not.toMatch(/ENV_FILE/);
+        // The example run gives the drain its time: Docker's own stop timeout is 10 s.
+        expect(text).toMatch(/^#\s+docker run --rm --stop-timeout \d+ /m);
       });
     });
   }
@@ -90,25 +92,40 @@ function dockerIgnored(lines: readonly string[]): (path: string) => boolean {
   };
 }
 
-describe('the repository\'s .dockerignore', () => {
-  const ignored = dockerIgnored(read('.dockerignore').split('\n'));
-  const tracked = execFileSync('git', ['ls-files'], { cwd: REPO_ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
+/** What git tracks, by path from the repository's root. */
+const tracked = execFileSync('git', ['ls-files'], { cwd: REPO_ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 
-  it('keeps every file the image runs: the lockfile, each package and app, their sources, fixtures and settings examples', () => {
-    const needed = tracked.filter((f) => /^(packages|apps)\//.test(f) || ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'tsconfig.base.json'].includes(f));
-    expect(needed.length).toBeGreaterThan(500);
-    expect(needed.filter(ignored)).toEqual([]);
-    expect(ignored('apps/clinic/.env.example')).toBe(false);
+/** Files no one tracks that must never reach an image: settings and keys under any name, and local tools' settings. */
+const NEVER = ['.env', '.env.production', 'prod.env', 'secrets/prod.env', 'server.pem', 'tls/server.key', 'client.p12', '.vscode/settings.json', '.idea/workspace.xml',
+  '.claude/settings.local.json', '.cursor/rules', '.DS_Store', 'server.log', 'traces/c.jsonl', 'audit/2026-09-18.jsonl', 'sessions/calls/c.json', '.console-link/link.json', 'node_modules/x/index.js'];
+
+describe('the repository\'s .dockerignore, an allowlist', () => {
+  const ignored = dockerIgnored(read('.dockerignore').split('\n'));
+
+  it('keeps every tracked file of the workspace\'s manifests, its packages and its apps but two, and nothing else', () => {
+    const kept = tracked.filter((f) => !ignored(f));
+    const manifests = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'tsconfig.base.json'];
+    expect(kept.filter((f) => !/^(packages|apps)\//.test(f)).sort()).toEqual([...manifests].sort());
+    const inside = tracked.filter((f) => /^(packages|apps)\//.test(f));
+    expect(inside.length).toBeGreaterThan(500);
+    // A test fixture of a dotfile and a package's own .gitignore: neither is read by a server.
+    expect(inside.filter(ignored).sort()).toEqual(['packages/kb-author/src/__fixtures__/folder/.draft.md', 'packages/widget/.gitignore']);
+    for (const f of ['apps/clinic/.env.example', 'apps/utility/kb/.index/potion-base-8M.json', 'packages/dialogwright/src/audit/postgres.ts']) expect(ignored(f), f).toBe(false);
   });
 
-  it('keeps out settings files, installed packages, builds and what a server writes, wherever they are', () => {
-    for (const path of ['.env', 'apps/clinic/.env', 'apps/clinic/.env.local', 'node_modules/x/index.js', 'apps/clinic/node_modules/dialogwright/package.json',
-      'packages/dialogwright/dist/index.js', 'traces/c.jsonl', 'apps/clinic/traces/c.jsonl', 'apps/clinic/audit/2026-09-18.jsonl', 'apps/clinic/sessions/calls/c.json',
-      'apps/clinic/.console-link/link.json', 'server.log', 'deploy/compose/logs/app-a.log', '.git/HEAD']) {
-      expect(ignored(path), path).toBe(true);
-    }
-    // The engine's own audit and trace code is source, not records.
-    expect(ignored('packages/dialogwright/src/audit/postgres.ts')).toBe(false);
+  it('keeps out settings files and keys under any name, local tools\' settings, installed packages, builds and records, anywhere', () => {
+    for (const base of ['', 'apps/clinic/', 'packages/dialogwright/']) for (const f of NEVER) expect(ignored(`${base}${f}`), `${base}${f}`).toBe(true);
+    for (const f of ['packages/dialogwright/dist/index.js', 'packages/dialogwright/docs/guide/README.md', 'packages/dialogwright/skills/create-app/SKILL.md', 'deploy/compose/logs/app-a.log', 'scripts/multi-test.mjs', 'docs/design.md', 'site/index.html', 'notes.txt', '.git/HEAD']) expect(ignored(f), f).toBe(true);
+  });
+});
+
+describe('a project\'s .dockerignore (templates/standalone/dockerignore), an allowlist', () => {
+  const ignored = dockerIgnored(read('packages', 'dialogwright', 'templates', 'standalone', 'dockerignore').split('\n'));
+
+  it('keeps the project\'s manifest, lockfile, YAML, generated pages and folders, and keeps out what is not the app\'s', () => {
+    for (const f of ['package.json', 'package-lock.json', 'tsconfig.json', 'app.yaml', 'policy.yaml', 'policy.matrix', 'POLICY.md', 'APP-MAP.md', 'src/app.ts', 'src/serve.ts',
+      'fixtures/corpus.jsonl', 'kb/kb.yaml', 'kb/.index/potion-base-8M.json', 'locale/es.yaml', '.env.example']) expect(ignored(f), f).toBe(false);
+    for (const f of [...NEVER, 'src/.env', 'src/local.env', 'README.md', 'CLAUDE.md', '.gitignore', '.claude/skills/create-app/SKILL.md', 'node_modules/dialogwright/package.json']) expect(ignored(f), f).toBe(true);
   });
 });
 
@@ -125,7 +142,9 @@ describe('the compose stack', () => {
       expect(s.image, name).toMatch(/^[a-z0-9/-]+:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/);
     }
     // One image for both servers, built once (by app-a), never pulled.
-    expect(services['app-a']!.build).toEqual({ context: '../..', dockerfile: 'Dockerfile', args: { APP: '${APP:-clinic}' } });
+    expect(services['app-a']!.build).toEqual({ context: '../..', dockerfile: 'Dockerfile', args: { APP: '${APP:-clinic}' }, labels: { 'dialogwright.multi-test': '1' } });
+    // The only images pnpm multi:test removes are those, untagged by a rebuild.
+    expect(read('scripts', 'multi-test.mjs')).toContain("['image', 'prune', '--force', '--filter', 'label=dialogwright.multi-test=1']");
     expect(services['app-b']!.build).toBeUndefined();
     expect((services['app-b'] as { pull_policy?: string }).pull_policy).toBe('never');
     for (const name of MULTI_SERVERS) {
@@ -153,7 +172,11 @@ describe('the compose stack', () => {
       expect(() => loadConfig(given)).not.toThrow();
     }
     // Longer than the drain, so a stop lets it end by itself.
-    expect(Number(/^(\d+)s$/.exec(services['app-a']!.stop_grace_period!)?.[1]) * 1000).toBeGreaterThan(Number(MULTI_SERVER_ENV.DRAIN_MS) + 5000);
+    expect(Number(/^(\d+)s$/.exec(services['app-a']!.stop_grace_period!)?.[1]) * 1000).toBeGreaterThan(Number(MULTI_SERVER_ENV.DRAIN_UNREADY_MS) + Number(MULTI_SERVER_ENV.DRAIN_MS) + 5000);
+    // Unready for longer than HAProxy takes to see a 503 (its check interval times its fall count).
+    const cfg = read('deploy', 'compose', 'haproxy.cfg');
+    const [, inter, fall] = /default-server check inter (\d+)ms fall (\d+)/.exec(cfg)!;
+    expect(Number(MULTI_SERVER_ENV.DRAIN_UNREADY_MS)).toBeGreaterThan(Number(inter) * Number(fall) * 2);
   });
 
   it('publishes every port on 127.0.0.1 only, on the ports the driver reaches by default', () => {
@@ -173,12 +196,14 @@ describe('the compose stack', () => {
     for (const name of MULTI_SERVERS) expect(cfg).toMatch(new RegExp(`^\\s*server ${name} ${name}:3000$`, 'm'));
   });
 
-  it('places the clinic\'s cancellation, the call pnpm multi:test makes by default', () => {
+  it('places the clinic\'s cancellation, the call pnpm multi:test makes by default, with the server going between the lookup and the write', () => {
     const script = read('scripts', 'multi-test.mjs');
     const defaults = /const DEFAULTS = \{ app: '([a-z-]+)', scenario: '([a-z-]+)', goAfter: '(\d+)' \}/.exec(script)!;
     expect(defaults).not.toBeNull();
     const call = scriptFromScenario(join(REPO_ROOT, 'apps', defaults[1]!), defaults[2]!, Number(defaults[3]));
-    expect(call.says.length).toBeGreaterThan(call.goAfter);
+    // The server goes once the summary is read back: it has run the lookup, and the one that takes the
+    // call over runs the write on the last line (the yes), so a turn run twice would run a tool twice.
+    expect(call).toEqual({ says: ['I need to cancel my appointment with Dr. Okafor', 'Morgan Ellis', 'June fourteenth nineteen seventy five', 'yes'], goAfter: 3 });
   });
 });
 
@@ -203,7 +228,9 @@ describe('pnpm multi:test', () => {
     expect(job.steps.map((s) => s.run).filter(Boolean)).toEqual(['pnpm install --frozen-lockfile', 'pnpm multi:test']);
     for (const s of job.steps.filter((x) => x.uses)) expect(s.uses).toMatch(/^[\w/-]+@[0-9a-f]{40}$/);
     const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@'));
-    expect(upload?.if).toBe('failure()');
+    expect(upload?.if).toBe('failure() || cancelled()');
+    // The checkout keeps no token for the steps after it.
+    expect(job.steps.find((x) => x.uses?.startsWith('actions/checkout@'))?.with?.['persist-credentials']).toBe(false);
     expect(upload?.with?.path).toBe('deploy/compose/logs/');
   });
 });

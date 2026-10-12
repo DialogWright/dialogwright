@@ -15,7 +15,7 @@ name: dialogwright-multi
 # The two servers run one image, built once (by app-a: two builds of one tag at once collide).
 x-app: &app
   image: dialogwright-multi-app:${APP:-clinic}
-  # Past DRAIN_MS: a `docker compose stop` lets the drain run and the server exit by itself.
+  # Past DRAIN_UNREADY_MS and DRAIN_MS: a `docker compose stop` lets the drain run and the server exit by itself.
   stop_grace_period: 30s
   depends_on:
     postgres:
@@ -34,6 +34,7 @@ x-app-env: &app-env
   NO_INPUT_MS: "0"
   CONSOLE_LOCAL_ONLY: "off"
   CALL_LEASE_MS: "5000"
+  DRAIN_UNREADY_MS: "2000"
   DRAIN_MS: "4000"
   RESTART_PAUSE_S: "0"
   TRACE_STORE: s3://call-traces/multi
@@ -102,6 +103,9 @@ services:
       dockerfile: Dockerfile
       args:
         APP: ${APP:-clinic}
+      # pnpm multi:test removes this stack's own images a rebuild left untagged, and no other.
+      labels:
+        dialogwright.multi-test: "1"
     environment:
       <<: *app-env
       SERVER_ID: app-a
