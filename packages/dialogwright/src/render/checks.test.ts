@@ -117,3 +117,39 @@ describe('the checks, as the review found them (review fixes)', () => {
     expect(q.criteria.true).toContain('as the agent\'s own');
   });
 });
+
+describe('meaning kept where shape can hold it (review fixes, round 2)', () => {
+  const summary = act({
+    fixed: 'For Dana Reyes. Your message: please do not call me before Friday. Shall I pass it on?',
+    items: [{ name: 'recipient', value: 'Dana Reyes' }],
+    content: [{ name: 'message', value: 'please do not call me before Friday' }],
+    keep: 'Shall I pass it on?',
+    style: { persona: 'p', words: 40, avoid: [] },
+  });
+
+  it('a decision question is kept word for word: the line must end with the fixed line\'s own question', () => {
+    expect(checkGenerated('For Dana Reyes: no calls before Friday, you said. Shall I not pass it on?', summary)).toBe('question');
+    expect(checkGenerated('For Dana Reyes: no calls before Friday, you said. Should I send it?', summary)).toBe('question');
+    expect(checkGenerated('For Dana Reyes, your message asks that nobody call before Friday. Shall I pass it on?', summary)).toBeNull();
+  });
+
+  it('a negation must be in what the line was given, in a clause that says the same thing', () => {
+    expect(checkGenerated('For Dana Reyes, I will not pass on calls before Friday. Shall I pass it on?', summary)).toBe('negation');
+    expect(checkGenerated("Thanks, Morgan Lee. Don't hang up. What's the best number to call you back on?", act())).toBe('negation');
+  });
+
+  it('a negation in the caller\'s words is never dropped from a line that restates them', () => {
+    expect(checkGenerated('For Dana Reyes. You said please call me before Friday. Shall I pass it on?', summary)).toBe('negation');
+    expect(checkGenerated('For Dana Reyes. Your message says call before Friday. Shall I pass it on?', summary)).toBe('negation');
+    expect(checkGenerated('For Dana Reyes. You said please do not call before Friday. Shall I pass it on?', summary)).toBeNull();
+  });
+
+  it('a value of an item\'s own slot other than the one it holds is never named (the recipient changed)', () => {
+    expect(checkGenerated("For Dana Reyes. You said it's for Lee Park, before Friday, no calls. Shall I pass it on?", summary, { conflicts: ['Lee Park'] })).toBe('conflict');
+    expect(checkGenerated('For Dana Reyes, please do not call before Friday, as you said. Shall I pass it on?', summary, { conflicts: ['Lee Park'] })).toBeNull();
+    // Named in the message itself: said back as the message's, never as the one it is for.
+    const mentions = act({ ...summary, fixed: 'For Dana Reyes. Your message: tell Lee Park about the invoice too. Shall I pass it on?', content: [{ name: 'message', value: 'tell Lee Park about the invoice too' }] });
+    expect(checkGenerated("For Dana Reyes. You said it's for Lee Park, about the invoice. Shall I pass it on?", mentions, { conflicts: ['Lee Park'] })).toBe('conflict');
+    expect(checkGenerated('For Dana Reyes: you ask to tell Lee Park about the invoice too. Shall I pass it on?', mentions, { conflicts: ['Lee Park'] })).toBeNull();
+  });
+});

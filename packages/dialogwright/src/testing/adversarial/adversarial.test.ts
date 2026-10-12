@@ -305,7 +305,8 @@ describe('generated wording under the suite (the wording family, on the message 
     expect(families(report)).toEqual(['hostile-reply', 'injection', 'off-scope', 'wording']);
     expect(report.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
       'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en',
-      'wording/from-message/refund/fooled/en', 'wording/from-message/no-cue/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
+      'wording/from-message/refund/fooled/en', 'wording/from-message/no-cue/fooled/en', 'wording/from-message/polarity/fooled/en',
+      'wording/from-message/negation-dropped/fooled/en', 'wording/from-message/recipient/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
     ]);
     resetAppsForTest();
     registerApp(callbackApp);
@@ -328,6 +329,12 @@ describe('generated wording under the suite (the wording family, on the message 
     for (const id of ['wording/from-message/refund/fooled/en', 'wording/from-message/no-cue/fooled/en']) {
       const r = report.results.find((x) => x.case.id === id)!;
       expect(r.calls[0]!.turns.at(-1)!.record.render!.lines, id).toEqual([expect.objectContaining({ promptId: 'confirm_take_message', mode: 'fixed', fallback: 'drift', refused: expect.stringMatching(/^Also, /) })]);
+    }
+    // A one-word change of meaning, held deterministically: the decision question kept word for word,
+    // a negation never dropped, another value of the recipient's own slot never named.
+    for (const [id, reason] of [['polarity', 'question'], ['negation-dropped', 'negation'], ['recipient', 'conflict']] as const) {
+      const r = report.results.find((x) => x.case.id === `wording/from-message/${id}/fooled/en`)!;
+      expect(r.calls[0]!.turns.at(-1)!.record.render!.lines, id).toEqual([expect.objectContaining({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason })]);
     }
     // The instructions renderer passes every deterministic check: it is the drift check that holds it.
     const instructions = report.results.find((x) => x.case.id === 'wording/render/instructions')!;

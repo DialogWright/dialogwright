@@ -10,7 +10,7 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptText, renderTemplate, saidLineOf, type SaidLine } from '../prompts/render';
-import { checkGenerated, cleanGenerated, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState } from './checks';
+import { checkGenerated, cleanGenerated, decisionQuestionOf, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState } from './checks';
 import { generatesLines, identifierVarsFrom, lineVars, saysKbAnswer } from './config';
 import { actMessage, RENDER_INSTRUCTIONS, renderKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
@@ -93,7 +93,7 @@ function requestUsage(act: SpeechAct): RenderUsage {
 }
 
 /** The act of one line, or why the line is not tried on this turn. */
-function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { act: SpeechAct; judgeFixed: string } | { skipped: RenderSkip } {
+function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { act: SpeechAct; judgeFixed: string; conflicts: string[] } | { skipped: RenderSkip } {
   const { before, result, event } = input;
   const after = result.session;
   // A line the core said must be heard word for word (a summary read back exactly after a no): always fixed.
@@ -120,11 +120,14 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   const content = vars.filter((v) => from.has(v)).map(value);
   const fixed = promptText(app, said.promptId, { ...said.vars }, locale);
   const style = app.generated!.style;
+  // A question a yes or a no settles (a confirmation is pending once it is said) is kept word for word.
+  const keep = said.role === 'ask' && after.pendingConfirmation !== null ? decisionQuestionOf(fixed) : undefined;
   const act: SpeechAct = {
     act: said.role,
     goal,
     fixed,
     asks: fixed.includes('?'),
+    ...(keep !== undefined ? { keep } : {}),
     items: vars.filter((v) => !from.has(v)).map(value),
     ...(content.length > 0 ? { content } : {}),
     ...(words !== null && !sensitivePrompt(app, before.promptedFor) ? { heard: words } : {}),
@@ -136,7 +139,24 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   };
   // The fixed line as the drift check reads it: each collected value left as its {placeholder}, the content apart.
   const judgeFixed = renderTemplate(template, Object.fromEntries(vars.map((v) => [v, from.has(v) ? `{${v}}` : (said.vars[v] ?? '')])));
-  return { act, judgeFixed };
+  return { act, judgeFixed, conflicts: conflictsOf(app, vars.filter((v) => !from.has(v)), said.vars, locale) };
+}
+
+/**
+ * The other values of each item's own slot, as said: for a choice slot, every other option's display
+ * (the other person a message could be for, say). Naming one the fixed line does not is a `conflict`.
+ */
+function conflictsOf(app: App, items: readonly string[], vars: Readonly<Record<string, string>>, locale: string | undefined): string[] {
+  const out: string[] = [];
+  for (const v of items) {
+    const spec = Object.hasOwn(app.slots, v) ? (app.slots[v] as { type?: unknown; config?: { options?: Record<string, unknown> }; display: (value: string, locale?: string) => string }) : undefined;
+    if (spec?.type !== 'choice' || spec.config?.options === undefined) continue;
+    for (const option of Object.keys(spec.config.options)) {
+      const said = spec.display(option, locale);
+      if (said !== vars[v]) out.push(said);
+    }
+  }
+  return out;
 }
 
 /** Rejects with 'late' once `deadline` has passed. */
@@ -191,7 +211,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       estimated: (checkUsage?.estimated ?? false) || u.estimated,
     };
   };
-  const attempt = async (promptId: string, act: SpeechAct, judgeFixed: string): Promise<Attempt> => {
+  const attempt = async (promptId: string, act: SpeechAct, judgeFixed: string, conflicts: readonly string[]): Promise<Attempt> => {
     // The line's checks share their budget: each is given what is left of it.
     let checkLeft = checkBudget;
     const check = async <T,>(p: Promise<T>): Promise<T | 'late'> => {
@@ -222,7 +242,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       return { fallback: e instanceof RenderClientError && e.kind === 'cassette-miss' ? 'cassette-miss' : 'error' };
     }
     const text = cleanGenerated(gen.text);
-    const failed = checkGenerated(text, act);
+    const failed = checkGenerated(text, act, { conflicts });
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {
       const r = await check(drift.ask({ state: renderDriftState(act, text, judgeFixed) as unknown as JsonValue, questions: renderDriftQuestion(), timeoutMs: Math.max(1, checkLeft), signal: abort.signal }));
@@ -239,7 +259,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const settled = await Promise.all(planned.map(async (p) => {
     if (!('act' in p.plan)) return null;
     const began = performance.now();
-    const got = await raceDeadline(attempt(p.said.promptId, p.plan.act, p.plan.judgeFixed), deadline);
+    const got = await raceDeadline(attempt(p.said.promptId, p.plan.act, p.plan.judgeFixed, p.plan.conflicts), deadline);
     return { got: got === 'late' ? ({ fallback: 'timeout', usage: requestUsage(p.plan.act) } as Attempt) : got, ms: performance.now() - began };
   }));
   for (const t of timers) clearTimeout(t);

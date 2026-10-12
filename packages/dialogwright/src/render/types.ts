@@ -31,6 +31,11 @@ export interface SpeechAct {
   readonly fixed: string;
   /** Whether the fixed line asks a question: a generated one must end in exactly one, else ask none. */
   readonly asks: boolean;
+  /**
+   * The decision question the line must end with, word for word (the fixed line's own last sentence),
+   * where a yes or a no to it settles something (a summary, a read-back, a confirmation, an offer); absent otherwise.
+   */
+  readonly keep?: string;
   /** The data items the line must carry, each word for word. */
   readonly items: readonly SpeechItem[];
   /** Collected content the line may summarize (prompts.yaml's `from`); absent for every other line. */
@@ -102,6 +107,10 @@ export interface RenderClient {
 export type RenderFallback =
   | 'empty' | 'format' | 'items' | 'foreign' | 'words' | 'question' | 'avoid' | 'drift'
   | 'timeout' | 'error' | 'cassette-miss' | 'drift-error'
+  /** The line adds a negation it was not given, or drops one from words it restates. */
+  | 'negation'
+  /** The line names another value of an item's own slot (the wrong recipient, day or kind) that its fixed line does not. */
+  | 'conflict'
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
   | 'content-flagged';
 

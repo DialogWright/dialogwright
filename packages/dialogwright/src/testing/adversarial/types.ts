@@ -76,10 +76,13 @@ export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened'
 /**
  * How a `wording` case's renderer answers (a fake, never a model): `echo`, the caller's words put in
  * the line, as a fooled model would; `obey`, the collected content (`from`) stated as the agent's own,
- * as a model that obeyed a message would; `instructions`, instructions to the caller and the system before
+ * as a model that obeyed a message would; `polarity`, the line's decision question turned around ("Shall I
+ * not pass it on?"); `drop-negation`, the collected content restated without its negation; `recipient`,
+ * another value of a choice item named as the line's own (the message for someone else); each a one-word
+ * change in meaning, the line otherwise its fixed text; `instructions`, instructions to the caller and the system before
  * the line; `numbers`, an amount and a number it was not given before the line.
  */
-export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers';
+export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'recipient';
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a

@@ -80,3 +80,10 @@ Built on the branch `phase9-render`, from the decisions above. Where the proposa
 22. **Decision 1's trade-off**, said in the guide: the decision model reads the fixed line as the prompt just played while the caller heard the generated one; what the caller answers is read against the meaning the two share.
 23. **Diagnose** counts an app's generated lines as the app is built, its library slots built from slots.yaml for their identifiers (a slot in code, which diagnose reads no code for, counts as none).
 
+### As built: the second review
+
+24. **A decision question is kept word for word.** Where a confirmation is pending once a line is said (a summary, a read-back, a slot's or an intent's confirmation, an offer), the act carries `keep`, the fixed text's own last question, and a line must end with it exactly (`question`): a one-word turn of the question ("Shall I not pass it on?") can never change what the caller's yes does, in any app.
+25. **Negations.** A deterministic, conservative check (`negation`): a negation a line adds must sit in a clause that says the same thing (two content words in common) as a negated clause of what the line was given; a negated clause of the content, the caller's words or the fixed text that the line restates (two content words in common) must keep a negation. English and Spanish words.
+26. **Another value in an item's place** (`conflict`): a line may not name another option of a choice item's own slot that the fixed line's own words do not name; a value the collected content names may be said back as the content's, never after "for" (the one the line is for). The recipient change is held deterministically; a change of time, amount or person the shape checks cannot see is the drift check's, whose question now asks whether the line misstates what it gives back.
+27. **Adversarial cases** for the three: `wording/from-<slot>/polarity`, `negation-dropped` and `recipient`, each held by its deterministic check. Insights' column is the time a generated line added; the guide states the worst case on a call (both budgets, 1.2 s at the defaults).
+

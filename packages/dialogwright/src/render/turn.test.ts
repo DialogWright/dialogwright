@@ -81,7 +81,7 @@ describe('a generated line', () => {
     expect(summary.heard).toBe(MESSAGE);
     expect(summary.asks).toBe(true);
     expect(summary.style).toEqual({ persona: 'a warm, brief office receptionist', words: 40, avoid: ['unfortunately', 'I apologize for the inconvenience'] });
-    expect(Object.keys(summary).sort()).toEqual(['act', 'asks', 'channel', 'content', 'fixed', 'frustration', 'goal', 'heard', 'items', 'language', 'situations', 'style']);
+    expect(Object.keys(summary).sort()).toEqual(['act', 'asks', 'channel', 'content', 'fixed', 'frustration', 'goal', 'heard', 'items', 'keep', 'language', 'situations', 'style']);
     // The words said at the phone number's question are never quoted to a model.
     const message = client.asked.find((a) => a.promptId === 'ask_message')!.act;
     expect(message.heard).toBeUndefined();
