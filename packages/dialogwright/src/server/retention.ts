@@ -13,6 +13,9 @@ const DAY_MS = 86_400_000;
 const AUDIT_DAY = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
 /** A trace's file and its frame log (index.ts: `<stem>.jsonl`, `<stem>.frames.jsonl`). */
 const TRACE_FILE = /^(.+?)(?:\.frames)?\.jsonl$/;
+/** The console's daily figures, beside the traces (dashboard/figuresCache.ts): a file per UTC day. */
+const FIGURES_DIR = '.figures';
+const FIGURES_DAY = /^(\d{4}-\d{2}-\d{2})\.json$/;
 
 export interface RetentionSettings {
   traceDir: string;
@@ -67,6 +70,19 @@ export function sweepRetention(s: RetentionSettings, at: { now: number; inUse: R
         traceFiles += 1;
       } catch {
         // Gone already, or not ours to remove: the next sweep tries again.
+      }
+    }
+    // The console's daily figures (dashboard/figuresCache.ts) go with their day: once every trace of a
+    // call that started that day is past the cutoff (it was last written by a day after the day's end).
+    const figures = join(s.traceDir, FIGURES_DIR);
+    for (const name of names(figures)) {
+      const m = FIGURES_DAY.exec(name);
+      const day = m ? Date.parse(`${m[1]}T00:00:00Z`) : Number.NaN;
+      if (Number.isNaN(day) || day + 2 * DAY_MS > cutoff) continue;
+      try {
+        unlinkSync(join(figures, name));
+      } catch {
+        // As above.
       }
     }
   }
