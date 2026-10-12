@@ -13,6 +13,37 @@ const base = { PUBLIC_HOST: 'demo.ngrok.app', TWILIO_AUTH_TOKEN: 'tok', HANDOFF_
 /** The paths CONSOLE_LOCAL_ONLY guards once an app's two chats are mounted (localOnly.ts localOnlyPaths). */
 const CONSOLE_PATHS = ['/dashboard', '/staff', '/portal'];
 
+describe('AUDIT_STORE and TRACE_STORE', () => {
+  it('are unset by default, and the config and its startup line are then as they always were', () => {
+    const c = loadConfig(base);
+    expect('auditStore' in c).toBe(false);
+    expect('traceStore' in c).toBe(false);
+    expect('serverId' in c).toBe(false);
+    expect(describeConfig(c)).toContain('  traces traces  audit audit  ');
+  });
+
+  it('take postgres://... and s3://<bucket>/<prefix> with the S3_ variables, and the startup line says neither password nor key', () => {
+    const c = loadConfig({
+      ...base, AUDIT_STORE: 'postgres://audit:pa55word@db.example:5432/records', SESSION_STORE_TIMEOUT_MS: '3000',
+      TRACE_STORE: 's3://call-traces/prod', S3_ACCESS_KEY_ID: 'AKIDEXAMPLEONLY', S3_SECRET_ACCESS_KEY: 'very-secret-key', S3_REGION: 'auto', S3_ENDPOINT: 'https://acct.r2.example.com',
+      SERVER_ID: 'web-1',
+    });
+    expect(c.auditStore).toEqual({ kind: 'postgres', url: 'postgres://audit:pa55word@db.example:5432/records', timeoutMs: 3000 });
+    expect(c.traceStore).toMatchObject({ kind: 's3', bucket: 'call-traces', prefix: 'prod/', region: 'auto', endpoint: 'https://acct.r2.example.com', forcePathStyle: false });
+    expect(c.serverId).toBe('web-1');
+    const line = describeConfig(c);
+    expect(line).toContain('traces s3://call-traces/prod/ at acct.r2.example.com (auto)');
+    expect(line).toContain('audit postgres://audit:***@db.example:5432/records');
+    for (const secret of ['pa55word', 'very-secret-key', 'AKIDEXAMPLEONLY']) expect(line).not.toContain(secret);
+  });
+
+  it('refuse a malformed one at startup, naming the variable and never its secret', () => {
+    expect(() => loadConfig({ ...base, AUDIT_STORE: 'mysql://u:pa55word@h/d' })).toThrow('AUDIT_STORE must be postgres://... (or unset, for day files in AUDIT_DIR), got "mysql://u:***@h/d"');
+    expect(() => loadConfig({ ...base, TRACE_STORE: 's3://call-traces/p', S3_ACCESS_KEY_ID: 'id' })).toThrow('TRACE_STORE=s3://... needs S3_SECRET_ACCESS_KEY');
+    expect(() => loadConfig({ ...base, TRACE_STORE: '/var/traces' })).toThrow('TRACE_STORE must be s3://<bucket>/<prefix>');
+  });
+});
+
 describe('SESSION_STORE', () => {
   it('is memory unless it says otherwise, and the config is then as it always was', () => {
     expect('sessionStore' in loadConfig(base)).toBe(false);
