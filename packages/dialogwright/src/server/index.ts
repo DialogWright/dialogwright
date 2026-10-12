@@ -39,6 +39,7 @@ import { AuditLog } from '../audit/log';
 import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
 import { PostgresNotices } from './stores/notices';
 import { openSweeps } from './stores/sweeps';
+import { chatTraceMeta } from './traceMeta';
 import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
@@ -450,23 +451,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
       resources: (id, sessions) => {
         const file = safeFileStem(id);
-        // As a call's: held while the entry the chat endpoint has for the chat is the one these sinks are
-        // for; once it was and is no longer (ended, or let go to another server), the last values it had,
-        // and what it still writes is marked late. The generation is the chat's restores (StoredChat.restores).
-        type Seen = { session: Session; frames?: FrameSink; restores?: number; movedAway?: boolean };
-        let mine: FrameSink | null = null;
-        let entry: Seen | null = null;
-        let last: Omit<CallMeta, 'held'> = { turn: 0, gen: 0, startedAtMs: now() };
-        const { trace, frames } = sinksOf(file, () => {
-          const e = sessions.get(id) as Seen | undefined;
-          if (e !== undefined && mine !== null && e.frames === mine) {
-            entry = e;
-            last = { turn: e.session.turnIndex, gen: e.restores ?? 0, startedAtMs: e.session.startedAtMs };
-          }
-          // Its own to the end (an ended chat's last lines are never late), unless it was let go to another server.
-          return { ...last, held: entry?.movedAway !== true };
-        });
-        mine = frames;
+        // As a call's (server/traceMeta.ts): the chat's last values once it leaves `sessions`, its restores as its generation.
+        const names = chatTraceMeta(id, sessions, now);
+        const { trace, frames } = sinksOf(file, names.meta);
+        names.bind(frames);
         const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
         // No render context: a chat shows a line's words, never a recorded clip.
         return {
