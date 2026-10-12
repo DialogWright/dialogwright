@@ -321,6 +321,9 @@ export async function probeAuditWrite(sql: SqlClient): Promise<void> {
 
 /** How many rows are checked between letting the server's other work run. */
 const VERIFY_YIELD_ROWS = 1_000;
+/** How many rows a page of the verification reads (keyset paging), and how many a lookup names at once (within Postgres's 65,535 parameters). */
+const VERIFY_PAGE_ROWS = 10_000;
+const LOOKUP_ROWS = 2_000;
 
 export interface PostgresVerifyResult {
   chains: number;
@@ -339,139 +342,222 @@ export interface PostgresVerifyResult {
  * day named in its roster. The first break of each chain, each server's day and each roster is
  * reported, and every other break besides.
  */
-export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVerifyResult> {
-  const entries = await sql.query<{ chain: string; seq: Num; day: string; body: string }>('SELECT chain, seq, day, body FROM dw_audit_entries ORDER BY chain, seq');
-  const anchors = await sql.query<{ day: string; server: string; seq: Num; body: string }>('SELECT day, server, seq, body FROM dw_audit_anchors ORDER BY day, server, seq');
-  const roster = await sql.query<{ day: string; seq: Num; body: string }>('SELECT day, seq, body FROM dw_audit_roster ORDER BY day, seq');
+export async function verifyPostgresAudit(sql: SqlQueryable, o: { pageSize?: number } = {}): Promise<PostgresVerifyResult> {
+  // Read a page at a time, in key order (keyset paging), keeping only what the checks need: per chain its
+  // newest intact seq and the newest seq an anchor names, per server and day its count of anchors. An
+  // anchor's entry, and a roster entry's anchor, are looked up a page at a time. So the memory a
+  // verification takes grows with the calls and the days, never with the entries.
+  const pageSize = Math.max(1, o.pageSize ?? VERIFY_PAGE_ROWS);
   const breaks: string[] = [];
-  /** Each chain's entries' hashes by seq, and its newest seq. */
-  const hashes = new Map<string, Map<number, string>>();
+  /** Each intact chain's newest seq, in chain order. */
+  const newest = new Map<string, number>();
   const brokenChains = new Set<string>();
-  let expected = 0;
-  let prev = GENESIS;
-  let current: string | null = null;
+  let chains = 0;
+  let entries = 0;
   // Every so many rows the server's other work runs (a voice call's turn): the console verifies on a live server.
   let walked = 0;
   const breathe = async (): Promise<void> => {
     if (++walked % VERIFY_YIELD_ROWS === 0) await new Promise<void>((r) => setImmediate(r));
   };
-  for (const row of entries.rows) {
-    await breathe();
-    const chain = row.chain;
-    if (chain !== current) {
-      current = chain;
-      expected = 1;
-      prev = GENESIS;
-      hashes.set(chain, new Map());
+  let expected = 0;
+  let prev = GENESIS;
+  let current: string | null = null;
+  for (let after: [string, number] | null = null; ;) {
+    const page: { rows: { chain: string; seq: Num; body: string }[] } = after === null
+      ? await sql.query<{ chain: string; seq: Num; body: string }>('SELECT chain, seq, body FROM dw_audit_entries ORDER BY chain, seq LIMIT $1', [pageSize])
+      : await sql.query<{ chain: string; seq: Num; body: string }>('SELECT chain, seq, body FROM dw_audit_entries WHERE (chain, seq) > ($1, $2) ORDER BY chain, seq LIMIT $3', [after[0], after[1], pageSize]);
+    for (const row of page.rows) {
+      await breathe();
+      entries += 1;
+      const chain = row.chain;
+      if (chain !== current) {
+        current = chain;
+        chains += 1;
+        expected = 1;
+        prev = GENESIS;
+      }
+      if (brokenChains.has(chain)) continue;
+      const seq = Number(row.seq);
+      const fail = (why: string): void => {
+        breaks.push(`call ${chain}: BROKEN at entry ${seq} (${why})`);
+        brokenChains.add(chain);
+        newest.delete(chain);
+      };
+      let e: AuditEntry;
+      try {
+        e = JSON.parse(row.body) as AuditEntry;
+      } catch {
+        fail('not JSON');
+        continue;
+      }
+      const { hash, ...rest } = e;
+      if (seq !== expected || e.seq !== seq) fail(seq !== expected ? `entry ${expected} is missing` : 'its seq is not its place');
+      else if (chainOf(e.callId, e.at.slice(0, 10)) !== chain) fail('it names another call');
+      else if (e.prevHash !== prev) fail('broken link');
+      else if (entryHash(rest) !== hash) fail('hash mismatch');
+      if (brokenChains.has(chain)) continue;
+      newest.set(chain, seq);
+      prev = hash;
+      expected = seq + 1;
     }
-    if (brokenChains.has(chain)) continue;
-    const seq = Number(row.seq);
-    const fail = (why: string): void => {
-      breaks.push(`call ${chain}: BROKEN at entry ${seq} (${why})`);
-      brokenChains.add(chain);
-    };
-    let e: AuditEntry;
-    try {
-      e = JSON.parse(row.body) as AuditEntry;
-    } catch {
-      fail('not JSON');
-      continue;
-    }
-    const { hash, ...rest } = e;
-    if (seq !== expected || e.seq !== seq) fail(seq !== expected ? `entry ${expected} is missing` : 'its seq is not its place');
-    else if (chainOf(e.callId, e.at.slice(0, 10)) !== chain) fail('it names another call');
-    else if (e.prevHash !== prev) fail('broken link');
-    else if (entryHash(rest) !== hash) fail('hash mismatch');
-    if (brokenChains.has(chain)) continue;
-    hashes.get(chain)!.set(seq, hash);
-    prev = hash;
-    expected = seq + 1;
+    if (page.rows.length < pageSize) break;
+    const last = page.rows.at(-1)!;
+    after = [last.chain, Number(last.seq)];
   }
   /** Each chain's newest seq that an anchor names. */
   const anchoredTo = new Map<string, number>();
-  /** Each server's anchors for each day, by seq: their hashes, which the roster names. */
-  const anchorHashes = new Map<string, Map<number, string>>();
   const days: PostgresVerifyResult['days'] = [];
   let key: string | null = null;
   let broken = false;
-  for (const row of anchors.rows) {
-    await breathe();
-    const k = `${row.day}/${row.server}`;
-    if (k !== key) {
-      key = k;
-      expected = 1;
-      prev = GENESIS;
-      broken = false;
-      days.push({ day: row.day, server: row.server, anchors: 0 });
-      anchorHashes.set(k, new Map());
+  for (let after: [string, string, number] | null = null; ;) {
+    const page: { rows: { day: string; server: string; seq: Num; body: string }[] } = after === null
+      ? await sql.query<{ day: string; server: string; seq: Num; body: string }>('SELECT day, server, seq, body FROM dw_audit_anchors ORDER BY day, server, seq LIMIT $1', [pageSize])
+      : await sql.query<{ day: string; server: string; seq: Num; body: string }>('SELECT day, server, seq, body FROM dw_audit_anchors WHERE (day, server, seq) > ($1, $2, $3) ORDER BY day, server, seq LIMIT $4', [after[0], after[1], after[2], pageSize]);
+    const parsed = page.rows.map((row) => {
+      try {
+        return JSON.parse(row.body) as AuditAnchor;
+      } catch {
+        return null;
+      }
+    });
+    // The entries this page's anchors name, as they are in the chains (their hashes, verified above for an intact chain).
+    const named = await entryHashes(sql, parsed.flatMap((a) => (a !== null && typeof a.callId === 'string' && Number.isInteger(a.callSeq) && !brokenChains.has(a.callId) ? [[a.callId, a.callSeq] as [string, number]] : [])));
+    for (const [i, row] of page.rows.entries()) {
+      await breathe();
+      const k = `${row.day}/${row.server}`;
+      if (k !== key) {
+        key = k;
+        expected = 1;
+        prev = GENESIS;
+        broken = false;
+        days.push({ day: row.day, server: row.server, anchors: 0 });
+      }
+      days.at(-1)!.anchors += 1;
+      const seq = Number(row.seq);
+      const fail = (why: string): void => {
+        if (!broken) breaks.push(`day ${row.day} (${row.server}): BROKEN at anchor ${seq} (${why})`);
+        broken = true;
+      };
+      const a = parsed[i];
+      if (a === null || a === undefined) {
+        fail('not JSON');
+        continue;
+      }
+      const { hash, ...rest } = a;
+      if (seq !== expected || a.seq !== seq || a.day !== row.day || a.server !== row.server) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq, day or server is not its place');
+      else if (a.prevHash !== prev) fail('broken link');
+      else if (anchorHash(rest) !== hash) fail('hash mismatch');
+      // Read on past a break (once said), so a call's chain is judged by every anchor there is.
+      if (!brokenChains.has(a.callId) && named.get(`${a.callId}\u0000${a.callSeq}`) !== a.callHash) {
+        breaks.push(`call ${a.callId}: BROKEN at entry ${a.callSeq} (anchored on ${row.day} by ${row.server}, and not there as anchored)`);
+        brokenChains.add(a.callId);
+        newest.delete(a.callId);
+      }
+      anchoredTo.set(a.callId, Math.max(anchoredTo.get(a.callId) ?? 0, a.callSeq));
+      prev = hash;
+      expected = seq + 1;
     }
-    days.at(-1)!.anchors += 1;
-    const seq = Number(row.seq);
-    const fail = (why: string): void => {
-      if (!broken) breaks.push(`day ${row.day} (${row.server}): BROKEN at anchor ${seq} (${why})`);
-      broken = true;
-    };
-    let a: AuditAnchor;
-    try {
-      a = JSON.parse(row.body) as AuditAnchor;
-    } catch {
-      fail('not JSON');
-      continue;
-    }
-    const { hash, ...rest } = a;
-    if (seq !== expected || a.seq !== seq || a.day !== row.day || a.server !== row.server) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq, day or server is not its place');
-    else if (a.prevHash !== prev) fail('broken link');
-    else if (anchorHash(rest) !== hash) fail('hash mismatch');
-    // Read on past a break (once said), so a call's chain is judged by every anchor there is.
-    if (!brokenChains.has(a.callId) && hashes.get(a.callId)?.get(a.callSeq) !== a.callHash) {
-      breaks.push(`call ${a.callId}: BROKEN at entry ${a.callSeq} (anchored on ${row.day} by ${row.server}, and not there as anchored)`);
-      brokenChains.add(a.callId);
-    }
-    anchoredTo.set(a.callId, Math.max(anchoredTo.get(a.callId) ?? 0, a.callSeq));
-    anchorHashes.get(k)!.set(seq, hash);
-    prev = hash;
-    expected = seq + 1;
+    if (page.rows.length < pageSize) break;
+    const last = page.rows.at(-1)!;
+    after = [last.day, last.server, Number(last.seq)];
   }
   // The roster of each day: every server's chain of anchors named, and each entry naming an anchor that is there.
   const rostered = new Set<string>();
   let rosterDay: string | null = null;
   let rosterBroken = false;
-  for (const row of roster.rows) {
-    await breathe();
-    if (row.day !== rosterDay) {
-      rosterDay = row.day;
-      expected = 1;
-      prev = GENESIS;
-      rosterBroken = false;
+  for (let after: [string, number] | null = null; ;) {
+    const page: { rows: { day: string; seq: Num; body: string }[] } = after === null
+      ? await sql.query<{ day: string; seq: Num; body: string }>('SELECT day, seq, body FROM dw_audit_roster ORDER BY day, seq LIMIT $1', [pageSize])
+      : await sql.query<{ day: string; seq: Num; body: string }>('SELECT day, seq, body FROM dw_audit_roster WHERE (day, seq) > ($1, $2) ORDER BY day, seq LIMIT $3', [after[0], after[1], pageSize]);
+    const parsed = page.rows.map((row) => {
+      try {
+        return JSON.parse(row.body) as RosterEntry;
+      } catch {
+        return null;
+      }
+    });
+    const anchorsNamed = await anchorHashesOf(sql, parsed.flatMap((r) => (r !== null && typeof r.day === 'string' && typeof r.server === 'string' && Number.isInteger(r.anchorSeq) ? [[r.day, r.server, r.anchorSeq] as [string, string, number]] : [])));
+    for (const [i, row] of page.rows.entries()) {
+      await breathe();
+      if (row.day !== rosterDay) {
+        rosterDay = row.day;
+        expected = 1;
+        prev = GENESIS;
+        rosterBroken = false;
+      }
+      const seq = Number(row.seq);
+      const fail = (why: string): void => {
+        if (!rosterBroken) breaks.push(`roster ${row.day}: BROKEN at entry ${seq} (${why})`);
+        rosterBroken = true;
+      };
+      const r = parsed[i];
+      if (r === null || r === undefined) {
+        fail('not JSON');
+        continue;
+      }
+      const { hash, ...rest } = r;
+      if (seq !== expected || r.seq !== seq || r.day !== row.day) fail(seq !== expected ? `entry ${expected} is missing` : 'its seq or day is not its place');
+      else if (r.prevHash !== prev) fail('broken link');
+      else if (rosterHash(rest) !== hash) fail('hash mismatch');
+      const k = `${r.day}/${r.server}`;
+      rostered.add(k);
+      if (anchorsNamed.get(`${k}\u0000${r.anchorSeq}`) !== r.anchorHash) breaks.push(`day ${r.day} (${r.server}): BROKEN at anchor ${r.anchorSeq} (named by the roster, and not there as named)`);
+      prev = hash;
+      expected = seq + 1;
     }
-    const seq = Number(row.seq);
-    const fail = (why: string): void => {
-      if (!rosterBroken) breaks.push(`roster ${row.day}: BROKEN at entry ${seq} (${why})`);
-      rosterBroken = true;
-    };
-    let r: RosterEntry;
-    try {
-      r = JSON.parse(row.body) as RosterEntry;
-    } catch {
-      fail('not JSON');
-      continue;
-    }
-    const { hash, ...rest } = r;
-    if (seq !== expected || r.seq !== seq || r.day !== row.day) fail(seq !== expected ? `entry ${expected} is missing` : 'its seq or day is not its place');
-    else if (r.prevHash !== prev) fail('broken link');
-    else if (rosterHash(rest) !== hash) fail('hash mismatch');
-    const k = `${r.day}/${r.server}`;
-    rostered.add(k);
-    if (anchorHashes.get(k)?.get(r.anchorSeq) !== r.anchorHash) breaks.push(`day ${r.day} (${r.server}): BROKEN at anchor ${r.anchorSeq} (named by the roster, and not there as named)`);
-    prev = hash;
-    expected = seq + 1;
+    if (page.rows.length < pageSize) break;
+    const last = page.rows.at(-1)!;
+    after = [last.day, Number(last.seq)];
   }
   for (const d of days) if (!rostered.has(`${d.day}/${d.server}`)) breaks.push(`day ${d.day} (${d.server}): its anchors are named in no roster`);
-  for (const [chain, seqs] of hashes) {
+  for (const [chain, top] of newest) {
     if (brokenChains.has(chain)) continue;
-    const newest = Math.max(0, ...seqs.keys());
     const anchored = anchoredTo.get(chain) ?? 0;
-    if (anchored < newest) breaks.push(`call ${chain}: BROKEN after entry ${anchored} (${newest - anchored} newer ${newest - anchored === 1 ? 'entry is' : 'entries are'} anchored nowhere)`);
+    if (anchored < top) breaks.push(`call ${chain}: BROKEN after entry ${anchored} (${top - anchored} newer ${top - anchored === 1 ? 'entry is' : 'entries are'} anchored nowhere)`);
   }
-  return { chains: hashes.size, entries: entries.rows.length, days, breaks };
+  return { chains, entries, days, breaks };
+}
+
+/** The hashes of the entries named (chain and seq), as their bodies hold them, by `<chain>\0<seq>`; one named twice is asked once. */
+async function entryHashes(sql: SqlQueryable, named: readonly [string, number][]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Map(named.map((n) => [`${n[0]}\u0000${n[1]}`, n])).values()];
+  for (let i = 0; i < unique.length; i += LOOKUP_ROWS) {
+    const part = unique.slice(i, i + LOOKUP_ROWS);
+    const rows = await sql.query<{ chain: string; seq: Num; body: string }>(
+      `SELECT chain, seq, body FROM dw_audit_entries WHERE (chain, seq) IN (${part.map((_, k) => `($${2 * k + 1}, $${2 * k + 2})`).join(', ')})`,
+      part.flat(),
+    );
+    for (const row of rows.rows) {
+      try {
+        const hash = (JSON.parse(row.body) as { hash?: unknown }).hash;
+        if (typeof hash === 'string') out.set(`${row.chain}\u0000${Number(row.seq)}`, hash);
+      } catch {
+        // Not JSON: no hash, so an anchor naming it is not there as anchored.
+      }
+    }
+  }
+  return out;
+}
+
+/** The hashes of the anchors named (day, server and seq), by `<day>/<server>\0<seq>`. */
+async function anchorHashesOf(sql: SqlQueryable, named: readonly [string, string, number][]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Map(named.map((n) => [`${n[0]}/${n[1]}\u0000${n[2]}`, n])).values()];
+  for (let i = 0; i < unique.length; i += LOOKUP_ROWS) {
+    const part = unique.slice(i, i + LOOKUP_ROWS);
+    const rows = await sql.query<{ day: string; server: string; seq: Num; body: string }>(
+      `SELECT day, server, seq, body FROM dw_audit_anchors WHERE (day, server, seq) IN (${part.map((_, k) => `($${3 * k + 1}, $${3 * k + 2}, $${3 * k + 3})`).join(', ')})`,
+      part.flat(),
+    );
+    for (const row of rows.rows) {
+      try {
+        const hash = (JSON.parse(row.body) as { hash?: unknown }).hash;
+        if (typeof hash === 'string') out.set(`${row.day}/${row.server}\u0000${Number(row.seq)}`, hash);
+      } catch {
+        // As above.
+      }
+    }
+  }
+  return out;
 }

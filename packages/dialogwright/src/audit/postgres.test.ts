@@ -221,3 +221,34 @@ describe('the audit in Postgres', () => {
     }
   });
 });
+
+describe('verifying a large audit a page at a time', () => {
+  it('reads every table in pages (bounded memory) and gives the same verdicts as in one page', async () => {
+    const { db, audit } = await fresh();
+    for (let c = 0; c < 60; c++) {
+      for (let t = 0; t < 4; t++) await audit.appendAll(`CA${String(c).padStart(3, '0')}`, 'voice', [draft('gate', { turn: t }), draft('tool_result', { turn: t })]);
+    }
+    await audit.enterHeads();
+    // What each query answers is counted: no page is larger than asked for.
+    let most = 0;
+    const counting = {
+      query: async <T,>(text: string, params?: unknown[]) => {
+        const r = await db.query<T>(text, params as never);
+        most = Math.max(most, r.rows.length);
+        return r;
+      },
+    } as unknown as Parameters<typeof verifyPostgresAudit>[0];
+    const whole = await verifyPostgresAudit(db);
+    expect(whole).toMatchObject({ chains: 60, entries: 480, breaks: [] });
+    expect(await verifyPostgresAudit(counting, { pageSize: 7 })).toEqual(whole);
+    expect(most).toBeLessThanOrEqual(7 * 2);
+    // Breaks found the same in pages: an edit, a deletion, a cut tail.
+    const e = (await db.query<{ body: string }>("SELECT body FROM dw_audit_entries WHERE chain = 'CA010' AND seq = 3")).rows[0]!.body;
+    await db.query("UPDATE dw_audit_entries SET body = $1 WHERE chain = 'CA010' AND seq = 3", [e.replace('"turn":1', '"turn":9')]);
+    await db.query("DELETE FROM dw_audit_entries WHERE chain = 'CA020' AND seq = 4");
+    await db.query("DELETE FROM dw_audit_entries WHERE chain = 'CA030' AND seq = 8");
+    const broken = await verifyPostgresAudit(db);
+    expect(broken.breaks).toHaveLength(3);
+    expect(await verifyPostgresAudit(counting, { pageSize: 7 })).toEqual(broken);
+  });
+});
