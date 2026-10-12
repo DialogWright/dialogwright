@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright guide: scaling out (a design)</title>
-  <meta name="description" content="How DialogWright runs on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in), the shared Postgres store built so far, and what many servers add next, Phase 8b.">
+  <meta name="description" content="How DialogWright runs on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in), the shared Postgres store, audit, traces on object storage and console built so far, and what many servers add next, Phase 8b.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -60,8 +60,8 @@
           resumes on a restarted server, writes carry idempotency keys, the server says when it is ready and drains before it
           stops, and the console has a sign-in. Running on many servers on top of those seams is Phase 8b of the
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>, being built: its
-          first part, the session store many servers share (<code>SESSION_STORE=postgres://...</code>, one server running a call at a
-          time), is built; the rest is designed. Each section below says which is which, and where this page names a setting or a
+          first parts, the session store many servers share (<code>SESSION_STORE=postgres://...</code>, one server running a call at a
+          time), the audit in Postgres, traces on S3-compatible storage and the console across servers, are built; the rest is designed. Each section below says which is which, and where this page names a setting or a
           command that does not exist yet, it says so.</p>
         <p><strong>One server is the right answer for most people.</strong> A single process answers a personal line or a small
           office's without strain; <a href="home-server.html">run it on a machine you own</a>. Scale out when you need a deploy that
@@ -195,8 +195,10 @@
           <li><strong>Shared stores</strong>: sessions and the audit log in Postgres; traces in object storage; console
             events over Postgres's <code>LISTEN</code>/<code>NOTIFY</code>. Each is chosen by configuration, one at a time:
             <code>SESSION_STORE</code> takes <code>memory</code>, <code>file:&lt;dir&gt;</code> or <code>postgres://...</code>
-            today (a Redis store may follow behind the same contract); the audit, traces and console events are Phase 8b's next
-            part.</li>
+            today (a Redis store may follow behind the same contract); <code>AUDIT_STORE</code> takes <code>postgres://...</code>,
+            <code>TRACE_STORE</code> takes <code>s3://&lt;bucket&gt;/&lt;prefix&gt;</code> (AWS S3, Cloudflare R2, MinIO), and the
+            console's events go over the session database with <code>SESSION_STORE=postgres://...</code>; unset, each is one
+            machine's, as it was.</li>
           <li><strong>A starter setup</strong> on a container platform with WebSockets: two instances and a managed
             Postgres. <strong>Production</strong> on containers across availability zones. <strong>A second region</strong>
             later, as the carrier's fallback target.</li>
@@ -205,7 +207,8 @@
           <li><strong>Locally</strong>, the plan has a <code>docker compose</code> stack with Postgres, an object-storage stand-in,
             two instances and a load balancer, where the kill-an-instance test runs (planned, Phase 8b). Its in-process version runs
             in every test run today: <code>server/manyServers.e2e.test.ts</code> puts two servers on one Postgres (PGlite, in the
-            process) behind a balancer, kills or drains the one with the call, and the other resumes it; and
+            process) and one in-process S3 store behind a balancer, kills or drains the one with the call, and the other resumes it,
+            with one trace, one verifying audit chain and one console across both; and
             <code>server/restart.e2e.test.ts</code> kills one server mid-call and resumes the call on a new process.</li>
         </ul>
       </section>
@@ -253,18 +256,22 @@
                 <td data-label="State">The audit chain</td>
                 <td data-label="Today (in the code)">One hash chain per UTC day file in <code>AUDIT_DIR</code> (<code>audit/log.ts</code>), continued from the file's
                   last line when the process starts.</td>
-                <td data-label="Across instances">Two processes appending to one day file would fork the chain. The design: Postgres, a hash chain per session,
-                  each session's final hash anchored into a daily chain.</td>
+                <td data-label="Across instances">Two processes appending to one day file would fork the chain. Built: <code>AUDIT_STORE=postgres://...</code>,
+                  a hash chain per call, chained under a lock on the call so servers appending at once never fork it, each call's newest hash
+                  anchored into a chain for the day; <code>pnpm audit:verify postgres://...</code> walks both.</td>
               </tr>
               <tr>
                 <td data-label="State">Traces and frame logs</td>
                 <td data-label="Today (in the code)">Two JSONL files per call in <code>TRACE_DIR</code>.</td>
-                <td data-label="Across instances">Object storage. A call that moves instance mid-call must continue one trace, not start a second.</td>
+                <td data-label="Across instances">Built: <code>TRACE_STORE=s3://...</code>. Each instance writes its own segments under the call's id,
+                  named by the turn they start at, and one reader joins them for the console, replay and <code>kb:gaps</code>, so a call
+                  that moved reads as one trace. Signed with AWS Signature Version 4 by the engine's own code, no SDK.</td>
               </tr>
               <tr>
                 <td data-label="State">Console events</td>
                 <td data-label="Today (in the code)">An in-process bus (<code>DashboardBus</code>).</td>
-                <td data-label="Across instances">Postgres's <code>LISTEN</code>/<code>NOTIFY</code>, so the console sees every instance's calls (Phase 8b, next).</td>
+                <td data-label="Across instances">Built: over Postgres's <code>LISTEN</code>/<code>NOTIFY</code> (a row and a notify of its id, past
+                  the 8000-byte limit), redacted as on one machine, so the console sees every instance's calls.</td>
               </tr>
               <tr>
                 <td data-label="State">The knowledge base's index</td>
@@ -313,9 +320,10 @@
         <p>
           A chat outlives its socket: the client reconnects with the resume token from the last <code>ready</code> and carries on, until
           <code>CHAT_IDLE_MS</code> of quiet ends it. Today the session lives on the machine that started it (and, with the file store,
-          survives that server's restart), so a resume reaches only that machine. Across instances, the session and its resume token live in the shared store, a resume rotates
-          the token there, and a resume that takes a chat over must close the old socket on whichever instance holds it (over the same
-          pub/sub the console uses). The widget needs no change: it already reconnects and resumes with backoff.
+          survives that server's restart), so a resume reaches only that machine. Across instances (built), the session and its resume
+          token live in the shared store, a resume rotates the token there, and a resume that takes a chat over closes the old socket on
+          whichever instance holds it, over the same notices the console uses. The widget needs no change: it already reconnects and
+          resumes with backoff.
         </p>
       </section>
 
@@ -359,8 +367,8 @@
           through the tunnel by <code>CONSOLE_AUTH=token</code>'s one-time sign-in link (an HMAC-signed session cookie, rate-limited
           sign-ins, a strict Content-Security-Policy), with each sign-in and replay in the audit. Across
           instances it becomes its own role (<code>--role console</code>), internal only, behind single sign-on or a VPN, reading the
-          shared stores. The design adds roles (viewer, supervisor, admin) to the sign-in, and the
-          access log of who replayed which call goes to the shared audit store.
+          shared stores. With <code>AUDIT_STORE</code>, the access log of who replayed which call already goes to the shared audit (built).
+          The design adds roles (viewer, supervisor, admin) to the sign-in.
         </p>
       </section>
 
@@ -420,7 +428,8 @@
           Phase 8, local-first on a machine you own, is done: the store interfaces and their contract suite, a file store, resume
           after a restart, idempotent writes, readiness and drain, retention, service files, carrier fallback documents and console
           sign-in, proved by the kill-the-server test. Phase 8b, many servers, is being built: the session store in Postgres passing
-          the same contract suite, with one owner per call, is built and proved by the in-process two-server test; next come the audit in Postgres, traces in object storage, console events over pub/sub, <code>--role</code>, a container image
+          the same contract suite, with one owner per call, the audit in Postgres, traces on S3-compatible storage and console events over
+          the database are built and proved by the in-process two-server test; next come <code>--role</code>, a container image
           and a <code>docker compose</code> stack where the kill-an-instance test runs, and console roles with single sign-on.
           Laptop mode stays first-class throughout: the same code runs in every mode, and the contract suite keeps the implementations honest.
         </p>

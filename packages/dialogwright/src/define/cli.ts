@@ -29,7 +29,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
  *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
  *   dialogwright configure | start | diagnose | service | fallback | console:link   (../server: running an app)
- *   dialogwright audit:verify [dir]                 (../audit/verifyCli.ts: each audit day file's hash chain)
+ *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
  *   dialogwright help
  *
  * `check` checks each app folder `dir` (a folder with app.yaml): see ./check.ts for what that is. One line
@@ -64,7 +64,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['service', 'a launchd or systemd service file with this machine\'s paths; prints the install commands'],
   ['fallback', 'the document a carrier plays when it cannot reach the server'],
   ['console:link', 'a new one-time sign-in link for the console (CONSOLE_AUTH=token)'],
-  ['audit:verify', "each audit day file's hash chain; exit 1 at the first break"],
+  ['audit:verify', "each audit day file's hash chain, or the audit in Postgres (a postgres:// URL); exit 1 at the first break"],
   ['kb:model', 'download the pinned embedding model, checking its SHA-256'],
   ['kb:index', "write a knowledge base's vector index after its topics change"],
   ['kb:bakeoff', 'compare the retrievers on paraphrases offline'],
