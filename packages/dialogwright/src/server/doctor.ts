@@ -13,6 +13,11 @@ import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
 import { maskConnectionString, maskSecrets, openPgClient, PgUnavailableError, type SqlClient } from './stores/sql';
 import { databaseNowMs, POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } from './stores/postgres';
+import { NOTICE_TABLES, NOTICES_SCHEMA_VERSION } from './stores/notices';
+import { AUDIT_SCHEMA_VERSION, AUDIT_TABLES, probeAuditWrite } from '../audit/postgres';
+import { describeTraceStore, type S3TraceSetting } from '../trace/store';
+import { S3Client } from '../trace/s3/client';
+import { randomBytes } from 'node:crypto';
 
 /**
  * `[ENV_FILE=<path>] pnpm diagnose [--app <name>] [--offline]`: what is misconfigured, before a caller
@@ -37,7 +42,12 @@ import { databaseNowMs, POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } fro
  *      on a temporary filesystem a reboot empties, and is not readable by others; with SESSION_STORE=
  *      postgres://... (not with --offline), the database answers, its session tables are at the version
  *      this server reads (or not made yet), and this server can take a test lease and give it up. The
- *      connection string is said with its password masked, and so is any message the driver gives.
+ *      connection string is said with its password masked, and so is any message the driver gives;
+ *  11. with AUDIT_STORE=postgres://... (not with --offline), the database answers, its audit tables are at
+ *      the version this server reads (or not made yet), and an entry can be written (in a transaction
+ *      rolled back, so the audit is never written to by a check);
+ *  12. with TRACE_STORE=s3://... (not with --offline), the bucket takes a small test object, gives it
+ *      back and deletes it, under the prefix and outside any call's folder. Neither key is ever said.
  *
  * It calls no carrier and no model: the only requests are DNS, two GETs to the server's own address
  * (three with CONSOLE_AUTH=token), one HEAD with no key and no body to a host the setup already relies
@@ -45,7 +55,7 @@ import { databaseNowMs, POSTGRES_SCHEMA_VERSION, probeLease, schemaVersion } fro
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'space' | 'clock';
+export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -66,6 +76,8 @@ export interface DoctorDeps {
   temporary?(dir: string): boolean;
   /** A connection to SESSION_STORE's Postgres (the check closes it); the pg driver's when absent. Tests give PGlite. */
   postgres?(url: string): Promise<SqlClient>;
+  /** How TRACE_STORE's bucket is reached (check 12); the global fetch when absent. Tests give their own store. */
+  s3Fetch?: typeof fetch;
 }
 
 export const defaultDoctorDeps: DoctorDeps = {
@@ -297,6 +309,9 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   // 10. The session store's folder, when there is one (the memory store has none to check), or its database.
   if (config.sessionStore?.kind === 'file') results.push(storeCheck(resolve(o.cwd, config.sessionStore.dir), deps.temporary ?? onTemporaryFilesystem));
   if (config.sessionStore?.kind === 'postgres') results.push(await postgresCheck(config.sessionStore.url, o.offline === true, deps));
+  // 11. The audit's database, and 12. the trace store's bucket, when they are set.
+  if (config.auditStore) results.push(await auditStoreCheck(config.auditStore.url, o.offline === true, deps));
+  if (config.traceStore) results.push(await traceStoreCheck(config.traceStore, o.offline === true, deps));
 
   // 8. The space.
   const free = [traceDir, auditDir].map((d) => deps.freeBytes(nearestExisting(d))).filter((n): n is number => n !== null);
@@ -477,9 +492,73 @@ async function postgresCheck(url: string, offline: boolean, deps: DoctorDeps): P
     } catch {
       // Said without it.
     }
+    // The notices between the servers (the console's events, a chat moved), made beside the session tables.
+    try {
+      const notices = await schemaVersion(sql, NOTICE_TABLES.row);
+      if (notices !== null && notices !== NOTICES_SCHEMA_VERSION) {
+        return { id: 'store', status: 'fail', message: `${named}: its notice table is version ${notices}, and this server reads ${NOTICES_SCHEMA_VERSION}`, fix: 'run the server that made it, or point SESSION_STORE at another database' };
+      }
+    } catch {
+      // Read with the session tables' version just above; a failure here is said by the server at start.
+    }
     return { id: 'store', status: 'ok', message: `${named} answers, its session tables are version ${version}, and a test lease was taken and given up: the servers on it share their calls${offset}` };
   } finally {
     await sql.close().catch(() => undefined);
+  }
+}
+
+/** Check 11 with AUDIT_STORE=postgres://...: reachable, the audit tables' version, and an entry written in a transaction undone. Never the password. */
+async function auditStoreCheck(url: string, offline: boolean, deps: DoctorDeps): Promise<CheckResult> {
+  const named = `AUDIT_STORE ${maskConnectionString(url)}`;
+  const unreachable = UNREACHABLE_DB.replace('SESSION_STORE', 'AUDIT_STORE');
+  if (offline) return { id: 'audit', status: 'skip', message: `${named}: not asked (--offline)` };
+  let sql: SqlClient;
+  try {
+    sql = await (deps.postgres ?? ((u: string) => openPgClient(u, { max: 1, connectTimeoutMs: ASK_MS })))(url);
+  } catch (err) {
+    if (err instanceof PgUnavailableError) return { id: 'audit', status: 'fail', message: `${named}: the pg package is not installed here`, fix: 'pnpm add pg (or npm install pg) in the project' };
+    return { id: 'audit', status: 'fail', message: `${named}: ${maskSecrets(dbMessage(err), url)}`, fix: unreachable };
+  }
+  try {
+    let version: number | null;
+    try {
+      version = await schemaVersion(sql, AUDIT_TABLES.row);
+    } catch (err) {
+      return { id: 'audit', status: 'fail', message: `${named} cannot be reached: ${maskSecrets(dbMessage(err), url)}`, fix: unreachable };
+    }
+    if (version === null) return { id: 'audit', status: 'ok', message: `${named} answers; its audit tables are made when the server first starts (version ${AUDIT_SCHEMA_VERSION})` };
+    if (version !== AUDIT_SCHEMA_VERSION) {
+      return {
+        id: 'audit', status: 'fail', message: `${named}: its audit tables are version ${version}, and this server reads ${AUDIT_SCHEMA_VERSION}`,
+        fix: version > AUDIT_SCHEMA_VERSION ? 'run the newer server, or point AUDIT_STORE at another database' : 'point AUDIT_STORE at a new database, or run the server that made them',
+      };
+    }
+    try {
+      await probeAuditWrite(sql);
+    } catch (err) {
+      return { id: 'audit', status: 'fail', message: `${named}: an entry could not be written: ${maskSecrets(dbMessage(err), url)}`, fix: 'give the user in AUDIT_STORE the right to read and insert into dw_audit_entries and dw_audit_anchors' };
+    }
+    return { id: 'audit', status: 'ok', message: `${named} answers, its audit tables are version ${version}, and an entry can be written (tried in a transaction undone): pnpm audit:verify reads it` };
+  } finally {
+    await sql.close().catch(() => undefined);
+  }
+}
+
+/** Check 12 with TRACE_STORE=s3://...: a small object written, read back and deleted, outside any call's folder. Never a key. */
+async function traceStoreCheck(setting: S3TraceSetting, offline: boolean, deps: DoctorDeps): Promise<CheckResult> {
+  const named = `TRACE_STORE ${describeTraceStore(setting)}`;
+  if (offline) return { id: 'traces', status: 'skip', message: `${named}: not asked (--offline)` };
+  const client = new S3Client(setting, { timeoutMs: ASK_MS, ...(deps.s3Fetch ? { fetch: deps.s3Fetch } : {}) });
+  const key = `${setting.prefix}dw-diagnose-${randomBytes(4).toString('hex')}.txt`;
+  const fix = 'check S3_ENDPOINT, S3_REGION, the bucket, and that S3_ACCESS_KEY_ID may put, get, list and delete under the prefix (and S3_FORCE_PATH_STYLE=on for a store such as MinIO)';
+  try {
+    await client.put(key, 'dialogwright diagnose\n');
+    const back = await client.get(key);
+    await client.delete(key);
+    if (back !== 'dialogwright diagnose\n') return { id: 'traces', status: 'fail', message: `${named}: a test object came back other than it was written`, fix };
+    return { id: 'traces', status: 'ok', message: `${named} takes a test object, gives it back and deletes it: each server writes its calls' segments there` };
+  } catch (err) {
+    return { id: 'traces', status: 'fail', message: `${named}: ${err instanceof Error ? err.message : String(err)}`, fix };
   }
 }
 

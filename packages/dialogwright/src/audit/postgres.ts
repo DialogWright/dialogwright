@@ -180,6 +180,27 @@ export async function openPostgresAudit(given: SqlClient, o: { now?: () => numbe
   return new PostgresAuditLog(sql, o.now);
 }
 
+/** Thrown to undo the probe's transaction. */
+class ProbeUndone extends Error {}
+
+/**
+ * Whether an entry and an anchor can be written (pnpm diagnose): both inserted in one transaction that
+ * is then rolled back, so a check never writes to the audit. Throws, saying what failed, when they cannot.
+ */
+export async function probeAuditWrite(sql: SqlClient): Promise<void> {
+  const chain = `dw-diagnose-${createHash('sha256').update(String(Math.random())).digest('hex').slice(0, 8)}`;
+  try {
+    await sql.transaction(async (tx) => {
+      await tx.query('INSERT INTO dw_audit_entries (chain, seq, day, body) VALUES ($1, 1, $2, $3)', [chain, '0000-00-00', '{}']);
+      await tx.query('INSERT INTO dw_audit_anchors (day, seq, body) VALUES ($1, 1, $2)', [chain, '{}']);
+      throw new ProbeUndone('undone');
+    });
+  } catch (err) {
+    if (err instanceof ProbeUndone) return;
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Verifying
 // ---------------------------------------------------------------------------------------------

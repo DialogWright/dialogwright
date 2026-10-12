@@ -8,6 +8,9 @@ import { PGlite } from '@electric-sql/pglite';
 import { formatResult, main, runDoctor, settingsFileCheck, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
+import { openPostgresAudit } from '../audit/postgres';
+import { FakeS3 } from '../testing/fakeS3';
+import type { SqlClient } from './stores/sql';
 import { PgUnavailableError } from './stores/sql';
 
 /**
@@ -487,6 +490,63 @@ describe('pnpm diagnose', () => {
         const r = byId(await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir, offline: true }, { ...deps(), ...p }), 'store');
         expect(r).toEqual({ id: 'store', status: 'skip', message: `SESSION_STORE ${MASKED}: not asked (--offline)` });
         expect(p.asked).toEqual([]);
+      });
+    });
+
+    describe('with AUDIT_STORE=postgres://... (check 11)', () => {
+      const URL_WITH_PASSWORD = 'postgres://audit:s3cret-pw@db.example:5432/records';
+      const MASKED = 'postgres://audit:***@db.example:5432/records';
+
+      it('passes a database at this version where an entry can be written, writing nothing; says one not made yet; never the password', async () => {
+        const dir = tempDir();
+        const db = await PGlite.create();
+        try {
+          const postgres = async (): Promise<SqlClient> => pgliteSql(db);
+          const fresh = byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres }), 'audit');
+          expect(fresh).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers; its audit tables are made when the server first starts (version 1)` });
+          await openPostgresAudit(pgliteSql(db));
+          const results = await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres });
+          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'audit', 'space', 'clock']);
+          expect(byId(results, 'audit')).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers, its audit tables are version 1, and an entry can be written (tried in a transaction undone): pnpm audit:verify reads it` });
+          expect((await db.query('SELECT * FROM dw_audit_entries')).rows).toEqual([]);
+          expect((await db.query('SELECT * FROM dw_audit_anchors')).rows).toEqual([]);
+          expect(JSON.stringify(results)).not.toContain('s3cret-pw');
+          await db.query("UPDATE dw_schema SET version = 2 WHERE name = 'audit'");
+          expect(byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres }), 'audit')).toEqual({
+            id: 'audit', status: 'fail', message: `AUDIT_STORE ${MASKED}: its audit tables are version 2, and this server reads 1`, fix: 'run the newer server, or point AUDIT_STORE at another database',
+          });
+          const offline = byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir, offline: true }, { ...deps(), postgres: async () => { throw new Error('asked'); } }), 'audit');
+          expect(offline).toEqual({ id: 'audit', status: 'skip', message: `AUDIT_STORE ${MASKED}: not asked (--offline)` });
+        } finally {
+          await db.close();
+        }
+      });
+    });
+
+    describe('with TRACE_STORE=s3://... (check 12)', () => {
+      const KEYS = { accessKeyId: 'AKIDDIAGNOSE', secretAccessKey: 'diagnose-secret-never-said' };
+
+      it('writes a test object, reads it back and deletes it; fails a store that refuses, saying why and never a key', async () => {
+        const dir = tempDir();
+        const s3 = await FakeS3.start({ bucket: 'call-traces', region: 'us-east-1', credentials: KEYS });
+        try {
+          const env = { ...goodEnv(dir), TRACE_STORE: 's3://call-traces/prod', S3_ENDPOINT: s3.endpoint, S3_ACCESS_KEY_ID: KEYS.accessKeyId, S3_SECRET_ACCESS_KEY: KEYS.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' };
+          const ok = byId(await runDoctor({ env, cwd: dir }, deps()), 'traces');
+          expect(ok).toEqual({ id: 'traces', status: 'ok', message: `TRACE_STORE s3://call-traces/prod/ at 127.0.0.1:${s3.port} (us-east-1) takes a test object, gives it back and deletes it: each server writes its calls' segments there` });
+          expect(s3.objects.size).toBe(0);
+          expect(s3.requests.map((r) => r.method)).toEqual(['PUT', 'GET', 'DELETE']);
+          expect(s3.requests[0]!.key).toMatch(/^prod\/dw-diagnose-[0-9a-f]{8}\.txt$/);
+          const wrong = byId(await runDoctor({ env: { ...env, S3_SECRET_ACCESS_KEY: 'not-the-secret' }, cwd: dir }, deps()), 'traces');
+          expect(wrong.status).toBe('fail');
+          expect(wrong.message).toMatch(/^TRACE_STORE s3:\/\/call-traces\/prod\/ at 127\.0\.0\.1:\d+ \(us-east-1\): S3 put prod\/dw-diagnose-[0-9a-f]{8}\.txt: 403 SignatureDoesNotMatch$/);
+          expect(JSON.stringify(wrong)).not.toContain('not-the-secret');
+          expect(JSON.stringify(wrong)).not.toContain(KEYS.accessKeyId);
+          const before = s3.requests.length;
+          expect(byId(await runDoctor({ env, cwd: dir, offline: true }, deps()), 'traces').status).toBe('skip');
+          expect(s3.requests.length).toBe(before);
+        } finally {
+          await s3.close();
+        }
       });
     });
 
