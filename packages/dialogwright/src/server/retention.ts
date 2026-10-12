@@ -165,14 +165,18 @@ export interface DiskUsage {
  * How much the trace and audit folders hold, counted at most once a minute (`/health` may be asked
  * often); with `warnFreeBytes` (DISK_WARN_FREE_GB), the free space beside it and whether it is low.
  */
-export function diskUsageCache(traceDir: string, auditDir: string, now: () => number, everyMs = 60_000, warnFreeBytes?: number, freeBytes: (dir: string) => number | null = freeBytesAt): () => DiskUsage {
+export function diskUsageCache(traceDir: string | readonly string[], auditDir: string | readonly string[], now: () => number, everyMs = 60_000, warnFreeBytes?: number, freeBytes: (dir: string) => number | null = freeBytesAt): () => DiskUsage {
+  // On a server of several apps (host.yaml), each app's folders, counted together.
+  const traceDirs = typeof traceDir === 'string' ? [traceDir] : traceDir;
+  const auditDirs = typeof auditDir === 'string' ? [auditDir] : auditDir;
+  const sum = (dirs: readonly string[]): number => dirs.reduce((n, d) => n + bytesIn(d), 0);
   let last: { at: number; usage: DiskUsage } | null = null;
   return () => {
     const t = now();
     if (last === null || t - last.at >= everyMs) {
-      const usage: DiskUsage = { traceBytes: bytesIn(traceDir), auditBytes: bytesIn(auditDir) };
+      const usage: DiskUsage = { traceBytes: sum(traceDirs), auditBytes: sum(auditDirs) };
       if (warnFreeBytes !== undefined) {
-        const free = [freeBytes(traceDir), freeBytes(auditDir)].filter((n): n is number => n !== null);
+        const free = [...traceDirs, ...auditDirs].map((d) => freeBytes(d)).filter((n): n is number => n !== null);
         usage.freeBytes = free.length === 0 ? null : Math.min(...free);
         usage.low = usage.freeBytes !== null && usage.freeBytes < warnFreeBytes;
       }

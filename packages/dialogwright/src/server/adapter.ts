@@ -1166,6 +1166,14 @@ export interface ConnectionContext {
   closed?: boolean;
 }
 
+/** A host's side of the adapter (AdapterDeps.host). */
+export interface AdapterHost {
+  /** The app a new call starts in: the one its start document named (HOST_APP_PARAMETER), else the one the setup's number called reaches, else the default. */
+  appOfSetup(provider: string, setup: SetupFrame): string;
+  /** An app's transfer targets, by its id. */
+  transferOf(appId: string): ServerTransfer | null;
+}
+
 export interface AdapterDeps {
   store: SessionStore;
   tokens: ServerTokenStore;
@@ -1206,6 +1214,11 @@ export interface AdapterDeps {
    * SIP host) masked. Absent or null, HANDOFF_NUMBER's, as before.
    */
   transfer?: ServerTransfer | null;
+  /**
+   * Several apps on one server (host.yaml, server/host.ts): the app a new call's setup starts it in, and
+   * each app's transfer targets. Absent, every call is in the default app, with `transfer`, as before.
+   */
+  host?: AdapterHost;
   /**
    * Where each of the app's downstream services (App.services) is reached, by name. A service with no
    * url is not running, and a request to it is answered at once with no result.
@@ -1537,7 +1550,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     if (run.result.decision.kind === 'handoff') {
       // The number the server dials for the target the engine chose (its transfer), masked; HANDOFF_NUMBER's without one.
       const chosen = run.result.decision.transfer;
-      const number = chosen !== undefined && deps.transfer ? maskTarget(targetNumber(deps.transfer, deps.handoffNumber ?? '', chosen.target)) : maskNumber(deps.handoffNumber);
+      const transfer = deps.host ? deps.host.transferOf(entry.session.appId) : deps.transfer;
+      const number = chosen !== undefined && transfer ? maskTarget(targetNumber(transfer, deps.handoffNumber ?? '', chosen.target)) : maskNumber(deps.handoffNumber);
       publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number });
       fireHandoffSummary(deps, entry);
     }
@@ -1796,7 +1810,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     });
     return;
   }
-  const entry = deps.store.create(callId, socket, ctx.provider);
+  // On a host, the app its number reached; on a server of one, the default, as before.
+  const entry = deps.host ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(ctx.provider, parsed)) : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
   entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
@@ -1820,6 +1835,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
     // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
     channel: 'voice', provider: ctx.provider, caller: null,
+    // On a host, which app the call is in, for the console's app on each row and its filter.
+    ...(deps.host ? { app: entry.session.appId } : {}),
   });
   // Open the connection to the model while the greeting plays, so the caller's first answer does
   // not pay for its setup. Not awaited and never allowed to fail the call; a reconnect keeps the

@@ -336,6 +336,7 @@
 {{links}}    <button id="presenter" title="Larger type for a screen share">Presenter (P)</button>
   </div>
   <div class="controls">
+    <select id="appfilter" hidden title="Which app's calls to show"></select>
     <span id="conn" class="mono"></span>
     <span class="rc"><button id="mode-live" class="on">Live</button> <button id="mode-replay">Replay</button></span>
   </div>
@@ -373,8 +374,24 @@
   import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK } from '/dashboard/view.js';
 
   /** The app this console serves (src/server/dashboard/meta.ts ConsoleMeta), put in by the server as it serves the page. */
-  const APP = {{meta}};
+  const PAGE = {{meta}};
+  /** The app whose words the page shows now: the page's, or on a host the app of the call shown (useApp). */
+  let APP = PAGE;
   configure(APP);
+  /** On a server of several apps (host.yaml): every app, with its name and console words, the default first; null on a server of one. */
+  const HOST_APPS = Array.isArray(PAGE.apps) ? PAGE.apps : null;
+  /** On a host, the app the page shows alone (`?app=<id>`), or null for every app's calls. */
+  const FILTER = HOST_APPS ? (PAGE.filter ?? null) : null;
+  /** On a host: shows a call in its own app's words, its name and mark in the header. */
+  function useApp(id) {
+    if (!HOST_APPS) return;
+    const found = HOST_APPS.find((a) => a.id === id);
+    if (!found || APP === found.meta) return;
+    APP = found.meta;
+    configure(APP);
+    document.querySelector('.brand .mark').textContent = APP.brand.mark;
+    document.querySelector('.brand .title').firstChild.textContent = `${APP.brand.name} `;
+  }
 
   /**
    * Replay ticks are drawn against today's defaults, mirrored from src/core/thresholds.ts
@@ -433,6 +450,8 @@
     mode: 'live',
     /** Live: the events received so far, the highest sequence number seen, and the call they belong to. */
     events: [], lastSeq: -1, callSid: null, es: null,
+    // On a host showing one app: the live calls of the others, not shown.
+    elsewhere: new Set(),
     /** Replay: the whole synthesized event list, how many of them are shown, and the trace they came from. */
     all: [], cursor: 0, sid: null,
     /** Where → and ← land in `all` (view.js's replayStops): a keypad entry is one step. */
@@ -475,7 +494,6 @@
 
   // ---------- wording ----------
 
-  const LEVELS = APP.levels;
   const STAGES = [['screen', 'Screen'], ['perception', 'Perception'], ['policy', 'Policy'], ['gate', 'Gate'], ['audit', 'Audit']];
   /** STEP_UP reads STEP-UP; a lower-case label such as `route:check_status` reads with spaces. */
   const verdictText = (v) => String(v ?? '').replace(/_/g, '-');
@@ -883,7 +901,7 @@
     badge.className = `badge level l${level}${acc.levelOn ? ' pulse' : ''}`;
     if (acc.levelRose) restart(badge, 'pulse');
     // On a chat, level 2 is the portal's own sign-in, never a texted code.
-    const label = chat && level === 2 ? 'portal sign-in' : LEVELS[level];
+    const label = chat && level === 2 ? 'portal sign-in' : APP.levels[level];
     badge.innerHTML = `<span class="pips"><i></i><i></i></span><span><span class="k">Level ${level}:</span> ${esc(label)}</span>`;
     const p50 = Math.round(num(t.p50AskMs) ?? 0);
     el('totals').innerHTML = `<span><b>${esc(v.turnCount)}</b> turns</span><span><b>$${(num(t.usd) ?? 0).toFixed(4)}</b></span><span>p50 ask <b>${p50}</b> ms</span>`;
@@ -1001,6 +1019,13 @@
       try { event = JSON.parse(m.data); } catch { return; }
       if (!event || typeof event !== 'object') return;
       el('conn').textContent = '';
+      // On a host showing one app (?app=), another app's calls are not shown; with every app's, each
+      // call in its own app's words.
+      if (HOST_APPS && event.type === 'call_started' && typeof event.app === 'string') {
+        if (FILTER !== null && event.app !== FILTER) { state.elsewhere.add(event.callSid); return; }
+        useApp(event.app);
+      }
+      if (state.elsewhere.has(event.callSid)) return;
       // A new call resets both the list and the sequence watermark: the bus starts its history
       // over, and a restarted server starts its numbering over too.
       if (event.type === 'call_started' && event.callSid !== state.callSid) {
@@ -1048,7 +1073,7 @@
     if (state.es) { state.es.close(); state.es = null; }
     el('conn').textContent = '';
     showControls();
-    const rows = (await json('/dashboard/traces')) ?? [];
+    const rows = (await json(`/dashboard/traces${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`)) ?? [];
     const list = Array.isArray(rows) ? rows : [];
     state.traceRows = list;
     fillTraces();
@@ -1114,6 +1139,8 @@
     // Re-fetched every time, including a trace this page already showed: entering Replay while a
     // call is still in progress must pick up whatever turns have landed since.
     const data = await json(`/dashboard/traces/${encodeURIComponent(sid)}`);
+    // On a host, the replay in its own app's words.
+    if (data && typeof data.app === 'string') useApp(data.app);
     const records = data && Array.isArray(data.records) ? data.records : [];
     const frames = data && Array.isArray(data.frames) ? data.frames : [];
     const deliveries = data && Array.isArray(data.deliveries) ? data.deliveries : [];
@@ -1202,6 +1229,14 @@
   el('presenter').addEventListener('click', (e) => { e.currentTarget.blur(); setPresenter(!document.body.classList.contains('presenter')); });
   // The app's own pages (ConsoleMeta.links), each in a window of its own that a second click reuses.
   for (const link of APP.links) el(link.id).addEventListener('click', () => { window.open(link.href, link.target, link.features); });
+  // On a host: which app's calls the page shows, every app's or one's (`/dashboard?app=<id>`).
+  if (HOST_APPS) {
+    const pickApp = el('appfilter');
+    pickApp.innerHTML = ['<option value="">All apps</option>', ...HOST_APPS.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)].join('');
+    pickApp.value = FILTER ?? '';
+    pickApp.hidden = false;
+    pickApp.addEventListener('change', () => { location.search = pickApp.value ? `?app=${encodeURIComponent(pickApp.value)}` : ''; });
+  }
   el('mode-live').addEventListener('click', () => { if (state.mode !== 'live') startLive(); });
   el('mode-replay').addEventListener('click', () => { if (state.mode !== 'replay') void startReplay(); });
   el('trace').addEventListener('change', (e) => void pick(e.target.value));

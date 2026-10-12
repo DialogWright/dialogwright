@@ -878,6 +878,10 @@ describe('run names in the Replay picker', () => {
     expect(traceLabel(row as never, '   ')).toBe('CAfeed0000… · 02:14 · 9 turns');
   });
 
+  it('names the app first on a server of several apps (host.yaml)', () => {
+    expect(traceLabel({ ...row, app: 'clinic', appName: 'Example Family Practice' } as never, 'DemoRun')).toBe('Example Family Practice · DemoRun · 02:14 · 9 turns');
+  });
+
   it('keeps a name tidy and short', () => {
     expect(cleanTraceName('  Demo   run  two ')).toBe('Demo run two');
     expect(cleanTraceName('x'.repeat(50))).toHaveLength(TRACE_NAME_MAX);

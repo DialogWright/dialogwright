@@ -25,6 +25,8 @@ export interface AuditDraft {
    */
   type: string;
   detail: Record<string, string | number | boolean | null | string[]>;
+  /** On a server of several apps (host.yaml), the app the call or chat is in; absent on a server of one. */
+  app?: string;
 }
 
 export interface AuditEntry extends AuditDraft {

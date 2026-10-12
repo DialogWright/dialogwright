@@ -257,6 +257,9 @@ export interface TraceRow {
   startedAt: string | null;
   turns: number;
   sizeBytes: number;
+  /** On a server of several apps (host.yaml): the app's id and its name. */
+  app?: string;
+  appName?: string;
 }
 
 /** One kind of delivery note: the line it goes under (null: none, held for the next turn's notes), and its sentence. */

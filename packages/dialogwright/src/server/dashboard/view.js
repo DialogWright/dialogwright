@@ -1216,15 +1216,17 @@ export function cleanTraceName(raw) {
 }
 
 /**
- * One row of the Replay picker: the run's name when it has one, else the start of its call id, then
- * its start time (UTC, as the trace records it) and its turn count.
+ * One row of the Replay picker: on a server of several apps the app's name first, then the run's name
+ * when it has one, else the start of its call id, then its start time (UTC, as the trace records it)
+ * and its turn count.
  */
 export function traceLabel(row, name) {
   const sid = String(row?.callSid ?? '');
   const started = typeof row?.startedAt === 'string' ? row.startedAt : null;
   const time = started && started.length >= 16 ? started.slice(11, 16) : 'unknown';
   const who = cleanTraceName(name) || `${sid.slice(0, 10)}…`;
-  return `${who} · ${time} · ${Number(row?.turns) || 0} turns`;
+  const app = typeof row?.appName === 'string' && row.appName !== '' ? `${row.appName} · ` : '';
+  return `${app}${who} · ${time} · ${Number(row?.turns) || 0} turns`;
 }
 
 /**

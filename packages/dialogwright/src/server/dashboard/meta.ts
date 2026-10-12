@@ -41,6 +41,14 @@ export interface ConsoleMeta {
   chatPrefixes: string[];
   heardBy: string;
   links: ConsoleLink[];
+  /**
+   * On a server of several apps (host.yaml): every app, by id, with its name and its own console words,
+   * the default first, so the page shows each call in its own app's words and its name on each row.
+   * Absent on a server of one.
+   */
+  apps?: { id: string; name: string; meta: ConsoleMeta }[];
+  /** On a host, the app the page shows alone (`/dashboard?app=<id>`), or null for every app's calls. */
+  filter?: string | null;
 }
 
 /** The console's words where the app gives none. */

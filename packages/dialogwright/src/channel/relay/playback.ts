@@ -16,7 +16,11 @@ export function playbackEstimateMs(frames: readonly OutboundFrame[], durations: 
       // A content-hash query string (clipVersions) is part of the URL, not the filename the
       // duration map is keyed by, so it is stripped before the lookup.
       const name = f.source.slice(f.source.lastIndexOf('/') + 1).replace(/\?.*$/, '');
-      total += (durations.get(name) ?? UNKNOWN_CLIP_MS) * Math.max(1, f.loop);
+      // On a server of several apps, a clip is under its app's folder (/audio/<app id>/<file>), and its
+      // length is kept by that path.
+      const audio = f.source.indexOf('/audio/');
+      const path = audio >= 0 ? f.source.slice(audio + '/audio/'.length).replace(/\?.*$/, '') : name;
+      total += (durations.get(path) ?? durations.get(name) ?? UNKNOWN_CLIP_MS) * Math.max(1, f.loop);
     }
   }
   return total;

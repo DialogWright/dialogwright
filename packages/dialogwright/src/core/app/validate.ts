@@ -44,7 +44,7 @@ const SUBJECT_KIND = /^[a-z][a-z0-9_]*$/;
  * checks this list against the page, so it cannot go stale unseen.
  */
 export const CONSOLE_ELEMENT_IDS: readonly string[] = [
-  'audit', 'back', 'beat', 'beatwrap', 'channel', 'conn', 'conv-aside', 'conv-script', 'conv-turns', 'conversation', 'dot', 'gate', 'handoff',
+  'appfilter', 'audit', 'back', 'beat', 'beatwrap', 'channel', 'conn', 'conv-aside', 'conv-script', 'conv-turns', 'conversation', 'dot', 'gate', 'handoff',
   'level', 'mode-live', 'mode-replay', 'note', 'now', 'perception', 'play', 'pos', 'presenter', 'rename', 'replaybar', 'reset', 'source',
   'speed', 'speedwrap', 'status', 'step', 'totals', 'trace',
 ];

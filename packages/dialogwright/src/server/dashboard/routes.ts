@@ -12,8 +12,9 @@ import type { Chained } from '../../audit/types';
 import type { TraceRecord } from '../../trace/types';
 import { upgradeTraceRecord } from '../../trace/read';
 import { defaultAppId, getApp } from '../../core/app/registry';
+import type { App } from '../../core/app/types';
 import { spokenText } from '../../prompts/render';
-import { consoleMetaOf, renderConsolePage } from './meta';
+import { consoleMetaOf, renderConsolePage, type ConsoleMeta } from './meta';
 import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
 
@@ -39,6 +40,21 @@ export interface DashboardDeps {
   auth?: ConsoleGate;
   /** TRACE_STORE=s3://...: the traces are read from the store, joined across servers, in place of traceDir. */
   traces?: S3TraceReader;
+  /**
+   * On a server of several apps (host.yaml): each app, with where its traces are (its folder in TRACE_DIR,
+   * or its prefix on the trace store), the default first. The traces list has every app's calls with
+   * the app on each row (and `?app=<id>` for one app's), a replay is read from its own app's, and the
+   * page knows each app's console words. Absent, the one app's, as before.
+   */
+  apps?: readonly ConsoleApp[];
+}
+
+/** One app of a host, as the console reads it. */
+export interface ConsoleApp {
+  readonly id: string;
+  readonly app: App;
+  readonly traceDir: string;
+  readonly traces?: S3TraceReader;
 }
 
 /** One trace record as `/dashboard/traces/<sid>` returns it: redacted, plus the line the caller heard. */
@@ -62,9 +78,9 @@ function send(res: ServerResponse, status: number, type: string, body: string | 
  * manifest. A record whose decision no longer renders — a prompt id or variable that has since
  * changed — is worth showing without its line rather than failing the whole trace.
  */
-function spokenOf(record: TraceRecord): string {
-  // A trace record does not carry its session's app, so a stored trace is read as the default app's.
-  const app = getApp(defaultAppId());
+function spokenOf(record: TraceRecord, app: App = getApp(defaultAppId())): string {
+  // A trace record does not carry its session's app, so a stored trace is read as the default app's,
+  // or on a host as the app whose folder it is in.
   try {
     const text = spokenText(app, record.decision, record.locale);
     return typeof text === 'string' ? text : '';
@@ -106,16 +122,16 @@ function parseTraceLines(lines: readonly string[]): TraceRecord[] {
  * from the frame log, so a reloaded call shows the same delivery notes; a page from before them reads
  * none.
  */
-function readTrace(traceDir: string, sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+function readTrace(traceDir: string, sid: string, app?: App): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
   const framesPath = join(traceDir, `${sid}.frames.jsonl`);
-  return replayOf(traceLines(join(traceDir, `${sid}.jsonl`)), existsSync(framesPath) ? readFrameLog(framesPath) : [], sid);
+  return replayOf(traceLines(join(traceDir, `${sid}.jsonl`)), existsSync(framesPath) ? readFrameLog(framesPath) : [], sid, app);
 }
 
 /** A trace as the replay route answers it: its records redacted with the line each said, its frames redacted, and its delivery facts. */
-function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
+function replayOf(raw: readonly TraceRecord[], read: readonly ReadFrameLogLine[], sid: string, app?: App): { records: ReplayRecord[]; frames: ReadFrameLogLine[]; deliveries: DeliveryEvent[] } {
   const records = raw.map((r) => {
     const record = redactRecord(r);
-    return { ...record, spokenText: spokenOf(record) };
+    return { ...record, spokenText: spokenOf(record, app) };
   });
   // redactFrameLine widens the type back to FrameLogLine; readFrameLog's line number survives the
   // spread, so it is restored here rather than dropped from what the page gets.
@@ -151,6 +167,116 @@ function fromStore(res: ServerResponse, head: boolean, reader: S3TraceReader, si
     if (!res.headersSent) send(res, 503, 'text/plain', `the trace store could not be read: ${err instanceof Error ? err.message : String(err)}`, head);
     else res.end();
   });
+}
+
+/** One row of the traces list: a call's trace, newest first; on a host, with its app's id and name. */
+interface TraceRow {
+  callSid: string;
+  startedAt: string | null;
+  turns: number;
+  sizeBytes: number;
+  app?: string;
+  appName?: string;
+}
+
+/** The traces in a folder, newest first, at most MAX_TRACES. */
+function folderRows(traceDir: string): TraceRow[] {
+  // Nothing creates the trace directory until the first call, so an empty dashboard is the
+  // normal state of a fresh checkout rather than a 500.
+  let names: string[];
+  try {
+    names = readdirSync(traceDir);
+  } catch {
+    names = [];
+  }
+  return names
+    .filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'))
+    .flatMap((f) => {
+      const full = join(traceDir, f);
+      try {
+        const stat = statSync(full);
+        return [{ f, full, mtimeMs: stat.mtimeMs, sizeBytes: stat.size }];
+      } catch {
+        return [];
+      }
+    })
+    // Newest first by mtime, so only the files the page can show are read off disk.
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, MAX_TRACES)
+    .map(({ f, full, sizeBytes }) => {
+      const lines = traceLines(full);
+      // Turns as the console counts them (the header's "9 turns", Replay's "Turn 9 of 9"), not trace
+      // records: each keyed digit, a barge-in and a downstream service's answer are records of their own,
+      // and a digit's record shares the turn it was keyed at.
+      const turns = new Set(lines.map((r) => r.turnIndex)).size;
+      return { callSid: f.slice(0, -'.jsonl'.length), startedAt: lines[0]?.ts ?? null, turns, sizeBytes };
+    });
+}
+
+const newestFirst = (a: TraceRow, b: TraceRow): number => (b.startedAt ?? '').localeCompare(a.startedAt ?? '');
+
+/** The app's name as its console shows it. */
+const appNameOf = (app: App): string => app.brand?.name ?? app.id;
+
+/**
+ * On a host: every app's traces (or the one `?app=` names), each row with its app, newest first, at most
+ * MAX_TRACES; a trace store that cannot be read answers 503, as for one app.
+ */
+function hostRows(res: ServerResponse, head: boolean, apps: readonly ConsoleApp[], only: string | null): void {
+  const chosen = only === null ? apps : apps.filter((a) => a.id === only);
+  const work = async (): Promise<void> => {
+    const rows: TraceRow[] = [];
+    for (const a of chosen) {
+      const own = a.traces
+        ? (await a.traces.calls({ limit: MAX_TRACES })).slice(0, MAX_TRACES).map((c) => ({ callSid: c.id, startedAt: c.startedAt, turns: c.turns, sizeBytes: c.sizeBytes }))
+        : folderRows(a.traceDir);
+      rows.push(...own.map((r) => ({ ...r, app: a.id, appName: appNameOf(a.app) })));
+    }
+    send(res, 200, 'application/json', JSON.stringify(rows.sort(newestFirst).slice(0, MAX_TRACES)), head);
+  };
+  work().catch((err: unknown) => {
+    if (!res.headersSent) send(res, 503, 'text/plain', `the trace store could not be read: ${err instanceof Error ? err.message : String(err)}`, head);
+    else res.end();
+  });
+}
+
+/** On a host: one call's replay, from the app whose traces have it, with that app's lines and its id. */
+function hostReplay(res: ServerResponse, head: boolean, apps: readonly ConsoleApp[], sid: string, onReplay: (() => Chained<void>) | null): void {
+  const work = async (): Promise<void> => {
+    for (const a of apps) {
+      let replay: ReturnType<typeof replayOf> | null = null;
+      if (a.traces) {
+        const joined = await a.traces.read(sid);
+        if (joined !== null) replay = replayOf(parseTraceLines(joined.trace), parseFrameLog(joined.frames.join('\n')), sid, a.app);
+      } else if (existsSync(join(a.traceDir, `${sid}.jsonl`))) {
+        replay = readTrace(a.traceDir, sid, a.app);
+      }
+      if (replay === null) continue;
+      // Recorded before the answer: a replay the audit could not record is not served.
+      const noted = onReplay?.();
+      if (noted instanceof Promise) await noted;
+      send(res, 200, 'application/json', JSON.stringify({ ...replay, app: a.id }), head);
+      return;
+    }
+    send(res, 404, 'text/plain', 'not found', head);
+  };
+  work().catch((err: unknown) => {
+    if (!res.headersSent) send(res, 503, 'text/plain', `the traces could not be read: ${err instanceof Error ? err.message : String(err)}`, head);
+    else res.end();
+  });
+}
+
+/**
+ * The console's metadata: the default app's (or, on a host, the app `?app=` names, the page's filter),
+ * and on a host every app's, so the page shows each call in its own app's words.
+ */
+function pageMeta(deps: DashboardDeps, query: URLSearchParams): ConsoleMeta {
+  const apps = deps.apps;
+  if (!apps || apps.length === 0) return consoleMetaOf(getApp(defaultAppId()));
+  const wanted = query.get('app');
+  const filter = wanted !== null && apps.some((a) => a.id === wanted) ? wanted : null;
+  const shown = apps.find((a) => a.id === filter) ?? apps[0]!;
+  return { ...consoleMetaOf(shown.app), apps: apps.map((a) => ({ id: a.id, name: appNameOf(a.app), meta: consoleMetaOf(a.app) })), filter };
 }
 
 /** The live feed: the bus's history, then every event as it comes, while the session (with a sign-in) lasts. */
@@ -200,10 +326,12 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   const head = req.method === 'HEAD';
   if (req.method !== 'GET' && !head) { send(res, 405, 'text/plain', 'method not allowed'); return true; }
 
-  // The page is the default app's console: its name, mark and words are put in as it is served.
+  const query = new URLSearchParams((req.url ?? '').includes('?') ? (req.url ?? '').slice((req.url ?? '').indexOf('?') + 1) : '');
+  // The page is the default app's console: its name, mark and words are put in as it is served. On a
+  // host, the app `?app=` names (its filter), with every app's words beside it.
   if (path === '/dashboard' || path === '/dashboard/') {
     const template = readFileSync(join(HERE, 'page.html'), 'utf8');
-    const meta = consoleMetaOf(getApp(defaultAppId()));
+    const meta = pageMeta(deps, query);
     if (!auth) {
       send(res, 200, 'text/html; charset=utf-8', renderConsolePage(template, meta), head);
       return true;
@@ -222,7 +350,7 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   // Replay mode has no live feed to carry the boot id, so the page asks for it here instead; with
   // it, the app the console serves (the same metadata the page was served with).
   if (path === '/dashboard/boot') {
-    send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ bootId: BOOT_ID, app: consoleMetaOf(getApp(defaultAppId())) }), head);
+    send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ bootId: BOOT_ID, app: pageMeta(deps, query) }), head);
     return true;
   }
   if (path === '/dashboard/events') {
@@ -236,42 +364,16 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     liveFeed(req, res, deps, head, auth);
     return true;
   }
+  if (path === '/dashboard/traces' && deps.apps && deps.apps.length > 0) {
+    hostRows(res, head, deps.apps, query.get('app'));
+    return true;
+  }
   if (path === '/dashboard/traces' && deps.traces) {
     fromStore(res, head, deps.traces, null, null);
     return true;
   }
   if (path === '/dashboard/traces') {
-    // Nothing creates the trace directory until the first call, so an empty dashboard is the
-    // normal state of a fresh checkout rather than a 500.
-    let names: string[];
-    try {
-      names = readdirSync(deps.traceDir);
-    } catch {
-      names = [];
-    }
-    const rows = names
-      .filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'))
-      .flatMap((f) => {
-        const full = join(deps.traceDir, f);
-        try {
-          const stat = statSync(full);
-          return [{ f, full, mtimeMs: stat.mtimeMs, sizeBytes: stat.size }];
-        } catch {
-          return [];
-        }
-      })
-      // Newest first by mtime, so only the files the page can show are read off disk.
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
-      .slice(0, MAX_TRACES)
-      .map(({ f, full, sizeBytes }) => {
-        const lines = traceLines(full);
-        // Turns as the console counts them (the header's "9 turns", Replay's "Turn 9 of 9"), not trace
-        // records: each keyed digit, a barge-in and a downstream service's answer are records of their own,
-        // and a digit's record shares the turn it was keyed at.
-        const turns = new Set(lines.map((r) => r.turnIndex)).size;
-        return { callSid: f.slice(0, -'.jsonl'.length), startedAt: lines[0]?.ts ?? null, turns, sizeBytes };
-      })
-      .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
+    const rows = folderRows(deps.traceDir).sort(newestFirst);
     send(res, 200, 'application/json', JSON.stringify(rows), head);
     return true;
   }
@@ -282,6 +384,10 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
       sid = decodeURIComponent(m[1]!);
     } catch {
       send(res, 404, 'text/plain', 'not found', head);
+      return true;
+    }
+    if (SID.test(sid) && deps.apps && deps.apps.length > 0) {
+      hostReplay(res, head, deps.apps, sid, !head && auth && session ? () => auth.noteReplay(session!, sid) : null);
       return true;
     }
     if (SID.test(sid) && deps.traces) {

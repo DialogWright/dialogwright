@@ -63,6 +63,11 @@ export interface ChatResources {
 
 export interface ChatDeps extends ChatTurnDeps {
   settings: ChatSettings;
+  /**
+   * The app this endpoint's chats are in, on a server of several apps (host.yaml: each app's chat at
+   * /chat/<app id>); a chat saved in another app is not resumed here. Absent, the default app, as before.
+   */
+  appId?: string;
   now: () => number;
   /** A new session's resources, by its id; `sessions` is where the console's observer finds it. */
   resources(id: string, sessions: ObservedCalls): ChatResources;
@@ -404,7 +409,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const id = fresh();
     const { opts, frames } = deps.resources(id, { get: (sid) => sessions.get(sid) });
     const e: ChatEntry = {
-      id, session: newSession(id, now(), WEB_CHAT), auditEntries: [], opts, lastActivityMs: now(),
+      id, session: deps.appId === undefined ? newSession(id, now(), WEB_CHAT) : newSession(id, now(), WEB_CHAT, undefined, deps.appId), auditEntries: [], opts, lastActivityMs: now(),
       resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: now(), restores: 0,
     };
     sessions.set(id, e);
@@ -412,7 +417,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     conn.id = id;
     record(e.frames, 'in', loggedIn(m, undefined, appOf(e.session).callData));
     // Ahead of the opening turn, and it is what resets the console's history: the page follows this chat now.
-    deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null });
+    deps.bus?.publish({ type: 'call_started', callSid: id, at: now(), from: 'web chat', todayIso: opts.todayIso, thresholds: opts.thresholds, channel: 'chat', caller: null, ...(deps.appId !== undefined ? { app: deps.appId } : {}) });
     void enqueue(e, async (s) => {
       // A token on start: a delegate's chat begins as theirs (as the harness's `as` does); a subject signs
       // in through the core once the chat has opened, as a later sign-in does.
@@ -426,7 +431,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         else subject = r.principal;
       }
       if (delegate !== null) {
-        s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate);
+        s.session = newSession(s.id, s.session.startedAtMs, WEB_CHAT, delegate, s.session.appId);
         log(`chat ${s.id}: signed in (${delegate.kind}, level ${delegate.level})`);
         record(s.frames, 'log', { signedIn: delegate.level, kind: delegate.kind });
       }
@@ -490,6 +495,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     if (c === null) return null;
     const held = sessions.get(c.id);
     if (held !== undefined) return held.ended ? null : held;
+    // On a host, a chat is resumed only at its own app's path: another app's is not this endpoint's to take.
+    if (deps.appId !== undefined && c.session.appId !== deps.appId) return null;
     let readable = c.schema === SESSION_SCHEMA;
     if (readable) {
       try {
@@ -676,6 +683,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
         if (sessions.has(id)) continue;
         const c = await state.load(id);
         if (c === null || sessions.has(id) || c.lastActivityMs > cutoff) continue;
+        // On a host, another app's chat is its own endpoint's to end.
+        if (deps.appId !== undefined && c.session.appId !== deps.appId) continue;
         queueWrite(id, 'remove the saved session', (st) => st.remove(id));
         log(`chat ${id}: saved before a restart and never resumed; ended after ${deps.settings.idleMs} ms idle`);
         whenChained(deps.audit.append(id, 'chat', { type: 'call_ended', detail: { reason: 'abandoned' } }), () => {},
@@ -739,6 +748,52 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     },
     async settled() {
       await Promise.all([...writes.values()]);
+    },
+  };
+}
+
+/**
+ * The web chat of a server of several apps (host.yaml): each app's endpoint at `/chat/<app id>`, and the
+ * default app's at CHAT_PATH (`/chat`) too, as on a server of one. An upgrade to any other path under
+ * it is refused 404. What a stop or a sweep asks is asked of every endpoint.
+ */
+export interface ChatByApp extends ChatEndpoint {
+  /** Whether an upgrade's path is a chat's: `/chat` or `/chat/<app id>` for an app the host runs. */
+  owns(path: string): boolean;
+  /** Each app's endpoint, by its id. */
+  readonly endpoints: ReadonlyMap<string, ChatEndpoint>;
+}
+
+export function chatByApp(endpoints: ReadonlyMap<string, ChatEndpoint>, defaultApp: string): ChatByApp {
+  const all = (): ChatEndpoint[] => [...endpoints.values()];
+  const endpointOf = (path: string): ChatEndpoint | undefined => {
+    if (path === CHAT_PATH) return endpoints.get(defaultApp);
+    if (!path.startsWith(`${CHAT_PATH}/`)) return undefined;
+    const id = path.slice(CHAT_PATH.length + 1);
+    return endpoints.get(id);
+  };
+  return {
+    endpoints,
+    owns: (path) => path === CHAT_PATH || path.startsWith(`${CHAT_PATH}/`),
+    handleUpgrade(req, socket, head) {
+      const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      const endpoint = endpointOf(path);
+      if (endpoint === undefined) {
+        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      endpoint.handleUpgrade(req, socket, head);
+    },
+    sweep: () => all().forEach((e) => e.sweep()),
+    tails: () => all().flatMap((e) => e.tails()),
+    close: () => all().forEach((e) => e.close()),
+    liveCount: () => all().reduce((n, e) => n + e.liveCount(), 0),
+    liveIds: () => all().flatMap((e) => e.liveIds()),
+    activeCount: () => all().reduce((n, e) => n + e.activeCount(), 0),
+    drain: () => all().forEach((e) => e.drain()),
+    async settled() {
+      await Promise.all(all().map((e) => e.settled?.()));
     },
   };
 }

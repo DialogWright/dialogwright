@@ -31,6 +31,8 @@ export function socketProvider(pathname: string, enabled: readonly string[]): st
 export interface ChatUpgrades {
   /** The path the chat is served on (`/chat`). */
   readonly path: string;
+  /** Whether a path is the chat's, where it answers more than one (a host's /chat/<app id>); absent, `path` alone. */
+  owns?(path: string): boolean;
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
 }
 
@@ -108,7 +110,7 @@ export function attachWebSocketServer(
     }
     const url = new URL(req.url ?? '/', 'http://localhost');
     // The web chat, when it is on: checked for its origin there, and never for a call token.
-    if (chat !== null && url.pathname === chat.path) {
+    if (chat !== null && (chat.owns ? chat.owns(url.pathname) : url.pathname === chat.path)) {
       chat.handleUpgrade(req, socket, head);
       return;
     }

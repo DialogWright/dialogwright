@@ -64,7 +64,12 @@ export interface CallEntry extends CallResources {
   undelivered?: readonly HeldFrame[];
 }
 
-export type CallFactory = (callSid: string) => CallResources;
+/**
+ * A call's resources (its session, run options, trace and frame log), by its id and, on a server of
+ * several apps (server/host.ts), the app it is in: the one its number reached, or the one it was saved
+ * in. Absent, the default app, as on a server of one.
+ */
+export type CallFactory = (callSid: string, appId?: string) => CallResources;
 
 /**
  * How long an ended call is kept after it ends. Long enough for a late `/cr-action` callback or a
@@ -253,11 +258,11 @@ export class SessionStore {
     return sids;
   }
 
-  /** A new call, on `provider`'s socket (default Twilio's, as the legacy path is). */
-  create(callSid: string, socket: SocketLike, provider?: string): CallEntry {
+  /** A new call, on `provider`'s socket (default Twilio's, as the legacy path is), in `appId` (default: the default app). */
+  create(callSid: string, socket: SocketLike, provider?: string, appId?: string): CallEntry {
     if (this.calls.has(callSid)) throw new Error(`session for ${callSid} already exists`);
     const entry: CallEntry = {
-      ...this.factory(callSid),
+      ...(appId === undefined ? this.factory(callSid) : this.factory(callSid, appId)),
       callSid,
       socket,
       reconnects: 0,
@@ -581,7 +586,8 @@ export class SessionStore {
   private hold(c: StoredCall, silentMs?: number | null): CallEntry {
     const callId = c.callId;
     const entry: CallEntry = {
-      ...this.factory(callId),
+      // In the app it was saved in: its trace and run options are that app's.
+      ...this.factory(callId, c.session.appId),
       session: c.session,
       callSid: callId,
       socket: null,

@@ -7,10 +7,10 @@ import type { SessionStore } from './sessions';
 import type { ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
-import { handleDashboardRequest } from './dashboard/routes';
+import { handleDashboardRequest, type DashboardDeps } from './dashboard/routes';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
-import { recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
+import { HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept } from '../channel/callData';
 import { whenChained, type AuditSink } from '../run/turn';
 import type { S3TraceReader } from '../trace/store';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
@@ -25,7 +25,29 @@ import type { App } from '../core/app/types';
 import { buildHintsFrom } from './hints';
 import { DEFAULT_LOCALE, localesOf, speechLanguagesOf } from '../core/locale';
 
-export interface HttpDeps {
+/**
+ * One app's part of the webhooks: the app, its hints, its start parameters, its transfer targets and its
+ * audit chain. HttpDeps is the one app's of a server of one; on a server of several (server/host.ts)
+ * each app has its own (HttpHost).
+ */
+export interface HttpApp {
+  readonly app?: App;
+  readonly hints: string;
+  readonly startParameters?: Readonly<Record<string, string>>;
+  readonly transfer?: ServerTransfer | null;
+  readonly audit?: AuditSink;
+}
+
+/**
+ * Several apps on one server (host.yaml, server/host.ts): the app the number called reaches (the
+ * default for a number listed nowhere, or none), and each app's part of the webhooks by its id.
+ */
+export interface HttpHost {
+  appFor(called: string | null | undefined): string;
+  served(id: string): HttpApp | undefined;
+}
+
+export interface HttpDeps extends HttpApp {
   config: ServerConfig;
   store: SessionStore;
   tokens: ServerTokenStore;
@@ -79,6 +101,13 @@ export interface HttpDeps {
   transfer?: ServerTransfer | null;
   /** Live web chats, for `/health`'s `chat`; absent when the engine's chat is off, and `/health` then has no `chat`. */
   chatLive?: () => number;
+  /**
+   * Several apps on one server (host.yaml): a new call's app is the one its number reaches, and every
+   * webhook for a call answers in its app's part. Absent, the server runs one app: this one's fields.
+   */
+  host?: HttpHost;
+  /** On a host, each app with its traces, for the console's app on each row and its filter (dashboard/routes.ts DashboardDeps.apps). */
+  consoleApps?: DashboardDeps['apps'];
   /** The trace and audit folders' sizes, for `/health`'s `disk`; absent when no retention is set, and `/health` then has no `disk`. */
   disk?: () => { traceBytes: number; auditBytes: number };
   /** TRACE_STORE=s3://...: the one reader of the traces on the store, for the console. Absent, the console reads TRACE_DIR. */
@@ -224,9 +253,25 @@ function isBlank(raw: string | undefined): boolean {
   return raw === undefined || raw.trim() === '';
 }
 
+/**
+ * A call's app and its part of the webhooks: on a server of several apps, the app the call's entry is in,
+ * else the one the number called reaches, with its id; on a server of one, its one app (id null).
+ */
+function servedOf(deps: HttpDeps, callId?: string, to?: string): { id: string | null; s: HttpApp } {
+  if (!deps.host) return { id: null, s: deps };
+  const held = callId ? deps.store.get(callId)?.session.appId : undefined;
+  const id = held !== undefined && deps.host.served(held) !== undefined ? held : deps.host.appFor(to);
+  return { id, s: deps.host.served(id) ?? deps };
+}
+
+/** The custom parameter a host's start document names its app by (HOST_APP_PARAMETER); none on a server of one app. */
+function hostEcho(id: string | null): Record<string, string> {
+  return id === null ? {} : { [HOST_APP_PARAMETER]: id };
+}
+
 /** Where a call put through with no handoff decision goes: the app's transfer default, HANDOFF_NUMBER without one. */
-function fallbackTarget(deps: HttpDeps): DialTarget {
-  return defaultTarget(deps.transfer ?? null, deps.config.handoffNumber);
+function fallbackTarget(deps: HttpDeps, s: HttpApp = deps): DialTarget {
+  return defaultTarget(s.transfer ?? null, deps.config.handoffNumber);
 }
 
 /**
@@ -235,10 +280,10 @@ function fallbackTarget(deps: HttpDeps): DialTarget {
  * which headers went and which did not (a phone number carries none); an app without transfer's note is
  * as it was.
  */
-function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, handoff: PostedHandoff, apologize = false): { document: string; note: string } {
-  const plan = dialPlan(deps.transfer ?? null, deps.config.handoffNumber, handoff);
-  const document = apologize ? provider.apologizeAndDialDocument(plan.target) : provider.dialDocument(plan.target);
-  if (!deps.transfer) return { document, note: `dial:${handoff.reasonCode}` };
+function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, handoff: PostedHandoff, s: HttpApp = deps): { document: string; note: string } {
+  const plan = dialPlan(s.transfer ?? null, deps.config.handoffNumber, handoff);
+  const document = provider.dialDocument(plan.target);
+  if (!s.transfer) return { document, note: `dial:${handoff.reasonCode}` };
   deps.store.get(callSid)?.frames.write('log', { transfer: recordedPlan(plan) });
   // Only header names (HEADER_NAME) are written, at most DROPPED_SHOWN: a name posted back can never forge a log line.
   const left = describeDropped(plan);
@@ -281,22 +326,22 @@ export function startLocale(app: App, to: string | undefined): string | undefine
  *   recognizer that does not hear a language is worse than the carrier's default for it.
  * The provider writes each where no other language inherits it (voice/xml.ts placeLanguages).
  */
-function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string, echoes: Readonly<Record<string, string>> = {}): StartDocumentOptions {
-  const options = languageOptions(deps, provider, token, locale);
+function connectOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string, echoes: Readonly<Record<string, string>> = {}, s: HttpApp = deps): StartDocumentOptions {
+  const options = languageOptions(deps, provider, token, locale, s);
   // The app's own parameters (startParameters) and the answer webhook's fields its callData names
-  // (dw_<key>), after the locale: an app with neither has the document it had.
-  const extra = { ...(deps.startParameters ?? {}), ...echoes };
+  // (dw_<key>), after the locale: an app with neither has the document it had. On a host, the app's id.
+  const extra = { ...(s.startParameters ?? {}), ...echoes };
   return Object.keys(extra).length === 0 ? options : { ...options, parameters: { ...(options.parameters ?? {}), ...extra } };
 }
 
 /** The start document's options before the app's own parameters (connectOptions). */
-function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string): StartDocumentOptions {
+function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string, locale?: string, s: HttpApp = deps): StartDocumentOptions {
   const deployment = voiceFor(deps.config, provider.id);
   const deploymentRecognition = recognitionFor(deps.config, provider.id);
   const events = provider.id === 'telnyx' && deps.config.telnyxEvents ? { events: deps.config.telnyxEvents } : {};
   const bargeIn = deps.config.bargeIn ? { bargeIn: deps.config.bargeIn } : {};
-  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: deps.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn };
-  const app = deps.app;
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: s.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn };
+  const app = s.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
   const defaultLocale = app.locales.default;
   const language = (tag: string): RelayLanguage => {
@@ -357,7 +402,7 @@ function decideUnreadable(
 ): { document: string; note: string } {
   if (!wantsReconnect(params)) return decideAction(deps, provider, params, start);
   deps.tokens.revoke(params.callId);
-  return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:unreadable' };
+  return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, servedOf(deps, params.callId, params.to).s)), note: 'dial:unreadable' };
 }
 
 /**
@@ -384,6 +429,9 @@ export function decideAction(
   held?: string | null | 'unknown',
 ): { document: string; note: string } {
   const callSid = params.callId;
+  // The call's app (on a host, the one its entry is in, else the one its number reaches): its transfer
+  // targets, its languages and its audit chain answer for it.
+  const { id: appId, s } = servedOf(deps, callSid, params.to);
 
   // (a) An explicit handoff decision from the adapter wins outright.
   const handoffData = params.handoffData;
@@ -395,7 +443,7 @@ export function decideAction(
       return { document: provider.hangupDocument(), note: 'completed' };
     }
     // The target the engine chose (by its variable's name) and its headers, written to the frame log before the call's entry ends.
-    const dialed = dialHandoff(deps, provider, callSid, handoff);
+    const dialed = dialHandoff(deps, provider, callSid, handoff, s);
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
     return dialed;
@@ -422,8 +470,8 @@ export function decideAction(
       // handoff summary a later call could still read (src/handoff/summary.ts) is never short one.
       // The console has the audit's entry before the end, as on one machine, whenever the audit has it.
       const ended = (): void => deps.bus?.publish({ type: 'ended', reason: 'hangup', callSid, at: Date.now() });
-      if (deps.audit) {
-        whenChained(deps.audit.append(callSid, live.session.channel, { type: 'call_ended', detail: { reason: 'hangup', completed: [...live.session.completed] } }), (entry) => {
+      if (s.audit) {
+        whenChained(s.audit.append(callSid, live.session.channel, { type: 'call_ended', detail: { reason: 'hangup', completed: [...live.session.completed] } }), (entry) => {
           live.auditEntries.push(entry);
           deps.bus?.publish({ type: 'audit', callSid, at: Date.now(), entries: [entry] });
           ended();
@@ -448,7 +496,7 @@ export function decideAction(
     if (deps.closing?.() && !deps.store.durable) {
       deps.store.end(callSid);
       deps.tokens.revoke(callSid);
-      return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:closing' };
+      return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:closing' };
     }
     if (entry.reconnects < deps.config.reconnectLimit) {
       deps.store.detach(callSid);
@@ -459,18 +507,18 @@ export function decideAction(
       void deps.store.persist(callSid);
       const token = deps.tokens.mint(callSid, provider.id);
       // The call goes on in the language it is in now, which a switch may have changed since it started.
-      const locale = deps.app?.locales ? (entry.session.locale ?? deps.app.locales.default) : undefined;
+      const locale = s.app?.locales ? (entry.session.locale ?? s.app.locales.default) : undefined;
       // A planned restart: the carrier waits before it connects, so its socket reaches the restarted server
       // (which loads the call at setup) and not this one, which turns sockets away until it stops listening.
       const handover = deps.closing?.() && deps.store.durable ? (deps.handover?.() ?? null) : null;
       // The webhook is not sent again: the fields the first document echoed are written from what the session kept.
-      const options = connectOptions(deps, provider, token, locale, webhookParametersOfKept(deps.app?.callData, entry.session.callData));
+      const options = connectOptions(deps, provider, token, locale, { ...webhookParametersOfKept(s.app?.callData, entry.session.callData), ...hostEcho(appId) }, s);
       const document = start(handover !== null ? { ...options, pauseS: handover.pauseS } : options);
       return { document, note: `reconnect:${entry.reconnects}${handover !== null ? ` after ${handover.pauseS} s` : ''}` };
     }
     deps.store.end(callSid);
     deps.tokens.revoke(callSid);
-    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'gave-up' };
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'gave-up' };
   }
   // A transfer whose `end` was held for its line to play (END_AFTER_PLAYBACK, server/adapter.ts) and never
   // sent: the socket closed first with the caller still on the line. The call has ended, but the
@@ -480,7 +528,7 @@ export function decideAction(
     if (entry) entry.heldHandoffData = null;
     // The store could not say whether a transfer is owed to a caller still on the line: a person, never a hangup.
     deps.tokens.revoke(callSid);
-    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:store-unavailable' };
+    return { document: provider.apologizeAndDialDocument(fallbackTarget(deps, s)), note: 'dial:store-unavailable' };
   }
   const owed = held !== undefined ? held : entry?.heldHandoffData;
   if (owed && !isBlank(owed)) {
@@ -489,7 +537,7 @@ export function decideAction(
       // Owed once: a second callback for the call hangs up.
       if (entry) entry.heldHandoffData = null;
       deps.tokens.revoke(callSid);
-      return dialHandoff(deps, provider, callSid, handoff);
+      return dialHandoff(deps, provider, callSid, handoff, s);
     }
   }
   if (entry && held !== undefined) entry.heldHandoffData = null;
@@ -528,7 +576,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         reply(res, 404, 'text/plain', 'not found');
         return;
       }
-      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}) })) return;
+      if (deps.bus && handleDashboardRequest(req, res, { bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}), ...(deps.consoleApps ? { apps: deps.consoleApps } : {}) })) return;
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {
@@ -539,7 +587,17 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         return;
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && path.startsWith('/audio/')) {
-        serveClip(req, res, deps.config.audioDir, path.slice('/audio/'.length));
+        const raw = path.slice('/audio/'.length);
+        // On a host, each app's clips are in a folder of its own, /audio/<app id>/<clip>.
+        const slash = raw.indexOf('/');
+        if (deps.host && slash > 0) {
+          const id = raw.slice(0, slash);
+          if (/^[a-z][a-z0-9_-]*$/.test(id) && deps.host.served(id) !== undefined) {
+            serveClip(req, res, join(deps.config.audioDir, id), raw.slice(slash + 1));
+            return;
+          }
+        }
+        serveClip(req, res, deps.config.audioDir, raw);
         return;
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && path === '/health') {
@@ -600,11 +658,14 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 400, 'text/plain', 'missing CallSid');
           return;
         }
+        // On a host, the app the number called reaches (the default for any other number, or none).
+        const { id: appId, s } = servedOf(deps, undefined, params.to);
+        const inApp = appId === null ? '' : ` (app ${appId})`;
         // The caller's number is theirs, not the console's: the last four tell calls apart.
         if (deps.draining?.()) {
           // A server about to stop starts no call it may not finish: the caller is put through to a person.
-          deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}: draining: new call sent to handoff`);
-          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps)));
+          deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}${inApp}: draining: new call sent to handoff`);
+          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
         const token = deps.tokens.mint(params.callId, provider.id);
@@ -612,12 +673,13 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // it, so the server its socket reaches can read it; one that could not be written puts the caller
         // through to a person rather than at a socket no server will open.
         if (deps.tokens.settled && !(await landed(deps, params.callId))) {
-          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps)));
+          reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
-        deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}`);
-        // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they come back with the setup.
-        const options = connectOptions(deps, provider, token, deps.app ? startLocale(deps.app, params.to) : undefined, webhookParameters(deps.app?.callData, params.raw));
+        deps.log(`${path} ${params.callId} from ${maskNumber(params.from)}${inApp}`);
+        // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they
+        // come back with the setup; on a host, the app's id too, so the setup starts the call in the same app.
+        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId) }, s);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
@@ -652,20 +714,21 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // Masked at write time: Twilio's form post spells the caller's number four different ways
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
-      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(deps.app?.callData, callback.raw) }));
+      const served = servedOf(deps, callback.callId, callback.to).s;
+      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(served.app?.callData, callback.raw) }));
       const start = legacy ? connectRelayTwiml : undefined;
       let { document, note } = loaded === 'unreadable'
         ? decideUnreadable(deps, provider, callback, start)
         : loaded === 'unavailable' && wantsReconnect(callback)
           // The store could not be asked in time: the caller is put through rather than at a reconnect no server can resume.
-          ? { document: provider.apologizeAndDialDocument(fallbackTarget(deps)), note: 'dial:store-unavailable' }
+          ? { document: provider.apologizeAndDialDocument(fallbackTarget(deps, served)), note: 'dial:store-unavailable' }
           : decideAction(deps, provider, callback, start, held);
       if (deps.store.shared && callback.callId) {
         // Loaded only to answer: the call is taken where its socket lands.
         deps.store.dropBorrowed(callback.callId);
         // A reconnect's token is in the store before the carrier has it; one that could not be saved puts the caller through.
         if (note.startsWith('reconnect') && deps.tokens.settled && !(await landed(deps, callback.callId))) {
-          document = provider.apologizeAndDialDocument(fallbackTarget(deps));
+          document = provider.apologizeAndDialDocument(fallbackTarget(deps, served));
           note = `${note}, then dial:token-not-saved`;
         }
       }

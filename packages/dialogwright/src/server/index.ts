@@ -2,10 +2,10 @@ import { createServer, type Server } from 'node:http';
 import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
-import { calledVariablesFrom, transferTargetsFrom } from './transfer';
+import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
-import { createRequestHandler, type HttpDeps } from './http';
+import { createRequestHandler, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { randomBytes } from 'node:crypto';
@@ -21,7 +21,11 @@ import { DashboardBus } from './dashboard/bus';
 import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
 import { defaultAppId, getApp } from '../core/app/registry';
+import type { App } from '../core/app/types';
 import { newSession, type Session } from '../core/session';
+import { ANONYMOUS } from '../gate/principal';
+import { appOfSetup, describeHost, type HostRouting } from './host';
+import type { AuditDraft } from '../audit/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
@@ -34,6 +38,8 @@ import { whenChained, type AuditSink, type TurnObserver } from '../run/turn';
 import { clipVersions, discoverClips, recordableClips } from '../prompts/clips';
 import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
+import type { RenderContext } from '../prompts/render';
+import type { SetupFrame } from '../channel/relay/frames';
 import { demoTools } from '../core/tools';
 import { AuditLog } from '../audit/log';
 import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
@@ -44,7 +50,7 @@ import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
 import { VOICE_RELAY } from '../channel/caps';
-import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
+import { CHAT_PATH, chatByApp, chatEndpoint, type ChatEndpoint } from './chat/socket';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
@@ -138,6 +144,12 @@ export interface ServerOverrides {
   auditSql?: SqlClient;
   /** With TRACE_STORE=s3://..., how the store is reached in place of the global fetch: a test seam, not a setting. */
   traceFetch?: typeof fetch;
+  /**
+   * Several apps on one server (host.yaml, server/host.ts loadHost): every app it lists, each with its own
+   * environment, and the numbers that reach each. Absent, the server runs the default app, reading its
+   * references from `env`, exactly as before.
+   */
+  apps?: HostRouting;
 }
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -195,6 +207,22 @@ function postgresFailure(setting: string, url: string, err: unknown): Error {
   return new Error(`${setting} ${maskConnectionString(url)}: ${maskSecrets(err instanceof Error ? err.message : String(err), url)}`);
 }
 
+/**
+ * On a host, the folder (in AUDIT_DIR) of the server's own audit, beside each app's: the console's
+ * sign-ins and replays, which are no app's. An app id starts with a letter, so none is this.
+ */
+export const SERVER_RECORDS = '_server';
+
+/** An app's audit chain on a host: `sink`, each entry naming the app (AuditDraft.app), hashed with it. */
+function appAudit(sink: AuditSink, app: string): AuditSink {
+  const named = (d: AuditDraft): AuditDraft => ({ ...d, app });
+  const appendAll = sink.appendAll?.bind(sink);
+  return {
+    append: (callId, channel, d) => sink.append(callId, channel, named(d)),
+    ...(appendAll ? { appendAll: (callId: string, channel: string, ds: readonly AuditDraft[]) => appendAll(callId, channel, ds.map(named)) } : {}),
+  };
+}
+
 export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
   const said = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
   // With SESSION_STORE=postgres, every line is said with the connection string's password taken out,
@@ -212,28 +240,59 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // Wall-clock date in the configured zone: a caller at 8pm Pacific means today, not tomorrow.
   const todayIso = () => config.todayOverride ?? localDateIso(now(), config.timezone);
 
-  const clips = discoverClips(config.audioDir);
-  const durations = clipDurations(config.audioDir);
+  // The apps this server runs: its one (the default, its references read from `env`, as always), or a
+  // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
+  // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
+  const host = overrides.apps ?? null;
+  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env }[] = host
+    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env }))
+    : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env }];
+  const tag = (id: string): string => (host ? `app ${id}: ` : '');
+  /** A call's app: on a host, the one of this id (the default for one it does not run); on a server of one, its one app. */
+  const appRun = (id: string | undefined): (typeof appsRun)[number] => (host && id !== undefined ? appsRun.find((a) => a.id === id) : undefined) ?? appsRun[0]!;
+  /** What an app's settings stop the server for (an unset variable, say): on a host, with the app's id in front. */
+  const forApp = <T>(id: string, read: () => T): T => {
+    try {
+      return read();
+    } catch (err) {
+      if (!host) throw err;
+      throw new Error(`app "${id}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  if (host) for (const line of describeHost(host)) log(line);
+  /** Where an app's recorded clips are: AUDIO_DIR; on a host, a folder per app in it, served at /audio/<app id>/. */
+  const audioDirOf = (id: string): string => (host ? join(config.audioDir, id) : config.audioDir);
+  /** Each clip's length, by its file name (on a host, `<app id>/<file>`), for the no-input wait after a played line. */
+  const durations = new Map<string, number>();
+  for (const a of appsRun) for (const [name, ms] of clipDurations(audioDirOf(a.id))) durations.set(host ? `${a.id}/${name}` : name, ms);
   // CLIPS=off leaves the render context unset, which is the harness's own mode: every prompt goes
   // out as text and ConversationRelay's voice speaks the fixed words, the names and the dates
   // alike. Nothing about the recorded clips matters then, so the presence/staleness checks below
   // (and the disk read they depend on) only run when CLIPS=on; off gets a single quiet line.
+  const renders = new Map<string, RenderContext>();
   if (config.clips) {
-    let recorded: Record<string, string> | null;
-    try {
-      recorded = readRecorded(config.audioDir);
-    } catch (e) {
-      log(`audio: ignoring unreadable recorded.json: ${e instanceof Error ? e.message : String(e)}`);
-      recorded = null;
-    }
-    const cov = clipStatus(recordableClips(getApp(defaultAppId())), clips, recorded);
-    const missingSuffix =
-      cov.missing.length === 0
-        ? ''
-        : `: missing ${cov.missing.slice(0, 10).join(', ')}${cov.missing.length > 10 ? ` +${cov.missing.length - 10} more` : ''}`;
-    log(`audio: ${cov.present} of ${cov.total} clips present in ${config.audioDir} (${cov.missing.length} segments fall back to TTS)${missingSuffix}`);
-    if (cov.stale.length > 0) {
-      log(`audio: ${cov.stale.length} stale clips (recorded text differs from the sheet): ${cov.stale.join(', ')}`);
+    for (const a of appsRun) {
+      const dir = audioDirOf(a.id);
+      const clips = discoverClips(dir);
+      let recorded: Record<string, string> | null;
+      try {
+        recorded = readRecorded(dir);
+      } catch (e) {
+        log(`${tag(a.id)}audio: ignoring unreadable recorded.json: ${e instanceof Error ? e.message : String(e)}`);
+        recorded = null;
+      }
+      const cov = clipStatus(recordableClips(a.app), clips, recorded);
+      const missingSuffix =
+        cov.missing.length === 0
+          ? ''
+          : `: missing ${cov.missing.slice(0, 10).join(', ')}${cov.missing.length > 10 ? ` +${cov.missing.length - 10} more` : ''}`;
+      log(`${tag(a.id)}audio: ${cov.present} of ${cov.total} clips present in ${dir} (${cov.missing.length} segments fall back to TTS)${missingSuffix}`);
+      if (cov.stale.length > 0) {
+        log(`${tag(a.id)}audio: ${cov.stale.length} stale clips (recorded text differs from the sheet): ${cov.stale.join(', ')}`);
+      }
+      // The presence/count logic above stays on the unversioned map; only what the caller actually
+      // fetches carries the content hash, so a regenerated clip is never served from Twilio's cache.
+      renders.set(a.id, { clips: clipVersions(dir, clips), audioBase: `https://${config.publicHost}/audio/${host ? `${a.id}/` : ''}` });
     }
   } else {
     const carriers = config.voiceProviders.map((id) => id.charAt(0).toUpperCase() + id.slice(1)).join(', ');
@@ -241,14 +300,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   }
   const noInputMs = overrides.noInputMs ?? config.noInputMs;
   log(noInputMs > 0 ? `no-input: ${noInputMs} ms after playback (${durations.size} clip durations)` : 'no-input: off');
-  // The presence/count logic above stays on the unversioned map; only what the caller actually
-  // fetches carries the content hash, so a regenerated clip is never served from Twilio's cache.
-  const render = config.clips ? { clips: clipVersions(config.audioDir, clips), audioBase: `https://${config.publicHost}/audio/` } : null;
+  const renderOf = (id: string): RenderContext | null => renders.get(id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
-  for (const name of Object.keys(getApp(defaultAppId()).services ?? {})) {
-    const url = serviceUrls[name] ?? null;
-    log(url ? `service ${name}: ${url}` : `service ${name}: off (its requests are answered with no result)`);
+  for (const a of appsRun) {
+    for (const name of Object.keys(a.app.services ?? {})) {
+      const url = serviceUrls[name] ?? null;
+      log(url ? `${tag(a.id)}service ${name}: ${url}` : `${tag(a.id)}service ${name}: off (its requests are answered with no result)`);
+    }
   }
 
   const bus = config.dashboard ? new DashboardBus() : undefined;
@@ -290,8 +349,15 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     log(`audit: ${maskConnectionString(auditSetting.url)} (shared: a hash chain per call, each anchored into a chain per day; pnpm audit:verify reads it)`);
   }
-  // One audit chain for the process: every call's entries link into the same day file.
-  const audit: AuditSink = postgresAudit ?? new AuditLog(config.auditDir, now);
+  // One audit chain for the process: every call's entries link into the same day file. On a host, the
+  // server's own (the console's sign-ins and replays) in AUDIT_DIR/_server, and each app's calls in a
+  // chain of its own, AUDIT_DIR/<app id> (or, in Postgres, a chain per call as always), each entry
+  // naming its app.
+  const audit: AuditSink = postgresAudit ?? new AuditLog(host ? join(config.auditDir, SERVER_RECORDS) : config.auditDir, now);
+  const audits = new Map<string, AuditSink>();
+  for (const a of appsRun) audits.set(a.id, host ? appAudit(postgresAudit ?? new AuditLog(join(config.auditDir, a.id), now), a.id) : audit);
+  /** A call's audit chain: its app's. */
+  const auditOf = (id: string | undefined): AuditSink => audits.get(appRun(id).id)!;
   // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens. Made
   // before anything that would need closing, as it reads the sign-outs a run before kept and may refuse them.
   let consoleAuth: ConsoleAuth | undefined;
@@ -357,26 +423,39 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   }
   // TRACE_STORE=s3://...: each call's trace and frame log as segments on S3-compatible storage, which
   // this server writes under its own name and every reader joins. Unset, files in TRACE_DIR, as always.
-  const traceStore = config.traceStore
-    ? new S3TraceStore(config.traceStore, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}) })
-    : null;
-  if (traceStore) log(`traces: ${traceStore.label}, written as segments by this server (${serverName}) and read back joined`);
-  /** A call's (or a chat's) trace and frame log: files in TRACE_DIR, or segments on the trace store. */
+  // On a host, each app's under a prefix of its own (<prefix><app id>/).
+  const traceStores = new Map<string, S3TraceStore>();
+  if (config.traceStore) {
+    for (const a of appsRun) {
+      const setting = host ? { ...config.traceStore, prefix: `${config.traceStore.prefix}${a.id}/` } : config.traceStore;
+      const store = new S3TraceStore(setting, { server: serverName, log, now, ...(overrides.traceFetch ? { fetch: overrides.traceFetch } : {}) });
+      traceStores.set(a.id, store);
+      log(`${tag(a.id)}traces: ${store.label}, written as segments by this server (${serverName}) and read back joined`);
+    }
+  }
+  /** Where an app's trace files are: TRACE_DIR; on a host, a folder per app in it. */
+  const traceDirOf = (id: string): string => (host ? join(config.traceDir, id) : config.traceDir);
+  /** A call's (or a chat's) trace and frame log, in its app's: files in TRACE_DIR, or segments on the trace store. */
   // On one machine, a trace or frame log that cannot be written is logged and counted, and never fails a turn.
   const traceFailures = new TraceFailures(log, now);
-  const sinksOf = (file: string, meta: () => CallMeta): { trace: TraceSink; frames: FrameSink } => {
-    if (traceStore) return traceStore.open(file, meta);
-    const trace = guardTrace(() => new TraceWriter(join(config.traceDir, `${file}.jsonl`)), traceFailures, `the trace of ${file}`);
-    return { trace, frames: guardFrames(() => new FrameLog(join(config.traceDir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
+  const sinksOf = (file: string, meta: () => CallMeta, appId: string): { trace: TraceSink; frames: FrameSink } => {
+    const store = traceStores.get(appId);
+    if (store) return store.open(file, meta);
+    const dir = traceDirOf(appId);
+    const trace = guardTrace(() => new TraceWriter(join(dir, `${file}.jsonl`)), traceFailures, `the trace of ${file}`);
+    return { trace, frames: guardFrames(() => new FrameLog(join(dir, `${file}.frames.jsonl`), now), traceFailures, `the frame log of ${file}`) };
   };
   // The numbers called conditions compare the number dialed with (routes.yaml, transfer targets), read
   // now, before any call: one unset, or not E.164, stops the server here. Each turn reads these values
-  // and nothing else of the environment (TurnContext.env).
-  const called = calledVariablesFrom(getApp(defaultAppId()), overrides.env ?? process.env);
+  // and nothing else of the environment (TurnContext.env). On a host, each app's from its own environment.
+  const calledByApp = new Map(appsRun.map((a) => [a.id, forApp(a.id, () => calledVariablesFrom(a.app, a.env))]));
+  const calledOf = (id: string): Readonly<Record<string, string>> => calledByApp.get(id)!;
   /** RESTART_PAUSE_S with a durable store: how long a planned restart's handover asks each carrier to wait; 0 with none. */
   const restartPauseS = config.sessionStore?.restartPauseS ?? 0;
   const store: SessionStore = new SessionStore(
-    (callSid) => {
+    (callSid, appId) => {
+      // On a host, the call's app (the one its number reached, or the one it was saved in); else the one app.
+      const a = appRun(appId);
       const file = safeFileStem(callSid);
       // What the trace store names this call's segments by. Held while the entry the store has for the call
       // is this one: once it was and is no longer (let go, taken over), what it still writes is marked late.
@@ -392,12 +471,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         }
         return { ...last, held: !store.shared || isMine || !seen };
       };
-      const { trace, frames } = sinksOf(file, meta);
+      const { trace, frames } = sinksOf(file, meta, a.id);
       mine = trace;
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
-        session: newSession(callSid, now(), VOICE_RELAY),
-        opts: { client, thresholds, todayIso: todayIso(), trace, now, render, observe, tools, audit, screen: config.screen, env: called },
+        session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
+        opts: { client, thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), observe, tools, audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
         trace,
         frames,
       };
@@ -417,7 +496,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     void store.sweepStored().then((gone) => {
       for (const c of gone) {
         log(`${c.callId}: saved before a restart and never called back; forgotten`);
-        whenChained(audit.append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
+        whenChained(auditOf(c.session.appId).append(c.callId, c.session.channel, { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
           (err: unknown) => log(`${c.callId}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     });
@@ -432,14 +511,22 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   validateRoutes(routes);
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
   for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
-  const app = getApp(defaultAppId());
-  // app.yaml's startParameters, read from the environment now: an unset one stops the server here, with the fix.
-  const startParameters = startParametersFrom(app, overrides.env ?? process.env);
-  if (Object.keys(startParameters).length > 0) log(`start parameters: ${Object.keys(startParameters).join(', ')}`);
-  // app.yaml's transfer targets, read from the environment now: one unset, or neither a number nor a sip: URI, stops the server here.
-  const transfer = transferTargetsFrom(app, overrides.env ?? process.env, config.handoffNumber);
-  if (transfer) log(`transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
-  if (Object.keys(called).length > 0) log(`called numbers: ${Object.keys(called).join(', ')}`);
+  // Each app's part of the webhooks: its hints, and app.yaml's startParameters and transfer targets read
+  // from its environment now: an unset one, or a target neither a number nor a sip: URI, stops the server
+  // here, with the fix.
+  const httpApps = new Map<string, HttpApp & { readonly app: App; readonly hints: string; readonly startParameters: Readonly<Record<string, string>>; readonly transfer: ServerTransfer | null }>();
+  for (const a of appsRun) {
+    const startParameters = forApp(a.id, () => startParametersFrom(a.app, a.env));
+    if (Object.keys(startParameters).length > 0) log(`${tag(a.id)}start parameters: ${Object.keys(startParameters).join(', ')}`);
+    const transfer = forApp(a.id, () => transferTargetsFrom(a.app, a.env, config.handoffNumber));
+    if (transfer) log(`${tag(a.id)}transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
+    const called = calledOf(a.id);
+    if (Object.keys(called).length > 0) log(`${tag(a.id)}called numbers: ${Object.keys(called).join(', ')}`);
+    httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id) });
+  }
+  const app = appsRun[0]!.app;
+  const startParameters = httpApps.get(appsRun[0]!.id)!.startParameters;
+  const transfer = httpApps.get(appsRun[0]!.id)!.transfer;
   let draining = false;
   /** Set by unready() (DRAIN_UNREADY_MS): /ready answers 503 while new calls are still answered. */
   let unready = false;
@@ -452,44 +539,59 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
    */
   let handover: { waiting: Set<string>; done: () => void } | null = null;
   // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
+  // On a host, each app's at /chat/<app id>, and the default's at /chat too.
   const chatSettings = config.chat;
-  const chat = chatSettings
-    ? chatEndpoint({
-      settings: chatSettings, now, log, audit, bus, serviceUrls,
-      anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-      startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
-      ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
-      resources: (id, sessions) => {
-        const file = safeFileStem(id);
-        // As a call's (server/traceMeta.ts): the chat's last values once it leaves `sessions`, its restores as its generation.
-        const names = chatTraceMeta(id, sessions, now);
-        const { trace, frames } = sinksOf(file, names.meta);
-        names.bind(frames);
-        const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
-        // No render context: a chat shows a line's words, never a recorded clip.
-        return {
-          opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit, screen: config.screen, env: called },
-          frames,
-        };
-      },
-    })
-    : undefined;
+  const chatOf = (a: (typeof appsRun)[number]): ChatEndpoint => chatEndpoint({
+    settings: chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls,
+    anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
+    startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
+    ...(host ? { appId: a.id } : {}),
+    ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
+    resources: (id, sessions) => {
+      const file = safeFileStem(id);
+      // As a call's (server/traceMeta.ts): the chat's last values once it leaves `sessions`, its restores as its generation.
+      const names = chatTraceMeta(id, sessions, now);
+      const { trace, frames } = sinksOf(file, names.meta, a.id);
+      names.bind(frames);
+      const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
+      // No render context: a chat shows a line's words, never a recorded clip.
+      return {
+        opts: { client, thresholds, todayIso: todayIso(), trace, now, render: null, observe, tools, audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        frames,
+      };
+    },
+  });
+  const chats = chatSettings && host ? chatByApp(new Map(appsRun.map((a) => [a.id, chatOf(a)])), host.defaultApp) : null;
+  const chat: ChatEndpoint | undefined = chatSettings ? (chats ?? chatOf(appsRun[0]!)) : undefined;
   // Retention, when TRACE_RETENTION_DAYS, TRACE_MAX_GB or AUDIT_RETENTION_DAYS is set, and the free-space
   // warning with DISK_WARN_FREE_GB: a sweep (and a look at the disk) now and once an hour after.
-  const retention: RetentionSettings = {
-    traceDir: config.traceDir, auditDir: config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
+  // On a host the same settings hold for every app, each app's folders swept as a server of one's are
+  // (TRACE_MAX_GB bounds each app's traces), and the server's own audit by its days.
+  const retentions: RetentionSettings[] = appsRun.map((a) => ({
+    traceDir: traceDirOf(a.id), auditDir: host ? join(config.auditDir, a.id) : config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
     ...(config.traceMaxBytes !== undefined ? { traceMaxBytes: config.traceMaxBytes } : {}),
-  };
+  }));
+  if (host) {
+    const own = join(config.auditDir, SERVER_RECORDS);
+    retentions.push({ traceDir: own, auditDir: own, auditDays: config.auditRetentionDays });
+  }
   const sweeping = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined || config.traceMaxBytes !== undefined;
   const retaining = sweeping || config.diskWarnFreeBytes !== undefined;
-  const disk = retaining ? diskUsageCache(config.traceDir, config.auditDir, now, undefined, config.diskWarnFreeBytes) : null;
+  const disk = retaining
+    ? (host
+      ? diskUsageCache(retentions.slice(0, appsRun.length).map((r) => r.traceDir), retentions.map((r) => r.auditDir), now, undefined, config.diskWarnFreeBytes)
+      : diskUsageCache(config.traceDir, config.auditDir, now, undefined, config.diskWarnFreeBytes))
+    : null;
   let retentionAt = now();
   const sweepDisk = (): void => {
     retentionAt = now();
     // Never the traces of a live call or an open chat.
     const inUse = new Set([...store.liveCallSids(), ...(chat?.liveIds() ?? [])].map(safeFileStem));
     if (sweeping) {
-      const r = sweepRetention(retention, { now: retentionAt, inUse });
+      const r = retentions.map((one) => sweepRetention(one, { now: retentionAt, inUse })).reduce((a, b) => ({
+        traceFiles: a.traceFiles + b.traceFiles, auditDays: a.auditDays + b.auditDays,
+        ...(a.trimmed || b.trimmed ? { trimmed: { files: (a.trimmed?.files ?? 0) + (b.trimmed?.files ?? 0), calls: (a.trimmed?.calls ?? 0) + (b.trimmed?.calls ?? 0) } } : {}),
+      }));
       log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days${r.trimmed ? ` (${r.trimmed.files} of them, ${r.trimmed.calls} calls, for TRACE_MAX_GB)` : ''}`);
     }
     // The audit in Postgres: a call's chain removed whole once its newest entry is past the days, and the days' anchors.
@@ -503,19 +605,26 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // The traces on the store: whole day folders past the days, then the calls written least recently past the size.
     const traceDays = config.traceRetentionDays;
     const traceMax = config.traceMaxBytes;
-    if (traceStore && (traceDays !== undefined || traceMax !== undefined)) {
+    if (traceStores.size > 0 && (traceDays !== undefined || traceMax !== undefined)) {
       void (async () => {
         // With servers sharing a database, one of them sweeps the store each hour; the others skip.
         if (sweeps && !(await sweeps.claim('traces', serverName, TRACE_SWEEP_HOLD_MS))) return;
-        if (traceDays !== undefined) {
-          const t = await traceStore.sweep(traceDays, retentionAt, inUse);
-          log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`);
+        // On a host, each app's prefix in turn.
+        for (const traceStore of traceStores.values()) {
+          try {
+            if (traceDays !== undefined) {
+              const t = await traceStore.sweep(traceDays, retentionAt, inUse);
+              log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`);
+            }
+            if (traceMax !== undefined) {
+              const t = await traceStore.trim(traceMax, inUse);
+              if (t.calls > 0) log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label} for TRACE_MAX_GB`);
+            }
+          } catch (err) {
+            log(`retention: could not sweep ${traceStore.label}: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
-        if (traceMax !== undefined) {
-          const t = await traceStore.trim(traceMax, inUse);
-          if (t.calls > 0) log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label} for TRACE_MAX_GB`);
-        }
-      })().catch((err: unknown) => log(`retention: could not sweep ${traceStore.label}: ${err instanceof Error ? err.message : String(err)}`));
+      })().catch((err: unknown) => log(`retention: could not sweep the trace store: ${err instanceof Error ? err.message : String(err)}`));
     }
     // The free space, with DISK_WARN_FREE_GB: said once an hour while it is low.
     const usage = disk?.();
@@ -551,17 +660,29 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         },
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
     ...(disk ? { disk } : {}),
-    ...(traceStore ? { traces: traceStore.reader() } : {}),
+    ...(!host && traceStores.size > 0 ? { traces: traceStores.get(appsRun[0]!.id)!.reader() } : {}),
+    // On a host: each app's part of the webhooks, and its traces for the console.
+    ...(host
+      ? {
+        host: { appFor: (called: string | null | undefined) => host.appFor(called), served: (id: string) => httpApps.get(id) },
+        consoleApps: appsRun.map((a) => ({ id: a.id, app: a.app, traceDir: traceDirOf(a.id), ...(traceStores.has(a.id) ? { traces: traceStores.get(a.id)!.reader() } : {}) })),
+      }
+      : {}),
     // /health's `traces`: always with a trace store; on one machine only once a write has failed, so a
     // body is as it was while the disk works.
-    traceHealth: () => (traceStore ? { failures: traceStore.failures, dropped: traceStore.dropped } : traceFailures.failures > 0 ? { failures: traceFailures.failures, dropped: 0 } : null),
+    traceHealth: () => (traceStores.size > 0
+      ? [...traceStores.values()].reduce((t, st) => ({ failures: t.failures + st.failures, dropped: t.dropped + st.dropped }), { failures: 0, dropped: 0 })
+      : traceFailures.failures > 0 ? { failures: traceFailures.failures, dropped: 0 } : null),
   };
   const server = createServer(createRequestHandler(deps));
   if (chatSettings) {
-    log(`chat: ${CHAT_PATH} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
+    const paths = host ? `${CHAT_PATH} (${host.defaultApp}), ${appsRun.map((a) => `${CHAT_PATH}/${a.id}`).join(', ')}` : CHAT_PATH;
+    log(`chat: ${paths} for ${chatSettings.origins.any ? 'any origin (laptop)' : [...chatSettings.origins.set].join(', ')}, sign-in ${chatSettings.signIn.method}`);
     // A sign-in method with nothing to sign in as: every token would be refused.
-    if (chatSettings.signIn.method !== 'none' && app.identity?.signInLevel === undefined && app.principals?.fromClaims === undefined) {
-      log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${app.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
+    for (const { app: one } of appsRun) {
+      if (chatSettings.signIn.method !== 'none' && one.identity?.signInLevel === undefined && one.principals?.fromClaims === undefined) {
+        log(`WARNING: CHAT_SIGNIN=${chatSettings.signIn.method}, but app "${one.id}" takes no sign-in (identity.yaml has no signIn, and principals has no fromClaims): every token will be refused`);
+      }
     }
   }
   const wss = attachWebSocketServer(
@@ -576,6 +697,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(config.resumeIntoReplyMs !== undefined ? { resumeIntoReplyMs: config.resumeIntoReplyMs } : {}),
       handoffNumber: config.handoffNumber, serviceUrls, anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary,
       ...(transfer ? { transfer } : {}),
+      // On a host, a new call starts in the app its number reached, with that app's transfer targets.
+      ...(host ? { host: { appOfSetup: (provider: string, setup: SetupFrame) => appOfSetup(host, provider, setup), transferOf: (id: string) => httpApps.get(id)?.transfer ?? null } } : {}),
       summarizeHandoff: overrides.summarizeHandoff,
       bargeIn: config.bargeIn ?? 'any',
       // END_AFTER_PLAYBACK: absent from a config made by hand before it existed reads as auto, as loadConfig's default.
@@ -593,7 +716,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     },
     overrides.setupTimeoutMs,
     config.voiceProviders,
-    chat ? { path: CHAT_PATH, handleUpgrade: (req, socket, head) => chat.handleUpgrade(req, socket, head) } : null,
+    chat ? { path: CHAT_PATH, handleUpgrade: (req, socket, head) => chat.handleUpgrade(req, socket, head), ...(chats ? { owns: (path: string) => chats.owns(path) } : {}) } : null,
     // Closing with the calls saved: a socket belongs to the restarted server (the handover, or a crash's close).
     () => closing && store.durable,
   );
@@ -612,6 +735,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // away is the one end a turn never sees and http.ts's hangup branch never reaches either, so
     // this sweep is its only producer of a `call_ended` audit entry.
     const liveBefore = new Set(store.liveCallSids());
+    // Each call's app, read before the eviction forgets it: its end goes to that app's audit.
+    const appIds = new Map([...liveBefore].map((sid) => [sid, store.get(sid)?.session.appId]));
     const evicted = store.evictIdle();
     for (const sid of evicted) {
       // An evicted call with a socket gets here again through the socket's own close, but one
@@ -619,7 +744,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       forgetNoInput(sid);
       log(`${sid}: evicted idle session`);
       if (liveBefore.has(sid)) {
-        whenChained(audit.append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
+        whenChained(auditOf(appIds.get(sid)).append(sid, 'voice', { type: 'call_ended', detail: { reason: 'evicted' } }), () => {},
           (err: unknown) => log(`${sid}: the evicted call's audit entry failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     }
@@ -854,7 +979,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       // What the last turns saved is on disk before the process goes.
       await Promise.all([store.settled(), chat?.settled?.()]);
       // And what the last turns traced is on the store (a few seconds at most).
-      await traceStore?.flush();
+      await Promise.all([...traceStores.values()].map((t) => t.flush()));
       await closeShared();
     },
   };
