@@ -208,5 +208,10 @@ describe('TRACE_STORE: segments written by two servers, read back as one trace',
     expect((await reader.calls({ limit: 1 })).map((c) => c.id)).toEqual(['CA-2026-10-11']);
     expect(s3.requests.length - before).toBe(2);
     expect((await reader.calls()).map((c) => c.id).sort()).toEqual(['CA-2026-10-09', 'CA-2026-10-10', 'CA-2026-10-11']);
+    // A date range reads only the day folders in it, by their names.
+    const ranged = s3.requests.length;
+    expect((await reader.calls({ from: '2026-10-10', to: '2026-10-10' })).map((c) => c.id)).toEqual(['CA-2026-10-10']);
+    expect(s3.requests.length - ranged).toBe(2);
+    expect((await reader.calls({ from: '2026-10-10' })).map((c) => c.id).sort()).toEqual(['CA-2026-10-10', 'CA-2026-10-11']);
   });
 });

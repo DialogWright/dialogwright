@@ -145,9 +145,9 @@ describe('CONSOLE_AUTH=token: no session', () => {
     }
   });
 
-  it('answers 401 to the live feed, the trace list, a replay, the boot id and the view module', async () => {
+  it('answers 401 to the live feed, the Live list and a call\'s feed, the trace list, a replay, the Calls page\'s list, today\'s figures, the boot id and the view module', async () => {
     const r = await rig();
-    for (const path of ['/dashboard/events', '/dashboard/traces', `/dashboard/traces/${SID}`, '/dashboard/boot', '/dashboard/view.js']) {
+    for (const path of ['/dashboard/events', '/dashboard/events?view=calls', `/dashboard/events?call=${SID}`, '/dashboard/traces', `/dashboard/traces/${SID}`, '/dashboard/calls', '/dashboard/calls?last4=0199', '/dashboard/today', '/dashboard/boot', '/dashboard/view.js']) {
       const res = await raw(r.base, 'GET', path, TUNNEL);
       expect(res.status, path).toBe(401);
       expect(res.body, path).not.toContain(SID);
@@ -377,6 +377,10 @@ describe('CONSOLE_AUTH=token: the headers', () => {
       await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie }),
       await raw(r.base, 'POST', '/dashboard/link', TUNNEL),
       await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie }),
+      await peek(r.base, '/dashboard/events?view=calls', { ...TUNNEL, cookie }),
+      await peek(r.base, `/dashboard/events?call=${SID}`, { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', '/dashboard/calls', { ...TUNNEL, cookie }),
+      await raw(r.base, 'GET', '/dashboard/today', { ...TUNNEL, cookie }),
     ];
     for (const a of answers) {
       expect(a.headers['content-security-policy'], String(a.status)).toMatch(/default-src 'none'.*frame-ancestors 'none'/);
@@ -410,6 +414,14 @@ describe('CONSOLE_AUTH=token: the access log', () => {
     const cookie = cookieOf(signed);
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
     await peek(r.base, '/dashboard/events', { ...TUNNEL, cookie });
+    // The Live list and a call's own feed are the live feed too: recorded on the first open only.
+    await peek(r.base, '/dashboard/events?view=calls', { ...TUNNEL, cookie });
+    await peek(r.base, `/dashboard/events?call=${SID}`, { ...TUNNEL, cookie });
+    // The Calls page's list is a list, as the traces list is: no replay of any call.
+    const calls = (await raw(r.base, 'GET', '/dashboard/calls', { ...TUNNEL, cookie })).body;
+    expect(calls).toContain(SID);
+    expect(calls).toContain('"from":"…0199"');
+    expect(calls).not.toContain(CALLER);
     await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie });
     await raw(r.base, 'GET', `/dashboard/traces/${SID}`, { ...TUNNEL, cookie });
     // A HEAD reads nothing, and a missing trace is no replay.

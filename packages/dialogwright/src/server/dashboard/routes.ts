@@ -10,13 +10,15 @@ import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog'
 import type { S3TraceReader } from '../../trace/store';
 import type { Chained } from '../../audit/types';
 import type { TraceRecord } from '../../trace/types';
-import { upgradeTraceRecord } from '../../trace/read';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import type { App } from '../../core/app/types';
 import { spokenText } from '../../prompts/render';
 import { consoleMetaOf, renderConsolePage, type ConsoleMeta } from './meta';
 import { deliveriesOf, type DeliveryEvent } from './delivery';
 import type { ConsoleGate, ConsoleSession } from '../console/auth';
+import { listCalls, parseTraceLines, todayOf, traceLines, QUERY_ENDINGS, type CallsQuery, type CallsSource } from './calls';
+import { LiveCalls } from './live';
+import type { PublishedEvent } from './bus';
 
 /**
  * Changes every time the server process starts. The page keeps the first one it sees and reloads
@@ -87,33 +89,6 @@ function spokenOf(record: TraceRecord, app: App = getApp(defaultAppId())): strin
   } catch {
     return '';
   }
-}
-
-/**
- * The parseable lines of a trace file. A killed process leaves a partial last line behind, and one
- * truncated line is no reason to fail the whole route, so unparseable lines are dropped.
- */
-function traceLines(path: string): TraceRecord[] {
-  return parseTraceLines(readFileSync(path, 'utf8').split('\n'));
-}
-
-/** The parseable records of a trace's lines (a file's, or a trace store's joined segments). */
-function parseTraceLines(lines: readonly string[]): TraceRecord[] {
-  return lines
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        const parsed: unknown = JSON.parse(line);
-        // A line that parses but isn't a plain object -- `null`, an array, a bare number or
-        // string -- is as malformed as one that doesn't parse at all: redactRecord walks it as a
-        // record and a `null` reaches Object.entries and throws.
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
-        // A record written before the channel event model is read in the current shape.
-        return [upgradeTraceRecord(parsed)];
-      } catch {
-        return [];
-      }
-    });
 }
 
 /**
@@ -281,13 +256,67 @@ function pageMeta(deps: DashboardDeps, query: URLSearchParams): ConsoleMeta {
   return { ...consoleMetaOf(shown.app), apps: apps.map((a) => ({ id: a.id, name: appNameOf(a.app), meta: consoleMetaOf(a.app) })), filter };
 }
 
-/** The live feed: the bus's history, then every event as it comes, while the session (with a sign-in) lasts. */
-function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps, head: boolean, auth: ConsoleGate | undefined): void {
+/** The Live list of each bus (live.ts), made on the list's first viewer and shared by every viewer after. */
+const lists = new WeakMap<DashboardBus, LiveCalls>();
+
+/** The bus's Live list, each call in its own app's words: on a host the app its call_started names, else the default app. */
+function liveCallsOf(deps: DashboardDeps): LiveCalls {
+  let list = lists.get(deps.bus);
+  if (list) return list;
+  const metas = new Map<string | null, ConsoleMeta>();
+  const metaOf = (app: string | null): ConsoleMeta => {
+    const known = metas.get(app);
+    if (known) return known;
+    const found = app !== null ? deps.apps?.find((a) => a.id === app)?.app : undefined;
+    const meta = consoleMetaOf(found ?? getApp(defaultAppId()));
+    metas.set(app, meta);
+    return meta;
+  };
+  list = new LiveCalls(deps.bus, metaOf);
+  lists.set(deps.bus, list);
+  return list;
+}
+
+/**
+ * Which events one viewer of the live feed is sent, by what it asked for:
+ * - `?call=<id>`: that call's history and events (a call's detail, opened from the Live list);
+ * - nothing: the newest call, as the console has always followed it, switching to each call that starts
+ *   (on a host with `?app=<id>`, the newest of that app's calls).
+ * Null for a call id that is not one.
+ */
+function feedFilter(deps: DashboardDeps, query: URLSearchParams): ((event: PublishedEvent, replaying: boolean) => boolean) | null {
+  const call = query.get('call');
+  if (call !== null) {
+    if (!SID.test(call)) return null;
+    return (event) => event.callSid === call;
+  }
+  const app = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
+  const appOf = (sid: string): string | undefined => {
+    const first = deps.bus.historyOf(sid)[0];
+    return first?.type === 'call_started' ? first.app : undefined;
+  };
+  // The newest call kept (of the app asked for): its history is what a viewer opening now catches up on.
+  let target = deps.bus.callIds().reverse().find((sid) => app === null || appOf(sid) === app) ?? null;
+  return (event, replaying) => {
+    if (!replaying && event.type === 'call_started' && (app === null || event.app === app)) target = event.callSid;
+    return event.callSid === target;
+  };
+}
+
+/** Opens an event stream: its headers, the connection comment and the boot id. False for a HEAD, which is a probe, not a viewer. */
+function openStream(res: ServerResponse, head: boolean): boolean {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-  // A HEAD is a probe, not a viewer: answer the headers and subscribe nothing.
-  if (head) { res.end(); return; }
+  if (head) { res.end(); return false; }
   res.write(': connected\n\n');
   res.write(`event: boot\ndata: ${JSON.stringify({ bootId: BOOT_ID })}\n\n`);
+  return true;
+}
+
+/**
+ * Keeps a stream going while its viewer is there and (with a sign-in) its session lasts: a heartbeat,
+ * and `stillSignedIn` for each write. `start` subscribes and returns its unsubscribe.
+ */
+function keepStream(req: IncomingMessage, res: ServerResponse, auth: ConsoleGate | undefined, start: (stillSignedIn: () => boolean) => () => void): void {
   let off: () => void = () => {};
   let beat: ReturnType<typeof setInterval> | undefined;
   const end = (): void => { off(); clearInterval(beat); };
@@ -299,17 +328,90 @@ function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps
     res.end();
     return false;
   };
-  off = deps.bus.subscribe((event) => {
-    if (!stillSignedIn()) return;
-    // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
-    // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
-    if (res.writableLength > MAX_STREAM_BACKLOG) return;
-    res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
-  });
+  off = start(stillSignedIn);
   // A comment line keeps a proxy (and ngrok) from closing an idle stream between calls.
   beat = setInterval(() => { if (stillSignedIn()) res.write(': hb\n\n'); }, HEARTBEAT_MS);
   beat.unref?.();
   req.on('close', end);
+}
+
+/**
+ * The live feed of one call (`?call=<id>`) or of the newest call (no query): its history, then every
+ * event as it comes, while the session (with a sign-in) lasts.
+ */
+function liveFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps, head: boolean, auth: ConsoleGate | undefined, shows: (event: PublishedEvent, replaying: boolean) => boolean): void {
+  if (!openStream(res, head)) return;
+  keepStream(req, res, auth, (stillSignedIn) => {
+    let replaying = true;
+    const off = deps.bus.subscribe((event) => {
+      if (!shows(event, replaying)) return;
+      if (!stillSignedIn()) return;
+      // A stalled viewer is dropped frames, not unbounded memory; the page notices the gap in
+      // `seq` and shows a warning rather than reloading on its own (page.html's `es.onmessage`).
+      if (res.writableLength > MAX_STREAM_BACKLOG) return;
+      res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
+    });
+    replaying = false;
+    return off;
+  });
+}
+
+/**
+ * The Live list's feed (`?view=calls`): every kept call's row (`event: rows`), then each row as it
+ * changes (`event: row`) and each call the console no longer keeps (`event: gone`). A reconnect starts
+ * with the whole list again.
+ */
+function listFeed(req: IncomingMessage, res: ServerResponse, deps: DashboardDeps, head: boolean, auth: ConsoleGate | undefined): void {
+  if (!openStream(res, head)) return;
+  const list = liveCallsOf(deps);
+  keepStream(req, res, auth, (stillSignedIn) => {
+    res.write(`event: rows\ndata: ${JSON.stringify({ rows: list.snapshot() })}\n\n`);
+    return list.watch((change) => {
+      if (!stillSignedIn()) return;
+      if (res.writableLength > MAX_STREAM_BACKLOG) return;
+      res.write(change.type === 'row' ? `event: row\ndata: ${JSON.stringify(change.row)}\n\n` : `event: gone\ndata: ${JSON.stringify({ callSid: change.callSid })}\n\n`);
+    });
+  });
+}
+
+/** Where the Calls page and today's figures read: each app's traces on a host (or the one `?app=` names), else the one app's. */
+function callsSources(deps: DashboardDeps, only: string | null): CallsSource[] {
+  if (deps.apps && deps.apps.length > 0) {
+    return deps.apps.filter((a) => only === null || a.id === only).map((a) => ({ id: a.id, app: a.app, traceDir: a.traceDir, ...(a.traces ? { traces: a.traces } : {}) }));
+  }
+  return [{ id: null, app: getApp(defaultAppId()), traceDir: deps.traceDir, ...(deps.traces ? { traces: deps.traces } : {}) }];
+}
+
+/** A whole number of milliseconds from a query, or undefined. */
+function msOf(v: string | null): number | undefined {
+  if (v === null || !/^\d{1,15}$/.test(v)) return undefined;
+  return Number(v);
+}
+
+/** The Calls page's query, each field kept only when well formed. */
+function callsQueryOf(query: URLSearchParams): CallsQuery {
+  const last4 = query.get('last4');
+  const task = query.get('task');
+  const ending = query.get('ending');
+  const page = msOf(query.get('page'));
+  const fromMs = msOf(query.get('from'));
+  const toMs = msOf(query.get('to'));
+  return {
+    ...(last4 !== null && /^\d{4}$/.test(last4) ? { last4 } : {}),
+    ...(fromMs !== undefined ? { fromMs } : {}),
+    ...(toMs !== undefined ? { toMs } : {}),
+    ...(task !== null && /^[A-Za-z0-9_.-]{1,64}$/.test(task) ? { task } : {}),
+    ...(ending !== null && QUERY_ENDINGS.includes(ending) ? { ending } : {}),
+    page: page !== undefined ? Math.min(page, 10_000) : 0,
+  };
+}
+
+/** Answers JSON from `work`, or 503 when the traces cannot be read. */
+function answerJson(res: ServerResponse, head: boolean, work: () => Promise<unknown>): void {
+  work().then((body) => send(res, 200, 'application/json', JSON.stringify(body), head), (err: unknown) => {
+    if (!res.headersSent) send(res, 503, 'text/plain', `the traces could not be read: ${err instanceof Error ? err.message : String(err)}`, head);
+    else res.end();
+  });
 }
 
 /** Returns true when the request was a dashboard route (handled), false to let the caller continue. */
@@ -356,14 +458,32 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
   if (path === '/dashboard/events') {
+    // The Live list's rows (`?view=calls`), one call's events (`?call=<id>`), or the newest call's.
+    const list = query.get('view') === 'calls';
+    const shows = list ? null : feedFilter(deps, query);
+    if (!list && shows === null) { send(res, 404, 'text/plain', 'not found', head); return true; }
+    const open = (): void => (list ? listFeed(req, res, deps, head, auth) : liveFeed(req, res, deps, head, auth, shows!));
     // Recorded before a byte of the feed is sent: a watch the audit could not record is not served.
     const noted = !head && auth && session ? auth.noteLive(session) : undefined;
     if (noted instanceof Promise) {
       // AUDIT_STORE=postgres: the feed starts once the database has the record.
-      noted.then(() => liveFeed(req, res, deps, head, auth), () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
+      noted.then(open, () => send(res, 503, 'text/plain', 'the access could not be recorded', head));
       return true;
     }
-    liveFeed(req, res, deps, head, auth);
+    open();
+    return true;
+  }
+  // The Calls page: past calls from the traces, filtered and paged (calls.ts).
+  if (path === '/dashboard/calls') {
+    const only = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
+    answerJson(res, head, () => listCalls(callsSources(deps, only), callsQueryOf(query), Date.now()));
+    return true;
+  }
+  // The Live page's figures for today: since the start of the viewer's day (`?since=<ms>`), from the traces.
+  if (path === '/dashboard/today') {
+    const only = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
+    const since = msOf(query.get('since')) ?? new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+    answerJson(res, head, () => todayOf(callsSources(deps, only), since, Date.now()));
     return true;
   }
   if (path === '/dashboard/traces' && deps.apps && deps.apps.length > 0) {

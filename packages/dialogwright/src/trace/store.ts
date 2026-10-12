@@ -587,11 +587,14 @@ export class S3TraceReader {
 
   /**
    * The calls with records in the store, newest first by their last write: the newest days' folders
-   * only, until at least `limit` calls are found (every day when `limit` is unset).
+   * only, until at least `limit` calls are found (every day when `limit` is unset), and only the day
+   * folders from `from` to `to` (YYYY-MM-DD, each optional) when they are given: the console's Calls
+   * page narrows a date range by the folders' names before it reads a call.
    */
-  async calls(o: { limit?: number } = {}): Promise<StoredTrace[]> {
+  async calls(o: { limit?: number; from?: string; to?: string } = {}): Promise<StoredTrace[]> {
     const out: StoredTrace[] = [];
     for (const day of await this.days()) {
+      if ((o.from !== undefined && day < o.from) || (o.to !== undefined && day > o.to)) continue;
       out.push(...(await this.callsOn(day)));
       if (o.limit !== undefined && out.length >= o.limit) break;
     }
