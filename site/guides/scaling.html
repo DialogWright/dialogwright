@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>DialogWright guide: scaling out (a design)</title>
-  <meta name="description" content="How DialogWright is designed to run on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in) and what many servers add, Phase 8b, designed and not built yet.">
+  <meta name="description" content="How DialogWright runs on many servers behind a load balancer: what one machine already has (store interfaces with a contract suite, a file store, resume, idempotent writes, drain, console sign-in), the shared Postgres store built so far, and what many servers add next, Phase 8b.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,7 @@
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://dialogwright.com/guides/scaling.html">
   <meta property="og:title" content="Scaling out (a design)">
-  <meta property="og:description" content="The same app folder on many servers: what must be shared, and how calls survive a deploy. Designed, not built yet.">
+  <meta property="og:description" content="The same app folder on many servers: what must be shared, and how calls survive a deploy. Part built, part designed.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="../style.css">
   <script src="../copy.js" defer></script>
@@ -59,9 +59,10 @@
           need are built into it: the session stores sit behind interfaces with one contract suite, a session is versioned and
           resumes on a restarted server, writes carry idempotency keys, the server says when it is ready and drains before it
           stops, and the console has a sign-in. Running on many servers on top of those seams is Phase 8b of the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>, designed and not
-          built yet. Each section below says which is which, and where this page names a setting or a command that does not exist
-          yet, it says so.</p>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>, being built: its
+          first part, the session store many servers share (<code>SESSION_STORE=postgres://...</code>, one server running a call at a
+          time), is built; the rest is designed. Each section below says which is which, and where this page names a setting or a
+          command that does not exist yet, it says so.</p>
         <p><strong>One server is the right answer for most people.</strong> A single process answers a personal line or a small
           office's without strain; <a href="home-server.html">run it on a machine you own</a>. Scale out when you need a deploy that
           never drops a call, or more than one machine's worth of calls.</p>
@@ -97,7 +98,9 @@
           <code>RECONNECT_LIMIT</code> times, then transfers it politely. With <code>SESSION_STORE=file:&lt;dir&gt;</code> the call
           is saved after every turn, so a restarted server on the same machine resumes it; a planned restart hands each call over
           to the server that starts next, and the carrier's fallback (<code>pnpm fallback</code>) catches a callback that finds no
-          server. What it cannot do yet is resume a call on another machine: that needs a store they share.
+          server. With <code>SESSION_STORE=postgres://...</code> several servers share their calls: when the one running a call dies or
+          drains, the carrier's reconnect reaches another, which takes the call over and resumes it
+          (<a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#1414-many-servers-on-one-database">the guide's section 14.14</a>).
         </p>
         <p>
           Everything a call needs lives in the server's memory or on its disk, by design: laptop mode is first-class, and every
@@ -113,7 +116,7 @@
         <figure class="diagram">
           <svg viewBox="0 0 400 652" role="img" aria-labelledby="scale-title scale-desc">
             <title id="scale-title">DialogWright on many servers (a design)</title>
-            <desc id="scale-desc">Callers, through the carrier, and web visitors reach a load balancer that passes HTTPS and WebSockets with an idle timeout longer than a call. Behind it run several instances of the same image in different roles: two voice instances and a chat instance. Every instance reads and writes shared stores: sessions with their call queues, tokens, reconnect counts and chat resume in Redis; the audit as a hash chain per session in Postgres; traces and frame logs in object storage. Every instance asks the decision model, whose account rate limits they share. The operator console runs as its own role, internal only, behind single sign-on, and reads the shared stores.</desc>
+            <desc id="scale-desc">Callers, through the carrier, and web visitors reach a load balancer that passes HTTPS and WebSockets with an idle timeout longer than a call. Behind it run several instances of the same image in different roles: two voice instances and a chat instance. Every instance reads and writes shared stores: sessions with their call queues, tokens, reconnect counts and chat resume in Postgres; the audit as a hash chain per session in Postgres; traces and frame logs in object storage. Every instance asks the decision model, whose account rate limits they share. The operator console runs as its own role, internal only, behind single sign-on, and reads the shared stores.</desc>
             <defs>
               <marker id="sc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path class="dg-head" d="M0,0 L10,5 L0,10 z"/>
@@ -159,7 +162,7 @@
             <text class="dg-note" x="20" y="310">shared stores</text>
 
             <rect class="dg-box" x="20" y="320" width="330" height="50" rx="8"/>
-            <text class="dg-title" x="185" y="341" text-anchor="middle">Sessions (Redis, say)</text>
+            <text class="dg-title" x="185" y="341" text-anchor="middle">Sessions (Postgres)</text>
             <text class="dg-note" x="185" y="359" text-anchor="middle">sessions, call queues, tokens, reconnects, chat resume</text>
 
             <rect class="dg-box" x="20" y="380" width="330" height="50" rx="8"/>
@@ -189,19 +192,21 @@
             internal only.</li>
           <li><strong>A load balancer that carries WebSockets</strong>, with an idle timeout longer than the longest call, and no
             sticky sessions. Carrier webhooks are stateless HTTP.</li>
-          <li><strong>Shared stores</strong>: sessions in Redis; the audit log in Postgres; traces in object storage; console
-            events over Redis pub/sub. Each is to be chosen by configuration, one at a time: <code>SESSION_STORE</code> exists and
-            takes <code>memory</code> or <code>file:&lt;dir&gt;</code> today; a shared value such as <code>redis://...</code> is
-            Phase 8b's.</li>
-          <li><strong>A starter setup</strong> on a container platform with WebSockets: two instances, managed Redis and
+          <li><strong>Shared stores</strong>: sessions and the audit log in Postgres; traces in object storage; console
+            events over Postgres's <code>LISTEN</code>/<code>NOTIFY</code>. Each is chosen by configuration, one at a time:
+            <code>SESSION_STORE</code> takes <code>memory</code>, <code>file:&lt;dir&gt;</code> or <code>postgres://...</code>
+            today (a Redis store may follow behind the same contract); the audit, traces and console events are Phase 8b's next
+            part.</li>
+          <li><strong>A starter setup</strong> on a container platform with WebSockets: two instances and a managed
             Postgres. <strong>Production</strong> on containers across availability zones. <strong>A second region</strong>
             later, as the carrier's fallback target.</li>
           <li><strong>For regulated data</strong>, services covered by the agreements your sector requires, encryption at rest,
             retention policies and in-region data.</li>
-          <li><strong>Locally</strong>, the design has <code>pnpm dev:stack</code> bring up Redis, Postgres and an object-storage
-            stand-in with <code>docker compose</code>, two instances behind a local load balancer, where the kill-an-instance test
-            runs (planned, Phase 8b). Its one-machine version runs today: <code>server/restart.e2e.test.ts</code> kills the server
-            mid-call and resumes the call on a new process.</li>
+          <li><strong>Locally</strong>, the plan has a <code>docker compose</code> stack with Postgres, an object-storage stand-in,
+            two instances and a load balancer, where the kill-an-instance test runs (planned, Phase 8b). Its in-process version runs
+            in every test run today: <code>server/manyServers.e2e.test.ts</code> puts two servers on one Postgres (PGlite, in the
+            process) behind a balancer, kills or drains the one with the call, and the other resumes it; and
+            <code>server/restart.e2e.test.ts</code> kills one server mid-call and resumes the call on a new process.</li>
         </ul>
       </section>
 
@@ -220,29 +225,29 @@
                   chain (<code>tail</code>, so turns run one at a time) and the turns in flight. With <code>SESSION_STORE=file:</code>
                   the session is saved after every turn (<code>CallStateStore</code>, <code>server/stores/</code>) with its
                   <code>SESSION_SCHEMA</code>, and a restarted server loads it (a resume onto another schema hands off politely).</td>
-                <td data-label="Across instances">The same <code>CallStateStore</code>, shared, passing the same contract suite, so any instance loads any call. One
-                  instance must own a call's turns at a time: a lock or lease per call id in the store.</td>
+                <td data-label="Across instances">Built: the same <code>CallStateStore</code> in Postgres, passing the same contract suite, so any instance loads
+                  any call, and one instance owns a call's turns at a time under a lease per call id, taken with the call at the
+                  socket's setup and given up when its socket closes.</td>
               </tr>
               <tr>
                 <td data-label="State">One-time socket tokens</td>
                 <td data-label="Today (in the code)">A <code>TokenStore</code> (<code>CallTokens</code> in memory, or <code>tokens.json</code> with the file store), kept only
                   as SHA-256: one per call, 10 minutes, tied to the call and to the carrier that minted it.</td>
-                <td data-label="Across instances">Shared, with the same expiry, and still single-use: the instance that takes the socket must recognise a token
-                  another instance minted. The server calls its token store synchronously today; a networked one needs those calls
-                  awaited.</td>
+                <td data-label="Across instances">Built: shared in Postgres, with the same expiry, still one per call: a token one instance mints is saved
+                  before the carrier has it, so the instance that takes the socket recognises it.</td>
               </tr>
               <tr>
                 <td data-label="State">The reconnect counter</td>
                 <td data-label="Today (in the code)">A field of the call's entry (<code>reconnects</code>), saved with the call, checked against <code>RECONNECT_LIMIT</code>.</td>
-                <td data-label="Across instances">Part of the shared session, incremented atomically, or two instances could each grant the last reconnect.</td>
+                <td data-label="Across instances">Built: a column beside the shared call, incremented in one statement, so two instances never both grant the last reconnect.</td>
               </tr>
               <tr>
                 <td data-label="State">Chat sessions and resume tokens</td>
                 <td data-label="Today (in the code)">In memory (<code>server/chat/socket.ts</code>), and with the file store saved as a <code>ChatStateStore</code>
                   record found by its resume token's hash; a fresh resume token with every <code>ready</code>.
                   <code>CHAT_MAX_SESSIONS</code> counts this process's chats.</td>
-                <td data-label="Across instances">Shared, so a resume reaches any instance (<a href="#chat">section 5</a>). The limit becomes per instance, or
-                  moves to the store.</td>
+                <td data-label="Across instances">Built: shared in Postgres, so a resume reaches any instance (<a href="#chat">section 5</a>). The limit is per
+                  instance.</td>
               </tr>
               <tr>
                 <td data-label="State">The audit chain</td>
@@ -259,7 +264,7 @@
               <tr>
                 <td data-label="State">Console events</td>
                 <td data-label="Today (in the code)">An in-process bus (<code>DashboardBus</code>).</td>
-                <td data-label="Across instances">Redis pub/sub, so the console sees every instance's calls.</td>
+                <td data-label="Across instances">Postgres's <code>LISTEN</code>/<code>NOTIFY</code>, so the console sees every instance's calls (Phase 8b, next).</td>
               </tr>
               <tr>
                 <td data-label="State">The knowledge base's index</td>
@@ -290,7 +295,7 @@
           <dt>The session in a shared store (the design's choice)</dt>
           <dd>Any instance can take any step: it reads the token, the counter and the session from the store, and the call resumes
             ("Sorry, I lost you for a moment"). The load balancer needs no affinity. On one machine this is built: a restarted
-            server loads the call from the file store. Across instances it needs Phase 8b's shared store.</dd>
+            server loads the call from the file store; across instances, from the Postgres store (Phase 8b, built).</dd>
           <dt>Route by call id</dt>
           <dd>Keep state in memory and have the load balancer send every step of a call to the instance that holds it. Today the
             socket's URL carries only the token, so a balancer cannot see the call id at the upgrade; it would need the call id, or
@@ -340,7 +345,8 @@
         <p>
           The design for a rolling deploy: new instances report ready before they take traffic; old ones stop taking new calls and keep
           serving the ones they have; after a drain limit (about 15 minutes) they close the remaining sockets, and those calls reconnect
-          to the new version from the shared session (Phase 8b). The test that proves it is the kill-an-instance test: a deploy never drops a call.
+          to the new version from the shared session (built: a draining server gives each call up as its socket closes, and another takes
+          it at once). The test that proves it is the kill-an-instance test: a deploy never drops a call.
         </p>
       </section>
 
@@ -411,8 +417,8 @@
         <p>
           Phase 8, local-first on a machine you own, is done: the store interfaces and their contract suite, a file store, resume
           after a restart, idempotent writes, readiness and drain, retention, service files, carrier fallback documents and console
-          sign-in, proved by the kill-the-server test. Phase 8b, many servers, is planned: shared stores passing the same contract
-          suite, the audit in Postgres, traces in object storage, console events over pub/sub, <code>--role</code>, a container image
+          sign-in, proved by the kill-the-server test. Phase 8b, many servers, is being built: the session store in Postgres passing
+          the same contract suite, with one owner per call, is built and proved by the in-process two-server test; next come the audit in Postgres, traces in object storage, console events over pub/sub, <code>--role</code>, a container image
           and a <code>docker compose</code> stack where the kill-an-instance test runs, and console roles with single sign-on.
           Laptop mode stays first-class throughout: the same code runs in every mode, and the contract suite keeps the implementations honest.
         </p>
