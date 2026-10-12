@@ -26,4 +26,4 @@ The guide is long, too long to read in one go: each section is a chapter of its 
 13. [Channels](13-channels.md)
 14. [Running it](14-running-it.md)
 15. [The adversarial suite](15-the-adversarial-suite.md)
-16. [Generated wording](16-generated-wording.md) (opt-in): [when to use it](16-generated-wording.md#161-when-to-use-it-and-when-not), [the secretary pattern](16-generated-wording.md#163-generating-from-what-was-collected-the-secretary-pattern), [the checks](16-generated-wording.md#166-the-checks-and-the-fallback), [running it](16-generated-wording.md#167-running-it), [measuring it](16-generated-wording.md#168-measuring-it)
+16. [Generated wording](16-generated-wording.md) (opt-in): [when to use it](16-generated-wording.md#161-when-to-use-it-and-when-not), [summarizing what a caller said: a framed line](16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line), [the checks](16-generated-wording.md#166-the-checks-and-the-fallback), [running it](16-generated-wording.md#167-running-it), [measuring it](16-generated-wording.md#168-measuring-it)

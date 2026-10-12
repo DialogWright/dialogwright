@@ -1566,18 +1566,6 @@ export const TOOLS: Record<string, ToolDef> = {
     goal: Ask again, kindly, for the number to call the caller back on.
     when:
       situations: [re-ask]
-  confirm_take_message:
-    text: "For {recipient}, from {caller}, call back on {phone}. Your message: {message}. Shall I pass it on?"
-    interruptible: true
-    mode: generative
-    goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message, and ask whether to pass it on.
-    from: [message]
-    summarizesConfirmed: true
-    when:
-      situations: [first-ask]
-  read_back_exact:
-    text: Here it is exactly as I took it down.
-    interruptible: false
   privacy_notice:
     text: This call may be recorded for quality and training.
     interruptible: false
@@ -1585,11 +1573,50 @@ export const TOOLS: Record<string, ToolDef> = {
 ```
 
 - Every generated line has a `goal`. Keep its `text`: it is the meaning, the fallback and what a repeat says.
-- `from` names the variables that hold collected content the line may summarize; the slot keeps the exact words, the write sends them, and `when: { situations: [first-ask] }` makes every later reading word for word. Give the slot `redact: none` and `say: null` (a `text` slot), so the words are what the line reads back. A read-back whose `from` value the write's `confirmed` rule covers needs `summarizesConfirmed: true`. Give its form `summary: { onNo: read-back }` and a `read_back_exact` line, so a caller who says no hears the exact words, on a call too.
+- To read back a summary of what the caller said (a message, a note, a long description), frame it: the next pattern. A whole line generated from the caller's words (`mode: generative` with `from`) is still allowed, but `check` warns of it: whether it says them as the caller's rests on a model's judgement.
 - A whole form: `wording: generative` in forms.yaml generates its questions, read-backs and summary, but for a line that says `mode: fixed` (a keypad instruction) or is prescribed.
 - When the paragraph does not say what is regulated, mark these `prescribed: true`: the lines that state what an action did (a booking made, a payment taken, an amount or a date the gate decided on), the identity and one-time-code lines, the handoff lines, and any legal or required notice. The policy card lists every generated and every prescribed line for the owner to review.
 - A line that names an identity factor, or a slot hidden whole in the records, cannot be generated (`check` refuses it), nor can a knowledge base's answer line (`{answer}`).
 - `style.yaml` (optional) sets the persona, a word budget per channel and phrases to avoid. Nothing is generated until the owner sets `RENDER_PROVIDER` and its key; the stub regression words the lines with a fake renderer and runs every check.
+
+## Summarizing what the caller said: a framed line (`generate`)
+
+**When:** the paragraph asks for a summary of something the caller said to be read back (a secretary reading back the gist of a message, a long note, a long transaction described in the caller's words), the exact words on request. The line stays fixed and says whose words follow; only the summary inside it is generated. Attribution is by design: whatever the model writes is heard inside words the app wrote, and the model is given only the summary's goal and the caller's words, never the line ([16.3](../../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line)).
+
+```yaml
+# prompts.yaml, under prompts:
+  confirm_take_message:
+    text: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on?"
+    interruptible: true
+    generate:
+      summary:
+        from: message
+        goal: Summarize the caller's message in one sentence, in their own terms.
+        words: 25
+    summarizesConfirmed: true
+    when:
+      situations: [first-ask]
+  read_back_exact:
+    text: Here it is exactly as I took it down.
+    interruptible: false
+```
+
+```yaml
+# forms.yaml, under forms:
+  take_message:
+    slots: [recipient, caller, phone, message]
+    summaryPromptId: confirm_take_message
+    hooks: [confirmedParams, complete]
+    calls: [leaveMessage]
+    summary:
+      onNo: read-back
+```
+
+- `generate` names the span (`{summary}`, a name of its own, never a slot's) with `from` (the slot that holds the caller's words), a `goal` and a word budget (`words`, default 25). The rest of the line is fixed: write it so it says whose words the span gives, and so it reads true when the span is the exact words (on a fallback, a no, a repeat): "left this message:", not "summarized:".
+- Give the slot `redact: none` and `say: null` (a `text` slot): the slot keeps the exact words, the write sends them, and they fill the span whenever it is not generated. A span whose `from` the write's `confirmed` rule covers needs `summarizesConfirmed: true` on the line. Give the form `summary: { onNo: read-back }` and a `read_back_exact` line, so a caller who says no hears the exact words, on a call too; `when: { situations: [first-ask] }` makes every later reading exact.
+- A long transaction: the same shape, the frame naming what it is ("Here is the change you described: {summary}. Shall I send it?"), the span worded from the slot that holds the description. Values the frame says (an amount, a day, a name) stay in the frame, fixed.
+- Nothing else of the line goes to the model, so the frame may name any value; the span's `from` may not be an identity factor or a slot hidden whole in the records. In another locale, its prompts.yaml frames the line in its own words, says the same spans, and gives a span only its goal (`generate: { summary: { goal: ... } }`); without a goal there, the span is the exact words.
+- `prescribed: true` forbids it; a framed line takes no `mode`, `goal` or `from` of its own. The stub regression words the span with the fake renderer and runs every check; the adversarial suite tries an injected message, a dropped negation, another recipient and a renderer writing into the frame on it.
 
 ## Values with no slot type
 

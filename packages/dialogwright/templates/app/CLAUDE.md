@@ -43,7 +43,7 @@ Run `pnpm check`, then this app's typecheck, tests and `regress`, then the root 
 ## Rules for this app
 
 - Never put policy in tool code. Tools do the work; the gate decides, from `policy.yaml`, whether they may run.
-- Every line a caller hears is in `prompts.yaml`, said word for word unless the app asks for it to be generated (`mode: generative`, a form's `wording: generative`); a line marked `prescribed: true` never is. What is regulated is the owner's call; the policy card lists every generated and prescribed line.
+- Every line a caller hears is in `prompts.yaml`, said word for word unless the app asks for it to be generated (`mode: generative`, a form's `wording: generative`); a line marked `prescribed: true` never is. A summary of what the caller said is a framed line (`generate`): the line fixed, saying whose words follow, and only the summary a generated span. What is regulated is the owner's call; the policy card lists every generated and prescribed line.
 - The regression runs the adversarial suite (app.yaml's `testing: { adversarial: on }`; keep it on). A `FAIL adversarial` case is a finding: fix the app (a tool's `check` of its reply, the policy, a hook), never the case, and never turn the suite off to pass.
 - Every tool whose reply a line says, or a call is made from, checks the reply (`check`, written with `replyShape`): a downstream system's reply is not trusted.
 - Fictional data only: invented names, the 555 phone range.
