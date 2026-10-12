@@ -5,7 +5,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, type Env, type ServerConfig } from './config';
+import { gb as gbOf, loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
@@ -34,7 +34,8 @@ import { randomBytes } from 'node:crypto';
  *   5. the model: which one and from where, and its key variable set (no request is made); a stub is a warning;
  *   6. HANDOFF_NUMBER is not a 555 number; and each variable app.yaml names (env.<NAME>) is set, said by its
  *      length, never its value; a transfer target's holds an E.164 number or a sip: URI, and not a 555 number;
- *   7. the trace and audit folders can be written, and 8. there is more than a gigabyte free;
+ *   7. the trace and audit folders can be written, and 8. there is more than a gigabyte free, and what
+ *      the retention policy keeps (traces, the audit, the free-space warning, the server's own log);
  *   9. this machine's clock is within a minute of another machine's: the Date that the carrier's API host
  *      (or else the model provider's) answers a HEAD with. Not PUBLIC_HOST's: through a tunnel that is
  *      this machine's own clock, passed back;
@@ -55,7 +56,7 @@ import { randomBytes } from 'node:crypto';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'clock';
+export type CheckId = 'settings' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -325,6 +326,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
         : { id: 'space', status: 'ok', message: gb },
     );
   }
+  // 8b. The retention policy: what is removed, and when, and where the server's own log goes.
+  results.push(retentionCheck(config));
 
   // 9. The clock, against another machine's: a host this setup relies on, never PUBLIC_HOST (through a
   // tunnel to this machine, its Date is this machine's own clock).
@@ -512,6 +515,18 @@ async function postgresCheck(url: string, offline: boolean, deps: DoctorDeps): P
   } finally {
     await sql.close().catch(() => undefined);
   }
+}
+
+/** The retention policy as the settings have it, said in one line (always ok: each is a choice). */
+export function retentionCheck(c: ServerConfig): CheckResult {
+  const traces = c.traceRetentionDays === undefined && c.traceMaxBytes === undefined
+    ? 'traces kept for ever'
+    : `traces kept ${c.traceRetentionDays === undefined ? 'for ever' : `${c.traceRetentionDays} days`}${c.traceMaxBytes !== undefined ? ` and at most ${gbOf(c.traceMaxBytes)}` : ''}`;
+  const audit = c.auditRetentionDays === undefined ? 'the audit kept for ever (a record: AUDIT_RETENTION_DAYS only for how long it must be kept)' : `the audit kept ${c.auditRetentionDays} days`;
+  const warn = c.diskWarnFreeBytes === undefined ? 'no free-space warning' : `/health warns under ${gbOf(c.diskWarnFreeBytes)} free`;
+  const log = c.logFile ? `the server's log in ${c.logFile.file}, rolled at ${Math.round(c.logFile.maxBytes / 1024 ** 2)} MB, ${c.logFile.keep} kept` : "the server's log where its service manager puts it (no LOG_FILE)";
+  const where = c.traceStore ? ` on ${describeTraceStore(c.traceStore)}` : '';
+  return { id: 'retention', status: 'ok', message: `${traces}${where}; ${audit}; ${warn}; ${log}` };
 }
 
 /** Check 11 with AUDIT_STORE=postgres://...: reachable, the audit tables' version, and an entry written in a transaction undone. Never the password. */

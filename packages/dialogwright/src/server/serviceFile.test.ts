@@ -41,11 +41,14 @@ const LAUNCHD = `<?xml version="1.0" encoding="UTF-8"?>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alex/dialogwright</string>
-  <!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm. -->
+  <!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm.
+       LOG_FILE: the server writes its own log there and rolls it (LOG_MAX_MB, LOG_KEEP in the settings file). -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>ENV_FILE</key>
     <string>/Users/alex/ivr/myline.env</string>
+    <key>LOG_FILE</key>
+    <string>/Users/alex/Library/Logs/com.example.ivr/server.log</string>
     <key>PATH</key>
     <string>/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
     <key>COREPACK_ENABLE_DOWNLOAD_PROMPT</key>
@@ -63,8 +66,10 @@ const LAUNCHD = `<?xml version="1.0" encoding="UTF-8"?>
   <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. -->
   <key>ExitTimeOut</key>
   <integer>40</integer>
+  <!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what
+       goes wrong before the server reads its settings (pnpm not found, say), which is little. -->
   <key>StandardOutPath</key>
-  <string>/Users/alex/Library/Logs/com.example.ivr/out.log</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
   <string>/Users/alex/Library/Logs/com.example.ivr/err.log</string>
 </dict>
@@ -181,9 +186,9 @@ describe('pnpm service', () => {
     expect(plist).toContain(`<string>${w.envFile}</string>`);
     expect(plist).toContain(`<string>${w.root}</string>`);
     expect(plist).toContain('<integer>60</integer>');
-    expect(plist).toContain(`<string>${join(w.home, 'Library/Logs/com.example.ivr')}/out.log</string>`);
+    expect(plist).toContain(`<string>${join(w.home, 'Library/Logs/com.example.ivr')}/server.log</string>`);
     expect(plist).not.toContain('not-read-into-the-file');
-    for (const p of [...plist.matchAll(/<string>([^<@]*\/[^<]*)<\/string>/g)].map((m) => m[1]!)) {
+    for (const p of [...plist.matchAll(/<string>([^<@]*\/[^<]*)<\/string>/g)].map((m) => m[1]!).filter((p) => p !== '/dev/null')) {
       for (const part of p.split(':')) expect(isAbsolute(part), part).toBe(true);
     }
     expect(r.out).toContain(`wrote ${out}`);

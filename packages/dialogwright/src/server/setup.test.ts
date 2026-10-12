@@ -80,7 +80,14 @@ describe('pnpm configure, answering its questions', () => {
       JEV_CLIENT: 'jev',
       JEV_PROVIDER: 'openrouter',
       OPENROUTER_API_KEY: MODEL_KEY,
+      // The retention policy a new settings file starts with; the audit left to its owner (a comment).
+      TRACE_RETENTION_DAYS: '30',
+      TRACE_MAX_GB: '5',
+      DISK_WARN_FREE_GB: '2',
+      LOG_MAX_MB: '10',
+      LOG_KEEP: '5',
     });
+    expect(readFileSync(file, 'utf8')).toContain('\n# AUDIT_RETENTION_DAYS=\n');
     // The keys were asked for with the echo off, and nothing printed carries them.
     expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([
       expect.stringContaining('Telnyx public key'),

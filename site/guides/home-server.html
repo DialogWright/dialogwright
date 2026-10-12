@@ -671,11 +671,14 @@ ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.
   &lt;/array&gt;
   &lt;key&gt;WorkingDirectory&lt;/key&gt;
   &lt;string&gt;{{root}}&lt;/string&gt;
-  &lt;!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm. --&gt;
+  &lt;!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm.
+       LOG_FILE: the server writes its own log there and rolls it (LOG_MAX_MB, LOG_KEEP in the settings file). --&gt;
   &lt;key&gt;EnvironmentVariables&lt;/key&gt;
   &lt;dict&gt;
     &lt;key&gt;ENV_FILE&lt;/key&gt;
     &lt;string&gt;{{envFile}}&lt;/string&gt;
+    &lt;key&gt;LOG_FILE&lt;/key&gt;
+    &lt;string&gt;{{logDir}}/server.log&lt;/string&gt;
     &lt;key&gt;PATH&lt;/key&gt;
     &lt;string&gt;{{path}}&lt;/string&gt;
     &lt;key&gt;COREPACK_ENABLE_DOWNLOAD_PROMPT&lt;/key&gt;
@@ -693,8 +696,10 @@ ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.
   &lt;!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. --&gt;
   &lt;key&gt;ExitTimeOut&lt;/key&gt;
   &lt;integer&gt;{{stopSeconds}}&lt;/integer&gt;
+  &lt;!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what
+       goes wrong before the server reads its settings (pnpm not found, say), which is little. --&gt;
   &lt;key&gt;StandardOutPath&lt;/key&gt;
-  &lt;string&gt;{{logDir}}/out.log&lt;/string&gt;
+  &lt;string&gt;/dev/null&lt;/string&gt;
   &lt;key&gt;StandardErrorPath&lt;/key&gt;
   &lt;string&gt;{{logDir}}/err.log&lt;/string&gt;
 &lt;/dict&gt;
@@ -705,7 +710,7 @@ ENV_FILE=~/ivr/myline.env pnpm service launchd --app myline --label com.example.
 plutil -lint ~/Library/LaunchAgents/com.example.myline.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.myline.plist   # start now, and at every login
 launchctl print gui/$(id -u)/com.example.myline | grep -E 'state|pid'             # running or not
-tail -f ~/Library/Logs/com.example.myline/out.log ~/Library/Logs/com.example.myline/err.log   # its output
+tail -f ~/Library/Logs/com.example.myline/server.log ~/Library/Logs/com.example.myline/err.log   # its output (server.log rolls at LOG_MAX_MB, LOG_KEEP kept)
 launchctl kickstart -k gui/$(id -u)/com.example.myline                            # restart: live calls get DRAIN_MS to finish
 launchctl bootout gui/$(id -u)/com.example.myline                                 # stop, and keep it stopped</code></pre>
         <p>

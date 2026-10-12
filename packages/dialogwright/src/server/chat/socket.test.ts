@@ -375,7 +375,8 @@ describe('the chat endpoint', () => {
     clock += 60_000;
     running!.sweep();
     expect(running!.chat!.liveCount()).toBe(0);
-    expect(logs.some((l) => l.includes('could not write a frame log'))).toBe(true);
+    // Logged by the trace's guard (a trace write never fails a turn), at most once a minute.
+    expect(logs.filter((l) => l.startsWith('traces: ') && l.includes('could not be written')).length).toBeGreaterThan(0);
     // The server still serves.
     const d = await ChatClient.connect(url);
     d.send({ type: 'ping' });
@@ -447,26 +448,29 @@ describe('the chat endpoint', () => {
     expect(d.received.slice(1).every((m) => m.type === 'say')).toBe(true);
   });
 
-  it('answers server_error when a turn cannot be run or logged, and goes on serving', async () => {
+  it('a trace that cannot be written never fails a turn: the reply comes as it would, and the server goes on serving', async () => {
     const { url, config, logs } = await start();
     const c = await ChatClient.connect(url);
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
     const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
-    // The trace cannot be written: the turn fails, and the client is asked to send it again.
+    // The trace cannot be written: the turn runs and answers (the maintainer's decision, 8b2's review).
     rmSync(join(config.traceDir, `${session}.jsonl`));
     mkdirSync(join(config.traceDir, `${session}.jsonl`));
     let n = c.received.length;
     c.send({ type: 'text', text: OPENER });
     await c.until((r) => r.length > n);
-    expect(c.received[n]).toEqual({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
-    // Nothing can be written at all: still answered, never silence.
+    expect(c.received[n]).not.toEqual({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
+    expect(c.received.slice(n).some((m) => m.type === 'say')).toBe(true);
+    expect(logs.filter((l) => l.startsWith('traces: ') && l.includes('could not be written'))).toHaveLength(1);
+    // The audit (in the same folder here) cannot be written either: that turn fails, as the record must be
+    // kept, and the client is asked to send it again; never silence.
     rmSync(config.traceDir, { recursive: true, force: true });
     n = c.received.length;
-    c.send({ type: 'text', text: OPENER });
+    // A handoff, which the audit records.
+    c.send({ type: 'text', text: AGENT });
     await c.until((r) => r.length > n);
     expect(c.received[n]).toEqual({ type: 'error', code: 'server_error', message: CHAT_TURN_ERROR });
-    expect(logs.some((l) => l.includes('could not write a frame log'))).toBe(true);
   });
 
   it('writes the frame log without the resume token', async () => {

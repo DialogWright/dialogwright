@@ -1,5 +1,5 @@
-import { readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, statfsSync, statSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 /**
  * Keeping the disk in check. A server writes two files per call (its trace and its frame log) and one
@@ -21,6 +21,8 @@ export interface RetentionSettings {
   traceDays?: number;
   /** AUDIT_RETENTION_DAYS; unset, every audit day is kept. */
   auditDays?: number;
+  /** TRACE_MAX_GB in bytes; unset, no size bound. */
+  traceMaxBytes?: number;
 }
 
 export interface SweepResult {
@@ -28,6 +30,8 @@ export interface SweepResult {
   traceFiles: number;
   /** Audit day files removed. */
   auditDays: number;
+  /** Of the trace files removed, those removed for the size bound, and the calls they were. */
+  trimmed?: { files: number; calls: number };
 }
 
 /** A folder's plain file names (not a link, not a folder), or none when it does not exist (yet). */
@@ -82,7 +86,58 @@ export function sweepRetention(s: RetentionSettings, at: { now: number; inUse: R
       }
     }
   }
+  // The size bound: while the traces are larger, the calls written least recently go first, whole.
+  if (s.traceMaxBytes !== undefined) {
+    const calls = new Map<string, { paths: string[]; size: number; newest: number }>();
+    let total = 0;
+    for (const name of names(s.traceDir)) {
+      const m = TRACE_FILE.exec(name);
+      if (!m || AUDIT_DAY.test(name)) continue;
+      const path = join(s.traceDir, name);
+      try {
+        const st = statSync(path);
+        const c = calls.get(m[1]!) ?? { paths: [], size: 0, newest: 0 };
+        c.paths.push(path);
+        c.size += st.size;
+        c.newest = Math.max(c.newest, st.mtimeMs);
+        calls.set(m[1]!, c);
+        total += st.size;
+      } catch {
+        // Gone while being counted.
+      }
+    }
+    let files = 0;
+    let removedCalls = 0;
+    for (const [stem, c] of [...calls].sort((a, b) => a[1].newest - b[1].newest)) {
+      if (total <= s.traceMaxBytes) break;
+      if (at.inUse.has(stem)) continue;
+      for (const path of c.paths) {
+        try {
+          unlinkSync(path);
+          files += 1;
+        } catch {
+          // As above.
+        }
+      }
+      total -= c.size;
+      removedCalls += 1;
+    }
+    traceFiles += files;
+    return { traceFiles, auditDays, trimmed: { files, calls: removedCalls } };
+  }
   return { traceFiles, auditDays };
+}
+
+/** The bytes free to this user on the disk `dir` is on (its nearest folder that exists), or null when that cannot be told. */
+export function freeBytesAt(dir: string): number | null {
+  let d = dir;
+  while (!existsSync(d) && dirname(d) !== d) d = dirname(d);
+  try {
+    const s = statfsSync(d);
+    return s.bavail * s.bsize;
+  } catch {
+    return null;
+  }
 }
 
 /** The bytes of the files directly in a folder; 0 for one that does not exist. */
@@ -101,14 +156,28 @@ function bytesIn(dir: string): number {
 export interface DiskUsage {
   traceBytes: number;
   auditBytes: number;
+  /** With DISK_WARN_FREE_GB: the least free space on the trace and audit folders' disks, and whether it is under the bound. */
+  freeBytes?: number | null;
+  low?: boolean;
 }
 
-/** How much the trace and audit folders hold, counted at most once a minute (`/health` may be asked often). */
-export function diskUsageCache(traceDir: string, auditDir: string, now: () => number, everyMs = 60_000): () => DiskUsage {
+/**
+ * How much the trace and audit folders hold, counted at most once a minute (`/health` may be asked
+ * often); with `warnFreeBytes` (DISK_WARN_FREE_GB), the free space beside it and whether it is low.
+ */
+export function diskUsageCache(traceDir: string, auditDir: string, now: () => number, everyMs = 60_000, warnFreeBytes?: number, freeBytes: (dir: string) => number | null = freeBytesAt): () => DiskUsage {
   let last: { at: number; usage: DiskUsage } | null = null;
   return () => {
     const t = now();
-    if (last === null || t - last.at >= everyMs) last = { at: t, usage: { traceBytes: bytesIn(traceDir), auditBytes: bytesIn(auditDir) } };
+    if (last === null || t - last.at >= everyMs) {
+      const usage: DiskUsage = { traceBytes: bytesIn(traceDir), auditBytes: bytesIn(auditDir) };
+      if (warnFreeBytes !== undefined) {
+        const free = [freeBytes(traceDir), freeBytes(auditDir)].filter((n): n is number => n !== null);
+        usage.freeBytes = free.length === 0 ? null : Math.min(...free);
+        usage.low = usage.freeBytes !== null && usage.freeBytes < warnFreeBytes;
+      }
+      last = { at: t, usage };
+    }
     return last.usage;
   };
 }

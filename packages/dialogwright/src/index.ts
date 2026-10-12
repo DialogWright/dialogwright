@@ -199,6 +199,10 @@ export { startServer, main as serverMain } from './server/index';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';
 export { routeOwns, validateRoutes } from './server/appRoutes';
 export type { AppRoute, AppRoutes, AppRouteDeps, AppRoutesFactory } from './server/appRoutes';
+// An app's own pages append to the audit through AppRouteDeps.audit, whose append answers at once with
+// day files and with a promise with AUDIT_STORE=postgres: whenChained takes either.
+export { whenChained, type AuditSink } from './run/turn';
+export type { Chained } from './audit/types';
 export type { ServerConfig } from './server/config';
 
 // The harness: the text CLI, the regression run, the threshold sweep and the cassette trim. An app's

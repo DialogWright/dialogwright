@@ -208,6 +208,28 @@ export function envLine(name: string, value: string): string {
   throw new UsageError(`${name} cannot be written so that a shell and the server read it alike: it has a ' and one of " $ \` \\ in it`);
 }
 
+/**
+ * The retention policy a new settings file starts with (the maintainer's proposal; each a setting to
+ * change): traces kept 30 days and at most 5 GB, a warning under 2 GB free, the server's own log rolled
+ * at 10 MB with 5 kept where a service writes it to a file (LOG_FILE), and the audit left to the owner.
+ */
+const RETENTION_SECTION: Section = {
+  comment: [
+    'Keeping the disk in check: traces and their frame logs are kept 30 days and at most 5 GB (the calls written',
+    'least recently go first, never a live one), and /health warns when less than 2 GB is free. The server\'s own',
+    'log, where the service writes it to a file (LOG_FILE, which pnpm service sets on a Mac), rolls at LOG_MAX_MB,',
+    'keeping LOG_KEEP. The audit is a record: it is kept for ever unless AUDIT_RETENTION_DAYS says how long it must be.',
+  ],
+  lines: [
+    { name: 'TRACE_RETENTION_DAYS', value: '30' },
+    { name: 'TRACE_MAX_GB', value: '5' },
+    { name: 'DISK_WARN_FREE_GB', value: '2' },
+    { name: 'LOG_MAX_MB', value: '10' },
+    { name: 'LOG_KEEP', value: '5' },
+    { name: 'AUDIT_RETENTION_DAYS', value: '', commented: true },
+  ],
+};
+
 /** What a settings file says, in groups, each with its comment. */
 interface Section {
   comment: string[];
@@ -430,6 +452,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
       existsSync(widget)
         ? { comment: ["The chat widget's script, served on /widget.js."], lines: [{ name: 'WIDGET', value: 'on' }, { name: 'WIDGET_FILE', value: widget }] }
         : { comment: ["The chat widget's script, served on /widget.js, once it is built: pnpm --filter @dialogwright/widget build."], lines: [{ name: 'WIDGET', value: 'on', commented: true }, { name: 'WIDGET_FILE', value: widget, commented: true }] },
+      RETENTION_SECTION,
     );
   } else {
     // The carrier, and its secret.
@@ -455,6 +478,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
       },
       { comment: ['Where a call goes when the caller wants a person, or the line cannot help (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
       { comment: ['The decision model, which reads what callers say.'], lines: modelLines },
+      RETENTION_SECTION,
     );
     out('');
     writeSettings(file, app, sections, out);

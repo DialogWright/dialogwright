@@ -14,11 +14,14 @@
   </array>
   <key>WorkingDirectory</key>
   <string>{{root}}</string>
-  <!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm. -->
+  <!-- The server reads the settings file itself (ENV_FILE). launchd starts with a short PATH: these hold node and pnpm.
+       LOG_FILE: the server writes its own log there and rolls it (LOG_MAX_MB, LOG_KEEP in the settings file). -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>ENV_FILE</key>
     <string>{{envFile}}</string>
+    <key>LOG_FILE</key>
+    <string>{{logDir}}/server.log</string>
     <key>PATH</key>
     <string>{{path}}</string>
     <key>COREPACK_ENABLE_DOWNLOAD_PROMPT</key>
@@ -36,8 +39,10 @@
   <!-- On stop: SIGTERM, which starts the drain, then this many seconds (DRAIN_MS and 10 more) before SIGKILL. -->
   <key>ExitTimeOut</key>
   <integer>{{stopSeconds}}</integer>
+  <!-- What the server prints is in LOG_FILE, rolled; launchd's own files would only grow. err.log keeps what
+       goes wrong before the server reads its settings (pnpm not found, say), which is little. -->
   <key>StandardOutPath</key>
-  <string>{{logDir}}/out.log</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
   <string>{{logDir}}/err.log</string>
 </dict>

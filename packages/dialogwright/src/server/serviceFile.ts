@@ -87,7 +87,7 @@ export function installCommands(kind: ServiceKind, file: string, label: string, 
       `plutil -lint ${f}`,
       `launchctl bootstrap gui/$(id -u) ${f}      # start now, and at every login`,
       `launchctl print gui/$(id -u)/${label} | grep -E 'state|pid'   # running or not`,
-      `tail -f ${shellWord(`${logDir}/out.log`)} ${shellWord(`${logDir}/err.log`)}   # its output`,
+      `tail -f ${shellWord(`${logDir}/server.log`)} ${shellWord(`${logDir}/err.log`)}   # its output (server.log rolls at LOG_MAX_MB, LOG_KEEP kept)`,
       `launchctl kickstart -k gui/$(id -u)/${label}   # restart: live calls get DRAIN_MS to finish`,
       `launchctl bootout gui/$(id -u)/${label}        # stop, and keep it stopped`,
     ];

@@ -3,7 +3,7 @@ import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { join, resolve as resolvePath } from 'node:path';
 import { calledVariablesFrom, transferTargetsFrom } from './transfer';
-import { consoleExposure, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
 import { createRequestHandler, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
@@ -45,6 +45,7 @@ import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatEndpoint, type ChatEndpoint } from './chat/socket';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
 import { ConsoleAuth } from './console/auth';
+import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 
 export interface RunningServer {
   server: Server;
@@ -453,17 +454,23 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       },
     })
     : undefined;
-  // Retention, when TRACE_RETENTION_DAYS or AUDIT_RETENTION_DAYS is set: a sweep now and once an hour after.
+  // Retention, when TRACE_RETENTION_DAYS, TRACE_MAX_GB or AUDIT_RETENTION_DAYS is set, and the free-space
+  // warning with DISK_WARN_FREE_GB: a sweep (and a look at the disk) now and once an hour after.
   const retention: RetentionSettings = {
     traceDir: config.traceDir, auditDir: config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
+    ...(config.traceMaxBytes !== undefined ? { traceMaxBytes: config.traceMaxBytes } : {}),
   };
-  const retaining = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined;
+  const sweeping = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined || config.traceMaxBytes !== undefined;
+  const retaining = sweeping || config.diskWarnFreeBytes !== undefined;
+  const disk = retaining ? diskUsageCache(config.traceDir, config.auditDir, now, undefined, config.diskWarnFreeBytes) : null;
   let retentionAt = now();
   const sweepDisk = (): void => {
     retentionAt = now();
     const inUse = new Set(store.liveCallSids().map(safeFileStem));
-    const r = sweepRetention(retention, { now: retentionAt, inUse });
-    log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days`);
+    if (sweeping) {
+      const r = sweepRetention(retention, { now: retentionAt, inUse });
+      log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days${r.trimmed ? ` (${r.trimmed.files} of them, ${r.trimmed.calls} calls, for TRACE_MAX_GB)` : ''}`);
+    }
     // The audit in Postgres: a call's chain removed whole once its newest entry is past the days, and the days' anchors.
     const auditDays = config.auditRetentionDays;
     if (postgresAudit && auditDays !== undefined && auditSetting) {
@@ -472,18 +479,30 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
         (err: unknown) => log(`retention: could not sweep the audit in ${maskConnectionString(auditSetting.url)}: ${err instanceof Error ? err.message : String(err)}`),
       );
     }
-    // The traces on the store: a call removed whole once its newest segment is past the days.
+    // The traces on the store: whole day folders past the days, then the calls written least recently past the size.
     const traceDays = config.traceRetentionDays;
-    if (traceStore && traceDays !== undefined) {
-      void traceStore.sweep(traceDays, retentionAt, inUse).then(
-        (t) => log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`),
-        (err: unknown) => log(`retention: could not sweep ${traceStore.label}: ${err instanceof Error ? err.message : String(err)}`),
-      );
+    const traceMax = config.traceMaxBytes;
+    if (traceStore && (traceDays !== undefined || traceMax !== undefined)) {
+      void (async () => {
+        if (traceDays !== undefined) {
+          const t = await traceStore.sweep(traceDays, retentionAt, inUse);
+          log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`);
+        }
+        if (traceMax !== undefined) {
+          const t = await traceStore.trim(traceMax, inUse);
+          if (t.calls > 0) log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label} for TRACE_MAX_GB`);
+        }
+      })().catch((err: unknown) => log(`retention: could not sweep ${traceStore.label}: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    // The free space, with DISK_WARN_FREE_GB: said once an hour while it is low.
+    const usage = disk?.();
+    if (usage?.low === true && config.diskWarnFreeBytes !== undefined) {
+      log(`WARNING: ${usage.freeBytes === null || usage.freeBytes === undefined ? 'unknown' : gb(usage.freeBytes)} free on the disk of the traces or the audit, under DISK_WARN_FREE_GB (${gb(config.diskWarnFreeBytes)}): free some space, or lower TRACE_RETENTION_DAYS or TRACE_MAX_GB`);
     }
   };
   if (retaining) {
     const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
-    log(`retention: traces kept ${kept(config.traceRetentionDays)}, audit days kept ${kept(config.auditRetentionDays)}`);
+    if (sweeping) log(`retention: traces kept ${kept(config.traceRetentionDays)}${config.traceMaxBytes !== undefined ? ` and at most ${gb(config.traceMaxBytes)}` : ''}, audit days kept ${kept(config.auditRetentionDays)}`);
     if (config.auditRetentionDays !== undefined) {
       log(`WARNING: AUDIT_RETENTION_DAYS=${config.auditRetentionDays}: audit day files older than ${config.auditRetentionDays} days are deleted, which ends the record for those days`);
     }
@@ -507,7 +526,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
           },
         },
     ...(chat ? { chatLive: () => chat.liveCount() } : {}),
-    ...(retaining ? { disk: diskUsageCache(config.traceDir, config.auditDir, now) } : {}),
+    ...(disk ? { disk } : {}),
     ...(traceStore ? { traces: traceStore.reader() } : {}),
     // /health's `traces`: always with a trace store; on one machine only once a write has failed, so a
     // body is as it was while the disk works.
@@ -867,6 +886,9 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
   try {
     const envFile = envFilePathOf(process.argv.slice(2), process.env);
     if (envFile !== null) applyEnvFile(envFile, process.env);
+    // LOG_FILE: from here on, what the process prints also goes to a file the server rolls itself.
+    const logFile = logFileSettingOf(process.env);
+    if (logFile !== null) teeProcessOutput(new RollingLog(logFile));
     const config = loadConfig(process.env);
     if (envFile !== null) console.log(`[server] settings from ${envFile} (a variable already in the environment wins over the file)`);
     console.log(`[server] ${describeConfig(config)}`);

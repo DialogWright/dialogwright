@@ -16,6 +16,7 @@ import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
 import { DEFAULT_SQL_TIMEOUT_MS, maskConnectionString } from './stores/sql';
 import { describeTraceStore, traceStoreSettingOf, type S3TraceSetting } from '../trace/store';
+import { logFileSettingOf, type LogFileSetting } from './logFile';
 import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -277,6 +278,19 @@ export interface ServerConfig {
    * files more than this many days old are deleted, never today's. Absent when unset.
    */
   auditRetentionDays?: number;
+  /**
+   * TRACE_MAX_GB, unset by default (no size bound, as before it existed): past it, the calls whose traces
+   * were written least recently are removed whole, never a live call's (server/retention.ts, and the
+   * trace store's trim). In bytes. Absent when unset.
+   */
+  traceMaxBytes?: number;
+  /**
+   * DISK_WARN_FREE_GB, unset by default: below this much free space on the disk the trace or audit
+   * folder is on, /health's `disk` says `low` and the log warns once an hour. In bytes. Absent when unset.
+   */
+  diskWarnFreeBytes?: number;
+  /** LOG_FILE (with LOG_MAX_MB and LOG_KEEP), unset by default: the server's own log, rolled (server/logFile.ts). */
+  logFile?: LogFileSetting;
   /**
    * SESSION_STORE, default memory (absent here, as before it existed): where calls, chats and relay
    * tokens are kept between turns (server/stores). `file:<dir>` keeps them in a folder on this machine
@@ -646,6 +660,12 @@ export function loadConfig(env: Env): ServerConfig {
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
+    ...gigabytesOf(env, 'TRACE_MAX_GB', 'traceMaxBytes'),
+    ...gigabytesOf(env, 'DISK_WARN_FREE_GB', 'diskWarnFreeBytes'),
+    ...(() => {
+      const logFile = logFileSettingOf(env);
+      return logFile === null ? {} : { logFile };
+    })(),
     ...sessionStoreOf(env),
     ...traceStoreOf(env),
     ...auditStoreOf(env),
@@ -732,6 +752,15 @@ function describeSessionStore(s: SessionStoreSetting): string {
   const pause = s.restartPauseS > 0 ? `restart pause ${s.restartPauseS} s` : 'restart pause off';
   if (s.kind === 'postgres') return `sessions ${maskConnectionString(s.url)} (${pause}, lease ${s.leaseMs} ms, timeout ${s.timeoutMs} ms${s.serverId ? `, server ${s.serverId}` : ''})`;
   return `sessions file:${s.dir} (${s.fsync ? `${pause}, fsync on` : pause})`;
+}
+
+/** A size in gigabytes (a decimal, above 0, at most 100000), as `{ [key]: bytes }`, or nothing when the variable is unset. */
+function gigabytesOf<K extends 'traceMaxBytes' | 'diskWarnFreeBytes'>(env: Env, name: string, key: K): { [k in K]?: number } {
+  const raw = env[name]?.trim();
+  if (raw === undefined || raw === '') return {};
+  const gb = Number(raw);
+  if (!Number.isFinite(gb) || gb <= 0 || gb > 100_000 || !/^\d+(\.\d+)?$/.test(raw)) throw new Error(`${name} must be a number of gigabytes above 0 (like 5 or 0.5), got "${env[name]}"`);
+  return { [key]: Math.round(gb * 1024 ** 3) } as { [k in K]?: number };
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
@@ -911,6 +940,9 @@ function describeEndAfterPlayback(c: ServerConfig): string {
   return held.length === 0 ? 'end after playback auto (no carrier listed needs it)' : `end after playback auto (${held.join(', ')}), ${upTo}`;
 }
 
+/** Bytes as gigabytes, as the startup line and diagnose say them. */
+export const gb = (bytes: number): string => `${Number((bytes / 1024 ** 3).toFixed(2))} GB`;
+
 export function describeConfig(c: ServerConfig): string {
   // A prefix of a secret is still a piece of the secret; the length alone is enough to tell
   // "the variable is set" from "the variable is the wrong value".
@@ -947,8 +979,10 @@ export function describeConfig(c: ServerConfig): string {
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms`,
-    `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}`,
+    `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}${c.traceMaxBytes !== undefined ? `, at most ${gb(c.traceMaxBytes)}` : ''}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
+    ...(c.diskWarnFreeBytes !== undefined ? [`warn below ${gb(c.diskWarnFreeBytes)} free`] : []),
+    ...(c.logFile ? [`log ${c.logFile.file} (rolled at ${Math.round(c.logFile.maxBytes / 1024 ** 2)} MB, ${c.logFile.keep} kept)`] : []),
     ...(c.sessionStore ? [describeSessionStore(c.sessionStore), describeResumedAfter(c.resumedAfterMs ?? DEFAULT_RESUMED_AFTER_MS)] : []),
     `clips ${c.clips ? 'on' : 'OFF (all TTS)'}`,
     `anthropic key ${mask(c.anthropicApiKey)}`,

@@ -114,7 +114,7 @@ describe('pnpm diagnose', () => {
     const d = deps();
     const results = await runDoctor({ env: goodEnv(dir), cwd: dir }, d);
     expect(results.map((r) => `${r.id} ${r.status}`)).toEqual([
-      'config ok', 'reach ok', 'console ok', 'carrier ok', 'model ok', 'handoff ok', 'folders ok', 'space ok', 'clock ok',
+      'config ok', 'reach ok', 'console ok', 'carrier ok', 'model ok', 'handoff ok', 'folders ok', 'space ok', 'retention ok', 'clock ok',
     ]);
     expect(d.seen.looked).toEqual(['ivr.example.com']);
     expect(d.seen.fetched).toEqual(['https://ivr.example.com/health', 'https://ivr.example.com/dashboard', 'HEAD https://api.telnyx.com/']);
@@ -365,7 +365,7 @@ describe('pnpm diagnose', () => {
     it('passes a folder the server can write that a reboot keeps, read from where the server runs, and names the fallback', async () => {
       const dir = tempDir();
       const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: 'file:sessions' }, cwd: dir }, { ...deps(), temporary: () => false });
-      expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'clock']);
+      expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'retention', 'clock']);
       expect(byId(results, 'store')).toEqual({
         id: 'store', status: 'ok',
         message: `sessions in ${join(dir, 'sessions')}: a restart resumes the calls under way (a carrier that calls back while no server listens needs its fallback document: pnpm fallback)`,
@@ -422,7 +422,7 @@ describe('pnpm diagnose', () => {
           await ensureSchema(pgliteSql(db));
           const p = pg(db);
           const results = await runDoctor({ env: { ...goodEnv(dir), SESSION_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), ...p });
-          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'clock']);
+          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'store', 'space', 'retention', 'clock']);
           expect(byId(results, 'store')).toMatchObject({ id: 'store', status: 'ok' });
           // The test's clock is fixed in 2026; PGlite's is this machine's: the offset is said, for information.
           expect(byId(results, 'store').message).toMatch(new RegExp(`^SESSION_STORE ${MASKED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} answers, its session tables are version 1, and a test lease was taken and given up: the servers on it share their calls; its clock is -?\\d+\\.\\d s from this machine's \\(leases are timed by the database's\\)$`));
@@ -513,6 +513,16 @@ describe('pnpm diagnose', () => {
       });
     });
 
+    it('says the retention policy: none set, everything kept; set, what goes and when, and where the log rolls', async () => {
+      const dir = tempDir();
+      expect(byId(await runDoctor({ env: goodEnv(dir), cwd: dir }, deps()), 'retention')).toEqual({
+        id: 'retention', status: 'ok',
+        message: "traces kept for ever; the audit kept for ever (a record: AUDIT_RETENTION_DAYS only for how long it must be kept); no free-space warning; the server's log where its service manager puts it (no LOG_FILE)",
+      });
+      const set = byId(await runDoctor({ env: { ...goodEnv(dir), TRACE_RETENTION_DAYS: '30', TRACE_MAX_GB: '5', DISK_WARN_FREE_GB: '2', LOG_FILE: join(dir, 'server.log'), LOG_MAX_MB: '10', LOG_KEEP: '5' }, cwd: dir }, deps()), 'retention');
+      expect(set.message).toBe(`traces kept 30 days and at most 5 GB; the audit kept for ever (a record: AUDIT_RETENTION_DAYS only for how long it must be kept); /health warns under 2 GB free; the server's log in ${join(dir, 'server.log')}, rolled at 10 MB, 5 kept`);
+    });
+
     describe('with AUDIT_STORE=postgres://... (check 11)', () => {
       const URL_WITH_PASSWORD = 'postgres://audit:s3cret-pw@db.example:5432/records';
       const MASKED = 'postgres://audit:***@db.example:5432/records';
@@ -526,7 +536,7 @@ describe('pnpm diagnose', () => {
           expect(fresh).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers; its audit tables are made when the server first starts (version 1)` });
           await openPostgresAudit(pgliteSql(db));
           const results = await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres });
-          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'audit', 'space', 'clock']);
+          expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'audit', 'space', 'retention', 'clock']);
           expect(byId(results, 'audit')).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers, its audit tables are version 1, and an entry can be written (tried in a transaction undone): pnpm audit:verify reads it` });
           expect((await db.query('SELECT * FROM dw_audit_entries')).rows).toEqual([]);
           expect((await db.query('SELECT * FROM dw_audit_anchors')).rows).toEqual([]);
@@ -642,7 +652,7 @@ describe('pnpm diagnose', () => {
     expect(code).toBe(0);
     expect(out).toContain('warn  HANDOFF_NUMBER +15555550123 is a 555 number: calls handed off will go nowhere  ->  set it to a phone a person answers');
     expect(out).toContain(`ok    ${file} is readable by its owner alone`);
-    expect(out.at(-1)).toBe('10 checks: 9 ok, 1 warn, 0 fail');
+    expect(out.at(-1)).toBe('11 checks: 10 ok, 1 warn, 0 fail');
     expect(out.join('\n')).not.toContain('test-key-not-real');
     const failing = await main(['--env-file', join(dir, 'missing.env')], { out: (l) => out.push(l), env: {}, invokedFrom: dir }, deps());
     expect(failing).toBe(1);
