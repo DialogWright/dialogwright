@@ -67,6 +67,8 @@ export interface DashboardDeps {
   health?: HealthSource;
   /** On a server of one app, the app's folder when the server runs in it (the Knowledge page counts its kb/pending drafts there). */
   appDir?: string;
+  /** FIGURES_RETENTION_DAYS: a day older is not read or worked out (figuresCache.ts). Absent, every day. */
+  figuresRetentionDays?: number;
 }
 
 /** One app of a host, as the console reads it. */
@@ -509,7 +511,7 @@ function figuresOf(deps: DashboardDeps): FiguresCache {
   let f = figuresKept.get(deps.bus);
   if (!f) {
     const ends = endsOf(deps.bus);
-    f = new FiguresCache({ endsSeen: () => ends.n });
+    f = new FiguresCache({ endsSeen: () => ends.n, ...(deps.figuresRetentionDays !== undefined ? { retentionDays: deps.figuresRetentionDays } : {}) });
     figuresKept.set(deps.bus, f);
   }
   return f;

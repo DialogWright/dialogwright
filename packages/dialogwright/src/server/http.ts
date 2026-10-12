@@ -635,6 +635,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         bus: deps.bus, traceDir: deps.config.traceDir, enabled: deps.config.dashboard, health: consoleHealth,
         ...(auth ? { auth } : {}), ...(deps.traces ? { traces: deps.traces } : {}), ...(deps.consoleApps ? { apps: deps.consoleApps } : {}),
         ...(deps.config.carrierRates ? { carrierRates: deps.config.carrierRates } : {}), ...(deps.appDir !== undefined ? { appDir: deps.appDir } : {}),
+        ...(deps.config.figuresRetentionDays !== undefined ? { figuresRetentionDays: deps.config.figuresRetentionDays } : {}),
       })) return;
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.

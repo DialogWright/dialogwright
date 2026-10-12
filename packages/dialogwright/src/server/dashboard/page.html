@@ -2074,9 +2074,10 @@
     const notes = [
       ...(i.older?.length ? [`Shown from figures kept in an older shape, their traces gone: ${i.older.map(esc).join(', ')} (the peak at once is each app's own, added; where callers hung up, as it was said then).`] : []),
       ...(i.unreadable?.length ? [`Left out, their figures could not be read: ${i.unreadable.map(esc).join(', ')}.`] : []),
+      ...(i.expired?.length ? [`Not shown, older than the figures are kept (FIGURES_RETENTION_DAYS): ${i.expired.length} ${i.expired.length === 1 ? 'day' : 'days'}, ${esc(i.expired[0])} to ${esc(i.expired.at(-1))}.`] : []),
     ];
     el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${kb}</div>`
-      + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end, and a day is final once its traces can no longer change. Hours are counted as the server counts them (UTC), shown in your time. The most at once counts the calls that started in the range: one already going when it began is not counted.</p>';
+      + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end, and a day is final once its traces can no longer change. Hours are counted as the server counts them (UTC), shown in your time. The most at once is to the minute (the most calls in progress in any one minute), of the calls that started in the range: one already going when it began is not counted.</p>';
   }
 
   // ---------- Knowledge ----------

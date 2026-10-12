@@ -11,7 +11,7 @@ import type { CallRow } from './rows';
 /**
  * The console's Insights (and the Knowledge page's unanswered questions): figures worked out from the
  * traces, call by call (CallFacts, read with the call's summary, calls.ts), then summed by the hour the
- * call started in (HourFigures) with each call's span (when it started and ended), which the daily
+ * call started in (HourFigures) with how many calls were in progress each minute, which the daily
  * figures cache keeps per app and UTC day (figuresCache.ts) and a date range adds up (sumHours), then
  * said in the app's console words (insightsOf).
  *
@@ -23,10 +23,11 @@ import type { CallRow } from './rows';
 
 /**
  * A figures shape's version: a cache written by another is worked out again from its traces, or, for a
- * closed day whose traces are gone, read as older figures (figuresCache.ts). 2: each call's span for
- * the peak at once, the abandoned by ids, the routes on business hours by open or closed.
+ * closed day whose traces are gone, read as it can be (figuresCache.ts). 2: each call's span for the
+ * peak at once, the abandoned by ids, the routes on business hours by open or closed. 3: no call's own
+ * times, only how many were in progress each minute (a version-2 file is made so as it is read).
  */
-export const FIGURES_VERSION = 2;
+export const FIGURES_VERSION = 3;
 
 /** The upper bounds, in seconds, of the call-length buckets (the last bucket is everything longer). */
 export const LENGTH_EDGES_S: readonly number[] = [30, 60, 120, 300, 600, 1200];
@@ -56,6 +57,7 @@ export interface CallFacts {
   hours: Record<string, number>;
   /** The knowledge base's unanswered questions (kb/gaps.ts), by kind and by nearest topic (`~` for none), with the latest. */
   gaps: Partial<Record<GapKind, number>>;
+  /** By nearest topic: how many, and the hour (UTC, ISO) of the latest. */
   gapTopics: Record<string, { n: number; latest: string }>;
 }
 
@@ -95,10 +97,19 @@ export interface HourFigures {
   gapTopics: Record<string, { n: number; latest: string }>;
 }
 
-/** A day's figures: by the hour each call started in, each call's span (start and end, ms, flat pairs), and, for figures of an older version, the peak each hour had. */
+/** The minutes a day's calls in progress are counted over: the day's own and the next day's (a call of the day going on past midnight; a call lasts at most a day). */
+export const DAY_MINUTES = 1_440;
+export const COUNTED_MINUTES = 2 * DAY_MINUTES;
+const MINUTE_MS = 60_000;
+
+/**
+ * A day's figures: by the hour each call started in; for each minute from the day's start to the end of
+ * the next day, how many of the day's calls were in progress at some moment of it (no call's own times:
+ * counts by the minute); and, for figures of an older version, the peak each hour had.
+ */
 export interface DayData {
   hours: Record<string, HourFigures>;
-  spans: number[];
+  minutes: Uint16Array;
   peaks?: Record<string, number>;
 }
 
@@ -218,7 +229,10 @@ export function factsOfTrace(records: readonly TraceRecord[], app: App): CallFac
       facts.gaps[g.kind] = (facts.gaps[g.kind] ?? 0) + 1;
       const key = g.topic ?? '~';
       const had = facts.gapTopics[key] ?? { n: 0, latest: '' };
-      facts.gapTopics[key] = { n: had.n + 1, latest: g.ts > had.latest ? g.ts : had.latest };
+      // The hour it was asked in, as the figures count calls by the hour: no call's own time.
+      const at = msOf(g.ts);
+      const hour = at === null ? '' : new Date(hourOf(at)).toISOString();
+      facts.gapTopics[key] = { n: had.n + 1, latest: hour > had.latest ? hour : had.latest };
     }
   }
   return facts;
@@ -301,51 +315,94 @@ function mergeTopics(into: HourFigures['gapTopics'], from: HourFigures['gapTopic
 }
 
 /**
- * A day's figures: its calls by the hour each started in (UTC, keyed by the hour's first ms), and each
- * call's span (its start, and its end or, in progress, its last word), from which a range's peak at once
- * is worked out (peaksByHour). `calls` are the day's: each started in it.
+ * A day's figures: its calls by the hour each started in (UTC, keyed by the hour's first ms), and how many
+ * were in progress in each minute (DayData.minutes, from `dayStart`), from which a range's peak at once
+ * is worked out to the minute (peaksByHour). `calls` are the day's: each started in it. A call in
+ * progress counts to its last word.
  */
-export function dayDataOf(calls: readonly CallSummary[]): DayData {
+export function dayDataOf(calls: readonly CallSummary[], dayStart: number): DayData {
   const hours: Record<string, HourFigures> = {};
-  const spans: number[] = [];
+  const diff = new Int32Array(COUNTED_MINUTES + 1);
   for (const c of calls) {
     if (c.row.startedAt === null) continue;
     addCall((hours[String(hourOf(c.row.startedAt))] ??= emptyHour()), c);
-    spans.push(c.row.startedAt, Math.max(c.row.startedAt, c.row.endedAt ?? c.row.lastAt ?? c.row.startedAt));
+    const start = c.row.startedAt;
+    const end = Math.max(start + 1, c.row.endedAt ?? c.row.lastAt ?? start);
+    const first = Math.max(0, Math.floor((start - dayStart) / MINUTE_MS));
+    const last = Math.min(COUNTED_MINUTES - 1, Math.floor((end - 1 - dayStart) / MINUTE_MS));
+    if (last < first) continue;
+    diff[first]! += 1;
+    diff[last + 1]! -= 1;
+  }
+  const minutes = new Uint16Array(COUNTED_MINUTES);
+  let now = 0;
+  for (let m = 0; m < COUNTED_MINUTES; m++) {
+    now += diff[m]!;
+    minutes[m] = Math.min(65_535, now);
   }
   for (const h of Object.values(hours)) h.costUsd = Math.round(h.costUsd * 1e6) / 1e6;
-  return { hours, spans };
+  return { hours, minutes };
+}
+
+/** A day's counts by the minute, as a file keeps them: runs of the same count, `[first minute, how many minutes, count]`, the quiet minutes left out. */
+export function minutesToRuns(minutes: Uint16Array): number[] {
+  const runs: number[] = [];
+  for (let m = 0; m < minutes.length;) {
+    const n = minutes[m]!;
+    let k = m + 1;
+    while (k < minutes.length && minutes[k] === n) k++;
+    if (n > 0) runs.push(m, k - m, n);
+    m = k;
+  }
+  return runs;
+}
+
+/** A file's runs read back as a day's counts by the minute; null for runs that are not counts inside the day's minutes. */
+export function runsToMinutes(runs: unknown): Uint16Array | null {
+  if (!Array.isArray(runs) || runs.length % 3 !== 0) return null;
+  const minutes = new Uint16Array(COUNTED_MINUTES);
+  for (let i = 0; i < runs.length; i += 3) {
+    const [m, len, n] = [runs[i], runs[i + 1], runs[i + 2]];
+    if (![m, len, n].every((x) => Number.isInteger(x) && (x as number) >= 0) || (len as number) < 1 || (m as number) + (len as number) > COUNTED_MINUTES || (n as number) > 65_535) return null;
+    minutes.fill(n as number, m as number, (m as number) + (len as number));
+  }
+  return minutes;
+}
+
+/** A version-2 file's calls' spans (flat start, end pairs) made counts by the minute, as version 3 keeps them; null for spans not of that shape. */
+function spansToMinutes(spans: unknown, dayStart: number): Uint16Array | null {
+  if (!Array.isArray(spans) || spans.length % 2 !== 0 || !spans.every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0)) return null;
+  const diff = new Int32Array(COUNTED_MINUTES + 1);
+  for (let i = 0; i < spans.length; i += 2) {
+    const start = spans[i] as number;
+    const end = Math.max(start + 1, spans[i + 1] as number);
+    const first = Math.max(0, Math.floor((start - dayStart) / MINUTE_MS));
+    const last = Math.min(COUNTED_MINUTES - 1, Math.floor((end - 1 - dayStart) / MINUTE_MS));
+    if (last < first) continue;
+    diff[first]! += 1;
+    diff[last + 1]! -= 1;
+  }
+  const minutes = new Uint16Array(COUNTED_MINUTES);
+  let now = 0;
+  for (let m = 0; m < COUNTED_MINUTES; m++) { now += diff[m]!; minutes[m] = Math.min(65_535, now); }
+  return minutes;
 }
 
 /**
- * The most calls in progress at once in each hour of [from, to], from calls' spans (flat start, end
- * pairs) of every app at once: a call ending the moment another starts is not at once with it (a call
- * of no length is in progress for its millisecond). A call that started before the spans given (the day
- * before the range's first) is not counted.
+ * The most calls in progress at once in each hour of [from, to], from counts by the minute of every app
+ * together (`counts[i]` the minute starting at `base + i` minutes): to the minute, so two calls in one
+ * minute, one ending as the other starts, count as two. A call that started before the counts given
+ * (the day before the range's first) is not counted.
  */
-export function peaksByHour(spans: readonly number[], from: number, to: number): Map<number, number> {
-  const events: [number, number][] = [];
-  for (let i = 0; i + 1 < spans.length; i += 2) {
-    const s = spans[i]!;
-    const e = Math.max(spans[i + 1]!, s + 1);
-    if (e <= from || s > to) continue;
-    events.push([s, 1], [e, -1]);
-  }
-  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+export function peaksByHour(counts: ArrayLike<number>, base: number, from: number, to: number): Map<number, number> {
   const peaks = new Map<number, number>();
-  let i = 0;
-  let now = 0;
-  for (let h = hourOf(from); h <= to; h += HOUR_MS) {
-    const start = Math.max(h, from);
-    const end = Math.min(h + HOUR_MS, to + 1);
-    // In progress as the hour (or the range) begins: everything that started or ended by then.
-    while (i < events.length && events[i]![0] <= start) now += events[i++]![1];
-    let most = now;
-    while (i < events.length && events[i]![0] < end) {
-      now += events[i++]![1];
-      if (now > most) most = now;
-    }
-    if (most > 0) peaks.set(h, most);
+  const first = Math.max(0, Math.floor((from - base) / MINUTE_MS));
+  const last = Math.min(counts.length - 1, Math.floor((to - base) / MINUTE_MS));
+  for (let m = first; m <= last; m++) {
+    const n = counts[m]!;
+    if (n === 0) continue;
+    const h = hourOf(base + m * MINUTE_MS);
+    if (n > (peaks.get(h) ?? 0)) peaks.set(h, n);
   }
   return peaks;
 }
@@ -415,9 +472,14 @@ export function hourFiguresOf(raw: unknown, older = false): HourFigures | null {
   return h;
 }
 
-/** A day's figures as a file holds them (its hours keyed by an hour's first ms), checked; null for anything malformed. */
-export function dayDataFrom(raw: { hours?: unknown; spans?: unknown; peaks?: unknown }, older = false): DayData | null {
+/**
+ * A day's figures as a file holds them (its hours keyed by an hour's first ms), checked; null for anything
+ * malformed. `version`: 3, the counts by the minute as runs (`inProgress`); 2, each call's span, made
+ * counts by the minute here (and never kept); 1, the peak each hour had, and the older words (`older`).
+ */
+export function dayDataFrom(raw: { hours?: unknown; inProgress?: unknown; spans?: unknown }, version: number, dayStart: number): DayData | null {
   if (!isMap(raw.hours)) return null;
+  const older = version === 1;
   const hours: Record<string, HourFigures> = {};
   const peaks: Record<string, number> = {};
   for (const [k, v] of Object.entries(raw.hours)) {
@@ -427,9 +489,9 @@ export function dayDataFrom(raw: { hours?: unknown; spans?: unknown; peaks?: unk
     hours[k] = h;
     if (older && isMap(v) && count(v.peak)) peaks[k] = v.peak;
   }
-  if (older) return { hours, spans: [], peaks };
-  if (!Array.isArray(raw.spans) || raw.spans.length % 2 !== 0 || !raw.spans.every(count)) return null;
-  return { hours, spans: [...raw.spans as number[]] };
+  if (older) return { hours, minutes: new Uint16Array(COUNTED_MINUTES), peaks };
+  const minutes = version === 2 ? spansToMinutes(raw.spans, dayStart) : runsToMinutes(raw.inProgress);
+  return minutes === null ? null : { hours, minutes };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -443,12 +505,14 @@ export interface AppFigures {
   figures: HourFigures;
   /** Its calls by the hour, for the calls-by-hour chart. */
   hourCalls: Record<string, number>;
-  /** Its calls' spans in the range (flat start, end pairs), for the peak at once; and an older figure's peak by the hour, where it has no spans. */
-  spans: number[];
+  /** Its calls in progress by the minute from `base` (the range's first UTC day's start), for the peak at once; and an older figure's peak by the hour, where it has no counts. */
+  base: number;
+  minutes: Uint32Array;
   peaks: Record<string, number>;
-  /** Days read from figures of an older version (their traces gone), and days whose figures could not be read. */
+  /** Days read from figures of an older version (their traces gone), days whose figures could not be read, and days older than FIGURES_RETENTION_DAYS. */
   older: string[];
   unreadable: string[];
+  expired?: string[];
 }
 
 /** A row of a table the page draws: its app's name on a host, its label in the app's words, and its numbers. */
@@ -486,9 +550,10 @@ export interface Insights {
   refusals: LabelledRow<number>[];
   hours: LabelledRow<number>[];
   gapTopics: LabelledRow<{ n: number; latest: string }>[];
-  /** Days shown from figures of an older version, and days whose figures could not be read (left out). */
+  /** Days shown from figures of an older version, days whose figures could not be read (left out), and days older than FIGURES_RETENTION_DAYS (left out). */
   older: string[];
   unreadable: string[];
+  expired: string[];
 }
 
 const byCount = <T>(n: (r: LabelledRow<T>) => number) => (a: LabelledRow<T>, b: LabelledRow<T>): number => n(b) - n(a) || a.label.localeCompare(b.label);
@@ -513,7 +578,7 @@ function topicTitle(app: App, topic: string): string {
 
 /**
  * The figures for a range ([from, to]), said in each app's console words; `rates` the carriers' rates a
- * minute (config.carrierRates). The peak at once is worked out from every app's calls' spans together.
+ * minute (config.carrierRates). The peak at once is worked out from every app's counts by the minute together.
  */
 export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<Record<string, number>>> | undefined, range: { from: number; to: number }): Insights {
   const all = sumHours(apps.map((a) => a.figures));
@@ -538,8 +603,11 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
   }
   const carrierUsd = carrier?.usd ?? null;
   const totalUsd = Math.round((all.costUsd + (carrierUsd ?? 0)) * 1e6) / 1e6;
-  // Calls by the hour, and the peak at once from every app's spans merged (an older figure's own peak where it has no spans).
-  const peaks = peaksByHour(apps.flatMap((a) => a.spans), range.from, range.to);
+  // Calls by the hour, and the peak at once from every app's counts by the minute added (an older figure's own peak where it has none).
+  const base = apps[0]?.base ?? range.from;
+  const together = new Uint32Array(Math.max(0, ...apps.map((a) => a.minutes.length)));
+  for (const a of apps) for (let m = 0; m < a.minutes.length; m++) together[m]! += a.minutes[m]!;
+  const peaks = peaksByHour(together, base, range.from, range.to);
   const hourly = new Map<number, { calls: number; peak: number }>();
   for (const a of apps) {
     for (const [k, n] of Object.entries(a.hourCalls)) {
@@ -575,6 +643,7 @@ export function insightsOf(apps: readonly AppFigures[], rates: Readonly<Partial<
       .sort((x, y) => y.value.n - x.value.n || (y.value.latest > x.value.latest ? 1 : y.value.latest < x.value.latest ? -1 : 0) || x.key.localeCompare(y.key)),
     older: [...new Set(apps.flatMap((a) => a.older))].sort(),
     unreadable: [...new Set(apps.flatMap((a) => a.unreadable))].sort(),
+    expired: [...new Set(apps.flatMap((a) => a.expired ?? []))].sort(),
   };
 }
 

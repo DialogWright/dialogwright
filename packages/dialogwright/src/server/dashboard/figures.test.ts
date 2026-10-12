@@ -6,7 +6,7 @@ import type { App } from '../../core/app/types';
 import type { TraceRecord } from '../../trace/types';
 import { parseFrameLog } from '../frameLog';
 import { summaryOfTrace } from './calls';
-import { dayDataFrom, dayDataOf, factsOfTrace, insightsOf, peaksByHour, sumHours, LENGTH_EDGES_S, type AppFigures, type CallSummary } from './figures';
+import { dayDataFrom, dayDataOf, factsOfTrace, insightsOf, minutesToRuns, peaksByHour, runsToMinutes, sumHours, COUNTED_MINUTES, DAY_MINUTES, FIGURES_VERSION, LENGTH_EDGES_S, type AppFigures, type CallSummary } from './figures';
 
 /**
  * Insights' figures (figures.ts) on fixture traces: what each call adds (its tasks, where it struggled,
@@ -29,8 +29,10 @@ const RANGE = { from: Date.parse('2026-09-18T00:00:00Z'), to: Date.parse('2026-0
 
 /** An app's figures for calls, as the cache would give them for RANGE. */
 function figs(calls: CallSummary[], id: string | null = null, app: App = getApp(defaultAppId())): AppFigures {
-  const d = dayDataOf(calls);
-  return { id, app, figures: sumHours(Object.values(d.hours)), hourCalls: Object.fromEntries(Object.entries(d.hours).map(([k, h]) => [k, h.calls])), spans: d.spans, peaks: {}, older: [], unreadable: [] };
+  const d = dayDataOf(calls, RANGE.from);
+  const minutes = new Uint32Array(2 * DAY_MINUTES);
+  minutes.set(d.minutes);
+  return { id, app, figures: sumHours(Object.values(d.hours)), hourCalls: Object.fromEntries(Object.entries(d.hours).map(([k, h]) => [k, h.calls])), base: RANGE.from, minutes, peaks: {}, older: [], unreadable: [] };
 }
 
 /** A scripted call's summary and facts, as calls.ts reads them from its trace and frame log, ended as `end` says. */
@@ -84,7 +86,7 @@ describe('what one call adds (factsOfTrace)', () => {
     expect(insightsOf([figs([{ row: { startedAt: T0, endedAt: T0 + 1000, lastAt: T0 + 1000, ending: { kind: 'handled', text: '' }, channel: 'voice', provider: 'twilio', costUsd: 0, handoffReason: null } as never, facts: factsOfTrace(records, routed) }])], undefined, RANGE).hours)
       .toEqual([{ app: null, key: 'start:closed:handoff', label: 'at the start, closed: to a person', value: 1 }]);
     expect(facts.gaps).toEqual({ unmatched: 1, none: 1 });
-    expect(facts.gapTopics).toEqual({ '~': { n: 1, latest: '2026-09-18T15:00:05.000Z' }, pets: { n: 1, latest: '2026-09-18T15:00:10.000Z' } });
+    expect(facts.gapTopics).toEqual({ '~': { n: 1, latest: '2026-09-18T15:00:00.000Z' }, pets: { n: 1, latest: '2026-09-18T15:00:00.000Z' } });
     // Nothing a caller said is kept.
     expect(JSON.stringify(facts)).not.toMatch(/open|dog|fifth/);
     const without = factsOfTrace(records, { ...app, knowledge: undefined } as App);
@@ -102,7 +104,7 @@ describe('summed by the hour, and said in the app\'s words (dayDataOf, sumHours,
       await call([OPENER], 'error', T0 + 240_000),
       await call([OPENER], 'none', T0 + 300_000),
     ];
-    const { hours } = dayDataOf(calls);
+    const { hours } = dayDataOf(calls, RANGE.from);
     expect(Object.keys(hours)).toEqual([String(T0)]);
     const h = hours[String(T0)]!;
     expect([h.calls, h.ended, h.contained, h.toPerson, h.hungUp, h.errors]).toEqual([6, 5, 1, 1, 2, 1]);
@@ -129,13 +131,13 @@ describe('summed by the hour, and said in the app\'s words (dayDataOf, sumHours,
     const next = await call(TRACK, 'completed', T0 + 3_600_000);
     const ins = insightsOf([figs([a, b, c, next])], undefined, RANGE);
     expect(ins.byHour.map((h) => [h.hour, h.peak])).toEqual([[T0, 2], [T0 + 3_600_000, 1]]);
-    // Spans by hand: back to back (one ends the millisecond the next starts), a call of no length, and one going through the next hour.
-    const H = T0;
-    expect(peaksByHour([H, H + 300_000, H + 300_000, H + 360_000], RANGE.from, RANGE.to).get(H)).toBe(1);
-    expect(peaksByHour([H, H], RANGE.from, RANGE.to).get(H)).toBe(1);
-    expect([...peaksByHour([H, H + 7_500_000], RANGE.from, RANGE.to)]).toEqual([[H, 1], [H + 3_600_000, 1], [H + 7_200_000, 1]]);
-    // A range that starts inside the call counts it from the range's start.
-    expect([...peaksByHour([H, H + 7_500_000], H + 3_600_000, RANGE.to)]).toEqual([[H + 3_600_000, 1], [H + 7_200_000, 1]]);
+    // Counts by the minute by hand: the peak of each hour is its busiest minute; a range that starts inside an hour takes its minutes from there.
+    const counts = new Uint32Array(3 * 60);
+    counts.fill(1, 0, 5);
+    counts[5] = 2; // in minute 5, one call ended and the next began: two, to the minute
+    counts.fill(1, 61, 125);
+    expect([...peaksByHour(counts, T0, RANGE.from, RANGE.to)]).toEqual([[T0, 2], [T0 + 3_600_000, 1], [T0 + 7_200_000, 1]]);
+    expect([...peaksByHour(counts, T0, T0 + 3_600_000, RANGE.to)]).toEqual([[T0 + 3_600_000, 1], [T0 + 7_200_000, 1]]);
   });
 
   it('minutes and the model\'s cost; the carrier\'s cost only with a rate, each call rounded up to the minute per carrier; cost per call and per handled call', async () => {
@@ -191,21 +193,27 @@ describe('summed by the hour, and said in the app\'s words (dayDataOf, sumHours,
 
 describe('a day\'s figures read back from a file (dayDataFrom)', () => {
   it('takes them as written, and refuses any number that is not a finite count, any map of another shape, and any key that is not an hour', async () => {
-    const d = dayDataOf([await call(TRACK, 'completed', T0), await call([OPENER], 'hangup', T0 + 60_000)]);
-    const written = JSON.parse(JSON.stringify(d)) as Record<string, unknown>;
-    expect(dayDataFrom(written)).toEqual(d);
+    const d = dayDataOf([await call(TRACK, 'completed', T0), await call([OPENER], 'hangup', T0 + 60_000)], RANGE.from);
+    const written = JSON.parse(JSON.stringify({ hours: d.hours, inProgress: minutesToRuns(d.minutes) })) as Record<string, unknown>;
+    expect(dayDataFrom(written, FIGURES_VERSION, RANGE.from)).toEqual(d);
+    // No call's own times in what is written: only runs of minutes, and counts.
+    expect(written.inProgress).toEqual([15 * 60, 2, 1]);
     const hour = Object.keys(d.hours)[0]!;
     const bad = (patch: Record<string, unknown>): unknown => ({ ...written, hours: { [hour]: { ...(written.hours as Record<string, object>)[hour], ...patch } } });
     for (const patch of [{ hungUp: '<img src=x onerror=alert(1)>' }, { calls: -1 }, { costUsd: Number.NaN }, { transfers: { a: 'x' } }, { lengths: [1] }, { asked: { dob: { reasks: 1 } } }, { gapTopics: { a: { n: 1, latest: 5 } } }]) {
-      expect(dayDataFrom(bad(patch) as never), JSON.stringify(patch)).toBeNull();
+      expect(dayDataFrom(bad(patch) as never, FIGURES_VERSION, RANGE.from), JSON.stringify(patch)).toBeNull();
     }
-    expect(dayDataFrom({ ...written, hours: { notAnHour: (written.hours as Record<string, object>)[hour] } })).toBeNull();
-    expect(dayDataFrom({ ...written, spans: [1, 'x'] })).toBeNull();
+    expect(dayDataFrom({ ...written, hours: { notAnHour: (written.hours as Record<string, object>)[hour] } }, FIGURES_VERSION, RANGE.from)).toBeNull();
+    for (const runs of [[1, 'x', 1], [0, 1], [COUNTED_MINUTES - 1, 2, 1], [0, 0, 1], [0, 1, -1]]) expect(runsToMinutes(runs), JSON.stringify(runs)).toBeNull();
+    // A version-2 file's spans are made counts by the minute as it is read.
+    const v2 = dayDataFrom({ hours: written.hours, spans: [T0, T0 + 26_000, T0 + 60_000, T0 + 66_000] }, 2, RANGE.from)!;
+    expect(minutesToRuns(v2.minutes)).toEqual([15 * 60, 2, 1]);
+    expect(dayDataFrom({ hours: written.hours, spans: [1, 'x'] }, 2, RANGE.from)).toBeNull();
   });
 
   it('reads a version-1 file (a peak by the hour, after-hours by its old name, where callers hung up in words)', () => {
     const v1hour = { calls: 2, ended: 2, contained: 1, toPerson: 0, hungUp: 1, errors: 0, peak: 2, lengthMs: 1000, lengths: [2, 0, 0, 0, 0, 0, 0], voice: 2, voiceMs: 1000, billedMinutes: { twilio: 2 }, costUsd: 0.01, transfers: {}, abandoned: { 'the greeting': 1 }, asked: {}, tasks: {}, screenHits: 0, refusals: {}, stepUps: 0, afterHours: 1, hours: { 'start:handoff': 1 }, gaps: 0, gapKinds: {}, gapTopics: {} };
-    const d = dayDataFrom({ hours: { [String(T0)]: v1hour } }, true)!;
+    const d = dayDataFrom({ hours: { [String(T0)]: v1hour } }, 1, RANGE.from)!;
     expect(d.peaks).toEqual({ [String(T0)]: 2 });
     expect(d.hours[String(T0)]).toMatchObject({ hoursRouted: 1, abandoned: { 'text:the greeting': 1 }, hours: { 'start::handoff': 1 } });
   });

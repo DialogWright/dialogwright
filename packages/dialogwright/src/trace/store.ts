@@ -452,19 +452,19 @@ export class S3TraceStore {
 
   /**
    * FIGURES_RETENTION_DAYS on the store: the console's daily figures of each day older than `days`
-   * removed (`<day>/.figures/`); the traces' own retention leaves them. Returns the days removed.
+   * removed (`<prefix>.figures/<day>.json`, beside the day folders, which the traces' own retention
+   * leaves). Returns the days removed.
    */
   async sweepFigures(days: number, nowMs: number): Promise<number> {
     const cutoff = dayOf(nowMs - days * 86_400_000);
-    let removed = 0;
-    for (const day of await this.days()) {
-      if (day >= cutoff) break;
-      const { objects } = await this.client.list(`${this.prefix}${day}/${CONSOLE_FIGURES}/`);
-      if (objects.length === 0) continue;
-      await this.remove(objects.map((o) => o.key));
-      removed += 1;
-    }
-    return removed;
+    const under = `${this.prefix}${CONSOLE_FIGURES}/`;
+    const { objects } = await this.client.list(under);
+    const old = objects.map((o) => o.key).filter((k) => {
+      const m = /^(\d{4}-\d{2}-\d{2})\.json$/.exec(k.slice(under.length));
+      return m !== null && m[1]! < cutoff;
+    });
+    await this.remove(old);
+    return old.length;
   }
 
   /**

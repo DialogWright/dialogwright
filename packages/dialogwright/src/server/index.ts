@@ -784,6 +784,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (retaining) {
     const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
     if (sweeping) log(`retention: traces kept ${kept(config.traceRetentionDays)}${config.traceMaxBytes !== undefined ? ` and at most ${gb(config.traceMaxBytes)}` : ''}, audit days kept ${kept(config.auditRetentionDays)}${config.figuresRetentionDays !== undefined ? `, console figures kept ${config.figuresRetentionDays} days` : ''}`);
+    if (config.figuresRetentionDays !== undefined && config.traceRetentionDays !== undefined && config.figuresRetentionDays < config.traceRetentionDays) {
+      log(`WARNING: FIGURES_RETENTION_DAYS=${config.figuresRetentionDays} is shorter than TRACE_RETENTION_DAYS=${config.traceRetentionDays}: the console's Insights shows no day older than ${config.figuresRetentionDays} days, though its traces are still kept`);
+    }
     if (config.auditRetentionDays !== undefined) {
       log(`WARNING: AUDIT_RETENTION_DAYS=${config.auditRetentionDays}: audit day files older than ${config.auditRetentionDays} days are deleted, which ends the record for those days`);
     }

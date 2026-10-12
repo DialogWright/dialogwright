@@ -8,8 +8,8 @@ import { FakeS3 } from '../../testing/fakeS3';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { S3TraceStore, traceStoreSettingOf } from '../../trace/store';
 import { forgetSummaries, type CallsSource } from './calls';
-import { daysBetween, FiguresCache, FIGURES_DIR, FIGURES_OBJECT, type DayFigures } from './figuresCache';
-import { FIGURES_VERSION } from './figures';
+import { daysBetween, FiguresCache, FIGURES_DIR, FIGURES_PREFIX, type DayFigures } from './figuresCache';
+import { FIGURES_VERSION, insightsOf } from './figures';
 import { sweepRetention } from '../retention';
 
 /**
@@ -39,7 +39,7 @@ function folder(): { dir: string; source: CallsSource } {
 }
 
 /** A cache whose computations are counted, by day. */
-function counted(o: { now?: () => number; endsSeen?: () => number } = {}): { cache: FiguresCache; computed: string[] } {
+function counted(o: { now?: () => number; endsSeen?: () => number; retentionDays?: number } = {}): { cache: FiguresCache; computed: string[] } {
   const computed: string[] = [];
   return { cache: new FiguresCache({ ...o, onCompute: (_app, day) => computed.push(day) }), computed };
 }
@@ -66,7 +66,7 @@ describe('one machine: a JSON file per day in the trace folder', () => {
     expect(file.v).toBe(FIGURES_VERSION);
     expect(file.day).toBe(DAY1);
     // Every trace that may be the day's: the next day's call too, last written within a day of its end.
-    expect(file.fingerprint).toMatch(/^3:\d+:\d+$/);
+    expect(file.fingerprint).toMatch(/^3:[0-9a-f]{16}$/);
     // No value a caller gave: not the number, not the account, not the words.
     const text = JSON.stringify(file);
     for (const said of ['5555550110', '0110', '5550123', 'parcel never', 'person', 'five']) expect(text).not.toContain(said);
@@ -203,7 +203,8 @@ describe('a closed day is final (its traces can no longer change, every call set
     expect([a!.figures.calls, a!.figures.ended]).toEqual([2, 1]);
     const file = JSON.parse(readFileSync(join(dir, FIGURES_DIR, `${DAY1}.json`), 'utf8')) as DayFigures;
     expect(file.closed).toBe(false);
-    expect(file.settleBy).toBe(late + 5_000 + 1_000 + 30 * 60_000 - 1_000);
+    // Half an hour after its last word, rounded up to the hour: no call's own time in the file.
+    expect(file.settleBy).toBe(Date.parse('2026-09-19T01:00:00Z'));
     // A month later, after a restart: the call is taken for ended ("no end recorded", an error), and the day closed.
     t = late + 30 * 86_400_000;
     forgetSummaries();
@@ -225,13 +226,63 @@ describe('a closed day is final (its traces can no longer change, every call set
     expect(a!.peaks).toEqual({ [hour]: 2 });
     expect(a!.older).toEqual([DAY1]);
     expect(a!.unreadable).toEqual(['2026-09-19']);
-    // With its traces there, a day of an older version is worked out again.
+    // With fewer traces than it was worked out from (two), it is still the record, read as older figures.
     await writeFolderCall(dir, 'CA_1', [OPENER], 'hangup', D1);
     forgetSummaries();
+    const fewer = counted({ now });
+    const [b] = await fewer.cache.range([source], ...whole(DAY1));
+    expect(fewer.computed).toEqual([]);
+    expect([b!.figures.calls, b!.older]).toEqual([2, [DAY1]]);
+    // With all of them there, a day of an older version is worked out again.
+    await writeFolderCall(dir, 'CA_2', [OPENER], 'hangup', D1 + 60_000);
+    forgetSummaries();
     const again = counted({ now });
-    const [b] = await again.cache.range([source], ...whole(DAY1));
+    const [c] = await again.cache.range([source], ...whole(DAY1));
     expect(again.computed).toEqual([DAY1]);
-    expect(b!.older).toEqual([]);
+    expect([c!.figures.calls, c!.older]).toEqual([2, []]);
+  });
+
+  it('a version-2 file (each call\'s span) is made counts by the minute as it is read, and written so: no call\'s own times are left on disk', async () => {
+    const { dir, source } = folder();
+    await writeFolderCall(dir, 'CA_1', [OPENER], 'hangup', D1);
+    const now = (): number => Date.parse('2026-10-12T00:00:00Z');
+    await new FiguresCache({ now }).range([source], ...whole(DAY1));
+    const p = join(dir, FIGURES_DIR, `${DAY1}.json`);
+    const v3 = JSON.parse(readFileSync(p, 'utf8')) as DayFigures & { spans?: unknown };
+    expect(v3.v).toBe(FIGURES_VERSION);
+    expect(v3.spans).toBeUndefined();
+    const { inProgress: _runs, ...rest } = v3;
+    writeFileSync(p, JSON.stringify({ ...rest, v: 2, spans: [D1, D1 + 6_000] }));
+    forgetSummaries();
+    const read = counted({ now });
+    const [a] = await read.cache.range([source], ...whole(DAY1));
+    expect(read.computed).toEqual([]);
+    expect(insightsOf([a!], undefined, { from: whole(DAY1)[0], to: whole(DAY1)[1] }).totals.peak).toBe(1);
+    const after = readFileSync(p, 'utf8');
+    expect(JSON.parse(after)).toMatchObject({ v: FIGURES_VERSION, inProgress: [15 * 60, 1, 1] });
+    // Nothing in the file is a time of day of a call: only its day, the hours' keys, and when it was worked out.
+    expect(after).not.toContain(String(D1 + 6_000));
+    expect(after).not.toContain('spans');
+  });
+
+  it('FIGURES_RETENTION_DAYS: a day older is neither read nor worked out, and is named as such', async () => {
+    const { dir, source } = folder();
+    await writeFolderCall(dir, 'CA_1', [OPENER], 'hangup', D1);
+    const { cache, computed } = counted({ now: () => Date.parse('2026-10-12T00:00:00Z'), retentionDays: 7 });
+    const [a] = await cache.range([source], ...whole(DAY1));
+    expect(computed).toEqual([]);
+    expect([a!.figures.calls, a!.expired]).toEqual([0, [DAY1]]);
+    expect(existsSync(join(dir, FIGURES_DIR, `${DAY1}.json`))).toBe(false);
+  });
+
+  it('a day closes an hour after its traces can no longer change, not before', async () => {
+    const { dir, source } = folder();
+    await writeFolderCall(dir, 'CA_1', [OPENER], 'hangup', D1);
+    const closes = Date.parse('2026-09-20T01:00:00Z');
+    await new FiguresCache({ now: () => closes - 60_000 }).range([source], ...whole(DAY1));
+    expect((JSON.parse(readFileSync(join(dir, FIGURES_DIR, `${DAY1}.json`), 'utf8')) as DayFigures).closed).toBe(false);
+    await new FiguresCache({ now: () => closes + 1 }).range([source], ...whole(DAY1));
+    expect((JSON.parse(readFileSync(join(dir, FIGURES_DIR, `${DAY1}.json`), 'utf8')) as DayFigures).closed).toBe(true);
   });
 
   it('a file with a value of another shape (its numbers checked as it is read) is worked out again from its traces', async () => {
@@ -263,7 +314,8 @@ describe('the trace store: an object under the day\'s folder', () => {
       expect(a!.figures.calls).toBe(2);
       expect(a!.figures.toPerson).toBe(1);
       expect(computed).toEqual([DAY1]);
-      const key = `prod/traces/${DAY1}/${FIGURES_OBJECT}`;
+      // Beside the day folders, never in one: no day's listing grows with them.
+      const key = `prod/traces/${FIGURES_PREFIX}${DAY1}.json`;
       expect(s3.objects.has(key)).toBe(true);
       // The figures object is not a call: the Calls page's listing never shows it.
       expect((await source.traces!.calls()).map((c) => c.id).sort()).toEqual(['CA_s1', 'CA_s2']);
@@ -274,7 +326,8 @@ describe('the trace store: an object under the day\'s folder', () => {
       // The traces' retention removes the day's calls and leaves its figures; FIGURES_RETENTION_DAYS removes them.
       const writer = new S3TraceStore(setting, { server: 'sweeper' });
       await writer.sweep(7, Date.parse('2026-10-12T00:00:00Z'), new Set());
-      expect([...s3.objects.keys()].filter((k) => k.startsWith(`prod/traces/${DAY1}/`))).toEqual([key]);
+      expect([...s3.objects.keys()].filter((k) => k.startsWith(`prod/traces/${DAY1}/`))).toEqual([]);
+      expect(s3.objects.has(key)).toBe(true);
       await writer.trim(0, new Set());
       expect(s3.objects.has(key)).toBe(true);
       forgetSummaries();
@@ -285,5 +338,47 @@ describe('the trace store: an object under the day\'s folder', () => {
     } finally {
       await s3.close();
     }
+  });
+});
+
+describe('a quarter read without holding up a call', () => {
+  it('92 closed days of a busy line: read, and said, with no synchronous stretch over 20 ms; a second read from memory too', async () => {
+    const { dir, source } = folder();
+    const DAY_MS = 86_400_000;
+    const start = Date.parse('2026-07-01T00:00:00Z');
+    await writeFolderCall(dir, 'CA_t', [OPENER], 'hangup', start + 3_600_000);
+    const now = (): number => Date.parse('2026-10-12T12:00:00Z');
+    await new FiguresCache({ now }).range([source], start, start + DAY_MS - 1);
+    const template = JSON.parse(readFileSync(join(dir, FIGURES_DIR, '2026-07-01.json'), 'utf8')) as DayFigures;
+    const hour = Object.values(template.hours)[0]!;
+    for (let d = 0; d < 92; d++) {
+      const day0 = start + d * DAY_MS;
+      const day = new Date(day0).toISOString().slice(0, 10);
+      const hours: Record<string, unknown> = {};
+      for (let h = 0; h < 24; h++) hours[String(day0 + h * 3_600_000)] = { ...hour, calls: 208 };
+      // Every minute a different count: the largest runs a day can have.
+      const inProgress: number[] = [];
+      for (let m = 0; m < 1_440; m++) inProgress.push(m, 1, 1 + ((m * 7) % 40));
+      writeFileSync(join(dir, FIGURES_DIR, `${day}.json`), JSON.stringify({ ...template, day, fingerprint: '5000:0123456789abcdef', closed: true, settleBy: null, hours, inProgress }));
+    }
+    const cache = new FiguresCache({ now });
+    const from = start;
+    const to = start + 92 * DAY_MS - 1;
+    /** The longest the event loop went without a turn while `work` ran, by a timer that asks every 2 ms. */
+    const longest = async (work: () => Promise<unknown>): Promise<number> => {
+      let last = performance.now();
+      let worst = 0;
+      const probe = setInterval(() => { const t = performance.now(); worst = Math.max(worst, t - last); last = t; }, 2);
+      await work();
+      clearInterval(probe);
+      return Math.max(worst, performance.now() - last);
+    };
+    let apps: Awaited<ReturnType<FiguresCache['range']>> = [];
+    const first = await longest(async () => { apps = await cache.range([source], from, to); });
+    expect(apps[0]!.figures.calls).toBe(92 * 24 * 208);
+    const said = await longest(async () => { insightsOf(apps, undefined, { from, to }); });
+    const again = await longest(async () => { apps = await cache.range([source], from, to); insightsOf(apps, undefined, { from, to }); });
+    expect(insightsOf(apps, undefined, { from, to }).totals.peak).toBe(40);
+    expect({ first: first < 20, said: said < 20, again: again < 20 }).toEqual({ first: true, said: true, again: true });
   });
 });

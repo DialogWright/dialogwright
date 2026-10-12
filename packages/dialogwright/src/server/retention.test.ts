@@ -128,6 +128,21 @@ describe('retention in the server', () => {
     });
   }
 
+  it("the console's figures: removed by their own retention, and a warning when it is shorter than the traces'", async () => {
+    const dir = folders();
+    const figures = join(dir.traceDir, '.figures');
+    mkdirSync(figures, { recursive: true });
+    writeFileSync(join(figures, '2026-01-01.json'), '{}');
+    writeFileSync(join(figures, '2026-10-03.json'), '{}');
+    const logs: string[] = [];
+    running = await startServer(config(dir, { TRACE_RETENTION_DAYS: '30', FIGURES_RETENTION_DAYS: '7' }), { host: '127.0.0.1', client: new HeuristicStubClient(), log: (l) => logs.push(l), now: () => NOW });
+    expect(logs).toContain('retention: traces kept 30 days, audit days kept forever, console figures kept 7 days');
+    expect(logs).toContain("WARNING: FIGURES_RETENTION_DAYS=7 is shorter than TRACE_RETENTION_DAYS=30: the console's Insights shows no day older than 7 days, though its traces are still kept");
+    expect(logs.find((l) => l.startsWith('retention: removed'))).toContain('1 days of console figures');
+    expect(existsSync(join(figures, '2026-01-01.json'))).toBe(false);
+    expect(existsSync(join(figures, '2026-10-03.json'))).toBe(true);
+  });
+
   it('sweeps at startup and then once an hour from the idle sweep, and reports disk in health', async () => {
     const dir = folders();
     aged(join(dir.traceDir, 'CA-old.jsonl'), 10);
