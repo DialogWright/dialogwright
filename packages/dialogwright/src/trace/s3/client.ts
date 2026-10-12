@@ -19,8 +19,18 @@ export interface S3Settings {
   forcePathStyle: boolean;
 }
 
-/** How long one request to the store may take before it is given up. */
+/** How long one request to the store may take before it is given up, its answer's body included. */
 export const S3_TIMEOUT_MS = 10_000;
+/** The most an object read back may be (a segment is far smaller), and the most a listing page or an error may be. */
+export const S3_MAX_OBJECT_BYTES = 64 * 1024 * 1024;
+const S3_MAX_PAGE_BYTES = 16 * 1024 * 1024;
+/** How many pages a listing reads before it refuses to go on (never a listing cut short in silence). */
+export const S3_MAX_PAGES = 1_000;
+
+/** A store's error code as it may be said: its letters and digits, or nothing (a code is never taken as it came). */
+function safeCode(code: string | null): string | null {
+  return code !== null && /^[A-Za-z0-9.]{1,64}$/.test(code) ? code : null;
+}
 
 export interface S3Object {
   key: string;
@@ -124,45 +134,78 @@ export class S3Client {
   }
 
   private async refused(operation: string, key: string, res: Response): Promise<never> {
-    const text = await res.text().catch(() => '');
-    throw new S3Error(operation, key, res.status, tag(text, 'Code'));
+    const text = await this.body(operation, key, res, S3_MAX_PAGE_BYTES).catch(() => '');
+    throw new S3Error(operation, key, res.status, safeCode(tag(text, 'Code')));
+  }
+
+  /**
+   * An answer's body as text, read within the request's deadline (its signal is the request's) and up to
+   * `limit` bytes: a store that stalls or answers too much fails as an S3Error, never hangs or fills memory.
+   */
+  private async body(operation: string, key: string, res: Response, limit: number): Promise<string> {
+    if (res.body === null) return '';
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit) {
+          await reader.cancel().catch(() => undefined);
+          throw new S3Error(operation, key, null, null, `an answer larger than ${limit} bytes`);
+        }
+        chunks.push(value);
+      }
+    } catch (err) {
+      if (err instanceof S3Error) throw err;
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      throw new S3Error(operation, key, null, null, timedOut ? `no answer within ${this.timeoutMs} ms` : `the answer broke off (${err instanceof Error ? err.message : String(err)})`);
+    }
+    return Buffer.concat(chunks).toString('utf8');
   }
 
   async put(key: string, body: string): Promise<void> {
     const res = await this.send('put', 'PUT', key, [], body);
     if (!res.ok) await this.refused('put', key, res);
-    await res.arrayBuffer().catch(() => undefined);
+    await this.body('put', key, res, S3_MAX_PAGE_BYTES);
   }
 
   /** The object's text, or null when there is none. */
   async get(key: string): Promise<string | null> {
     const res = await this.send('get', 'GET', key, []);
     if (res.status === 404) {
-      await res.arrayBuffer().catch(() => undefined);
+      await this.body('get', key, res, S3_MAX_PAGE_BYTES).catch(() => undefined);
       return null;
     }
     if (!res.ok) await this.refused('get', key, res);
-    return res.text();
+    return this.body('get', key, res, S3_MAX_OBJECT_BYTES);
   }
 
   async delete(key: string): Promise<void> {
     const res = await this.send('delete', 'DELETE', key, []);
     if (!res.ok && res.status !== 404) await this.refused('delete', key, res);
-    await res.arrayBuffer().catch(() => undefined);
+    await this.body('delete', key, res, S3_MAX_PAGE_BYTES);
   }
 
-  /** Every object under `prefix` (each page asked in turn); with `delimiter`, the prefixes it groups them under too. */
+  /**
+   * Every object under `prefix` (each page asked in turn); with `delimiter`, the prefixes it groups them
+   * under too. Past `maxPages` (S3_MAX_PAGES) it throws rather than answer with part of the listing.
+   */
   async list(prefix: string, o: { delimiter?: string; maxPages?: number } = {}): Promise<{ objects: S3Object[]; prefixes: string[] }> {
     const objects: S3Object[] = [];
     const prefixes: string[] = [];
     let token: string | null = null;
-    for (let page = 0; page < (o.maxPages ?? 1_000); page++) {
+    const maxPages = o.maxPages ?? S3_MAX_PAGES;
+    for (let page = 0; ; page++) {
+      if (page >= maxPages) throw new S3Error('list', prefix, null, null, `more than ${maxPages} pages: narrow the prefix, or let retention (or the bucket's lifecycle rule) remove old traces`);
       const query: [string, string][] = [['list-type', '2'], ['prefix', prefix]];
       if (o.delimiter) query.push(['delimiter', o.delimiter]);
       if (token !== null) query.push(['continuation-token', token]);
       const res = await this.send('list', 'GET', null, query);
       if (!res.ok) await this.refused('list', prefix, res);
-      const parsed = parseListing(await res.text());
+      const parsed = parseListing(await this.body('list', prefix, res, S3_MAX_PAGE_BYTES));
       objects.push(...parsed.objects);
       prefixes.push(...parsed.prefixes);
       token = parsed.next;
