@@ -201,6 +201,26 @@ describe('a SessionStore over a shared store', () => {
     expect(b.s.get('CA1')!.reconnects).toBe(2);
   });
 
+  it('a lease taken for a socket that closed meanwhile is given back, for a new call and for one taken over', async () => {
+    const clock = { t: 1_000_000 };
+    const state = new MemoryCallStateStore(() => clock.t);
+    const a = server('a', state, clock);
+    const b = server('b', state, clock);
+    expect(await b.s.claim('CA-new', 'twilio')).toBe('none');
+    b.s.giveBack('CA-new');
+    await b.s.settled();
+    expect(state.holder('CA-new')).toBeNull();
+    await a.s.claim('CA1', 'twilio');
+    a.s.create('CA1', sock(), 'twilio');
+    await a.s.persist('CA1');
+    await a.s.releaseAll();
+    expect(await b.s.claim('CA1', 'twilio')).toBe('restored');
+    b.s.giveBack('CA1');
+    await b.s.settled();
+    expect(b.s.get('CA1')).toBeUndefined();
+    expect(state.holder('CA1')).toBeNull();
+  });
+
   it('a stop gives up every call it holds, so the next server takes them at once', async () => {
     const clock = { t: 1_000_000 };
     const state = new MemoryCallStateStore(() => clock.t);

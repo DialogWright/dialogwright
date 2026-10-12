@@ -1106,6 +1106,8 @@ export interface ConnectionContext {
   setupDone?: Promise<void>;
   /** Settles `setupDone`: once the call is held here (attached or begun), or the setup is over. */
   setupReady?: () => void;
+  /** The socket has closed: a setup still waiting on a shared store then gives back what it took. */
+  closed?: boolean;
 }
 
 export interface AdapterDeps {
@@ -1611,6 +1613,13 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
       deps.tokens.revoke(callId);
       return;
     }
+    // The carrier gave up on this socket while the lease was waited for: the call is given back, for the
+    // server its next socket reaches.
+    if (ctx.closed) {
+      deps.log(`${callId}: its socket closed while its lease was taken; given back`);
+      deps.store.giveBack(callId);
+      return;
+    }
   } else if (deps.store.get(callId) === undefined && deps.store.durable) {
     const loaded = await deps.store.restore(callId, ctx.provider);
     if (loaded === 'unreadable') {
@@ -1963,6 +1972,7 @@ function arrivalFlags(event: SessionEvent, arrival: Arrival, pending: boolean): 
 }
 
 export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContext): Promise<void> {
+  ctx.closed = true;
   if (!ctx.callSid) return;
   const entry = deps.store.get(ctx.callSid);
   if (!entry) {

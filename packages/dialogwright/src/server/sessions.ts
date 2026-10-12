@@ -486,6 +486,23 @@ export class SessionStore {
     }
   }
 
+  /**
+   * With a shared store, a call whose lease a setup took for a socket that closed meanwhile: let go here,
+   * and its lease given up, so the server the carrier's next socket reaches takes it at once.
+   */
+  giveBack(callId: string): void {
+    const lease = this.lease;
+    if (lease === null) return;
+    if (this.calls.has(callId) && !this.borrowed.has(callId)) {
+      this.detach(callId);
+      return;
+    }
+    const run = this.inOrder(callId, () => lease.leases.release(callId, lease.owner))
+      .catch((err: unknown) => this.log(`${callId}: could not give up the call's lease: ${err instanceof Error ? err.message : String(err)}`));
+    this.releasing.add(run);
+    void run.then(() => this.releasing.delete(run));
+  }
+
   /** With a shared store, a call loaded only to answer a callback, dropped once it is answered (its lease is where its socket lands). */
   dropBorrowed(callId: string): void {
     if (this.borrowed.has(callId)) this.drop(callId);
