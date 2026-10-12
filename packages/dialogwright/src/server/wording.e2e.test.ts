@@ -45,7 +45,7 @@ describe('generated wording on the phone line', () => {
 
   it('with a provider, the server names the model, the share and the budget, never the key', async () => {
     const { logs } = await start({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_SHARE: '50' });
-    expect(logs).toContain('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic, 50% of calls, within 700 ms on a call and 1500 ms in a chat');
+    expect(logs).toContain('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic, 50% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms');
     expect(logs.join('\n')).not.toContain('sk-test-not-real');
   });
 

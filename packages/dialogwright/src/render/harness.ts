@@ -21,19 +21,19 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
   if (opts.render !== undefined && opts.render !== 'fixed') throw new Error(`--render must be fixed, got "${opts.render}"`);
   const settings = renderSettings(env);
   if (kind === 'stub' || kind === 'heuristic') {
-    return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
+    return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
   }
   if (kind === 'recorded') {
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...env }, { needKey: false })!;
     const client = new RenderCassette({ path: renderCassettePath(recordedDir, p.model), mode: 'replay', model: p.model });
     client.preload();
-    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
+    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
   }
   const p = resolveRenderProvider(env);
   if (p === null) return { renderer: null, header: renderLines(null) };
   const live = new ModelRenderClient(p);
   const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, p.model), mode: 'record', model: p.model, inner: live }) : live;
-  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, price: settings.price }, header: renderLines(p) };
+  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: renderLines(p) };
 }
 
 /** What a run's generated lines came to: how many were tried, said generated, and fell back, by reason. */

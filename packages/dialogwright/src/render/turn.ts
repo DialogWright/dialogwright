@@ -8,12 +8,14 @@ import { appOf } from '../core/app/registry';
 import type { App, GeneratedLine, RenderChannel, RenderSituation } from '../core/app/types';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
-import { isNoul, type JevClient, type JevUsage } from '../jev/types';
-import { localePromptEntry, promptText, saidLineOf, type SaidLine } from '../prompts/render';
+import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
+import { localePromptEntry, promptText, renderTemplate, saidLineOf, type SaidLine } from '../prompts/render';
 import { checkGenerated, cleanGenerated, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState } from './checks';
 import { generatesLines, identifierVarsFrom, lineVars, saysKbAnswer } from './config';
-import { renderKey } from './prompt';
-import { DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpeechAct, type SpeechItem } from './types';
+import { actMessage, RENDER_INSTRUCTIONS, renderKey } from './prompt';
+import { screenQuestions, screenState } from '../core/screen';
+import { atLeast, type Thresholds } from '../core/thresholds';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpeechAct, type SpeechItem } from './types';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -62,7 +64,7 @@ export interface RenderedTurn {
   actions: Action[];
   record: RenderRecord;
   audit: AuditDraft[];
-  /** The decision model's usage on the drift checks; null when none was asked. */
+  /** The decision model's usage on the checks it was asked (the collected content screened, the drift check); null when none was asked. */
   driftUsage: JevUsage | null;
 }
 
@@ -75,14 +77,27 @@ export interface RenderInput {
   renderer: Renderer;
   /** The run's decision model client: the drift check's, unless the renderer names its own. */
   client: JevClient;
+  /** The run's thresholds: the screen's fire level, for the collected content screened again. */
+  thresholds: Thresholds;
 }
 
-type Attempt = { said: string; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation };
+/** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
+type Attempt = { said: string; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage };
+
+/**
+ * What a request the turn stopped waiting for was likely billed: its input, estimated from the
+ * request's size (the instructions and the act, about four characters a token); its output unknown.
+ */
+function requestUsage(act: SpeechAct): RenderUsage {
+  return { inputTokens: Math.ceil((RENDER_INSTRUCTIONS.length + actMessage(act).length) / 4), outputTokens: 0, estimated: true };
+}
 
 /** The act of one line, or why the line is not tried on this turn. */
-function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { act: SpeechAct } | { skipped: RenderSkip } {
+function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { act: SpeechAct; judgeFixed: string } | { skipped: RenderSkip } {
   const { before, result, event } = input;
   const after = result.session;
+  // A line the core said must be heard word for word (a summary read back exactly after a no): always fixed.
+  if (said.exact === true) return { skipped: 'exact' };
   if (group === 'fixed') return { skipped: 'share' };
   const locale = after.locale;
   const defaultLocale = app.locales?.default;
@@ -119,7 +134,9 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     language: locale ?? defaultLocale ?? 'en-US',
     style: { persona: style.persona, words: style.words[channel], avoid: [...style.avoid] },
   };
-  return { act };
+  // The fixed line as the drift check reads it: each collected value left as its {placeholder}, the content apart.
+  const judgeFixed = renderTemplate(template, Object.fromEntries(vars.map((v) => [v, from.has(v) ? `{${v}}` : (said.vars[v] ?? '')])));
+  return { act, judgeFixed };
 }
 
 /** Rejects with 'late' once `deadline` has passed. */
@@ -153,18 +170,54 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   if (planned.length === 0 && !start) return null;
 
   const t0 = performance.now();
-  const budget = (renderer.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS)[channelOf(result.session)];
+  const channel = channelOf(result.session);
+  // Two budgets: the model's wording, and the decision model's checks (the collected content screened
+  // before, the drift check after), so a slow wording never starves the checks of their time.
+  const budget = (renderer.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS)[channel];
+  const checkBudget = (renderer.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[channel];
   const abort = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<'late'>((resolve) => {
-    timer = setTimeout(() => resolve('late'), budget);
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const after = (ms: number): Promise<'late'> => new Promise((resolve) => {
+    timers.push(setTimeout(() => resolve('late'), ms));
   });
+  // The turn's whole budget: no line takes longer than the wording's and the checks' together.
+  const deadline = after(budget + checkBudget);
   const drift = renderer.drift ?? input.client;
-  let driftUsage: JevUsage | null = null;
-  const attempt = async (promptId: string, act: SpeechAct): Promise<Attempt> => {
+  let checkUsage: JevUsage | null = null;
+  const used = (u: JevUsage): void => {
+    checkUsage = {
+      inputTokens: (checkUsage?.inputTokens ?? 0) + u.inputTokens,
+      outputTokens: (checkUsage?.outputTokens ?? 0) + u.outputTokens,
+      estimated: (checkUsage?.estimated ?? false) || u.estimated,
+    };
+  };
+  const attempt = async (promptId: string, act: SpeechAct, judgeFixed: string): Promise<Attempt> => {
+    // The line's checks share their budget: each is given what is left of it.
+    let checkLeft = checkBudget;
+    const check = async <T,>(p: Promise<T>): Promise<T | 'late'> => {
+      const began = performance.now();
+      const got = await raceDeadline(p, after(Math.max(0, checkLeft)));
+      checkLeft -= performance.now() - began;
+      return got;
+    };
+    // Collected content is the caller's words, kept from an earlier turn: screened again now, alone, and
+    // a line is generated from it only when the screen reads it and does not flag it.
+    for (const c of act.content ?? []) {
+      try {
+        const r = await check(drift.ask({ state: screenState(c.value), questions: screenQuestions(app), timeoutMs: Math.max(1, checkLeft), signal: abort.signal }));
+        if (r === 'late') return { fallback: 'timeout' };
+        used(r.usage);
+        const read = r.answers.manipulation;
+        if (!isNoul(read) || atLeast(read.noul, input.thresholds.SCREEN_FIRE)) return { fallback: 'content-flagged' };
+      } catch {
+        return { fallback: 'content-flagged' };
+      }
+    }
     let gen: Generation;
     try {
-      gen = await renderer.client.generate({ promptId, act, key: renderKey(promptId, act) }, abort.signal);
+      const wording = await raceDeadline(renderer.client.generate({ promptId, act, key: renderKey(promptId, act) }, abort.signal), after(budget));
+      if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
+      gen = wording;
     } catch (e) {
       return { fallback: e instanceof RenderClientError && e.kind === 'cassette-miss' ? 'cassette-miss' : 'error' };
     }
@@ -172,12 +225,9 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const failed = checkGenerated(text, act);
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {
-      const r = await drift.ask({ state: renderDriftState(act, text), questions: renderDriftQuestion(), timeoutMs: budget, signal: abort.signal });
-      driftUsage = {
-        inputTokens: (driftUsage?.inputTokens ?? 0) + r.usage.inputTokens,
-        outputTokens: (driftUsage?.outputTokens ?? 0) + r.usage.outputTokens,
-        estimated: (driftUsage?.estimated ?? false) || r.usage.estimated,
-      };
+      const r = await check(drift.ask({ state: renderDriftState(act, text, judgeFixed) as unknown as JsonValue, questions: renderDriftQuestion(), timeoutMs: Math.max(1, checkLeft), signal: abort.signal }));
+      if (r === 'late') return { fallback: 'timeout', refused: text, gen };
+      used(r.usage);
       const a = r.answers[DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
       if (a.noul >= DRIFT_FIRE) return { fallback: 'drift', refused: text, gen };
@@ -189,16 +239,16 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const settled = await Promise.all(planned.map(async (p) => {
     if (!('act' in p.plan)) return null;
     const began = performance.now();
-    const got = await raceDeadline(attempt(p.said.promptId, p.plan.act), deadline);
-    return { got: got === 'late' ? ({ fallback: 'timeout' } as Attempt) : got, ms: performance.now() - began };
+    const got = await raceDeadline(attempt(p.said.promptId, p.plan.act, p.plan.judgeFixed), deadline);
+    return { got: got === 'late' ? ({ fallback: 'timeout', usage: requestUsage(p.plan.act) } as Attempt) : got, ms: performance.now() - began };
   }));
-  clearTimeout(timer);
+  for (const t of timers) clearTimeout(t);
   abort.abort();
 
   const actions = [...result.actions];
   const lines: RenderLine[] = [];
   const audit: AuditDraft[] = [];
-  let usage: { inputTokens: number; outputTokens: number } | null = null;
+  let usage: RenderUsage | null = null;
   let model: string | undefined;
   planned.forEach((p, i) => {
     const base = { index: p.index, promptId: p.said.promptId, fixed: promptText(app, p.said.promptId, { ...p.said.vars }, result.session.locale), act: p.said.role };
@@ -208,11 +258,13 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     }
     const { got, ms } = settled[i]!;
     const gen = 'gen' in got ? got.gen : undefined;
-    if (gen !== undefined) {
-      usage = { inputTokens: (usage?.inputTokens ?? 0) + gen.usage.inputTokens, outputTokens: (usage?.outputTokens ?? 0) + gen.usage.outputTokens };
-      model = gen.model;
+    // What the line was paid for: its generation's usage, or a request the turn stopped waiting for (estimated).
+    const paid: RenderUsage | undefined = gen !== undefined ? { ...gen.usage } : 'usage' in got ? got.usage : undefined;
+    if (paid !== undefined) {
+      usage = { inputTokens: (usage?.inputTokens ?? 0) + paid.inputTokens, outputTokens: (usage?.outputTokens ?? 0) + paid.outputTokens, ...((usage?.estimated ?? false) || paid.estimated === true ? { estimated: true } : {}) };
     }
-    const meta = { situations: [...p.plan.act.situations], ms, ...(gen !== undefined ? { usage: { ...gen.usage }, source: gen.source } : {}) };
+    if (gen !== undefined) model = gen.model;
+    const meta = { situations: [...p.plan.act.situations], ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
       const was = actions[p.index] as Say;
       actions[p.index] = sayAction([{ text: got.said }], was.interruptible, was.lang);
@@ -224,7 +276,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   });
   if (start) audit.unshift({ type: 'render_group', detail: { group, share } });
   const price = renderer.price ?? DEFAULT_RENDER_PRICE;
-  const spent = usage as { inputTokens: number; outputTokens: number } | null;
+  const spent = usage as RenderUsage | null;
   const record: RenderRecord = {
     group,
     share,
@@ -233,7 +285,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     ...(spent !== null ? { usage: { ...spent, costUsd: (spent.inputTokens * price.input + spent.outputTokens * price.output) / 1_000_000 } } : {}),
     ms: performance.now() - t0,
   };
-  return { actions, record, audit, driftUsage };
+  return { actions, record, audit, driftUsage: checkUsage };
 }
 
 /**

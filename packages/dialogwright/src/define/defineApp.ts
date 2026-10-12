@@ -69,7 +69,7 @@ import { transferProblems, type TransferProblem, type TransferWorld } from '../c
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -900,12 +900,20 @@ export function crossLink(
     inTs(clash.with === 'undeclared' ? ['slots', clash.slot, 'questionIds'] : ['slots', clash.slot], clashMessage(clash), fix);
   }
 
+  // A summary read back word for word on a no (forms.yaml's summary.onNo: read-back): a form with a summary, and its line.
+  for (const [id, form] of Object.entries(forms)) {
+    if (form.summary?.onNo !== 'read-back') continue;
+    if (form.summaryPromptId === null) yaml('forms.yaml', ['forms', id, 'summary'], `form "${id}" has no summary (summaryPromptId: null), so "summary.onNo" has nothing to read back`, 'delete "summary", or give the form a summaryPromptId');
+    else if (!has(prompts, 'read_back_exact')) yaml('forms.yaml', ['forms', id, 'summary', 'onNo'], `form "${id}" reads its summary back word for word on a no, said after the line "read_back_exact", which is not in prompts.yaml`, 'add "read_back_exact:" to prompts.yaml, such as "Here it is exactly as I have it." with interruptible: false');
+  }
+
   // Generated wording: prescribed lines never generated, a generated line's goal and variables, a locale's goals (render/config.ts).
   for (const p of generatedWordingProblems({
     prompts,
     forms,
     localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
     identifierVars: identifierVarsFrom(linked.slots, config.identity?.levels[1].factors ?? []),
+    confirmed: confirmedFieldsOf(config.policy),
   })) yaml(p.file, p.path, p.message, p.fix, p.atKey === true);
 
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
@@ -946,6 +954,11 @@ function sortProblems(problems: readonly Problem[], codeFile: string): Problem[]
 // ---------------------------------------------------------------------------------------------
 // Building the App
 // ---------------------------------------------------------------------------------------------
+
+/** Each action's `confirmed` fields, by tool, as policy.yaml writes them. */
+function confirmedFieldsOf(policy: LoadedConfig['policy']): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(policy.actions).map(([tool, a]) => [tool, (a.rules ?? []).flatMap((r) => (typeof r === 'object' && r !== null && 'confirmed' in r && Array.isArray((r as { confirmed: unknown }).confirmed) ? (r as { confirmed: string[] }).confirmed : []))]));
+}
 
 /** Sets `key` only when it has a value, so an App has no keys standing for nothing. */
 function put<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
@@ -1170,6 +1183,7 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.internal === true) def.internal = true;
   if (form.label !== undefined) def.label = form.label;
   if (form.listenBeforeEntered !== undefined) def.listenBeforeEntered = form.listenBeforeEntered;
+  if (form.summary?.onNo === 'read-back') def.summaryOnNo = 'read-back';
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
     const { slot, via, answer, unavailable } = form.answers;

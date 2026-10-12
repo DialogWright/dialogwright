@@ -183,6 +183,21 @@
             "type": "string",
             "minLength": 1
           },
+          "summary": {
+            "description": "How the form's summary answers a caller who pushes back. Only on a form with a summary.",
+            "type": "object",
+            "properties": {
+              "onNo": {
+                "description": "What a bare no at the summary does (a no that changes nothing). ask-change (the default): \"What should I change?\" (ask_change), as always. read-back: the summary is read again word for word first, after read_back_exact (a line the app writes), never generated whatever its when says, and with no attempt counted; a second bare no goes on to ask_change, and the ladder continues as always. With read-back, asking to hear it again at ask_change reads the summary again, word for word.",
+                "type": "string",
+                "enum": [
+                  "ask-change",
+                  "read-back"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
           "wording": {
             "description": "How the form's lines are produced (generated wording). generative: each of its lines (its slots' questions, ask_<slot> and their retry, no-input and partial lines, their read-backs, confirm_<slot>, and its summary) is generated as a prompt with mode: generative is, unless the line says mode: fixed or is prescribed (prescribed: true). A line without a goal of its own is worded to say what its fixed text says. Default fixed: every line word for word.",
             "type": "string",

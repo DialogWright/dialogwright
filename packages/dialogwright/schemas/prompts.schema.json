@@ -79,6 +79,11 @@
               "type": "string",
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             }
+          },
+          "summarizesConfirmed": {
+            "description": "true: the app accepts that this generated line, a read-back, may summarize a value named in `from` that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.",
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [

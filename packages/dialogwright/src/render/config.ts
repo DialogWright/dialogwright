@@ -52,6 +52,7 @@ export function generatedWordingOf(input: {
     ...(p.when?.channels !== undefined ? { channels: [...p.when.channels] } : {}),
     ...(p.from !== undefined ? { from: [...p.from] } : {}),
     by,
+    ...(p.summarizesConfirmed === true ? { summarizesConfirmed: true as const } : {}),
   });
   for (const id of ids) {
     const p = input.prompts[id]!;
@@ -131,6 +132,8 @@ export function generatedWordingProblems(input: {
   forms: FormsYaml['forms'];
   localePrompts: Readonly<Record<string, Readonly<Record<string, PromptYaml>>>>;
   identifierVars: ReadonlySet<string>;
+  /** Each action's `confirmed` fields (policy.yaml), by tool: a read-back that summarizes one must say so. */
+  confirmed?: Readonly<Record<string, readonly string[]>>;
 }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
@@ -153,7 +156,7 @@ export function generatedWordingProblems(input: {
       if (ids.length > 0) out.push({ file, path: at('mode'), message: `the line "${id}" is generated, but it names ${ids.map((v) => `{${v}}`).join(', ')}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier`, fix: 'delete "mode: generative" (the line is said word for word), or say the identifier in a fixed line of its own' });
     }
     if (!isGenerated) {
-      for (const key of ['goal', 'when', 'from'] as const) {
+      for (const key of ['goal', 'when', 'from', 'summarizesConfirmed'] as const) {
         if (p[key] !== undefined && !(p.mode === 'generative')) out.push({ file, path: at(key), message: `the line "${id}" is not generated (no mode: generative, and no form that generates its lines), so its "${key}" does nothing`, fix: `add "mode: generative" to generate it, or delete "${key}"`, atKey: true });
       }
     }
@@ -164,6 +167,22 @@ export function generatedWordingProblems(input: {
       });
     }
   }
+  // A generated line that may summarize a value a confirmed rule holds the caller to: the app says it accepts that.
+  const ids = Object.keys(input.prompts);
+  for (const [id, p] of Object.entries(input.prompts)) {
+    if (!Object.hasOwn(generated, id)) continue;
+    const covered = new Set<string>();
+    for (const def of Object.values(input.forms)) {
+      if (!formLineIds(ids, def.slots, def.summaryPromptId).includes(id)) continue;
+      for (const tool of def.calls ?? []) for (const f of input.confirmed?.[tool] ?? []) if ((p.from ?? []).includes(f)) covered.add(f);
+    }
+    if (covered.size > 0 && p.summarizesConfirmed !== true) {
+      out.push({ file, path: ['prompts', id, 'from'], message: `the line "${id}" may summarize ${[...covered].map((v) => `{${v}}`).join(', ')}, which a confirmed rule holds the caller to confirming exactly, so the caller would confirm a value they heard summarized`, fix: 'add "summarizesConfirmed: true" to accept it (the value confirmed and sent is still the one kept, and the policy card says so), or take the variable out of "from" so the line says it whole' });
+    }
+    if (covered.size === 0 && p.summarizesConfirmed === true) {
+      out.push({ file, path: ['prompts', id, 'summarizesConfirmed'], message: `the line "${id}" summarizes no value a confirmed rule covers, so "summarizesConfirmed" does nothing`, fix: 'delete "summarizesConfirmed"', atKey: true });
+    }
+  }
   for (const [form, def] of Object.entries(input.forms)) {
     if (def.wording !== 'generative') continue;
     const any = Object.values(generated).some((l) => l.by !== 'prompt' && l.by.form === form);
@@ -172,11 +191,31 @@ export function generatedWordingProblems(input: {
   for (const [locale, prompts] of Object.entries(input.localePrompts)) {
     const dir = `locale/${locale}/prompts.yaml`;
     for (const [id, p] of Object.entries(prompts)) {
-      for (const key of ['mode', 'prescribed', 'when', 'from'] as const) {
+      for (const key of ['mode', 'prescribed', 'when', 'from', 'summarizesConfirmed'] as const) {
         if (p[key] !== undefined) out.push({ file: dir, path: ['prompts', id, key], message: `"${key}" is read from prompts.yaml, for every locale; a locale gives a generated line only its goal`, fix: `move "${key}" to the line in prompts.yaml, or delete it here`, atKey: true });
       }
       if (p.goal !== undefined && !Object.hasOwn(generated, id)) out.push({ file: dir, path: ['prompts', id, 'goal'], message: `the line "${id}" is not generated in prompts.yaml, so its goal here does nothing`, fix: 'generate it in prompts.yaml (mode: generative), or delete "goal"', atKey: true });
     }
   }
   return out;
+}
+
+/**
+ * The values a `confirmed` rule of `tool` holds the caller to that a generated read-back may summarize
+ * rather than say whole: the `from` variables of a generated line of a form that calls `tool` (its
+ * questions, read-backs or summary) among `fields`. The values confirmed and sent are still the ones
+ * kept, word for word. Empty for every app that generates no such line.
+ */
+export function summarizedFields(app: { generated?: GeneratedWording; forms: Readonly<Record<string, { slots: readonly string[]; summaryPromptId: string | null; calls?: readonly string[] }>>; prompts: { manifest: Readonly<Record<string, unknown>> } }, tool: string, fields: readonly string[]): string[] {
+  const lines = app.generated?.lines;
+  if (lines === undefined) return [];
+  const ids = Object.keys(app.prompts.manifest);
+  const out = new Set<string>();
+  for (const form of Object.values(app.forms)) {
+    if (!(form.calls ?? []).includes(tool)) continue;
+    for (const id of formLineIds(ids, form.slots, form.summaryPromptId)) {
+      for (const v of lines[id]?.from ?? []) if (fields.includes(v)) out.add(v);
+    }
+  }
+  return fields.filter((f) => out.has(f));
 }

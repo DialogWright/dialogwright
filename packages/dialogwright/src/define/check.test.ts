@@ -755,3 +755,18 @@ describe('checkAppFully: a priority switch\'s correction and the handoff\'s unco
     expect(await warnings(folder({ 'app.yaml': handoffData('    slots: none\n    unconfirmed: send\n') }))).toEqual([]);
   });
 });
+
+describe('checkApp: a summary read back word for word on a no (review fixes)', () => {
+  it('needs its line, read_back_exact, and a form with a summary', async () => {
+    const { MESSAGE_DIR, messageCode } = await import('../testing/message/app');
+    const dir = mkdtempSync(join(tmpdir(), 'readback-'));
+    try {
+      cpSync(MESSAGE_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      writeFileSync(join(dir, 'prompts.yaml'), readFileSync(join(dir, 'prompts.yaml'), 'utf8').replace('  read_back_exact:\n    text: Here it is exactly as I took it down.\n    interruptible: false\n', ''));
+      const problems = (await checkApp(dir, { code: messageCode })).map(formatProblem);
+      expect(problems).toEqual([expect.stringContaining('form "take_message" reads its summary back word for word on a no, said after the line "read_back_exact", which is not in prompts.yaml')]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

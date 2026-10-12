@@ -137,18 +137,24 @@ prompts:
     interruptible: true
 
   # The read-back: the first time, a short summary of the message (generated from it); after that,
-  # and whenever a check fails, the message word for word, as stored. A caller who asks to hear it
-  # again (repeat_prompt) hears it word for word too.
+  # and whenever a check fails, the message word for word, as stored. A caller who says no hears it
+  # word for word (forms.yaml's summary.onNo: read-back, after read_back_exact), and so does one who
+  # asks to hear it again (repeat_prompt). The caller confirms the message kept, word for word, after
+  # hearing its summary: summarizesConfirmed says the app accepts that.
   confirm_take_message:
     text: "For {recipient}, from {caller}, call back on {phone}. Your message: {message}. Shall I pass it on?"
     interruptible: true
     mode: generative
     goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message in your own words, and ask whether to pass it on.
     from: [message]
+    summarizesConfirmed: true
     when:
       situations: [first-ask]
+  read_back_exact:
+    text: Here it is exactly as I took it down.
+    interruptible: false
   ask_change:
-    text: Sorry about that. Tell me what to change, or say read it back to hear your message word for word.
+    text: What should I change? You can also ask me to read it back again.
     interruptible: true
 
   # Said when the message is passed on: prescribed, always word for word.

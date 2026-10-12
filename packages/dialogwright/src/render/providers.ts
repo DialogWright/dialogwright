@@ -1,5 +1,5 @@
 import { RENDER_INSTRUCTIONS, actMessage } from './prompt';
-import { DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
@@ -11,8 +11,10 @@ import { DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, typ
  *   `anthropic/claude-haiku-5.5` on OpenRouter).
  * - the key: OPENROUTER_API_KEY or ANTHROPIC_API_KEY, the provider's own variable.
  * - RENDER_SHARE: the share of calls served generated, 0 to 100; default 100.
- * - RENDER_TIMEOUT_MS: how long a turn waits for its generated lines, checks included; default 700 on
- *   a call and 1500 in a chat (one value given sets both).
+ * - RENDER_TIMEOUT_MS: how long a line's wording may take; default 700 on a call and 1500 in a chat
+ *   (one value given sets both).
+ * - RENDER_CHECK_TIMEOUT_MS: how long the decision model's checks of a line may take together (the
+ *   collected content screened again, the drift check); default 500 on a call and 1000 in a chat.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
  *   million tokens, for the cost in the trace and Insights; default the default model's.
  */
@@ -70,11 +72,13 @@ function price(env: Env, name: string, fallback: number): number {
 }
 
 /** RENDER_SHARE, RENDER_TIMEOUT_MS and the price, with their defaults. */
-export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; price: RenderPrice } {
+export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
   const timeout = value(env, 'RENDER_TIMEOUT_MS') === null ? null : bounded(env, 'RENDER_TIMEOUT_MS', 50, 30_000, 0);
+  const checks = value(env, 'RENDER_CHECK_TIMEOUT_MS') === null ? null : bounded(env, 'RENDER_CHECK_TIMEOUT_MS', 50, 30_000, 0);
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: timeout === null ? { ...DEFAULT_RENDER_TIMEOUT_MS } : { voice: timeout, chat: timeout },
+    checkTimeoutMs: checks === null ? { ...DEFAULT_RENDER_CHECK_TIMEOUT_MS } : { voice: checks, chat: checks },
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', DEFAULT_RENDER_PRICE.input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', DEFAULT_RENDER_PRICE.output) },
   };
 }
@@ -98,7 +102,8 @@ export class ModelRenderClient implements RenderClient {
     const anthropic = this.p.provider === 'anthropic';
     const body = anthropic
       ? { model: this.p.model, max_tokens: MAX_TOKENS, system: RENDER_INSTRUCTIONS, messages: [{ role: 'user', content }], thinking: { type: 'disabled' } }
-      : { model: this.p.model, max_tokens: MAX_TOKENS, messages: [{ role: 'system', content: RENDER_INSTRUCTIONS }, { role: 'user', content }] };
+      // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed per model).
+      : { model: this.p.model, max_tokens: MAX_TOKENS, reasoning: { enabled: false }, messages: [{ role: 'system', content: RENDER_INSTRUCTIONS }, { role: 'user', content }] };
     const headers: Record<string, string> = anthropic
       ? { 'x-api-key': this.p.apiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
       : { authorization: `Bearer ${this.p.apiKey!}`, 'content-type': 'application/json' };
@@ -124,15 +129,17 @@ export class ModelRenderClient implements RenderClient {
 
 function anthropicAnswer(json: unknown): { text: string; model?: string; usage: { inputTokens: number; outputTokens: number } } | null {
   const b = json as { content?: { type?: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number }; model?: string; stop_reason?: string } | null;
-  if (b === null || typeof b !== 'object' || b.stop_reason === 'refusal' || !Array.isArray(b.content)) return null;
+  // A refusal, or a line cut off at the token limit, is no line.
+  if (b === null || typeof b !== 'object' || b.stop_reason === 'refusal' || b.stop_reason === 'max_tokens' || !Array.isArray(b.content)) return null;
   const text = b.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
   return { text, ...(typeof b.model === 'string' ? { model: b.model } : {}), usage: { inputTokens: b.usage?.input_tokens ?? 0, outputTokens: b.usage?.output_tokens ?? 0 } };
 }
 
 function openRouterAnswer(json: unknown): { text: string; model?: string; usage: { inputTokens: number; outputTokens: number } } | null {
-  const b = json as { choices?: { message?: { content?: unknown } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } | null;
+  const b = json as { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } | null;
   const text = b?.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') return null;
+  // A line cut off at the token limit is no line.
+  if (typeof text !== 'string' || b?.choices?.[0]?.finish_reason === 'length') return null;
   return { text, ...(typeof b?.model === 'string' ? { model: b.model } : {}), usage: { inputTokens: b?.usage?.prompt_tokens ?? 0, outputTokens: b?.usage?.completion_tokens ?? 0 } };
 }
 

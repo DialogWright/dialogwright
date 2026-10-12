@@ -107,3 +107,19 @@ describe('generatedWordingProblems', () => {
     ]);
   });
 });
+
+describe('a generated read-back that summarizes a confirmed value (review fixes)', () => {
+  const prompts = {
+    ask_note: line('Your note?'),
+    confirm_f: line('So: {note}. Right?', { mode: 'generative', goal: 'Read it back.', from: ['note'] }),
+  };
+  const forms = { f: form(['note'], { summaryPromptId: 'confirm_f', calls: ['save'] }) };
+  it('needs summarizesConfirmed when a confirmed rule of an action its form calls holds the value', () => {
+    expect(generatedWordingProblems({ prompts, forms, localePrompts: {}, identifierVars: new Set(), confirmed: { save: ['note'] } }).map((p) => p.message)).toEqual([
+      'the line "confirm_f" may summarize {note}, which a confirmed rule holds the caller to confirming exactly, so the caller would confirm a value they heard summarized',
+    ]);
+    const accepted = { ...prompts, confirm_f: { ...prompts.confirm_f, summarizesConfirmed: true as const } };
+    expect(generatedWordingProblems({ prompts: accepted, forms, localePrompts: {}, identifierVars: new Set(), confirmed: { save: ['note'] } })).toEqual([]);
+    expect(generatedWordingProblems({ prompts: accepted, forms, localePrompts: {}, identifierVars: new Set(), confirmed: { save: [] } }).map((p) => p.path.join('.'))).toEqual(['prompts.confirm_f.summarizesConfirmed']);
+  });
+});

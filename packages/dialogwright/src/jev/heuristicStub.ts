@@ -1,3 +1,4 @@
+import { isFigureWord } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -15,26 +16,51 @@ const CONTROL_INTENT_KEYWORDS: Array<[string, RegExp]> = [
 const NUMBER_WORD_DIGIT: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5' };
 
 function textOf(state: unknown): string {
-  const s = state as { asr?: { text?: string }; line?: { said?: string; fixed?: string; goal?: string } } | null;
-  if (s?.asr?.text === undefined && typeof s?.line?.said === 'string') return driftText(s.line.said, `${s.line.fixed ?? ''} ${s.line.goal ?? ''}`);
+  const s = state as { asr?: { text?: string } } | null;
   return (s?.asr?.text ?? '').toLowerCase();
 }
 
-/**
- * A generated line's drift check (render/checks.ts renderDriftState) is about the line, not a caller's
- * words: what it reads is the line's words that neither its fixed wording nor its goal has, so a line
- * is held to what it adds.
- */
-function driftText(said: string, given: string): string {
-  const known = new Set(given.toLowerCase().match(/[a-z0-9']+/g) ?? []);
-  return (said.toLowerCase().match(/[a-z0-9']+/g) ?? []).filter((w) => !known.has(w)).join(' ');
-}
+/** Words a generated line may add to its fixed text and goal without saying anything of its own. */
+const FILLER: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'so', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from', 'about', 'is', 'are', 'was', 'be', 'it', "it's",
+  'its', 'that', "that's", 'this', 'i', "i'm", "i'll", 'me', 'my', 'you', "you're", 'your', 'we', "we'll", 'our', 'us', 'thanks', 'thank', 'got', 'sure',
+  'okay', 'ok', 'let', "let's", 'ask', 'again', 'sorry', 'please', 'understand', 'just', 'now', 'yes', 'no', 'right', 'all', 'here', 'there', 'can',
+  'will', 'would', 'could', 'shall', 'do', 'does', 'what', "what's", 'which', 'who', 'how', 'when', 'where', 'if', 'then', 'also', 'more', 'happy',
+  'help', 'noted', 'alright', 'great', 'of', 'course', 'certainly', 'quick', 'quickly', 'once', 'that', 'too', 'very', 'kindly', 'mind',
+]);
+/** A sentence that says the caller's words are the caller's: "your message says", "you said". */
+const ATTRIBUTED = /\b(your message|your note|you said|you mentioned|you told|you asked|you'd like|you want|you say|says|said)\b/i;
+
+const tokens = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
 
 /**
- * What a generated line that does more than its goal looks like to the stub's drift check: talk of
- * instructions, rules, prompts or modes, a transfer, a refund, a credit or a promise, an address to a
- * system. A test's renderer that injects such words is held to falling back; a real model is asked.
+ * The stub's drift judge (render/checks.ts renderDriftQuestion), deterministic, holding a line to the
+ * question's own criteria by its words: a sentence that states something found only in the caller's
+ * quoted words (a figure, a name, or three words or more of them) without attributing it to the caller;
+ * a sentence with two words or more traceable to neither its fixed text, its goal nor the quoted words;
+ * or words of an injection. A real model is asked the question itself.
  */
+export function stubDrift(state: unknown): boolean {
+  const s = state as { line?: { said?: unknown; fixed?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
+  const said = typeof s?.line?.said === 'string' ? s.line.said : '';
+  const fixed = typeof s?.line?.fixed === 'string' ? s.line.fixed.replace(/\{[A-Za-z][A-Za-z0-9_]*\}/g, ' ') : '';
+  const goal = typeof s?.line?.goal === 'string' ? s.line.goal : '';
+  const known = new Set(tokens(`${fixed} ${goal}`));
+  const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
+  const added = tokens(said).filter((w) => !known.has(w)).join(' ');
+  if (manipulationPattern(undefined).test(added) || DRIFT_CUES.test(added)) return true;
+  for (const sentence of said.split(/(?<=[.!?])\s+/)) {
+    const words = tokens(sentence);
+    const capitalized = new Set((sentence.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => w.toLowerCase()));
+    const quotedOnly = words.filter((w) => quoted.has(w) && !known.has(w) && !FILLER.has(w));
+    const claims = quotedOnly.filter((w) => isFigureWord(w) || capitalized.has(w));
+    if ((claims.length > 0 || quotedOnly.length >= 3) && !ATTRIBUTED.test(sentence)) return true;
+    const novel = words.filter((w) => !known.has(w) && !quoted.has(w) && !FILLER.has(w));
+    if (novel.length >= 2) return true;
+  }
+  return false;
+}
+
 const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
 
 function has(text: string, re: RegExp): boolean {
@@ -141,7 +167,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'callerMatchDeclined': return noulAnswer(has(text, /\b(no|nope|different account|another account|not me|not mine|not my account)\b/) ? 0.9 : 0.05);
     case 'manipulation': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) ? 0.9 : 0.04);
     // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
-    case 'renderDrift': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) || DRIFT_CUES.test(text) ? 0.9 : 0.04);
+    case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -168,6 +194,8 @@ export class HeuristicStubClient implements JevClient {
     const text = textOf(req.state);
     const answers: AnswerMap = {};
     for (const [id, q] of Object.entries(req.questions)) answers[id] = answerHeuristically(id, q, text, this.todayIso, this.app === undefined ? defaultAppOrNull() : this.app);
+    // Generated wording's drift check reads the line, its fixed text and the caller's quoted words, not a caller's turn.
+    if (Object.hasOwn(req.questions, 'renderDrift')) answers.renderDrift = noulAnswer(stubDrift(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

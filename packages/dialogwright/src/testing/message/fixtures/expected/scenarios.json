@@ -45,10 +45,56 @@
     "id": "message-pushback-exact",
     "decision": "prompt",
     "promptId": "confirm_take_message",
-    "acks": [],
+    "acks": [
+      "read_back_exact"
+    ],
     "reason": null,
     "decidedGate": "confirmation",
     "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-pushback-exact-chat": {
+    "id": "message-pushback-exact-chat",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [
+      "read_back_exact"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-pushback-then-repeat": {
+    "id": "message-pushback-then-repeat",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
     "form": "take_message",
     "slots": {
       "recipient": "dana",

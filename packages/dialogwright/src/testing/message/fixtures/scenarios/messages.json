@@ -75,18 +75,73 @@
       },
       {
         "say": "no, that's not quite what I said"
-      },
-      {
-        "say": "read it back"
       }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
-    },
-    "as": "web"
+      "text": "Here it is exactly as I took it down. For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+    }
+  },
+  {
+    "id": "message-pushback-exact-chat",
+    "as": "web",
+    "steps": [
+      {
+        "say": "can I leave a message for Dana"
+      },
+      {
+        "say": "it's Morgan Lee"
+      },
+      {
+        "say": "five five five five five five zero one four two"
+      },
+      {
+        "say": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+      },
+      {
+        "say": "no, that's not quite what I said"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "text": "Here it is exactly as I took it down. For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+    }
+  },
+  {
+    "id": "message-pushback-then-repeat",
+    "steps": [
+      {
+        "say": "can I leave a message for Dana"
+      },
+      {
+        "say": "it's Morgan Lee"
+      },
+      {
+        "say": "five five five five five five zero one four two"
+      },
+      {
+        "say": "please call me about the March invoice before Friday, I think we were charged twice for the same delivery"
+      },
+      {
+        "say": "no, that's not quite what I said"
+      },
+      {
+        "say": "no, that's not quite what I said"
+      },
+      {
+        "say": "can you read that back word for word"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "text": "Your message: please call me about the March invoice before Friday, I think we were charged twice for the same delivery. Shall I pass it on?"
+    }
   },
   {
     "id": "message-for-lee",

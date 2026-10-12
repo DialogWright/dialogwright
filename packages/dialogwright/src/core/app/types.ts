@@ -107,6 +107,12 @@ export interface FormDef {
   /** The manifest prompt confirming the filled form, or null. */
   summaryPromptId: string | null;
   /**
+   * What a bare no at the summary does (forms.yaml's `summary.onNo`): `ask-change` (absent: "What should I
+   * change?", as always) or `read-back` (the summary read again word for word first, after
+   * `read_back_exact`; a second bare no asks the change).
+   */
+  summaryOnNo?: 'ask-change' | 'read-back';
+  /**
    * The actions (tools) the form's hooks call through the gate: its entry call and the calls its
    * completion and summary hooks make. Declared by every form of an app or by none; the app map
    * (dialogwright/testing appMapText) draws a form to them, and `check` reports an action no form
@@ -1453,6 +1459,8 @@ export interface GeneratedLine {
   readonly from?: readonly string[];
   /** Why it is generated: its own `mode: generative`, or its form's `wording: generative`. */
   readonly by: 'prompt' | { readonly form: FormId };
+  /** The app accepts that the line may summarize a value a `confirmed` rule holds the caller to (prompts.yaml's `summarizesConfirmed`). */
+  readonly summarizesConfirmed?: true;
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */

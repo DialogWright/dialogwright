@@ -122,6 +122,8 @@ export interface SaidLine {
   readonly promptId: string;
   readonly vars: Readonly<Record<string, string>>;
   readonly role: LineRole;
+  /** The decision asks for this line word for word (PromptDecision.exact). */
+  readonly exact?: true;
 }
 
 const SAID_LINES = new WeakMap<Say, SaidLine>();
@@ -137,9 +139,9 @@ export function saidLineOf(say: Say): SaidLine | undefined {
 
 /** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
 export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string): Action[] {
-  const sayAs = (role: LineRole) => (id: string, vars: Record<string, string>, interruptible: boolean): Say => {
+  const sayAs = (role: LineRole, exact = false) => (id: string, vars: Record<string, string>, interruptible: boolean): Say => {
     const line = promptSay(app, id, vars, interruptible, ctx, locale);
-    SAID_LINES.set(line, { promptId: id, vars, role });
+    SAID_LINES.set(line, { promptId: id, vars, role, ...(exact ? { exact: true as const } : {}) });
     return line;
   };
   const ack = sayAs('acknowledge');
@@ -151,7 +153,7 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
       const actions: Action[] = decision.acks.map((a) => ack(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
-      actions.push(sayAs('ask')(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
+      actions.push(sayAs('ask', decision.exact === true)(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
       return actions;
     }
     case 'complete':

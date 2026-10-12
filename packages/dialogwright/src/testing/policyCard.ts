@@ -2,6 +2,7 @@ import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
+import { summarizedFields } from '../render/config';
 import { lookupRefsOf } from '../define/policyFile';
 import { refText, todayText, type DateBound, type LookupRef, type NumberBound } from '../gate/bounded';
 import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from '../gate/compiled';
@@ -131,7 +132,7 @@ function listLine(app: App, rule: Extract<Rule, { rule: 'oneOf' | 'noneOf' }>): 
 }
 
 /** One rule of an action in plain English, with its parameters. */
-function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule): string {
+function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Rule, tool = ''): string {
   const subjectKind = identityOf(app).subjectKind;
   switch (rule.rule) {
     case 'identity':
@@ -147,7 +148,12 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
         : `the ${noun} must be ${same}`;
     }
     case 'role': return roleLine(rule, subjectKind);
-    case 'confirmed': return `the caller must confirm exactly these values at the read-back, and nothing else is sent: ${andList(rule.fields.map((f) => paramNoun(app, f)))}`;
+    case 'confirmed': {
+      const said = `the caller must confirm exactly these values at the read-back, and nothing else is sent: ${andList(rule.fields.map((f) => paramNoun(app, f)))}`;
+      // A generated read-back that may summarize a value (prompts.yaml's from, with summarizesConfirmed): said so.
+      const summarized = summarizedFields(app, tool, rule.fields);
+      return summarized.length === 0 ? said : `${said} (the read-back is generated and may summarize ${andList(summarized.map((f) => paramNoun(app, f)))}; the values confirmed and sent are the ones kept, word for word, and the caller may ask to hear them so)`;
+    }
     case 'fields': return `only these fields are sent: ${rule.fields.length === 0 ? 'none' : rule.fields.map(code).join(', ')}`;
     case 'dateInRange': {
       const bounds = [
@@ -443,7 +449,7 @@ function actionsSection(app: App, source: PolicySource): string[] {
     const label = action.check === true ? `${named}<br/>a form's check: the gate answers, nothing runs` : named;
     // The identity tools' own check runs first (gate/compiled.ts subjectOnlyDecision), written in no file.
     const subjectOnly = app.identity !== undefined && identityTools.includes(tool) ? [`only ${article(subjectKind)} ${subjectKind}, or a caller not yet verified, may use it (any other party is refused)`] : [];
-    const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r))];
+    const said = [...subjectOnly, ...action.rules.map((r) => ruleText(app, source, action, r, tool))];
     const rules = said.length === 0 ? 'nothing: no rule runs' : said.map((r, i) => `${i + 1}. ${cell(r)}`).join('<br/>');
     out.push(`| ${label} | ${action.level} ${cell(levelName(app, action.level))} | ${rules} |`);
   }
@@ -511,16 +517,19 @@ function wordingSection(app: App): string[] {
   const ids = Object.keys(g.lines);
   if (ids.length === 0) out.push('No line is generated: every line is said word for word.');
   else {
-    out.push(`These lines are worded by a model for the moment (generated wording). Each is checked before anyone hears it: every value it must carry is there word for word, it names no other number, amount, date or name, it keeps to its word budget and asks one question only where its fixed text does, it avoids the phrases style.yaml lists, and the decision model finds it does nothing beyond its goal. When a check fails, the model is slow or errs, or the caller's words were flagged as an injection, its fixed text is said instead. A model is never sent an identifier, the transcript or what a tool returned. Every other line is said word for word.`);
-    out.push('', '| Line | Fixed text | Goal | Generated | Carries word for word | May summarize |', '| --- | --- | --- | --- | --- | --- |');
+    out.push(`These lines are worded by a model for the moment (generated wording). Each is checked before anyone hears it: every value it must carry is there word for word; it names no number, amount, date or ordinal it was not given (a figure the caller said only in an acknowledgement of it), and no capitalized word it was not given; it keeps to its word budget and asks one question only where its fixed text does; it avoids the phrases style.yaml lists; and the decision model, given the line, its goal and its fixed text with the caller's words apart, finds it does nothing beyond its goal and states nothing of the caller's words as the agent's own. Collected content is screened for an injection again before a line is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, its fixed text is said instead. The model is sent the line's values as its fixed text would say them (those a tool filled in among them), the caller's words on the turn, quoted (never after a question whose answer the records mask), and the content it may summarize; never an identity factor, a value the records hide whole, the transcript, or anything else a tool returned. Every other line is said word for word.`);
+    out.push('', '| Line | Fixed text | Goal | Generated | Carries word for word | Sent whole, though recorded masked | May summarize |', '| --- | --- | --- | --- | --- | --- | --- |');
     for (const id of ids) {
       const line = g.lines[id]!;
       const text = app.prompts.manifest[id]?.text ?? '';
       const vars = [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!))];
       const from = new Set(line.from ?? []);
       const carried = vars.filter((v) => !from.has(v));
+      // A value a slot records masked (by its last four) that the line sends the model whole.
+      const masked = vars.filter((v) => Object.hasOwn(app.slots, v) && app.slots[v]!.redact !== undefined);
       const by = line.by === 'prompt' ? '' : ` (its form ${code(line.by.form)})`;
-      out.push(`| ${code(id)} | ${cell(text)} | ${cell(line.goal)} | ${cell(whereWords(line))}${by} | ${carried.length === 0 ? 'nothing' : carried.map((v) => code(`{${v}}`)).join(', ')} | ${from.size === 0 ? 'nothing' : [...from].map((v) => code(`{${v}}`)).join(', ')} |`);
+      const list = (xs: readonly string[]): string => (xs.length === 0 ? 'nothing' : xs.map((v) => code(`{${v}}`)).join(', '));
+      out.push(`| ${code(id)} | ${cell(text)} | ${cell(line.goal)} | ${cell(whereWords(line))}${by} | ${list(carried)} | ${list(masked)} | ${list([...from])}${line.summarizesConfirmed === true ? ', a value the caller confirms' : ''} |`);
     }
   }
   out.push('');

@@ -41,11 +41,11 @@ describe('resolveRenderProvider', () => {
 
 describe('renderSettings', () => {
   it('defaults: every call generated, 700 ms on a call and 1500 in a chat, the default model\'s price', () => {
-    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 700, chat: 1500 }, price: { input: 0.1, output: 0.5 } });
+    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 700, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, price: { input: 0.1, output: 0.5 } });
   });
 
   it('RENDER_SHARE, RENDER_TIMEOUT_MS (both channels) and the price, each checked', () => {
-    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, price: { input: 1, output: 5 } });
+    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, price: { input: 1, output: 5 } });
     expect(() => renderSettings({ RENDER_SHARE: '150' })).toThrow('RENDER_SHARE must be a whole number from 0 to 100, got "150"');
     expect(() => renderSettings({ RENDER_TIMEOUT_MS: 'fast' })).toThrow('RENDER_TIMEOUT_MS');
     expect(() => renderSettings({ RENDER_PRICE_INPUT_PER_MTOK: '-1' })).toThrow('RENDER_PRICE_INPUT_PER_MTOK');
@@ -82,6 +82,7 @@ describe('ModelRenderClient', () => {
     expect(sent[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
     expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
     expect(JSON.parse(String(sent[0]!.init.body)).messages[0]).toEqual({ role: 'system', content: RENDER_INSTRUCTIONS });
+    expect(JSON.parse(String(sent[0]!.init.body)).reasoning).toEqual({ enabled: false });
   });
 
   it('a failed request, a refusal or an answer with no line rejects with an error that names no key', async () => {
@@ -94,6 +95,10 @@ describe('ModelRenderClient', () => {
     };
     expect(await fails(answering(401, { error: 'bad key' }))).toBe('anthropic: HTTP 401');
     expect(await fails(answering(200, { content: [], stop_reason: 'refusal' }))).toBe('anthropic: the answer had no line');
+    expect(await fails(answering(200, { content: [{ type: 'text', text: 'And who is the mess' }], stop_reason: 'max_tokens' }))).toBe('anthropic: the answer had no line');
+    const or = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!;
+    const cut = await new ModelRenderClient(or, answering(200, { choices: [{ message: { content: 'Who is it' }, finish_reason: 'length' }] })).generate(req, signal).catch((x: unknown) => x);
+    expect((cut as Error).message).toBe('openrouter: the answer had no line');
     expect(await fails((async () => { throw new TypeError(`fetch failed with ${KEY}`); }) as typeof fetch)).toBe('anthropic: TypeError');
   });
 

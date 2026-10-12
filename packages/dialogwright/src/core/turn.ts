@@ -431,6 +431,17 @@ function askSummary(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision
   return summaryPrompt(s, form, acks);
 }
 
+/** The line said before a summary read back word for word after a bare no (forms.yaml's `summary.onNo: read-back`). */
+export const READ_BACK_EXACT = 'read_back_exact';
+
+/**
+ * The pending summary read again, word for word (PromptDecision.exact): a generated summary is said
+ * fixed. The summary stays pending as it was, with no attempt counted.
+ */
+function readBackExact(s: Session, form: FormId, acks: Ack[]): PromptDecision {
+  return { ...summaryPrompt(s, form, acks), exact: true };
+}
+
 /**
  * "What should I change?", which takes the place of one re-ask: it occupies the ladder's first
  * rung so that three answers with nothing usable in them still reach an agent.
@@ -1737,8 +1748,15 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       return { decision: failAttempt(s, promptedTarget(s), io), events: [] };
     case 'handoff':
       return { decision: handoff(s, verdict.reason), events: [] };
-    case 'replay':
+    case 'replay': {
+      // At "What should I change?", a form whose summary reads back on a no (`summary.onNo: read-back`)
+      // reads the pending summary again, word for word, rather than repeat the change question.
+      const pc = s.pendingConfirmation;
+      if (pc?.target === 'form' && pc.askedChange === true && formOf(io.app, pc.form).summaryOnNo === 'read-back' && s.lastPromptId === 'ask_change') {
+        return { decision: readBackExact(s, pc.form, []), events: [] };
+      }
       return { decision: { kind: 'replay', text: s.lastPromptText }, events: [] };
+    }
     case 'inform': {
       // The answer plays as an ack in front of the question the caller was on. What else the
       // breath carried for the open form still fills, as on the queue verdict; outside a form only
@@ -1839,7 +1857,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           return { decision: continueForm(s, io, [...acks, ...fill.acks, ...move.acks], null), events: fill.events };
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks]), events: fill.events };
-        // Nothing usable came with the no: ask what to change and keep the summary pending. That
+        // Nothing usable came with the no. With forms.yaml's `summary.onNo: read-back`, the summary is
+        // read again first, word for word, after read_back_exact: no rung is spent, and the next bare no
+        // asks the change.
+        if (formOf(io.app, pc.form).summaryOnNo === 'read-back' && pc.readBack !== true && pc.askedChange !== true) {
+          pc.readBack = true;
+          return { decision: readBackExact(s, pc.form, [...acks, { promptId: READ_BACK_EXACT, vars: {} }]), events: fill.events };
+        }
+        // Otherwise ask what to change and keep the summary pending. That
         // question is asked once per summary; a caller who answers it with another bare no has
         // spent a turn on the confirmation, so the ladder counts it (keypad, then an agent).
         if (pc.askedChange === true) return { decision: reaskConfirmation(s, io, acks), events: fill.events };

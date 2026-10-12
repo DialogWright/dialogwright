@@ -27,6 +27,11 @@ export interface PromptDecision {
   menu?: boolean;
   /** the help prompt this decision plays in place of the target slot's question; recorded on the slot once it is actually spoken */
   help?: { slot: SlotId; promptId: string };
+  /**
+   * The line must be heard word for word: a summary read back exactly after a no (forms.yaml's
+   * `summary.onNo: read-back`). A generated line is said fixed (render/turn.ts, skip `exact`). Absent on every other prompt.
+   */
+  exact?: true;
 }
 
 export interface CompleteDecision {

@@ -25,12 +25,12 @@ describe('a chat turn of an app that generates lines', () => {
   it('shows the generated words; without a renderer, the fixed line', async () => {
     const entry = (renderer: boolean): ChatTurnEntry => ({
       id: 'WC1', session: newSession('WC1', 0, WEB_CHAT), auditEntries: [], lastActivityMs: 0,
-      opts: { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-13', now: () => 0, tools: demoTools(), ...(renderer ? { renderer: { client: new FakeRenderClient({ say: { ask_caller: 'Happy to take that for Dana. Who is it from?' } }) } } : {}) },
+      opts: { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-13', now: () => 0, tools: demoTools(), ...(renderer ? { renderer: { client: new FakeRenderClient({ say: { ask_caller: 'Happy to help. Who is it from?' } }) } } : {}) },
     });
     const worded = entry(true);
     const plain = entry(false);
     for (const e of [worded, plain]) await runChatTurn(deps, e, startEvent(), () => 0, 'desk');
-    expect(await runChatTurn(deps, worded, textEvent('can I leave a message for Dana'), () => 0, 'desk')).toEqual(['Sure, I can help you take a message. Happy to take that for Dana. Who is it from?']);
+    expect(await runChatTurn(deps, worded, textEvent('can I leave a message for Dana'), () => 0, 'desk')).toEqual(['Sure, I can help you take a message. Happy to help. Who is it from?']);
     expect(await runChatTurn(deps, plain, textEvent('can I leave a message for Dana'), () => 0, 'desk')).toEqual(['Sure, I can help you take a message. And who is the message from?']);
   });
 });

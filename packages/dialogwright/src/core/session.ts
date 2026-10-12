@@ -127,8 +127,11 @@ export type PendingConfirmation =
    * of those spends a rung.
    * readAs is the prompt the summary was last read as, where the form's summary hook read it as
    * another (FormDef.onSummaryRead; e.g. a short re-read): the same question, so its keypad works there too.
+   * readBack records that the summary was read back word for word after a bare no (forms.yaml's
+   * `summary.onNo: read-back`), so the next bare no asks what to change. Absent until then (and in a
+   * session saved before it, which behaves as one that has not read it back).
    */
-  | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string }
+  | { target: 'form'; form: FormId; attempts: number; askedChange?: boolean; readAs?: string; readBack?: boolean }
   /**
    * A form check's refusal read back before it acts (a check outcome's `confirm`, core/turn.ts
    * stopForm): the check by its action, and what the gate said (its verdict and reason), so a yes

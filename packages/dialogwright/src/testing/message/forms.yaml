@@ -3,9 +3,12 @@ forms:
   # Who the message is for, who it is from, the number to call back and the message itself, read
   # back for a yes. Its lines are generated (wording: generative), but for those that say mode: fixed
   # or are prescribed; the message is stored exactly as the caller said it, whatever a line said of it.
+  # A caller who says no to the summary hears it again word for word first (summary.onNo: read-back).
   take_message:
     slots: [recipient, caller, phone, message]
     summaryPromptId: confirm_take_message
     hooks: [confirmedParams, complete]
     calls: [leaveMessage]
+    summary:
+      onNo: read-back
     wording: generative

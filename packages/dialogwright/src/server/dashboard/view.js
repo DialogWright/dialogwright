@@ -945,7 +945,7 @@ export function reduce(events, opts) {
             `${Object.keys(r.questions).length} questions`,
             `${Math.round(r.timing?.askMs ?? 0)} ms`,
             `${tokensOf(r.usage).toLocaleString('en-US')} tokens`,
-            money(r.usage?.costUsd ?? 0),
+            money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0)),
           ].join(' · ') + (r.error ? ` · error: ${r.error.name}` : '');
           // A record with a `turnState` answers this outright, including with a null: falling back
           // to the post-turn state when it says "nothing was pending" would put the group back on

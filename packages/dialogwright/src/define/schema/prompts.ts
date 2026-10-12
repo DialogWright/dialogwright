@@ -62,6 +62,12 @@ const prompt = z
       .describe(
         'Generated from collected content: the line\'s variables (its {names}) that hold content the call collected (a message, a note) and the model may summarize rather than repeat word for word. The exact content is always kept and is what is stored; the fixed text, which reads it word for word, is the fallback, and a caller who asks to hear it again hears it. Only with a generated line.',
       ),
+    summarizesConfirmed: z
+      .literal(true, { error: 'must be true, or left out' })
+      .optional()
+      .describe(
+        'true: the app accepts that this generated line, a read-back, may summarize a value named in `from` that a `confirmed` rule holds the caller to (the caller confirms the value kept, word for word, after hearing a summary of it). Required for such a line; the policy card says so on the action.',
+      ),
   })
   .describe('One line the agent says.');
 

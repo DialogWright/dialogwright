@@ -9,7 +9,8 @@ import { gb as gbOf, loadConfig, type Env, type ServerConfig } from './config';
 import { readEnvFile } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
-import { generatedWordingOf } from '../render/config';
+import { generatedWordingOf, identifierVarsFrom } from '../render/config';
+import { buildSlot } from '../slots/defineSlot';
 import { renderSettings, resolveRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
@@ -397,7 +398,17 @@ const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp',
 export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   const loaded = loadAppFolder(appDir).config;
   if (loaded === null) return [];
-  const g = generatedWordingOf({ prompts: loaded.prompts[loaded.defaultLocale] ?? {}, forms: loaded.forms.forms, style: loaded.style, localePrompts: {} });
+  // The identifiers, as the app is built: its identity factors, and each library slot hidden whole in the
+  // records (a slot in code, which this reads no code for, counts as none).
+  const slots: Record<string, { redact?: string }> = {};
+  for (const [id, entry] of Object.entries(loaded.slots ?? {})) {
+    const built = buildSlot(id, entry);
+    if (built.ok) slots[id] = built.spec.redact !== undefined ? { redact: built.spec.redact } : {};
+  }
+  const g = generatedWordingOf({
+    prompts: loaded.prompts[loaded.defaultLocale] ?? {}, forms: loaded.forms.forms, style: loaded.style, localePrompts: {},
+    identifierVars: identifierVarsFrom(slots, loaded.identity?.levels[1].factors ?? []),
+  });
   const lines = g === undefined ? 0 : Object.keys(g.lines).length;
   if (lines === 0) return [];
   const said = `${lines} generated line${lines === 1 ? '' : 's'}`;
@@ -405,7 +416,7 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
     const p = resolveRenderProvider(env);
     if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated' }];
     const r = renderSettings(env);
-    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat` }];
+    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }

@@ -55,6 +55,8 @@ export interface SpeechAct {
 export interface RenderUsage {
   inputTokens: number;
   outputTokens: number;
+  /** True where it is an estimate: a request the turn stopped waiting for, billed but never answered in time. */
+  estimated?: boolean;
 }
 
 /** A model's wording of one line, before any check. */
@@ -99,7 +101,9 @@ export interface RenderClient {
 /** Why a line the app generates was said fixed instead of generated: a check that failed, or how the generation failed. */
 export type RenderFallback =
   | 'empty' | 'format' | 'items' | 'foreign' | 'words' | 'question' | 'avoid' | 'drift'
-  | 'timeout' | 'error' | 'cassette-miss' | 'drift-error';
+  | 'timeout' | 'error' | 'cassette-miss' | 'drift-error'
+  /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
+  | 'content-flagged';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =
@@ -114,7 +118,9 @@ export type RenderSkip =
   /** The line names an identifier. */
   | 'identifier'
   /** The line says a knowledge base's answer, word for word. */
-  | 'knowledge';
+  | 'knowledge'
+  /** The core asked for the line word for word (a summary read back exactly, forms.yaml's `summary.onNo: read-back`). */
+  | 'exact';
 
 /** One line the app generates, as said on a turn (TraceRecord.render.lines). */
 export interface RenderLine {
@@ -167,8 +173,14 @@ export interface Renderer {
   client: RenderClient;
   /** RENDER_SHARE: the share of calls (0 to 100) served generated, chosen per call; default 100. */
   share?: number;
-  /** RENDER_TIMEOUT_MS: how long a turn waits for its generated lines, checks included, per channel; default 700 on voice, 1500 in a chat. */
+  /** RENDER_TIMEOUT_MS: how long a line's wording may take, per channel; default 700 on voice, 1500 in a chat. */
   timeoutMs?: { voice: number; chat: number };
+  /**
+   * RENDER_CHECK_TIMEOUT_MS: how long the decision model's checks of a line may take together (the collected
+   * content screened again, the drift check), per channel; default 500 on voice, 1000 in a chat. A turn
+   * waits at most both budgets.
+   */
+  checkTimeoutMs?: { voice: number; chat: number };
   /** The model's price, for the cost in the trace and Insights; default the default model's. */
   price?: RenderPrice;
   /**
@@ -178,8 +190,11 @@ export interface Renderer {
   drift?: JevClient;
 }
 
-/** The default per-turn budget, ms, on each channel. */
+/** The default budget of a line's wording, ms, on each channel. */
 export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 700, chat: 1500 } as const;
+
+/** The default budget of a line's checks by the decision model, ms, on each channel. */
+export const DEFAULT_RENDER_CHECK_TIMEOUT_MS = { voice: 500, chat: 1000 } as const;
 
 /** The default model's price (Claude Haiku 5.5), US dollars per million tokens: what the cost is counted at unless RENDER_PRICE_* says otherwise. */
 export const DEFAULT_RENDER_PRICE: RenderPrice = { input: 0.1, output: 0.5 };

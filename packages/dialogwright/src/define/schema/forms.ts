@@ -98,6 +98,17 @@ const form = z
     label: text()
       .optional()
       .describe('An internal form\'s spoken label ("book your free inspection"), as an intent\'s label is used: in bridge_next as {intentLabel}, and as the form the caller is in. Only on an internal form; a form intent\'s label is in intents.yaml.'),
+    summary: z
+      .strictObject({
+        onNo: z
+          .enum(['ask-change', 'read-back'])
+          .optional()
+          .describe(
+            'What a bare no at the summary does (a no that changes nothing). ask-change (the default): "What should I change?" (ask_change), as always. read-back: the summary is read again word for word first, after read_back_exact (a line the app writes), never generated whatever its when says, and with no attempt counted; a second bare no goes on to ask_change, and the ladder continues as always. With read-back, asking to hear it again at ask_change reads the summary again, word for word.',
+          ),
+      })
+      .optional()
+      .describe('How the form\'s summary answers a caller who pushes back. Only on a form with a summary.'),
     wording: z
       .enum(['fixed', 'generative'])
       .optional()
