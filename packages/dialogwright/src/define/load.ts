@@ -17,6 +17,9 @@ import { readKbFolder, type KbEntry, type KbFolderIo } from '../kb/folder';
 import { kbContentProblems } from '../kb/rules';
 import { KB_KINDS, type KbKind } from '../kb/schema';
 import { hostSchema, type HostYaml } from './schema/host';
+
+/** The host file's name (define/host.ts HOST_FILE_NAME), which an app folder may hold beside its own files. */
+const HOST_FILE = 'host.yaml';
 import type { KnowledgeBase } from '../kb/types';
 
 export type { Problem } from './problems';
@@ -440,7 +443,9 @@ function missingFile(file: string, kind: Kind, top: readonly string[]): Problem 
 function strayYamlFiles(top: readonly string[], problems: Problem[]): void {
   const known = new Set<string>(FOLDER_FILES);
   for (const name of top) {
-    if (!/\.ya?ml$/.test(name) || known.has(name)) continue;
+    // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
+    // is its app's, that is in the app's folder. It is the server's, never read as part of the app.
+    if (!/\.ya?ml$/.test(name) || known.has(name) || name === HOST_FILE) continue;
     const near = closest(name.replace(/\.ya?ml$/, '.yaml'), [...known]);
     problems.push(
       problemAt(

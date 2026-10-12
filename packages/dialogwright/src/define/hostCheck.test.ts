@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main, type Io } from './cli';
+import { loadAppFolder } from './load';
 
 /** `dialogwright check` with a host file (host.yaml: several apps on one server). */
 
@@ -35,5 +36,15 @@ describe('dialogwright check with a host file', () => {
     expect(code).toBe(1);
     expect(out[0]).toMatch(/^host\.yaml:1:8  apps\[0\]  the app folder apps\/missing does not exist .*->  write the path/);
     expect(out.at(-1)).toBe('2 problems in host.yaml');
+  });
+
+  it('lets host.yaml sit in an app\'s own folder, as in a project of its own, whose folder is its app\'s', () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-own-'));
+    dirs.push(root);
+    cpSync(join(dirname(FIXTURE), '..', 'callback'), root, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    writeFileSync(join(root, 'host.yaml'), 'apps: [.]\n');
+    expect(loadAppFolder(root).problems.filter((p) => p.file === 'host.yaml')).toEqual([]);
+    writeFileSync(join(root, 'hosts.yaml'), 'apps: [.]\n');
+    expect(loadAppFolder(root).problems.map((p) => p.file)).toContain('hosts.yaml');
   });
 });
