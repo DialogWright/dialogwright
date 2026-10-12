@@ -16,6 +16,13 @@ export interface SqlClient extends SqlQueryable {
   /** `fn` in one transaction on one connection: committed when it resolves, rolled back when it throws. */
   transaction<T>(fn: (tx: SqlQueryable) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+  /**
+   * LISTEN on `channel` (a fixed identifier, never a caller's) on a connection of its own, kept open
+   * and opened again when it fails: `onNotify` gets each NOTIFY's payload, and an empty payload each
+   * time the connection is (re)opened, when a notice may have been missed. Resolves to what stops it.
+   * Absent on a client that cannot listen.
+   */
+  listen?(channel: string, onNotify: (payload: string) => void, onError?: (err: Error) => void): Promise<() => Promise<void>>;
 }
 
 /** The driver the server runs Postgres on: an optional dependency, imported only when SESSION_STORE names Postgres. */
@@ -33,6 +40,8 @@ export class PgUnavailableError extends Error {
 interface PgPoolClient {
   query(text: string, params?: readonly unknown[]): Promise<{ rows: unknown[] }>;
   release(err?: Error | boolean): void;
+  on(event: 'notification', listener: (m: { channel: string; payload?: string }) => void): unknown;
+  on(event: 'error', listener: (err: Error) => void): unknown;
 }
 interface PgPool {
   query(text: string, params?: readonly unknown[]): Promise<{ rows: unknown[] }>;
@@ -111,8 +120,12 @@ export function boundedSql(sql: SqlClient, ms: number): SqlClient {
     query: (text, params) => within(sql.query(text, params), ms),
     transaction: (fn) => within(sql.transaction(fn), ms),
     close: () => sql.close(),
+    ...(sql.listen ? { listen: sql.listen.bind(sql) } : {}),
   };
 }
+
+/** A channel name LISTEN takes as it is: letters, digits and underscores, never from outside. */
+const CHANNEL = /^[a-z_][a-z0-9_]{0,62}$/;
 
 /**
  * A SqlClient on the `pg` driver over a pool. A connection that fails while idle is logged, never
@@ -153,6 +166,59 @@ export async function openPgClient(url: string, o: PgClientOptions = {}): Promis
       }
     },
     close: () => pool.end(),
+    async listen(channel, onNotify, onError) {
+      if (!CHANNEL.test(channel)) throw new Error(`not a channel name: ${channel}`);
+      let stopped = false;
+      let client: PgPoolClient | null = null;
+      let retry: ReturnType<typeof setTimeout> | null = null;
+      const open = async (): Promise<void> => {
+        const c = await pool.connect();
+        c.on('notification', (m) => {
+          if (m.channel === channel) onNotify(m.payload ?? '');
+        });
+        c.on('error', (err) => {
+          onError?.(err);
+          if (client === c) client = null;
+          c.release(true);
+          again();
+        });
+        try {
+          await c.query(`LISTEN ${channel}`);
+        } catch (err) {
+          c.release(true);
+          throw err;
+        }
+        if (stopped) {
+          c.release(true);
+          return;
+        }
+        client = c;
+        // Anything sent while no connection listened is read now.
+        onNotify('');
+      };
+      const again = (): void => {
+        if (stopped || retry !== null) return;
+        retry = setTimeout(() => {
+          retry = null;
+          open().catch((err: unknown) => {
+            onError?.(err instanceof Error ? err : new Error(String(err)));
+            again();
+          });
+        }, 1_000);
+        retry.unref?.();
+      };
+      await open();
+      return async () => {
+        stopped = true;
+        if (retry !== null) clearTimeout(retry);
+        const c = client;
+        client = null;
+        if (c) {
+          await c.query(`UNLISTEN ${channel}`).catch(() => undefined);
+          c.release();
+        }
+      };
+    },
   };
 }
 

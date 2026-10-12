@@ -75,6 +75,20 @@ export interface ChatDeps extends ChatTurnDeps {
    * (SESSION_STORE=file, server/stores/file.ts). Absent or null (memory, the default), nowhere.
    */
   state?: ChatStateStore | null;
+  /**
+   * With several servers on one database (SESSION_STORE=postgres, stores/notices.ts): a chat restored
+   * here from the store is announced, and one another server restored is let go here (its socket
+   * closed, its session forgotten, the store left as that server saves it). Absent on one machine.
+   */
+  peers?: ChatPeers | null;
+}
+
+/** How the servers on one database tell each other a chat was resumed elsewhere. */
+export interface ChatPeers {
+  /** This server has taken the chat over from the store. */
+  announce(id: string): void;
+  /** `fn` with each chat another server has taken over. */
+  onTaken(fn: (id: string) => void): void;
 }
 
 /** One chat session, whichever socket it is on now. */
@@ -486,8 +500,25 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     resumeIds.set(e.resume, e.id);
     log(`chat ${e.id}: restored from the session store`);
     record(e.frames, 'log', { restored: true });
+    // Another server may still hold it, its socket open: it lets it go.
+    deps.peers?.announce(e.id);
     return e;
   };
+
+  // A chat another server restored from the store is no longer this server's: its socket here is
+  // closed as a resume on this server closes the one before it, and its session forgotten without an
+  // end (the chat goes on there, and that server saves it from now on).
+  deps.peers?.onTaken((id) => {
+    const e = sessions.get(id);
+    if (e === undefined || e.ended) return;
+    e.ended = true;
+    sessions.delete(id);
+    resumeIds.delete(e.resume);
+    log(`chat ${id}: resumed on another server; let go here`);
+    record(e.frames, 'log', { resumedElsewhere: true });
+    e.socket?.close(1000, 'resumed elsewhere');
+    e.socket = null;
+  });
 
   const start = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
     if (m.resume !== undefined) {

@@ -37,6 +37,17 @@ export function pgliteSql(db: PGlite): PgliteSql {
       }));
     },
     close: async () => {},
+    async listen(channel, onNotify) {
+      check();
+      const off = await db.listen(channel, (payload) => {
+        // A server cut off hears nothing more, as a crashed one would not.
+        if (!cut) onNotify(payload);
+      });
+      onNotify('');
+      return async () => {
+        await off();
+      };
+    },
     cut: () => {
       cut = true;
     },

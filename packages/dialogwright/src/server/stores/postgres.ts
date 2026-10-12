@@ -82,21 +82,41 @@ const TABLES_V1 = [
   'CREATE INDEX IF NOT EXISTS dw_tokens_hash ON dw_tokens (token_hash)',
 ];
 
-/** The database's session tables are at a version this code does not read. */
+/**
+ * One set of tables this code makes and reads, under its own row in dw_schema: the session tables
+ * (`sessions`), and since 8b2 the audit's (`audit`, audit/postgres.ts) and the console's notices
+ * (`notices`, stores/notices.ts), each at its own version, so a database may hold any of them.
+ */
+export interface TablePart {
+  /** Its row in dw_schema. */
+  row: string;
+  version: number;
+  /** The statements that make it, run once, in one transaction under the schema lock. */
+  tables: readonly string[];
+  /** What the tables are, as an error says it: "session tables". */
+  what: string;
+  /** The setting that names the database, as an error says it: "SESSION_STORE". */
+  setting: string;
+}
+
+/** The session tables: dw_schema's first row. */
+export const SESSION_TABLES: TablePart = { row: SCHEMA_ROW, version: POSTGRES_SCHEMA_VERSION, tables: TABLES_V1, what: 'session tables', setting: 'SESSION_STORE' };
+
+/** The database's tables of a part are at a version this code does not read. */
 export class SchemaVersionError extends Error {
-  constructor(readonly found: number, readonly known: number) {
+  constructor(readonly found: number, readonly known: number, what = 'session tables', setting = 'SESSION_STORE') {
     super(found > known
-      ? `the database's session tables are version ${found}, newer than this server reads (${known}): run the newer server, or point SESSION_STORE at another database`
-      : `the database's session tables are version ${found}, older than this server reads (${known}), and no migration runs unasked: point SESSION_STORE at a new database, or run the server that made them`);
+      ? `the database's ${what} are version ${found}, newer than this server reads (${known}): run the newer server, or point ${setting} at another database`
+      : `the database's ${what} are version ${found}, older than this server reads (${known}), and no migration runs unasked: point ${setting} at a new database, or run the server that made them`);
     this.name = 'SchemaVersionError';
   }
 }
 
-/** The version the database's session tables are at, or null when they have not been made. Reads only. */
-export async function schemaVersion(sql: SqlQueryable): Promise<number | null> {
+/** The version a part's tables are at (the session tables' by default), or null when they have not been made. Reads only. */
+export async function schemaVersion(sql: SqlQueryable, row = SCHEMA_ROW): Promise<number | null> {
   const exists = await sql.query<{ t: string | null }>("SELECT to_regclass('dw_schema')::text AS t");
   if (exists.rows[0]?.t == null) return null;
-  const r = await sql.query<{ version: number | string }>('SELECT version FROM dw_schema WHERE name = $1', [SCHEMA_ROW]);
+  const r = await sql.query<{ version: number | string }>('SELECT version FROM dw_schema WHERE name = $1', [row]);
   return r.rows.length === 0 ? null : Number(r.rows[0]!.version);
 }
 
@@ -106,21 +126,27 @@ export async function schemaVersion(sql: SqlQueryable): Promise<number | null> {
  * under a lock so two servers starting at once make them once. Returns whether they were made now.
  */
 export async function ensureSchema(sql: SqlClient): Promise<boolean> {
-  const found = await schemaVersion(sql);
+  return ensureTables(sql, SESSION_TABLES);
+}
+
+/** A part's tables at this code's version, as ensureSchema does for the session tables. Returns whether they were made now. */
+export async function ensureTables(sql: SqlClient, part: TablePart): Promise<boolean> {
+  const refuse = (found: number): SchemaVersionError => new SchemaVersionError(found, part.version, part.what, part.setting);
+  const found = await schemaVersion(sql, part.row);
   if (found !== null) {
-    if (found !== POSTGRES_SCHEMA_VERSION) throw new SchemaVersionError(found, POSTGRES_SCHEMA_VERSION);
+    if (found !== part.version) throw refuse(found);
     return false;
   }
   return sql.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock($1)', [SCHEMA_LOCK]);
     await tx.query('CREATE TABLE IF NOT EXISTS dw_schema (name text PRIMARY KEY, version integer NOT NULL)');
-    const again = await schemaVersion(tx);
+    const again = await schemaVersion(tx, part.row);
     if (again !== null) {
-      if (again !== POSTGRES_SCHEMA_VERSION) throw new SchemaVersionError(again, POSTGRES_SCHEMA_VERSION);
+      if (again !== part.version) throw refuse(again);
       return false;
     }
-    for (const statement of TABLES_V1) await tx.query(statement);
-    await tx.query('INSERT INTO dw_schema (name, version) VALUES ($1, $2)', [SCHEMA_ROW, POSTGRES_SCHEMA_VERSION]);
+    for (const statement of part.tables) await tx.query(statement);
+    await tx.query('INSERT INTO dw_schema (name, version) VALUES ($1, $2)', [part.row, part.version]);
     return true;
   });
 }

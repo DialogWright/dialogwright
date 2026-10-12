@@ -18,6 +18,7 @@ import type { CallStateStore, ChatStateStore, ServerTokenStore } from './stores/
 import { FrameLog } from './frameLog';
 import { buildHints } from './hints';
 import { DashboardBus } from './dashboard/bus';
+import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
 import { defaultAppId, getApp } from '../core/app/registry';
 import { newSession } from '../core/session';
@@ -34,6 +35,8 @@ import { clipDurations } from '../prompts/playback';
 import { clipStatus, readRecorded } from '../prompts/sheet';
 import { demoTools } from '../core/tools';
 import { AuditLog } from '../audit/log';
+import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
+import { PostgresNotices } from './stores/notices';
 import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
@@ -119,6 +122,8 @@ export interface ServerOverrides {
    * process. Not a setting: a deployment always connects through the pg driver. The server closes it.
    */
   sessionSql?: SqlClient;
+  /** With AUDIT_STORE=postgres://..., the connection to use, as sessionSql is for SESSION_STORE: a test seam, not a setting. */
+  auditSql?: SqlClient;
   /** With TRACE_STORE=s3://..., how the store is reached in place of the global fetch: a test seam, not a setting. */
   traceFetch?: typeof fetch;
 }
@@ -155,8 +160,7 @@ export function safeFileStem(callSid: string): string {
  * gives): a failure to connect, or tables at another version, stops the server here with the reason,
  * the connection string's password never in it.
  */
-async function openShared(url: string, timeoutMs: number, given: SqlClient | undefined, now: () => number, log: (line: string) => void) {
-  const sql = given ?? (await openPgClient(url, { log, queryTimeoutMs: timeoutMs }));
+async function openShared(url: string, timeoutMs: number, sql: SqlClient, now: () => number, log: (line: string) => void) {
   try {
     return await openPostgresStores(sql, { tokenTtlMs: TOKEN_TTL_MS, now, log, timeoutMs });
   } catch (err) {
@@ -165,12 +169,18 @@ async function openShared(url: string, timeoutMs: number, given: SqlClient | und
   }
 }
 
+/** A failure opening one of the Postgres parts as the server says it: the setting, the masked string, and why, never the password. */
+function postgresFailure(setting: string, url: string, err: unknown): Error {
+  return new Error(`${setting} ${maskConnectionString(url)}: ${maskSecrets(err instanceof Error ? err.message : String(err), url)}`);
+}
+
 export async function startServer(config: ServerConfig, overrides: ServerOverrides = {}): Promise<RunningServer> {
   const said = overrides.log ?? ((line: string) => console.log(`[server] ${line}`));
   // With SESSION_STORE=postgres, every line is said with the connection string's password taken out,
   // whatever a driver's message held. Otherwise every line as it was.
   const storeUrl = config.sessionStore?.kind === 'postgres' ? config.sessionStore.url : null;
-  const log = storeUrl === null ? said : (line: string): void => said(maskSecrets(line, storeUrl));
+  const secretUrls = [storeUrl, config.auditStore?.url ?? null].filter((u): u is string => u !== null);
+  const log = secretUrls.length === 0 ? said : (line: string): void => said(secretUrls.reduce((l, u) => maskSecrets(l, u), line));
   const now = overrides.now ?? (() => Date.now());
   // The one threshold the phone line sets from its environment: the ask budget is a property of the
   // deployment's network and the day's question count, not of the dialogue policy.
@@ -227,11 +237,47 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // would be circular: the initializer references the very binding it is initializing.
   // One set of tools (the app's systems) for the process, so a record made on one call can be read on the next.
   const tools = demoTools();
+  // SESSION_STORE=postgres://...: the connection, opened now (the pg driver connects on the first
+  // question), so AUDIT_STORE may share it; the stores on it are opened below, with the file store's.
+  const setting0 = config.sessionStore;
+  const sessionSql: SqlClient | null = setting0?.kind === 'postgres'
+    ? (overrides.sessionSql ?? (await openPgClient(setting0.url, { log, queryTimeoutMs: setting0.timeoutMs })))
+    : null;
+  // AUDIT_STORE=postgres://...: the audit in a database, a chain per call anchored into a chain per day;
+  // on SESSION_STORE's connection when it names the same database. Unset, one chain per day file, as always.
+  const auditSetting = config.auditStore;
+  const auditSql: SqlClient | null = auditSetting
+    ? (overrides.auditSql ?? (sessionSql !== null && setting0?.kind === 'postgres' && setting0.url === auditSetting.url
+      ? sessionSql
+      : await openPgClient(auditSetting.url, { log, queryTimeoutMs: auditSetting.timeoutMs })))
+    : null;
+  /** The connections opened here, closed once whatever happens: a failed start, or close(). */
+  const closeAuditSql = async (): Promise<void> => {
+    if (auditSql !== null && auditSql !== sessionSql) await auditSql.close().catch(() => undefined);
+  };
+  let postgresAudit: PostgresAuditLog | null = null;
+  if (auditSql !== null && auditSetting) {
+    try {
+      postgresAudit = await openPostgresAudit(auditSql, { now, timeoutMs: auditSetting.timeoutMs, log });
+    } catch (err) {
+      await closeAuditSql();
+      await sessionSql?.close().catch(() => undefined);
+      throw postgresFailure('AUDIT_STORE', auditSetting.url, err);
+    }
+    log(`audit: ${maskConnectionString(auditSetting.url)} (shared: a hash chain per call, each anchored into a chain per day; pnpm audit:verify reads it)`);
+  }
   // One audit chain for the process: every call's entries link into the same day file.
-  const audit = new AuditLog(config.auditDir, now);
+  const audit: AuditSink = postgresAudit ?? new AuditLog(config.auditDir, now);
   // CONSOLE_AUTH=token: the console's sign-in, whose first link is made once the server listens. Made
   // before anything that would need closing, as it reads the sign-outs a run before kept and may refuse them.
-  const consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
+  let consoleAuth: ConsoleAuth | undefined;
+  try {
+    consoleAuth = config.consoleAuth && bus ? new ConsoleAuth({ settings: config.consoleAuth, publicHost: config.publicHost, audit, now, log }) : undefined;
+  } catch (err) {
+    await closeAuditSql();
+    await sessionSql?.close().catch(() => undefined);
+    throw err;
+  }
   // SESSION_STORE=file:<dir>: calls, chats and relay tokens saved in a folder, so a restart resumes a
   // call whose carrier calls back. Unset (memory), nothing is saved, as it always was.
   const setting = config.sessionStore;
@@ -241,13 +287,44 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (files) log(`sessions: file:${files.dir} (calls, chats and relay tokens are saved after every turn, and a restart resumes them)`);
   // SESSION_STORE=postgres://...: the same in a database many servers share, each call held by one
   // server at a time under a lease this server renews while the call is live.
-  const shared = setting?.kind === 'postgres' ? await openShared(setting.url, setting.timeoutMs, overrides.sessionSql, now, log) : null;
+  const shared = setting?.kind === 'postgres' && sessionSql !== null
+    ? await openShared(setting.url, setting.timeoutMs, sessionSql, now, log).catch(async (err: unknown) => {
+      await closeAuditSql();
+      throw err;
+    })
+    : null;
   const leaseMs = setting?.kind === 'postgres' ? setting.leaseMs : 0;
   const owner = setting?.kind === 'postgres' ? `${setting.serverId ?? 'server'}-${randomBytes(4).toString('hex')}` : '';
   if (shared && setting?.kind === 'postgres') {
     log(`sessions: ${maskConnectionString(setting.url)} (shared: calls, chats and relay tokens are saved after every turn, and any server the carrier reconnects to takes a call over); this server is ${owner}, holding each call ${leaseMs} ms at a time`);
   }
   const durable: { calls: CallStateStore; chats: ChatStateStore; tokens: ServerTokenStore } | null = files ?? shared;
+  // With SESSION_STORE=postgres: notices between the servers on the database (stores/notices.ts), so one
+  // console sees every server's calls and a chat resumed elsewhere is let go here.
+  let notices: PostgresNotices | null = null;
+  if (shared && sessionSql && setting?.kind === 'postgres') {
+    try {
+      notices = await PostgresNotices.open(sessionSql, { origin: owner, log, now, timeoutMs: setting.timeoutMs });
+    } catch (err) {
+      await shared.close().catch(() => undefined);
+      await closeAuditSql();
+      throw postgresFailure('SESSION_STORE', setting.url, err);
+    }
+    if (bus) {
+      const linked = notices;
+      // Each event as this server's console has it (already redacted), to the others' consoles, and theirs to this one.
+      bus.link((event) => linked.publish('console', JSON.stringify(event)));
+      linked.subscribe('console', (body) => {
+        let event: DashboardEvent;
+        try {
+          event = JSON.parse(body) as DashboardEvent;
+        } catch {
+          return;
+        }
+        bus.receive(event);
+      });
+    }
+  }
   // TRACE_STORE=s3://...: each call's trace and frame log as segments on S3-compatible storage, which
   // this server writes under its own name and every reader joins. Unset, files in TRACE_DIR, as always.
   const serverName = owner !== '' ? owner : `${config.serverId ?? 'server'}-${randomBytes(4).toString('hex')}`;
@@ -333,6 +410,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       settings: chatSettings, now, log, audit, bus, serviceUrls,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
       startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
+      ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string) => void) => void notices!.subscribe('chat', (id) => fn(id)) } } : {}),
       resources: (id, sessions) => {
         const file = safeFileStem(id);
         const { trace, frames } = sinksOf(file, () => sessions.get(id)?.session.turnIndex ?? 0);
@@ -356,6 +434,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const inUse = new Set(store.liveCallSids().map(safeFileStem));
     const r = sweepRetention(retention, { now: retentionAt, inUse });
     log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days`);
+    // The audit in Postgres: a call's chain removed whole once its newest entry is past the days, and the days' anchors.
+    const auditDays = config.auditRetentionDays;
+    if (postgresAudit && auditDays !== undefined && auditSetting) {
+      void postgresAudit.sweep(auditDays, retentionAt).then(
+        (a) => log(`retention: removed ${a.days} audit days (${a.chains} call chains, ${a.entries} entries) from ${maskConnectionString(auditSetting.url)}`),
+        (err: unknown) => log(`retention: could not sweep the audit in ${maskConnectionString(auditSetting.url)}: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
     // The traces on the store: a call removed whole once its newest segment is past the days.
     const traceDays = config.traceRetentionDays;
     if (traceStore && traceDays !== undefined) {
@@ -467,6 +553,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     for (const r of routes) r.sweep?.();
     chat?.sweep();
     if (durable) sweepSaved();
+    if (notices) void notices.sweep().catch((err: unknown) => log(`notices: could not sweep the old notices: ${err instanceof Error ? err.message : String(err)}`));
     const swept = tokens.evictExpired();
     const sayExpired = (n: number): void => {
       if (n) log(`swept ${n} expired call tokens`);
@@ -483,7 +570,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   /** The shared store's connection, closed once (a failed start, or close()). */
   const closeShared = async (): Promise<void> => {
     if (renewer) clearInterval(renewer);
+    await notices?.close();
+    await postgresAudit?.settled();
     await shared?.close().catch((err: unknown) => log(`sessions: could not close the Postgres connection: ${err instanceof Error ? err.message : String(err)}`));
+    await closeAuditSql();
   };
 
   // listen reports failure as an 'error' event, which is unhandled (and fatal) unless it is awaited here.

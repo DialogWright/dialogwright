@@ -7,6 +7,9 @@ import { startServer, type RunningServer } from '../index';
 import { loadConfig } from '../config';
 import { useTestkit } from '../../testing/apps';
 import type { LinkFile } from './auth';
+import { PGlite } from '@electric-sql/pglite';
+import { pgliteSql } from '../stores/pgliteSql';
+import { verifyPostgresAudit } from '../../audit/postgres';
 
 useTestkit();
 
@@ -73,5 +76,56 @@ describe('startServer with CONSOLE_AUTH=token', () => {
     expect(existsSync(join(dir, '.console-link'))).toBe(false);
     const res = await fetch(`http://127.0.0.1:${running.port}/dashboard`, { headers: { 'x-forwarded-for': '203.0.113.9' } });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('startServer with CONSOLE_AUTH=token and AUDIT_STORE=postgres', () => {
+  const DB_URL = 'postgres://dialogwright:not-a-password@db.invalid:5432/dialogwright';
+
+  /** A POST to the sign-in through the tunnel. */
+  async function signInWith(port: number, code: string): Promise<Response> {
+    return fetch(`http://127.0.0.1:${port}/dashboard/login`, {
+      method: 'POST', redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': '203.0.113.9', origin: 'https://demo.example.net', host: 'demo.example.net' },
+      body: `code=${code}`,
+    });
+  }
+
+  it('the access log goes to the database: the link made, the sign-in, the live feed; one the database cannot take is not served', async () => {
+    const db = await PGlite.create();
+    try {
+      const sql = pgliteSql(db);
+      const { dir, config: c } = config({ CONSOLE_AUTH: 'token', AUDIT_STORE: DB_URL });
+      const lines: string[] = [];
+      running = await startServer(c, { host: '127.0.0.1', log: (l) => lines.push(l), auditSql: sql });
+      expect(lines).toContain('audit: postgres://dialogwright:***@db.invalid:5432/dialogwright (shared: a hash chain per call, each anchored into a chain per day; pnpm audit:verify reads it)');
+      const link = JSON.parse(readFileSync(join(dir, '.console-link', 'link.json'), 'utf8')) as LinkFile;
+      const signedIn = await signInWith(running.port, new URL(link.url!).searchParams.get('code')!);
+      expect(signedIn.status).toBe(303);
+      const cookie = signedIn.headers.get('set-cookie')!.split(';')[0]!;
+      const feed = new AbortController();
+      const live = await fetch(`http://127.0.0.1:${running.port}/dashboard/events`, { headers: { cookie, 'x-forwarded-for': '203.0.113.9', host: 'demo.example.net' }, signal: feed.signal });
+      expect(live.status).toBe(200);
+      feed.abort();
+      const events = (await db.query<{ chain: string; body: string }>('SELECT chain, body FROM dw_audit_entries ORDER BY chain, seq')).rows.map((r) => ({ chain: r.chain, ...(JSON.parse(r.body) as { type: string; callId: string; channel: string; detail: { event: string } }) }));
+      expect(events.map((e) => [e.chain.replace(/\d{4}-\d{2}-\d{2}$/, 'DAY'), e.type, e.callId, e.channel, e.detail.event])).toEqual([
+        ['console@DAY', 'console_access', 'console', 'console', 'link_made'],
+        ['console@DAY', 'console_access', 'console', 'console', 'sign_in'],
+        ['console@DAY', 'console_access', 'console', 'console', 'live'],
+      ]);
+      expect(existsSync(join(dir, 'audit'))).toBe(false);
+      expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
+      // The database stops answering: a sign-in it cannot record is not made, and a feed not opened.
+      sql.cut();
+      const refused = await signInWith(running.port, 'f'.repeat(64));
+      expect(refused.status).toBe(500);
+      expect(refused.headers.get('set-cookie')).toBeNull();
+      const other = await fetch(`http://127.0.0.1:${running.port}/dashboard/login?code=${'e'.repeat(64)}`);
+      expect(other.status).toBe(200);
+      await running.close();
+      running = null;
+    } finally {
+      await db.close();
+    }
   });
 });

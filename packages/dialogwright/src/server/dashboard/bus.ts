@@ -15,6 +15,8 @@ export class DashboardBus {
   private subscribers = new Set<Subscriber>();
   private callSid: string | null = null;
   private seq = 0;
+  /** Where each event published here also goes (the other servers' consoles); null on one machine. */
+  private outbound: ((event: DashboardEvent) => void) | null = null;
 
   constructor(private readonly maxHistory = 2000) {}
 
@@ -29,6 +31,27 @@ export class DashboardBus {
   }
 
   publish(event: DashboardEvent): void {
+    this.accept(event);
+    if (this.outbound !== null) {
+      try { this.outbound(event); } catch { /* another server's console never breaks a call */ }
+    }
+  }
+
+  /**
+   * With several servers on one database (stores/notices.ts): every event published here is handed to
+   * `send` too, and the events other servers publish come in through receive(), so one console follows
+   * every server's calls. Not called on one machine, where the bus is as it was.
+   */
+  link(send: (event: DashboardEvent) => void): void {
+    this.outbound = send;
+  }
+
+  /** An event another server published, taken as if published here, and sent nowhere else. */
+  receive(event: DashboardEvent): void {
+    this.accept(event);
+  }
+
+  private accept(event: DashboardEvent): void {
     if (event.type === 'call_started') {
       this.callSid = event.callSid;
       this.history = [];

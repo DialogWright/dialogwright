@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuditLog } from './log';
 import { main } from './verifyCli';
+import { PGlite } from '@electric-sql/pglite';
+import { pgliteSql } from '../server/stores/pgliteSql';
+import { openPostgresAudit } from './postgres';
 
 /** `pnpm audit:verify [dir]`: the root script exists, and the command it runs says whether each day's chain is whole. */
 
@@ -55,5 +58,50 @@ describe('pnpm audit:verify', () => {
     chain();
     expect(main([relative(tmpdir(), dir)], { INIT_CWD: tmpdir() })).toBe(0);
     expect(lines).toEqual(['2026-10-01.jsonl: 3 entries, chain intact']);
+  });
+});
+
+describe('pnpm audit:verify postgres://... (AUDIT_STORE=postgres)', () => {
+  const URL = 'postgres://dialogwright:s3cret-pass@db.invalid:5432/dialogwright';
+
+  it('verifies every call\'s chain and every day\'s anchors, says the database with its password masked, and exits 1 at a break', async () => {
+    const db = await PGlite.create();
+    try {
+      const audit = await openPostgresAudit(pgliteSql(db), { now: () => Date.UTC(2026, 9, 11, 12, 0, 0) });
+      await audit.appendAll('CA1', 'voice', [{ type: 'call_started', detail: {} }, { type: 'call_ended', detail: { reason: 'hangup' } }]);
+      await audit.append('CA2', 'voice', { type: 'call_started', detail: {} });
+      expect(await main([URL], {}, { sql: pgliteSql(db) })).toBe(0);
+      expect(lines).toEqual([
+        'postgres://dialogwright:***@db.invalid:5432/dialogwright: 2 chains, 3 entries',
+        '2026-10-11: 2 anchors, chain intact',
+        "every call's chain intact, and each one's newest entry anchored",
+      ]);
+      // AUDIT_STORE is read when no argument names a place.
+      lines = [];
+      expect(await main([], { AUDIT_STORE: URL, AUDIT_DIR: dir }, { sql: pgliteSql(db) })).toBe(0);
+      expect(lines[0]).toBe('postgres://dialogwright:***@db.invalid:5432/dialogwright: 2 chains, 3 entries');
+      await db.query("UPDATE dw_audit_entries SET body = replace(body, 'hangup', 'completed') WHERE chain = 'CA1' AND seq = 2");
+      lines = [];
+      expect(await main([URL], {}, { sql: pgliteSql(db) })).toBe(1);
+      expect(lines).toContain('call CA1: BROKEN at entry 2 (hash mismatch)');
+      expect(lines.join('\n')).not.toContain('s3cret-pass');
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('a database with no audit tables has nothing to verify; one that cannot be reached exits 1 without its password', async () => {
+    const db = await PGlite.create();
+    try {
+      expect(await main([URL], {}, { sql: pgliteSql(db) })).toBe(0);
+      expect(lines).toEqual(['no audit tables in postgres://dialogwright:***@db.invalid:5432/dialogwright']);
+      const cut = pgliteSql(db);
+      cut.cut();
+      lines = [];
+      expect(await main([URL], {}, { sql: cut })).toBe(1);
+      expect(lines).toEqual(['postgres://dialogwright:***@db.invalid:5432/dialogwright: connection cut (the server went away)']);
+    } finally {
+      await db.close();
+    }
   });
 });
