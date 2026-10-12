@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage } from '../jev/types';
 import { localePromptEntry, promptText, saidLineOf, type SaidLine } from '../prompts/render';
 import { checkGenerated, cleanGenerated, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState } from './checks';
-import { generatesLines, identifierVarsFrom, lineVars } from './config';
+import { generatesLines, identifierVarsFrom, lineVars, saysKbAnswer } from './config';
 import { renderKey } from './prompt';
 import { DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpeechAct, type SpeechItem } from './types';
 
@@ -96,6 +96,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   const template = localePromptEntry(app, said.promptId, locale).entry.text;
   const vars = lineVars(template);
   if (vars.some((v) => identifiers.has(v))) return { skipped: 'identifier' };
+  if (saysKbAnswer(template)) return { skipped: 'knowledge' };
   const words = wordsOf(event);
   // A turn with words is generated only once the injection screen has read them and not flagged them.
   if (words !== null && (result.screen === null || result.screen.fired || result.screen.error !== null || result.quarantined)) return { skipped: 'screen' };

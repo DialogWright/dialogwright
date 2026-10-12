@@ -370,7 +370,7 @@ The engine's fixture is the two-form variant of `packages/dialogwright/src/testi
 
 ### prompts.yaml
 
-Every line a caller can hear, word for word. The agent says exactly these and never composes its own.
+Every line a caller can hear, word for word. The agent says exactly these, unless the app asks for a line to be generated ([16](16-generated-wording.md)).
 
 ```yaml
 prompts:
@@ -390,7 +390,7 @@ prompts:
 
 - Variables in braces are filled by the engine (`{intentLabel}`) or by the app's code (`{book}`, `{due}`). The engine's lines are given only a few: `{intentLabel}` (`ack_intent`, `ack_queued`, `bridge_next`, `confirm_intent_explicit`), `{a}` and `{b}` (`disambiguate_intent`, `ack_intent_then`), `{first}` (`identity_verified`, `signin_thanks`, `greeting_chat_signed_in`, `greeting_chat_delegate`), `{phoneLast4}` (`ask_otp`, empty when the caller has no phone on record), and the slot's own value (`confirm_<slot>`, `ack_<slot>`, as `{<slot>}`). The rest are given none. `pnpm check` names them when it asks for a missing line.
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
-- `mode` can only be `fixed` (the default). A model chooses among these lines; it never writes one. Generated wording, which lets a model choose the words of a line you flag, never its content, is an opt-in later phase ([design.md §5](../design.md#5-generated-wording)).
+- `mode` is `fixed` (the default: the text, word for word) or `generative`: the line is worded by a model for the moment, with a `goal`, under checks that hold it to this text's data and meaning, and this text is said whenever a check fails or the model is slow. `when` limits it to some situations or channels, `from` names variables that hold collected content the line may summarize, and `prescribed: true` keeps a line word for word whatever its form says (`pnpm check` refuses `mode: generative` on it). A form's `wording: generative` generates its lines. All of it is opt-in, and the app's choice: [16. Generated wording](16-generated-wording.md).
 - The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`; `confirm_<slot>` alone where a no asks the slot again, `readBackNo: 'ask'`, as for a library slot's `confirm: always`), `confirm_<slot>` for one that reads some values back (`confirmValues`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for its role rule's `reason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 7). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 5).
 
 ### policy.yaml

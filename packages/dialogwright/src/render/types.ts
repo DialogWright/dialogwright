@@ -112,7 +112,9 @@ export type RenderSkip =
   /** The injection screen flagged the turn's words, or did not read them. */
   | 'screen'
   /** The line names an identifier. */
-  | 'identifier';
+  | 'identifier'
+  /** The line says a knowledge base's answer, word for word. */
+  | 'knowledge';
 
 /** One line the app generates, as said on a turn (TraceRecord.render.lines). */
 export interface RenderLine {

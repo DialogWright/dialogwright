@@ -1553,6 +1553,40 @@ export const TOOLS: Record<string, ToolDef> = {
 - The adversarial suite (on in every scaffold) answers each tool with instructions in place of each text field of its reply, a sentence and then four plain words: a `nothing-said`, `said-in-place`, `no-new-action` (passed on to another call) or `threw` failure on `hostile-reply/<tool>/field` names the field that needs a closed check; a `said in its place` line under the counts names a free-text field to look at.
 - The identity tools' principal is the engine's to check: a first name that is not one, or a phone's last four that are not four digits, goes to a person.
 
+## Generated wording: `mode: generative` and `prescribed`
+
+**When:** only when the paragraph asks for it: a warmer re-ask, an acknowledgement that fits, a summary of a message read back, or an entirely generated experience. Every other line is said word for word. A model words a generated line for the moment; checks hold it to its fixed text's values and meaning, and the fixed text is said whenever a check fails or the model is slow ([16](../../../docs/guide/16-generated-wording.md)).
+
+```yaml
+# prompts.yaml, under prompts:
+  ask_phone_retry:
+    text: Sorry, what's the ten-digit number to call you back on?
+    interruptible: true
+    mode: generative
+    goal: Ask again, kindly, for the number to call the caller back on.
+    when:
+      situations: [re-ask]
+  confirm_take_message:
+    text: "For {recipient}, from {caller}, call back on {phone}. Your message: {message}. Shall I pass it on?"
+    interruptible: true
+    mode: generative
+    goal: Read back who the message is for, who it is from and the number to call, then a short summary of the message, and ask whether to pass it on.
+    from: [message]
+    when:
+      situations: [first-ask]
+  privacy_notice:
+    text: This call may be recorded for quality and training.
+    interruptible: false
+    prescribed: true
+```
+
+- Every generated line has a `goal`. Keep its `text`: it is the meaning, the fallback and what a repeat says.
+- `from` names the variables that hold collected content the line may summarize; the slot keeps the exact words, the write sends them, and `when: { situations: [first-ask] }` makes every later reading word for word. Give the slot `redact: none` and `say: null` (a `text` slot), so the words are what the line reads back.
+- A whole form: `wording: generative` in forms.yaml generates its questions, read-backs and summary, but for a line that says `mode: fixed` (a keypad instruction) or is prescribed.
+- When the paragraph does not say what is regulated, mark these `prescribed: true`: the lines that state what an action did (a booking made, a payment taken, an amount or a date the gate decided on), the identity and one-time-code lines, the handoff lines, and any legal or required notice. The policy card lists every generated and every prescribed line for the owner to review.
+- A line that names an identity factor, or a slot hidden whole in the records, cannot be generated (`check` refuses it), nor can a knowledge base's answer line (`{answer}`).
+- `style.yaml` (optional) sets the persona, a word budget per channel and phrases to avoid. Nothing is generated until the owner sets `RENDER_PROVIDER` and its key; the stub regression words the lines with a fake renderer and runs every check.
+
 ## Values with no slot type
 
 | Value | Do this | And log |

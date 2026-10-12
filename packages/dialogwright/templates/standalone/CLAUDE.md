@@ -55,7 +55,7 @@ Run the check, the type check, the tests and the regression. Never regenerate th
 ## Rules for this app
 
 - Never put policy in tool code. Tools do the work; the gate decides, from `policy.yaml`, whether they may run.
-- Never let a model write a regulated line. Every line a caller hears is in `prompts.yaml`, word for word. A knowledge base's answers are fixed text too, approved by a person (never by you: never run `kb:approve`, and never edit `kb/approvals.jsonl`).
+- Every line a caller hears is in `prompts.yaml`, said word for word unless the app asks for it to be generated (`mode: generative`, a form's `wording: generative`); a line marked `prescribed: true` never is. What is regulated is the owner's call; the policy card lists every generated and prescribed line. A knowledge base's answers are fixed text too, approved by a person (never by you: never run `kb:approve`, and never edit `kb/approvals.jsonl`).
 - Import only from `'dialogwright'`, `'dialogwright/testing'` (tests), `'dialogwright/slot-kit'` (a slot type of your own) and `'dialogwright/policy'`. Nothing else of the package is supported.
 - Every YAML file starts with `# yaml-language-server: $schema=node_modules/dialogwright/schemas/<kind>.schema.json`: keep the line when you add a file.
 - Every tool lists the `params` its calls carry, and `policy.yaml` declares under `audit` how each is recorded. A rule of your own is written with `defineRule`, with an example the gate allows and one it refuses.

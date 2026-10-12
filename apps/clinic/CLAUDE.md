@@ -37,7 +37,7 @@ Run `pnpm check`, the clinic's typecheck and tests, `regress` (expects `no chang
 ## Rules for this app
 
 - Never put policy in tool code. Tools do the work; the gate decides, from `policy.yaml`, whether they may run.
-- Never let a model write a regulated line. Every line a caller hears is in `prompts.yaml`, word for word.
+- Every line a caller hears is in `prompts.yaml`, said word for word: this app generates none. A line is generated only where an app asks for it (`mode: generative`, a form's `wording: generative`), and never one marked `prescribed: true` ([guide 16](../../docs/guide/16-generated-wording.md)).
 - The regression runs the adversarial suite (app.yaml's `testing: { adversarial: on }`): a `FAIL adversarial` case is a finding to fix in the app (a tool's `check` of its reply, the policy, a hook) or the engine, never by changing the case or turning the suite off. Every tool whose reply a line says checks it (`check`). Until the next recording, the recorded replay lists the suite's cases as not yet recorded.
 - An app imports only from `'dialogwright'`; a test checks it.
 - The clinic is the app new ones are modeled on. Start a new app with `pnpm create-app`, not by copying this folder.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FormsYaml, PromptYaml } from '../define/schema/index';
-import { formLineIds, generatedWordingOf, generatedWordingProblems, identifierVarsFrom } from './config';
+import { formLineIds, generatedWordingOf, generatedWordingProblems, identifierVarsFrom, KB_ANSWER_LINE_VAR } from './config';
+import { KB_ANSWER_VAR } from '../kb/answer';
 import { messageApp } from '../testing/message/app';
 
 /**
@@ -80,6 +81,15 @@ describe('generatedWordingProblems', () => {
       'prompts.yaml prompts.b.mode: the line "b" is generated, but it names {accountId}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier',
       'prompts.yaml prompts.c.from.0: the line "c" has no {message}, so it cannot be generated from it',
     ]);
+  });
+
+  it('a knowledge base\'s answer line is never generated: refused on the line, left fixed by its form', () => {
+    expect(problems({ kb_answer: line('{answer}', { mode: 'generative', goal: 'Say it.' }) })).toEqual([
+      'prompts.yaml prompts.kb_answer.mode: the line "kb_answer" says a knowledge base\'s answer ({answer}), which is an approved passage said word for word, never generated',
+    ]);
+    expect(KB_ANSWER_LINE_VAR).toBe(KB_ANSWER_VAR);
+    const g = generatedWordingOf({ prompts: { ask_x: line('X?'), confirm_x: line('So {answer}?') }, forms: { f: form(['x'], { wording: 'generative', summaryPromptId: null }) }, style: null, localePrompts: {} })!;
+    expect(Object.keys(g.lines)).toEqual(['ask_x']);
   });
 
   it('a goal, when or from on a line that is not generated does nothing', () => {

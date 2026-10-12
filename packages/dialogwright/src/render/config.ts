@@ -61,8 +61,8 @@ export function generatedWordingOf(input: {
     if (def.wording !== 'generative') continue;
     for (const id of formLineIds(ids, def.slots, def.summaryPromptId)) {
       const p = input.prompts[id]!;
-      // A line that names an identifier is never sent to a model: its form's switch leaves it fixed.
-      if (Object.hasOwn(lines, id) || p.mode === 'fixed' || p.prescribed === true || identifierVarsOf(p.text, input.identifierVars).length > 0) continue;
+      // A line that names an identifier is never sent to a model, and a knowledge base's answer is said word for word: its form's switch leaves either fixed.
+      if (Object.hasOwn(lines, id) || p.mode === 'fixed' || p.prescribed === true || identifierVarsOf(p.text, input.identifierVars).length > 0 || saysKbAnswer(p.text)) continue;
       lines[id] = lineOf(p, { form });
     }
   }
@@ -78,6 +78,14 @@ export function generatedWordingOf(input: {
 /** Whether `app` has a line a model may word (App.generated.lines): the one test for "this app generates". */
 export function generatesLines(app: { generated?: GeneratedWording }): boolean {
   return app.generated !== undefined && Object.keys(app.generated.lines).length > 0;
+}
+
+/** The variable a knowledge base's answer is said in (kb/answer.ts KB_ANSWER_VAR): a line that names it says an approved passage, word for word, and is never generated. */
+export const KB_ANSWER_LINE_VAR = 'answer';
+
+/** Whether a line says a knowledge base's answer (it names {answer}). */
+export function saysKbAnswer(text: string): boolean {
+  return lineVars(text).includes(KB_ANSWER_LINE_VAR);
 }
 
 /** The {variables} of a line's text. */
@@ -137,6 +145,9 @@ export function generatedWordingProblems(input: {
       out.push({ file, path: ['prompts', id], message: `the line "${id}" is generated (mode: generative) but has no goal, so the model would not know what the line is for`, fix: `add "goal:" saying what the line must do, for example "Ask for the caller's name; briefly acknowledge what they just said."`, atKey: true });
     }
     const isGenerated = Object.hasOwn(generated, id);
+    if (p.mode === 'generative' && saysKbAnswer(p.text)) {
+      out.push({ file, path: at('mode'), message: `the line "${id}" says a knowledge base's answer ({answer}), which is an approved passage said word for word, never generated`, fix: 'delete "mode: generative"; generate the lines around the answer instead' });
+    }
     if (p.mode === 'generative') {
       const ids = identifierVarsOf(p.text, input.identifierVars);
       if (ids.length > 0) out.push({ file, path: at('mode'), message: `the line "${id}" is generated, but it names ${ids.map((v) => `{${v}}`).join(', ')}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier`, fix: 'delete "mode: generative" (the line is said word for word), or say the identifier in a fixed line of its own' });

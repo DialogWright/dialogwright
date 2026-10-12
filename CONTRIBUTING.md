@@ -26,7 +26,7 @@ Nothing in this repository needs a build: each package's `package.json` points i
 - The engine imports no app. Apps depend on the engine, never the other way around.
 - No private data or real personal information in code, tests or fixtures. Use the 555 phone range and invented names.
 - Policy belongs in the gate, never in tool code. A tool does its job; the gate decides whether it may run.
-- A model never writes a regulated line. It only chooses among approved ones.
+- A line is generated only where the app asks for it, and never one the app marks `prescribed: true`. A generated line is held by checks to its fixed text, which is said whenever a check fails; no test or CI run calls a model (tests use the fake renderer).
 - A knowledge base's answers are approved text, said word for word. Only a person approves a passage, a drafting tool only proposes one, and no key for a model is ever committed or used in CI or a test.
 - Do not regenerate a regression baseline or snapshot to make a test pass. If output changed, understand why first.
 

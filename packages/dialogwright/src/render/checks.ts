@@ -71,7 +71,7 @@ function midSentenceCapitals(text: string): string[] {
     const word = m[0];
     if (!/^\p{Lu}/u.test(word)) continue;
     const before = text.slice(0, m.index).trimEnd();
-    if (before === '' || /[.!?:;—–"“(]$/.test(before)) continue;
+    if (before === '' || /[.!?:;\u2014\u2013"\u201c(]$/.test(before)) continue;
     out.push(word);
   }
   return out;
