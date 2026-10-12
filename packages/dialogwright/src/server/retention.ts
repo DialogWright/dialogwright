@@ -26,6 +26,8 @@ export interface RetentionSettings {
   auditDays?: number;
   /** TRACE_MAX_GB in bytes; unset, no size bound. */
   traceMaxBytes?: number;
+  /** FIGURES_RETENTION_DAYS: the console's daily figures (`<traceDir>/.figures`); unset, kept. */
+  figuresDays?: number;
 }
 
 export interface SweepResult {
@@ -35,6 +37,8 @@ export interface SweepResult {
   auditDays: number;
   /** Of the trace files removed, those removed for the size bound, and the calls they were. */
   trimmed?: { files: number; calls: number };
+  /** The console's daily figures files removed (FIGURES_RETENTION_DAYS). */
+  figuresDays?: number;
 }
 
 /** A folder's plain file names (not a link, not a folder), or none when it does not exist (yet). */
@@ -72,15 +76,20 @@ export function sweepRetention(s: RetentionSettings, at: { now: number; inUse: R
         // Gone already, or not ours to remove: the next sweep tries again.
       }
     }
-    // The console's daily figures (dashboard/figuresCache.ts) go with their day: once every trace of a
-    // call that started that day is past the cutoff (it was last written by a day after the day's end).
+  }
+  // The console's daily figures (dashboard/figuresCache.ts) outlive the traces, under their own retention:
+  // a day's file goes when its day is more than `figuresDays` days before today (UTC), by its name.
+  let figuresDays = 0;
+  if (s.figuresDays !== undefined) {
+    const today = Date.parse(`${new Date(at.now).toISOString().slice(0, 10)}T00:00:00Z`);
     const figures = join(s.traceDir, FIGURES_DIR);
     for (const name of names(figures)) {
       const m = FIGURES_DAY.exec(name);
       const day = m ? Date.parse(`${m[1]}T00:00:00Z`) : Number.NaN;
-      if (Number.isNaN(day) || day + 2 * DAY_MS > cutoff) continue;
+      if (Number.isNaN(day) || today - day <= s.figuresDays * DAY_MS) continue;
       try {
         unlinkSync(join(figures, name));
+        figuresDays += 1;
       } catch {
         // As above.
       }
@@ -139,9 +148,9 @@ export function sweepRetention(s: RetentionSettings, at: { now: number; inUse: R
       removedCalls += 1;
     }
     traceFiles += files;
-    return { traceFiles, auditDays, trimmed: { files, calls: removedCalls } };
+    return { traceFiles, auditDays, trimmed: { files, calls: removedCalls }, ...(s.figuresDays !== undefined ? { figuresDays } : {}) };
   }
-  return { traceFiles, auditDays };
+  return { traceFiles, auditDays, ...(s.figuresDays !== undefined ? { figuresDays } : {}) };
 }
 
 /** The bytes free to this user on the disk `dir` is on (its nearest folder that exists), or null when that cannot be told. */

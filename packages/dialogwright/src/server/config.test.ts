@@ -513,3 +513,15 @@ describe("the carriers' rates a minute (CARRIER_RATE_PER_MIN_<CARRIER>), for the
     expect(() => loadConfig({ ...base, CARRIER_RATE_PER_MIN_TELNYX: 'x' })).toThrow('CARRIER_RATE_PER_MIN_TELNYX must be');
   });
 });
+
+describe("the console's daily figures' own retention (FIGURES_RETENTION_DAYS)", () => {
+  it('unset by default (kept); a whole number of days above 0 when set, said at start', () => {
+    expect(loadConfig(base).figuresRetentionDays).toBeUndefined();
+    expect(describeConfig(loadConfig(base))).not.toContain('console figures');
+    const c = loadConfig({ ...base, FIGURES_RETENTION_DAYS: '400' });
+    expect(c.figuresRetentionDays).toBe(400);
+    expect(describeConfig(c)).toContain('console figures kept 400 days');
+    expect(() => loadConfig({ ...base, FIGURES_RETENTION_DAYS: '0' })).toThrow('FIGURES_RETENTION_DAYS must be a positive whole number of days, got "0"');
+    expect(() => loadConfig({ ...base, FIGURES_RETENTION_DAYS: 'a year' })).toThrow('FIGURES_RETENTION_DAYS');
+  });
+});

@@ -68,7 +68,7 @@ describe('Insights (/dashboard/insights)', () => {
     const a = JSON.parse(text) as InsightsAnswer;
     expect(a.insights.totals).toMatchObject({ calls: 3, ended: 3, contained: 1, toPerson: 1, hungUp: 1, errors: 0 });
     expect(a.insights.transfers.map((r) => [r.key, r.value])).toEqual([['live-agent', 1]]);
-    expect(a.insights.abandoned.map((r) => r.label)).toEqual(['Report a missing parcel · Date of birth']);
+    expect(a.insights.abandoned.map((r) => [r.key, r.label])).toEqual([['report_missing|dob', 'Report a missing parcel · Date of birth']]);
     expect(a.insights.carrier).toBeNull();
     expect(a.knowledge).toBeNull();
     for (const said of ['+1555', '5555550110', 'parcel never', 'talk to', 'five five']) expect(text).not.toContain(said);
@@ -97,7 +97,7 @@ describe('Insights (/dashboard/insights)', () => {
     let release: () => void = () => {};
     const held = new Promise<void>((r) => { release = r; });
     let first = true;
-    const { base } = await serve({ holdInsights: () => (first ? ((first = false), held) : Promise.resolve()) });
+    const { base } = await serve({ holdFigures: () => (first ? ((first = false), held) : Promise.resolve()) });
     const one = fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`);
     await new Promise((r) => setTimeout(r, 50));
     expect((await fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`)).status).toBe(429);
@@ -120,8 +120,27 @@ describe('Insights (/dashboard/insights)', () => {
     const one = await getJson<InsightsAnswer>(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}&app=north`);
     expect(one.insights.totals.calls).toBe(1);
     expect(one.insights.transfers).toEqual([]);
-    // An app the host does not run is no filter: every app.
-    expect((await getJson<InsightsAnswer>(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}&app=nowhere`)).insights.totals.calls).toBe(2);
+    // An app the host does not run is refused, on Insights and Knowledge alike.
+    expect((await fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}&app=nowhere`)).status).toBe(400);
+    expect((await fetch(`${base}/dashboard/knowledge?app=nowhere`)).status).toBe(400);
+    expect((await fetch(`${base}/dashboard/knowledge?app=north`)).status).toBe(200);
+  });
+});
+
+describe('the Knowledge page, one read at a time', () => {
+  it('a second read while the first runs is refused (429), and goes once it answers', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    let first = true;
+    const { base } = await serve({ holdFigures: () => (first ? ((first = false), held) : Promise.resolve()) });
+    const one = fetch(`${base}/dashboard/knowledge`);
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await fetch(`${base}/dashboard/knowledge`)).status).toBe(429);
+    // Insights is a page of its own: not held up by the Knowledge page's read.
+    expect((await fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`)).status).toBe(200);
+    release();
+    expect((await one).status).toBe(200);
+    expect((await fetch(`${base}/dashboard/knowledge`)).status).toBe(200);
   });
 });
 

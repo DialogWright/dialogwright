@@ -281,6 +281,12 @@ export interface ServerConfig {
    */
   traceRetentionDays?: number;
   /**
+   * FIGURES_RETENTION_DAYS, unset by default (kept): how long the console's daily figures are kept
+   * (dashboard/figuresCache.ts). They hold counts and durations only, so they outlive the traces they
+   * were worked out from, under this retention of their own. In whole days. Absent when unset.
+   */
+  figuresRetentionDays?: number;
+  /**
    * AUDIT_RETENTION_DAYS, unset by default (every audit day kept: the audit is a record): audit day
    * files more than this many days old are deleted, never today's. Absent when unset.
    */
@@ -674,6 +680,7 @@ export function loadConfig(env: Env): ServerConfig {
     drainMs: integer(env, 'DRAIN_MS', DEFAULT_DRAIN_MS),
     drainUnreadyMs: drainUnreadyOf(env),
     ...retentionOf(env, 'TRACE_RETENTION_DAYS', 'traceRetentionDays'),
+    ...retentionOf(env, 'FIGURES_RETENTION_DAYS', 'figuresRetentionDays'),
     ...retentionOf(env, 'AUDIT_RETENTION_DAYS', 'auditRetentionDays'),
     ...gigabytesOf(env, 'TRACE_MAX_GB', 'traceMaxBytes'),
     ...gigabytesOf(env, 'DISK_WARN_FREE_GB', 'diskWarnFreeBytes'),
@@ -809,7 +816,7 @@ function carrierRatesOf(env: Env): { carrierRates?: Partial<Record<'twilio' | 't
 }
 
 /** A retention in days, as `{ [key]: days }`, or nothing when the variable is unset. */
-function retentionOf<K extends 'traceRetentionDays' | 'auditRetentionDays'>(env: Env, name: string, key: K): { [k in K]?: number } {
+function retentionOf<K extends 'traceRetentionDays' | 'auditRetentionDays' | 'figuresRetentionDays'>(env: Env, name: string, key: K): { [k in K]?: number } {
   const raw = env[name]?.trim();
   if (raw === undefined || raw === '') return {};
   const days = integer(env, name, 0);
@@ -1026,6 +1033,7 @@ export function describeConfig(c: ServerConfig): string {
     `drain ${c.drainMs ?? DEFAULT_DRAIN_MS} ms${c.drainUnreadyMs ? ` (unready ${c.drainUnreadyMs} ms first)` : ''}`,
     `traces kept ${c.traceRetentionDays === undefined ? 'forever' : `${c.traceRetentionDays} days`}${c.traceMaxBytes !== undefined ? `, at most ${gb(c.traceMaxBytes)}` : ''}`,
     `audit kept ${c.auditRetentionDays === undefined ? 'forever' : `${c.auditRetentionDays} days`}`,
+    ...(c.figuresRetentionDays !== undefined ? [`console figures kept ${c.figuresRetentionDays} days`] : []),
     ...(c.diskWarnFreeBytes !== undefined ? [`warn below ${gb(c.diskWarnFreeBytes)} free`] : []),
     ...(c.carrierRates ? [`carrier rates ${Object.entries(c.carrierRates).map(([k, v]) => `${k} $${v}/min`).join(', ')}`] : []),
     ...(c.logFile ? [`log ${c.logFile.file} (rolled at ${Math.round(c.logFile.maxBytes / 1024 ** 2)} MB, ${c.logFile.keep} kept)`] : []),

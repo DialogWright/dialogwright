@@ -451,6 +451,23 @@ export class S3TraceStore {
   }
 
   /**
+   * FIGURES_RETENTION_DAYS on the store: the console's daily figures of each day older than `days`
+   * removed (`<day>/.figures/`); the traces' own retention leaves them. Returns the days removed.
+   */
+  async sweepFigures(days: number, nowMs: number): Promise<number> {
+    const cutoff = dayOf(nowMs - days * 86_400_000);
+    let removed = 0;
+    for (const day of await this.days()) {
+      if (day >= cutoff) break;
+      const { objects } = await this.client.list(`${this.prefix}${day}/${CONSOLE_FIGURES}/`);
+      if (objects.length === 0) continue;
+      await this.remove(objects.map((o) => o.key));
+      removed += 1;
+    }
+    return removed;
+  }
+
+  /**
    * TRACE_MAX_GB on the store: while its traces are larger than `maxBytes`, the calls written least
    * recently are removed whole, never a call in `inUse`, one day folder at a time from the oldest (each
    * listed on its own, so no listing grows with the whole store). Returns the objects and calls removed,
@@ -466,6 +483,8 @@ export class S3TraceStore {
         const slash = rest.indexOf('/');
         if (slash <= 0) continue;
         const id = rest.slice(0, slash);
+        // The console's daily figures are no call's: they outlive the traces (FIGURES_RETENTION_DAYS).
+        if (id === CONSOLE_FIGURES) continue;
         const c = calls.get(id) ?? { keys: [], size: 0, newest: 0 };
         c.keys.push(o.key);
         c.size += o.size;
@@ -499,7 +518,10 @@ export class S3TraceStore {
   }
 }
 
-/** Keys under `under` (`<prefix><day>/`) grouped by the call folder they are in. */
+/** The folder of a day the console's daily figures are in (server/dashboard/figuresCache.ts): no call's, so no trace retention removes it. */
+const CONSOLE_FIGURES = '.figures';
+
+/** Keys under `under` (`<prefix><day>/`) grouped by the call folder they are in (the console's figures are in none). */
 function groupByCall(keys: readonly string[], under: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const key of keys) {
@@ -507,6 +529,7 @@ function groupByCall(keys: readonly string[], under: string): Map<string, string
     const slash = rest.indexOf('/');
     if (slash <= 0) continue;
     const call = rest.slice(0, slash);
+    if (call === CONSOLE_FIGURES) continue;
     out.set(call, [...(out.get(call) ?? []), key]);
   }
   return out;

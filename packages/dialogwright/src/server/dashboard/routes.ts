@@ -56,8 +56,8 @@ export interface DashboardDeps {
   apps?: readonly ConsoleApp[];
   /** Tests only: awaited before a Calls search reads, so a test can hold one open (the one-at-a-time rule). */
   holdCalls?: () => Promise<void>;
-  /** Tests only: awaited before Insights' figures are read, as holdCalls. */
-  holdInsights?: () => Promise<void>;
+  /** Tests only: awaited before Insights' or the Knowledge page's figures are read, as holdCalls. */
+  holdFigures?: () => Promise<void>;
   /**
    * The carriers' rates a minute (config.carrierRates: CARRIER_RATE_PER_MIN_<CARRIER>): Insights and the
    * Live strip show the carrier's cost with them; absent, no carrier cost at all.
@@ -517,13 +517,30 @@ function figuresOf(deps: DashboardDeps): FiguresCache {
 
 /** The longest range Insights reads: a quarter. */
 const MAX_RANGE_MS = 92 * 86_400_000;
-/** The sessions (or `local`) with Insights' figures being read. */
+/** The sessions (or `local`) with Insights' or the Knowledge page's figures being read, by page. */
 const reading = new Set<string>();
 
-/** The app `?app=` names on a host (one it runs), else null: every app. */
-function onlyApp(deps: DashboardDeps, query: URLSearchParams): string | null {
+/**
+ * The app `?app=` names on a host (one it runs), null for every app (none named, or a server of one);
+ * undefined for an app the host does not run, which the pages of figures refuse (400).
+ */
+function onlyApp(deps: DashboardDeps, query: URLSearchParams): string | null | undefined {
   const wanted = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
-  return wanted !== null && deps.apps!.some((a) => a.id === wanted) ? wanted : null;
+  if (wanted === null || wanted === '') return null;
+  return deps.apps!.some((a) => a.id === wanted) ? wanted : undefined;
+}
+
+/**
+ * One read of a page of figures at a time per session (or, with no sign-in, for the console): a second
+ * while the first runs is refused (429). Returns the release, or null when refused.
+ */
+function oneAtATime(res: ServerResponse, head: boolean, session: ConsoleSession | null, page: string): (() => void) | null {
+  const who = `${page}|${session?.id ?? 'local'}`;
+  if (reading.has(who)) { send(res, 429, 'text/plain', 'already being read: try again when it answers', head); return null; }
+  reading.add(who);
+  const done = (): void => { reading.delete(who); };
+  res.once('close', done);
+  return done;
 }
 
 /** What /dashboard/insights answers. */
@@ -558,19 +575,17 @@ function insightsRoute(req: IncomingMessage, res: ServerResponse, deps: Dashboar
     send(res, 400, 'text/plain', 'give a range: from and to, in milliseconds, at most 92 days apart', head);
     return;
   }
-  const who = session?.id ?? 'local';
-  if (reading.has(who)) { send(res, 429, 'text/plain', 'Insights are already being read: try again when they answer', head); return; }
-  reading.add(who);
-  const done = (): void => { reading.delete(who); };
-  res.once('close', done);
   const only = onlyApp(deps, query);
+  if (only === undefined) { send(res, 400, 'text/plain', 'no such app on this server', head); return; }
+  const done = oneAtATime(res, head, session, 'insights');
+  if (done === null) return;
   viewed(res, head, deps, session, 'insights', async () => {
     try {
-      if (deps.holdInsights) await deps.holdInsights();
+      if (deps.holdFigures) await deps.holdFigures();
       const sources = callsSources(deps, only);
       const apps = await figuresOf(deps).range(sources, from, to);
       const withKb = sources.filter((s) => s.app.knowledge !== undefined).length;
-      const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates), lengthEdgesS: LENGTH_EDGES_S, knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
+      const answer: InsightsAnswer = { from, to, insights: insightsOf(apps, deps.carrierRates, { from, to }), lengthEdgesS: LENGTH_EDGES_S, knowledge: withKb === 0 ? null : { apps: withKb, command: 'pnpm kb:gaps' } };
       return answer;
     } finally {
       done();
@@ -590,10 +605,9 @@ export interface KnowledgeApp {
 const KNOWLEDGE_DAYS = [7, 30, 90];
 
 /** The Knowledge page: each app's knowledge base counted, and its unanswered questions of the last `?days=` (7, 30 or 90) days. */
-async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams): Promise<{ days: number; apps: KnowledgeApp[] }> {
+async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams, only: string | null): Promise<{ days: number; apps: KnowledgeApp[] }> {
   const asked = Number(query.get('days'));
   const days = KNOWLEDGE_DAYS.includes(asked) ? asked : 30;
-  const only = onlyApp(deps, query);
   const sources = callsSources(deps, only);
   const to = Date.now();
   const out: KnowledgeApp[] = [];
@@ -602,8 +616,9 @@ async function knowledgeOf(deps: DashboardDeps, query: URLSearchParams): Promise
     const status = await knowledgeStatusOf(s.app, dir);
     let unanswered: KnowledgeApp['unanswered'] = { total: 0, top: [] };
     if (status.kind !== 'none') {
-      const [figures] = await figuresOf(deps).range([s], to - days * 86_400_000, to);
-      const ins = insightsOf(figures ? [{ ...figures, id: null }] : [], undefined);
+      const from = to - days * 86_400_000;
+      const [figures] = await figuresOf(deps).range([s], from, to);
+      const ins = insightsOf(figures ? [{ ...figures, id: null }] : [], undefined, { from, to });
       unanswered = { total: ins.totals.gaps, top: ins.gapTopics.slice(0, 10).map((g) => ({ topic: g.key, label: g.label, n: g.value.n, latest: g.value.latest })) };
     }
     out.push({ id: s.id, name: appNameOf(s.app), status, unanswered });
@@ -752,7 +767,9 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     const since = msOf(query.get('since')) ?? new Date(new Date().setHours(0, 0, 0, 0)).getTime();
     answerJson(res, head, async () => {
       const t = await todayFigures(deps, only, since);
-      return { ...t, carrierUsd: carrierCostOf(t.billedMinutes, deps.carrierRates) };
+      const rates = deps.carrierRates;
+      const unpricedMinutes = rates ? Object.entries(t.billedMinutes).reduce((sum, [c, m]) => sum + (rates[c] === undefined ? m : 0), 0) : 0;
+      return { ...t, carrierUsd: carrierCostOf(t.billedMinutes, rates), unpricedMinutes };
     });
     return true;
   }
@@ -762,7 +779,18 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
   if (path === '/dashboard/knowledge') {
-    viewed(res, head, deps, session, 'knowledge', () => knowledgeOf(deps, query));
+    const only = onlyApp(deps, query);
+    if (only === undefined) { send(res, 400, 'text/plain', 'no such app on this server', head); return true; }
+    const done = oneAtATime(res, head, session, 'knowledge');
+    if (done === null) return true;
+    viewed(res, head, deps, session, 'knowledge', async () => {
+      try {
+        if (deps.holdFigures) await deps.holdFigures();
+        return await knowledgeOf(deps, query, only);
+      } finally {
+        done();
+      }
+    });
     return true;
   }
   if (path === '/dashboard/health') {

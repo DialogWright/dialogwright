@@ -712,14 +712,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // On a host the same settings hold for every app, each app's folders swept as a server of one's are
   // (TRACE_MAX_GB bounds each app's traces), and the server's own audit by its days.
   const retentions: RetentionSettings[] = appsRun.map((a) => ({
-    traceDir: traceDirOf(a.id), auditDir: host ? join(config.auditDir, a.id) : config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays,
+    traceDir: traceDirOf(a.id), auditDir: host ? join(config.auditDir, a.id) : config.auditDir, traceDays: config.traceRetentionDays, auditDays: config.auditRetentionDays, ...(config.figuresRetentionDays !== undefined ? { figuresDays: config.figuresRetentionDays } : {}),
     ...(config.traceMaxBytes !== undefined ? { traceMaxBytes: config.traceMaxBytes } : {}),
   }));
   if (host) {
     const own = join(config.auditDir, SERVER_RECORDS);
     retentions.push({ traceDir: own, auditDir: own, auditDays: config.auditRetentionDays });
   }
-  const sweeping = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined || config.traceMaxBytes !== undefined;
+  const sweeping = config.traceRetentionDays !== undefined || config.auditRetentionDays !== undefined || config.traceMaxBytes !== undefined || config.figuresRetentionDays !== undefined;
   const retaining = sweeping || config.diskWarnFreeBytes !== undefined;
   const disk = retaining
     ? (host
@@ -733,10 +733,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const inUse = new Set([...store.liveCallSids(), ...(chat?.liveIds() ?? [])].map(safeFileStem));
     if (sweeping) {
       const r = retentions.map((one) => sweepRetention(one, { now: retentionAt, inUse })).reduce((a, b) => ({
-        traceFiles: a.traceFiles + b.traceFiles, auditDays: a.auditDays + b.auditDays,
+        traceFiles: a.traceFiles + b.traceFiles, auditDays: a.auditDays + b.auditDays, figuresDays: (a.figuresDays ?? 0) + (b.figuresDays ?? 0),
         ...(a.trimmed || b.trimmed ? { trimmed: { files: (a.trimmed?.files ?? 0) + (b.trimmed?.files ?? 0), calls: (a.trimmed?.calls ?? 0) + (b.trimmed?.calls ?? 0) } } : {}),
       }));
-      log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days${r.trimmed ? ` (${r.trimmed.files} of them, ${r.trimmed.calls} calls, for TRACE_MAX_GB)` : ''}`);
+      log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days${r.trimmed ? ` (${r.trimmed.files} of them, ${r.trimmed.calls} calls, for TRACE_MAX_GB)` : ''}${config.figuresRetentionDays !== undefined ? `, ${r.figuresDays ?? 0} days of console figures` : ''}`);
     }
     // The audit in Postgres: a call's chain removed whole once its newest entry is past the days, and the days' anchors.
     const auditDays = config.auditRetentionDays;
@@ -749,13 +749,18 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     // The traces on the store: whole day folders past the days, then the calls written least recently past the size.
     const traceDays = config.traceRetentionDays;
     const traceMax = config.traceMaxBytes;
-    if (traceStores.size > 0 && (traceDays !== undefined || traceMax !== undefined)) {
+    const figuresDays = config.figuresRetentionDays;
+    if (traceStores.size > 0 && (traceDays !== undefined || traceMax !== undefined || figuresDays !== undefined)) {
       void (async () => {
         // With servers sharing a database, one of them sweeps the store each hour; the others skip.
         if (sweeps && !(await sweeps.claim('traces', serverName, TRACE_SWEEP_HOLD_MS))) return;
         // On a host, each app's prefix in turn.
         for (const traceStore of traceStores.values()) {
           try {
+            if (figuresDays !== undefined) {
+              const f = await traceStore.sweepFigures(figuresDays, retentionAt);
+              if (f > 0) log(`retention: removed ${f} days of console figures from ${traceStore.label}`);
+            }
             if (traceDays !== undefined) {
               const t = await traceStore.sweep(traceDays, retentionAt, inUse);
               log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`);
@@ -778,7 +783,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   };
   if (retaining) {
     const kept = (days: number | undefined) => (days === undefined ? 'forever' : `${days} days`);
-    if (sweeping) log(`retention: traces kept ${kept(config.traceRetentionDays)}${config.traceMaxBytes !== undefined ? ` and at most ${gb(config.traceMaxBytes)}` : ''}, audit days kept ${kept(config.auditRetentionDays)}`);
+    if (sweeping) log(`retention: traces kept ${kept(config.traceRetentionDays)}${config.traceMaxBytes !== undefined ? ` and at most ${gb(config.traceMaxBytes)}` : ''}, audit days kept ${kept(config.auditRetentionDays)}${config.figuresRetentionDays !== undefined ? `, console figures kept ${config.figuresRetentionDays} days` : ''}`);
     if (config.auditRetentionDays !== undefined) {
       log(`WARNING: AUDIT_RETENTION_DAYS=${config.auditRetentionDays}: audit day files older than ${config.auditRetentionDays} days are deleted, which ends the record for those days`);
     }

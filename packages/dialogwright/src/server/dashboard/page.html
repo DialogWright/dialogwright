@@ -1785,7 +1785,8 @@
     const carrier = typeof t.carrierUsd === 'number' ? t.carrierUsd : null;
     el('st-cost').textContent = money((Number(t.costUsd) || 0) + (carrier ?? 0));
     el('st-cost-k').textContent = carrier === null ? 'decision model cost today' : 'cost today';
-    el('st-cost-sub').textContent = `${t.calls} ${t.calls === 1 ? 'call' : 'calls'} today · ${carrier === null ? 'the decision model\'s; no carrier rate is set' : `model ${money(Number(t.costUsd) || 0)}, carrier ${money(carrier)} (est.)`}`;
+    const unpriced = carrier === null ? 0 : Number(t.unpricedMinutes) || 0;
+    el('st-cost-sub').textContent = `${t.calls} ${t.calls === 1 ? 'call' : 'calls'} today · ${carrier === null ? 'the decision model\'s; no carrier rate is set' : `model ${money(Number(t.costUsd) || 0)}, carrier ${money(carrier)} (est.)${unpriced ? `, ${unpriced} ${unpriced === 1 ? 'minute' : 'minutes'} on a carrier with no rate not priced` : ''}`}`;
   }
   function soonToday() {
     clearTimeout(live.todayTimer);
@@ -2029,14 +2030,14 @@
     ].join('')}</div>`;
 
     const max = Math.max(0, ...series.points.map((p) => p.calls));
-    const callsChart = card(`Calls by ${unit}`, `<div class="chart-max" aria-hidden="true">${max} ${max === 1 ? 'call' : 'calls'}</div>`
+    const callsChart = card(`Calls by ${unit}`, `<div class="chart-max" aria-hidden="true">${n(max)} ${max === 1 ? 'call' : 'calls'}</div>`
       + barsSvg(series.points, { label: `Calls by ${unit}: ${t.calls} in all${busiest ? `, at most ${busiest.peak} at once` : ''}. The table below gives each ${unit}.`, valueOf: (p) => p.calls, titleOf: (p) => `${p.label}: ${p.calls} ${p.calls === 1 ? 'call' : 'calls'}, at most ${p.peak} at once` })
       + `<div class="axis" aria-hidden="true"><span>${esc(series.points[0]?.label ?? '')}</span><span>${esc(series.points.at(-1)?.label ?? '')}</span></div>`
       + `<details class="astable"><summary>As a table</summary>${tableHtml('', [unit === 'hour' ? 'Hour' : 'Day', 'Calls#', 'Most at once#'], series.points.filter((p) => p.calls > 0).map((p) => [esc(p.label), n(p.calls), n(p.peak)]), 'No calls in this range.')}</details>`);
 
     const parts = ENDING_PARTS.map(([key, cls, label]) => ({ label, cls, value: key === 'handled' ? t.contained : t[key] })).concat(open > 0 ? [{ label: 'In progress', cls: 'k-open', value: open }] : []);
     const endings = card('How calls ended', (splitSvg(parts, `How calls ended: ${parts.map((p) => `${p.label} ${p.value}`).join(', ')}`) || '<p class="figs-note">No calls in this range.</p>')
-      + `<ul class="legend">${parts.map((p) => `<li><i class="${p.cls}" aria-hidden="true"></i>${esc(p.label)} <b>${p.value}</b></li>`).join('')}</ul>`
+      + `<ul class="legend">${parts.map((p) => `<li><i class="${esc(p.cls)}" aria-hidden="true"></i>${esc(p.label)} <b>${n(p.value)}</b></li>`).join('')}</ul>`
       + `<p class="figs-note">Handled with no person is the calls the agent handled to the end, of the calls that ended; a hang-up or an error is not counted as handled.</p>`
       + tableHtml('To a person, by reason', withApp(['Reason', 'Calls#']), i.transfers.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No call went to a person.')
       + tableHtml('Hung up, by the last question they heard', withApp(['Where', 'Calls#']), i.abandoned.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No caller hung up.'));
@@ -2059,19 +2060,23 @@
       + `<dt>In all</dt><dd>${esc(moneyText(i.cost.totalUsd))}</dd><dt>A call</dt><dd>${esc(moneyText(i.cost.perCall))}</dd><dt>A handled call</dt><dd>${esc(moneyText(i.cost.perHandled))}</dd></dl>`
       + (i.carrier
         ? tableHtml('The carrier, by the minutes it bills', ['Carrier', 'Minutes#', 'A minute#', 'Cost#'], carrierRows, 'No voice calls on a carrier with a rate.')
-          + `<p class="figs-note">Carriers bill each call rounded up to the minute, so each call is counted that way here.${i.carrier.unpriced ? ` ${i.carrier.unpriced} minutes on a carrier with no rate set are not priced.` : ''} An estimate: the carrier's invoice is the bill.</p>`
+          + `<p class="figs-note">Carriers bill each call rounded up to the minute, so each call is counted that way here.${i.carrier.unpriced ? ` ${n(i.carrier.unpriced)} minutes on a carrier with no rate set are not priced.` : ''} An estimate: the carrier's invoice is the bill.</p>`
         : '<p class="figs-note">The decision model\'s cost is exact, from the traces. The carrier\'s is shown when its rate a minute is set: <code>CARRIER_RATE_PER_MIN_TWILIO</code>, <code>CARRIER_RATE_PER_MIN_TELNYX</code>.</p>'));
 
     const safety = card('Safety', `<dl class="kv2"><dt>The injection screen fired</dt><dd>${n(t.screenHits)}</dd><dt>Verify first (step-ups)</dt><dd>${n(t.stepUps)}</dd></dl>`
       + tableHtml('The gate\'s refusals, by the rule that refused', withApp(['Rule', 'Refusals#']), i.refusals.map((r) => [...appCell(r), `<code>${esc(r.label)}</code>`, n(r.value)]), 'The gate refused nothing.'));
 
-    const hours = card('Business hours', `<p class="figs-note">${n(t.afterHours)} ${t.afterHours === 1 ? 'call was' : 'calls were'} routed by a rule that reads the business hours (routes.yaml).</p>`
+    const hours = card('Calls routed on business hours', `<p class="figs-note">${n(t.hoursRouted)} ${t.hoursRouted === 1 ? 'call was' : 'calls were'} routed by a rule that reads the business hours (routes.yaml), by where, whether the rule asked for open or closed, and what followed.</p>`
       + tableHtml('', withApp(['Route', 'Calls#']), i.hours.map((r) => [...appCell(r), esc(r.label), n(r.value)]), 'No route read the hours.'));
 
     const kb = d.knowledge ? card('Knowledge base', `<p class="figs-note"><b>${n(t.gaps)}</b> ${t.gaps === 1 ? 'question' : 'questions'} the knowledge base did not answer. Their topics are on the <a class="follow" href="#/knowledge">Knowledge</a> page; the callers' words, ranked with the fix for each, are <code>${esc(d.knowledge.command)}</code> at the terminal.</p>`) : '';
 
-    el('insights-body').innerHTML = `${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${kb}</div>`
-      + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end. Hours are counted as the server counts them (UTC), shown in your time.</p>';
+    const notes = [
+      ...(i.older?.length ? [`Shown from figures kept in an older shape, their traces gone: ${i.older.map(esc).join(', ')} (the peak at once is each app's own, added; where callers hung up, as it was said then).`] : []),
+      ...(i.unreadable?.length ? [`Left out, their figures could not be read: ${i.unreadable.map(esc).join(', ')}.`] : []),
+    ];
+    el('insights-body').innerHTML = `${notes.map((x) => `<p class="figs-note warnt" role="note">${x}</p>`).join('')}${strip}<div class="grid2">${callsChart}${endings}${struggles}${tasks}${length}${cost}${safety}${hours}${kb}</div>`
+      + '<p class="figs-note">Figures are worked out from the traces, a day at a time, and kept; today\'s follow the calls as they end, and a day is final once its traces can no longer change. Hours are counted as the server counts them (UTC), shown in your time. The most at once counts the calls that started in the range: one already going when it began is not counted.</p>';
   }
 
   // ---------- Knowledge ----------
