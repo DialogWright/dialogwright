@@ -3,6 +3,8 @@ import { applyEnvFile, envFilePathOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { existsSync } from 'node:fs';
+import type { KeyObject } from 'node:crypto';
+import { checkJwksUrl, jwksKeys } from './chat/jwks';
 import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
@@ -230,7 +232,10 @@ function chatSettingsOf(settings: ChatSettings, env: Env): ChatSettings {
   if (settings.signIn.method !== 'jwt') return settings;
   const audience = env.CHAT_AUDIENCE?.trim() || settings.signIn.audience;
   const issuer = env.CHAT_ISSUER?.trim() || settings.signIn.issuer;
-  return { ...settings, signIn: { ...settings.signIn, audience, issuer } };
+  const jwksUrl = env.CHAT_JWKS_URL?.trim() || settings.signIn.jwksUrl;
+  // An https URL, as the server's own must be: one that is not stops the server here, naming the app.
+  checkJwksUrl(jwksUrl);
+  return { ...settings, signIn: { ...settings.signIn, audience, issuer, jwksUrl } };
 }
 
 /**
@@ -649,8 +654,19 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // The engine's own web chat, when CHAT=on: each session with the phone line's client, tools, audit chain and console.
   // On a host, each app's at /chat/<app id>, and the default's at /chat too.
   const chatSettings = config.chat;
+  // Each JWKS URL's keys fetched and cached once, whichever apps' chats share it.
+  const jwks = new Map<string, (kid: string) => Promise<KeyObject | null>>();
+  const keysFor = (url: string): ((kid: string) => Promise<KeyObject | null>) => {
+    let keys = jwks.get(url);
+    if (keys === undefined) {
+      keys = jwksKeys({ url, fetch: overrides.chatFetch, nowMs: now, log });
+      jwks.set(url, keys);
+    }
+    return keys;
+  };
   const chatOf = (a: (typeof appsRun)[number]): ChatEndpoint => chatEndpoint({
-    settings: host ? chatSettingsOf(chatSettings!, a.env) : chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls: serviceUrlsOf(a.id),
+    settings: host ? forApp(a.id, () => chatSettingsOf(chatSettings!, a.env)) : chatSettings!, now, log, audit: auditOf(a.id), bus, serviceUrls: serviceUrlsOf(a.id),
+    ...(host ? { keysFor } : {}),
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
     startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
     ...(host ? { appId: a.id } : {}),
@@ -794,6 +810,15 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     // On a host, one audience for two apps' chats means a token for one app's portal signs in at the other's.
     for (const shared of sharedAudiences(chatSettings, appsRun)) log(`WARNING: CHAT_SIGNIN=jwt: ${shared}`);
+    // On a host, an app whose sign-in is its own says so: its issuer and where its keys are.
+    if (host && chatSettings.signIn.method === 'jwt') {
+      for (const a of appsRun) {
+        const own = chatSettingsOf(chatSettings, a.env).signIn;
+        if (own.method === 'jwt' && (own.issuer !== chatSettings.signIn.issuer || own.jwksUrl !== chatSettings.signIn.jwksUrl || own.audience !== chatSettings.signIn.audience)) {
+          log(`${tag(a.id)}chat sign-in jwt of its own (${own.issuer}, keys at ${new URL(own.jwksUrl).host})`);
+        }
+      }
+    }
   }
   const wss = attachWebSocketServer(
     server,

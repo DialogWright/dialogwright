@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from 'node:crypto';
+import { createServer } from 'node:http';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -58,7 +59,7 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-async function start(apps: HostRouting, now: number, extra: Env = {}): Promise<{ base: string; ws: string; dir: string; logs: string[] }> {
+async function start(apps: HostRouting, now: number, extra: Env = {}, more: { chatFetch?: typeof fetch } = {}): Promise<{ base: string; ws: string; dir: string; logs: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'host-apps-'));
   dirs.push(dir);
   const logs: string[] = [];
@@ -70,7 +71,7 @@ async function start(apps: HostRouting, now: number, extra: Env = {}): Promise<{
     VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY,
     ...extra,
   });
-  running = await startServer(config, { host: '127.0.0.1', apps, log: (l) => logs.push(l), now: () => now });
+  running = await startServer(config, { host: '127.0.0.1', apps, log: (l) => logs.push(l), now: () => now, ...more });
   return { base: `http://127.0.0.1:${running.port}`, ws: `ws://127.0.0.1:${running.port}`, dir, logs };
 }
 
@@ -289,5 +290,78 @@ describe('a knowledge base in an app that is not the default', () => {
     const other = await call(s, 'twilio', 'CA000000000000000000000000000kbcbk', '+15555550999');
     expect(await say(other, ['how do outage credits work'])).not.toContain('credit of 25 dollars');
     expect(auditOf(s.dir, 'callback').filter((e) => e.type === 'kb_answer')).toEqual([]);
+  });
+});
+
+describe('each app\'s own identity provider for its chat\'s sign-in', () => {
+  /** A second app that takes a sign-in, the testkit under another id, so two apps' chats sign in at once. */
+  const depotApp = { ...testkitApp, id: 'depot' };
+  registerApp(depotApp);
+  const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
+  const providers = {
+    one: { issuer: 'https://id-one.example.com', key: generateKeyPairSync('ec', { namedCurve: 'P-256' }), audience: 'parcels-portal' },
+    two: { issuer: 'https://id-two.example.com', key: generateKeyPairSync('ec', { namedCurve: 'P-256' }), audience: 'depot-portal' },
+  };
+  function token(p: (typeof providers)['one']): string {
+    const head = b64url(JSON.stringify({ alg: 'ES256', kid: 'k1', typ: 'JWT' }));
+    // On the server's clock (its fixed now), as a provider's token would be.
+    const now = Math.floor(Date.parse('2026-09-18T15:00:00Z') / 1000);
+    const body = b64url(JSON.stringify({ iss: p.issuer, aud: p.audience, iat: now, exp: now + 300, sub: '55501234' }));
+    const sig = cryptoSign('sha256', Buffer.from(`${head}.${body}`), { key: p.key.privateKey as KeyObject, dsaEncoding: 'ieee-p1363' });
+    return `${head}.${body}.${b64url(sig)}`;
+  }
+
+  it('takes each app\'s token at its own /chat/<id> only, each verified against its own provider\'s keys, fetched once each', async () => {
+    const fetched: string[] = [];
+    // Each provider's key set on one local server, by its host; the config takes https only.
+    const idp = createServer((req, res) => {
+      const which = req.headers['x-provider'] === 'two' ? providers.two : providers.one;
+      fetched.push(String(req.headers['x-provider']));
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=300' });
+      res.end(JSON.stringify({ keys: [{ ...which.key.publicKey.export({ format: 'jwk' }), kid: 'k1', use: 'sig', alg: 'ES256' }] }));
+    });
+    await new Promise<void>((resolve) => idp.listen(0, '127.0.0.1', resolve));
+    const port = (idp.address() as { port: number }).port;
+    const chatFetch = ((url: string | URL, init?: RequestInit) => fetch(`http://127.0.0.1:${port}/jwks`, { ...init, headers: { ...(init?.headers as Record<string, string>), 'x-provider': String(url).includes('id-two') ? 'two' : 'one' } })) as typeof fetch;
+    try {
+      const apps = hostRouting({
+        apps: [
+          { id: 'testkit', app: testkitApp, env: {}, own: [], ignored: [] },
+          { id: 'depot', app: depotApp, env: { CHAT_JWKS_URL: `${providers.two.issuer}/jwks.json`, CHAT_ISSUER: providers.two.issuer, CHAT_AUDIENCE: providers.two.audience }, own: ['CHAT_JWKS_URL', 'CHAT_ISSUER', 'CHAT_AUDIENCE'], ignored: [] },
+        ],
+        numbers: [],
+        defaultApp: 'testkit',
+        env: {},
+      });
+      const s = await start(apps, Date.parse('2026-09-18T15:00:00Z'), {
+        CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN, CHAT_SIGNIN: 'jwt',
+        CHAT_JWKS_URL: `${providers.one.issuer}/jwks.json`, CHAT_ISSUER: providers.one.issuer, CHAT_AUDIENCE: providers.one.audience,
+      }, { chatFetch });
+      /** The first answer to a start carrying the token: signed in, or refused. */
+      const signIn = async (path: string, tok: string): Promise<string> => {
+        const ws = new WebSocket(`${s.ws}${path}`, { origin: ORIGIN });
+        const received: ServerMessage[] = [];
+        ws.on('message', (d) => received.push(JSON.parse(d.toString()) as ServerMessage));
+        await new Promise<void>((resolve) => ws.once('open', () => resolve()));
+        ws.send(JSON.stringify({ type: 'start', v: 1, token: tok }));
+        const deadline = Date.now() + 4000;
+        const settled = (): ServerMessage | undefined => received.find((m) => m.type === 'signed_in' || (m.type === 'error' && m.code === 'sign_in_failed'));
+        while (settled() === undefined && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+        ws.close();
+        const m = settled();
+        return m === undefined ? 'nothing' : m.type === 'signed_in' ? 'signed in' : 'refused';
+      };
+      expect(await signIn('/chat/testkit', token(providers.one))).toBe('signed in');
+      expect(await signIn('/chat/depot', token(providers.two))).toBe('signed in');
+      expect(await signIn('/chat/depot', token(providers.one))).toBe('refused');
+      expect(await signIn('/chat/testkit', token(providers.two))).toBe('refused');
+      expect(await signIn('/chat/testkit', token(providers.one))).toBe('signed in');
+      // Each provider's keys fetched once, however many chats asked.
+      expect(fetched.sort()).toEqual(['one', 'two']);
+      expect(s.logs).toContain('app depot: chat sign-in jwt of its own (https://id-two.example.com, keys at id-two.example.com)');
+      expect(s.logs.filter((l) => l.includes('take tokens for one audience'))).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => idp.close(() => resolve()));
+    }
   });
 });

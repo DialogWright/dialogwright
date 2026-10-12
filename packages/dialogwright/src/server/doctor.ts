@@ -732,6 +732,20 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     if (signIn) {
       const key = `${read.env.CHAT_ISSUER ?? ''} ${read.env.CHAT_AUDIENCE ?? ''}`;
       audiences.set(key, [...(audiences.get(key) ?? []), app.id]);
+      // Its own identity provider's keys, when its own settings file names them: an https URL, as the server's must be.
+      if (read.own.includes('CHAT_JWKS_URL')) {
+        const url = read.env.CHAT_JWKS_URL?.trim() ?? '';
+        let https = false;
+        try {
+          https = new URL(url).protocol === 'https:';
+        } catch {
+          https = false;
+        }
+        out.push(tag(https
+          ? { id: 'variables', status: 'ok', message: `its own chat sign-in: keys at ${new URL(url).host}${read.own.includes('CHAT_ISSUER') ? `, issuer ${read.env.CHAT_ISSUER}` : ', the server\'s issuer'}` }
+          : { id: 'variables', status: 'fail', message: 'its own CHAT_JWKS_URL is not an https URL: the server will not start', fix: 'set CHAT_JWKS_URL in the app\'s own settings file to its identity provider\'s https JWKS URL' }));
+        if (!read.own.includes('CHAT_ISSUER')) out.push(tag({ id: 'variables', status: 'warn', message: 'its own CHAT_JWKS_URL with the server\'s CHAT_ISSUER: a token from its own identity provider names that provider as its issuer', fix: 'set CHAT_ISSUER in the app\'s own settings file too' }));
+      }
     }
     if (read.ignored.length > 0) {
       out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host an app's own file is read for its own variables alone`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file, and delete the rest here' }));

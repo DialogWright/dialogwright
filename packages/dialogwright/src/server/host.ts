@@ -44,10 +44,11 @@ export interface HostApp {
 
 /**
  * The server settings an app may give its own value under a host, in its own settings file: where its
- * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and whom its chat's sign-in tokens are
- * for (CHAT_AUDIENCE, CHAT_ISSUER). Absent there, the server's.
+ * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and its chat's sign-in: whom its tokens
+ * are for (CHAT_AUDIENCE), who issues them (CHAT_ISSUER) and where that issuer's keys are
+ * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own. Absent there, the server's.
  */
-export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER'];
+export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL'];
 
 /** One number a host routes: the variable that holds it, its value, and the app it reaches. */
 export interface HostNumber {

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, type KeyObject } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
@@ -75,6 +75,11 @@ export interface ChatDeps extends ChatTurnDeps {
   startTimeoutMs?: number;
   /** How the identity provider's published keys are fetched (CHAT_SIGNIN=jwt); tests serve their own. */
   fetch?: typeof fetch;
+  /**
+   * The key lookup for a JWKS URL (CHAT_SIGNIN=jwt), shared by the endpoints of a server of several apps
+   * so each URL's keys are fetched and cached once; absent, this endpoint's own.
+   */
+  keysFor?: (url: string) => (kid: string) => Promise<KeyObject | null>;
   /**
    * Where each chat is saved after every turn, and found by its resume token after a restart
    * (SESSION_STORE=file, server/stores/file.ts). Absent or null (memory, the default), nowhere.
@@ -200,7 +205,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const { log, now } = deps;
   const how = deps.settings.signIn;
   const signIn: ChatSignIn = how.method === 'jwt'
-    ? { method: 'jwt', keyFor: jwksKeys({ url: how.jwksUrl, fetch: deps.fetch, nowMs: now, log }), issuer: how.issuer, audience: how.audience }
+    ? { method: 'jwt', keyFor: deps.keysFor ? deps.keysFor(how.jwksUrl) : jwksKeys({ url: how.jwksUrl, fetch: deps.fetch, nowMs: now, log }), issuer: how.issuer, audience: how.audience }
     : how;
   const sessions = new Map<string, ChatEntry>();
   /** Whether the refusal for CHAT_MAX_SESSIONS has been logged since a session last ended (said once, not per refusal). */

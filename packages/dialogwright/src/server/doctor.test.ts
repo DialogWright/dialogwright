@@ -736,6 +736,17 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(again).toContain("ok    app two: host.yaml's services.scheduler reads SCHEDULER_URL: set, scheduler.example.com");
   });
 
+  it('checks an app\'s own identity provider for its chat\'s sign-in', async () => {
+    const dir = hosted({ CHAT: 'on', CHAT_SIGNIN: 'jwt', CHAT_JWKS_URL: 'https://id.example.com/jwks', CHAT_ISSUER: 'https://id.example.com', CHAT_AUDIENCE: 'portal' });
+    writeFileSync(join(dir, 'apps', 'one', '.env'), 'MAIN_LINE=+15555550201\nCHAT_JWKS_URL=https://id-one.example.com/jwks\nCHAT_ISSUER=https://id-one.example.com\nCHAT_AUDIENCE=one\n', { mode: 0o600 });
+    writeFileSync(join(dir, 'apps', 'two', '.env'), 'MAIN_LINE=sip:desk@pbx.example.com\nCHAT_JWKS_URL=http://id-two.example.com/jwks\n', { mode: 0o600 });
+    const out: string[] = [];
+    expect(await main(['--offline'], { out: (l) => out.push(l), env: {}, invokedFrom: dir, root: dir }, deps())).toBe(1);
+    expect(out).toContain('ok    app one: its own chat sign-in: keys at id-one.example.com, issuer https://id-one.example.com');
+    expect(out).toContain("fail  app two: its own CHAT_JWKS_URL is not an https URL: the server will not start  ->  set CHAT_JWKS_URL in the app's own settings file to its identity provider's https JWKS URL");
+    expect(out.find((l) => l.startsWith('warn  app two: its own CHAT_JWKS_URL with the server'))).toBeDefined();
+  });
+
   it('takes --app for one app as before, and says a host file\'s problems', async () => {
     const dir = hosted();
     writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/nowhere]\n');
