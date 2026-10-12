@@ -60,7 +60,7 @@ In a project of its own the same commands are `npx dialogwright configure`, `npx
 
 Pre-release. APIs will change, and the packages are not yet published to npm.
 
-The packages build (`pnpm -r build`: JavaScript and declarations in each package's `dist/`), and `pnpm adopt:test` packs them, makes a project of its own outside this repository from the packed `create-dialogwright`, and runs its checks, tests and regression; publishing is the maintainer's step ([RELEASING.md](RELEASING.md)). In this repository nothing needs a build: the packages are read from their TypeScript source. What is built and what is planned is the roadmap, [section 12 of the design](docs/design.md#12-roadmap).
+The packages build (`pnpm -r build`: JavaScript and declarations in each package's `dist/`), and `pnpm adopt:test` packs them, makes a project of its own outside this repository from the packed `create-dialogwright`, and runs its checks, tests and regression; `pnpm multi:test` builds the container image (the root `Dockerfile`) and runs two servers of an app in `docker compose` behind a load balancer, killing and draining the one holding a call ([guide 14.14](docs/guide/14-running-it.md#1414-many-servers-on-one-database)); publishing is the maintainer's step ([RELEASING.md](RELEASING.md)). In this repository nothing needs a build: the packages are read from their TypeScript source. What is built and what is planned is the roadmap, [section 12 of the design](docs/design.md#12-roadmap).
 
 ## Documentation
 
