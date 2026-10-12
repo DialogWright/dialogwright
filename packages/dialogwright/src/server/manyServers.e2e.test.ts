@@ -797,32 +797,106 @@ describe('a turn still running when its socket closes', () => {
     expect(turnsIn(b, callSid)).toEqual([5]);
   }, 30_000);
 
-  it('that ends the call: the other server, having waited, closes the socket, and the carrier\'s callback hangs up', async () => {
+  const TRANSFER_LINE = 'Connecting you with a support specialist now.';
+
+  for (const carrier of ['twilio', 'telnyx'] as const) {
+    for (const ending of ['transfer', 'goodbye'] as const) {
+      it(`${carrier}: that ends the call (${ending}) while the socket is gone: the server the carrier reaches next says its lines and sends its end, so the caller is ${ending === 'transfer' ? 'put through where the turn decided' : 'told goodbye'}, once`, async () => {
+        const db = await PGlite.create();
+        cleanups.push(() => db.close());
+        const model = slowable();
+        const env: Env = { CALL_LEASE_MS: '3000', ...(carrier === 'telnyx' ? { VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY: TELNYX_KEY } : {}) };
+        const a = await boot('a', db, env, { client: model.client });
+        const b = await boot('b', db, env);
+        const callSid = carrier === 'telnyx' ? `v2:telnyx-unsent-${ending}` : `CA000000000000000000000000unsent${ending === 'transfer' ? 't' : 'g'}`;
+        const onA = { base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` };
+        const onB = { base: `http://127.0.0.1:${b.server.port}`, ws: `ws://127.0.0.1:${b.server.port}` };
+        const relay = await firstHalf(await answer(onA, carrier, callSid), callSid);
+        if (ending === 'goodbye') {
+          relay.prompt(DOB);
+          await relay.waitForTexts(7);
+        }
+        // The turn that ends the call is slow, and the socket drops while it runs.
+        model.slowMs = 800;
+        relay.prompt(ending === 'transfer' ? 'i want to talk to a person' : "no, that's all");
+        await new Promise((x) => setTimeout(x, 100));
+        relay.close();
+        await relay.closed;
+        const doc = await (await fetch(`${onB.base}/cr-action/${carrier}`, form(failed(callSid)))).text();
+        const again = await FakeRelay.connect(socketUrl(doc, onB.ws));
+        relays.push(again);
+        again.setup(callSid, 'VX-after');
+        const end = await again.waitFor((m) => m.type === 'end', 8000);
+        expect(again.texts().length).toBeGreaterThan(0);
+        if (ending === 'transfer') {
+          expect(again.texts()).toEqual([TRANSFER_LINE]);
+          expect(JSON.parse(String(end.handoffData))).toMatchObject({ reasonCode: 'live-agent' });
+          // The carrier's callback with that handoff dials the app's target.
+          const dial = await (await fetch(`${onB.base}/cr-action/${carrier}`, form({ ...failed(callSid), HandoffData: String(end.handoffData) }))).text();
+          expect(dial).toContain('<Dial>+15551234567</Dial>');
+        } else {
+          expect(end.handoffData).toBe('{"reasonCode":"completed","completed":["delivery_window"]}');
+        }
+        expect(b.logs).toContain(`${callSid}: its last turn's lines and end reached no socket: sent on this one`);
+        // Once: nothing is left for another server to send or dial.
+        await b.server.store.settled();
+        expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([]);
+        const stray = await (await fetch(`${onA.base}/cr-action/${carrier}`, form(failed(callSid)))).text();
+        expect(stray).toContain('<Hangup/>');
+      }, 30_000);
+    }
+  }
+
+  it('that transfers, on the same server the socket comes back to: the transfer line and its end, as on one machine', async () => {
     const db = await PGlite.create();
     cleanups.push(() => db.close());
     const model = slowable();
-    const env: Env = { CALL_LEASE_MS: '3000' };
-    const a = await boot('a', db, env, { client: model.client });
-    const b = await boot('b', db, env);
-    const callSid = 'CA00000000000000000000000000ending';
-    const relay = await firstHalf(await answer({ base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` }, 'twilio', callSid), callSid);
-    relay.prompt(DOB);
-    await relay.waitForTexts(7);
-    model.slowMs = 1000;
-    relay.prompt("no, that's all");
+    const a = await boot('a', db, { CALL_LEASE_MS: '3000' }, { client: model.client });
+    const onA = { base: `http://127.0.0.1:${a.server.port}`, ws: `ws://127.0.0.1:${a.server.port}` };
+    const callSid = 'CA0000000000000000000000000samexfr';
+    const relay = await firstHalf(await answer(onA, 'twilio', callSid), callSid);
+    model.slowMs = 800;
+    relay.prompt('i want to talk to a person');
     await new Promise((x) => setTimeout(x, 100));
     relay.close();
     await relay.closed;
-    const doc = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form(failed(callSid)))).text();
-    const again = await FakeRelay.connect(socketUrl(doc, `ws://127.0.0.1:${b.server.port}`));
+    const doc = await (await fetch(`${onA.base}/cr-action/twilio`, form(failed(callSid)))).text();
+    const again = await FakeRelay.connect(socketUrl(doc, onA.ws));
     relays.push(again);
     again.setup(callSid, 'VX-after');
-    expect((await again.closed).reason).toBe('call ended');
-    expect(again.texts()).toEqual([]);
-    expect(b.logs).toContain(`${callSid}: ended on the server that held it while its socket waited here`);
-    const hangup = await (await fetch(`http://127.0.0.1:${b.server.port}/cr-action/twilio`, form({ CallSid: callSid, CallStatus: 'completed' }))).text();
-    expect(hangup).toContain('<Hangup/>');
-    expect((await db.query('SELECT call_id FROM dw_calls')).rows).toEqual([]);
+    const end = await again.waitFor((m) => m.type === 'end', 5000);
+    expect(again.texts()).toEqual([TRANSFER_LINE]);
+    expect(JSON.parse(String(end.handoffData))).toMatchObject({ reasonCode: 'live-agent' });
+  }, 30_000);
+
+  it('the file store, one machine: a transfer decided while the socket was gone is said and sent on the next socket', async () => {
+    const dir = folder();
+    const model = slowable();
+    const env: Env = {
+      PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', SIGNATURE_CHECK: 'off', TODAY_OVERRIDE: '2026-09-18',
+      TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, NO_INPUT_MS: '0', SESSION_STORE: `file:${join(dir, 'sessions')}`,
+    };
+    const server = await startServer(loadConfig(env), { host: '127.0.0.1', client: model.client, log: () => {} });
+    cleanups.push(() => server.close().catch(() => {}));
+    const one = { base: `http://127.0.0.1:${server.port}`, ws: `ws://127.0.0.1:${server.port}` };
+    const callSid = 'CA0000000000000000000000000filexfr';
+    const relay = await firstHalf(await answer(one, 'twilio', callSid), callSid);
+    model.slowMs = 500;
+    relay.prompt('i want to talk to a person');
+    await new Promise((x) => setTimeout(x, 100));
+    relay.close();
+    await relay.closed;
+    const doc = await (await fetch(`${one.base}/cr-action/twilio`, form(failed(callSid)))).text();
+    // The carrier is slow to connect again: the turn has ended the call meanwhile, with no socket.
+    await new Promise((x) => setTimeout(x, 800));
+    const again = await FakeRelay.connect(socketUrl(doc, one.ws));
+    relays.push(again);
+    again.setup(callSid, 'VX-after');
+    const end = await again.waitFor((m) => m.type === 'end', 5000);
+    expect(again.texts()).toEqual([TRANSFER_LINE]);
+    expect(JSON.parse(String(end.handoffData))).toMatchObject({ reasonCode: 'live-agent' });
+    await server.store.settled();
+    expect(readdirSync(join(dir, 'sessions', 'calls'))).toEqual([]);
   }, 30_000);
 });
 

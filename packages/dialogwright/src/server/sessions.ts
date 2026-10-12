@@ -1,6 +1,6 @@
 import { SESSION_SCHEMA, type Session } from '../core/session';
 import { appOf } from '../core/app/registry';
-import type { CallLeases, CallStateStore, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
+import type { CallLeases, CallStateStore, HeldFrame, LeaseClaim, PendingEffect, ReleaseKind, StoredCall } from './stores/types';
 import type { RunOptions } from '../run/turn';
 import type { TraceWriter } from '../trace/writer';
 import type { FrameLog } from './frameLog';
@@ -56,6 +56,12 @@ export interface CallEntry extends CallResources {
    * server's clock: what the silence before the `resumed` line is measured from (RESUMED_AFTER_MS).
    */
   droppedAtMs?: number;
+  /**
+   * The lines and the `end` a turn ended the call with while it had no socket (endUndelivered): what a
+   * socket that comes for it next is sent (the adapter's replay), once. Never saved as such: the store
+   * keeps them in StoredCall.heldFrames.
+   */
+  undelivered?: readonly HeldFrame[];
 }
 
 export type CallFactory = (callSid: string) => CallResources;
@@ -121,9 +127,11 @@ export type RestoreResult = 'held' | 'restored' | 'none' | 'unreadable' | 'unava
  * What `claim` found (a setup, with a shared store): as `restore`, with the lease taken; or 'busy', the
  * lease not to be had (another server held on to it past the wait, the database could not be asked, or
  * the call is another carrier's), and the caller is put through to a person; or 'ended', the call ended
- * on the server that held it while this one waited (its last turn ended it), and the socket is closed.
+ * on the server that held it while this one waited (its last turn ended it), and the socket is closed;
+ * or 'replay', the call ended with lines and an `end` no socket took (endUndelivered), now held here
+ * (`undelivered`) for this socket to be sent.
  */
-export type ClaimResult = RestoreResult | 'busy' | 'ended';
+export type ClaimResult = RestoreResult | 'busy' | 'ended' | 'replay';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -362,6 +370,38 @@ export class SessionStore {
     void this.queueWrite(callSid, 'save the held transfer', (state) => state.save(call));
   }
 
+  /**
+   * A turn ended the call while it had no socket (it closed as the turn ran), so its lines and its `end`
+   * reached no one. With a durable store they are kept, not forgotten: saved with the call (heldFrames,
+   * and the `end`'s handoff as heldHandoffData), and the call given up, so the server the carrier's
+   * socket reaches next sends them, once, and the caller hears the goodbye or is put through where the
+   * turn decided. Without a store, `end`.
+   */
+  endUndelivered(callSid: string, frames: readonly HeldFrame[]): void {
+    const e = this.calls.get(callSid);
+    const end = frames.find((f) => f.type === 'end');
+    if (!e || this.state === null || end === undefined) {
+      this.end(callSid);
+      return;
+    }
+    if (!e.ended) e.endedAtMs = this.now();
+    e.ended = true;
+    e.lastActivityMs = this.now();
+    e.undelivered = frames;
+    this.holding.add(callSid);
+    const call = this.storedOf(e, { heldHandoffData: typeof end.handoffData === 'string' ? end.handoffData : '{}', heldFrames: frames });
+    const lease = this.lease;
+    if (lease !== null) {
+      void this.queueWrite(callSid, 'save the undelivered end', async () => {
+        if (!(await lease.leases.saveAs(call, lease.owner, lease.ttlMs))) return;
+        // Given up as by its socket, so whichever server the carrier reaches next takes it at once.
+        await lease.leases.release(callSid, lease.owner, 'socket');
+      });
+      return;
+    }
+    void this.queueWrite(callSid, 'save the undelivered end', (state) => state.save(call));
+  }
+
   /** A held transfer's `end` has gone: the call is forgotten, as `end` forgets one. */
   heldSent(callSid: string): void {
     if (!this.holding.delete(callSid)) return;
@@ -378,16 +418,38 @@ export class SessionStore {
     const state = this.state;
     if (state === null) return undefined;
     try {
-      return await this.inOrder(callId, async () => {
-        if (state.takeHeld) return state.takeHeld(callId);
-        const c = await state.load(callId);
-        if (c?.heldHandoffData === undefined) return null;
-        await state.remove(callId);
-        return c.heldHandoffData;
-      });
+      const c = await this.takeHeldCall(callId);
+      return c?.heldHandoffData ?? null;
     } catch (err) {
       this.log(`${callId}: could not read a held transfer: ${err instanceof Error ? err.message : String(err)}`);
       return 'unknown';
+    }
+  }
+
+  /** A call saved with a held end, taken from the store in one step (CallStateStore.takeHeld), or null. */
+  private takeHeldCall(callId: string): Promise<StoredCall | null> {
+    const state = this.state;
+    if (state === null) return Promise.resolve(null);
+    return this.inOrder(callId, async () => {
+      if (state.takeHeld) return state.takeHeld(callId);
+      const c = await state.load(callId);
+      if (c?.heldHandoffData === undefined) return null;
+      await state.remove(callId);
+      return c;
+    });
+  }
+
+  /**
+   * One machine's durable store: a call this server ended with lines and an `end` no socket took
+   * (endUndelivered), taken from the store as a socket comes for it, so it is sent once. False when
+   * another took it (or the store could not say: nothing is sent twice).
+   */
+  async takeUndelivered(callId: string): Promise<boolean> {
+    try {
+      return (await this.takeHeldCall(callId)) !== null;
+    } catch (err) {
+      this.log(`${callId}: could not take its undelivered end: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
     }
   }
 
@@ -540,8 +602,12 @@ export class SessionStore {
     if (dropped !== undefined) entry.droppedAtMs = dropped;
     this.calls.set(callId, entry);
     this.restored.add(callId);
-    // One machine: let go by a stopping server (a drain or a close), not lost to a crash.
-    if (c.stopped === true && this.lease === null) this.clean.add(callId);
+    // One machine: let go by a stopping server (a drain or a close), not lost to a crash. The mark is
+    // cleared in the store at once, so a crash of this server before its next save is not taken for a stop.
+    if (c.stopped === true && this.lease === null) {
+      this.clean.add(callId);
+      void this.queueWrite(callId, 'save the session', (state) => state.save(this.storedOf(entry)));
+    }
     return entry;
   }
 
@@ -588,7 +654,12 @@ export class SessionStore {
           continue;
         }
         const claimedAt = this.now();
-        const mine = this.calls.get(callId);
+        let mine = this.calls.get(callId);
+        // Ended here (its last turn's end reached no socket): what the store says now decides, below.
+        if (mine !== undefined && !this.borrowed.has(callId) && mine.ended) {
+          this.drop(callId);
+          mine = undefined;
+        }
         if (mine !== undefined && !this.borrowed.has(callId)) {
           this.claimedAt.set(callId, claimedAt);
           if (r.silentMs !== null) mine.droppedAtMs = this.now() - r.silentMs;
@@ -604,6 +675,19 @@ export class SessionStore {
           }
           this.claimedAt.set(callId, claimedAt);
           return 'none';
+        }
+        if (r.call.heldFrames !== undefined && r.call.provider === provider) {
+          // Ended by a turn whose lines and `end` reached no socket: taken from the store (once, whatever
+          // server tries) and held here for this socket, under this server's lease, to be sent them.
+          const taken = await this.takeHeldCall(callId).catch(() => null);
+          if (taken?.heldFrames === undefined) return 'ended';
+          await this.inOrder(callId, () => lease.leases.claim(callId, lease.owner, lease.ttlMs)).catch(() => undefined);
+          const entry = this.hold(taken);
+          this.restored.delete(callId);
+          entry.undelivered = taken.heldFrames;
+          this.claimedAt.set(callId, claimedAt);
+          this.log(`${callId}: its last turn's lines and end reached no socket: sent on this one`);
+          return 'replay';
         }
         if (r.call.provider !== provider || r.call.heldHandoffData !== undefined) {
           // A token opens only its own carrier's path, and a call that ended with a transfer owed is no

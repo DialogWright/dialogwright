@@ -495,7 +495,7 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       await s.calls.save(held);
       sameJson(await s.calls.load('CA0002'), held, 'a call saved with a held transfer');
       const taken = await Promise.all([s.calls.takeHeld('CA0002'), s.calls.takeHeld('CA0002')]);
-      sameJson(taken.filter((t) => t !== null), [handoff], 'the held transfers taken at once');
+      sameJson(taken.filter((t) => t !== null), [held], 'the calls with a held transfer taken at once');
       if ((await s.calls.load('CA0002')) !== null) fail('a call whose held transfer was taken is still saved');
     },
   },

@@ -112,12 +112,12 @@ export class InProcessLeases implements CallLeases {
     return existed;
   }
 
-  /** The held transfer of a call saved with one, removed with the call (CallStateStore.takeHeld). */
-  takeHeld(callId: string): string | null {
+  /** A call saved with a held end, removed with its lease (CallStateStore.takeHeld). */
+  takeHeld(callId: string): StoredCall | null {
     const c = this.calls.load(callId);
     if (c?.heldHandoffData === undefined) return null;
     this.calls.removeRecord(callId);
     this.held.delete(callId);
-    return c.heldHandoffData;
+    return c;
   }
 }

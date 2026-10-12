@@ -309,7 +309,7 @@ export class FileCallStateStore implements CallStateStore, CallLeases {
     return this.leases.removeUnleased(callId);
   }
 
-  takeHeld(callId: string): string | null {
+  takeHeld(callId: string): StoredCall | null {
     return this.leases.takeHeld(callId);
   }
 

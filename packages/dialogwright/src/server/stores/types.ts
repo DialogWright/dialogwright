@@ -5,6 +5,12 @@ import type { Effect } from '../../core/lifecycle';
 import type { ScrubPart } from '../../core/recording';
 
 /**
+ * An outbound frame as a store keeps it: plain data with its `type`. The store and the session store
+ * never read the wire's frames (the relay boundary): the adapter, which wrote them, reads them back.
+ */
+export type HeldFrame = { readonly type: string } & Readonly<Record<string, unknown>>;
+
+/**
  * What the server keeps of a call or a chat between turns, behind interfaces, so where it lives is a
  * setting (SESSION_STORE) and not the server's business: in this process's memory (the default, as it
  * always was), in files on this machine (`file:<dir>`, which outlives a restart), or in Postgres
@@ -58,6 +64,12 @@ export interface StoredCall {
    */
   readonly heldHandoffData?: string;
   /**
+   * The lines and the `end` a turn ended the call with while the call had no socket (it closed as the turn
+   * ran), saved with the call so the server the carrier's socket reaches says them and sends the `end`,
+   * once. With them, `heldHandoffData` is that `end`'s handoff (a goodbye's too).
+   */
+  readonly heldFrames?: readonly HeldFrame[];
+  /**
    * When the carrier last reported the relay lost (its callback asking to reconnect), by the clock of the
    * one machine that counted it: how long the caller has been in silence is measured from it, for the
    * `resumed` line (RESUMED_AFTER_MS). Outside the session, optional, read by one machine's stores only;
@@ -95,11 +107,11 @@ export interface CallStateStore {
   /** The ids of every call saved and not removed, for the sweep. */
   list(): Awaitable<readonly string[]>;
   /**
-   * The held transfer of a call saved with one (StoredCall.heldHandoffData), taken with the call in one
+   * A call saved with a held end (StoredCall.heldHandoffData), taken (removed, with its lease) in one
    * step, so that of many servers taking it exactly one has it; null when there is none (never held,
    * sent, or taken already). Absent, the server loads and removes the call itself, as one process may.
    */
-  takeHeld?(callId: string): Awaitable<string | null>;
+  takeHeld?(callId: string): Awaitable<StoredCall | null>;
 }
 
 /** Where web chats are kept between turns. */

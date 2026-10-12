@@ -732,6 +732,29 @@ describe('the resumed line, said only past RESUMED_AFTER_MS of silence (default 
     expect(await comeBack(second.base, callSid, 0)).toBe(`${RESUMED_TEXT} ${ASK_DOB}`);
   }, 40_000);
 
+  it('the file store: a server that resumed a call after a planned stop and then crashed does not pass for a stop: the resumed line', async () => {
+    const dir = folder();
+    const env = settings(dir, { RESUMED_AFTER_MS: '1500', RESTART_PAUSE_S: '1' });
+    const first = await boot(env);
+    const callSid = 'CA0000000000000000000000000gapstale';
+    const relay = await firstHalf(await answer(first.base, 'twilio', callSid), callSid);
+    // A planned restart: the stopping server answers the callback with a pause and saves the call as let go by a stop.
+    const drained = first.server.drain(0);
+    await relay.closed;
+    const doc = await (await fetch(`${first.base}/cr-action/twilio`, form(failed('twilio', callSid)))).text();
+    await drained;
+    await first.server.close();
+    // The restarted server takes the socket (no callback reaches it first) and dies before the call's next turn saves.
+    const second = await boot(env);
+    const again = await FakeRelay.connect(socketUrl(doc, second.base));
+    sockets.push(again);
+    again.setup(callSid, 'VX-after');
+    await again.waitForTexts(1);
+    await second.server.store.settled();
+    const third = await boot(env);
+    expect(await comeBack(third.base, callSid, 0)).toBe(`${RESUMED_TEXT} ${ASK_DOB}`);
+  }, 30_000);
+
   it('a planned restart, its carrier told to wait RESTART_PAUSE_S (default 5 s, past the threshold): the resumed line, as before the option', async () => {
     const dir = folder();
     // A pause of two seconds stands for the default five: what matters is that it is longer than 1.5 s.

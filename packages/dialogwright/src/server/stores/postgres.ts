@@ -331,12 +331,12 @@ export class PostgresCallStateStore implements CallStateStore, CallLeases {
     });
   }
 
-  async takeHeld(callId: string): Promise<string | null> {
+  async takeHeld(callId: string): Promise<StoredCall | null> {
     return this.sql.transaction(async (tx) => {
-      const r = await tx.query<{ held_handoff: string }>('DELETE FROM dw_calls WHERE call_id = $1 AND held_handoff IS NOT NULL RETURNING held_handoff', [callId]);
+      const r = await tx.query<{ body: string; reconnects: Num }>('DELETE FROM dw_calls WHERE call_id = $1 AND held_handoff IS NOT NULL RETURNING body, reconnects', [callId]);
       if (r.rows.length === 0) return null;
       await tx.query('DELETE FROM dw_call_leases WHERE call_id = $1', [callId]);
-      return r.rows[0]!.held_handoff;
+      return this.read(callId, r.rows[0]!);
     });
   }
 }

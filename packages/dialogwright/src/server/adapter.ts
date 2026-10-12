@@ -18,7 +18,7 @@ import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
 import type { Session } from '../core/session';
 import type { CallEntry, SessionStore, SocketLike } from './sessions';
-import type { ServerTokenStore } from './stores/types';
+import type { HeldFrame, ServerTokenStore } from './stores/types';
 import { within } from './stores/sql';
 import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
@@ -975,6 +975,34 @@ function sendEndAfterPlayback(deps: AdapterDeps, entry: CallEntry, end: Outbound
 }
 
 /**
+ * The lines and `end` a turn ended the call with while it had no socket, sent on the socket that came
+ * for it next (SessionStore.endUndelivered, a shared store's claim 'replay'), as the turn would have
+ * sent them: the lines, then the `end`, held for them to play where the carrier needs it, with its
+ * handoff, so the carrier's callback puts the caller through where the turn decided (or hangs up after
+ * a goodbye). The call then ends here, once.
+ */
+async function replayEnd(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, entry: CallEntry): Promise<void> {
+  // The frames this adapter kept (endUndelivered), as plain data: read back as the wire's.
+  const frames = [...(entry.undelivered ?? [])] as unknown as OutboundFrame[];
+  delete entry.undelivered;
+  deps.store.attach(entry.callSid, socket);
+  ctx.setupReady?.();
+  entry.frames.write('log', { replayedEnd: frames.map((f) => f.type) });
+  const at = holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
+  const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames);
+  let endHeld = false;
+  if (at >= 0) {
+    endHeld = sendEndAfterPlayback(deps, entry, frames.slice(at), sent, null);
+    if (!endHeld) sent.push(...(await sendFrames(deps, entry, frames.slice(at))));
+  }
+  if (!endHeld && holds(deps, entry)) {
+    deps.store.end(entry.callSid);
+    deps.tokens.revoke(entry.callSid);
+  }
+  if (!endHeld) armEndGrace(deps, entry);
+}
+
+/**
  * Whether this server may end the call `entry` is for: always with the memory and file stores; with a
  * store many servers share, only while it still holds the call (a turn that outlived its hold, the call
  * since taken over by another server, ends nothing and revokes no token the other minted).
@@ -1475,6 +1503,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   let ending = false;
   // The turn's `end` waits for its lines to play, and is sent (with the grace after it) by the wait.
   let endHeld = false;
+  // A turn that ended the call while the call had no socket (it closed as the turn ran): its lines and
+  // `end`, kept with the call by a durable store for the next socket (SessionStore.endUndelivered).
+  let unsent: OutboundFrame[] | null = null;
   try {
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
@@ -1528,6 +1559,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       endHeld = sendEndAfterPlayback(deps, entry, frames.slice(at), sent, run.result.decision);
       if (!endHeld) sent.push(...(await sendFrames(deps, entry, frames.slice(at), run.result.decision)));
     }
+    if (ending && deps.store.durable && entry.socket === null && !sent.some((f) => f.type === 'end') && frames.some((f) => f.type === 'end')) unsent = frames;
     // Lines a carrier that reports its playback may cut short, said again if it does (RESAY_CUT_LINES).
     watchPlayback(deps, entry, frames, run.result.decision, sent, false);
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
@@ -1570,8 +1602,12 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   } finally {
     // Runs even when sending the decision failed: the call is over either way.
     if (ending && holds(deps, entry)) {
-      deps.store.end(entry.callSid);
-      deps.tokens.revoke(entry.callSid);
+      // Kept for the next socket, whose token (minted by the carrier's callback meanwhile) stays live.
+      if (unsent !== null) deps.store.endUndelivered(entry.callSid, unsent as unknown as HeldFrame[]);
+      else {
+        deps.store.end(entry.callSid);
+        deps.tokens.revoke(entry.callSid);
+      }
     }
     if (ending) {
       // Twilio closes the socket after it has played the queued frames and processed `end`;
@@ -1642,6 +1678,10 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   // this server cannot read) is ended toward a person as above.
   if (deps.store.shared) {
     const claimed = await deps.store.claim(callId, ctx.provider);
+    if (claimed === 'replay') {
+      await replayEnd(deps, socket, ctx, deps.store.get(callId)!);
+      return;
+    }
     if (claimed === 'ended') {
       // Its last turn ended it on the server that held it while this socket waited: the carrier's callback hangs up.
       deps.tokens.revoke(callId);
@@ -1674,6 +1714,14 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     // the caller's whole number, and the file on disk must never hold it either.
     existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
     if (existing.ended) {
+      // Its last turn's lines and `end` reached no socket (it closed as the turn ran): sent on this one,
+      // once (one machine's durable store; a shared one hands them over in its claim: 'replay').
+      if (existing.undelivered !== undefined && !deps.store.shared && (await deps.store.takeUndelivered(callId))) {
+        existing.ended = false;
+        existing.endedAtMs = null;
+        await replayEnd(deps, socket, ctx, existing);
+        return;
+      }
       deps.log(`${callId}: setup for an ended call, closing`);
       socket.close(1000, 'call ended');
       return;
