@@ -54,6 +54,22 @@ async function serve(deps: Partial<DashboardDeps> & { bus?: DashboardBus } = {})
   return { base: `http://127.0.0.1:${(server!.address() as { port: number }).port}`, dir, bus };
 }
 
+/** A test seam that holds the first read where it works out its figures, says when it is there, and lets it go on release; every later read goes straight on. */
+function holdOnce(): { holdFigures: () => Promise<void>; atHold: Promise<void>; release: () => void } {
+  let release: () => void = () => {};
+  let reached: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  const atHold = new Promise<void>((r) => { reached = r; });
+  let first = true;
+  const holdFigures = (): Promise<void> => {
+    if (!first) return Promise.resolve();
+    first = false;
+    reached();
+    return held;
+  };
+  return { holdFigures, atHold, release: () => release() };
+}
+
 const getJson = async <T>(url: string): Promise<T> => (await (await fetch(url)).json()) as T;
 
 describe('Insights (/dashboard/insights)', () => {
@@ -94,12 +110,11 @@ describe('Insights (/dashboard/insights)', () => {
   });
 
   it('one read at a time per session: a second while the first is held is refused (429), and goes once it answers', async () => {
-    let release: () => void = () => {};
-    const held = new Promise<void>((r) => { release = r; });
-    let first = true;
-    const { base } = await serve({ holdFigures: () => (first ? ((first = false), held) : Promise.resolve()) });
+    const { holdFigures, atHold, release } = holdOnce();
+    const { base } = await serve({ holdFigures });
     const one = fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`);
-    await new Promise((r) => setTimeout(r, 50));
+    // The first is under way (held where it reads) before the second is asked: no timing assumed.
+    await atHold;
     expect((await fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`)).status).toBe(429);
     release();
     expect((await one).status).toBe(200);
@@ -129,12 +144,10 @@ describe('Insights (/dashboard/insights)', () => {
 
 describe('the Knowledge page, one read at a time', () => {
   it('a second read while the first runs is refused (429), and goes once it answers', async () => {
-    let release: () => void = () => {};
-    const held = new Promise<void>((r) => { release = r; });
-    let first = true;
-    const { base } = await serve({ holdFigures: () => (first ? ((first = false), held) : Promise.resolve()) });
+    const { holdFigures, atHold, release } = holdOnce();
+    const { base } = await serve({ holdFigures });
     const one = fetch(`${base}/dashboard/knowledge`);
-    await new Promise((r) => setTimeout(r, 50));
+    await atHold;
     expect((await fetch(`${base}/dashboard/knowledge`)).status).toBe(429);
     // Insights is a page of its own: not held up by the Knowledge page's read.
     expect((await fetch(`${base}/dashboard/insights?from=${DAY[0]}&to=${DAY[1]}`)).status).toBe(200);

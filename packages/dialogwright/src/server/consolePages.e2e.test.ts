@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,7 +72,24 @@ async function say(relay: FakeRelay, lines: readonly string[]): Promise<void> {
     const n = relay.texts().length;
     relay.prompt(line);
     await relay.waitFor(() => relay.texts().length > n || relay.received.some((x) => x.type === 'end'), 4000);
-    await new Promise((r) => setTimeout(r, 30));
+  }
+}
+
+/** A file's text, or nothing while it is not there. */
+const readIfThere = (path: string): string => {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
+/** Until `pred` holds (looked at as each I/O turn passes, not after a fixed wait), or fails after 4 s. */
+async function until(pred: () => boolean): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (!pred()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    await new Promise<void>((r) => setImmediate(r));
   }
 }
 
@@ -95,14 +112,15 @@ describe('Insights, Knowledge and Health over a host of two apps', () => {
     await say(asked, ['how do outage credits work', 'do you sell gift cards for the holidays?']);
     // A hang-up, as the carrier does it: the socket closes, then the callback.
     asked.close();
-    await new Promise((r) => setTimeout(r, 100));
+    // The server has logged the close (what makes the call a hang-up in its trace) before the carrier's callback.
+    await until(() => readIfThere(join(dir, 'traces', 'utility', 'CA0000000000000000000000000000pg1.frames.jsonl')).includes('socketClosed'));
     await fetch(`${base}/cr-action/twilio`, form({ CallSid: 'CA0000000000000000000000000000pg1', CallStatus: 'completed', SessionStatus: 'ended' }));
     // The callback app: a person asked for.
     const person = await call(base, ws, 'CA0000000000000000000000000000pg2', '+15555550999');
     await say(person, ['can I talk to a person']);
     await person.waitFor((m) => m.type === 'end');
+    // The callback answers once its writes are done (every trace and frame-log write is synchronous).
     await fetch(`${base}/cr-action/twilio`, form({ CallSid: 'CA0000000000000000000000000000pg2', CallStatus: 'completed', SessionStatus: 'ended' }));
-    await new Promise((r) => setTimeout(r, 100));
     const to = Date.now() + 60_000;
 
     const all = (await (await fetch(`${base}/dashboard/insights?from=${from}&to=${to}`)).json()) as InsightsAnswer;
