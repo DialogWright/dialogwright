@@ -112,8 +112,11 @@ export interface TokenStore {
 export interface ServerTokenStore extends TokenStore {
   mint(callId: string, provider?: string): string;
   revoke(callId: string): void;
-  /** The writes behind every mint and revoke so far, landed; rejects when one of them failed. */
-  settled?(): Promise<void>;
+  /**
+   * The writes behind a call's mints and revokes so far, landed, rejecting when its last one failed;
+   * with no call, every write so far, failed or not.
+   */
+  settled?(callId?: string): Promise<void>;
 }
 
 /**
