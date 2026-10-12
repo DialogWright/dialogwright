@@ -136,6 +136,8 @@ export interface ChatEndpoint {
   close(): void;
   /** Sessions not yet ended. */
   liveCount(): number;
+  /** Their ids (what retention never removes the traces of). */
+  liveIds(): string[];
   /**
    * Sessions someone is in now: with a socket open, or a turn under way. A session whose socket has
    * dropped waits for a resume until it is idle (CHAT_IDLE_MS), but no one is waiting on it.
@@ -723,6 +725,9 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     },
     liveCount() {
       return sessions.size;
+    },
+    liveIds() {
+      return [...sessions.keys()];
     },
     activeCount() {
       let n = 0;

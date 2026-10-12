@@ -87,6 +87,20 @@ describe('LOG_FILE', () => {
     expect(log.failures).toBe(0);
   });
 
+  it('a second process on the same LOG_FILE is refused, naming the first; a lock left by a process that is gone is taken over', () => {
+    const d = folder();
+    const setting = logFileSettingOf({ LOG_FILE: join(d, 'server.log') })!;
+    // A process that is running (this test's parent) holds it.
+    writeFileSync(join(d, 'server.log.lock'), String(process.ppid));
+    expect(() => new RollingLog(setting)).toThrow(`LOG_FILE ${join(d, 'server.log')} is written by another process (pid ${process.ppid}): give each server a log file of its own`);
+    // One that is gone does not.
+    writeFileSync(join(d, 'server.log.lock'), '999999999');
+    const log = new RollingLog(setting);
+    expect(readFileSync(join(d, 'server.log.lock'), 'utf8')).toBe(String(process.pid));
+    log.close();
+    expect(existsSync(join(d, 'server.log.lock'))).toBe(false);
+  });
+
   it('a log that cannot be written never throws', () => {
     const d = folder();
     const log = new RollingLog(logFileSettingOf({ LOG_FILE: join(d, 'server.log') })!);

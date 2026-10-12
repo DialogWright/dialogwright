@@ -13,7 +13,7 @@ import { SessionStore } from './sessions';
 import { CallTokens } from './tokens';
 import { openFileStores } from './stores/file';
 import { openPostgresStores } from './stores/postgres';
-import { maskConnectionString, maskSecrets, openPgClient, type SqlClient } from './stores/sql';
+import { boundedSql, maskConnectionString, maskSecrets, openPgClient, type SqlClient } from './stores/sql';
 import type { CallStateStore, ChatStateStore, ServerTokenStore } from './stores/types';
 import { FrameLog } from './frameLog';
 import { buildHints } from './hints';
@@ -38,6 +38,7 @@ import { demoTools } from '../core/tools';
 import { AuditLog } from '../audit/log';
 import { openPostgresAudit, type PostgresAuditLog } from '../audit/postgres';
 import { PostgresNotices } from './stores/notices';
+import { openSweeps } from './stores/sweeps';
 import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
@@ -138,6 +139,8 @@ const TOKEN_TTL_MS = 10 * 60 * 1000;
  */
 export const SESSION_POOL = 12;
 export const AUDIT_POOL = 5;
+/** How long one server holds the trace store's hourly sweep: less than the hour, so another may take the next. */
+const TRACE_SWEEP_HOLD_MS = 50 * 60 * 1000;
 const EVICT_EVERY_MS = 60 * 1000;
 /** How often the idle sweep also sweeps old traces and audit days, when a retention is set. */
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
@@ -311,6 +314,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     log(`sessions: ${maskConnectionString(setting.url)} (shared: calls, chats and relay tokens are saved after every turn, and any server the carrier reconnects to takes a call over); this server is ${owner}, holding each call ${leaseMs} ms at a time`);
   }
   const durable: { calls: CallStateStore; chats: ChatStateStore; tokens: ServerTokenStore } | null = files ?? shared;
+  // With SESSION_STORE=postgres: which server runs a sweep they share (stores/sweeps.ts).
+  const sweeps = shared && sessionSql ? await openSweeps(boundedSql(sessionSql, setting?.kind === 'postgres' ? setting.timeoutMs : 2_000)).catch(async (err: unknown) => {
+    await shared.close().catch(() => undefined);
+    await closeAuditSql();
+    throw postgresFailure('SESSION_STORE', setting?.kind === 'postgres' ? setting.url : '', err);
+  }) : null;
   // With SESSION_STORE=postgres: notices between the servers on the database (stores/notices.ts), so one
   // console sees every server's calls and a chat resumed elsewhere is let go here.
   let notices: PostgresNotices | null = null;
@@ -479,7 +488,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   let retentionAt = now();
   const sweepDisk = (): void => {
     retentionAt = now();
-    const inUse = new Set(store.liveCallSids().map(safeFileStem));
+    // Never the traces of a live call or an open chat.
+    const inUse = new Set([...store.liveCallSids(), ...(chat?.liveIds() ?? [])].map(safeFileStem));
     if (sweeping) {
       const r = sweepRetention(retention, { now: retentionAt, inUse });
       log(`retention: removed ${r.traceFiles} trace files, ${r.auditDays} audit days${r.trimmed ? ` (${r.trimmed.files} of them, ${r.trimmed.calls} calls, for TRACE_MAX_GB)` : ''}`);
@@ -497,6 +507,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const traceMax = config.traceMaxBytes;
     if (traceStore && (traceDays !== undefined || traceMax !== undefined)) {
       void (async () => {
+        // With servers sharing a database, one of them sweeps the store each hour; the others skip.
+        if (sweeps && !(await sweeps.claim('traces', serverName, TRACE_SWEEP_HOLD_MS))) return;
         if (traceDays !== undefined) {
           const t = await traceStore.sweep(traceDays, retentionAt, inUse);
           log(`retention: removed ${t.objects} trace objects (${t.calls} calls) from ${traceStore.label}`);

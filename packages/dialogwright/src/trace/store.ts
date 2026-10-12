@@ -446,33 +446,48 @@ export class S3TraceStore {
 
   /**
    * TRACE_MAX_GB on the store: while its traces are larger than `maxBytes`, the calls written least
-   * recently are removed whole, never a call in `inUse`. Returns the objects and calls removed, and the
-   * bytes left.
+   * recently are removed whole, never a call in `inUse`, one day folder at a time from the oldest (each
+   * listed on its own, so no listing grows with the whole store). Returns the objects and calls removed,
+   * and the bytes left.
    */
   async trim(maxBytes: number, inUse: ReadonlySet<string>): Promise<{ objects: number; calls: number; bytes: number }> {
-    const { objects: all } = await this.client.list(this.prefix);
-    const byCall = new Map<string, { keys: string[]; size: number; newest: number }>();
+    const byDay = async (day: string): Promise<Map<string, { keys: string[]; size: number; newest: number }>> => {
+      const under = `${this.prefix}${day}/`;
+      const { objects: found } = await this.client.list(under);
+      const calls = new Map<string, { keys: string[]; size: number; newest: number }>();
+      for (const o of found) {
+        const rest = o.key.slice(under.length);
+        const slash = rest.indexOf('/');
+        if (slash <= 0) continue;
+        const id = rest.slice(0, slash);
+        const c = calls.get(id) ?? { keys: [], size: 0, newest: 0 };
+        c.keys.push(o.key);
+        c.size += o.size;
+        c.newest = Math.max(c.newest, o.lastModifiedMs);
+        calls.set(id, c);
+      }
+      return calls;
+    };
+    const days = await this.days();
+    const sizes = new Map<string, number>();
     let total = 0;
-    for (const o of all) {
-      const rest = o.key.slice(this.prefix.length).split('/');
-      if (rest.length !== 3 || !DAY.test(rest[0]!)) continue;
-      const id = `${rest[0]}/${rest[1]}`;
-      const c = byCall.get(id) ?? { keys: [], size: 0, newest: 0 };
-      c.keys.push(o.key);
-      c.size += o.size;
-      c.newest = Math.max(c.newest, o.lastModifiedMs);
-      byCall.set(id, c);
-      total += o.size;
+    for (const day of days) {
+      const size = [...(await byDay(day)).values()].reduce((n, c) => n + c.size, 0);
+      sizes.set(day, size);
+      total += size;
     }
     let objects = 0;
     let calls = 0;
-    for (const [id, c] of [...byCall].sort((a, b) => a[1].newest - b[1].newest)) {
+    for (const day of days) {
       if (total <= maxBytes) break;
-      if (inUse.has(id.split('/')[1]!)) continue;
-      await this.remove(c.keys);
-      total -= c.size;
-      objects += c.keys.length;
-      calls += 1;
+      for (const [id, c] of [...(await byDay(day))].sort((x, y) => x[1].newest - y[1].newest)) {
+        if (total <= maxBytes) break;
+        if (inUse.has(id)) continue;
+        await this.remove(c.keys);
+        total -= c.size;
+        objects += c.keys.length;
+        calls += 1;
+      }
     }
     return { objects, calls, bytes: total };
   }

@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, renameSync, rmSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 /**
@@ -40,9 +40,44 @@ export class RollingLog {
   private size = 0;
   failures = 0;
 
+  private readonly lockFile: string;
+
+  /**
+   * The log file, taken for this process alone (`<file>.lock`, holding its pid): two processes rolling
+   * one file would rename it under each other, so a second one is refused, naming the first. A lock
+   * whose process is gone is taken over.
+   */
   constructor(readonly setting: LogFileSetting) {
     mkdirSync(dirname(setting.file), { recursive: true, mode: 0o700 });
+    this.lockFile = `${setting.file}.lock`;
+    this.lock();
     this.open();
+  }
+
+  private lock(): void {
+    for (let tries = 0; tries < 2; tries++) {
+      try {
+        writeFileSync(this.lockFile, String(process.pid), { flag: 'wx', mode: 0o600 });
+        process.once('exit', () => this.unlock());
+        return;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      }
+      const pid = Number(readFileSync(this.lockFile, 'utf8').trim());
+      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid)) {
+        throw new Error(`LOG_FILE ${this.setting.file} is written by another process (pid ${pid}): give each server a log file of its own`);
+      }
+      rmSync(this.lockFile, { force: true });
+    }
+    throw new Error(`LOG_FILE ${this.setting.file}: its lock could not be taken`);
+  }
+
+  private unlock(): void {
+    try {
+      if (readFileSync(this.lockFile, 'utf8').trim() === String(process.pid)) rmSync(this.lockFile, { force: true });
+    } catch {
+      // Gone already.
+    }
   }
 
   private open(): void {
@@ -77,6 +112,7 @@ export class RollingLog {
   close(): void {
     if (this.fd !== null) closeSync(this.fd);
     this.fd = null;
+    this.unlock();
   }
 }
 
@@ -93,4 +129,14 @@ export function teeProcessOutput(log: RollingLog): () => void {
   return () => streams.forEach((s, i) => {
     s.write = originals[i] as typeof s.write;
   });
+}
+
+/** Whether a process is running (signal 0 asks, sends nothing). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
