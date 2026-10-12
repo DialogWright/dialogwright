@@ -541,7 +541,8 @@ describe('signing in to the chat', () => {
     c.send({ type: 'start', v: 1 });
     await c.until((r) => r.some((m) => m.type === 'say'));
     c.send({ type: 'text', text: OPENER });
-    const n = (await c.until((r) => r.filter((m) => m.type === 'say').length >= 2)).length;
+    // The opener's whole reply (its last line asks to sign in), so nothing of it lands after `n` under load.
+    const n = (await c.until((r) => says(r).some((t) => t.includes('sign in first')))).length;
     c.send({ type: 'sign_in', token: idToken({ sub: CUSTOMER }) });
     // What the testkit's web chat scenario expects once the customer signs in (web.json).
     await c.until((r) => says(r.slice(n)).join(' ').includes('was delivered Wednesday, September 16'));
