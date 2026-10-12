@@ -152,9 +152,12 @@ describe('today\'s figures: the carrier\'s cost beside the model\'s when a rate 
     server = null;
     const rated = await serve({ carrierRates: { twilio: 0.5 } });
     await writeFolderCall(rated.dir, 'CA_1', [OPENER], 'hangup', Date.now() - 60_000);
-    const t = await getJson<{ carrierUsd: number | null; billedMinutes: Record<string, number> }>(`${rated.base}/dashboard/today?since=${Date.now() - 3_600_000}`);
-    expect(t.billedMinutes).toEqual({ twilio: 1 });
+    await writeFolderCall(rated.dir, 'CA_2', [OPENER], 'hangup', Date.now() - 50_000, { provider: 'telnyx' });
+    const t = await getJson<{ carrierUsd: number | null; billedMinutes: Record<string, number>; unpricedMinutes: number }>(`${rated.base}/dashboard/today?since=${Date.now() - 3_600_000}`);
+    expect(t.billedMinutes).toEqual({ twilio: 1, telnyx: 1 });
     expect(t.carrierUsd).toBe(0.5);
+    // A carrier with no rate: its minutes counted, not priced, and the strip says so.
+    expect(t.unpricedMinutes).toBe(1);
   });
 });
 
