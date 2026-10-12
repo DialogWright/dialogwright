@@ -604,7 +604,8 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       if (deps.store.shared && callback.callId) {
         // Loaded only to answer: the call is taken where its socket lands.
         deps.store.dropBorrowed(callback.callId);
-        if (deps.tokens.settled && !(await landed(deps, callback.callId))) {
+        // A reconnect's token is in the store before the carrier has it; one that could not be saved puts the caller through.
+        if (note.startsWith('reconnect') && deps.tokens.settled && !(await landed(deps, callback.callId))) {
           document = provider.apologizeAndDialDocument(fallbackTarget(deps));
           note = `${note}, then dial:token-not-saved`;
         }

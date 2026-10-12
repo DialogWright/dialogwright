@@ -376,6 +376,9 @@ describe('what a shared store cannot do goes to a person, never dead air', () =>
     expect(doc).toContain('<Dial>+15551234567</Dial>');
     expect(doc).not.toContain('<ConversationRelay');
     expect(a.logs.some((l) => l.startsWith('CA00000000000000000000000000notok: the relay token could not be saved'))).toBe(true);
+    // A hangup's callback still hangs up: only a token the carrier is to use puts the caller through.
+    const hangup = await (await fetch(`http://127.0.0.1:${a.server.port}/cr-action/twilio`, form({ CallSid: 'CA00000000000000000000000000notok', CallStatus: 'completed' }))).text();
+    expect(hangup).toContain('<Hangup/>');
   }, 20_000);
 });
 
