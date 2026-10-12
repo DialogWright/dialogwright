@@ -94,6 +94,12 @@ export interface StoredChat {
   readonly createdAtMs: number;
   readonly lastActivityMs: number;
   readonly auditTail: readonly AuditEntry[];
+  /**
+   * How many times a server has restored the chat from the store (a restart, or another server taking
+   * it over): what its trace segments are ordered by within a turn (trace/store.ts). Absent until the
+   * first restore, so a chat that never moved is saved as it was.
+   */
+  readonly restores?: number;
 }
 
 /** Where calls are kept between turns. */

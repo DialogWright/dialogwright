@@ -491,8 +491,9 @@ describe('a chat across two servers', () => {
     const db = await PGlite.create();
     cleanups.push(() => db.close());
     const env: Env = { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN };
-    const a = await boot('a', db, env);
-    const b = await boot('b', db, env);
+    const s3 = await traceStore();
+    const a = await boot('a', db, env, { records: s3 });
+    const b = await boot('b', db, env, { records: s3 });
     const first = await chatOn(a);
     first.send({ type: 'start', v: 1 });
     await first.until((r) => r.some((m) => m.type === 'say'));
@@ -512,6 +513,22 @@ describe('a chat across two servers', () => {
     // The chat goes on on B.
     second.send({ type: 'ping' });
     await second.until((r) => r.some((m) => m.type === 'pong'));
+    const n = second.received.length;
+    second.send({ type: 'text', text: 'can you deliver tomorrow morning' });
+    await second.until((r) => r.slice(n).some((m) => m.type === 'say'));
+    await a.server.close();
+    await b.server.close();
+    // One trace: A's turns, then B's, in order by the chat's restores (A wrote at 0, B at 1), whatever the names;
+    // A's lines after it let the chat go come before B's; nothing late.
+    const joined = (await traceReaderOf(TRACE_STORE, s3Env(s3))!.read(ready.session))!;
+    const records = joined.trace.map((l) => JSON.parse(l) as { turnIndex: number; outlivedHold?: true });
+    expect(records.map((r) => r.turnIndex)).toEqual([...records.map((r) => r.turnIndex)].sort((x, y) => x - y));
+    expect(records.some((r) => r.outlivedHold)).toBe(false);
+    const frames = joined.frames.map((l) => JSON.parse(l) as { msg: Record<string, unknown> });
+    const letGoAt = frames.findIndex((f) => f.msg.resumedElsewhere === true);
+    const restoredAt = frames.findIndex((f) => f.msg.restored === true);
+    expect(letGoAt).toBeGreaterThan(-1);
+    expect(restoredAt).toBeGreaterThan(letGoAt);
   }, 20_000);
 
   it('a stale announcement (older than this server\'s own restore of the chat) lets nothing go; a newer one does', async () => {

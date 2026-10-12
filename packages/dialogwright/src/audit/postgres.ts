@@ -33,7 +33,11 @@ import { ensureTables, type TablePart } from '../server/stores/postgres';
  */
 
 /** The audit tables' version: their own row in dw_schema, beside the session tables'. */
-export const AUDIT_SCHEMA_VERSION = 1;
+/**
+ * The audit tables' version. 2: the anchors kept per server and day, and the roster (version 1, one
+ * chain of anchors per day, never shipped, and is refused rather than read).
+ */
+export const AUDIT_SCHEMA_VERSION = 2;
 
 export const AUDIT_TABLES: TablePart = {
   row: 'audit',
@@ -56,13 +60,42 @@ export const AUDIT_TABLES: TablePart = {
       body text NOT NULL,
       PRIMARY KEY (day, server, seq)
     )`,
+    `CREATE TABLE IF NOT EXISTS dw_audit_roster (
+      day text NOT NULL,
+      seq integer NOT NULL,
+      body text NOT NULL,
+      PRIMARY KEY (day, seq)
+    )`,
   ],
 };
+
+/**
+ * How often a server enters its chain's head for the day in the day's roster while it writes: the most
+ * of a server's newest anchors a cut could take with no trace (beside its stop, when it enters it too).
+ */
+export const ROSTER_EVERY_MS = 10 * 60_000;
+
+/** An entry of a day's roster: a server's chain of anchors for the day, as far as `anchorSeq`. */
+export interface RosterEntry {
+  day: string;
+  seq: number;
+  at: string;
+  server: string;
+  anchorSeq: number;
+  anchorHash: string;
+  prevHash: string;
+  hash: string;
+}
+
+export function rosterHash(r: Omit<RosterEntry, 'hash'>): string {
+  return createHash('sha256').update(canonicalJson(r), 'utf8').digest('hex');
+}
 
 /** The advisory locks' first keys: a call's chain, a server's chain for a day, and the one sweeper. */
 const CALL_LOCK = 0x6461; // "da"
 const DAY_LOCK = 0x6464; // "dd"
 const SWEEP_LOCK = 0x6473; // "ds"
+const ROSTER_LOCK = 0x6472; // "dr"
 
 /** The call id the console's access entries go under (server/console/auth.ts). */
 const CONSOLE = 'console';
@@ -96,6 +129,8 @@ type Num = number | string;
 export class PostgresAuditLog implements AuditSink {
   /** Each chain's appends from this server, in the order they were asked for. */
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** Each day this server has written anchors on: its newest anchor, and the last it entered in the roster (and when). */
+  private readonly days = new Map<string, { anchorSeq: number; anchorHash: string; rosteredSeq: number; rosteredAtMs: number }>();
 
   constructor(
     private readonly sql: SqlClient,
@@ -164,8 +199,43 @@ export class PostgresAuditLog implements AuditSink {
       const anchorBase = { day, server: this.server, seq: (lastAnchor?.seq ?? 0) + 1, at, callId: chain, callSeq: newest.seq, callHash: newest.hash, prevHash: lastAnchor?.hash ?? GENESIS };
       const anchor: AuditAnchor = { ...anchorBase, hash: anchorHash(anchorBase) };
       await tx.query('INSERT INTO dw_audit_anchors (day, server, seq, body) VALUES ($1, $2, $3, $4)', [day, this.server, anchor.seq, JSON.stringify(anchor)]);
+      // The day's roster names this server's chain when it opens it, and its head every ROSTER_EVERY_MS.
+      const known = this.days.get(day);
+      const due = known === undefined || atMs - known.rosteredAtMs >= ROSTER_EVERY_MS;
+      if (due) await this.roster(tx, day, at, anchor.seq, anchor.hash);
+      return { entries, anchor, due };
+    }).then(({ entries, anchor, due }) => {
+      const known = this.days.get(day);
+      this.days.set(day, {
+        anchorSeq: anchor.seq, anchorHash: anchor.hash,
+        rosteredSeq: due ? anchor.seq : (known?.rosteredSeq ?? 0), rosteredAtMs: due ? atMs : (known?.rosteredAtMs ?? 0),
+      });
       return entries;
     });
+  }
+
+  /** This server's chain for `day`, as far as anchor `anchorSeq`, entered in the day's roster (in `tx`). */
+  private async roster(tx: SqlQueryable, day: string, at: string, anchorSeq: number, anchorHash: string): Promise<void> {
+    await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [ROSTER_LOCK, day]);
+    const head = await tx.query<{ body: string }>('SELECT body FROM dw_audit_roster WHERE day = $1 ORDER BY seq DESC LIMIT 1', [day]);
+    const last = head.rows.length > 0 ? (JSON.parse(head.rows[0]!.body) as RosterEntry) : null;
+    const base = { day, seq: (last?.seq ?? 0) + 1, at, server: this.server, anchorSeq, anchorHash, prevHash: last?.hash ?? GENESIS };
+    const entry: RosterEntry = { ...base, hash: rosterHash(base) };
+    await tx.query('INSERT INTO dw_audit_roster (day, seq, body) VALUES ($1, $2, $3)', [day, entry.seq, JSON.stringify(entry)]);
+  }
+
+  /** At a stop: each day's chain head this server has not yet entered in the roster, entered. */
+  async enterHeads(): Promise<void> {
+    await this.settled();
+    for (const [day, d] of this.days) {
+      if (d.anchorSeq <= d.rosteredSeq) continue;
+      const at = new Date(this.now()).toISOString();
+      await this.sql.transaction(async (tx) => {
+        await tx.query(`SET LOCAL lock_timeout = '${Math.max(1, Math.floor(this.lockTimeoutMs))}ms'`);
+        await this.roster(tx, day, at, d.anchorSeq, d.anchorHash);
+      });
+      d.rosteredSeq = d.anchorSeq;
+    }
   }
 
   /** Every append asked for so far, done (or failed). */
@@ -205,6 +275,7 @@ export class PostgresAuditLog implements AuditSink {
         entries += gone.rows.length;
       }
       const dayRows = await tx.query<{ day: string }>('DELETE FROM dw_audit_anchors WHERE day < $1 RETURNING day', [cutoff]);
+      await tx.query('DELETE FROM dw_audit_roster WHERE day < $1', [cutoff]);
       return { days: new Set(dayRows.rows.map((r) => r.day)).size, chains, entries };
     });
   }
@@ -235,6 +306,7 @@ export async function probeAuditWrite(sql: SqlClient): Promise<void> {
     await sql.transaction(async (tx) => {
       await tx.query('INSERT INTO dw_audit_entries (chain, seq, day, body) VALUES ($1, 1, $2, $3)', [chain, '0000-00-00', '{}']);
       await tx.query('INSERT INTO dw_audit_anchors (day, server, seq, body) VALUES ($1, $1, 1, $2)', [chain, '{}']);
+      await tx.query('INSERT INTO dw_audit_roster (day, seq, body) VALUES ($1, 1, $2)', [chain, '{}']);
       throw new ProbeUndone('undone');
     });
   } catch (err) {
@@ -257,20 +329,21 @@ export interface PostgresVerifyResult {
 }
 
 /**
- * Re-walk every call's chain and every server's anchors for every day (`pnpm audit:verify postgres://...`):
- * each chain from GENESIS with no gap, each entry's hash its own, each anchor's link and hash, each
- * anchor naming an entry that is there with that hash, and each chain's newest entry anchored. The
- * first break of each chain (and of each server's day) is reported.
+ * Re-walk every call's chain, every server's anchors for every day, and every day's roster (`pnpm
+ * audit:verify postgres://...`): each chain from GENESIS with no gap, each entry's hash its own, each
+ * anchor's link and hash, each anchor naming an entry that is there with that hash, each chain's newest
+ * entry anchored, each roster entry naming an anchor that is there, and every server's anchors for a
+ * day named in its roster. The first break of each chain, each server's day and each roster is
+ * reported, and every other break besides.
  */
 export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVerifyResult> {
   const entries = await sql.query<{ chain: string; seq: Num; day: string; body: string }>('SELECT chain, seq, day, body FROM dw_audit_entries ORDER BY chain, seq');
   const anchors = await sql.query<{ day: string; server: string; seq: Num; body: string }>('SELECT day, server, seq, body FROM dw_audit_anchors ORDER BY day, server, seq');
+  const roster = await sql.query<{ day: string; seq: Num; body: string }>('SELECT day, seq, body FROM dw_audit_roster ORDER BY day, seq');
   const breaks: string[] = [];
   /** Each chain's entries' hashes by seq, and its newest seq. */
   const hashes = new Map<string, Map<number, string>>();
-  /** Each chain's newest entry's day: a chain whose day's anchors are broken is not also said to be unanchored. */
-  const newestDay = new Map<string, string>();
-  const broken = new Set<string>();
+  const brokenChains = new Set<string>();
   let expected = 0;
   let prev = GENESIS;
   let current: string | null = null;
@@ -282,11 +355,11 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
       prev = GENESIS;
       hashes.set(chain, new Map());
     }
-    if (broken.has(chain)) continue;
+    if (brokenChains.has(chain)) continue;
     const seq = Number(row.seq);
     const fail = (why: string): void => {
       breaks.push(`call ${chain}: BROKEN at entry ${seq} (${why})`);
-      broken.add(chain);
+      brokenChains.add(chain);
     };
     let e: AuditEntry;
     try {
@@ -300,35 +373,33 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
     else if (chainOf(e.callId, e.at.slice(0, 10)) !== chain) fail('it names another call');
     else if (e.prevHash !== prev) fail('broken link');
     else if (entryHash(rest) !== hash) fail('hash mismatch');
-    if (broken.has(chain)) continue;
+    if (brokenChains.has(chain)) continue;
     hashes.get(chain)!.set(seq, hash);
-    newestDay.set(chain, row.day);
     prev = hash;
     expected = seq + 1;
   }
   /** Each chain's newest seq that an anchor names. */
   const anchoredTo = new Map<string, number>();
+  /** Each server's anchors for each day, by seq: their hashes, which the roster names. */
+  const anchorHashes = new Map<string, Map<number, string>>();
   const days: PostgresVerifyResult['days'] = [];
-  let day: string | null = null;
-  let server: string | null = null;
-  let dayBroken = false;
-  const brokenDays = new Set<string>();
+  let key: string | null = null;
+  let broken = false;
   for (const row of anchors.rows) {
-    if (row.day !== day || row.server !== server) {
-      day = row.day;
-      server = row.server;
+    const k = `${row.day}/${row.server}`;
+    if (k !== key) {
+      key = k;
       expected = 1;
       prev = GENESIS;
-      dayBroken = false;
-      days.push({ day, server, anchors: 0 });
+      broken = false;
+      days.push({ day: row.day, server: row.server, anchors: 0 });
+      anchorHashes.set(k, new Map());
     }
     days.at(-1)!.anchors += 1;
-    if (dayBroken) continue;
     const seq = Number(row.seq);
     const fail = (why: string): void => {
-      breaks.push(`day ${day} (${server}): BROKEN at anchor ${seq} (${why})`);
-      dayBroken = true;
-      brokenDays.add(day!);
+      if (!broken) breaks.push(`day ${row.day} (${row.server}): BROKEN at anchor ${seq} (${why})`);
+      broken = true;
     };
     let a: AuditAnchor;
     try {
@@ -338,21 +409,55 @@ export async function verifyPostgresAudit(sql: SqlQueryable): Promise<PostgresVe
       continue;
     }
     const { hash, ...rest } = a;
-    if (seq !== expected || a.seq !== seq || a.day !== day || a.server !== server) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq, day or server is not its place');
+    if (seq !== expected || a.seq !== seq || a.day !== row.day || a.server !== row.server) fail(seq !== expected ? `anchor ${expected} is missing` : 'its seq, day or server is not its place');
     else if (a.prevHash !== prev) fail('broken link');
     else if (anchorHash(rest) !== hash) fail('hash mismatch');
-    if (dayBroken) continue;
-    // The day's chain holds; an anchor naming an entry that is not there (or not as it was) is a break of its call's.
-    if (!broken.has(a.callId) && hashes.get(a.callId)?.get(a.callSeq) !== a.callHash) {
-      breaks.push(`call ${a.callId}: BROKEN at entry ${a.callSeq} (anchored on ${day}, and not there as anchored)`);
-      broken.add(a.callId);
+    // Read on past a break (once said), so a call's chain is judged by every anchor there is.
+    if (!brokenChains.has(a.callId) && hashes.get(a.callId)?.get(a.callSeq) !== a.callHash) {
+      breaks.push(`call ${a.callId}: BROKEN at entry ${a.callSeq} (anchored on ${row.day} by ${row.server}, and not there as anchored)`);
+      brokenChains.add(a.callId);
     }
     anchoredTo.set(a.callId, Math.max(anchoredTo.get(a.callId) ?? 0, a.callSeq));
+    anchorHashes.get(k)!.set(seq, hash);
     prev = hash;
     expected = seq + 1;
   }
+  // The roster of each day: every server's chain of anchors named, and each entry naming an anchor that is there.
+  const rostered = new Set<string>();
+  let rosterDay: string | null = null;
+  let rosterBroken = false;
+  for (const row of roster.rows) {
+    if (row.day !== rosterDay) {
+      rosterDay = row.day;
+      expected = 1;
+      prev = GENESIS;
+      rosterBroken = false;
+    }
+    const seq = Number(row.seq);
+    const fail = (why: string): void => {
+      if (!rosterBroken) breaks.push(`roster ${row.day}: BROKEN at entry ${seq} (${why})`);
+      rosterBroken = true;
+    };
+    let r: RosterEntry;
+    try {
+      r = JSON.parse(row.body) as RosterEntry;
+    } catch {
+      fail('not JSON');
+      continue;
+    }
+    const { hash, ...rest } = r;
+    if (seq !== expected || r.seq !== seq || r.day !== row.day) fail(seq !== expected ? `entry ${expected} is missing` : 'its seq or day is not its place');
+    else if (r.prevHash !== prev) fail('broken link');
+    else if (rosterHash(rest) !== hash) fail('hash mismatch');
+    const k = `${r.day}/${r.server}`;
+    rostered.add(k);
+    if (anchorHashes.get(k)?.get(r.anchorSeq) !== r.anchorHash) breaks.push(`day ${r.day} (${r.server}): BROKEN at anchor ${r.anchorSeq} (named by the roster, and not there as named)`);
+    prev = hash;
+    expected = seq + 1;
+  }
+  for (const d of days) if (!rostered.has(`${d.day}/${d.server}`)) breaks.push(`day ${d.day} (${d.server}): its anchors are named in no roster`);
   for (const [chain, seqs] of hashes) {
-    if (broken.has(chain) || brokenDays.has(newestDay.get(chain) ?? '')) continue;
+    if (brokenChains.has(chain)) continue;
     const newest = Math.max(0, ...seqs.keys());
     const anchored = anchoredTo.get(chain) ?? 0;
     if (anchored < newest) breaks.push(`call ${chain}: BROKEN after entry ${anchored} (${newest - anchored} newer ${newest - anchored === 1 ? 'entry is' : 'entries are'} anchored nowhere)`);

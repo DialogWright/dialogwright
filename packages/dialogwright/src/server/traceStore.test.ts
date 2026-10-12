@@ -15,6 +15,7 @@ import type { JevClient } from '../jev/types';
 import { traceReaderOf } from '../trace/store';
 import { replayFrameLines } from '../harness-text/replay';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import WebSocket from 'ws';
 import { demoTools } from '../core/tools';
 
 /**
@@ -70,6 +71,43 @@ async function call(server: RunningServer, callSid: string): Promise<FakeRelay> 
 }
 
 describe('TRACE_STORE=s3://... on a server', () => {
+  it("a chat's trace ends with its end: the lines written as it ends carry its last turn, not turn 0", async () => {
+    let clock = Date.now();
+    const { server, s3, env } = await boot({ CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com', CHAT_IDLE_MS: '60000' });
+    void s3;
+    await server.close();
+    const again = await startServer(loadConfig({ ...env, PORT: '0' }), { host: '127.0.0.1', client: stub, log: () => {}, now: () => clock });
+    cleanups.push(() => again.close().catch(() => {}));
+    const ws = new WebSocket(`ws://127.0.0.1:${again.port}/chat`, { origin: 'https://www.example.com' });
+    await new Promise<void>((r, j) => { ws.once('open', () => r()); ws.once('error', j); });
+    const got: { type: string; session?: string }[] = [];
+    ws.on('message', (d) => got.push(JSON.parse(d.toString()) as { type: string; session?: string }));
+    ws.send(JSON.stringify({ type: 'start', v: 1 }));
+    const wait = async (pred: () => boolean): Promise<void> => {
+      const end = Date.now() + 4000;
+      while (!pred()) {
+        if (Date.now() > end) throw new Error('timed out');
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+    await wait(() => got.some((m) => m.type === 'say'));
+    for (const text of ['can you deliver tomorrow morning', 'five five five zero one two three four']) {
+      const n = got.length;
+      ws.send(JSON.stringify({ type: 'text', text }));
+      await wait(() => got.slice(n).some((m) => m.type === 'say'));
+    }
+    await Promise.all(again.chat!.tails());
+    // The turns' frame lines written out first, so the end's lines are a segment of their own.
+    await new Promise((r) => setTimeout(r, 1_300));
+    clock += 120_000;
+    again.sweep();
+    await again.close();
+    const session = got.find((m) => m.type === 'ready')!.session!;
+    const joined = (await traceReaderOf('s3://call-traces/prod/traces', env)!.read(session))!;
+    const frames = joined.frames.map((l) => JSON.parse(l) as { msg: Record<string, unknown> });
+    expect(frames.at(-1)!.msg).toEqual({ ended: 'idle' });
+  }, 30_000);
+
   it("writes the call's trace and frame log as this server's segments, nothing in TRACE_DIR, and the console reads them from the store", async () => {
     const { server, s3, dir, logs, env } = await boot();
     expect(logs.some((l) => l.startsWith(`traces: s3://call-traces/prod/traces/ at 127.0.0.1:${s3.port} (us-east-1), written as segments by this server (web-1-`))).toBe(true);

@@ -21,7 +21,7 @@ import { DashboardBus } from './dashboard/bus';
 import type { DashboardEvent } from './dashboard/events';
 import { makeObserver } from './dashboard/observer';
 import { defaultAppId, getApp } from '../core/app/registry';
-import { newSession } from '../core/session';
+import { newSession, type Session } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
 import { localDateIso } from '../run/clock';
@@ -441,10 +441,23 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
       resources: (id, sessions) => {
         const file = safeFileStem(id);
+        // As a call's: held while the entry the chat endpoint has for the chat is the one these sinks are
+        // for; once it was and is no longer (ended, or let go to another server), the last values it had,
+        // and what it still writes is marked late. The generation is the chat's restores (StoredChat.restores).
+        type Seen = { session: Session; frames?: FrameSink; restores?: number; movedAway?: boolean };
+        let mine: FrameSink | null = null;
+        let entry: Seen | null = null;
+        let last: Omit<CallMeta, 'held'> = { turn: 0, gen: 0, startedAtMs: now() };
         const { trace, frames } = sinksOf(file, () => {
-          const s = sessions.get(id)?.session;
-          return { turn: s?.turnIndex ?? 0, gen: 0, startedAtMs: s?.startedAtMs ?? now(), held: true };
+          const e = sessions.get(id) as Seen | undefined;
+          if (e !== undefined && mine !== null && e.frames === mine) {
+            entry = e;
+            last = { turn: e.session.turnIndex, gen: e.restores ?? 0, startedAtMs: e.session.startedAtMs };
+          }
+          // Its own to the end (an ended chat's last lines are never late), unless it was let go to another server.
+          return { ...last, held: entry?.movedAway !== true };
         });
+        mine = frames;
         const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
         // No render context: a chat shows a line's words, never a recorded clip.
         return {
@@ -624,6 +637,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (renewer) clearInterval(renewer);
     await notices?.close();
     await postgresAudit?.settled();
+    // The audit's roster names how far this server's chains for each day go, as it stops.
+    await postgresAudit?.enterHeads().catch((err: unknown) => log(`audit: could not enter this server's chain heads in the roster: ${err instanceof Error ? err.message : String(err)}`));
     await shared?.close().catch((err: unknown) => log(`sessions: could not close the Postgres connection: ${err instanceof Error ? err.message : String(err)}`));
     await closeAuditSql();
   };

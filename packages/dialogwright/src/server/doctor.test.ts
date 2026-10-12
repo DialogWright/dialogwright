@@ -533,17 +533,17 @@ describe('pnpm diagnose', () => {
         try {
           const postgres = async (): Promise<SqlClient> => pgliteSql(db);
           const fresh = byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres }), 'audit');
-          expect(fresh).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers; its audit tables are made when the server first starts (version 1)` });
+          expect(fresh).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers; its audit tables are made when the server first starts (version 2)` });
           await openPostgresAudit(pgliteSql(db));
           const results = await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres });
           expect(results.map((r) => r.id)).toEqual(['config', 'reach', 'console', 'carrier', 'model', 'handoff', 'folders', 'audit', 'space', 'retention', 'clock']);
-          expect(byId(results, 'audit')).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers, its audit tables are version 1, and an entry can be written (tried in a transaction undone): pnpm audit:verify reads it` });
+          expect(byId(results, 'audit')).toEqual({ id: 'audit', status: 'ok', message: `AUDIT_STORE ${MASKED} answers, its audit tables are version 2, and an entry can be written (tried in a transaction undone): pnpm audit:verify reads it` });
           expect((await db.query('SELECT * FROM dw_audit_entries')).rows).toEqual([]);
           expect((await db.query('SELECT * FROM dw_audit_anchors')).rows).toEqual([]);
           expect(JSON.stringify(results)).not.toContain('s3cret-pw');
-          await db.query("UPDATE dw_schema SET version = 2 WHERE name = 'audit'");
+          await db.query("UPDATE dw_schema SET version = 3 WHERE name = 'audit'");
           expect(byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir }, { ...deps(), postgres }), 'audit')).toEqual({
-            id: 'audit', status: 'fail', message: `AUDIT_STORE ${MASKED}: its audit tables are version 2, and this server reads 1`, fix: 'run the newer server, or point AUDIT_STORE at another database',
+            id: 'audit', status: 'fail', message: `AUDIT_STORE ${MASKED}: its audit tables are version 3, and this server reads 2`, fix: 'run the newer server, or point AUDIT_STORE at another database',
           });
           const offline = byId(await runDoctor({ env: { ...goodEnv(dir), AUDIT_STORE: URL_WITH_PASSWORD }, cwd: dir, offline: true }, { ...deps(), postgres: async () => { throw new Error('asked'); } }), 'audit');
           expect(offline).toEqual({ id: 'audit', status: 'skip', message: `AUDIT_STORE ${MASKED}: not asked (--offline)` });

@@ -75,6 +75,57 @@ describe('the audit in Postgres', () => {
     expect(Math.max(...anchors.map((a) => a.callSeq))).toBe(5);
   });
 
+  it("each day's roster names every server's chain of anchors: a whole server's chain cut away is found, and every server's break is said", async () => {
+    const t = Date.UTC(2026, 9, 11, 12);
+    const run = async (cut: string): Promise<string[]> => {
+      const db = await PGlite.create();
+      dbs.push(db);
+      const a = await openPostgresAudit(pgliteSql(db), { now: () => t, server: 'a-1111' });
+      const b = await openPostgresAudit(pgliteSql(db), { now: () => t, server: 'b-2222' });
+      for (let i = 0; i < 3; i++) {
+        await a.append('CA1', 'voice', draft('gate', { n: i }));
+        await b.append('CA2', 'voice', draft('gate', { n: i }));
+        await b.append('CA3', 'voice', draft('gate', { n: i }));
+      }
+      await a.append('CA4', 'voice', draft('gate', { n: 0 }));
+      await b.append('CA4', 'voice', draft('gate', { n: 1 }));
+      await a.enterHeads();
+      await b.enterHeads();
+      expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
+      await db.exec(cut);
+      return (await verifyPostgresAudit(db)).breaks;
+    };
+    // b's whole chain for the day, the calls only b anchored, and the tail of a call that moved to b.
+    expect(await run("DELETE FROM dw_audit_anchors WHERE server='b-2222'; DELETE FROM dw_audit_entries WHERE chain IN ('CA2','CA3') OR (chain='CA4' AND seq=2)"))
+      .toEqual(['day 2026-10-11 (b-2222): BROKEN at anchor 1 (named by the roster, and not there as named)', 'day 2026-10-11 (b-2222): BROKEN at anchor 7 (named by the roster, and not there as named)']);
+    // A break in each server's chain: both said, neither hiding the other.
+    const both = await run("DELETE FROM dw_audit_anchors WHERE seq = 2");
+    expect(both.filter((x) => x.startsWith('day 2026-10-11 (a-1111): BROKEN at anchor 3'))).toHaveLength(1);
+    expect(both.filter((x) => x.startsWith('day 2026-10-11 (b-2222): BROKEN at anchor 3'))).toHaveLength(1);
+    // The roster itself cut: its chain breaks.
+    expect(await run('DELETE FROM dw_audit_roster WHERE seq = 1')).toContain('roster 2026-10-11: BROKEN at entry 2 (entry 1 is missing)');
+  });
+
+  it('a server enters its chain in the roster when it opens it, its head every ten minutes as it writes, and its head as it stops', async () => {
+    let t = Date.UTC(2026, 9, 11, 12);
+    const db = await PGlite.create();
+    dbs.push(db);
+    const a = await openPostgresAudit(pgliteSql(db), { now: () => t, server: 'a-1111' });
+    const roster = async (): Promise<number[]> => (await db.query<{ body: string }>('SELECT body FROM dw_audit_roster ORDER BY seq')).rows.map((r) => (JSON.parse(r.body) as { anchorSeq: number }).anchorSeq);
+    await a.append('CA1', 'voice', draft('gate'));
+    await a.append('CA1', 'voice', draft('gate'));
+    expect(await roster()).toEqual([1]);
+    t += 10 * 60_000;
+    await a.append('CA1', 'voice', draft('gate'));
+    await a.append('CA1', 'voice', draft('gate'));
+    expect(await roster()).toEqual([1, 3]);
+    await a.enterHeads();
+    expect(await roster()).toEqual([1, 3, 4]);
+    await a.enterHeads();
+    expect(await roster()).toEqual([1, 3, 4]);
+    expect((await verifyPostgresAudit(db)).breaks).toEqual([]);
+  });
+
   it('one server sweeps at a time: two at once, and the one that finds the sweep taken removes nothing', async () => {
     const day = 86_400_000;
     const t0 = Date.UTC(2026, 9, 1, 12, 0, 0);
@@ -120,7 +171,7 @@ describe('the audit in Postgres', () => {
     expect(r.breaks).toEqual([
       'call CA1: BROKEN at entry 2 (hash mismatch)',
       'call CA2: BROKEN at entry 3 (entry 2 is missing)',
-      'call CA4: BROKEN at entry 3 (anchored on 2026-10-11, and not there as anchored)',
+      'call CA4: BROKEN at entry 3 (anchored on 2026-10-11 by server, and not there as anchored)',
       'call CA3: BROKEN after entry 3 (1 newer entry is anchored nowhere)',
     ]);
     // An anchor of the day's chain edited: the day's chain breaks there.
@@ -149,10 +200,10 @@ describe('the audit in Postgres', () => {
     const db = await PGlite.create();
     dbs.push(db);
     await openPostgresAudit(pgliteSql(db));
-    await db.query("UPDATE dw_schema SET version = 2 WHERE name = 'audit'");
+    await db.query("UPDATE dw_schema SET version = 3 WHERE name = 'audit'");
     const err = await openPostgresAudit(pgliteSql(db)).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SchemaVersionError);
-    expect((err as Error).message).toBe("the database's audit tables are version 2, newer than this server reads (1): run the newer server, or point AUDIT_STORE at another database");
+    expect((err as Error).message).toBe("the database's audit tables are version 3, newer than this server reads (2): run the newer server, or point AUDIT_STORE at another database");
   });
 
   it('a day file and the database hold the same entry for the same drafts and time', async () => {

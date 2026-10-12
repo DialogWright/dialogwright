@@ -104,6 +104,10 @@ interface ChatEntry extends ChatTurnEntry {
   waiting: number;
   /** When the session started, as saved (StoredChat.createdAtMs). */
   readonly createdAtMs: number;
+  /** How many times a server restored it from the store (StoredChat.restores); 0 for a chat that never moved. */
+  readonly restores: number;
+  /** Let go to a server that restored it later: what this server still writes for it is late. */
+  movedAway?: boolean;
   /**
    * With several servers: the place of this server's announcement that it restored the chat (0 for a
    * chat that started here). Another server's announcement lets the chat go here only when it is later.
@@ -275,6 +279,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const chat: StoredChat = {
       id: e.id, schema: SESSION_SCHEMA, session: e.session, resumeHash: tokenHash(e.resume),
       createdAtMs: e.createdAtMs, lastActivityMs: e.lastActivityMs, auditTail: [...e.auditEntries],
+      ...(e.restores > 0 ? { restores: e.restores } : {}),
     };
     queueWrite(e.id, 'save the session', (st) => st.save(chat));
   };
@@ -398,7 +403,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const { opts, frames } = deps.resources(id, { get: (sid) => sessions.get(sid) });
     const e: ChatEntry = {
       id, session: newSession(id, now(), WEB_CHAT), auditEntries: [], opts, lastActivityMs: now(),
-      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: now(),
+      resume: fresh(), socket: conn.ws, frames, ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: now(), restores: 0,
     };
     sessions.set(id, e);
     resumeIds.set(e.resume, id);
@@ -499,7 +504,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     const { opts, frames } = deps.resources(c.id, { get: (sid) => sessions.get(sid) });
     const e: ChatEntry = {
       id: c.id, session: c.session, auditEntries: [...c.auditTail], opts, lastActivityMs: now(), resume: resume, socket: null, frames,
-      ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: c.createdAtMs,
+      ended: false, tail: Promise.resolve(), inFlight: 0, waiting: 0, createdAtMs: c.createdAtMs, restores: (c.restores ?? 0) + 1,
     };
     sessions.set(e.id, e);
     resumeIds.set(e.resume, e.id);
@@ -525,6 +530,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   const letGo = (id: string, e: ChatEntry): void => {
     if (sessions.get(id) !== e || e.ended) return;
     e.ended = true;
+    e.movedAway = true;
     sessions.delete(id);
     resumeIds.delete(e.resume);
     log(`chat ${id}: resumed on another server; let go here`);
