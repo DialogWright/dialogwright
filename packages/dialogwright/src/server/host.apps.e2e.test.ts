@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { startServer, type RunningServer } from './index';
@@ -251,5 +251,43 @@ describe('the testkit, not the default, on a host built in code', () => {
     ws.close();
     const first = received.find((m) => m.type === 'say');
     expect(first && first.type === 'say' ? first.text : '').toContain('Example Parcels');
+  });
+});
+
+describe('a knowledge base in an app that is not the default', () => {
+  /** A host over the callback app (the default, no knowledge base) and the utility (its kb/ approved by people), in a temporary folder. */
+  async function withUtility(): Promise<HostRouting> {
+    const dir = mkdtempSync(join(tmpdir(), 'host-kb-'));
+    dirs.push(dir);
+    const callback = fileURLToPath(new URL('../testing/callback', import.meta.url));
+    const utility = fileURLToPath(new URL('../../../../apps/utility', import.meta.url));
+    writeFileSync(join(dir, 'utility.env'), 'HANDOFF_NUMBER=+15555550499\n');
+    writeFileSync(join(dir, 'host.yaml'), [
+      'apps:',
+      `  - { folder: ${relative(dir, callback)}, env: callback.env }`,
+      `  - { folder: ${relative(dir, utility)}, env: utility.env }`,
+      'numbers:',
+      '  - { number: env.POWER_LINE, app: utility }',
+      'default: callback',
+      '',
+    ].join('\n'));
+    writeFileSync(join(dir, 'callback.env'), 'MAIN_LINE=+15555550101\nPRIORITY_LINE=+15555550102\nCALLBACK_DESK=+15555550103\nSECURITY_DESK=+15555550104\n');
+    // Keyword retrieval where the embedder's model is not in the cache: the documented fallback, a warning and no refusal.
+    delete process.env.DIALOGWRIGHT_REQUIRE_EMBEDDER;
+    return loadHost(join(dir, 'host.yaml'), { POWER_LINE: '+15555550330' });
+  }
+  /** The utility's approved passage on outage credits, word for word (apps/utility/kb/passages/outage-credit.yaml). */
+  const CREDIT = "If your power is out for 24 hours or more in a row, you get a credit of 25 dollars on your next bill, applied automatically. There's nothing to apply for.";
+
+  it('answers from the utility\'s own approved passage, word for word, its record naming the app; the default app, with none, does not', async () => {
+    const s = await start(await withUtility(), MORNING);
+    const asked = await call(s, 'twilio', 'CA000000000000000000000000000kbutl', '+15555550330');
+    expect(await say(asked, ['how do outage credits work'])).toContain(CREDIT);
+    const answers = auditOf(s.dir, 'utility').filter((e) => e.type === 'kb_answer');
+    expect(answers.map((e) => [e.app, e.detail.passageId])).toEqual([['utility', 'outage-credit']]);
+    // The callback app has no knowledge base: the same question there is never the utility's passage.
+    const other = await call(s, 'twilio', 'CA000000000000000000000000000kbcbk', '+15555550999');
+    expect(await say(other, ['how do outage credits work'])).not.toContain('credit of 25 dollars');
+    expect(auditOf(s.dir, 'callback').filter((e) => e.type === 'kb_answer')).toEqual([]);
   });
 });
