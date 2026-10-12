@@ -85,10 +85,10 @@ export interface ChatDeps extends ChatTurnDeps {
 
 /** How the servers on one database tell each other a chat was resumed elsewhere. */
 export interface ChatPeers {
-  /** This server has taken the chat over from the store. */
-  announce(id: string): void;
-  /** `fn` with each chat another server has taken over. */
-  onTaken(fn: (id: string) => void): void;
+  /** This server has taken the chat over from the store: resolves to the announcement's place among all servers' (its notice id), or null. */
+  announce(id: string): Promise<number | null> | void;
+  /** `fn` with each chat another server has taken over, and the place of that announcement. */
+  onTaken(fn: (id: string, generation: number) => void): void;
 }
 
 /** One chat session, whichever socket it is on now. */
@@ -104,6 +104,11 @@ interface ChatEntry extends ChatTurnEntry {
   waiting: number;
   /** When the session started, as saved (StoredChat.createdAtMs). */
   readonly createdAtMs: number;
+  /**
+   * With several servers: the place of this server's announcement that it restored the chat (0 for a
+   * chat that started here). Another server's announcement lets the chat go here only when it is later.
+   */
+  generation?: Promise<number>;
 }
 
 /** One WebSocket connection, before and after it has a session. */
@@ -500,17 +505,25 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     resumeIds.set(e.resume, e.id);
     log(`chat ${e.id}: restored from the session store`);
     record(e.frames, 'log', { restored: true });
-    // Another server may still hold it, its socket open: it lets it go.
-    deps.peers?.announce(e.id);
+    // Another server may still hold it, its socket open: it lets it go (unless it restored it later than this).
+    if (deps.peers) e.generation = Promise.resolve(deps.peers.announce(e.id)).then((n) => n ?? 0, () => 0);
     return e;
   };
 
   // A chat another server restored from the store is no longer this server's: its socket here is
   // closed as a resume on this server closes the one before it, and its session forgotten without an
   // end (the chat goes on there, and that server saves it from now on).
-  deps.peers?.onTaken((id) => {
-    const e = sessions.get(id);
-    if (e === undefined || e.ended) return;
+  deps.peers?.onTaken((id, generation) => {
+    const held = sessions.get(id);
+    if (held === undefined || held.ended) return;
+    void (held.generation ?? Promise.resolve(0)).then((mine) => {
+      // An announcement older than this server's own restore is stale: this server has the chat now.
+      if (mine >= generation) return;
+      letGo(id, held);
+    });
+  });
+  const letGo = (id: string, e: ChatEntry): void => {
+    if (sessions.get(id) !== e || e.ended) return;
     e.ended = true;
     sessions.delete(id);
     resumeIds.delete(e.resume);
@@ -518,7 +531,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     record(e.frames, 'log', { resumedElsewhere: true });
     e.socket?.close(1000, 'resumed elsewhere');
     e.socket = null;
-  });
+  };
 
   const start = (conn: ChatConnection, m: Extract<ClientMessage, { type: 'start' }>): void => {
     if (m.resume !== undefined) {

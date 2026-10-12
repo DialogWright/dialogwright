@@ -62,7 +62,21 @@ describe('notices between servers on one Postgres', () => {
     a.publish('chat', 'later');
     await until(() => heard.length === 1);
     expect(heard).toEqual(['later']);
-    expect(await a.sweep(Date.now() + NOTICE_KEEP_MS + 1)).toBe(2);
+    // Swept by the database's clock: none now, both once it is past the keep.
+    expect(await a.sweep()).toBe(0);
+    expect(await a.sweep(NOTICE_KEEP_MS + 60_000)).toBe(2);
+  });
+
+  it('a notice whose NOTIFY never came is read by the periodic catch-up', async () => {
+    const db = await PGlite.create();
+    closers.push(() => db.close());
+    const a = await PostgresNotices.open(pgliteSql(db), { origin: 'a-1', catchUpMs: 100 });
+    closers.push(() => a.close());
+    const heard: string[] = [];
+    a.subscribe('chat', (body) => heard.push(body));
+    await db.query("INSERT INTO dw_notices (topic, origin, body, at_ms) VALUES ('chat', 'b-2', 'quiet', 0)");
+    await until(() => heard.length === 1, 2000);
+    expect(heard).toEqual(['quiet']);
   });
 
   it("a console's bus linked through the notices sees the other server's events, redacted as they were published, numbered by its own bus", async () => {

@@ -437,7 +437,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       settings: chatSettings, now, log, audit, bus, serviceUrls,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
       startTimeoutMs: overrides.setupTimeoutMs, fetch: overrides.chatFetch, state: durable?.chats ?? null,
-      ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string) => void) => void notices!.subscribe('chat', (id) => fn(id)) } } : {}),
+      ...(notices ? { peers: { announce: (id: string) => notices!.publish('chat', id), onTaken: (fn: (id: string, generation: number) => void) => void notices!.subscribe('chat', (id, _origin, n) => fn(id, n)) } } : {}),
       resources: (id, sessions) => {
         const file = safeFileStem(id);
         const { trace, frames } = sinksOf(file, () => {

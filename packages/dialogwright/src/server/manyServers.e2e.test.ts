@@ -513,6 +513,37 @@ describe('a chat across two servers', () => {
     second.send({ type: 'ping' });
     await second.until((r) => r.some((m) => m.type === 'pong'));
   }, 20_000);
+
+  it('a stale announcement (older than this server\'s own restore of the chat) lets nothing go; a newer one does', async () => {
+    const db = await PGlite.create();
+    cleanups.push(() => db.close());
+    const env: Env = { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN, DASHBOARD: 'off' };
+    const a = await boot('a', db, env);
+    const b = await boot('b', db, env);
+    const first = await chatOn(a);
+    first.send({ type: 'start', v: 1 });
+    await first.until((r) => r.some((m) => m.type === 'say'));
+    const ready = first.received[0] as Extract<ServerMessage, { type: 'ready' }>;
+    await a.server.chat!.settled!();
+    // Resumed on B (B's announcement), then back on A (A's, later): B lets it go.
+    const second = await chatOn(b);
+    second.send({ type: 'start', v: 1, resume: ready.resume });
+    await second.until((r) => r.some((m) => m.type === 'ready'));
+    await first.closed;
+    await b.server.chat!.settled!();
+    await db.query("SELECT setval('dw_notices_id_seq', 10)");
+    const third = await chatOn(a);
+    third.send({ type: 'start', v: 1, resume: (second.received.find((m) => m.type === 'ready') as Extract<ServerMessage, { type: 'ready' }>).resume });
+    await third.until((r) => r.some((m) => m.type === 'ready'));
+    expect(await second.closed).toEqual({ code: 1000, reason: 'resumed elsewhere' });
+    // A notice from B placed before A's own restore (id 5, A's being 11), arriving late: A keeps the chat.
+    await db.query("INSERT INTO dw_notices (id, topic, origin, body, at_ms) VALUES (5, 'chat', $1, $2, 0)", [b.server.store.owner, ready.session]);
+    await db.query("SELECT pg_notify('dw_notices', '5')");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(a.server.chat!.liveCount()).toBe(1);
+    third.send({ type: 'ping' });
+    await third.until((r) => r.some((m) => m.type === 'pong'));
+  }, 20_000);
 });
 
 describe('what a shared store cannot do goes to a person, never dead air', () => {

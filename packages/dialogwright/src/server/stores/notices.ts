@@ -37,6 +37,10 @@ export const NOTICE_TABLES: TablePart = {
 export const NOTICE_CHANNEL = 'dw_notices';
 /** How long a notice is kept for a server that reads late. */
 export const NOTICE_KEEP_MS = 10 * 60_000;
+/** How often a server reads the notices whether or not a NOTIFY came (one lost with a connection, say). */
+export const NOTICE_CATCH_UP_MS = 30_000;
+/** The database's clock, in ms: what a notice is stamped and swept by. */
+const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
 /**
  * How far back by id a read looks again for a row it has not seen: ids are taken in insert order but
  * become visible in commit order, so a row with a smaller id may appear just after a larger one.
@@ -51,10 +55,13 @@ export interface NoticesOptions {
   log?: (line: string) => void;
   now?: () => number;
   timeoutMs?: number;
+  /** How often to read whether or not a NOTIFY came; default NOTICE_CATCH_UP_MS. */
+  catchUpMs?: number;
 }
 
 export class PostgresNotices {
-  private readonly subscribers = new Map<string, Set<(body: string, origin: string) => void>>();
+  private readonly subscribers = new Map<string, Set<(body: string, origin: string, id: number) => void>>();
+  private catchUp: ReturnType<typeof setInterval> | null = null;
   private lastId = 0;
   private readonly seen = new Set<number>();
   private reading: Promise<void> | null = null;
@@ -79,11 +86,13 @@ export class PostgresNotices {
     for (const row of before.rows) n.seen.add(Number(row.id));
     if (!given.listen) throw new Error('the session store\'s connection cannot LISTEN');
     n.stop = await given.listen(NOTICE_CHANNEL, () => n.read(), (err) => o.log?.(`notices: the listening connection failed (${err.message}); opening another`));
+    n.catchUp = setInterval(() => n.read(), o.catchUpMs ?? NOTICE_CATCH_UP_MS);
+    n.catchUp.unref?.();
     return n;
   }
 
-  /** `fn` with each notice of `topic` another server sends; returns what stops it. */
-  subscribe(topic: string, fn: (body: string, origin: string) => void): () => void {
+  /** `fn` with each notice of `topic` another server sends (and its id, which orders all notices); returns what stops it. */
+  subscribe(topic: string, fn: (body: string, origin: string, id: number) => void): () => void {
     const set = this.subscribers.get(topic) ?? new Set();
     set.add(fn);
     this.subscribers.set(topic, set);
@@ -92,22 +101,29 @@ export class PostgresNotices {
     };
   }
 
-  /** Send a notice to the other servers: in the order sent from here, in the background; a failure is logged and counted, never thrown. */
-  publish(topic: string, body: string): void {
-    if (this.closed) return;
-    const at = (this.o.now ?? Date.now)();
-    this.sending = this.sending.then(async () => {
+  /**
+   * Send a notice to the other servers: in the order sent from here, in the background; a failure is
+   * logged and counted, never thrown. Resolves to the notice's id (null when it could not be sent):
+   * ids order every server's notices.
+   */
+  publish(topic: string, body: string): Promise<number | null> {
+    if (this.closed) return Promise.resolve(null);
+    const sent = this.sending.then(async (): Promise<number | null> => {
       try {
-        await this.sql.query(
-          `WITH r AS (INSERT INTO dw_notices (topic, origin, body, at_ms) VALUES ($1, $2, $3, $4) RETURNING id)
-           SELECT pg_notify('${NOTICE_CHANNEL}', (SELECT id FROM r)::text)`,
-          [topic, this.o.origin, body, at],
+        const r = await this.sql.query<{ id: Num }>(
+          `WITH r AS (INSERT INTO dw_notices (topic, origin, body, at_ms) VALUES ($1, $2, $3, ${DB_NOW}) RETURNING id)
+           SELECT id, pg_notify('${NOTICE_CHANNEL}', id::text) FROM r`,
+          [topic, this.o.origin, body],
         );
+        return Number(r.rows[0]!.id);
       } catch (err) {
         this.failures += 1;
         if (this.failures === 1 || this.failures % 100 === 0) this.o.log?.(`notices: a ${topic} notice could not be sent (${err instanceof Error ? err.message : String(err)}); ${this.failures} so far`);
+        return null;
       }
     });
+    this.sending = sent.then(() => undefined);
+    return sent;
   }
 
   /** Every notice sent from here so far, done. */
@@ -150,7 +166,7 @@ export class PostgresNotices {
       if (row.origin === this.o.origin) continue;
       for (const fn of this.subscribers.get(row.topic) ?? []) {
         try {
-          fn(row.body, row.origin);
+          fn(row.body, row.origin, id);
         } catch {
           // A subscriber that throws never stops the others.
         }
@@ -159,14 +175,15 @@ export class PostgresNotices {
     for (const id of this.seen) if (id <= this.lastId - LOOKBACK) this.seen.delete(id);
   }
 
-  /** Notices older than NOTICE_KEEP_MS removed (any server may; each does it with its sweep). */
-  async sweep(nowMs = (this.o.now ?? Date.now)()): Promise<number> {
-    const r = await this.sql.query<{ id: Num }>('DELETE FROM dw_notices WHERE at_ms < $1 RETURNING id', [nowMs - NOTICE_KEEP_MS]);
+  /** Notices older than NOTICE_KEEP_MS by the database's clock removed (any server may; each does it with its sweep). `aheadMs` moves that clock, for a test. */
+  async sweep(aheadMs = 0): Promise<number> {
+    const r = await this.sql.query<{ id: Num }>(`DELETE FROM dw_notices WHERE at_ms < ${DB_NOW} + $1::bigint - $2::bigint RETURNING id`, [aheadMs, NOTICE_KEEP_MS]);
     return r.rows.length;
   }
 
   async close(): Promise<void> {
     this.closed = true;
+    if (this.catchUp !== null) clearInterval(this.catchUp);
     await this.sending.catch(() => undefined);
     await this.stop?.().catch(() => undefined);
     await this.reading?.catch(() => undefined);
