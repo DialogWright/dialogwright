@@ -189,6 +189,8 @@ describe('the clinic folder: slots.yaml', () => {
     expect(lib.config).toEqual({
       noun: 'member ID', length: 8, mask: '^\\d{8}$', keypad: true, group: [4, 4], ids: { given: 'containsMemberId' },
       confirm: 'summary', readBack: 'implicit', minConfidence: 'none', redact: 'last4', handoff: 'last4',
+      // Added since the hand-written slot (live calls, 2026-10-13): said back digit by digit, and a re-ask held for the rest of a number begun.
+      sayAs: 'digits', waitForRestMs: 1500,
     });
     expect(lib).toMatchObject({ id: memberIdSlot.id, spokenConfirm: memberIdSlot.spokenConfirm, redact: 'last4', handoff: 'last4', detect: true });
     expect(lib.dtmf?.length).toBe(8);

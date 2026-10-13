@@ -58,6 +58,23 @@
         accountSpan: { choice: { five five five: 0.9, none: 0.1 } }
         accountComplete: { noul: 0.2 }
       expect: { kind: invalid, reason: incomplete }
+    # Asked for the number, a caller says the first digit and pauses: a miss that may be only the start
+    # of the number (restToCome), so on the phone the re-ask waits waitForRestMs for the rest, and the
+    # words that follow are joined to these.
+    - text: Five.
+      context: { prompted: true }
+      answers:
+        accountGiven: { noul: 0.9 }
+        accountSpan: { choice: { five: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.8 }
+      expect: { kind: invalid, reason: length, raw: "5" }
+    - text: Five. Five five two zero four one seven.
+      context: { prompted: true }
+      answers:
+        accountGiven: { noul: 0.95 }
+        accountSpan: { choice: { five five five two zero four one seven: 0.9, none: 0.1 } }
+        accountComplete: { noul: 0.9 }
+      expect: { kind: filled, value: "55520417", display: 5552 0417, confirm: implicit }
     - text: it is on the tip of my tongue
       answers:
         accountGiven: { noul: 0.9 }

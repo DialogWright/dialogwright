@@ -4,7 +4,7 @@
 # utterance here, and the type's docs page shows them.
 
 - name: caller's name
-  about: The defaults. First and last name, or one word, said back title-cased. A correction to a name already on file replaces it, and a turn that gives no name leaves the slot alone.
+  about: The defaults. First and last name, or one word, said back title-cased. A correction to a name already on file replaces it, and a turn that gives no name leaves the slot alone. Right after the name question, a bare name the model is unsure was given, but sure is the name, is taken.
   slot: name
   config: {}
   utterances:
@@ -57,6 +57,33 @@
         nameGiven: { noul: 0.9 }
         nameSpan: { choice: { ellis morgan: 0.9, none: 0.1 } }
       expect: { kind: invalid, reason: no_span, raw: ellis morgan }
+      # A bare name right after the question, as on a live call: the yes-or-no under SLOT_DETECT, the span over it.
+    - text: Jordan Avery.
+      context: { prompted: true }
+      answers:
+        nameGiven: { noul: 0.41 }
+        nameSpan: { choice: { jordan avery: 0.74, none: 0.26 } }
+      expect: { kind: filled, value: jordan avery, display: Jordan Avery, confirm: none }
+      # The same words when the name was not just asked are not taken.
+    - text: Jordan Avery
+      answers:
+        nameGiven: { noul: 0.41 }
+        nameSpan: { choice: { jordan avery: 0.74, none: 0.26 } }
+      expect: { kind: absent }
+      # Nor is a longer answer than bareAnswer.words.
+    - text: well I was going to say Jordan Avery
+      context: { prompted: true }
+      answers:
+        nameGiven: { noul: 0.41 }
+        nameSpan: { choice: { jordan avery: 0.74, none: 0.26 } }
+      expect: { kind: absent }
+      # Nor a short answer whose span the model is unsure of.
+    - text: Tuesday
+      context: { prompted: true }
+      answers:
+        nameGiven: { noul: 0.2 }
+        nameSpan: { choice: { tuesday: 0.3, none: 0.7 } }
+      expect: { kind: absent }
 
 - name: name beside a second person's
   about: A call where the caller names someone else too (a technician, a manager). The words that are never the caller's name are listed, and no span holding one is offered, so a correction to the other person's name cannot be taken as the caller's own.
@@ -91,6 +118,7 @@
   slot: contact
   config:
     redact: mask
+    bareAnswer: { words: 2, span: SLOT_CHOICE_FILL }
     ids:
       given: saysContactName
     text:
@@ -109,4 +137,18 @@
       answers:
         saysContactName: { noul: 0.1 }
         contactSpan: { choice: { none: 1 } }
+      expect: { kind: absent }
+      # A bare name, read against the slot's own threshold (SLOT_CHOICE_FILL) and word limit.
+    - text: Priya Raghunathan
+      context: { prompted: true }
+      answers:
+        saysContactName: { noul: 0.3 }
+        contactSpan: { choice: { priya raghunathan: 0.6, none: 0.4 } }
+      expect: { kind: filled, value: priya raghunathan, display: Priya Raghunathan }
+      # Three words, over this slot's limit of two.
+    - text: it's Priya Raghunathan
+      context: { prompted: true }
+      answers:
+        saysContactName: { noul: 0.3 }
+        contactSpan: { choice: { priya raghunathan: 0.6, none: 0.4 } }
       expect: { kind: absent }

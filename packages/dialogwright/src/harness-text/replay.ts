@@ -219,16 +219,17 @@ function isCallerResumed(line: ReadFrameLogLine): boolean {
  * holdReply): `{ replyHeld: { outcome: 'joined', turn } }`, by the held turn's turnIndex. The line is
  * written when the hold ends, which can be after frames that came during it (a prompt), whose turns ran
  * after it; so replay reads them all first, and tells its Continuation straight after that turn, as the
- * adapter did. A reply held and then sent changes nothing.
+ * adapter did, with the slot whose rest it was held for where the line names one (`slot`). A reply held
+ * and then sent changes nothing.
  */
-function heldAndJoined(lines: readonly ReadFrameLogLine[]): Set<number> {
-  const turns = new Set<number>();
+function heldAndJoined(lines: readonly ReadFrameLogLine[]): Map<number, string | undefined> {
+  const turns = new Map<number, string | undefined>();
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
     const h = (line.msg as { replyHeld?: unknown }).replyHeld;
     if (typeof h !== 'object' || h === null) continue;
-    const { outcome, turn } = h as { outcome?: unknown; turn?: unknown };
-    if (outcome === 'joined' && typeof turn === 'number' && Number.isInteger(turn)) turns.add(turn);
+    const { outcome, turn, slot } = h as { outcome?: unknown; turn?: unknown; slot?: unknown };
+    if (outcome === 'joined' && typeof turn === 'number' && Number.isInteger(turn)) turns.set(turn, typeof slot === 'string' ? slot : undefined);
   }
   return turns;
 }
@@ -329,7 +330,7 @@ export async function replayFrameLines(
       const r = await continuation.run(session!, p.event, turnOpts, p.arrival);
       session = r.result.session;
       // Its reply held, and the caller went on: the next final prompt continues it (heldAndJoined).
-      if (p.event.type === 'user.speech' && p.event.final && joinedHolds.has(session.turnIndex)) continuation.resumed();
+      if (p.event.type === 'user.speech' && p.event.final && joinedHolds.has(session.turnIndex)) continuation.resumed(joinedHolds.get(session.turnIndex));
       runs.push(r);
       onRun?.(r);
       if (session.ended) ended = true;

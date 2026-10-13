@@ -296,6 +296,33 @@ export interface SlotSpec {
    */
   display(value: string, locale?: string): string;
   /**
+   * How the phone's voice says the value: `digits`, one digit at a time ("0 1 4 2", in groups as the
+   * display groups it: "5 5 5 0, 7 7 8 8"), wherever a line says it: its value or display, a value read
+   * back or offered for it, and the last four of the caller's number offered for it (channel/sayDigits.ts).
+   * Only the text sent to the voice is rewritten (server/adapter.ts sendFrames), after the app's own
+   * spokenDigits rules: the session, the trace, the console and a chat keep the value as written. A
+   * `digits` slot sets it unless its `sayAs` is `number`. Absent: the voice reads the value as written.
+   */
+  sayAs?: 'digits';
+  /**
+   * Whether words the slot could not take as its value may be only the start of one, the caller not
+   * finished (a `digits` slot that heard fewer digits than its `length`, or a number the model heard
+   * trail off). Asked by the engine only of the slot just asked, with the answers and context its
+   * fill had, when that fill was invalid; a yes marks the turn's fill event (FillEvent.rest). Like
+   * `fill`, it reads and changes nothing, and it changes nothing the turn decides: on the phone, a slot
+   * with `waitForRestMs` waits for the rest before its re-ask is said. Absent: never.
+   */
+  restToCome?(answers: AnswerMap, ctx: SlotContext): boolean;
+  /**
+   * How long the phone waits for the rest of a value the caller began, in milliseconds (a `digits`
+   * slot's `waitForRestMs`): when the turn's fill of the slot just asked is marked as the start of a
+   * value (`restToCome`, FillEvent.rest) and the turn only asks again, the voice server holds that reply
+   * up to this long; if the caller goes on in that time it is never said, and their next words are joined
+   * to these, run on the session before them (run/continuation.ts waitsForRest, server/adapter.ts
+   * holdReply). Not on a chat, where a message comes whole. Absent or 0: the reply goes at once, as always.
+   */
+  waitForRestMs?: number;
+  /**
    * `said`: a fill's display is the caller's words as said, and its value a form of them written by
    * code that display(value) cannot give back (a text slot with `say: null` and `numbers: digits` or
    * `case: title`: "seventy six twenty five oak hollow lane" is read back as said, and the value is

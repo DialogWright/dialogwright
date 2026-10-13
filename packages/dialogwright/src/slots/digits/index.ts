@@ -4,11 +4,11 @@ import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { digitsDisplay } from './display';
-import { digitsFill, digitsFit } from './fill';
+import { digitsFill, digitsFit, digitsRestToCome } from './fill';
 import { digitsOptions, type DigitsOptions } from './options';
 import { digitsQuestions, idsOf, thingOf } from './questions';
 
-export { digitsOptions, DIGITS_PARTS, DIGITS_QUESTIONS, MIN_CONFIDENCE } from './options';
+export { digitsOptions, DIGITS_PARTS, DIGITS_QUESTIONS, MIN_CONFIDENCE, DEFAULT_WAIT_FOR_REST_MS, MAX_WAIT_FOR_REST_MS } from './options';
 export type { DigitsOptions } from './options';
 export { digitsDisplay } from './display';
 
@@ -90,6 +90,11 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
         : {}),
       ...(o.callerNumber !== undefined ? { callerNumber: callerNumberOf(o, display) } : {}),
       display,
+      // Said back one digit at a time on the phone, unless it is a quantity (channel/sayDigits.ts).
+      ...(o.sayAs === 'digits' ? { sayAs: 'digits' as const } : {}),
+      // The re-ask held on the phone for the rest of a number begun (a miss that may be only its start).
+      restToCome: digitsRestToCome(o, ids),
+      ...(o.waitForRestMs > 0 ? { waitForRestMs: o.waitForRestMs } : {}),
     };
   },
   get examples() {

@@ -60,6 +60,8 @@ export interface TraceInput {
   retrieval?: RetrievalRecord | null;
   /** The prompts a joined turn's words join (TraceRecord.joined); null or absent for a turn of its own. */
   joined?: readonly string[] | null;
+  /** The slot whose rest the reply to a joined turn's first words was held for (TraceRecord.joined.waitedFor); absent otherwise. */
+  joinedWaitedFor?: string;
   /** What answers the call (TraceRecord.answeredBy): on the session start's record, from a client that asks a model. */
   answeredBy?: AnsweredBy | null;
   ts: string;
@@ -122,7 +124,7 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     // Only on a turn the retriever ran: every other record is as it was.
     ...(input.retrieval ? { retrieval: input.retrieval } : {}),
     // Only on a joined turn: every other record is as it was.
-    ...(input.joined ? { joined: { fragments: [...input.joined] } } : {}),
+    ...(input.joined ? { joined: { fragments: [...input.joined], ...(input.joinedWaitedFor !== undefined ? { waitedFor: input.joinedWaitedFor } : {}) } } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
     effects: result.effects.map(recordedEffect),
     // Only on a turn a slot with retries of its own ran out: every other record is as it was.

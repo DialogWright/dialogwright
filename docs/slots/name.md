@@ -20,6 +20,9 @@ A slot of this type is written under its id in slots.yaml, with `type: name` and
 | `redact` | one of `none`, `mask` | `none` | How the value is masked wherever it leaves the turn (the trace, a tool call's param of the same name): "mask" ("•") or "none", kept as it is. |
 | `handoff` | one of `display`, `verified` | `display` | What a transfer to a person hands over: the name as its "display", or only whether the caller was "verified", never the name. app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked. |
 | `confirm` | one of `summary`, `always` | unset | "summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. "always": the name is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken. |
+| `bareAnswer` | map | unset | A bare name, right after the name question: when the slot was just asked and the answer is short (at most `words` words), a span the model chose as the name with a probability of at least `span` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT. A caller who answers the question with only a name ("Jordan Avery") was otherwise asked again, the words read as a name too weakly on their own; the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: 4, span: SLOT_DETECT }. |
+| `bareAnswer.words` | integer, 0 to 10 | `4` | The most words an answer may have to be taken as a bare name (words are what spaces separate, punctuation aside: "Jordan Avery" is two, "it's Jordan Avery" three). 0 takes no bare answer: the model must judge the name given, as before. Default: 4. |
+| `bareAnswer.span` | string | `SLOT_DETECT` | The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: SLOT_DETECT. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given, span), to keep the ids an existing slot used. |
 | `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): "form" when every form that lists it says false (the default for an internal form), else "up-front". |
@@ -56,7 +59,8 @@ The slot is always `detect: true` (its row in the console is measured against `S
 
 | What the caller said | The outcome |
 |---|---|
-| No name (the first question is below `SLOT_DETECT`) | `absent`, so a turn about something else leaves the slot alone |
+| No name (the first question is below `SLOT_DETECT`) | `absent`, so a turn about something else leaves the slot alone, unless it is a bare name (below) |
+| Right after the name question, an answer of at most `bareAnswer.words` words (default 4) whose chosen span was offered and reaches `bareAnswer.span` (default `SLOT_DETECT`), the first question under `SLOT_DETECT` | a bare name: as if the name were stated, so `filled` with the span |
 | A name, but no span chosen (or `none`) | `invalid`, reason `no_span` |
 | A span this turn's question did not offer | `invalid`, reason `no_span`, with the span as raw |
 | An offered span | `filled`: the value is the span with its whitespace collapsed, the display is the name title-cased, with the span's own probability as its confidence, never acknowledged |
@@ -87,14 +91,14 @@ Each configuration below is built and run by the type's tests (the conformance k
 
 #### caller's name
 
-The defaults. First and last name, or one word, said back title-cased. A correction to a name already on file replaces it, and a turn that gives no name leaves the slot alone.
+The defaults. First and last name, or one word, said back title-cased. A correction to a name already on file replaces it, and a turn that gives no name leaves the slot alone. Right after the name question, a bare name the model is unsure was given, but sure is the name, is taken.
 
 ```yaml
 name:
   type: name
 ```
 
-<details><summary>Starter utterances (9)</summary>
+<details><summary>Starter utterances (13)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
@@ -107,6 +111,10 @@ name:
 | I want to change my address | `nameGiven`: yes 0.05<br>`nameSpan`: `none` 1 | absent |
 | none of your business | `nameGiven`: yes 0.7<br>`nameSpan`: `none` 0.95 | invalid: reason `no_span`, raw `` |
 | this is Morgan Ellis | `nameGiven`: yes 0.9<br>`nameSpan`: `ellis morgan` 0.9, `none` 0.1 | invalid: reason `no_span`, raw `ellis morgan` |
+| Jordan Avery.<br>_prompted_ | `nameGiven`: yes 0.41<br>`nameSpan`: `jordan avery` 0.74, `none` 0.26 | filled: value `jordan avery`, display `Jordan Avery`, confirm `none` |
+| Jordan Avery | `nameGiven`: yes 0.41<br>`nameSpan`: `jordan avery` 0.74, `none` 0.26 | absent |
+| well I was going to say Jordan Avery<br>_prompted_ | `nameGiven`: yes 0.41<br>`nameSpan`: `jordan avery` 0.74, `none` 0.26 | absent |
+| Tuesday<br>_prompted_ | `nameGiven`: yes 0.2<br>`nameSpan`: `tuesday` 0.3, `none` 0.7 | absent |
 
 </details>
 
@@ -144,6 +152,9 @@ A masked name with its own wording and its own question ids, as an app keeps the
 contact:
   type: name
   redact: mask
+  bareAnswer:
+    words: 2
+    span: SLOT_CHOICE_FILL
   ids:
     given: saysContactName
   text:
@@ -154,12 +165,14 @@ contact:
     spanNone: No span of asr.text is the contact's name
 ```
 
-<details><summary>Starter utterances (2)</summary>
+<details><summary>Starter utterances (4)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
 | ask for Priya Raghunathan | `saysContactName`: yes 0.93<br>`contactSpan`: `priya raghunathan` 0.88, `none` 0.12 | filled: value `priya raghunathan`, display `Priya Raghunathan`, display in es `Priya Raghunathan` |
 | I'll tell you later | `saysContactName`: yes 0.1<br>`contactSpan`: `none` 1 | absent |
+| Priya Raghunathan<br>_prompted_ | `saysContactName`: yes 0.3<br>`contactSpan`: `priya raghunathan` 0.6, `none` 0.4 | filled: value `priya raghunathan`, display `Priya Raghunathan` |
+| it's Priya Raghunathan<br>_prompted_ | `saysContactName`: yes 0.3<br>`contactSpan`: `priya raghunathan` 0.6, `none` 0.4 | absent |
 
 </details>
 
@@ -168,6 +181,7 @@ contact:
 - Every slot listens on every turn, so the two questions are asked even while the form is on another slot, and "this is Morgan Ellis, calling about my appointment" can fill the name on the opening turn.
 - The words that are withheld are a list in the slot's configuration, not a reference to another slot, because a slot is built from its own options alone. An app whose other people are a list it already has (a roster of providers) keeps one source for both and checks in a test that the list here equals the one derived from the roster.
 - The model sees at most the engine's candidate word spans (one to four words each, never starting or ending with a filler such as "my" or "is"), so a name of more than four words is not offered whole.
+- A bare name (`bareAnswer`): a caller who answers the name question with only a name ("Jordan Avery") gives the yes-or-no question little to go on, and on a live call it read 0.41 while the span question was 0.74 sure of the name; the same words a turn later read 0.85. So right after the question, while the slot is the one just asked, a short answer the span question is sure of is taken as the name given. Anywhere else (the slot not just asked, an answer longer than `words`), the yes-or-no decides as always, so a name said in passing, which may be someone else's, is never taken on the span alone. `words: 0` turns it off. The questions are the same either way, so a recording made before the option is still read the same.
 - Display is title-casing of each run of letters; names with apostrophes ("O'Neil") are said as "O Neil", as the words were tokenized.
 - In a Spanish session (`es`, `es-*`) the spans are Unicode words ("maría josé"), the fillers are Spanish ("me llamo", "soy"), a compound surname is one span (up to three particles, `de`, `del`, `la`, `las`, `los`, `y`, `e`, between its words, beyond the four: "maría josé muñoz de la cruz"), the display keeps those particles in lower case ("María José Muñoz de la Cruz"), and `exclude` compares words without accents ("munoz" withholds "muñoz").
 - Run its checks with `pnpm --filter dialogwright test slots/name`.

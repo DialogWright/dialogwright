@@ -10,8 +10,9 @@ import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNu
 import { callDataFrom, HOST_APP_PARAMETER } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
-import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun } from '../run/continuation';
+import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, waitsForRest, type ContinuedRun } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
+import { digitsSaidOf, sayDigits } from '../channel/sayDigits';
 import { localeOf } from '../core/locale';
 import { digitAtRun, keyBurstPending, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
@@ -485,6 +486,8 @@ const lastStart = new Map<string, number>();
 const lastStop = new Map<string, number>();
 /** Calls whose caller has stopped speaking since their last final prompt came. */
 const stoppedSincePrompt = new Set<string>();
+/** When a partial prompt last came (Twilio's, which reports no caller speaking): the caller is speaking. */
+const lastPartial = new Map<string, number>();
 
 /** RESUME_AFTER_PAUSE_MS: the longest pause that leaves a caller not finished. */
 function resumeAfterPauseOf(deps: AdapterDeps): number {
@@ -497,6 +500,7 @@ function forgetResumed(callSid: string): void {
   lastStart.delete(callSid);
   lastStop.delete(callSid);
   stoppedSincePrompt.delete(callSid);
+  lastPartial.delete(callSid);
 }
 
 /** The caller started or stopped speaking: whether they are coming back in over the reply to their last final prompt. */
@@ -770,6 +774,16 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
  * frame log has `{ replyHeld: { ms, outcome: 'joined' | 'sent', utteranceComplete, turn } }`
  * when it ends, `turn` being the held turn's turnIndex, by which replay tells its Continuation after that
  * turn, as here (harness-text/replay.ts).
+ *
+ * **The rest of a value begun** (run/continuation.ts waitsForRest): a turn whose fill of the slot just
+ * asked heard only the start of its value (fewer digits than a `digits` slot's `length`, or a number
+ * trailing off) and that only asks again is held the same way, for the slot's `waitForRestMs`, on every
+ * carrier: the caller going on is a prompt (on Twilio a partial one, which comes as they start speaking,
+ * and is taken as speech: the final prompt is still to come) or, where the carrier reports it, their
+ * voice. It is not the model's reading, so it holds whatever INCOMPLETE_WAIT_MS and continueWithinMs
+ * say (the Continuation joins it with the window at 0 too). Where the model's reading would hold the
+ * reply as well, the slot's wait is the one taken. The frame log's line names the slot:
+ * `{ replyHeld: { ms, outcome, slot, turn } }`, with `utteranceComplete` beside it when the words were read.
  */
 interface HeldReply {
   timer: ReturnType<typeof setTimeout>;
@@ -804,28 +818,39 @@ export function holdsReply(result: TurnResult, below: number): number | null {
  * one to hold. `promptAtMs` is when the prompt came: a caller heard starting since then has gone on.
  */
 async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, run: ContinuedRun, promptAtMs: number | undefined): Promise<HeldOutcome | null> {
-  const wait = deps.incompleteWait;
   // A socket already gone has no one to wait for (and nothing left to end the wait early).
-  if (!wait || wait.waitMs <= 0 || !readsPlaybackEvents(entry.provider) || entry.socket === null) return null;
-  if (event.type !== 'user.speech' || !event.final) return null;
+  if (entry.socket === null || event.type !== 'user.speech' || !event.final) return null;
+  if ((run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
   const continuation = continuationOf(entry);
-  if (continuation.withinMs === 0 || (run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
-  const complete = holdsReply(run.result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE);
-  if (complete === null) return null;
+  // The rest of a value begun, on every carrier (above); the model's reading, where the carrier reports the caller's voice.
+  const rest = waitsForRest(run.result);
+  const wait = deps.incompleteWait;
+  const reads = wait !== undefined && wait.waitMs > 0 && readsPlaybackEvents(entry.provider) && continuation.withinMs > 0;
+  const complete = reads ? holdsReply(run.result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE) : null;
+  if (rest === null && complete === null) return null;
+  const waitMs = rest?.ms ?? wait!.waitMs;
   const callSid = entry.callSid;
   // No silence turn over the hold: the turn arms the wait once it ends.
   clearNoInput(callSid);
   const heldAtMs = Date.now();
-  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
+  const since = promptAtMs ?? heldAtMs;
+  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= since || (lastPartial.get(callSid) ?? -Infinity) > since;
   const ended = back ? 'speech' : await new Promise<HeldOutcome>((resolve) => {
     releaseReply(callSid, 'sent');
-    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs), resolve };
+    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), waitMs), resolve };
     h.timer.unref?.();
     heldReplies.set(callSid, h);
   });
   const outcome = ended === 'sent' ? 'sent' : 'joined';
-  logDelivery(deps, entry, { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
-  if (outcome === 'joined') continuation.resumed();
+  logDelivery(deps, entry, {
+    replyHeld: {
+      ms: Date.now() - heldAtMs, outcome,
+      ...(complete !== null ? { utteranceComplete: complete } : {}),
+      ...(rest !== null ? { slot: rest.slot } : {}),
+      turn: run.result.session.turnIndex,
+    },
+  });
+  if (outcome === 'joined') continuation.resumed(rest?.slot);
   return ended;
 }
 
@@ -1132,8 +1157,8 @@ function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
  * sees on their card. Only what goes on the wire is rewritten; the session text, the trace record
  * and the prompt manifest keep the readable form. Without rules, the text goes out as it is.
  *
- * Framework seam: a slot declaring how its own value is spoken would replace this pattern matching
- * at the wire.
+ * A slot that declares how its own value is said (SlotSpec.sayAs, a `digits` slot's by default) needs no
+ * rule: sendFrames spells its values out after these (channel/sayDigits.ts), where a rule left them as written.
  */
 export function spokenDigits(text: string, rules: readonly SpokenDigitRule[] = []): string {
   const spell = (digits: string): string => [...digits].join(' ');
@@ -1388,9 +1413,12 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const voice = appOf(entry.session).voice;
   // The words the voice says another way, for the language the lines are in (channel/pronounce.ts).
   const respell = pronounceFor(voice, localeOf(entry.session));
+  // The values of the slots said digit by digit (SlotSpec.sayAs) the lines may hold (channel/sayDigits.ts).
+  const digitsSaid = digitsSaidOf(appOf(entry.session), entry.session, decision);
   for (const [i, original] of frames.entries()) {
-    // Digits spelled out first, by rules written against the lines as written (a respelled lead word
-    // still leads its digits), then the respellings. The frame log records what actually went out,
+    // Digits spelled out first, by the app's rules written against the lines as written (a respelled
+    // lead word still leads its digits), then any value of a slot said digit by digit that they left
+    // as written, then the respellings. The frame log records what actually went out,
     // digit spacing and respellings and all, but with a redacted value masked before it is
     // respelled: masking finds the value as written, never a respelling of it.
     // Such a carrier joins the turn's text frames into one utterance as sent, so a line before the
@@ -1398,7 +1426,7 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
     // dot what's" (Telnyx, seen on a live call).
     const joined = lastText >= 0 && i !== lastText;
     const spoken: OutboundFrame = original.type === 'text'
-      ? { ...original, token: spaced(spokenDigits(original.token, voice?.spokenDigits), joined), ...(joined ? { last: false } : {}) }
+      ? { ...original, token: spaced(sayDigits(spokenDigits(original.token, voice?.spokenDigits), digitsSaid), joined), ...(joined ? { last: false } : {}) }
       : original;
     const frame = bargeInFrame(respelled(spoken, respell), deps.bargeIn ?? 'any');
     const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub, appOf(entry.session)), respell), deps.bargeIn ?? 'any');
@@ -1999,8 +2027,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Nor is a line the carrier stopped playing then one to say again, nor an interrupt settling one the caller did not make.
     callerHeard(ctx.callSid);
   }
-  // A reply held for a caller not finished: more words are the caller going on; a key sends it now.
-  if (frame.type === 'prompt') releaseReply(ctx.callSid, 'prompt');
+  // A reply held for a caller not finished: more words are the caller going on; a key sends it now. A
+  // partial prompt (Twilio's) is the caller speaking, the final prompt still to come.
+  if (frame.type === 'prompt' && !frame.last) lastPartial.set(ctx.callSid, Date.now());
+  if (frame.type === 'prompt') releaseReply(ctx.callSid, frame.last ? 'prompt' : 'speech');
   else if (frame.type === 'dtmf') releaseReply(ctx.callSid, 'sent');
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });

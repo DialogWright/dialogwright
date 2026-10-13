@@ -220,9 +220,10 @@ function heardAsWritten(session: Session, event: SessionEvent): SessionEvent {
  * Unset (the harness, the CLI, which run each event as it arrives), it is made here from `session`,
  * by the same predicate. `joined` is set only by a Continuation (run/continuation.ts), for a turn
  * whose words join the final prompts of a caller who had not finished: the prompts, in order, which
- * the trace record keeps beside the joined words.
+ * the trace record keeps beside the joined words, with `waitedFor`, the slot whose rest the reply to
+ * them was held for, where it was (run/continuation.ts waitsForRest).
  */
-export async function runTurn(session: Session, heard: SessionEvent, opts: RunOptions, arrival?: Arrival, joined?: readonly string[]): Promise<TurnRun> {
+export async function runTurn(session: Session, heard: SessionEvent, opts: RunOptions, arrival?: Arrival, joined?: readonly string[], waitedFor?: string): Promise<TurnRun> {
   // A code said aloud at the code prompt goes no further than this, whoever called: the screen,
   // perception, the core and the trace all get the masked words. This is the same masking the voice
   // adapter applies to the wire frame (maskCodeFrame) before its frame log, so there it is already
@@ -348,6 +349,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     driftUsage: rendered?.driftUsage ?? null,
     retrieval: retrieved?.record ?? null,
     joined: fragments ?? null,
+    ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
     ts: new Date(now()).toISOString(),
     pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
   });

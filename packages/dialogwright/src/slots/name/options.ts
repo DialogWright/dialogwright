@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { matching } from '../../define/schema/common';
 import { questionParts, textParts } from '../parts/text';
 import { alwaysConfirmText } from '../parts/readBack';
+import { thresholdName } from '../choice/options';
 
 /**
  * The text parts of a `name` slot: its two questions (does the caller give their own name, which
@@ -46,6 +47,10 @@ export const NAME_QUESTIONS = questionParts({
   span: 'which span of the caller\'s words is their name',
 });
 
+/** A bare answer's defaults (`bareAnswer`): at most four words, a span the model is at least SLOT_DETECT sure of. */
+export const BARE_ANSWER_WORDS = 4;
+export const BARE_ANSWER_SPAN = 'SLOT_DETECT';
+
 /** One word of the `exclude` list: what a span's words are compared with, so letters and digits only. */
 const excludedWord = () =>
   matching(
@@ -73,6 +78,21 @@ export const nameOptions = z.strictObject({
     .enum(['summary', 'always'])
     .optional()
     .describe(`"summary" (the default): a name is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('the name', false)}`),
+  bareAnswer: z
+    .strictObject({
+      words: z
+        .number()
+        .int()
+        .min(0)
+        .max(10)
+        .default(BARE_ANSWER_WORDS)
+        .describe(`The most words an answer may have to be taken as a bare name (words are what spaces separate, punctuation aside: "Jordan Avery" is two, "it's Jordan Avery" three). 0 takes no bare answer: the model must judge the name given, as before. Default: ${BARE_ANSWER_WORDS}.`),
+      span: thresholdName()
+        .default(BARE_ANSWER_SPAN)
+        .describe(`The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: ${BARE_ANSWER_SPAN}.`),
+    })
+    .optional()
+    .describe(`A bare name, right after the name question: when the slot was just asked and the answer is short (at most \`words\` words), a span the model chose as the name with a probability of at least \`span\` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT. A caller who answers the question with only a name ("Jordan Avery") was otherwise asked again, the words read as a name too weakly on their own; the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: ${BARE_ANSWER_WORDS}, span: ${BARE_ANSWER_SPAN} }.`),
   text: NAME_PARTS.schema,
   ids: NAME_QUESTIONS.schema,
 });

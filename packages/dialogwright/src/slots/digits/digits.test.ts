@@ -71,6 +71,7 @@ describe('a digits slot built from the defaults', () => {
     expect(account.type).toBe('digits');
     expect(account.config).toEqual({
       noun: 'account', length: 8, keypad: true, group: [4, 4], confirm: 'summary', readBack: 'implicit', minConfidence: 'none', redact: 'last4', handoff: 'last4',
+      sayAs: 'digits', waitForRestMs: 1500,
     });
     expect(Object.isFrozen(account.config)).toBe(true);
   });
@@ -98,6 +99,54 @@ describe('fill', () => {
     expect(account.fill(heard(SPAN, 0.9, T.SLOT_DETECT - 0.01), testSlotContext(SAID)).kind).toBe('absent');
     expect(account.fill(heard(SPAN, 0.9, 0.9), testSlotContext(SAID, { thresholds: { ...T, SLOT_DETECT: 0.95 } })).kind).toBe('absent');
     expect(account.fill(heard(SPAN, 0.9, 0.9, T.SLOT_DETECT - 0.01), testSlotContext(SAID))).toMatchObject({ reason: 'incomplete' });
+  });
+});
+
+describe('the rest of a number begun (restToCome, waitForRestMs)', () => {
+  const asked = (text: string) => testSlotContext(text, { prompted: true });
+  const rest = (slot: SlotSpec, answers: Parameters<SlotSpec['fill']>[0], text: string) => slot.restToCome!(answers, asked(text));
+
+  it('says a number of fewer digits than its length, and one trailing off, may be only the start of it; the fill is as it was', () => {
+    expect(account.fill(heard('five'), asked('Five.'))).toEqual({ kind: 'invalid', reason: 'length', raw: '5' });
+    expect(rest(account, heard('five'), 'Five.')).toBe(true);
+    expect(rest(account, heard('five five', 0.9, 0.9, 0.2), 'it is five five')).toBe(true);
+    expect(rest(account, heard('5550 778'), '5550 778')).toBe(true);
+  });
+
+  it('says no of a number too long, of no number stated, and of no span', () => {
+    expect(rest(account, heard('five five five zero seven seven eight eight eight'), 'five five five zero seven seven eight eight eight')).toBe(false);
+    expect(rest(account, heard('five', 0.9, 0.2), 'Five.')).toBe(false);
+    expect(rest(account, { ...heard('x'), accountSpan: choice({ none: 0.9, five: 0.1 }) }, 'five')).toBe(false);
+    expect(rest(account, {}, '')).toBe(false);
+  });
+
+  it('reads SLOT_DETECT by name', () => {
+    expect(account.restToCome!(heard('five', 0.9, 0.9), testSlotContext('Five.', { prompted: true, thresholds: { ...T, SLOT_DETECT: 0.95 } }))).toBe(false);
+  });
+
+  it('with a mask too, by the slot\'s length; with a mask alone, only a number trailing off', () => {
+    const both = defineSlot('code', { type: 'digits', noun: 'code', length: 6, mask: '9\\d{5}' });
+    const said = (span: string, complete = 0.9) => ({ codeGiven: noul(0.95), codeSpan: choice({ [span]: 0.9, none: 0.1 }), codeComplete: noul(complete) });
+    expect(rest(both, said('nine one'), 'nine one')).toBe(true);
+    const masked = defineSlot('code', { type: 'digits', noun: 'code', mask: '9\\d{5}' });
+    expect(rest(masked, said('nine one'), 'nine one')).toBe(false);
+    expect(rest(masked, said('nine one', 0.2), 'nine one')).toBe(true);
+  });
+
+  it('waits 1500 ms by default; 0 waits not at all; more than 5000 is refused', () => {
+    expect(account.waitForRestMs).toBe(1500);
+    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 0 }).waitForRestMs).toBeUndefined();
+    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 2500 }).waitForRestMs).toBe(2500);
+    const long = buildSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 5001 });
+    expect(long.ok).toBe(false);
+  });
+});
+
+describe('sayAs', () => {
+  it('says the value digit by digit by default, and as written with sayAs: number', () => {
+    expect(account.sayAs).toBe('digits');
+    expect(defineSlot('count', { type: 'digits', noun: 'count', length: 3, sayAs: 'number' }).sayAs).toBeUndefined();
+    expect(buildSlot('count', { type: 'digits', noun: 'count', length: 3, sayAs: 'words' }).ok).toBe(false);
   });
 });
 
@@ -400,7 +449,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/digits.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(digitsType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['article', 'attempts', 'callerNumber', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'listen', 'mask', 'minConfidence', 'noun', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'readBack', 'redact', 'text']);
+    expect(options.sort()).toEqual(['article', 'attempts', 'callerNumber', 'confirm', 'group', 'handoff', 'ids', 'keypad', 'length', 'lengthRetryPromptId', 'listen', 'mask', 'minConfidence', 'noun', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'readBack', 'redact', 'sayAs', 'text', 'waitForRestMs']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });

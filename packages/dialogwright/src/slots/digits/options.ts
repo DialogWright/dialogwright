@@ -40,6 +40,10 @@ export const DIGITS_QUESTIONS = questionParts({
   complete: 'whether the caller said the whole number',
 });
 
+/** How long a digits slot waits on the phone for the rest of a number begun (`waitForRestMs`), by default, and at most. */
+export const DEFAULT_WAIT_FOR_REST_MS = 1500;
+export const MAX_WAIT_FOR_REST_MS = 5000;
+
 /** The thresholds a `minConfidence` may name, and `none` for no floor. */
 export const MIN_CONFIDENCE = ['none', 'SLOT_DETECT', 'SLOT_CHOICE_CONFIRM', 'SLOT_CHOICE_FILL'] as const;
 
@@ -116,6 +120,17 @@ export const digitsOptions = z
       .enum(['last4', 'verified', 'display'])
       .default('last4')
       .describe('What a transfer to a person hands over: its "last4", only whether the caller was "verified", or its "display" in full. app.yaml\'s handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked.'),
+    sayAs: z
+      .enum(['digits', 'number'])
+      .default('digits')
+      .describe('How the phone\'s voice says the value back, wherever a line says it (a read-back, a summary, the last four of the caller\'s number at its offer): "digits" (default), one digit at a time ("0 1 4 2"; in its `group`s with a short pause between them, "5 5 5 0, 7 7 8 8"), as a caller reads a number out; "number", as the voice reads it ("one hundred forty-two"), for a value that is a quantity rather than an identifier. Only what is sent to the voice is rewritten, after voice.spokenDigits: the session, the trace, the console and a chat keep the digits as written.'),
+    waitForRestMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_WAIT_FOR_REST_MS)
+      .default(DEFAULT_WAIT_FOR_REST_MS)
+      .describe(`On the phone, how long to wait for the rest of a number the caller began, in milliseconds: when the slot was just asked and heard fewer digits than \`length\` (or a number the model heard trail off), and the turn would only ask again, the re-ask is held this long; if the caller goes on in that time it is never said, and their next words are joined to the first ("five", a pause, "five five two zero four one seven" is 55520417). A caller who said all they meant to hears the re-ask this much later. 0 asks again at once. Not on a chat, where a message comes whole. Default: ${DEFAULT_WAIT_FOR_REST_MS}, a reader's pause to look at the number again; 0 to ${MAX_WAIT_FOR_REST_MS}.`),
     text: DIGITS_PARTS.schema,
     ids: DIGITS_QUESTIONS.schema,
   })

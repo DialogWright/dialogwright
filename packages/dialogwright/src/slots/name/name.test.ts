@@ -9,6 +9,7 @@ import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot, slotTypeJsonSchema } from '../defineSlot';
 import { nameType } from './index';
 import { titleCase } from './display';
+import { wordCount } from './fill';
 
 /** The `name` type: the conformance kit over its examples, then what the kit does not cover. */
 runSlotConformance(nameType, { describe, it, locales: ['en-US', 'es'] });
@@ -119,6 +120,59 @@ describe('fill', () => {
   });
 });
 
+describe('a bare name, right after the name question (bareAnswer)', () => {
+  const asked = (text: string, over: Parameters<typeof testSlotContext>[1] = {}) => testSlotContext(text, { prompted: true, ...over });
+  const bare = (p: number, given = 0.41) => ({ nameGiven: noul(given), nameSpan: choice({ 'jordan avery': p, none: 1 - p }) });
+
+  it('counts the words spaces separate, each with a letter or a digit', () => {
+    expect(wordCount('Jordan Avery.')).toBe(2);
+    expect(wordCount("  it's Jordan   Avery ")).toBe(3);
+    expect(wordCount('uh - Jordan')).toBe(2);
+    expect(wordCount('')).toBe(0);
+  });
+
+  it('takes a short answer whose span reaches SLOT_DETECT as the name given, the yes-or-no under it (a live call: 0.41, the span 0.74)', () => {
+    expect(name.fill(bare(0.74), asked('Jordan Avery.'))).toEqual({ kind: 'filled', value: 'jordan avery', display: 'Jordan Avery', confidence: 0.74, confirm: 'none' });
+    expect(name.fill(bare(T.SLOT_DETECT), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(name.fill(bare(T.SLOT_DETECT - 0.01), asked('Jordan Avery'))).toEqual({ kind: 'absent' });
+    // The yes-or-no is not needed at all, however low.
+    expect(name.fill(bare(0.74, 0), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+  });
+
+  it('only when the slot was just asked, the answer is at most four words, and the span was offered', () => {
+    expect(name.fill(bare(0.74), testSlotContext('Jordan Avery'))).toEqual({ kind: 'absent' });
+    expect(name.fill(bare(0.74), asked('it is Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(name.fill(bare(0.74), asked('well it is Jordan Avery'))).toEqual({ kind: 'absent' });
+    expect(name.fill(bare(0.74), asked('Morgan Ellis'))).toEqual({ kind: 'absent' });
+    expect(name.fill({ nameGiven: noul(0.41), nameSpan: choice({ none: 0.9, 'jordan avery': 0.1 }) }, asked('Jordan Avery'))).toEqual({ kind: 'absent' });
+  });
+
+  it('reads its threshold by name, the slot\'s own when it names one, which it declares', () => {
+    const strict = defineSlot('name', { type: 'name', bareAnswer: { span: 'NAME_BARE' } });
+    expect(strict.thresholds).toEqual(['NAME_BARE']);
+    expect(name.thresholds).toBeUndefined();
+    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, NAME_BARE: 0.8 } }))).toEqual({ kind: 'absent' });
+    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, NAME_BARE: 0.7 } }))).toMatchObject({ kind: 'filled' });
+    // The run's SLOT_DETECT moves the default with it.
+    expect(name.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, SLOT_DETECT: 0.8 } }))).toEqual({ kind: 'absent' });
+  });
+
+  it('takes no bare answer with words: 0, nor more words than it says', () => {
+    const off = defineSlot('name', { type: 'name', bareAnswer: { words: 0 } });
+    expect(off.thresholds).toBeUndefined();
+    expect(off.fill(bare(0.95), asked('Jordan'))).toEqual({ kind: 'absent' });
+    const two = defineSlot('name', { type: 'name', bareAnswer: { words: 2 } });
+    expect(two.fill(bare(0.74), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(two.fill(bare(0.74), asked("it's Jordan Avery"))).toEqual({ kind: 'absent' });
+  });
+
+  it('refuses a threshold that is no name, and more than ten words', () => {
+    const bad = buildSlot('name', { type: 'name', bareAnswer: { span: 'not a name', words: 11 } });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.problems.map((p) => p.path).sort()).toEqual(['name.bareAnswer.span', 'name.bareAnswer.words']);
+  });
+});
+
 describe('exclude', () => {
   const doctors = defineSlot('name', { type: 'name', exclude: ['dr', 'Doctor', 'chen', 'cheng'] });
 
@@ -212,7 +266,7 @@ describe('the docs', () => {
   it('the docs page names every option and every text part', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/name.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(nameType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['attempts', 'confirm', 'exclude', 'handoff', 'ids', 'listen', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'redact', 'text']);
+    expect(options.sort()).toEqual(['attempts', 'bareAnswer', 'confirm', 'exclude', 'handoff', 'ids', 'listen', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'redact', 'text']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
     for (const part of ['given', 'givenTrue', 'givenFalse', 'span', 'spanNone']) expect(readme, part).toContain(`\`text.${part}\``);
   });

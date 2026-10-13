@@ -61,6 +61,11 @@ describe('DELIVERY_NOTES: each kind in words, under the line it concerns', () =>
     expect(note(deliveryFactOf({ replyHeld: { ms: 600, outcome: 'joined', utteranceComplete: 0.3, turn: 4 } }))).toMatchObject({ on: 'agent', text: 'not said: the caller went on', unsaid: true });
   });
 
+  it('says a reply held for the rest of a slot\'s value, and marks one never said', () => {
+    expect(note(deliveryFactOf({ replyHeld: { ms: 1500, outcome: 'sent', slot: 'account', turn: 4 } }))).toMatchObject({ on: 'agent', text: 'reply held 1.5 s for the rest of account, then said', unsaid: false });
+    expect(note(deliveryFactOf({ replyHeld: { ms: 700, outcome: 'joined', slot: 'account', turn: 4 } }))).toMatchObject({ on: 'agent', text: 'not said: the caller went on', unsaid: true });
+  });
+
   it('says how a held end went', () => {
     const end = (value: string) => note(deliveryFactOf({ endAfter: value, endHeldMs: 2000, expectedMs: 1800 }))?.text;
     expect(end('played')).toBe('call end held 2.0 s until it played');

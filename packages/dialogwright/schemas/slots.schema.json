@@ -1044,6 +1044,22 @@
               "display"
             ]
           },
+          "sayAs": {
+            "default": "digits",
+            "description": "How the phone's voice says the value back, wherever a line says it (a read-back, a summary, the last four of the caller's number at its offer): \"digits\" (default), one digit at a time (\"0 1 4 2\"; in its `group`s with a short pause between them, \"5 5 5 0, 7 7 8 8\"), as a caller reads a number out; \"number\", as the voice reads it (\"one hundred forty-two\"), for a value that is a quantity rather than an identifier. Only what is sent to the voice is rewritten, after voice.spokenDigits: the session, the trace, the console and a chat keep the digits as written.",
+            "type": "string",
+            "enum": [
+              "digits",
+              "number"
+            ]
+          },
+          "waitForRestMs": {
+            "default": 1500,
+            "description": "On the phone, how long to wait for the rest of a number the caller began, in milliseconds: when the slot was just asked and heard fewer digits than `length` (or a number the model heard trail off), and the turn would only ask again, the re-ask is held this long; if the caller goes on in that time it is never said, and their next words are joined to the first (\"five\", a pause, \"five five two zero four one seven\" is 55520417). A caller who said all they meant to hears the re-ask this much later. 0 asks again at once. Not on a chat, where a message comes whole. Default: 1500, a reader's pause to look at the number again; 0 to 5000.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
+          },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: given, span, none, complete.",
             "type": "object",
@@ -1237,6 +1253,26 @@
               "summary",
               "always"
             ]
+          },
+          "bareAnswer": {
+            "description": "A bare name, right after the name question: when the slot was just asked and the answer is short (at most `words` words), a span the model chose as the name with a probability of at least `span` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT. A caller who answers the question with only a name (\"Jordan Avery\") was otherwise asked again, the words read as a name too weakly on their own; the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: 4, span: SLOT_DETECT }.",
+            "type": "object",
+            "properties": {
+              "words": {
+                "default": 4,
+                "description": "The most words an answer may have to be taken as a bare name (words are what spaces separate, punctuation aside: \"Jordan Avery\" is two, \"it's Jordan Avery\" three). 0 takes no bare answer: the model must judge the name given, as before. Default: 4.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10
+              },
+              "span": {
+                "default": "SLOT_DETECT",
+                "description": "The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: SLOT_DETECT.",
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              }
+            },
+            "additionalProperties": false
           },
           "text": {
             "description": "Text to say to the model in place of a default, word for word, by part: given, givenTrue, givenFalse, span, spanNone.",

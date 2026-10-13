@@ -215,6 +215,36 @@ Every offer the caller settles writes an `offer` row to the audit ([A text offer
 
 Testing it: a scripted call takes `"callerNumber": "+15555550142"` as a carrier sends it (a withheld one as the carrier writes it), which reaches the call only for an app with such a slot, never a chat; the text CLI takes `--caller-number`. A corpus line at the offer is in the form's context, `prompted` the slot, with `confirm` (`yes`, `no` or `unanswered`), as a summary's line is. Turning it on changes the model's request on the offer turn (the pending read-back is in its turn state), so a recorded cassette misses there until it is recorded again. The frame log keeps only the number's last four, on a line of its own (`{"callerNumber": "…0142"}`, written only when the session kept the number), and replaying a logged call stands a made-up number ending in those four in for it (the shortest in the 555 range the slot takes), so the replay makes the offer the call made, with the same line and the same request to the model; after a yes the slot holds the stand-in, which the trace masks to the same last four, so a later turn's request, which shows the model the slot, is not the call's. A log written before that line replays with no offer. The engine's own fixture is `packages/dialogwright/src/testing/callback`.
 
+### A number on the phone: `sayAs` and `waitForRestMs`
+
+Two things a `digits` slot does on the phone, each with a default:
+
+```yaml
+account:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  sayAs: digits          # the default; number for a quantity the voice may read as a number
+  waitForRestMs: 1500    # the default; 0 asks again at once
+```
+
+**Said back digit by digit (`sayAs`).** A text-to-speech voice reads "0142" as "one hundred forty-two" and an account number as a number in the millions. So wherever a line says the slot's value (a read-back, the form's summary, a line worded by a model, a repeat of the last line, a line of the app's own code), the last four of the caller's number at its offer, or the consent to text, the voice is sent each digit, with a short pause between the display's groups: "Account 5552 0417" goes out as "Account 5 5 5 2, 0 4 1 7". Only the text sent to the voice changes, as for app.yaml's `voice.spokenDigits` and `voice.pronounce` ([13.8](13-channels.md#138-a-caller-who-had-not-finished-and-how-a-word-is-said)): the session, the trace, the console, a chat and the regression baselines keep the line as written. The engine finds the value in a line by the value itself (the slot's value and display, a value read back or offered, the last four offered), whole, never inside a longer number, so a line needs no marking. An app's own `spokenDigits` rules run first, and a value they spelled out stays as they spelled it. `sayAs: number` leaves the value to the voice.
+
+**A number said with a pause (`waitForRestMs`).** A recognizer ends a prompt at a short pause. A caller reading an account number off a card says "five", looks again, and says the rest: the engine is sent "Five." as a whole answer, and the re-ask it would say goes out over the rest (or, with the carrier's barge-in off, the rest is not heard at all). So when the slot was just asked and heard fewer digits than its `length` (or a number the model heard trail off), and the turn would only ask again, the voice server holds the re-ask up to `waitForRestMs`. If the caller goes on in that time, it is never said, and their next words are joined to the first and read as one answer ("Five. five five two zero four one seven." is 55520417), on the session as it was before the first: no attempt is counted. If not, the re-ask goes when the wait is over, a little later than it would have. It is the same joining that serves a caller who had not finished ([13.8](13-channels.md#138-a-caller-who-had-not-finished-and-how-a-word-is-said)), on every carrier, whatever `continueWithinMs` and `INCOMPLETE_WAIT_MS` say; a chat, where a message comes whole, never waits. A slot with a `mask` and no `length` waits only for a number trailed off. The trace keeps both turns, and the joined one says so (`joined: { fragments: [...], waitedFor: account }`); the frame log's `replyHeld` line names the slot, and the console notes the hold on the line. A number a carrier heard with a digit too many is refused and asked again, as before: no wait for that.
+
+### A bare name: `bareAnswer`
+
+A caller who answers the name question with only a name ("Jordan Avery") gives the model's yes-or-no question ("does the caller state their own name?") little to go on: on a live call it read 0.41, under `SLOT_DETECT`, while the span question was 0.74 sure "jordan avery" was the name, and the caller was asked again. So right after the question (the slot the one just asked), a short answer whose chosen span the model is sure of is taken as the name given:
+
+```yaml
+caller:
+  type: name
+  bareAnswer: { words: 4, span: SLOT_DETECT }   # the defaults; words: 0 turns it off
+```
+
+`words` is the most words the answer may have ("it's Jordan Avery" is three), and `span` the threshold the span's probability must reach, an engine threshold or one of the app's own (app.yaml `thresholds:`), read by name like every other. Anywhere else (a turn the slot was not just asked, a longer answer) the yes-or-no decides, as always, so a name said in passing, which may be someone else's, is never taken on the span alone. The questions are the same either way, so a recording made before the option reads the same.
+
 ### A text offer: `onNo` and `ifNone`
 
 A callback number is a slot the form needs: a no to the offer asks for another. An offer to text the caller ("Can I text you updates at the number you're calling from?") is one the caller may turn down, and a no means no text. Two options of the `callerNumber` offer say so:

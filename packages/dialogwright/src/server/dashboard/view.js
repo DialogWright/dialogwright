@@ -141,10 +141,13 @@ export const DELIVERY_NOTES = {
   interrupt: { on: 'agent', text: (f) => `caller talked over this, ${secs(f.afterMs)} in` },
   // The adapter's decision that an interrupt was not the caller's (RESAY_SPURIOUS_INTERRUPTS): not passed to the core.
   spuriousInterrupt: { on: 'agent', text: (f) => `interrupted ${secs(f.afterMs)} in with no caller speaking`, replaces: () => ['interrupt'] },
-  // A reply held for a caller not finished (INCOMPLETE_WAIT_MS): said after the wait, or never, the caller going on.
+  // A reply held for a caller not finished (INCOMPLETE_WAIT_MS), or for the rest of a slot's value (`slot`, its
+  // waitForRestMs): said after the wait, or never, the caller going on.
   replyHeld: {
     on: 'agent',
-    text: (f) => (f.outcome === 'joined' ? 'not said: the caller went on' : `reply held ${secs(f.ms)} for the caller to finish, then said`),
+    text: (f) => (f.outcome === 'joined'
+      ? 'not said: the caller went on'
+      : f.slot ? `reply held ${secs(f.ms)} for the rest of ${f.slot}, then said` : `reply held ${secs(f.ms)} for the caller to finish, then said`),
     unsaid: (f) => f.outcome === 'joined',
   },
   // A turn's `end` held until its lines played (END_AFTER_PLAYBACK); `value` is how it came to go.

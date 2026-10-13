@@ -69,3 +69,21 @@ export function digitsFill(
     return { kind: 'filled', value: digits, display: display(digits, ctx.locale), confidence: p, confirm };
   };
 }
+
+/**
+ * Whether a digits slot's miss may be only the start of its number (SlotSpec.restToCome): a number
+ * stated (SLOT_DETECT) but not said whole (under SLOT_DETECT), or a span of fewer digits than `length`
+ * (never by length without one: a mask alone knows no least length). The engine asks it only of the
+ * slot just asked whose fill was invalid; on the phone the re-ask then waits `waitForRestMs` for the rest.
+ */
+export function digitsRestToCome(o: Pick<DigitsOptions, 'length'>, ids: DigitsIds): (answers: AnswerMap, ctx: SlotContext) => boolean {
+  return (answers, ctx) => {
+    const t = ctx.thresholds;
+    if (!meetsThreshold(t, 'SLOT_DETECT', noulValue(answers, ids.given))) return false;
+    if (!meetsThreshold(t, 'SLOT_DETECT', noulValue(answers, ids.complete))) return true;
+    const span = answers[ids.span];
+    if (o.length === undefined || !isChoice(span) || typeof span.choice !== 'string' || span.choice === 'none') return false;
+    const digits = spokenToDigits(span.choice, ctx.locale);
+    return digits.length > 0 && digits.length < o.length;
+  };
+}

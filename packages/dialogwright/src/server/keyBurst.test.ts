@@ -15,6 +15,7 @@ import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient } from '../jev/types';
 import { promptText } from '../prompts/render';
+import { spellDigits } from '../channel/sayDigits';
 import { TraceWriter } from '../trace/writer';
 import { replayFrameLog } from '../harness-text/replay';
 import { registerApp, resetAppsForTest } from '../core/app/registry';
@@ -66,7 +67,8 @@ function deps(keyWaitMs?: number, app: App = consent): AdapterDeps & { dir: stri
 
 const setup = JSON.stringify({ type: 'setup', sessionId: 'VX1', callSid: 'CA1', from: '+15555550142', to: '+15555550100', customParameters: {} });
 const digit = (d: string) => JSON.stringify({ type: 'dtmf', digit: d });
-const CONSENT_Q = promptText(consent, 'consent_texts', { last4: '0142' });
+// The lines as they go out on the wire: a digits slot's number said digit by digit (channel/sayDigits.ts).
+const CONSENT_Q = promptText(consent, 'consent_texts', { last4: spellDigits('0142') });
 const OPEN = promptText(consent, 'greet_after_offer', {});
 
 async function call(d: AdapterDeps): Promise<{ sock: Fake; send: (m: string) => Promise<void> }> {
@@ -172,7 +174,7 @@ describe('keys at a slot\'s own yes-or-no offer, on a live call', () => {
     vi.useRealTimers();
   });
   const say = (t: string) => JSON.stringify({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true });
-  const OFFER = promptText(yesNo, 'offer_textTo', { last4: '0142' });
+  const OFFER = promptText(yesNo, 'offer_textTo', { last4: spellDigits('0142') });
 
   it('a number keyed is asked again once, files nothing, and the 1 after it is the yes', async () => {
     const d = deps(undefined, yesNo);
@@ -193,7 +195,7 @@ describe('keys at a slot\'s own yes-or-no offer, on a live call', () => {
     await send(digit('1'));
     await send(digit('#'));
     await vi.advanceTimersByTimeAsync(0);
-    expect(texts(sock).at(-1)).toBe(promptText(yesNo, 'confirm_open_request_text', { topic: 'an order', textTo: '555 555 0142' }));
+    expect(texts(sock).at(-1)).toBe(promptText(yesNo, 'confirm_open_request_text', { topic: 'an order', textTo: spellDigits('555 555 0142') }));
     expect(entry.session.slots.textTo).toMatchObject({ value: '5555550142', confirmed: true });
     expect(drafts(d.dir).filter((e) => e.type === 'offer').map((e) => [e.detail.answer, e.detail.by])).toEqual([['yes', 'keypad']]);
     expect(drafts(d.dir).filter((e) => e.type === 'gate').map((e) => e.detail.tool)).toEqual(['findCallerByPhone']);
