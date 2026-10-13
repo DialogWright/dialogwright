@@ -151,6 +151,9 @@ describe('decisionToActions', () => {
     const chat: Decision = { kind: 'complete', form: null, promptId: 'goodbye_chat', vars: {}, acks: [], completed: [] };
     expect(decisionToActions(app, chat)).toEqual([say('goodbye_chat', {}, false), endAction([])]);
     expect(spokenText(app, chat)).toBe('Thanks for chatting with Example Parcels. Goodbye.');
+    // Any other ending on a chat closes with the chat's goodbye the core names (goodbyeId), not the voice's.
+    const filed: Decision = { kind: 'complete', form: 'report_missing', promptId: 'report_filed', vars: { report: '1001' }, acks: [], completed: ['report_missing'], goodbyeId: 'goodbye_chat' };
+    expect(decisionToActions(app, filed)).toEqual([say('report_filed', { report: '1001' }, false), say('goodbye_chat', {}, false), endAction(['report_missing'])]);
   });
 
   it('transfers a handoff with its reason, what was done and queued, and the slots collected', () => {

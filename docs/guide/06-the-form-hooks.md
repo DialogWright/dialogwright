@@ -48,4 +48,4 @@ predicates: {
 },
 ```
 
-A completion that ends the call (`{ kind: 'end', promptId, vars, acks }`) is followed by the app's `goodbye` line, as a `then: end` outcome is; `goodbye: false` on it ends the call on its own line, for a line that says goodbye itself.
+A completion that ends the call (`{ kind: 'end', promptId, vars, acks }`) is followed by the app's `goodbye` line (on a chat, `goodbye_chat`), as a `then: end` outcome is; `goodbye: false` on it ends the call on its own line, for a line that says goodbye itself. With a request queued the line is said word for word and the call goes on to it, so a line that may be followed by one keeps the goodbye out of its words.

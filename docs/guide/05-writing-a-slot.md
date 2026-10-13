@@ -541,7 +541,7 @@ A `_noinput` line is the whole turn ("Sorry, I didn't hear anything. What's your
 | `handoff` (the default) | `handoff_max_attempts`, and a person. |
 | `{ then: handoff, reason: <reason> }` | `say` if given, then `handoff_<reason>` (in piece 2, the transfer target too). |
 | `skip`, `{ say, then: skip }` | `say` if given; the slot is left empty and declined, and the form goes on to its next question. The completion sees no value. |
-| `{ say, then: end }` | `say` (required), and the call ends, the app's `goodbye` line after it (`goodbye: false`: on `say` alone, for a line that says goodbye itself); with a request queued, the call goes on to it, the slot asked afresh there. |
+| `{ say, then: end }` | `say` (required), and the call ends, the app's `goodbye` line after it (`goodbye: false`: on `say` alone, for a line that says goodbye itself); with a request queued, `say` is said word for word and the call goes on to it, the slot asked afresh there, so keep a goodbye out of `say` unless no request can be queued. |
 | `{ say, then: anything-else }` | `say` (required); the form closes uncompleted, and the call goes on to a queued request, or "anything else?". An identity factor asked at the greeting (callerId `ask: greeting`) sets identity aside and asks the open question (`greet_after_offer`) instead. |
 | `{ say, then: form, form: <form> }` | `say` if given; the form closes uncompleted and `<form>` is entered, as a `next` enters it: the slots both forms list are kept, the rest emptied, and `bridge_next` says the new form's label before its first question. An internal form an outcome enters is reached, as one a `next` names is, and so is one an identity factor's outcome enters. |
 

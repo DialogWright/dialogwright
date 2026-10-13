@@ -18,7 +18,7 @@ export interface RenderContext {
   audioBase: string;
 }
 
-/** The line every completed call ends on. */
+/** The line every completed call ends on (a chat's own, goodbye_chat, where the decision names it: CompleteDecision.goodbyeId). */
 const GOODBYE = 'goodbye';
 /** The goodbye on a chat (core/turn.ts goodbye): itself the goodbye, as `goodbye` is. */
 const GOODBYE_CHAT = 'goodbye_chat';
@@ -186,7 +186,7 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       return [
         ...decision.acks.map((a) => ack(a.promptId, a.vars, false)),
         sayAs('close')(decision.promptId, decision.vars, false),
-        ...(closesWithGoodbye(decision) ? [] : [sayAs('close')(GOODBYE, {}, false)]),
+        ...(closesWithGoodbye(decision) ? [] : [sayAs('close')(decision.goodbyeId ?? GOODBYE, {}, false)]),
         endAction(decision.completed),
       ];
     case 'handoff':
@@ -234,7 +234,7 @@ export function spokenText(app: App, decision: Decision, locale?: string): strin
       return [
         ...decision.acks.map((a) => text(a.promptId, a.vars)),
         text(decision.promptId, decision.vars),
-        ...(closesWithGoodbye(decision) ? [] : [text(GOODBYE, {})]),
+        ...(closesWithGoodbye(decision) ? [] : [text(decision.goodbyeId ?? GOODBYE, {})]),
       ].join(' ');
     case 'handoff':
       return [...decision.acks.map((a) => text(a.promptId, a.vars)), text(decision.promptId, {})].join(' ');

@@ -705,7 +705,7 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(out).toContain("ok    host.yaml's numbers: ONE_LINE (one), each set and its own; any other number reaches one");
     expect(out).toContain("warn  app one: app.yaml's transfer.default reads MAIN_LINE: a 555 number, so calls handed off there will go nowhere  ->  set MAIN_LINE to a phone a person answers");
     expect(out).toContain("ok    app two: app.yaml's transfer.default reads MAIN_LINE: set, a SIP address");
-    expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^warn  app two: .*sets TWILIO_AUTH_TOKEN, which the app's YAML does not name/);
+    expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^ok    app two: .*also sets TWILIO_AUTH_TOKEN, not named by its YAML: available to its code through ctx.env/);
     expect(out.join('\n')).not.toContain('+15555550201');
     expect(out.join('\n')).not.toContain('not-read');
   });

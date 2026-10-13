@@ -565,7 +565,16 @@ function endOnCompletion(s: Session, form: FormId, c: Extract<Completion, { kind
   const def = formOf(appOf(s), form);
   if (def.summaryPromptId !== null) for (const id of def.slots) if (s.slots[id]!.value !== null) s.slots[id]!.confirmed = true;
   agree(s, form);
-  return { kind: 'complete', form, promptId: c.promptId, vars: c.vars, acks: c.acks, completed: [...s.completed], ...(c.goodbye === false ? { goodbye: false as const } : {}) };
+  return { kind: 'complete', form, promptId: c.promptId, vars: c.vars, acks: c.acks, completed: [...s.completed], ...closingOf(s, c.goodbye) };
+}
+
+/**
+ * What a call that ends on a line says after it (CompleteDecision.goodbye, goodbyeId): nothing with
+ * `goodbye: false`; else the goodbye, on a chat its own (goodbye_chat, as goodbye() says it).
+ */
+function closingOf(s: Session, goodbye: false | undefined): Pick<CompleteDecision, 'goodbye' | 'goodbyeId'> {
+  if (goodbye === false) return { goodbye: false };
+  return s.caps.speech ? {} : { goodbyeId: 'goodbye_chat' };
 }
 
 /**
@@ -1396,7 +1405,7 @@ function actOn(s: Session, form: FormId | null, ending: Ending, io: TurnIO): Dec
       if (s.queued.length > 0 && form !== null) return finishForm(s, form, [...ending.acks, ending.line], io, false);
       s.pendingConfirmation = null;
       s.pendingHash = null;
-      return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed], ...(ending.goodbye === false ? { goodbye: false as const } : {}) };
+      return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed], ...closingOf(s, ending.goodbye) };
     case 'anything-else':
       if (form === null) return withNoForm(s, ending.acks);
       return finishForm(s, form, ending.acks, io, false);

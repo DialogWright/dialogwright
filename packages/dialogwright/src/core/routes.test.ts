@@ -94,6 +94,10 @@ describe('start', () => {
     expect('goodbye' in before.decision).toBe(false);
     expect(heard(before)).toBe(`${CLOSED} Goodbye.`);
     expect(before.actions.map((a) => a.type)).toEqual(['say', 'say', 'end']);
+    // On a chat, the goodbye after the line is the chat's own (goodbye_chat), as "no, that's all" says it.
+    const chat = last(await call({ now: EVENING, as: 'web' }));
+    expect(chat.decision).toMatchObject({ kind: 'complete', promptId: 'closed_now', goodbyeId: 'goodbye_chat' });
+    expect(heard(chat)).toBe(`${CLOSED} Thanks for chatting with Example Service Line. Goodbye.`);
   });
 
   it('an outage on the Spanish line: the rule that does both says the notice in Spanish and switches; the outage rule alone would have taken it in English', async () => {

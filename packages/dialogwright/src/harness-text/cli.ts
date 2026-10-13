@@ -135,7 +135,9 @@ async function run(): Promise<void> {
   if (isClientKind(kind)) for (const line of modelHeader(kind, provider)) console.log(line);
   const client = buildClient(kind, corpusFileOf(args['corpus-file'], args.corpus), thresholds, todayIso, provider ?? undefined);
   const trace = args.trace ? new TraceWriter(args.trace) : null;
-  // The CLI's own environment, of which a turn reads only the variables the app's conditions name (a called condition's).
+  // The CLI's own environment, of which a turn's conditions read only the variables they name (a called
+  // condition's), and the app's code any setting by name (ctx.env): the corpus, a replay and the prompt read
+  // the shell's (and, against a model, the settings file loaded above); a scripted call its own "env" only.
   const opts: RunOptions = { client, thresholds, todayIso, trace, screen: parseScreenMode(args.screen, '--screen'), env: process.env };
   const records: TraceRecord[] = [];
 
@@ -155,7 +157,8 @@ async function run(): Promise<void> {
   if (args.scenarios) {
     let failed = 0;
     for (const scenario of loadScenarios(args.scenarios)) {
-      const r = await runScenario(scenario, opts);
+      // A scripted call reads its own "env" (conditions and the code's ctx.env alike), never the shell's: none where it gives none.
+      const r = await runScenario(scenario, { ...opts, env: {} });
       for (const run of r.runs) records.push(run.record);
       console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${scenario.id}`);
       for (const m of r.mismatches) console.log(`      ${m}`);

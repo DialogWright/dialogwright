@@ -50,6 +50,11 @@ export interface CompleteDecision {
    * goodbye follows the line, unless the line is the goodbye.
    */
   goodbye?: false;
+  /**
+   * The goodbye said after the line, where one is: on a chat, `goodbye_chat` (the core picks it from the
+   * channel, as it does for "no, that's all"). Absent, `goodbye`.
+   */
+  goodbyeId?: 'goodbye_chat';
 }
 
 export interface HandoffDecision {

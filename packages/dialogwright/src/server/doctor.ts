@@ -722,7 +722,8 @@ export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>] pnpm diagnose [--app <name
  * The checks of a host file's apps (host.yaml: several apps on one server), after the server's own: the
  * numbers it names, each set, E.164 and its own; then, for each app, its own settings file and every
  * variable its YAML names, as the server will read it for that app (its own file's value, else the
- * server's), and the variables its own file sets that are not read under a host. Names and lengths only,
+ * server's), and the variables its own file sets that its YAML does not name (its code's, through ctx.env;
+ * not the server's under a host). Names and lengths only,
  * never a value.
  */
 export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platform = process.platform): CheckResult[] {
@@ -788,7 +789,9 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
       }
     }
     if (read.ignored.length > 0) {
-      out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host the server reads an app's own file for its own variables alone (the app's code may read any of them with ctx.env)`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file; keep here only what the app\'s YAML or its code (ctx.env) reads' }));
+      // Not a fault: the app's code may read them (ctx.env). Named, never a value, so a server setting left
+      // here from before the host (which the server does not read from an app's file) is seen.
+      out.push(tag({ id: 'settings', status: 'ok', message: `${app.envFile} also sets ${read.ignored.join(', ')}, not named by its YAML: available to its code through ctx.env (the server's own settings come from the server's settings file)` }));
     }
   }
   for (const ids of audiences.values()) {

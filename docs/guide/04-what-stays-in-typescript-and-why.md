@@ -58,7 +58,8 @@ The app's code reads its own settings (a desk's number, a list of numbers, a swi
 
 - on a server of one app, the server's environment (its `.env`, or the file `ENV_FILE` names);
 - on a server of several apps (a host file, [14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)), the app's own settings file, the whole of it, over the server's settings, so two apps may each set a variable of one name;
-- in a scripted call, the call's `"env"` (the server's way, `RunOptions.settings`, is read over it), so a test never reads the shell's.
+- in a scripted call, the call's `"env"` (the server's way, `RunOptions.settings`, is read over it), so a test never reads the shell's: a scripted call that gives none has none, in `regress` and the text harness alike;
+- in the text harness's corpus, its prompt and a replay of a call's frame log (`--replay`), the shell's environment (with a model client, the settings file `ENV_FILE` names, else the `.env` where it runs, read into it first). To replay a call of an app on a host, give it that app's settings: `ENV_FILE` at the app's own settings file, or the variables its code reads exported in the shell.
 
 `process.env` is the server's alone: under a host it never holds an app's own file. And code at a module's top level runs once, as the module is imported, before any call: a constant read from `process.env` there is the server's setting at start, whatever the app's own file says. In a live call a predicate's list read that way was empty under a host. Read a setting inside the hook, the tool or the predicate:
 

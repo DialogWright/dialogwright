@@ -30,7 +30,7 @@ const THEN_WORDS: Record<OutcomeThen, string> = {
 
 /** What `goodbye:` means on an ending outcome, as the JSON Schema and an editor say it (routes.yaml's too). */
 export const GOODBYE_DESCRIPTION =
-  'For then: end, whether the app\'s goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself ("... We\'re closed right now. Goodbye."), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.';
+  'For then: end, whether the app\'s goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself ("... We\'re closed right now. Goodbye."), so the caller does not hear goodbye twice. Default true: the goodbye follows the line. Either way, with a request queued the line is said and the call goes on to it, so a line that may be followed by one keeps the goodbye out of its words (only a start route never has one).';
 
 /** What `then` says, for the thens an outcome of this kind takes. */
 const thenDescription = (thens: readonly OutcomeThen[]): string => `What follows the line: ${thens.map((t) => THEN_WORDS[t]).join('; ')}.`;

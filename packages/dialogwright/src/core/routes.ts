@@ -1,6 +1,6 @@
 import type { App, FormId, PredicateContext, RouteOutcome, RoutePoint, RouteRule, Routes } from './app/types';
 import { ROUTE_POINTS, ROUTE_THEN, ROUTE_THEN_AT } from './app/types';
-import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, subjectsOf, type Condition, type ConditionFacts, type ConditionWorld } from './conditions';
+import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, subjectsOf, type Condition, type ConditionFacts, type ConditionValue, type ConditionWorld, type ValueTest } from './conditions';
 import { hoursOpen, scheduleNames } from './hours';
 import type { Session } from './session';
 import { callDataOf } from './callData';
@@ -197,15 +197,15 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
   // A rule that says a line and goes on (`continue`) above a `locale` rule: a call both hold for is taken
   // by the first and never switched, so its line and the rest of the call are in the default language
   // (live: an outage notice above the Spanish line's rule greeted a Spanish call in English). Warned only
-  // where it is likely: not where both read the number called (a call dials one), nor where a rule above
-  // the first already does both (the combined rule, the fix).
+  // where both can hold (not where they cannot both hold: exclusive), and not where a rule above the
+  // first already does both (the combined rule, the fix).
   const lostSwitches = (rules: readonly RouteRule[], at: readonly (string | number)[]): void => {
     const plain = (r: unknown): r is RouteRule => typeof r === 'object' && r !== null && (r as RouteRule).else !== true && Array.isArray((r as RouteRule).when) && typeof (r as RouteRule).outcome === 'object' && (r as RouteRule).outcome !== null;
     const key = (c: Condition): string => JSON.stringify(c);
     rules.forEach((rule, i) => {
       if (!plain(rule) || rule.outcome.then !== 'continue' || rule.outcome.say === undefined) return;
       const j = rules.findIndex((later, k) => k > i && plain(later) && later.outcome.then === 'locale'
-        && !(rule.when.some((c) => c.kind === 'called') && later.when.some((c) => c.kind === 'called'))
+        && !exclusive(rule.when, later.when)
         && !rules.slice(0, i).some((above) => plain(above) && above.outcome.then === 'locale' && above.outcome.locale === (later.outcome as { locale: string }).locale
           && [...rule.when, ...later.when].every((c) => above.when.some((a) => key(a) === key(c)))));
       if (j < 0) return;
@@ -246,6 +246,38 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
     }
   }
   return out;
+}
+
+/**
+ * Whether two rules' conditions can never all hold on one call, as far as their own words say: two
+ * `called` conditions with no variable in common (a call dials one number), or one subject (a fact, a
+ * call data key, a slot) tested for values that exclude each other, or the same hours open and closed.
+ * Anything else may hold together (a predicate, a level, two different facts).
+ */
+export function exclusive(a: readonly Condition[], b: readonly Condition[]): boolean {
+  return a.some((x) => b.some((y) => excludes(x, y)));
+}
+
+/** Whether conditions `x` and `y` can never both hold (exclusive). */
+function excludes(x: Condition, y: Condition): boolean {
+  if (x.kind === 'called' && y.kind === 'called') return !x.variables.some((v) => y.variables.includes(v));
+  if (x.kind === 'hours' && y.kind === 'hours') return x.schedule === y.schedule && x.open !== y.open;
+  if ((x.kind === 'fact' || x.kind === 'callData' || x.kind === 'slot') && y.kind === x.kind && y.key === x.key) return testsExclude(x.test, y.test) || testsExclude(y.test, x.test);
+  return false;
+}
+
+/** Whether a value passing test `t` can never pass `u` (each of is, in, notIn, present; values compared by their spelling, as call data is, so `1` and `"1"` are the same). */
+function testsExclude(t: ValueTest, u: ValueTest): boolean {
+  const same = (p: ConditionValue, q: ConditionValue): boolean => String(p) === String(q);
+  if ('present' in t && 'present' in u) return t.present !== u.present;
+  if ('present' in t && !t.present) return 'is' in u || 'in' in u;
+  if ('is' in t) {
+    if ('is' in u) return !same(t.is, u.is);
+    if ('in' in u) return !u.in.some((v) => same(v, t.is));
+    if ('notIn' in u) return u.notIn.some((v) => same(v, t.is));
+  }
+  if ('in' in t && 'in' in u) return !t.in.some((v) => u.in.some((w) => same(v, w)));
+  return false;
 }
 
 /**

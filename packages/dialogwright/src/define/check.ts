@@ -460,17 +460,22 @@ function routeWarnings(config: LoadedConfig, code: AppCode | undefined, slots: r
 }
 
 /**
- * The warning for a goodbye said twice: an ending outcome (`then: end`: a route's, a check's, a library
- * slot's onMaxAttempts) whose line itself ends as the goodbye line does (its last sentence: "Goodbye."
- * for "Thanks for calling. Goodbye."), in any locale, where the outcome leaves the goodbye after it.
- * The caller would hear goodbye twice; `goodbye: false` ends the call on the line alone. A warning,
- * never a refusal: the line's words are the app's.
+ * The warnings for an ending's goodbye (`then: end`: a route's, a check's, a library slot's
+ * onMaxAttempts), never refusals, the line's words being the app's. A line ends "as the goodbye does"
+ * when it ends with the last sentence of the goodbye line ("Goodbye." of "Thanks for calling. Goodbye.")
+ * or of the chat's (goodbye_chat), in any locale.
+ * - Such a line with the goodbye after it (no `goodbye: false`): the caller hears goodbye twice. At
+ *   `start` the fix is `goodbye: false`; anywhere else a request may be queued, and then the line is said
+ *   and the call goes on to it, so the fix is first to take the goodbye out of the line.
+ * - Such a line with `goodbye: false` anywhere but `start`: with a request queued, the call goes on after
+ *   it, and the caller hears goodbye mid-call.
+ * The goodbye lines themselves (goodbye, goodbye_chat) are never warned of.
  */
 function goodbyeTwiceWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
-  const endings: { file: string; path: DataPath; say: string }[] = [];
-  const ending = (o: unknown, file: string, path: DataPath): void => {
+  const endings: { file: string; path: DataPath; say: string; own: boolean; queueable: boolean }[] = [];
+  const ending = (o: unknown, file: string, path: DataPath, queueable: boolean): void => {
     const { then, say, goodbye } = (typeof o === 'object' && o !== null ? o : {}) as { then?: unknown; say?: unknown; goodbye?: unknown };
-    if (then === 'end' && typeof say === 'string' && goodbye !== false) endings.push({ file, path, say });
+    if (then === 'end' && typeof say === 'string' && say !== 'goodbye' && say !== 'goodbye_chat') endings.push({ file, path, say, own: goodbye === false, queueable });
   };
   const lists: [DataPath, readonly RouteRuleYaml[]][] = [];
   if (config.routes?.start) lists.push([['start'], config.routes.start]);
@@ -479,22 +484,32 @@ function goodbyeTwiceWarnings(config: LoadedConfig, report: (file: string, path:
   for (const [at, rules] of lists) {
     rules.forEach((rule, i) => {
       const w = writtenOutcome(rule);
-      if (w !== null) ending(w.outcome, 'routes.yaml', [...at, i, ...w.at]);
+      // Nothing has been asked at start, so no request can be queued there.
+      if (w !== null) ending(w.outcome, 'routes.yaml', [...at, i, ...w.at], at[0] !== 'start');
     });
   }
   for (const [id, form] of Object.entries(config.forms.forms)) {
     (form.checks ?? []).forEach((check, i) => {
-      for (const [reason, o] of Object.entries(check.on ?? {})) ending(o, 'forms.yaml', ['forms', id, 'checks', i, 'on', reason]);
+      for (const [reason, o] of Object.entries(check.on ?? {})) ending(o, 'forms.yaml', ['forms', id, 'checks', i, 'on', reason], true);
     });
   }
-  for (const [id, raw] of Object.entries(config.slots ?? {})) ending((raw as { onMaxAttempts?: unknown }).onMaxAttempts, SLOTS_FILE, [id, 'onMaxAttempts']);
+  for (const [id, raw] of Object.entries(config.slots ?? {})) ending((raw as { onMaxAttempts?: unknown }).onMaxAttempts, SLOTS_FILE, [id, 'onMaxAttempts'], true);
   const defaults = config.prompts[config.defaultLocale] ?? {};
   for (const e of endings) {
     for (const prompts of Object.values(config.prompts)) {
       const line = (prompts[e.say] ?? defaults[e.say])?.text;
-      const goodbye = (prompts.goodbye ?? defaults.goodbye)?.text;
-      if (line === undefined || goodbye === undefined || !endsAsGoodbye(line, goodbye)) continue;
-      report(e.file, [...e.path, 'say'], `the line "${e.say}" ends the call with a goodbye of its own ("${lastSentence(goodbye)}"), and the goodbye line follows it: the caller hears goodbye twice`, 'add "goodbye: false" to this outcome, so the call ends on its line alone; or take the goodbye out of the line');
+      const goodbye = ['goodbye', 'goodbye_chat'].map((id) => (prompts[id] ?? defaults[id])?.text).find((g) => line !== undefined && g !== undefined && endsAsGoodbye(line, g));
+      if (goodbye === undefined) continue;
+      const said = lastSentence(goodbye);
+      if (!e.own) {
+        report(e.file, [...e.path, 'say'], `the line "${e.say}" ends the call with a goodbye of its own ("${said}"), and the goodbye line follows it: the caller hears goodbye twice`,
+          e.queueable
+            ? 'take the goodbye out of the line: with a request queued, the line is said and the call goes on to it, so it must read right mid-call too; only where that cannot happen, add "goodbye: false" instead'
+            : 'add "goodbye: false" to this outcome, so the call ends on its line alone; or take the goodbye out of the line');
+      } else if (e.queueable) {
+        report(e.file, [...e.path, 'goodbye'], `the line "${e.say}" says goodbye itself ("${said}"), and with a request queued the call goes on after it, so the caller hears goodbye mid-call`,
+          'take the goodbye out of the line and delete "goodbye: false": the goodbye then follows the line only when the call ends there');
+      }
       break;
     }
   }

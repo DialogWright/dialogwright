@@ -291,21 +291,31 @@ describe('the live findings: an ending\'s own goodbye, and routes taken first-ma
     expect(r.warnings).toEqual([expect.stringContaining('start[0].say  the line "closed_now" ends the call with a goodbye of its own ("Goodbye."), and the goodbye line follows it: the caller hears goodbye twice  ->  add "goodbye: false" to this outcome')]);
   });
 
-  it('warns of the same on a check\'s ending (its punctuation aside), and not once it says goodbye: false', async () => {
+  it('on a check\'s ending, where a request may be queued: the goodbye taken out of the line first; and goodbye: false there is warned of too, as the line is then said mid-call', async () => {
     const s = await import('../testing/screened/app');
-    const checked = async (forms: (t: string) => string): Promise<string[]> => {
+    const checked = async (forms: (t: string) => string, line = 'but the owner is welcome to call us. Goodbye!\n'): Promise<string[]> => {
       const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
       scratch.push(dir);
       cpSync(s.SCREENED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
       const prompts = readFileSync(join(dir, 'prompts.yaml'), 'utf8');
-      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace('but the owner is welcome to call us.\n', 'but the owner is welcome to call us. Goodbye!\n'));
+      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace('but the owner is welcome to call us.\n', line));
       writeFileSync(join(dir, 'forms.yaml'), forms(readFileSync(join(dir, 'forms.yaml'), 'utf8')));
       const r = await checkAppFully(dir, { code: s.screenedCode, fixturesRoot: PACKAGE_DIR });
       expect(r.problems).toEqual([]);
       return (r.warnings ?? []).map(formatProblem);
     };
-    expect(await checked((t) => t)).toEqual([expect.stringContaining('forms.yaml:18:29  forms.book_visit.checks[1].on.not-owner.say  the line "decline_renter" ends the call with a goodbye of its own ("Goodbye."), and the goodbye line follows it')]);
-    expect(await checked((t) => t.replace('not-owner: { say: decline_renter, then: end }', 'not-owner: { say: decline_renter, then: end, goodbye: false }'))).toEqual([]);
+    const ownGoodbye = (t: string) => t.replace('not-owner: { say: decline_renter, then: end }', 'not-owner: { say: decline_renter, then: end, goodbye: false }');
+    // Punctuation aside: "Goodbye!" ends as "Goodbye." does.
+    expect(await checked((t) => t)).toEqual([expect.stringContaining('forms.yaml:18:29  forms.book_visit.checks[1].on.not-owner.say  the line "decline_renter" ends the call with a goodbye of its own ("Goodbye."), and the goodbye line follows it: the caller hears goodbye twice  ->  take the goodbye out of the line: with a request queued, the line is said and the call goes on to it')]);
+    expect(await checked(ownGoodbye)).toEqual([expect.stringContaining('forms.book_visit.checks[1].on.not-owner.goodbye  the line "decline_renter" says goodbye itself ("Goodbye."), and with a request queued the call goes on after it, so the caller hears goodbye mid-call  ->  take the goodbye out of the line and delete "goodbye: false"')]);
+    // A line that does not say goodbye, either way: nothing.
+    expect(await checked((t) => t, 'but the owner is welcome to call us.\n')).toEqual([]);
+    expect(await checked(ownGoodbye, 'but the owner is welcome to call us.\n')).toEqual([]);
+  });
+
+  it('never warns of an ending on the goodbye line itself', async () => {
+    const r = await routedWith((t) => t.replace('    say: closed_now\n    then: end\n    goodbye: false\n', '    say: goodbye\n    then: end\n'));
+    expect(r.warnings).toEqual([]);
   });
 
   it('refuses goodbye on a route that does not end the call', async () => {
@@ -336,9 +346,28 @@ describe('the live findings: an ending\'s own goodbye, and routes taken first-ma
     ]);
   });
 
-  it('says nothing where the two cannot both hold (each reads the number called), or the rule says no line', async () => {
-    const both = await routedWith((t) => t.replace(COMBINED, '').replace('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: [{ fact: outage, is: true }, { called: env.MAIN_LINE }]\n    say: outage_notice\n    then: continue\n'));
-    expect(both.warnings.filter((w) => w.includes('never switched'))).toEqual([]);
+  it('warns where both read the same number called (the live call\'s own shape)', async () => {
+    const r = await routedWith((t) => t.replace(COMBINED, '').replace('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]\n    say: outage_notice\n    then: continue\n'));
+    expect(r.warnings).toEqual([expect.stringContaining('start[2]  says outage_notice and goes on, so a call it takes is never switched to es, even where rule 4 (then: locale) holds too')]);
+  });
+
+  it('says nothing where the two cannot both hold, or the rule says no line', async () => {
+    const outage = '  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n';
+    const quiet = async (rule: string, locale?: string): Promise<string[]> => {
+      const r = await routedWith((t) => {
+        const x = t.replace(COMBINED, '').replace(outage, rule);
+        return locale === undefined ? x : x.replace('  - when: { called: env.SPANISH_LINE }\n', locale);
+      });
+      return r.warnings.filter((w) => w.includes('never switched'));
+    };
+    // Each reads a different number called: a call dials one.
+    expect(await quiet('  - when: [{ fact: outage, is: true }, { called: env.MAIN_LINE }]\n    say: outage_notice\n    then: continue\n')).toEqual([]);
+    // One subject with values that exclude each other: a fact, call data, the hours.
+    expect(await quiet('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: [{ called: env.SPANISH_LINE }, { fact: outage, is: false }]\n')).toEqual([]);
+    expect(await quiet('  - when: { callData: queue, is: main }\n    say: outage_notice\n    then: continue\n', '  - when: { callData: queue, in: [spanish, es] }\n')).toEqual([]);
+    expect(await quiet('  - when: { hours: open }\n    say: outage_notice\n    then: continue\n', '  - when: [{ called: env.SPANISH_LINE }, { hours: closed }]\n')).toEqual([]);
+    // The same subject with values that can meet still warns.
+    expect(await quiet('  - when: { callData: queue, is: es }\n    say: outage_notice\n    then: continue\n', '  - when: { callData: queue, in: [spanish, es] }\n')).toHaveLength(1);
     const silent = await routedWith((t) => t.replace(COMBINED, '').replace('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: { fact: outage, is: true }\n    then: continue\n'));
     expect(silent.warnings).toEqual([]);
   });
