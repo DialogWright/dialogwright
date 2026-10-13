@@ -10,3 +10,5 @@ intents:
     label: revisar sus préstamos
   done:
     label: terminar
+  hours:
+    label: conocer el horario

@@ -824,6 +824,31 @@ describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10
     expect(languageChecks(LIBRARY, server(['twilio'], 'nova-3-general'))).toHaveLength(1);
   });
 
+  it('on Twilio, fails a bare tts and a certain English-only hearing (own, or the server\'s for the default locale), and warns of a bare transcription and of another language\'s model (the maintainer\'s decision)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'languages-doctor-'));
+    try {
+      for (const f of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml']) writeFileSync(join(dir, f), readFileSync(join(LIBRARY, f), 'utf8'));
+      mkdirSync(join(dir, 'locale', 'es'), { recursive: true });
+      for (const f of ['prompts.yaml', 'slots.yaml', 'intents.yaml']) writeFileSync(join(dir, 'locale', 'es', f), readFileSync(join(LIBRARY, 'locale', 'es', f), 'utf8'));
+      const withEs = (es: string) => writeFileSync(join(dir, 'app.yaml'), readFileSync(join(LIBRARY, 'app.yaml'), 'utf8').replace('voice:\n', `voice:\n  locales:\n    es: ${es}\n`));
+      // A bare transcription alone: a warning; its own flux: a fail.
+      withEs('{ tts: es-US, transcription: es, recognition: { twilio: { provider: Deepgram, model: flux } } }');
+      expect(languageChecks(dir, server(['twilio'])).map((r) => r.status)).toEqual(['warn', 'fail']);
+      // On Telnyx alone, the Twilio recognizer is not looked at, and the bare transcription is a warning.
+      expect(languageChecks(dir, server(['telnyx'])).map((r) => r.status)).toEqual(['warn']);
+      // {} of its own beside the server's flux: another language's, a warning.
+      withEs('{ tts: es-US, transcription: es-US, recognition: { twilio: {} } }');
+      expect(languageChecks(dir, server(['twilio']))).toEqual([expect.objectContaining({ status: 'warn', message: expect.stringContaining('names an empty recognizer ({})') })]);
+      // A default locale other than English heard with the server's flux: a fail.
+      writeFileSync(join(dir, 'app.yaml'), readFileSync(join(LIBRARY, 'app.yaml'), 'utf8').replace('locale: en-US', 'locale: es-US'));
+      rmSync(join(dir, 'locale'), { recursive: true, force: true });
+      expect(languageChecks(dir, server(['twilio']))).toEqual([expect.objectContaining({ status: 'fail', message: expect.stringContaining('the default locale es-US is heard as es-US on Twilio with Deepgram flux (the server\'s)') })]);
+      expect(languageChecks(dir, server(['twilio'], 'nova-3-general'))[0]).toMatchObject({ status: 'ok' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('names each locale\'s languages when nothing is wrong, and says nothing of an app that names none', () => {
     expect(languageChecks(ROUTED, server(['twilio', 'telnyx']))).toEqual([
       { id: 'languages', status: 'ok', message: 'languages: en-US as en-US; es as es-US, each with its region, and none heard by a recognizer that hears English only' },

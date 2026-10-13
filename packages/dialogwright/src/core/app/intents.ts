@@ -55,6 +55,46 @@ export function formLabel(app: App, form: FormId, locale?: string): string {
   return label;
 }
 
+/** The engine's lines that say a label (core/turn.ts), and the variables that hold it. */
+export const LABEL_LINE_VARS: Readonly<Record<string, readonly string[]>> = {
+  ack_intent: ['intentLabel'],
+  confirm_intent_explicit: ['intentLabel'],
+  disambiguate_intent: ['a', 'b'],
+  ack_intent_then: ['a', 'b'],
+  ack_queued: ['intentLabel'],
+  bridge_next: ['intentLabel'],
+};
+
+/**
+ * A label said in `from` (a session's locale before a switch), said in `to`: the intent's or the form's
+ * whose label it is in `from`, in `to`'s words; the label as it is when it is no intent's or form's.
+ */
+export function labelIn(app: App, label: string, from: string | undefined, to: string | undefined): string {
+  if (from === to) return label;
+  for (const id of [...Object.keys(app.intents), ...Object.keys(app.forms)]) {
+    const isForm = !Object.hasOwn(app.intents, id);
+    if (isForm && app.forms[id]!.label === undefined) continue;
+    if (formLabel(app, id, from) === label) return formLabel(app, id, to);
+  }
+  return label;
+}
+
+/**
+ * Lines worded before a switch in the same turn (core/turn.ts switchLocale) that say a request's label,
+ * said again in the new locale: an ack_intent or a bridge_next built in the old one names the request in
+ * the new one's words, as every other line of the turn is said in it. Every other line, and every other
+ * variable, as it was.
+ */
+export function relabelled<A extends { readonly promptId: string; readonly vars: Readonly<Record<string, string>> }>(app: App, acks: readonly A[], from: string | undefined, to: string | undefined): A[] {
+  if (from === to) return [...acks];
+  return acks.map((a) => {
+    const vars = Object.hasOwn(LABEL_LINE_VARS, a.promptId) ? LABEL_LINE_VARS[a.promptId]! : [];
+    const named = vars.filter((v) => a.vars[v] !== undefined);
+    if (named.length === 0) return a;
+    return { ...a, vars: { ...a.vars, ...Object.fromEntries(named.map((v) => [v, labelIn(app, a.vars[v]!, from, to)])) } };
+  });
+}
+
 /** The prompt an informational intent plays, or undefined for any other intent (and for one that says a passage: informationOf). */
 export function informationalPrompt(app: App, intent: string): string | undefined {
   const def = app.intents[intent];

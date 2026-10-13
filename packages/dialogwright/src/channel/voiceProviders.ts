@@ -77,23 +77,26 @@ export const TWILIO_TTS_PROVIDERS = ['Google', 'Amazon', 'ElevenLabs'] as const;
  * (server/config.ts: TWILIO_TRANSCRIPTION_PROVIDER and TWILIO_SPEECH_MODEL unset, TELNYX_TRANSCRIPTION_PROVIDER
  * unset): Deepgram flux on Twilio, as the start document always had; on Telnyx none, Telnyx's own default.
  */
+export const TWILIO_DEFAULT_RECOGNIZER = { provider: 'Deepgram', model: 'flux' } as const;
 export const DEFAULT_RECOGNITION: Readonly<Record<VoiceProviderId, Readonly<{ provider?: string; model?: string }>>> = {
-  twilio: { provider: 'Deepgram', model: 'flux' },
+  twilio: TWILIO_DEFAULT_RECOGNIZER,
   telnyx: {},
 };
 
 /**
- * Speech models documented as hearing English only, by provider (lower case), each model as the carriers
- * name it (lower case). The one place this list is kept; `pnpm check`, `pnpm diagnose` and the server warn
- * of a language other than English heard by one (channel/speechLanguages.ts englishOnlyHearings).
- * - Deepgram's Flux: Deepgram's model page lists Flux, its conversational model, for English only (its
- *   API names it `flux-general-en`), and Twilio's ConversationRelay names it `flux` (its speechModel). On
- *   a live Twilio call (2026-10-13), a Spanish language heard with it failed: "Error connecting to Deepgram
- *   Flux".
- * Add a model only from its provider's own documentation, with where it says so.
+ * Speech models known to hear English only, by provider (lower case), each model as the carriers name it
+ * (lower case). The one place this list is kept; `pnpm check`, `pnpm diagnose` and the server warn of a
+ * language other than English heard by one (channel/speechLanguages.ts englishOnlyHearings).
+ * - `deepgram` `flux`: Twilio's ConversationRelay names Deepgram's Flux `flux` (its speechModel), the
+ *   engine's default since before languages, and this repository has always called it a model for English
+ *   (the guide's 13.1 and 13.3, server/http.ts). On a live Twilio call (2026-10-13) a Spanish language heard
+ *   with it failed: "Error connecting to Deepgram Flux".
+ * TO CHECK (docs/live-checks.md check 16): this list has not been read against Deepgram's own table of
+ * models and the languages each hears, nor Telnyx's; do that before relying on it, and add a model only
+ * from its provider's own documentation, saying where. A model missing here is never warned of.
  */
 export const ENGLISH_ONLY_MODELS: Readonly<Record<string, readonly string[]>> = {
-  deepgram: ['flux', 'flux-general-en'],
+  deepgram: ['flux'],
 };
 
 /**

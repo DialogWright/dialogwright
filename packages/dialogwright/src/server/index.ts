@@ -702,8 +702,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const carriers = VOICE_PROVIDER_IDS.filter((id) => config.voiceProviders.includes(id));
     const bare = carriers.length > 0 ? bareSpeechTags(speech) : [];
     for (const locale of [...new Set(bare.map((b) => b.locale))]) {
-      const { message, fix } = bareTagFinding(locale, bare.filter((b) => b.locale === locale));
-      log(`WARNING: ${tag(a.id)}${message}${carriers.includes('twilio') ? ': Twilio will refuse its calls\' start document' : ''}; ${fix}`);
+      const mine = bare.filter((b) => b.locale === locale);
+      const { message, fix } = bareTagFinding(locale, mine);
+      // A bare tts is the <Language> code Twilio refused; a bare transcription alone is not yet seen on a call.
+      const refused = carriers.includes('twilio') && mine.some((b) => b.field === 'tts');
+      log(`WARNING: ${tag(a.id)}${message}${refused ? ': Twilio will refuse its calls\' start document' : ''}; ${fix}`);
     }
     for (const h of englishOnlyHearings(speech, (c) => recognitionFor(config, c), carriers)) {
       const { message, fix } = englishOnlyFinding(h, true);

@@ -756,7 +756,8 @@ function speechLanguageWarnings(config: LoadedConfig, report: (file: string, pat
 /**
  * The lines the engine says an intent's or a form's label in (core/turn.ts: {intentLabel}, and {a} and {b}
  * of the two lines that name two), with what they name: `forms` the form intents and the internal forms
- * (formLabel), `confirmed` also done, which a caller may be asked to confirm (gates.ts isRoutable).
+ * (formLabel), `confirmed` also done and the informational intents, which a caller may be asked to confirm
+ * (gates.ts isRoutable, inform_explicit).
  */
 const LABEL_LINES: Readonly<Record<string, 'forms' | 'confirmed'>> = {
   ack_intent: 'forms',
@@ -817,7 +818,12 @@ function localeLabelWarnings(config: LoadedConfig, report: (file: string, path: 
     const lines = Object.keys(LABEL_LINES).filter((id) => Object.hasOwn(prompts, id));
     if (lines.length === 0) continue;
     const named = new Set([...formIntents, ...internal]);
-    if (lines.some((id) => LABEL_LINES[id] === 'confirmed') && Object.hasOwn(intents, 'done')) named.add('done');
+    // confirm_intent_explicit also names what a caller may be asked to confirm outside a form: done, and
+    // an informational intent (gates.ts inform_explicit), each of which says, switches or answers (informationOf).
+    if (lines.some((id) => LABEL_LINES[id] === 'confirmed')) {
+      if (Object.hasOwn(intents, 'done')) named.add('done');
+      for (const [id, d] of Object.entries(intents)) if (d.kind === 'informational') named.add(id);
+    }
     const own = { ...(config.localeIntents?.[tag]?.intents ?? {}), ...(config.localeForms?.[tag]?.forms ?? {}) };
     const missing = [...named].filter((id) => !Object.hasOwn(own, id));
     if (missing.length === 0) continue;

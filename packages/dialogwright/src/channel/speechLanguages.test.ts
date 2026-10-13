@@ -51,11 +51,11 @@ describe('a language tag with no region (bareSpeechTags)', () => {
 });
 
 describe('a language heard by a recognizer that hears English only (englishOnlyHearings)', () => {
-  it('keeps the list in one place: Deepgram\'s flux, as Twilio names it and as Deepgram does', () => {
-    expect(ENGLISH_ONLY_MODELS).toEqual({ deepgram: ['flux', 'flux-general-en'] });
+  it('keeps the list in one place: Deepgram\'s flux, as Twilio names it', () => {
+    expect(ENGLISH_ONLY_MODELS).toEqual({ deepgram: ['flux'] });
     expect(DEFAULT_RECOGNITION.twilio).toEqual({ provider: 'Deepgram', model: 'flux' });
     expect(hearsEnglishOnly({ provider: 'Deepgram', model: 'flux' })).toBe(true);
-    expect(hearsEnglishOnly({ provider: 'deepgram', model: 'FLUX-general-en' })).toBe(true);
+    expect(hearsEnglishOnly({ provider: 'deepgram', model: 'FLUX' })).toBe(true);
     expect(hearsEnglishOnly({ model: 'flux' })).toBe(true);
     expect(hearsEnglishOnly({ provider: 'Deepgram', model: 'nova-3-general' })).toBe(false);
     expect(hearsEnglishOnly({ provider: 'Google', model: 'flux' })).toBe(false);
@@ -72,6 +72,22 @@ describe('a language heard by a recognizer that hears English only (englishOnlyH
     expect(englishOnlyHearings(own)).toEqual([]);
     // The server's model is another (TWILIO_SPEECH_MODEL=nova-3-general): nothing.
     expect(englishOnlyHearings(REGIONAL, () => ({ provider: 'Deepgram', model: 'nova-3-general' }))).toEqual([]);
+  });
+
+  it('reads a recognizer of its own that names no model as naming none: {} writes nothing on its <Language>, the live call\'s document', () => {
+    const empty: SpeechLocales = { ...BARE, voice: { locales: { es: { tts: 'es-US', transcription: 'es-US', recognition: { twilio: {} } } } } };
+    const [h] = englishOnlyHearings(empty);
+    expect(h).toEqual({ locale: 'es', carrier: 'twilio', transcription: 'es-US', recognizer: { provider: 'Deepgram', model: 'flux' }, how: 'another', from: 'en-US', fromHow: 'deployment', ownWithoutModel: {} });
+    expect(englishOnlyFinding(h!, true).message).toMatch(/^the locale es \(heard as es-US\) names an empty recognizer \(\{\}\), which writes nothing on its <Language>, on Twilio, while en-US is heard with Deepgram flux/);
+    // A provider alone writes no speechModel: the same provider's English-only model may be kept, warned of;
+    // another provider's would not be, so nothing.
+    const deepgram: SpeechLocales = { ...BARE, voice: { locales: { es: { tts: 'es-US', transcription: 'es-US', recognition: { twilio: { provider: 'deepgram' } } } } } };
+    expect(englishOnlyFinding(englishOnlyHearings(deepgram)[0]!, true).message).toContain('names the provider deepgram and no model on Twilio');
+    const google: SpeechLocales = { ...BARE, voice: { locales: { es: { tts: 'es-US', transcription: 'es-US', recognition: { twilio: { provider: 'Google' } } } } } };
+    expect(englishOnlyHearings(google)).toEqual([]);
+    // A default locale with {} of its own takes nothing of the deployment's either.
+    const spanishEmpty: SpeechLocales = { defaultLocale: 'es-US', locales: ['es-US'], voice: { locales: { 'es-US': { recognition: { twilio: {} } } } } };
+    expect(englishOnlyHearings(spanishEmpty)).toEqual([]);
   });
 
   it('finds a locale whose own recognizer hears English only, on either carrier', () => {

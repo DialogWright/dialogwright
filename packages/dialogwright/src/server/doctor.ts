@@ -430,10 +430,13 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
  * The app's languages as the server's carriers would be sent them (channel/speechLanguages.ts), for an app
  * whose start document names its languages; nothing for any other, or a folder that cannot be read (pnpm
  * check says why). A locale spoken or heard as a tag with no region fails on a server that answers on
- * Twilio, which refused such a tag on a live call and ended the call with an error; on Telnyx alone it is
- * a warning, since whether Telnyx takes one is not known. A language other than English heard by a
- * recognizer that hears English only, the server's own (TWILIO_SPEECH_MODEL) for the default locale
- * included, is a warning on each carrier listed. Otherwise one line names each locale's languages.
+ * Twilio, which refused such a tag as a <Language> code on a live call and ended the call with an error,
+ * where the tag is the locale's tts (the code); a bare transcription alone, and anything on Telnyx alone,
+ * is a warning, since neither is known. A language other than English heard by a recognizer that hears
+ * English only fails on Twilio where its own element names that model (its own recognizer, or the
+ * server's TWILIO_SPEECH_MODEL for the default locale), and warns where it names none and another
+ * language's may be kept (one live call's reading), and on Telnyx. Otherwise one line names each locale's
+ * languages. (Provisional, the maintainer's to confirm: which of these fail.)
  */
 export function languageChecks(appDir: string, config: Pick<ServerConfig, 'voiceProviders' | 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider'>): CheckResult[] {
   const loaded = loadAppFolder(appDir).config;
@@ -444,14 +447,20 @@ export function languageChecks(appDir: string, config: Pick<ServerConfig, 'voice
   const out: CheckResult[] = [];
   const bare = bareSpeechTags(speech);
   for (const locale of [...new Set(bare.map((b) => b.locale))]) {
-    const { message, fix } = bareTagFinding(locale, bare.filter((b) => b.locale === locale));
-    out.push(carriers.includes('twilio')
+    const mine = bare.filter((b) => b.locale === locale);
+    const { message, fix } = bareTagFinding(locale, mine);
+    // A bare tts is the <Language> code, which Twilio refused on a live call: certain to fail there. A bare
+    // transcription alone is not yet seen on a call, and on Telnyx neither is known: warnings.
+    out.push(carriers.includes('twilio') && mine.some((b) => b.field === 'tts')
       ? { id: 'languages', status: 'fail', message: `${message}: Twilio, which this server answers on, will refuse it`, fix }
       : { id: 'languages', status: 'warn', message, fix });
   }
   for (const h of englishOnlyHearings(speech, (c) => recognitionFor(config, c), carriers)) {
     const { message, fix } = englishOnlyFinding(h, true);
-    out.push({ id: 'languages', status: 'warn', message, fix });
+    // On Twilio, a language whose own element names an English-only model (its own, or the server's for the
+    // default locale) is heard with it for certain: a fail. One that names none and may be heard with
+    // another language's is a reading of one live call: a warning.
+    out.push({ id: 'languages', status: h.carrier === 'twilio' && h.how !== 'another' ? 'fail' : 'warn', message, fix });
   }
   if (out.length > 0) return out;
   const named = (speech.locales ?? []).map((l) => {

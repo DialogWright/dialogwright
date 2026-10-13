@@ -3,7 +3,7 @@ import { useTestkit } from '../../testing/apps';
 import { testkitApp } from '../../testing/testkit';
 import { FORM_INTENTS, INTENTS, MENU } from '../../testing/testkit/domain/intents';
 import {
-  formIntents, formLabel, informationalIntents, informationalPrompt, intentCriteria, intentLabel, intentList, isFormIntent,
+  formIntents, formLabel, labelIn, relabelled, informationalIntents, informationalPrompt, intentCriteria, intentLabel, intentList, isFormIntent,
 } from './intents';
 
 useTestkit();
@@ -73,5 +73,25 @@ describe('a label in a locale (AppLocales.labels)', () => {
     // An app whose locales give no labels: the default's in every locale.
     const { labels: _labels, ...without } = routedApp.locales!;
     expect(intentLabel({ ...routedApp, locales: without }, 'report_problem', 'es')).toBe('report a problem');
+  });
+});
+
+describe('a label said again after a switch in the same turn (labelIn, relabelled)', () => {
+  it('says a label of one locale in another, the request\'s, and leaves anything else as it was', async () => {
+    const { routedApp } = await import('../../testing/routed/app');
+    expect(labelIn(routedApp, 'report a problem', 'en-US', 'es')).toBe('reportar un problema');
+    expect(labelIn(routedApp, 'preparar un plan de pago', 'es', 'en-US')).toBe('set up a payment plan');
+    expect(labelIn(routedApp, 'something said', 'en-US', 'es')).toBe('something said');
+    const acks: { promptId: string; vars: Record<string, string> }[] = [
+      { promptId: 'ack_intent', vars: { intentLabel: 'check on a request' } },
+      { promptId: 'ack_intent_then', vars: { a: 'report a problem', b: 'check on a request' } },
+      { promptId: 'identity_verified', vars: { first: 'report a problem' } },
+    ];
+    expect(relabelled(routedApp, acks, 'en-US', 'es')).toEqual([
+      { promptId: 'ack_intent', vars: { intentLabel: 'revisar una solicitud' } },
+      { promptId: 'ack_intent_then', vars: { a: 'reportar un problema', b: 'revisar una solicitud' } },
+      { promptId: 'identity_verified', vars: { first: 'report a problem' } },
+    ]);
+    expect(relabelled(routedApp, acks, 'es', 'es')).toEqual(acks);
   });
 });

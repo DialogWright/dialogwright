@@ -822,7 +822,7 @@ describe('checkAppFully: what a carrier is sent of the languages (live findings,
     const dir = folder({ 'app.yaml': voices('    es:\n      tts: es-US\n      transcription: es\n      recognition:\n        twilio: { provider: Deepgram, model: flux }\n') });
     expect(await lines(dir)).toEqual([]);
     expect(await warnings(dir)).toEqual([
-      'app.yaml:22:22  voice.locales.es.transcription  the locale es is heard as "es", a language tag with no region: Twilio refused a start document with such a <Language> code on a live call (error 64101, and the caller heard "an application error has occurred"); whether Telnyx takes one is not known  ->  set voice.locales.es.transcription to a tag with its region, such as es-US or es-MX',
+      'app.yaml:22:22  voice.locales.es.transcription  the locale es is heard as "es", a language tag with no region: Twilio refused such a tag as a <Language> code on a live call (error 64101); as the language heard in (transcriptionLanguage) it is not yet seen on a call, on Twilio or on Telnyx  ->  set voice.locales.es.transcription to a tag with its region, such as es-US or es-MX',
       'app.yaml:24:9  voice.locales.es.recognition.twilio  voice.locales.es.recognition.twilio names Deepgram flux, which hears English only, and the locale es is heard as es: its callers would not be understood, or Twilio fails to connect the recognizer  ->  name a recognizer that hears es for the locale: voice.locales.es.recognition.twilio: { provider: Deepgram, model: nova-3-general }',
     ]);
   });
@@ -842,8 +842,15 @@ describe('checkApp: the intents\' labels in a locale (locale/<tag>/intents.yaml,
     const dir = folder({ 'locale/es/intents.yaml': `${HEAD}intents:\n  renew_loan:\n    label: renovar un libro\n` });
     expect(await lines(dir)).toEqual([]);
     expect(await warnings(dir)).toEqual([
-      'locale/es/prompts.yaml:23:3  prompts.ack_intent  the es lines ack_intent, confirm_intent_explicit, disambiguate_intent, ack_intent_then, ack_queued, bridge_next say an intent\'s label, and the locale gives none of its own for check_hold ("check a hold"), check_loans ("check your loans"), done ("finish"): they are said in the default locale\'s words in the middle of those es lines  ->  give each its label in es in locale/es/intents.yaml (intents: { check_hold: { label: ... } })',
+      'locale/es/prompts.yaml:23:3  prompts.ack_intent  the es lines ack_intent, confirm_intent_explicit, disambiguate_intent, ack_intent_then, ack_queued, bridge_next say an intent\'s label, and the locale gives none of its own for check_hold ("check a hold"), check_loans ("check your loans"), done ("finish"), hours ("hear the opening hours"): they are said in the default locale\'s words in the middle of those es lines  ->  give each its label in es in locale/es/intents.yaml (intents: { check_hold: { label: ... } })',
     ]);
+  });
+
+  it('asks an informational intent\'s label only where the locale confirms a reading (confirm_intent_explicit)', async () => {
+    const dir = folder({ 'locale/es/intents.yaml': (t) => t.replace('  hours:\n    label: conocer el horario\n', '') });
+    expect(await warnings(dir)).toEqual([expect.stringContaining('gives none of its own for hours ("hear the opening hours")')]);
+    const unconfirmed = folder({ 'locale/es/intents.yaml': (t) => t.replace('  hours:\n    label: conocer el horario\n', ''), 'locale/es/prompts.yaml': without('confirm_intent_explicit') });
+    expect(await warnings(unconfirmed)).toEqual([]);
   });
 
   it('says nothing of a locale that says no label in its own words: the default\'s lines say them', async () => {

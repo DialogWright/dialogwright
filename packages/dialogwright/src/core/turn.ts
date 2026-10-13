@@ -4,7 +4,7 @@ import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
 import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
-import { formLabel, informationOf, intentLabel, isFormIntent, type Informs } from './app/intents';
+import { formLabel, informationOf, intentLabel, isFormIntent, relabelled, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
@@ -1784,7 +1784,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       const said = informed(s, io, verdict);
       // A switch in the same breath: what was heard in the old language is said in the new one.
       const { acks: filled, disambiguate } = s.locale === before ? fill : inLocaleOf(s, io, fill);
-      const acks = [...said.acks, ...filled];
+      const acks = relabelled(io.app, [...said.acks, ...filled], before, s.locale);
       const offer = said.answered ? null : offerAfterUnavailable(s, acks);
       return { decision: offer ?? resume(s, io, acks, disambiguate, fill.help), events: fill.events };
     }
@@ -2609,7 +2609,11 @@ function afterIdentityRoute(s: Session, io: TurnIO, said: Ack[]): Decision | nul
   s.identityRouted = true;
   const o = takeRoute(s, 'afterIdentity', io);
   if (o === null) return null;
-  if (o.then === 'locale') switchLocale(s, io, o.locale);
+  if (o.then === 'locale') {
+    const before = s.locale;
+    switchLocale(s, io, o.locale);
+    said.splice(0, said.length, ...relabelled(io.app, said, before, s.locale));
+  }
   if (o.then === 'continue' || o.then === 'locale' || (o.then === 'form' && o.form === s.form)) {
     said.push(...routeSay(s, o));
     return null;
@@ -2631,8 +2635,9 @@ function afterIdentityRoute(s: Session, io: TurnIO, said: Ack[]): Decision | nul
 function afterFormRoute(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision | null {
   const o = takeRoute(s, 'afterForm', io, form);
   if (o === null) return null;
+  const before = s.locale;
   if (o.then === 'locale') switchLocale(s, io, o.locale);
-  const said = [...acks, ...routeSay(s, o)];
+  const said = [...relabelled(io.app, acks, before, s.locale), ...routeSay(s, o)];
   switch (o.then) {
     case 'continue':
     case 'locale':

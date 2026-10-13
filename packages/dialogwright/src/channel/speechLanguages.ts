@@ -157,6 +157,8 @@ export interface EnglishOnlyHearing {
   /** For `another`: the locale whose recognizer it is, and whether that locale names it or has the deployment's. */
   readonly from?: string;
   readonly fromHow?: 'own' | 'deployment';
+  /** For `another`: the locale's own recognizer, when it has one that names no model (`{}`, or a provider alone). */
+  readonly ownWithoutModel?: Recognition;
 }
 
 /**
@@ -181,14 +183,21 @@ export function englishOnlyHearings(
   const locales = s.locales ?? [];
   const out: EnglishOnlyHearing[] = [];
   for (const carrier of carriers) {
-    // What each language's own element names (server/http.ts connectOptions): its own, else the
-    // deployment's for the default locale, else none.
-    const named = (locale: string): { r: Recognition; how: 'own' | 'deployment' } | undefined => {
+    const ownOf = (locale: string): Recognition | undefined => {
       const own = settingsOf(s, locale)?.recognition;
-      if (own !== undefined && Object.hasOwn(own, carrier)) return { r: own[carrier]!, how: 'own' };
+      return own !== undefined && Object.hasOwn(own, carrier) ? own[carrier]! : undefined;
+    };
+    // The model each language's own element names (server/http.ts connectOptions): its own recognizer's,
+    // else the deployment's for the default locale, else none. A recognizer of its own that names no model
+    // names none: `{}` writes nothing on its <Language> (the live call's document), and a provider alone
+    // writes no speechModel, so which model it is heard with is the carrier's to choose; it never falls to
+    // the deployment's either (the app's recognizer wins as a whole).
+    const named = (locale: string): { r: Recognition; how: 'own' | 'deployment' } | undefined => {
+      const own = ownOf(locale);
+      if (own !== undefined) return own.model !== undefined ? { r: own, how: 'own' } : undefined;
       if (locale === s.defaultLocale) {
         const d = deployment(carrier);
-        if (d.provider !== undefined || d.model !== undefined) return { r: d, how: 'deployment' };
+        if (d.model !== undefined) return { r: d, how: 'deployment' };
       }
       return undefined;
     };
@@ -199,9 +208,19 @@ export function englishOnlyHearings(
       const n = named(locale);
       if (n !== undefined) {
         if (hearsEnglishOnly(n.r)) out.push({ locale, carrier, transcription, recognizer: n.r, how: n.how });
-      } else if (englishOnly !== undefined) {
-        out.push({ locale, carrier, transcription, recognizer: englishOnly.n!.r, how: 'another', from: englishOnly.l, fromHow: englishOnly.n!.how });
+        continue;
       }
+      if (englishOnly === undefined) continue;
+      // A provider of its own with no model: the English-only model is only kept if it is that provider's
+      // (another provider's model would not be), so a provider of its own other than the English-only
+      // recognizer's is taken as heard by that provider's default.
+      const own = ownOf(locale);
+      const theirs = englishOnly.n!.r.provider;
+      if (own?.provider !== undefined && theirs !== undefined && own.provider.toLowerCase() !== theirs.toLowerCase()) continue;
+      out.push({
+        locale, carrier, transcription, recognizer: englishOnly.n!.r, how: 'another', from: englishOnly.l, fromHow: englishOnly.n!.how,
+        ...(own !== undefined ? { ownWithoutModel: own } : {}),
+      });
     }
   }
   return out;
@@ -236,8 +255,12 @@ export function bareTagFinding(locale: string, bare: readonly BareTag[]): { mess
   const which = fields.length === 2 ? 'spoken and heard' : fields[0] === 'tts' ? 'spoken' : 'heard';
   const from = bare.every((b) => !b.own) ? ` (its own tag: voice.locales.${locale} names no ${fields.join(' or ')})` : '';
   const keys = fields.map((f) => `voice.locales.${locale}.${f}`).join(' and ');
+  // The tts tag is the <Language> code, the attribute Twilio refused; a transcription tag alone is unproven.
+  const seen = fields.includes('tts')
+    ? 'Twilio refused a start document with such a <Language> code on a live call (error 64101, and the caller heard "an application error has occurred"); whether Telnyx takes one is not known'
+    : 'Twilio refused such a tag as a <Language> code on a live call (error 64101); as the language heard in (transcriptionLanguage) it is not yet seen on a call, on Twilio or on Telnyx';
   return {
-    message: `the locale ${locale} is ${which} as "${tag}"${from}, a language tag with no region: Twilio refused a start document with such a <Language> code on a live call (error 64101, and the caller heard "an application error has occurred"); whether Telnyx takes one is not known`,
+    message: `the locale ${locale} is ${which} as "${tag}"${from}, a language tag with no region: ${seen}`,
     fix: `set ${keys} to a tag with its region, such as ${regionalExample(tag)}`,
   };
 }
@@ -267,7 +290,7 @@ export function englishOnlyFinding(h: EnglishOnlyHearing, known: boolean): { mes
       };
     case 'another':
       return {
-        message: `the locale ${h.locale} (heard as ${h.transcription}) names no recognizer of its own on ${carrier}, while ${h.from} is heard with ${name}${h.fromHow === 'deployment' ? servers : ''}, which hears English only: on a live Twilio call such a language was heard with the start language's flux after a switch, and Twilio failed to connect it`,
+        message: `the locale ${h.locale} (heard as ${h.transcription}) names ${h.ownWithoutModel === undefined ? 'no recognizer of its own' : h.ownWithoutModel.provider === undefined ? 'an empty recognizer ({}), which writes nothing on its <Language>,' : `the provider ${h.ownWithoutModel.provider} and no model`} on ${carrier}, while ${h.from} is heard with ${name}${h.fromHow === 'deployment' ? servers : ''}, which hears English only: on a live Twilio call such a language was heard with the start language's flux after a switch, and Twilio failed to connect it`,
         fix: ownFix,
       };
   }

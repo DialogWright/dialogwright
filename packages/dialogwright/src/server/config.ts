@@ -8,7 +8,7 @@ import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
   BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
-  VOICE_PROVIDER_IDS, type BargeIn, type EndAfterPlayback, type VoiceProviderId,
+  TWILIO_DEFAULT_RECOGNIZER, VOICE_PROVIDER_IDS, type BargeIn, type EndAfterPlayback, type VoiceProviderId,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
@@ -673,9 +673,10 @@ export function loadConfig(env: Env): ServerConfig {
   if (telnyxVoice && !/^[A-Za-z]+(\.[A-Za-z0-9_-]+)+$/.test(telnyxVoice)) {
     throw new Error(`TELNYX_VOICE must be a Telnyx voice name like Telnyx.NaturalHD.astra, got "${telnyxVoice}"`);
   }
-  const twilioTranscriptionProvider = recognizerName(env, 'TWILIO_TRANSCRIPTION_PROVIDER', 'Deepgram') ?? 'Deepgram';
+  // Unset, the engine's default recognizer on Twilio (channel/voiceProviders.ts TWILIO_DEFAULT_RECOGNIZER, Deepgram flux).
+  const twilioTranscriptionProvider = recognizerName(env, 'TWILIO_TRANSCRIPTION_PROVIDER', 'Deepgram') ?? TWILIO_DEFAULT_RECOGNIZER.provider;
   // flux is Deepgram's: another provider without a model of its own gets that provider's default.
-  const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === 'Deepgram' ? 'flux' : null);
+  const twilioSpeechModel = recognizerName(env, 'TWILIO_SPEECH_MODEL', 'nova-3-general') ?? (twilioTranscriptionProvider === TWILIO_DEFAULT_RECOGNIZER.provider ? TWILIO_DEFAULT_RECOGNIZER.model : null);
   const telnyxTranscriptionProvider = recognizerName(env, 'TELNYX_TRANSCRIPTION_PROVIDER', 'deepgram');
   const telnyxEventsRaw = env.TELNYX_EVENTS?.trim() ?? '';
   const telnyxEventTokens = telnyxEventsRaw.split(/\s+/).filter(Boolean);
