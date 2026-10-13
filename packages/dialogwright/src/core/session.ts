@@ -531,7 +531,9 @@ export function unparkTask(session: Session): void {
   const back = cloneParked(p);
   session.form = back.form;
   session.entered = back.entered;
-  session.stepUp = back.stepUp;
+  // A step-up the caller has met since (verified in the aside, say) is not asked again: the form's entry
+  // call goes back to the gate as new (continueForm), and passes.
+  session.stepUp = back.stepUp !== null && session.principal.level >= back.stepUp.need ? null : back.stepUp;
   session.pendingConfirmation = back.pendingConfirmation;
   session.intentAttempts = back.intentAttempts;
   session.menuActive = back.menuActive;

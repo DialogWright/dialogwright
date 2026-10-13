@@ -3,7 +3,7 @@ import { formatRegressSummary, formatTriage, type RegressSummaryInput } from './
 import type { TraceRecord } from '../trace/types';
 import { CASSETTE_MISS } from '../jev/cassette';
 
-type Row = Pick<TraceRecord, 'source' | 'timing' | 'usage' | 'error' | 'screen'>;
+type Row = Pick<TraceRecord, 'source' | 'timing' | 'usage' | 'error' | 'screen' | 'followUp'>;
 
 function row(source: TraceRecord['source'], askMs: number, inputTokens: number, error: TraceRecord['error'] = null, estimated = false): Row {
   return {
@@ -47,6 +47,18 @@ describe('formatRegressSummary', () => {
     expect(text).toContain('cost usd   0.0504  (2 requests, 1,200,000 input tokens)');
     expect(text).not.toMatch(/\[(replayed|mixed)\]/);
     expect(text).toContain('ask latency ms p50 500.0  p95 700.0');
+  });
+
+  it('counts a turn\'s second request (followUp) as a request, folds its time into the turn\'s, and lists its errors', () => {
+    const followUp = (error: TraceRecord['error']): NonNullable<TraceRecord['followUp']> => ({ reason: 'aside-topic', slot: 'subject', questions: {}, answers: null, source: error ? 'error' : 'jev', error, usage: null });
+    const asked = { ...row('jev', 500, 1_000), timing: { planMs: 0, askMs: 500, followUpMs: 300, resolveMs: 0, totalMs: 800 }, followUp: followUp(null) };
+    const failed = { ...row('jev', 400, 1_000), followUp: followUp({ name: 'JevClientError', message: 'timeout' }) };
+    const missed = { ...row('recorded', 1, 10), followUp: followUp({ name: 'JevClientError', message: `${CASSETTE_MISS} abc` }) };
+    const text = summary({ records: [asked, failed, missed] });
+    expect(text).toContain('(4 requests,');
+    expect(text).toContain('ask latency ms p50 400.0  p95 800.0');
+    expect(text).toContain('follow-up errors 1 (first: timeout)');
+    expect(text).toContain('cassette misses 1');
   });
 
   it('tags an all-recorded run as replayed and a mix as mixed', () => {

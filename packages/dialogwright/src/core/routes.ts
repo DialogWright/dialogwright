@@ -145,6 +145,8 @@ export interface RouteWorld extends TransferWorld {
   readonly locales: readonly string[];
   /** Whether the app's default locale has a line; absent, lines are not checked (check.ts checks them in every locale). */
   readonly hasLine?: (id: string) => boolean;
+  /** The forms that are an aside to the task in hand (FormDef.aside); absent, none. */
+  readonly asides?: readonly FormId[];
 }
 
 /**
@@ -152,7 +154,9 @@ export interface RouteWorld extends TransferWorld {
  * refusals, for an app built in code): a point's list that does not end with its `else`, or has one
  * before its end; a condition or an outcome that names what the app does not have; a `then` its point
  * does not take; an afterForm route entering the form that just completed; and, as warnings, a rule after
- * one that always holds, and the condition warnings (an undeclared fact).
+ * one that always holds, the condition warnings (an undeclared fact), and a route after an aside (a form
+ * that answers in the middle of a task) that ends the call, hands it off or goes to "anything else?",
+ * which ends the task set aside.
  */
 export function routeProblems(routes: Routes | undefined, world: RouteWorld): RouteProblem[] {
   if (routes === undefined) return [];
@@ -230,6 +234,13 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
     if (o.then === 'form') {
       if (!world.forms.includes(o.form)) add([...at, 'form'], `form "${o.form}" is not defined`, `name one of ${world.forms.join(', ')}`);
       else if (point === 'afterForm' && o.form === form) add([...at, 'form'], `a route after "${form}" enters "${form}" again, which goes round in a loop and sends the call to a person`, 'enter another form, or go on (continue)');
+    }
+    // After an aside, the task set aside resumes (core/turn.ts finishForm): a route there that ends the
+    // call, hands it to a person or goes to "anything else?" ends that task too, which a caller who only asked a question in the
+    // middle of it would not expect. It runs, as written; it is warned of.
+    if (point === 'afterForm' && form !== undefined && (world.asides ?? []).includes(form) && (o.then === 'end' || o.then === 'handoff' || o.then === 'anything-else')) {
+      const does = o.then === 'end' ? 'ends the call' : o.then === 'handoff' ? 'hands the call to a person' : 'asks "anything else?"';
+      add([...at, 'then'], `a route after "${form}", which answers a question in the middle of a task (answers.midTask: aside), ${does}: asked mid-task, the task the caller was in the middle of ends with it, unfinished`, `if that is meant, nothing to do; otherwise go on (continue) or say a line and go on, or write answers.midTask: task on "${form}"`, { warning: true });
     }
     if (o.then === 'locale' && !world.locales.includes(o.locale)) add([...at, 'locale'], `"${o.locale}" is not a locale of this app`, `add locale/${o.locale}/ or use one of ${world.locales.join(', ')}`);
   };

@@ -4,13 +4,14 @@ import { registerApp } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { formOf } from '../core/app/lookup';
 import { followUpOf } from '../core/turn';
-import { checkApp } from '../define/check';
+import type { Session } from '../core/session';
+import { checkApp, checkAppFully } from '../define/check';
 import { defineApp, isAppDefinitionError } from '../define/defineApp';
 import { formatProblem } from '../define/problems';
 import { isCassetteMiss } from '../jev/cassette';
 import { JevClientError, type AnswerMap, type JevClient, type JevRequest } from '../jev/types';
-import { runTurn, type RunOptions } from '../run/turn';
-import { choice, noul } from '../testing/answers';
+import { FOLLOW_UP_NO_TIME, runTurn, type RunOptions } from '../run/turn';
+import { choice, noul, score } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
 import { mockCodeVerifier } from '../core/tools';
 import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, heard, libraryKbApp, nominated, say, TODAY, type Call } from './__fixtures__/libraryKbApp';
@@ -174,6 +175,107 @@ describe('an aside in the middle of a task (forms.yaml answers:, midTask: aside,
   });
 });
 
+describe('the aside, further', () => {
+  it('a session saved mid-aside and loaded again (a JSON round trip) resumes the task as it stood', () => {
+    const c = call(APP);
+    atSummary(c);
+    say(c, 'I have a question', QUESTION(null));
+    expect(c.last.session.parked?.form).toBe('renew_loan');
+    const loaded = JSON.parse(JSON.stringify(c.last.session)) as Session;
+    expect(loaded).toEqual(c.last.session);
+    c.last = { ...c.last, session: loaded };
+    say(c, 'late fees', { intent: choice({ none: 0.95, other: 0.05 }), libraryTopicTopic: choice({ late_fees: 0.92, none: 0.08 }) }, nominated('late_fees'));
+    expect(heard(c)).toBe(`${LATE_FEES} You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?`);
+    say(c, 'yes', YES);
+    expect(heard(c)).toMatch(/^Done\. The Clockwork Garden is now due back/);
+  });
+
+  it('read below INTENT_SWITCH, the caller is asked first; the yes says the answer for the topic of the words asked about, and the task resumes', () => {
+    const c = call(APP);
+    atSummary(c);
+    say(c, 'what are the late fees', { ...QUESTION('late_fees'), intent: choice({ ask_library: 0.7, renew_loan: 0.2, none: 0.1 }) }, nominated('late_fees'));
+    expect(heard(c)).toBe('Just to check, do you want to answer a question? Yes or no.');
+    expect(c.last.rows.find((row) => row.gate === 'intent')?.outcome).toBe('aside_explicit:ask_library');
+    // The yes names no topic and nothing is nominated for it: the topic is the one read from the words asked about.
+    say(c, 'yes', YES);
+    expect(heard(c)).toBe(`${LATE_FEES} You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?`);
+    expect(c.last.session.form).toBe('renew_loan');
+    expect(c.last.session.pendingConfirmation).toMatchObject({ target: 'form', form: 'renew_loan' });
+  });
+
+  it('hedged, the caller is asked first too, and a no goes back to the task with nothing answered', () => {
+    const c = call(APP);
+    renewing(c);
+    say(c, 'maybe I should ask about the late fees', { ...QUESTION('late_fees'), intentTentative: noul(0.92) }, nominated('late_fees'));
+    expect(c.last.rows.find((row) => row.gate === 'intent')?.outcome).toBe('aside_tentative:ask_library');
+    expect(heard(c)).toBe('Just to check, do you want to answer a question? Yes or no.');
+    say(c, 'no', NO);
+    expect(heard(c)).toBe('Which book is it?');
+    expect(c.last.session.completed).toEqual([]);
+  });
+
+  it('an added reading at the summary ("yes, and what are the late fees"): the yes is not taken, the answer is said and the summary asked again', () => {
+    const c = call(APP);
+    atSummary(c);
+    const r = say(c, 'yes, and what are the late fees', { ...QUESTION('late_fees', 'adding'), confirmsYes: noul(0.9), confirmsNo: noul(0.03) }, nominated('late_fees'));
+    expect(heard(c)).toBe(`${LATE_FEES} You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?`);
+    expect(calls(r).some((call) => call.startsWith('renewLoan'))).toBe(false);
+    expect(r.session.pendingConfirmation).toMatchObject({ target: 'form', form: 'renew_loan', attempts: 0 });
+  });
+});
+
+describe('a handoff during an aside names the task set aside', () => {
+  // A transfer chosen on the form: the renewal desk for a caller renewing a book, the main line otherwise.
+  const DESK = libraryKbApp('library-aside-desk', {
+    'app.yaml': (t) => `${APP_EDITS['app.yaml']!(t)}\ntransfer:\n  targets:\n    - when: { form: renew_loan }\n      to: env.RENEWALS_DESK\n  default: env.MAIN_LINE\n`,
+  });
+
+  it('asked for a person in the aside: the task first in the handoff\'s queue, its values in the data, the transfer chosen on it', () => {
+    const c = call(DESK);
+    atSummary(c);
+    say(c, 'I have a question', QUESTION(null));
+    expect(c.last.session.form).toBe('ask_library');
+    const r = say(c, 'just get me a person', { intent: choice({ agent: 0.95, none: 0.05 }), wantsHuman: noul(0.95) });
+    expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', queued: ['renew_loan'], slots: { book: 'The Clockwork Garden' } });
+    expect(r.decision.kind === 'handoff' && r.decision.transfer?.target).toBe('RENEWALS_DESK');
+  });
+
+  it('the person offered for a question with no answer, accepted: the same', () => {
+    const c = call(DESK, { setup: (sys) => { sys.cardKind = null; } });
+    atSummary(c);
+    say(c, 'what are the late fees', QUESTION('late_fees'), nominated('late_fees'));
+    const r = say(c, 'yes', YES);
+    expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent', queued: ['renew_loan'] });
+    expect(r.decision.kind === 'handoff' && r.decision.transfer?.target).toBe('RENEWALS_DESK');
+  });
+
+  it('a caller frustrated a third time in the aside: the same', () => {
+    const c = call(DESK);
+    atSummary(c);
+    say(c, 'I have a question', QUESTION(null));
+    c.last = { ...c.last, session: { ...c.last.session, frustratedTurns: 2, transferDeclined: true } };
+    const r = say(c, 'this is ridiculous', { intent: choice({ none: 0.95, other: 0.05 }), frustration: score({ none: 0.02, mild: 0.08, high: 0.9 }) });
+    expect(r.decision).toMatchObject({ kind: 'handoff', reason: 'frustrated', queued: ['renew_loan'] });
+    expect(r.decision.kind === 'handoff' && r.decision.transfer?.target).toBe('RENEWALS_DESK');
+  });
+
+  it('outside an aside, a handoff is as it was: nothing set aside, the open form chooses', () => {
+    const c = call(DESK);
+    renewing(c);
+    const r = say(c, 'just get me a person', { intent: choice({ agent: 0.95, none: 0.05 }), wantsHuman: noul(0.95) });
+    expect(r.decision).toMatchObject({ kind: 'handoff', queued: [] });
+    expect(r.decision.kind === 'handoff' && r.decision.transfer?.target).toBe('RENEWALS_DESK');
+  });
+
+  it('check warns of a route after the aside that ends the task with it', async () => {
+    const dir = folder('library-aside-route', { 'routes.yaml': '# yaml-language-server: $schema=../../../schemas/routes.schema.json\nafterForm:\n  ask_library:\n    - else: { then: handoff, reason: live-agent }\n' });
+    const result = await checkAppFully(dir, { code: codeFor(dir), todayIso: TODAY });
+    expect(result.problems.map(formatProblem)).toEqual([]);
+    const warnings = (result.warnings ?? []).map(formatProblem);
+    expect(warnings.some((p) => p.includes('routes.yaml') && p.includes('answers a question in the middle of a task') && p.includes('hands the call to a person'))).toBe(true);
+  });
+});
+
 describe('midTask: task (the old behaviour)', () => {
   const TASK = libraryKbApp('library-aside-task', { 'forms.yaml': (t) => APP_EDITS['forms.yaml']!(t).replace('answers: { slot: libraryTopic }', 'answers: { slot: libraryTopic, midTask: task }') });
 
@@ -286,6 +388,32 @@ describe('the second request on the switch turn (run/turn.ts)', () => {
     const missed = client((req, n) => (n === 1 ? main(req) : new JevClientError('cassette miss: abc')));
     const second = opened(missed);
     expect(isCassetteMiss((await runTurn(second.session, speechEvent(WORDS, true), second.opts)).record)).toBe(true);
+  });
+
+  it('has what is left of the turn\'s budget (JEV_TIMEOUT_MS) and no more; with nothing left, none is made', async () => {
+    const slow = (ms: number) => (req: JevRequest, n: number): Promise<AnswerMap> => new Promise((done) => setTimeout(() => done(n === 1 ? main(req) : { libraryTopicTopic: choice({ late_fees: 0.92, none: 0.08 }) }), n === 1 ? ms : 0));
+    const timed = (answer: (req: JevRequest, n: number) => Promise<AnswerMap>): JevClient & { requests: JevRequest[] } => {
+      const requests: JevRequest[] = [];
+      return { requests, async ask(req) { requests.push(req); return { answers: await answer(req, requests.length), model: 'test', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 1, source: 'jev' }; } };
+    };
+    const some = timed(slow(30));
+    const a = opened(some);
+    await runTurn(a.session, speechEvent(WORDS, true), { ...a.opts, thresholds: { ...a.opts.thresholds, JEV_TIMEOUT_MS: 1000 } });
+    expect(some.requests).toHaveLength(2);
+    expect(some.requests[1]!.timeoutMs).toBeLessThanOrEqual(1000 - 30 + 5);
+    expect(some.requests[1]!.timeoutMs).toBeGreaterThan(0);
+    const none = timed(slow(60));
+    const b = opened(none);
+    const run = await runTurn(b.session, speechEvent(WORDS, true), { ...b.opts, thresholds: { ...b.opts.thresholds, JEV_TIMEOUT_MS: 50 } });
+    expect(none.requests).toHaveLength(1);
+    expect(run.record.followUp).toMatchObject({ error: { message: FOLLOW_UP_NO_TIME }, answers: null });
+    expect(run.result.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
+  });
+
+  it('a failure that is no client\'s (a bug) is thrown, not taken as no answer', async () => {
+    const c = client((req, n) => (n === 1 ? main(req) : new TypeError('a bug')));
+    const { session, opts } = opened(c);
+    await expect(runTurn(session, speechEvent(WORDS, true), opts)).rejects.toThrow('a bug');
   });
 
   it('is not made when retrieval nominates nothing: the topic question is the aside\'s own', async () => {

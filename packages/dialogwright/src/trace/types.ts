@@ -21,7 +21,7 @@ export interface TraceTiming {
   retrieveMs?: number;
   /** How long the generated lines took, after the core decided; only on a turn that rendered one (TraceRecord.render). */
   renderMs?: number;
-  /** How long the turn's second request took, its retrieval included (TraceRecord.followUp); only on a turn that made one. */
+  /** How long the turn's second request took (TraceRecord.followUp), its retrieval not included (that is `retrieveMs`); only on a turn that asked for one. */
   followUpMs?: number;
   planMs: number;
   askMs: number;

@@ -164,11 +164,6 @@ export interface TurnRun {
   audit: AuditEntry[];
 }
 
-/**
- * A JevClientError is a client-level failure (timeout, transport) the harness models as part of
- * the run. Anything else is a bug in the corpus/fixture authoring (e.g. a bad label) and should
- * stop the run rather than being scored as a client failure.
- */
 /** A turn's second request (core/turn.ts FollowUp) as it went: what it asked, and what came back or why nothing did. */
 export interface FollowUpRun {
   readonly followUp: FollowUp;
@@ -177,17 +172,26 @@ export interface FollowUpRun {
   readonly error: TurnError | null;
 }
 
+/** A follow-up's error when the turn's budget for the model (JEV_TIMEOUT_MS) was spent before it could be asked: no request is made. */
+export const FOLLOW_UP_NO_TIME = 'no time left of JEV_TIMEOUT_MS';
+
 /**
  * The turn's second request, for what its answers turned out to need (core/turn.ts followUpOf): made
  * only when the gates settle on an aside to the form in hand whose topic is unknown. Retrieval runs
- * for the words then (a topic slot asks only about what it nominates), and, when it nominated anything,
- * the topic slot's question alone is asked of the same words with the same turn state: a request of its
- * own, keyed by its own state and question in a cassette. Every other turn makes no second request and
- * retrieves nothing more, so its request is the one it always made. The words were screened with the
- * turn's own request (a quarantined turn never gets here). A failed or late follow-up is no answer: the
- * turn goes on, and the aside asks its slot's own question.
+ * for the words then (a topic slot asks only about what it nominates), and, when it nominated anything
+ * the turn's answers do not already answer, the topic slot's question alone is asked of the same words
+ * with the same turn state: a request of its own, keyed by its own state and question in a cassette.
+ * Every other turn makes no second request and retrieves nothing more, so its request is the one it
+ * always made. The words were screened with the turn's own request (a quarantined turn never gets here).
+ *
+ * Its budget is what is left of the turn's (JEV_TIMEOUT_MS, counted from `askedAt`, when the turn's own
+ * request went out): the caller waits on the model no longer than a turn without a follow-up could
+ * make them, and a run that raises JEV_TIMEOUT_MS (a recording) raises it with it. Nothing left, no
+ * request is made. A failed, late or unmade follow-up is no answer: the turn goes on, and the aside asks
+ * its slot's own question. Only a client's failure is taken so (clientFailure): anything else is a bug,
+ * and is thrown.
  */
-async function askFollowUp(session: Session, event: SessionEvent, words: string, turnState: unknown, answers: AnswerMap, tc: TurnContext, screen: ScreenResult | null, opts: RunOptions): Promise<{ tc: TurnContext; answers: AnswerMap; run: FollowUpRun | null; retrieved: Retrieved | null; ms: number | null }> {
+async function askFollowUp(session: Session, event: SessionEvent, words: string, turnState: unknown, answers: AnswerMap, tc: TurnContext, screen: ScreenResult | null, opts: RunOptions, askedAt: number): Promise<{ tc: TurnContext; answers: AnswerMap; run: FollowUpRun | null; retrieved: Retrieved | null; ms: number | null }> {
   const followUp = followUpOf(session, event, answers, tc, screen);
   if (followUp === null) return { tc, answers, run: null, retrieved: null, ms: null };
   const knowledge = appOf(session).knowledge;
@@ -196,15 +200,14 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
     : null;
   const known: TurnContext = retrieved ? { ...tc, knowledge: { nominated: retrieved.nominated } } : tc;
   const questions = followUpQuestions(session, followUp, words, known);
-  if (Object.keys(questions).length === 0) return { tc: known, answers, run: null, retrieved, ms: null };
+  // Nothing to ask, or nothing the turn's own answers do not already answer.
+  if (Object.keys(questions).length === 0 || Object.keys(questions).every((id) => Object.hasOwn(answers, id))) return { tc: known, answers, run: null, retrieved, ms: null };
+  const left = Math.floor(opts.thresholds.JEV_TIMEOUT_MS - (performance.now() - askedAt));
+  if (left <= 0) return { tc: known, answers, run: { followUp, questions, response: null, error: { name: 'JevClientError', message: FOLLOW_UP_NO_TIME } }, retrieved, ms: 0 };
   const t0 = performance.now();
-  const asked = await settle(opts.client.ask({ state: turnState as JsonValue, questions, timeoutMs: opts.thresholds.JEV_TIMEOUT_MS }));
+  const asked = await settle(opts.client.ask({ state: turnState as JsonValue, questions, timeoutMs: left }));
   const ms = performance.now() - t0;
-  if (asked.status === 'rejected') {
-    const reason = asked.reason;
-    const error = reason instanceof Error ? { name: reason.name, message: reason.message } : { name: 'Error', message: String(reason) };
-    return { tc: known, answers, run: { followUp, questions, response: null, error }, retrieved, ms };
-  }
+  if (asked.status === 'rejected') return { tc: known, answers, run: { followUp, questions, response: null, error: clientFailure(asked.reason) }, retrieved, ms };
   // Only the follow-up's own questions are taken from it: the turn's answers stand as they came.
   const added = Object.fromEntries(Object.entries(asked.value.answers).filter(([id]) => Object.hasOwn(questions, id) && !Object.hasOwn(answers, id)));
   return { tc: known, answers: { ...answers, ...added }, run: { followUp, questions, response: asked.value, error: null }, retrieved, ms };
@@ -223,6 +226,11 @@ function followUpRecord(run: FollowUpRun): FollowUpRecord {
   };
 }
 
+/**
+ * A JevClientError is a client-level failure (timeout, transport) the harness models as part of
+ * the run. Anything else is a bug in the corpus/fixture authoring (e.g. a bad label) and should
+ * stop the run rather than being scored as a client failure.
+ */
 function clientFailure(reason: unknown): TurnError {
   if (!(reason instanceof JevClientError)) throw reason;
   return { name: reason.name, message: reason.message };
@@ -383,7 +391,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t2 = performance.now();
   // A second request on the same words, when the answers turn out to need one (askFollowUp).
   const second = response !== null && words !== null && p.turnState !== null
-    ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts)
+    ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts, t1)
     : null;
   const turnTc = second?.tc ?? tc;
   const t2f = performance.now();

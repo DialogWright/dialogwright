@@ -40,7 +40,8 @@ export function formatRegressSummary(i: RegressSummaryInput): string {
     lines.push(`cost usd   ${cost.toFixed(4)}  (${requests} requests, ${String(tokens).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} input tokens)${tag}`);
   }
   if (answered.length > 0) {
-    const latencies = answered.map((r) => r.timing.askMs);
+    // A turn's second request (TraceRecord.followUp) is folded in: the time the caller waited on the model that turn.
+    const latencies = answered.map((r) => r.timing.askMs + (r.timing.followUpMs ?? 0));
     lines.push(`ask latency ms p50 ${percentile(latencies, 50).toFixed(1)}  p95 ${percentile(latencies, 95).toFixed(1)}`);
   }
   const misses = i.records.filter(isCassetteMiss).length;

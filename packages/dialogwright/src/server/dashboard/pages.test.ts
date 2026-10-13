@@ -242,6 +242,15 @@ describe('Health (/dashboard/health) and the audit verified on demand', () => {
     expect((await fetch(`${base}/dashboard/health/audit`)).status).toBe(404);
   });
 
+  it('the model\'s latency folds in a turn\'s second request (timing.followUpMs): the time the caller waited on the model that turn', () => {
+    const bus = new DashboardBus();
+    const latency = latencyOf(bus);
+    bus.publish({ type: 'call_started', callSid: 'CA1', at: 1, from: '…0110', todayIso: '2026-10-12', thresholds: {} });
+    bus.publish({ type: 'turn', callSid: 'CA1', at: 1, record: { questions: {}, timing: { askMs: 400, followUpMs: 250 } }, spoken: '' } as unknown as DashboardEvent);
+    bus.publish({ type: 'turn', callSid: 'CA1', at: 1, record: { questions: {}, timing: { askMs: 300 } }, spoken: '' } as unknown as DashboardEvent);
+    expect(latency.stats()).toEqual({ asks: 2, medianMs: 300, p95Ms: 650 });
+  });
+
   it('the audit verified, one at a time: day files intact, then one broken; the last result kept for the page', async () => {
     const audit = tmp();
     auditFile(join(audit, '2026-09-18.jsonl'), 1500);

@@ -69,7 +69,11 @@ export interface HandoffDecision {
   promptId: string;
   acks: Ack[];
   completed: FormId[];
-  /** intents the caller added that the call never started */
+  /**
+   * The tasks the person taking the call is left to do: first, a task set aside for a question asked in
+   * the middle of it (Session.parked: the caller was answering it, and what it collected is in `slots`),
+   * then the intents the caller added that the call never started.
+   */
   queued: FormId[];
   /**
    * what the call collected, as the caller heard it: filled slots only, display values. Identity is
@@ -136,19 +140,27 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
     else if (spec.displayFrom === 'said') slots[id] = slot.value;
     else slots[id] = slot.display ?? slot.value;
   }
-  const decision: HandoffDecision = { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued: [...s.queued], slots };
+  // A task set aside for a question (Session.parked) is the caller's unfinished business, ahead of what they queued.
+  const queued = s.parked !== undefined ? [s.parked.form, ...s.queued.filter((f) => f !== s.parked!.form)] : [...s.queued];
+  const decision: HandoffDecision = { kind: 'handoff', reason, promptId: handoffPromptId(reason), acks, completed: [...s.completed], queued, slots };
   if (handoffUnconfirmedOf(app) !== 'send') decision.unconfirmed = unconfirmedSlots(s);
-  // The transfer target, chosen on the reason, the form the caller is in (or, with none open, the last
-  // one completed) and the call data; a slot it sends goes as the handoff data sends it.
+  // The transfer target, chosen on the reason, the form the caller is in (the task set aside for a
+  // question, during the aside; with none open, the last one completed) and the call data; a slot it
+  // sends goes as the handoff data sends it.
   if (app.transfer !== undefined) {
     decision.transfer = chooseTransfer(app, {
       reason,
-      form: s.form ?? s.completed.at(-1) ?? null,
+      form: taskOf(s),
       callData: callDataOf(s),
       slots: handoffDataSlots(app, slots, decision.unconfirmed),
     }, sessionConditionFacts(app, s, null));
   }
   return decision;
+}
+
+/** The task a handoff is about: the one set aside for a question during the aside, else the open form, else the last completed. */
+function taskOf(s: Session): FormId | null {
+  return s.parked?.form ?? s.form ?? s.completed.at(-1) ?? null;
 }
 
 /**
@@ -162,7 +174,7 @@ export function withTurnTransfer(s: Session, decision: HandoffDecision, clock: C
   if (app.transfer === undefined) return;
   decision.transfer = chooseTransfer(app, {
     reason: decision.reason,
-    form: s.form ?? s.completed.at(-1) ?? null,
+    form: taskOf(s),
     callData: callDataOf(s),
     slots: handoffDataSlots(app, decision.slots, decision.unconfirmed),
   }, sessionConditionFacts(app, s, clock, decision.reason));

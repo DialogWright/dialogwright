@@ -78,7 +78,8 @@ const LATENCY_MAX = 50_000;
 
 /**
  * The decision model's latency over the last hour: each turn that asked it (a record with questions) as
- * the console's bus carries it, its `timing.askMs`. Watched from the server's start (index.ts), so the
+ * the console's bus carries it, its `timing.askMs`, with its second request's (`timing.followUpMs`, a
+ * question in the middle of a task) folded in: the time the caller waited on the model that turn. Watched from the server's start (index.ts), so the
  * Health page has the hour before it was opened.
  */
 export class ModelLatency {
@@ -90,7 +91,8 @@ export class ModelLatency {
       const r = e.record;
       const ms = r?.timing?.askMs;
       if (!r || r.questions === null || r.questions === undefined || typeof ms !== 'number' || !Number.isFinite(ms)) return;
-      this.add(ms);
+      const followUp = r.timing?.followUpMs;
+      this.add(ms + (typeof followUp === 'number' && Number.isFinite(followUp) ? followUp : 0));
     });
   }
 
