@@ -257,6 +257,25 @@ describe('a caller who withheld their number on Telnyx (privacy)', () => {
     expect(p.raw.To).toBe('+15555550111');
   });
 
+  it('takes out a copy of a number any number-carrying field holds, not From\'s alone (a From with no number, the number in the caller ID)', () => {
+    const p = parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'anonymous', Privacy: 'id', CallerId: NUMBER, Asserted: `tel:${NUMBER}`, To: '+15555550111' }).toString());
+    expect(p.withheld).toBe(true);
+    expect(JSON.stringify(p)).not.toContain('5550142');
+    expect(p.raw).toMatchObject({ Privacy: 'id', To: '+15555550111' });
+    const sip = parseForm(new URLSearchParams({ CallSid: 'v3:abc', CallerId: 'anonymous', FromSipUri: `sip:${NUMBER}@carrier.example.com`, Other: NUMBER.slice(1) }).toString());
+    expect(JSON.stringify(sip)).not.toContain('5550142');
+  });
+
+  it('takes a withheld word as the SIP From\'s display name for a mark', () => {
+    for (const from of ['"Anonymous" <sip:+15555550142@carrier.example.com>', 'Restricted <sip:+15555550142@carrier.example.com>']) {
+      const p = parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: from }).toString());
+      expect(p.withheld, from).toBe(true);
+      expect(JSON.stringify(p), from).not.toContain('5550142');
+    }
+    // A display name that is a person's name is no mark.
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: `"Jordan Avery" <sip:${NUMBER}@carrier.example.com>` }).toString())).not.toHaveProperty('withheld');
+  });
+
   it('reads a call with its number given as not withheld, as before', () => {
     const given: Record<string, string>[] = [{}, { CallerId: NUMBER, FromSipUri: `${NUMBER}@sip.example.com` }, { Privacy: 'none' }];
     for (const fields of given) {

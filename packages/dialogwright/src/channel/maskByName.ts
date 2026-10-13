@@ -30,6 +30,55 @@ export function maskNumber(n: string | undefined | null): string {
  * writes and in a start event's provider details (`param.telnyx_call_from`).
  */
 export const MASK_KEYS = new Set(['from', 'to', 'caller', 'called', 'forwardedfrom', 'callernumber', 'callednumber', 'telnyx_call_from', 'telnyx_call_to']);
+/**
+ * Addresses that may carry a number inside other text: Telnyx's TeXML webhooks name the caller's ID
+ * (`CallerId`) and both ends' SIP addresses (`FromSipUri`, `ToSipUri`), each with the number whole on an
+ * ordinary call (`+15555550142@sip.telnyx.com`) and a word on a withheld one (`anonymous`,
+ * `anonymous@anonymous.invalid`). Masked by maskAddress: each number in them to its last four, the rest
+ * kept, so a withheld call's marks stay readable. Matched case-insensitively.
+ */
+export const ADDRESS_KEYS = new Set(['callerid', 'fromsipuri', 'tosipuri']);
+
+/**
+ * An address with each number in it masked to its last four (a run of five or more digits, with a `+`
+ * before it or not: `+15555550142@sip.telnyx.com` is `…0142@sip.telnyx.com`); one with no such run
+ * (`anonymous@anonymous.invalid`, an already masked one) as it is.
+ */
+export function maskAddress(value: string): string {
+  return value.replace(/\+?\d{5,}/g, (run) => maskNumber(run));
+}
+
+/**
+ * Fields with every copy of `number` masked, whatever their names: a field whose digits hold the number's
+ * last seven has each number in it masked to its last four (maskAddress), or the whole value when the
+ * number is written with spaces or dashes between its digits. A defence beside the masking by name, for a
+ * carrier that sends the number under a name no list knows. A number of fewer than seven digits, or none,
+ * leaves the fields as they are.
+ */
+export function maskCopiesOf(fields: Readonly<Record<string, string>>, number: string | undefined): Record<string, string> {
+  const digits = (number ?? '').replace(/\D/g, '');
+  if (digits.length < 7) return { ...fields };
+  const tail = digits.slice(-7);
+  const holds = (v: string): boolean => v.replace(/\D/g, '').includes(tail);
+  return Object.fromEntries(Object.entries(fields).map(([k, v]) => {
+    if (!holds(v)) return [k, v];
+    const masked = maskAddress(v);
+    return [k, holds(masked) ? maskNumber(v) : masked];
+  }));
+}
+
+/**
+ * Fields with every copy of `number` left out: the caller's own fields by name (`From`, `Caller`, the
+ * caller's name), and any other whose digits hold the number's last seven. For a call whose caller
+ * withheld their number, where not even its last four is written.
+ */
+export function withoutCopiesOf(fields: Readonly<Record<string, string>>, number: string | undefined): Record<string, string> {
+  const digits = (number ?? '').replace(/\D/g, '');
+  const tail = digits.length >= 7 ? digits.slice(-7) : null;
+  const named = new Set(['from', 'caller', 'callername', 'calleridname', 'caller_id_name']);
+  return Object.fromEntries(Object.entries(fields).filter(([k, v]) => !named.has(k.toLowerCase()) && (tail === null || !v.replace(/\D/g, '').includes(tail))));
+}
+
 /** Masked to a fixed string rather than to digits: a name has nothing worth keeping. */
 export const NAME_KEYS = new Set(['callername']);
 /** Dropped outright; the account id identifies the Twilio account, not the call. */
@@ -49,6 +98,7 @@ export function floorByName(name: string, value: string): string | null {
   if (NAME_KEYS.has(k)) return 'redacted';
   // A number already shown by its last four (a key's `last4`) is as strict as the floor.
   if (MASK_KEYS.has(k)) return value === SHORT_MASK || /^(?:\.\.\.|…).{4}$/.test(value) ? value : maskNumber(value);
+  if (ADDRESS_KEYS.has(k)) return maskAddress(value);
   return value;
 }
 

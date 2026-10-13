@@ -123,6 +123,10 @@ const CHECKS: readonly { name: string; durable?: true; body: Body }[] = [
       const call = contractCall('CA0001');
       await s.calls.save(call);
       sameJson(await s.calls.load('CA0001'), call, 'loaded call');
+      // With the fields beside the session a call may carry: a caller who withheld their number, too.
+      const withheld = { ...contractCall('CA0002'), callerWithheld: true as const };
+      await s.calls.save(withheld);
+      sameJson(await s.calls.load('CA0002'), withheld, 'loaded withheld call');
     },
   },
   {

@@ -11,6 +11,7 @@ import { handleDashboardRequest, type DashboardDeps } from './dashboard/routes';
 import { type AuditCheck, type DayCounters, type HealthNumbers, type HealthSource, type ServerSeen } from './dashboard/health';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { maskNumber, redactDeep } from './dashboard/events';
+import { maskCopiesOf, withoutCopiesOf } from '../channel/maskByName';
 import { HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept, WITHHELD_PARAMETER } from '../channel/callData';
 import { whenChained, type AuditSink } from '../run/turn';
 import type { S3TraceReader } from '../trace/store';
@@ -336,6 +337,27 @@ function dialHandoff(deps: HttpDeps, provider: VoiceProvider, callSid: string, h
 function namesLanguages(app: App): boolean {
   if (!app.locales) return false;
   return Object.keys(app.locales.prompts).length > 0 || app.voice?.locales !== undefined || app.voice?.numbers !== undefined || app.locales.default !== DEFAULT_LOCALE;
+}
+
+/**
+ * The locales of an app that names its languages whose calls on Telnyx have no voice of their own (the
+ * app's voice.locales.<tag>.voices.telnyx, or for the default locale the deployment's TELNYX_VOICE),
+ * when at least one other locale has one; empty otherwise. On Telnyx the start language's voice is
+ * written on the relay element too (voice/telnyx.ts startDocument: with the voices on the <Language>
+ * children alone Telnyx said nothing), so after a switch such a language may keep the voice the call
+ * started with, reading its language in another's voice. Not yet checked on a live call either way; the
+ * server warns of it at start (index.ts), as `pnpm check` does of the app's own voices.
+ */
+export function telnyxUnvoicedLocales(app: App, deploymentVoice: string | null | undefined): string[] {
+  if (!app.locales || !namesLanguages(app)) return [];
+  const locales = localesOf(app);
+  const voiced = (tag: string): boolean => {
+    const own = app.voice?.locales && Object.hasOwn(app.voice.locales, tag) ? app.voice.locales[tag] : undefined;
+    const named = own?.voices && Object.hasOwn(own.voices, 'telnyx') ? own.voices.telnyx : undefined;
+    return named !== undefined || (tag === app.locales!.default && Boolean(deploymentVoice));
+  };
+  const without = locales.filter((tag) => !voiced(tag));
+  return without.length === 0 || without.length === locales.length ? [] : without;
 }
 
 /** The locale a call starts in: the app's voice.numbers for the number called, else the app's default. Undefined for an app without locales. */
@@ -785,7 +807,12 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // (From/To/Caller/Called), and the frame log must never hold the whole thing on disk.
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
       const served = servedOf(deps, callback.callId, callback.to).s;
-      deps.store.get(callback.callId)?.frames.write('http', redactDeep({ route: path, ...recordedWebhookFields(served.app?.callData, callback.raw) }));
+      // And, whatever its name, any field that holds the caller's number (maskCopiesOf), as a defence beside the
+      // names; for a call whose caller withheld their number (CallEntry.callerWithheld, saved with it) and a
+      // callback that does not mark it, every copy is left out, not masked: no last four of it either.
+      const holder = deps.store.get(callback.callId);
+      const fields = recordedWebhookFields(served.app?.callData, callback.raw);
+      holder?.frames.write('http', redactDeep({ route: path, ...(holder.callerWithheld === true ? withoutCopiesOf(fields, callback.from) : maskCopiesOf(fields, callback.from)) }));
       const start = legacy ? connectRelayTwiml : undefined;
       let { document, note, fallback } = loaded === 'unreadable'
         ? decideUnreadable(deps, provider, callback, start)

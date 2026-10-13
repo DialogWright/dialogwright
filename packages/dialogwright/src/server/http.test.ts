@@ -4,7 +4,7 @@ import { createServer, request, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clipName, createRequestHandler, decideAction, decideActionTwiml, type HttpDeps } from './http';
+import { clipName, createRequestHandler, decideAction, decideActionTwiml, telnyxUnvoicedLocales, type HttpDeps } from './http';
 import { telnyxProvider } from './voice/telnyx';
 import { twilioProvider } from './voice/twilio';
 import { loadConfig } from './config';
@@ -303,6 +303,23 @@ const bilingual: App = {
     },
   },
 };
+
+describe('Telnyx voices for some locales and not others (telnyxUnvoicedLocales)', () => {
+  it('names the locales with no Telnyx voice of their own when another has one, the deployment\'s counting for the default locale', () => {
+    expect(telnyxUnvoicedLocales(bilingual, null)).toEqual([]);
+    const spanishBare: App = { ...bilingual, voice: { ...bilingual.voice, locales: { 'en-US': { voices: { telnyx: 'Telnyx.Ultra.Callie' } }, es: { tts: 'es-US' } } } };
+    expect(telnyxUnvoicedLocales(spanishBare, null)).toEqual(['es']);
+    // No voice of the app's own, but TELNYX_VOICE for the default locale: the same gap.
+    const noneNamed: App = { ...bilingual, voice: { ...bilingual.voice, locales: { es: { tts: 'es-US' } } } };
+    expect(telnyxUnvoicedLocales(noneNamed, 'Telnyx.NaturalHD.astra')).toEqual(['es']);
+    expect(telnyxUnvoicedLocales(noneNamed, null)).toEqual([]);
+    // The library's Spanish locale with TELNYX_VOICE alone: the default voiced, Spanish not.
+    expect(telnyxUnvoicedLocales(libraryApp, 'Telnyx.NaturalHD.astra')).toEqual(['es']);
+    // An app with no locales has none to switch to.
+    const { locales: _l, ...oneLanguage } = libraryApp;
+    expect(telnyxUnvoicedLocales(oneLanguage as App, 'Telnyx.NaturalHD.astra')).toEqual([]);
+  });
+});
 
 describe('a call\'s languages (voice.numbers, voice.locales)', () => {
   it('starts a call to the listed number in its locale, with every language the call may switch to', async () => {

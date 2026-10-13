@@ -3,7 +3,7 @@ import type { PlaybackEvent, VoiceProvider } from './provider';
 import { twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { telnyxPublicKey } from './telnyxSignature';
-import { VOICE_PROVIDER_IDS, type VoiceProviderId } from '../../channel/voiceProviders';
+import { LEGACY_VOICE_PROVIDER, VOICE_PROVIDER_IDS, type VoiceProviderId } from '../../channel/voiceProviders';
 import { WITHHELD_PARAMETER } from '../../channel/callData';
 
 /** A carrier the engine knows: its provider, and the environment variable that holds its secret. */
@@ -38,7 +38,7 @@ const ALL: Readonly<Record<VoiceProviderId, KnownProvider>> = {
 export const KNOWN_VOICE_PROVIDERS: readonly string[] = VOICE_PROVIDER_IDS;
 
 /** The provider the unprefixed `/voice`, `/cr-action` and `/conversation` belong to, for deployments made before providers. */
-export const LEGACY_PROVIDER = 'twilio';
+export const LEGACY_PROVIDER: string = LEGACY_VOICE_PROVIDER;
 
 function known(id: string): KnownProvider {
   const k = Object.hasOwn(ALL, id) ? ALL[id as VoiceProviderId] : undefined;

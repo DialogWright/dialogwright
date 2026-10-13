@@ -415,8 +415,12 @@ describe('END_AFTER_PLAYBACK and END_PLAYBACK_MAX_MS', () => {
     }
   });
   it('says at startup which carriers have their end held', () => {
-    expect(describeConfig(loadConfig(base))).toContain(`end after playback auto (telnyx), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms, 2x the estimate + 2000 ms awaiting the carrier's report`);
-    expect(describeConfig(loadConfig({ ...base, END_PLAYBACK_FACTOR: '3', END_PLAYBACK_MARGIN_MS: '1000' }))).toContain('3x the estimate + 1000 ms awaiting');
+    // Without TELNYX_EVENTS no report comes, and the line says nothing of awaiting one.
+    expect(describeConfig(loadConfig(base))).toContain(`end after playback auto (telnyx), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms `);
+    expect(describeConfig(loadConfig(base))).not.toContain('awaiting');
+    const events = { ...base, TELNYX_EVENTS: 'speaker-events tokens-played' };
+    expect(describeConfig(loadConfig(events))).toContain(`end after playback auto (telnyx), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms, 2x the estimate + 2000 ms awaiting the carrier's report`);
+    expect(describeConfig(loadConfig({ ...events, END_PLAYBACK_FACTOR: '3', END_PLAYBACK_MARGIN_MS: '1000' }))).toContain('3x the estimate + 1000 ms awaiting');
     expect(describeConfig(loadConfig({ ...base, END_AFTER_PLAYBACK: 'on' }))).toContain(`end after playback on (every carrier), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms`);
     expect(describeConfig(loadConfig({ ...base, END_AFTER_PLAYBACK: 'off' }))).toContain('end after playback off');
     const twilio = { PUBLIC_HOST: 'voice.example.com', HANDOFF_NUMBER: '+15555550100', TWILIO_AUTH_TOKEN: 'x'.repeat(32) };

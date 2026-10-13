@@ -358,6 +358,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  telnyxVoiceWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   shortSecretWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -685,6 +689,28 @@ function listenWarnings(config: LoadedConfig, slots: Readonly<Record<string, Slo
     if (w === null) return;
     report('app.yaml', ['carrySlots', i], `the slot "${id}" is carried (carrySlots), which listens for the whole call, but ${says(w)}; carrySlots wins`, 'nothing to do if that is meant; otherwise take the slot out of carrySlots, so it is asked once its form is open');
   });
+}
+
+/**
+ * The warning for Telnyx voices named for some of the app's locales and not the others
+ * (voice.locales.<tag>.voices.telnyx). On Telnyx the start language's voice is written on the relay
+ * element too (server/voice/telnyx.ts: with the voices on the <Language> children alone Telnyx said
+ * nothing on live calls), so a language with no voice of its own may keep the voice the call started
+ * with after a switch: not yet checked on a live call either way. The deployment's TELNYX_VOICE, which
+ * the default locale takes, is the server's to say (it warns at start).
+ */
+function telnyxVoiceWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const locales = Object.keys(config.prompts);
+  const voiceLocales = config.app.voice?.locales;
+  if (locales.length < 2 || voiceLocales === undefined) return;
+  const voiced = (tag: string): boolean => {
+    const own = Object.hasOwn(voiceLocales, tag) ? voiceLocales[tag] : undefined;
+    return own?.voices !== undefined && Object.hasOwn(own.voices, 'telnyx');
+  };
+  const named = locales.filter(voiced);
+  if (named.length === 0 || named.length === locales.length) return;
+  const missing = locales.filter((tag) => !voiced(tag));
+  report('app.yaml', ['voice', 'locales'], `a Telnyx voice is named for ${named.join(', ')} but not for ${missing.join(', ')}: on Telnyx the start language's voice is on the relay element too, so a call that switches to ${missing.length === 1 ? 'that locale' : 'one of those'} may keep the voice it started with, reading its language in another's voice (not yet checked on a live call)`, `name a Telnyx voice for every locale (voice.locales.<tag>.voices.telnyx), or for none`);
 }
 
 /**

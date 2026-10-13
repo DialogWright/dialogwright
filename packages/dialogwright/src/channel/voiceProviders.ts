@@ -7,6 +7,9 @@ export const VOICE_PROVIDER_IDS = ['twilio', 'telnyx'] as const;
 
 export type VoiceProviderId = (typeof VOICE_PROVIDER_IDS)[number];
 
+/** The provider a call that names none is on: the unprefixed paths' (server/voice/registry.ts LEGACY_PROVIDER), from before providers. */
+export const LEGACY_VOICE_PROVIDER: VoiceProviderId = 'twilio';
+
 /**
  * Who may talk over a line the agent is saying (BARGE_IN), as the relay element's `interruptible`
  * takes it: `any` (speech or a keypress), `speech` only, `dtmf` (a keypress) only, or `none`.
@@ -57,7 +60,9 @@ export const BARGE_IN_CARRIER_VARS: Readonly<Record<VoiceProviderId, string>> = 
  * server's (BARGE_IN, `base`), else any, as the engine always connected.
  */
 export function bargeInOfCarrier(providerId: string | undefined, base: BargeIn | undefined, byCarrier: Readonly<Partial<Record<string, BargeIn>>> | undefined): BargeIn {
-  const own = providerId !== undefined && byCarrier !== undefined && Object.hasOwn(byCarrier, providerId) ? byCarrier[providerId] : undefined;
+  // A call that names no carrier is on the legacy one (Twilio's unprefixed paths), as everywhere else.
+  const id = providerId ?? LEGACY_VOICE_PROVIDER;
+  const own = byCarrier !== undefined && Object.hasOwn(byCarrier, id) ? byCarrier[id] : undefined;
   return own ?? base ?? 'any';
 }
 

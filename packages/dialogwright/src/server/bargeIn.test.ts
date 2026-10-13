@@ -49,6 +49,9 @@ describe('BARGE_IN_TWILIO and BARGE_IN_TELNYX', () => {
     expect(bargeInOfCarrier('telnyx', c.bargeIn, c.bargeInByCarrier)).toBe('none');
     expect(bargeInOfCarrier('twilio', c.bargeIn, c.bargeInByCarrier)).toBe('speech');
     expect(bargeInOfCarrier(undefined, c.bargeIn, c.bargeInByCarrier)).toBe('speech');
+    // A call that names no carrier is on the legacy one, Twilio, and takes its own.
+    const twilioOwn = loadConfig({ ...both, BARGE_IN_TWILIO: 'none' });
+    expect(bargeInOfCarrier(undefined, twilioOwn.bargeIn, twilioOwn.bargeInByCarrier)).toBe('none');
     expect(loadConfig({ ...both, BARGE_IN_TWILIO: 'dtmf', BARGE_IN_TELNYX: 'any' }).bargeInByCarrier).toEqual({ twilio: 'dtmf', telnyx: 'any' });
   });
 

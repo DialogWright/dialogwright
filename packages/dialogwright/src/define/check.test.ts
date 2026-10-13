@@ -756,6 +756,25 @@ describe('checkAppFully: a priority switch\'s correction and the handoff\'s unco
   });
 });
 
+describe('checkAppFully: Telnyx voices for some locales and not others', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const voices = (locales: string) => (text: string): string => text.replace('voice:\n', `voice:\n  locales:\n${locales}`);
+
+  it('warns when a Telnyx voice is named for one locale and not the other: a switch may keep the start language\'s voice', async () => {
+    const dir = folder({ 'app.yaml': voices('    en-US: { voices: { telnyx: Telnyx.NaturalHD.astra } }\n') });
+    expect(await lines(dir)).toEqual([]);
+    const found = await warnings(dir);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('voice.locales  a Telnyx voice is named for en-US but not for es: on Telnyx the start language\'s voice is on the relay element too');
+    expect(found[0]).toContain('->  name a Telnyx voice for every locale (voice.locales.<tag>.voices.telnyx), or for none');
+  });
+
+  it('says nothing when every locale has a Telnyx voice, or none does', async () => {
+    expect(await warnings(folder({ 'app.yaml': voices('    en-US: { voices: { telnyx: Telnyx.NaturalHD.astra } }\n    es: { voices: { telnyx: Telnyx.NaturalHD.luna } }\n') }))).toEqual([]);
+    expect(await warnings(folder({ 'app.yaml': voices('    en-US: { voices: { twilio: en-US-Journey-O } }\n') }))).toEqual([]);
+  });
+});
+
 describe('checkApp: a summary read back word for word on a no (review fixes)', () => {
   it('needs its line, read_back_exact, and a form with a summary', async () => {
     const { MESSAGE_DIR, messageCode } = await import('../testing/message/app');

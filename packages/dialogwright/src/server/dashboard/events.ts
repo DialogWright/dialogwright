@@ -9,7 +9,7 @@ import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../tra
 import { defaultAppOrNull } from '../../core/app/registry';
 import type { CallDataKey } from '../../core/app/types';
 import { callDataSourceOf, recordedCustomParameters, UNNAMED_PARAMETER } from '../../channel/callData';
-import { DROP_KEYS, DROP_SUFFIXES, floorByName, MASK_KEYS, maskNumber, NAME_KEYS } from '../../channel/maskByName';
+import { ADDRESS_KEYS, DROP_KEYS, DROP_SUFFIXES, floorByName, MASK_KEYS, maskAddress, maskNumber, NAME_KEYS } from '../../channel/maskByName';
 
 // Where the masking by name lives (beside the call data, which the core's audit floors by it too).
 export { floorByName, frameLogKeepsField, maskNumber } from '../../channel/maskByName';
@@ -111,6 +111,8 @@ export function redactDeep(value: unknown, depth = 0): unknown {
     if (v === UNNAMED_PARAMETER) out[key] = v;
     else if (typeof v === 'string' && NAME_KEYS.has(k)) out[key] = 'redacted';
     else if (typeof v === 'string' && MASK_KEYS.has(k)) out[key] = maskNumber(v);
+    // An address that may hold a number (a SIP address, a caller ID): each number in it to its last four.
+    else if (typeof v === 'string' && ADDRESS_KEYS.has(k)) out[key] = maskAddress(v);
     // Every other custom parameter (`param.*`): the core never reads them, so none is worth showing.
     else if (typeof v === 'string' && key.toLowerCase().startsWith(PARAM_PREFIX)) out[key] = 'redacted';
     else out[key] = redactDeep(v, depth + 1);

@@ -1912,8 +1912,12 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   }
   const existing = deps.store.get(callId);
   if (existing) {
-    // A caller who withheld their number on the call's first setup: this one's copies of it are taken out too.
-    if (existing.callerWithheld) parsed = setupWithCallerWithheld(ctx.provider, parsed, true);
+    // A caller who withheld their number, as the call knows it or as this setup's own parameter says: its
+    // copies of the number are taken out, and the call remembers it (saved with it) for the next reconnect.
+    if (existing.callerWithheld === true || callerWithheldIn(parsed)) {
+      parsed = setupWithCallerWithheld(ctx.provider, parsed, true);
+      existing.callerWithheld = true;
+    }
     // Masked at write time, not only when the dashboard reads it back: the setup frame carries
     // the caller's whole number, and the file on disk must never hold it either.
     existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));

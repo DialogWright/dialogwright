@@ -158,6 +158,9 @@ const LIVE_STATUSES: ReadonlySet<string> = new Set(['active', 'in-progress']);
  * (RFC 3261 8.1.1.3's `sip:anonymous@anonymous.invalid` for a caller who withholds their identity).
  */
 function anonymousSip(value: string): boolean {
+  // A display name that is a withheld word ("Anonymous" <sip:...>) is a mark too.
+  const lt = value.indexOf('<');
+  if (lt > 0 && isWithheldWord(value.slice(0, lt).trim().replace(/^"(.*)"$/, '$1'))) return true;
   const address = value.trim().replace(/^.*</, '').replace(/>.*$/, '').replace(/^sips?:/i, '');
   const at = address.indexOf('@');
   const user = at >= 0 ? address.slice(0, at) : address;
@@ -188,18 +191,24 @@ function withheldMarked(raw: Record<string, string>): boolean {
 /** The fields that name the number called or the call, never taken out of a withheld call's webhook. */
 const KEPT_FIELDS: ReadonlySet<string> = new Set(['To', 'to', 'Called', 'CallSid', 'CallSidLegacy', 'call_control_id', 'CallControlId', 'CallSessionId', 'ConnectionId', 'AccountSid']);
 
+/** The fields that may carry the caller's number (a withheld call's sends it in some, the marks in others). */
+const NUMBER_FIELDS: readonly string[] = ['From', 'from', 'Caller', 'caller', 'CallerId', 'CallerID', 'caller_id', 'callerId', 'FromSipUri', 'from_sip_uri', 'fromSipUri'];
+
 /**
  * A withheld call's fields with every copy of the caller's number taken out: `From`, `Caller` and the
- * caller's name by name, and any other field whose digits hold the number's last seven (a SIP From
- * written with the number, say). The marks themselves (an anonymous caller ID or SIP From) stay, for
- * the frame log to show why the number is not there.
+ * caller's name by name, and any other field whose digits hold the last seven of a number one of the
+ * number-carrying fields holds (NUMBER_FIELDS: `From`, `Caller`, a caller ID, a SIP From with a number
+ * in it). The marks themselves (an anonymous caller ID or SIP From) stay, for the frame log to show
+ * why the number is not there.
  */
 function withoutCaller(raw: Record<string, string>): Record<string, string> {
-  const digits = (first(raw, 'From', 'from') ?? '').replace(/\D/g, '');
-  const tail = digits.length >= 7 ? digits.slice(-7) : null;
+  const tails = NUMBER_FIELDS.flatMap((name) => {
+    const digits = (raw[name] ?? '').replace(/\D/g, '');
+    return digits.length >= 7 ? [digits.slice(-7)] : [];
+  });
   const named = new Set(['From', 'from', 'Caller', 'caller', 'CallerName', 'CallerIdName', 'caller_id_name']);
-  return Object.fromEntries(Object.entries(raw).filter(([k, v]) =>
-    KEPT_FIELDS.has(k) || (!named.has(k) && (tail === null || !v.replace(/\D/g, '').includes(tail)))));
+  const holds = (v: string): boolean => tails.some((t) => v.replace(/\D/g, '').includes(t));
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => KEPT_FIELDS.has(k) || (!named.has(k) && !holds(v))));
 }
 
 function parse(req: WebhookRequest): CallbackParams | null {

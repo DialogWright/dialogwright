@@ -8,7 +8,7 @@ import { checkJwksUrl, jwksKeys } from './chat/jwks';
 import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
-import { createRequestHandler, type HttpApp, type HttpDeps } from './http';
+import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { randomBytes } from 'node:crypto';
@@ -688,6 +688,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (transfer) log(`${tag(a.id)}transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
     const called = calledOf(a.id);
     if (Object.keys(called).length > 0) log(`${tag(a.id)}called numbers: ${Object.keys(called).join(', ')}`);
+    // On Telnyx, a language with no voice of its own beside one with a voice may keep the start language's
+    // voice after a switch (http.ts telnyxUnvoicedLocales): worth saying until a live call shows otherwise.
+    const unvoiced = config.voiceProviders.includes('telnyx') ? telnyxUnvoicedLocales(a.app, config.telnyxVoice) : [];
+    if (unvoiced.length > 0) {
+      log(`WARNING: ${tag(a.id)}on Telnyx, ${unvoiced.join(', ')} ${unvoiced.length === 1 ? 'has' : 'have'} no voice of ${unvoiced.length === 1 ? 'its' : 'their'} own while another locale has one: a call that starts in a voiced locale and switches may keep that voice (not yet checked on a live call); name a Telnyx voice for every locale in app.yaml (voice.locales.<tag>.voices.telnyx)`);
+    }
     httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id), handoffNumber: handoffOf(a.id) });
     // On a host of several apps, an app with no transfer targets and no HANDOFF_NUMBER of its own puts its
     // callers through to the server's: worth saying, since another business's desk may answer.

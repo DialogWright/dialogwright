@@ -1045,8 +1045,9 @@ function describeBargeIn(c: ServerConfig): string {
 function describeEndAfterPlayback(c: ServerConfig): string {
   const mode = c.endAfterPlayback ?? 'auto';
   if (mode === 'off') return 'end after playback off';
-  // A carrier that reports its playback ends the hold on the report, with a ceiling of its own under the most.
-  const reported = c.voiceProviders.some(readsPlaybackEvents)
+  // A carrier that reports its playback ends the hold on the report, with a ceiling of its own under the
+  // most: only where it is asked to report (Telnyx with TELNYX_EVENTS).
+  const reported = c.voiceProviders.some((id) => readsPlaybackEvents(id) && (id !== 'telnyx' || Boolean(c.telnyxEvents)))
     ? `, ${c.endPlaybackFactor ?? DEFAULT_END_PLAYBACK_FACTOR}x the estimate + ${c.endPlaybackMarginMs ?? DEFAULT_END_PLAYBACK_MARGIN_MS} ms awaiting the carrier's report`
     : '';
   const upTo = `up to ${c.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS} ms${reported}`;

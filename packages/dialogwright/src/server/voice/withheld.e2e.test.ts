@@ -21,7 +21,9 @@ import { WITHHELD_PARAMETER } from '../../channel/callData';
  * beside it (`CallerId` anonymous, `FromSipUri` anonymous@anonymous.invalid), and its setup carried the
  * number again as `telnyx_call_from`; the engine kept it and offered it back. Here the app is the texting
  * fixture, which keeps the number for a call-start lookup and offers it for texts: with the number
- * withheld, nothing is kept, looked up, offered, logged or shown. The number is fictional.
+ * withheld, nothing is kept, looked up, offered, logged or shown, on a reconnect too, and on one a
+ * restarted server takes up (SESSION_STORE=file) from a callback with no marks of its own. The number
+ * is fictional.
  */
 
 const NUMBER = '+15555550142';
@@ -29,11 +31,13 @@ const DIGITS = '5550142';
 const CALL_ID = 'v3:WITHHELDexampleCallIdForTestsOnly0000000000000000';
 const TELNYX_PUBLIC_KEY = Buffer.alloc(32, 7).toString('base64');
 
+const servers: RunningServer[] = [];
 let running: RunningServer | null = null;
 const dirs: string[] = [];
 afterEach(async () => {
-  await running?.close();
+  for (const s of servers.splice(0)) await s.close().catch(() => {});
   running = null;
+  await new Promise((r) => setTimeout(r, 20));
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -48,18 +52,26 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(() => useTestkit());
 
-/** A server answering Telnyx, with what it logged and published. */
-async function start(): Promise<{ base: string; ws: string; traceDir: string; lines: string[]; events: DashboardEvent[] }> {
-  const traceDir = mkdtempSync(join(tmpdir(), 'withheld-'));
-  const audioDir = mkdtempSync(join(tmpdir(), 'audio-'));
-  dirs.push(traceDir, audioDir);
+interface Started { base: string; ws: string; traceDir: string; lines: string[]; events: DashboardEvent[] }
+
+/** A folder for one test's traces, audit, audio and (with a file store) sessions, shared by its servers. */
+function folder(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'withheld-'));
+  dirs.push(dir);
+  return dir;
+}
+
+/** A server answering Telnyx on `dir`, with what it logged and published; `env` on top (a file store, say). */
+async function start(dir = folder(), env: Record<string, string> = {}): Promise<Started> {
+  const traceDir = join(dir, 'traces');
   const config = loadConfig({
     PUBLIC_HOST: 'localhost', VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY, SIGNATURE_CHECK: 'off',
-    HANDOFF_NUMBER: '+15551234567', PORT: '0', TODAY_OVERRIDE: '2026-10-13',
-    TRACE_DIR: traceDir, AUDIT_DIR: join(traceDir, 'audit'), AUDIO_DIR: audioDir,
+    HANDOFF_NUMBER: '+15551234567', PORT: '0', TODAY_OVERRIDE: '2026-10-13', NO_INPUT_MS: '0',
+    TRACE_DIR: traceDir, AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, ...env,
   });
   const lines: string[] = [];
   running = await startServer(config, { host: '127.0.0.1', client: client!, log: (l) => lines.push(l) });
+  servers.push(running);
   const events: DashboardEvent[] = [];
   running.bus?.subscribe((e) => events.push(e));
   return { base: `http://127.0.0.1:${running.port}`, ws: `ws://127.0.0.1:${running.port}`, traceDir, lines, events };
@@ -71,15 +83,17 @@ async function post(base: string, path: string, fields: Record<string, string>):
   return res.text();
 }
 
-/** The answer webhook as the live call's carried it: the real number in From, and the marks beside it. */
-const WITHHELD_WEBHOOK = {
-  CallSid: CALL_ID, CallStatus: 'ringing', Direction: 'inbound', From: NUMBER, To: '+15555550111',
-  CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid', CallSessionId: '0b6e1f2a-6f5d-11ef-9692-02420aeffb1f',
-};
+/** The fields a live call's TeXML webhooks carried: the real number in From, and the marks beside it. */
+const MARKED = { From: NUMBER, To: '+15555550111', CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid', CallSessionId: '0b6e1f2a-6f5d-11ef-9692-02420aeffb1f' };
+const WITHHELD_WEBHOOK = { CallSid: CALL_ID, CallStatus: 'ringing', Direction: 'inbound', ...MARKED };
+/** A relay that failed mid-call, as the action callback reports it, with the same fields. */
+const FAILED_MARKED = { CallSid: CALL_ID, CallStatus: 'in-progress', SessionStatus: 'failed', ...MARKED };
+/** The same callback with no marks: the number whole in From, nothing saying it was withheld. */
+const FAILED_UNMARKED = { CallSid: CALL_ID, CallStatus: 'in-progress', SessionStatus: 'failed', From: NUMBER, To: '+15555550111' };
 
 /** Telnyx's setup as a live call sends it: from and to null, the numbers in its custom parameters, with the ones the document named. */
-function setupFor(document: string): { type: string; customParameters: Record<string, string>; [k: string]: unknown } {
-  const params = Object.fromEntries([...document.matchAll(/<Parameter name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1]!, m[2]!]));
+function setupFor(document: string, withParameters = true): { type: string; customParameters: Record<string, string>; [k: string]: unknown } {
+  const params = withParameters ? Object.fromEntries([...document.matchAll(/<Parameter name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1]!, m[2]!])) : {};
   return {
     type: 'setup', sessionId: '05ff737c-0000-4000-8000-000000000000', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: CALL_ID,
     from: null, to: null, direction: null, callStatus: 'active', callerName: 'Jordan Avery',
@@ -87,88 +101,147 @@ function setupFor(document: string): { type: string; customParameters: Record<st
   };
 }
 
-/** Everything the server wrote of the call: its trace and frame log files. */
-function written(traceDir: string): string {
-  return readdirSync(traceDir, { recursive: true, withFileTypes: true })
+/** Everything the server wrote under the folder: traces, frame logs, the audit, and with a file store the saved calls. */
+function written(dir: string): string {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((f) => f.isFile())
     .map((f) => readFileSync(join(f.parentPath, f.name), 'utf8'))
     .join('\n');
 }
 
-describe('a caller who withheld their number on Telnyx', () => {
-  it('is a call with no number: nothing kept, looked up, offered, logged or shown, from the webhook to the call', async () => {
-    const { base, ws, traceDir, lines, events } = await start();
-    const document = await post(base, '/voice/telnyx', WITHHELD_WEBHOOK);
-    // The start document says the number was withheld, so the setup's copies of it are taken out.
-    expect(document).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
-    expect(document).not.toContain(DIGITS);
-    const token = /token=([0-9a-f]{32})/.exec(document)![1]!;
+/**
+ * No copy of the number anywhere: not whole, and not by its last four as the masks write them (`…0142`,
+ * `...0142`). The four digits alone are not looked for: a timestamp or a hash may hold them.
+ */
+function expectNoCopy(s: Started, dir: string): void {
+  const files = written(dir);
+  const events = JSON.stringify(s.events);
+  const lines = s.lines.join('\n');
+  for (const copy of [DIGITS, '…0142', '...0142', 'Jordan Avery']) {
+    expect(files, copy).not.toContain(copy);
+    expect(events, copy).not.toContain(copy);
+    expect(lines, copy).not.toContain(copy);
+  }
+}
 
-    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
-    relay.send(setupFor(document));
-    const [greeting] = await relay.waitForTexts(1);
-    await running!.store.get(CALL_ID)?.tail;
+/** The trace records of the call, from its trace file. */
+function records(traceDir: string): TraceRecord[] {
+  const name = readdirSync(traceDir).find((n) => n.endsWith('.jsonl') && !n.includes('frames'))!;
+  return readFileSync(join(traceDir, name), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
+}
+
+/** A withheld call answered and started on `s`: its relay, after the greeting. */
+async function withheldCall(s: Started): Promise<FakeRelay> {
+  const document = await post(s.base, '/voice/telnyx', WITHHELD_WEBHOOK);
+  // The start document says the number was withheld, so the setup's copies of it are taken out.
+  expect(document).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
+  expect(document).not.toContain(DIGITS);
+  const token = /token=([0-9a-f]{32})/.exec(document)![1]!;
+  const relay = await FakeRelay.connect(`${s.ws}/conversation/telnyx?token=${token}`);
+  relay.send(setupFor(document));
+  await relay.waitForTexts(1);
+  await running!.store.get(CALL_ID)?.tail;
+  return relay;
+}
+
+/** The new socket a reconnect's document names, its setup sent as Telnyx would (with the document's parameters, or none). */
+async function reconnect(s: Started, document: string, withParameters: boolean): Promise<FakeRelay> {
+  const token = /token=([0-9a-f]{32})/.exec(document)![1]!;
+  const relay = await FakeRelay.connect(`${s.ws}/conversation/telnyx?token=${token}`);
+  relay.send(setupFor(document, withParameters));
+  await relay.waitForTexts(1);
+  await running!.store.get(CALL_ID)?.tail;
+  return relay;
+}
+
+describe('a caller who withheld their number on Telnyx', () => {
+  it('is a call with no number: nothing kept, looked up, offered, logged or shown, from the webhook to the call and its reconnect', async () => {
+    const dir = folder();
+    const s = await start(dir);
+    const relay = await withheldCall(s);
 
     // No number on the session: nothing kept for the app's code, and nothing to offer.
-    const session = running!.store.get(CALL_ID)!.session;
-    expect(session).not.toHaveProperty('callerNumber');
+    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
     // The start event carries none, and the call-start lookup by the caller's number never ran.
-    const records = readFileSync(join(traceDir, readdirSync(traceDir).find((n) => n.endsWith('.jsonl') && !n.includes('frames'))!), 'utf8')
-      .trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
-    const startRecord = records.find((r) => r.event?.type === 'session.start')!;
+    const startRecord = records(s.traceDir).find((r) => r.event?.type === 'session.start')!;
     expect(startRecord.event).not.toHaveProperty('callerNumber');
     expect(startRecord.gateEvents ?? []).toEqual([]);
     // Nothing offered: no line names the number's last four.
-    expect(greeting).not.toContain('0142');
     expect(relay.texts().join(' ')).not.toContain('0142');
     // The console shows the caller as withheld, never by their last four.
-    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ from: 'withheld' });
-    // Not one copy of the number anywhere: the trace, the frame log, the console's events, the server's log.
-    expect(written(traceDir)).not.toContain(DIGITS);
-    expect(written(traceDir)).not.toContain('Jordan Avery');
-    expect(JSON.stringify(events)).not.toContain(DIGITS);
-    expect(JSON.stringify(events)).not.toContain('0142');
-    expect(lines.join('\n')).not.toContain('0142');
-    expect(lines.some((l) => l.includes(`${CALL_ID} from withheld`))).toBe(true);
+    expect(s.events.find((e) => e.type === 'call_started')).toMatchObject({ from: 'withheld' });
+    expect(s.lines.some((l) => l.includes(`${CALL_ID} from withheld`))).toBe(true);
+    expectNoCopy(s, dir);
 
-    // A dropped relay's reconnect, its callback with no marks of its own: the new document says so again,
-    // and the new setup (which carries the number again) has it taken out too.
+    // A dropped relay's reconnect, its callback as Telnyx sends it (the number in From, the marks beside it):
+    // the new document says so again, and the new setup (which carries the number again) has it taken out.
     relay.close();
     await new Promise((r) => setTimeout(r, 50));
-    const again = await post(base, '/cr-action/telnyx', { CallSid: CALL_ID, CallStatus: 'in-progress', SessionStatus: 'failed' });
+    const again = await post(s.base, '/cr-action/telnyx', FAILED_MARKED);
     expect(again).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
-    const token2 = /token=([0-9a-f]{32})/.exec(again)![1]!;
-    const relay2 = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token2}`);
-    const { customParameters, ...rest } = setupFor(again);
-    const { [WITHHELD_PARAMETER]: _w, ...noMark } = customParameters;
-    relay2.send({ ...rest, type: 'setup', customParameters: noMark });
-    await relay2.waitForTexts(1);
-    await running!.store.get(CALL_ID)?.tail;
-    expect(events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: 'withheld' }) })]);
-    expect(written(traceDir)).not.toContain(DIGITS);
-    expect(JSON.stringify(events)).not.toContain('0142');
+    const relay2 = await reconnect(s, again, true);
+    expect(s.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: 'withheld' }) })]);
     expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
+    // The callback's marks stay readable in the frame log; the number is not there.
+    expect(written(dir)).toContain('anonymous@anonymous.invalid');
+    expectNoCopy(s, dir);
     relay2.close();
   });
 
+  it('stays withheld on a reconnect a restarted server takes up (SESSION_STORE=file), from a callback with no marks and a setup with no parameter', async () => {
+    const dir = folder();
+    const store = { SESSION_STORE: `file:${join(dir, 'sessions')}`, RESUMED_AFTER_MS: '0' };
+    const first = await start(dir, store);
+    await withheldCall(first);
+    await running!.store.settled();
+    // The call is saved withheld.
+    expect(written(join(dir, 'sessions'))).toContain('"callerWithheld":true');
+    await running!.close();
+
+    const second = await start(dir, store);
+    // The callback says nothing of the number being withheld: the saved call does.
+    const again = await post(second.base, '/cr-action/telnyx', FAILED_UNMARKED);
+    expect(again).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
+    // And a setup that does not carry the parameter back still has its copies of the number taken out.
+    const relay = await reconnect(second, again, false);
+    expect(second.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: 'withheld' }) })]);
+    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
+    expectNoCopy(first, dir);
+    expectNoCopy(second, dir);
+    relay.close();
+  }, 20_000);
+
   it('a call with its number given is as before: kept, looked up, and shown by its last four', async () => {
-    const { base, ws, traceDir, events } = await start();
+    const dir = folder();
+    const s = await start(dir);
     const { CallerId: _c, FromSipUri: _f, ...given } = WITHHELD_WEBHOOK;
-    const document = await post(base, '/voice/telnyx', given);
+    const document = await post(s.base, '/voice/telnyx', given);
     expect(document).not.toContain(WITHHELD_PARAMETER);
     const token = /token=([0-9a-f]{32})/.exec(document)![1]!;
-    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${token}`);
+    const relay = await FakeRelay.connect(`${s.ws}/conversation/telnyx?token=${token}`);
     relay.send(setupFor(document));
     await relay.waitForTexts(1);
     await running!.store.get(CALL_ID)?.tail;
     expect(running!.store.get(CALL_ID)!.session.callerNumber).toBe(NUMBER);
-    expect(events.find((e) => e.type === 'call_started')).toMatchObject({ from: '…0142' });
+    expect(s.events.find((e) => e.type === 'call_started')).toMatchObject({ from: '…0142' });
     // The call-start lookup by the number ran, as it does for every call that gives one.
-    const records = readFileSync(join(traceDir, readdirSync(traceDir).find((n) => n.endsWith('.jsonl') && !n.includes('frames'))!), 'utf8')
-      .trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
-    expect(records.find((r) => r.event?.type === 'session.start')!.gateEvents?.map((e) => e.decision.call.tool)).toEqual(['findCallerByPhone']);
-    // Kept, and still never written whole.
-    expect(written(traceDir)).not.toContain(DIGITS);
+    expect(records(s.traceDir).find((r) => r.event?.type === 'session.start')!.gateEvents?.map((e) => e.decision.call.tool)).toEqual(['findCallerByPhone']);
+    // Its action callback, carrying the number in CallerId and both SIP addresses as Telnyx's do: the
+    // frame log masks each to its last four, and never writes it whole.
     relay.close();
+    await new Promise((r) => setTimeout(r, 50));
+    await post(s.base, '/cr-action/telnyx', {
+      CallSid: CALL_ID, CallStatus: 'completed', SessionStatus: 'completed', From: NUMBER, To: '+15555550111',
+      CallerId: NUMBER, FromSipUri: `${NUMBER}@sip.telnyx.com`, ToSipUri: '+15555550111@sip.telnyx.com', Asserted: `<sip:${NUMBER}@carrier.example.com>`,
+    });
+    const frames = readFileSync(join(s.traceDir, readdirSync(s.traceDir).find((n) => n.endsWith('.frames.jsonl'))!), 'utf8');
+    const http = frames.split('\n').filter((l) => l.includes('"dir":"http"')).at(-1)!;
+    expect(http).toContain('"CallerId":"…0142"');
+    expect(http).toContain('"FromSipUri":"…0142@sip.telnyx.com"');
+    expect(http).toContain('"ToSipUri":"…0111@sip.telnyx.com"');
+    expect(http).toContain('"Asserted":"<sip:…0142@carrier.example.com>"');
+    // Kept, and still never written whole.
+    expect(written(dir)).not.toContain(DIGITS);
+    expect(written(dir)).not.toContain('5550111');
   });
 });
