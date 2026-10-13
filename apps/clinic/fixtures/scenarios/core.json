@@ -230,13 +230,13 @@
     "id": "intent-retry-to-agent",
     "steps": [
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       }
     ],
     "expect": {
@@ -271,10 +271,10 @@
     "id": "dtmf-menu",
     "steps": [
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
         "dtmf": "2"
@@ -290,10 +290,10 @@
     "id": "spoken-menu-number",
     "steps": [
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "What are your hours"
+        "say": "I need a prescription refill"
       },
       {
         "say": "press three"
@@ -1344,7 +1344,7 @@
         "say": "Tuesday"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       }
     ],
     "expect": {
@@ -1369,10 +1369,10 @@
         "say": "Tuesday"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
         "dtmf": "1"
@@ -1400,10 +1400,10 @@
         "say": "Tuesday"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
         "dtmf": "2"
@@ -1443,13 +1443,13 @@
         "say": "Tuesday"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       },
       {
-        "say": "what are your hours"
+        "say": "I need a prescription refill"
       }
     ],
     "expect": {

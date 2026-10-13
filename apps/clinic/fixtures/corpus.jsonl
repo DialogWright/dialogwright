@@ -66,8 +66,8 @@
 {"id":"dn-06","text":"I'm good, thanks","intent":"done","context":"anything_else"}
 {"id":"dn-07","text":"that's everything","intent":"done","context":"anything_else"}
 {"id":"dn-08","text":"that's all I needed, thanks","intent":"done","context":"no_form"}
-{"id":"ot-01","text":"What are your hours","intent":"other","context":"no_form"}
-{"id":"ot-02","text":"Do you have parking","intent":"other","context":"no_form"}
+{"id":"ot-01","text":"Do you do flu shots","intent":"other","context":"no_form"}
+{"id":"ot-02","text":"Can you send my records to another doctor","intent":"other","context":"no_form"}
 {"id":"ot-03","text":"I need a prescription refill","intent":"other","context":"no_form"}
 {"id":"ot-04","text":"Can I get my lab results","intent":"other","context":"no_form"}
 {"id":"ot-05","text":"Where are you located","intent":"other","context":"no_form"}
@@ -258,7 +258,8 @@
 {"id":"aq-09","text":"is the building wheelchair accessible","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"accessibility"},"tags":["knowledge"]}
 {"id":"aq-10","text":"can I get a sign language interpreter","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"accessibility"},"tags":["knowledge"]}
 {"id":"aq-11","text":"I have a question","intent":"ask_question","context":"no_form","tags":["knowledge"]}
-{"id":"aq-12","text":"do you do flu shots","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"none"},"tags":["knowledge"]}
+{"id":"aq-12","text":"What are your hours","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
+{"id":"aq-13","text":"Do you have parking","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
 {"id":"sq-01","text":"parking","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
 {"id":"sq-02","text":"your opening hours","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
 {"id":"sq-03","text":"whether you do flu shots","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"none"},"tags":["knowledge"]}
