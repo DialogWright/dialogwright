@@ -250,6 +250,7 @@ exports[`the questions the model sees, on the clinic > pins every question at th
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -445,6 +446,7 @@ exports[`the questions the model sees, on the clinic > pins every question in bi
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -584,6 +586,7 @@ exports[`the questions the model sees, on the clinic > pins every question in bi
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -845,6 +848,7 @@ exports[`the questions the model sees, on the clinic > pins every question in ca
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -1088,6 +1092,7 @@ exports[`the questions the model sees, on the clinic > pins every question in co
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -1443,6 +1448,7 @@ exports[`the questions the model sees, on the clinic > pins every question in re
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -1808,6 +1814,7 @@ exports[`the questions the model sees, on the clinic > pins every question in sc
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -2272,6 +2279,7 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -2478,6 +2486,7 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
   },
   "secondIntent": {
     "criteria": {
+      "ask_question": "A second, separate request on top of the main one: Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "A second, separate request on top of the main one: Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "A second, separate request on top of the main one: Wants to cancel an existing appointment",
       "confirm_appointment": "A second, separate request on top of the main one: Wants to check or confirm the details of an existing appointment",
@@ -2766,6 +2775,7 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -2861,6 +2871,7 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
   },
   "secondIntent": {
     "criteria": {
+      "ask_question": "A second, separate request on top of the main one: Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "A second, separate request on top of the main one: Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "A second, separate request on top of the main one: Wants to cancel an existing appointment",
       "confirm_appointment": "A second, separate request on top of the main one: Wants to check or confirm the details of an existing appointment",
@@ -3151,6 +3162,7 @@ exports[`the questions the model sees, on the clinic > pins every question with 
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",
@@ -3516,6 +3528,7 @@ exports[`the questions the model sees, on the clinic > pins every question with 
   "intent": {
     "criteria": {
       "agent": "Asks to speak with a person, representative, or operator",
+      "ask_question": "Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is",
       "billing": "Asks about a bill, charge, payment, or insurance coverage",
       "cancel": "Wants to cancel an existing appointment",
       "capabilities": "Asks what the system can do, what it is, what the options are, or how to use it, as in what can you do, what are my options, or what is this",

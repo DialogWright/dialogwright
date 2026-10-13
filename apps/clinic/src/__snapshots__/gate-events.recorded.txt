@@ -72,7 +72,6 @@
 # corpus ot-02
 # corpus ot-03
 # corpus ot-04
-# corpus ot-05
 # corpus ot-06
 # corpus ns-01
 # corpus ns-02
@@ -379,6 +378,49 @@
 1 bookAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel","date":"2026-09-22","time":"10:00 AM"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
     confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash
+# corpus aq-01
+1 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-02
+1 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-03
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-04
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-05
+1 answerQuestion ALLOW {"topic":"first_visit"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-06
+1 answerQuestion ALLOW {"topic":"first_visit"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-07
+1 answerQuestion ALLOW {"topic":"cancellation_policy"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-08
+1 answerQuestion ALLOW {"topic":"cancellation_policy"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-09
+1 answerQuestion ALLOW {"topic":"accessibility"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-10
+# corpus aq-11
+# corpus aq-12
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-13
+1 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-14
+# corpus sq-01
+1 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus sq-02
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus sq-03
 # scenario reschedule-happy
 4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
@@ -750,3 +792,13 @@
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 5 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario question-parking
+1 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario question-asked-for
+2 answerQuestion ALLOW {"topic":"parking"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario question-cancellation-policy
+1 answerQuestion ALLOW {"topic":"cancellation_policy"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario question-none

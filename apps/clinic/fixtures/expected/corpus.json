@@ -15,7 +15,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -37,7 +38,8 @@
       "dob": null,
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -59,7 +61,8 @@
       "dob": null,
       "memberId": null,
       "provider": "nguyen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -81,7 +84,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": "2026-09-19"
+      "date": "2026-09-19",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -103,7 +107,8 @@
       "dob": null,
       "memberId": null,
       "provider": "kim",
-      "date": "2026-10-05"
+      "date": "2026-10-05",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -125,7 +130,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -147,7 +153,8 @@
       "dob": null,
       "memberId": null,
       "provider": "alvarez",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -169,7 +176,8 @@
       "dob": null,
       "memberId": null,
       "provider": "rossi",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -191,7 +199,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -213,7 +222,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "okafor",
-      "date": "2026-09-25"
+      "date": "2026-09-25",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -235,7 +245,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -257,7 +268,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -279,7 +291,8 @@
       "dob": null,
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -301,7 +314,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -323,7 +337,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": "2026-09-19"
+      "date": "2026-09-19",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -345,7 +360,8 @@
       "dob": null,
       "memberId": null,
       "provider": "kim",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -367,7 +383,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": "2026-11-12"
+      "date": "2026-11-12",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -389,7 +406,8 @@
       "dob": null,
       "memberId": null,
       "provider": "cheng",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -411,7 +429,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -433,7 +452,8 @@
       "dob": null,
       "memberId": null,
       "provider": "nguyen",
-      "date": "2026-09-18"
+      "date": "2026-09-18",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -455,7 +475,8 @@
       "dob": null,
       "memberId": null,
       "provider": "rossi",
-      "date": "2026-09-20"
+      "date": "2026-09-20",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -477,7 +498,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -499,7 +521,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -521,7 +544,8 @@
       "dob": null,
       "memberId": null,
       "provider": "okafor",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -543,7 +567,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -565,7 +590,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -587,7 +613,8 @@
       "dob": null,
       "memberId": null,
       "provider": "alvarez",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -609,7 +636,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -631,7 +659,8 @@
       "dob": null,
       "memberId": null,
       "provider": "kim",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -653,7 +682,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -675,7 +705,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -697,7 +728,8 @@
       "dob": null,
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -719,7 +751,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -741,7 +774,8 @@
       "dob": null,
       "memberId": null,
       "provider": "rossi",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -763,7 +797,8 @@
       "dob": null,
       "memberId": null,
       "provider": "nguyen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -785,7 +820,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -807,7 +843,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -829,7 +866,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -851,7 +889,8 @@
       "dob": null,
       "memberId": null,
       "provider": "kim",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -873,7 +912,8 @@
       "dob": null,
       "memberId": null,
       "provider": "okafor",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -895,7 +935,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -917,7 +958,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -939,7 +981,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -961,7 +1004,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -983,7 +1027,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1005,7 +1050,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1027,7 +1073,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1049,7 +1096,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1069,7 +1117,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1089,7 +1138,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1109,7 +1159,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1129,7 +1180,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1149,7 +1201,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1169,7 +1222,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1189,7 +1243,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1209,7 +1264,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1229,7 +1285,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1249,7 +1306,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1271,7 +1329,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1291,7 +1350,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1311,7 +1371,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1331,7 +1392,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1351,7 +1413,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1371,7 +1434,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1391,7 +1455,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1411,7 +1476,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1431,7 +1497,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1451,7 +1518,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1471,7 +1539,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1491,7 +1560,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1511,7 +1581,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1531,27 +1602,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
-  "ot-05": {
-    "id": "ot-05",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "name": null,
-      "dob": null,
-      "memberId": null,
-      "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1571,7 +1623,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1591,7 +1644,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1611,7 +1665,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1631,7 +1686,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1651,7 +1707,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1671,7 +1728,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1691,7 +1749,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1711,7 +1770,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1731,7 +1791,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1751,7 +1812,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1773,7 +1835,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1793,7 +1856,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1813,7 +1877,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1833,7 +1898,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1853,7 +1919,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1875,7 +1942,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1897,7 +1965,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1919,7 +1988,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1939,7 +2009,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1961,7 +2032,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "rossi",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1983,7 +2055,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "kim",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2006,7 +2079,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2029,7 +2103,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2051,7 +2126,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2073,7 +2149,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2095,7 +2172,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2117,7 +2195,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2137,7 +2216,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2157,7 +2237,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2177,7 +2258,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2197,7 +2279,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2217,7 +2300,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2237,7 +2321,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2257,7 +2342,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2277,7 +2363,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2297,7 +2384,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2317,7 +2405,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2337,7 +2426,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2357,7 +2447,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2377,7 +2468,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2397,7 +2489,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2417,7 +2510,8 @@
       "dob": null,
       "memberId": "81204457",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2437,7 +2531,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2457,7 +2552,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2477,7 +2573,8 @@
       "dob": null,
       "memberId": "22059138",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2497,7 +2594,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2517,7 +2615,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2537,7 +2636,8 @@
       "dob": null,
       "memberId": "55507788",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2557,7 +2657,8 @@
       "dob": null,
       "memberId": "12345678",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2577,7 +2678,8 @@
       "dob": null,
       "memberId": "09331276",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2597,7 +2699,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2617,7 +2720,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2637,7 +2741,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "nguyen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2657,7 +2762,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "cheng",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2677,7 +2783,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "okafor",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2697,7 +2804,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "kim",
-      "date": "2026-09-21"
+      "date": "2026-09-21",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2717,7 +2825,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2737,7 +2846,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "alvarez",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2746,7 +2856,7 @@
   "dt-01": {
     "id": "dt-01",
     "decision": "prompt",
-    "promptId": "confirm_reschedule",
+    "promptId": "no_openings",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -2757,7 +2867,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-19"
+      "date": "2026-09-19",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2777,7 +2888,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2797,7 +2909,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-10-05"
+      "date": "2026-10-05",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2817,7 +2930,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-11-12"
+      "date": "2026-11-12",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2837,7 +2951,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2857,7 +2972,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2877,7 +2993,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-18"
+      "date": "2026-09-18",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2897,7 +3014,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2917,7 +3035,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-28"
+      "date": "2026-09-28",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2937,7 +3056,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-18"
+      "date": "2026-09-18",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2957,7 +3077,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2977,7 +3098,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -2986,7 +3108,7 @@
   "dt-13": {
     "id": "dt-13",
     "decision": "prompt",
-    "promptId": "confirm_schedule",
+    "promptId": "no_openings",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -2997,7 +3119,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-20"
+      "date": "2026-09-20",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3017,7 +3140,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2027-03-03"
+      "date": "2027-03-03",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3037,7 +3161,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-23"
+      "date": "2026-09-23",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3057,7 +3182,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-23"
+      "date": "2026-09-23",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3077,7 +3203,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3097,7 +3224,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3119,7 +3247,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3141,7 +3270,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3161,7 +3291,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3181,7 +3312,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3201,7 +3333,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3221,7 +3354,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3243,7 +3377,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [
       "billing"
@@ -3265,7 +3400,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3285,7 +3421,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3305,7 +3442,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-21"
+      "date": "2026-09-21",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3325,7 +3463,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3347,7 +3486,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3367,7 +3507,8 @@
       "dob": null,
       "memberId": "44187355",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3387,7 +3528,8 @@
       "dob": null,
       "memberId": "44187305",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3407,7 +3549,8 @@
       "dob": null,
       "memberId": "44187355",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3427,7 +3570,8 @@
       "dob": null,
       "memberId": "81793314",
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3449,7 +3593,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [
       "billing"
@@ -3473,7 +3618,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [
       "schedule_new"
@@ -3497,7 +3643,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3519,7 +3666,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3541,7 +3689,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3561,7 +3710,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3581,7 +3731,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3603,7 +3754,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3623,7 +3775,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3643,7 +3796,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3663,7 +3817,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3683,7 +3838,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "alvarez",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3703,7 +3859,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "cheng",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3723,7 +3880,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3743,7 +3901,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3763,7 +3922,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3783,7 +3943,8 @@
       "dob": null,
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3803,7 +3964,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3826,7 +3988,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3846,7 +4009,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3866,7 +4030,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "cheng",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3886,7 +4051,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3906,7 +4072,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "cheng",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3926,7 +4093,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "cheng",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -3948,7 +4116,8 @@
       "dob": null,
       "memberId": null,
       "provider": "alvarez",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [
       "billing"
@@ -3972,7 +4141,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [
       "schedule_new"
@@ -3996,7 +4166,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4016,7 +4187,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4036,7 +4208,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-25"
+      "date": "2026-09-25",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4056,7 +4229,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "kim",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4076,7 +4250,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4096,7 +4271,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4116,7 +4292,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4136,7 +4313,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4156,7 +4334,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4178,7 +4357,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4200,7 +4380,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4222,7 +4403,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4242,7 +4424,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4262,7 +4445,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4282,7 +4466,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4302,7 +4487,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4322,7 +4508,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4342,7 +4529,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4362,7 +4550,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4382,7 +4571,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4402,7 +4592,8 @@
       "dob": "1991-11-12",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4422,7 +4613,8 @@
       "dob": "1972-08-15",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4442,7 +4634,8 @@
       "dob": "2001-01-11",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4462,7 +4655,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4482,7 +4676,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4502,7 +4697,8 @@
       "dob": "1975-06-15",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4522,7 +4718,8 @@
       "dob": null,
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4542,7 +4739,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4562,7 +4760,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4582,7 +4781,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4602,7 +4802,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4622,7 +4823,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4642,7 +4844,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4662,7 +4865,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4684,7 +4888,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4706,7 +4911,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4728,7 +4934,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4750,7 +4957,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4772,7 +4980,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4792,7 +5001,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4812,7 +5022,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4832,7 +5043,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4852,7 +5064,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4872,7 +5085,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4892,7 +5106,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "chen",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4912,7 +5127,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": null,
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4934,7 +5150,8 @@
       "dob": null,
       "memberId": null,
       "provider": "chen",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4956,7 +5173,8 @@
       "dob": null,
       "memberId": null,
       "provider": null,
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4976,7 +5194,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -4996,7 +5215,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": null
+      "date": null,
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5018,7 +5238,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5038,7 +5259,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5058,7 +5280,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5078,7 +5301,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5098,7 +5322,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5120,7 +5345,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5140,7 +5366,8 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-24"
+      "date": "2026-09-24",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -5160,10 +5387,412 @@
       "dob": "1975-06-14",
       "memberId": null,
       "provider": "patel",
-      "date": "2026-09-22"
+      "date": "2026-09-22",
+      "subject": null
     },
     "queued": [],
     "principalLevel": 0,
     "gate": "bookAppointment:ALLOW"
+  },
+  "aq-01": {
+    "id": "aq-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-02": {
+    "id": "aq-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-03": {
+    "id": "aq-03",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-04": {
+    "id": "aq-04",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-05": {
+    "id": "aq-05",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-06": {
+    "id": "aq-06",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-07": {
+    "id": "aq-07",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-08": {
+    "id": "aq-08",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-09": {
+    "id": "aq-09",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-10": {
+    "id": "aq-10",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-11": {
+    "id": "aq-11",
+    "decision": "prompt",
+    "promptId": "ask_subject",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "ask_question",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "aq-12": {
+    "id": "aq-12",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-13": {
+    "id": "aq-13",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "aq-14": {
+    "id": "aq-14",
+    "decision": "prompt",
+    "promptId": "ask_subject",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "ask_question",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sq-01": {
+    "id": "sq-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "sq-02": {
+    "id": "sq-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
+  "sq-03": {
+    "id": "sq-03",
+    "decision": "prompt",
+    "promptId": "ask_subject_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "ask_question",
+    "slots": {
+      "name": null,
+      "dob": null,
+      "memberId": null,
+      "provider": null,
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
   }
 }
