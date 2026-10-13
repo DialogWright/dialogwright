@@ -43,6 +43,11 @@ Fourteen fixes in five items, each built through the usual loop (a worktree, an 
 
 14. **A knowledge base in the clinic.** None of the example apps has a knowledge base, and an adopter wants to see one. The clinic gets a small one (a fictional source document, a few topics such as parking, what to bring, opening hours), drafted into `kb/pending`. Passages are approved by a person, never by a tool, and the clinic's recorded run needs the decision model's answers for the topic questions: so this item is built up to the maintainer's approval (`pnpm kb:approve`) and recording, and waits for them before it merges.
 
+## Follow-ups (decided 2026-10-13, after the build)
+
+15. **A knowledge question in the middle of a task.** Asked at a form's question or its summary, a question the knowledge base answers was read as replacing the task, and the task was gone after the answer. A form that answers from the knowledge base is an aside: the answer is said and the task resumes where it was, as an informational intent's line does; retrieval runs on every turn where a switch to it can happen, so the topic is known when it does. An app may still choose the old behaviour per form.
+16. **The language from the number called, with numbers in the settings.** `voice.numbers` (the number called to the locale the call starts in, chosen when the call starts, before any route) takes `env.NAME` as well as a number written out, as host.yaml's numbers do, so a language line needs no route. The routed fixture uses it; the guide and the create-app skill teach the usual pattern: the call answered in the default language, a number per other language, and a language choice on the keypad menu (an informational intent with `locale:`).
+
 ## What waits for the maintainer
 
 - Any regression baseline a fix changes is shown to the maintainer with the reason; only the maintainer runs `regress --update`.
