@@ -21,13 +21,21 @@ import { appOf } from './app/registry';
 /**
  * What a carrier sends in place of a number when the caller ID is withheld: Twilio's, the keypad
  * spellings of ANONYMOUS, RESTRICTED, UNAVAILABLE and BLOCKED. RESTRICTED has ten digits and fits a
- * ten-digit phone mask, so a slot's mask alone cannot refuse it. Telnyx's withheld form is not yet
- * seen on a live call (docs/live-checks.md).
+ * ten-digit phone mask, so a slot's mask alone cannot refuse it. Telnyx sends no placeholder: seen on a
+ * live call (2026-10-13, a call made with *67), its answer webhook carried the caller's real number in
+ * `From`, with the marks of a withheld one beside it (`CallerId` anonymous, `FromSipUri`
+ * anonymous@anonymous.invalid). Its provider reads the marks (server/voice/telnyx.ts), and the number
+ * never reaches the engine (CallbackParams.withheld, server/voice/registry.ts setupWithCallerWithheld).
  */
 export const WITHHELD_PLACEHOLDERS: readonly string[] = ['266696687', '7378742833', '86282452253', '2562533'];
 
 /** The words a carrier may send for a withheld number, which are no number. */
 const WITHHELD_WORDS = new Set(['anonymous', 'restricted', 'unavailable', 'unknown', 'private', 'blocked', 'withheld']);
+
+/** Whether `text` is one of the words a carrier sends for a withheld number (anonymous, restricted, private...), in any case. */
+export function isWithheldWord(text: string): boolean {
+  return WITHHELD_WORDS.has(text.trim().toLowerCase());
+}
 
 /** A number as a carrier writes it: digits, with a leading `+` and spacing, dashes, dots or brackets. Anything else (a SIP address, a client name) is no number. */
 const NUMBER_SHAPE = /^\+?[\d\s().-]+$/;

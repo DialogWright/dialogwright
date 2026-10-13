@@ -50,6 +50,15 @@ export const WEBHOOK_PARAMETER_PREFIX = 'dw_';
  */
 export const HOST_APP_PARAMETER = 'dialogwright_app';
 
+/**
+ * The custom parameter a start document carries when the answer webhook said the caller withheld their
+ * number (CallbackParams.withheld): the setup that comes back with it has every copy of the caller's
+ * number taken out before anything reads it (server/voice/registry.ts setupWithCallerWithheld), so the
+ * number is never kept, offered, looked up, logged or shown. Its one value is `true`; a call whose
+ * number was not withheld carries none, and its start document is as it was.
+ */
+export const WITHHELD_PARAMETER = 'dialogwright_withheld';
+
 /** The most custom parameters a setup keeps, and the longest value (the wire's limits, channel/relay/wire.ts); a chat's context is held to the same. */
 export const CALL_DATA_MAX_KEYS = 50;
 export const CALL_DATA_VALUE_MAX = 500;

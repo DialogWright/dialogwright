@@ -1,6 +1,10 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { telnyxProvider } from './telnyx';
+import { twilioProvider } from './twilio';
+import { callerWithheldIn, setupCalledOf, setupCallerOf, setupWithCallerWithheld } from './registry';
+import { WITHHELD_PARAMETER } from '../../channel/callData';
 
 const START = { publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: 'one,two' };
 const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
@@ -55,7 +59,7 @@ describe('the Telnyx voice provider', () => {
     expect(doc).toBe(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Connect action="https://voice.example.com/cr-action/telnyx">' +
         `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two" ` +
-        'language="es-US">' +
+        'language="es-US" voice="Telnyx.Ultra.Asher">' +
         '<Language code="en-US" voice="Telnyx.Ultra.Callie" transcriptionProvider="deepgram" speechModel="nova-2"/><Language code="es-US" voice="Telnyx.Ultra.Asher" transcriptionProvider="google"/>' +
         '<Parameter name="locale" value="es-US"/>' +
         '</ConversationRelay></Connect></Response>',
@@ -64,6 +68,32 @@ describe('the Telnyx voice provider', () => {
     const plain = telnyxProvider.startDocument({ ...START, voice: 'Telnyx.Ultra.Callie', language: { tts: 'es-US', transcription: 'es-US' } });
     expect(plain).toContain('hints="one,two" language="es-US"/>');
     expect(plain).not.toContain('voice=');
+  });
+
+  it('writes the start language\'s voice on the relay element too, each <Language> keeping its own (Telnyx said nothing without it, 2026-10-13)', () => {
+    const languages = [
+      { tts: 'en-US', transcription: 'en-US', voice: 'Telnyx.NaturalHD.astra' },
+      { tts: 'es-US', transcription: 'es-US', voice: 'Telnyx.NaturalHD.luna' },
+    ];
+    const english = telnyxProvider.startDocument({ ...START, language: languages[0]!, languages, parameters: { locale: 'en-US' } });
+    expect(english).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Connect action="https://voice.example.com/cr-action/telnyx">' +
+        `<ConversationRelay url="wss://voice.example.com/conversation/telnyx?token=${'b'.repeat(32)}" dtmfDetection="true" interruptible="any" hints="one,two" ` +
+        'language="en-US" voice="Telnyx.NaturalHD.astra">' +
+        '<Language code="en-US" voice="Telnyx.NaturalHD.astra"/><Language code="es-US" voice="Telnyx.NaturalHD.luna"/>' +
+        '<Parameter name="locale" value="en-US"/>' +
+        '</ConversationRelay></Connect></Response>',
+    );
+    // A call that starts in Spanish has the Spanish voice on the element; a switch still finds each language's own.
+    const spanish = telnyxProvider.startDocument({ ...START, language: languages[1]!, languages, parameters: { locale: 'es-US' } });
+    expect(spanish).toContain('language="es-US" voice="Telnyx.NaturalHD.luna"><Language code="en-US" voice="Telnyx.NaturalHD.astra"/><Language code="es-US" voice="Telnyx.NaturalHD.luna"/>');
+    // A start language with no voice of its own names none on the element: Telnyx's default, never another language's.
+    const noVoice = telnyxProvider.startDocument({ ...START, language: { tts: 'es-US', transcription: 'es-US' }, languages: [languages[0]!, { tts: 'es-US', transcription: 'es-US' }] });
+    expect(noVoice).toContain('language="es-US"><Language code="en-US" voice="Telnyx.NaturalHD.astra"/><Language code="es-US"/>');
+    // Twilio's document is unchanged: the voices only on the <Language> children, none on the element.
+    const twilio = twilioProvider.startDocument({ ...START, language: languages[0]!, languages, parameters: { locale: 'en-US' } });
+    expect(twilio).toContain('ttsLanguage="en-US" transcriptionLanguage="en-US"><Language code="en-US" voice="Telnyx.NaturalHD.astra"/>');
+    expect(twilio).not.toMatch(/<ConversationRelay [^>]* voice=/);
   });
 
   it('names what every language shares on the relay element, except a model, which only <Language> takes', () => {
@@ -173,5 +203,89 @@ describe("Telnyx's playback events in the engine's terms", () => {
     expect(telnyxProvider.readEvent!({ type: 'prompt', voicePrompt: 'hello', last: true })).toBeNull();
     expect(telnyxProvider.readEvent!(null)).toBeNull();
     expect(telnyxProvider.readEvent!('agentSpeaking')).toBeNull();
+  });
+});
+
+describe('a caller who withheld their number on Telnyx (privacy)', () => {
+  // The answer webhook of a call dialled with *67 (2026-10-13), its number replaced: the real number in
+  // From, and the marks of a withheld one beside it.
+  const fixtures = JSON.parse(readFileSync(new URL('./__fixtures__/telnyx/webhooks.json', import.meta.url), 'utf8')) as {
+    alternatives: { source: string; headers: Record<string, string>; rawBody: string }[];
+  };
+  const captured = fixtures.alternatives.find((w) => w.source.startsWith('captured 2026-10-13'))!;
+  const NUMBER = '+15555550142';
+  const parseForm = (rawBody: string) => telnyxProvider.parse({ url: '/voice/telnyx', headers: FORM, rawBody, nowSec: 0 })!;
+  const body = (fields: Record<string, string>) => new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, To: '+15555550111', ...fields }).toString();
+
+  it('reads the captured webhook as withheld: no from, and no copy of the number anywhere in what it keeps', () => {
+    expect(captured.rawBody).toContain(encodeURIComponent(NUMBER));
+    const p = parseForm(captured.rawBody);
+    expect(p.withheld).toBe(true);
+    expect(p).not.toHaveProperty('from');
+    expect(p.to).toBe('+15555550111');
+    expect(JSON.stringify(p)).not.toContain('5550142');
+    // The marks stay, saying why the number is not there; the call's ids and the number called too.
+    expect(p.raw).toMatchObject({ CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid', To: '+15555550111', CallSessionId: '0b6e1f2a-6f5d-11ef-9692-02420aeffb1f' });
+  });
+
+  it('takes any one mark, in any case: an anonymous caller ID, an anonymous SIP From, a From that is no number, a SIP Privacy header', () => {
+    const marks: Record<string, string>[] = [
+      { CallerId: 'anonymous' }, { CallerId: 'Anonymous' }, { CallerId: 'RESTRICTED' }, { CallerId: 'private' },
+      { FromSipUri: 'anonymous@anonymous.invalid' }, { FromSipUri: 'sip:Anonymous@pbx.example.com' }, { FromSipUri: '"Anonymous" <sip:x@ANONYMOUS.INVALID>;tag=1' },
+      { Privacy: 'id' }, { SipHeader_Privacy: 'user;header' },
+    ];
+    for (const fields of marks) {
+      const p = parseForm(body(fields));
+      expect(p.withheld, JSON.stringify(fields)).toBe(true);
+      expect(p, JSON.stringify(fields)).not.toHaveProperty('from');
+      expect(JSON.stringify(p.raw), JSON.stringify(fields)).not.toContain('5550142');
+    }
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'anonymous' }).toString()).withheld).toBe(true);
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'sip:anonymous@anonymous.invalid' }).toString()).withheld).toBe(true);
+    // A JSON body the same.
+    const json = telnyxProvider.parse({ url: '/voice/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ CallSid: 'v3:abc', From: NUMBER, CallerId: 'anonymous' }), nowSec: 0 })!;
+    expect(json.withheld).toBe(true);
+    expect(json).not.toHaveProperty('from');
+  });
+
+  it('takes out every field that holds the number, not only From', () => {
+    const p = parseForm(body({ CallerId: 'anonymous', Caller: NUMBER, CallerName: 'Jordan Avery', PAssertedIdentity: `<sip:${NUMBER}@carrier.example.com>` }));
+    expect(p.raw).not.toHaveProperty('Caller');
+    expect(p.raw).not.toHaveProperty('CallerName');
+    expect(p.raw).not.toHaveProperty('PAssertedIdentity');
+    expect(JSON.stringify(p)).not.toContain('5550142');
+    expect(p.raw.To).toBe('+15555550111');
+  });
+
+  it('reads a call with its number given as not withheld, as before', () => {
+    const given: Record<string, string>[] = [{}, { CallerId: NUMBER, FromSipUri: `${NUMBER}@sip.example.com` }, { Privacy: 'none' }];
+    for (const fields of given) {
+      const p = parseForm(body(fields));
+      expect(p, JSON.stringify(fields)).not.toHaveProperty('withheld');
+      expect(p.from).toBe(NUMBER);
+    }
+  });
+
+  it('takes the number out of a withheld call\'s setup (telnyx_call_from, from, callerName), and leaves any other setup as it came', () => {
+    const setup = {
+      type: 'setup' as const, sessionId: 'TX1', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: 'v3:abc', callerName: 'Jordan Avery',
+      from: null as unknown as string, to: null as unknown as string,
+      customParameters: { telnyx_call_from: NUMBER, telnyx_call_to: '+15555550111', [WITHHELD_PARAMETER]: 'true', locale: 'en-US' },
+    };
+    expect(callerWithheldIn(setup)).toBe(true);
+    const read = setupWithCallerWithheld('telnyx', setup);
+    expect(JSON.stringify(read)).not.toContain('5550142');
+    expect(read).not.toHaveProperty('callerName');
+    expect(read.customParameters).toEqual({ telnyx_call_to: '+15555550111', [WITHHELD_PARAMETER]: 'true', locale: 'en-US' });
+    expect(setupCallerOf('telnyx', read)).toBeNull();
+    expect(setupCalledOf('telnyx', read)).toBe('+15555550111');
+    // A reconnect's setup of a call known to be withheld, with no parameter of its own: the same.
+    const { [WITHHELD_PARAMETER]: _w, ...plain } = setup.customParameters;
+    expect(setupWithCallerWithheld('telnyx', { ...setup, customParameters: plain }, true)).toEqual(read);
+    // Not withheld: as it came, the number with it.
+    expect(setupWithCallerWithheld('telnyx', { ...setup, customParameters: plain })).toEqual({ ...setup, customParameters: plain });
+    // A Twilio setup marked so loses its from as well.
+    const twilio = { type: 'setup' as const, sessionId: 'VX1', callSid: 'CA1', from: NUMBER, to: '+15555550111', customParameters: { [WITHHELD_PARAMETER]: 'true' } };
+    expect(setupCallerOf('twilio', setupWithCallerWithheld('twilio', twilio))).toBeNull();
   });
 });

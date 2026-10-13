@@ -2,6 +2,7 @@ import type { CallbackParams, PlaybackEvent, StartDocumentOptions, VoiceProvider
 import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import { verifyTelnyxSignature } from './telnyxSignature';
+import { isWithheldWord } from '../../core/callerNumber';
 
 /**
  * Telnyx's Conversation Relay through TeXML. The socket frames are the shared relay wire; what
@@ -100,8 +101,10 @@ import { verifyTelnyxSignature } from './telnyxSignature';
  *    `locale` custom parameter are the documented `<Language code voice>` and `<Parameter name
  *    value>` children; a switch is the documented `language` frame. Still to confirm on a live call:
  *    that a text frame's `lang` is read (Telnyx's text frame example carries `token` and `last`
- *    only), and that a `<Language>` child's voice and recognizer apply to the call's first language
- *    (the `language` attribute) as well as to a switch.
+ *    only), and that a `<Language>` child's recognizer applies to the call's first language (the
+ *    `language` attribute) as well as to a switch. Its voice does not, seen on live calls
+ *    (2026-10-13): with the voice on the children alone Telnyx said nothing, so the start language's
+ *    voice is written on the relay element as well (startDocument).
  * 5. The recognizer: the documented `transcriptionProvider` attribute (TELNYX_TRANSCRIPTION_PROVIDER,
  *    or a locale's own); a model only on `<Language>`, as its documented `speechModel` (the relay
  *    element documents none). That a child inherits what it leaves out from the relay element is
@@ -150,11 +153,63 @@ function first(raw: Record<string, string>, ...names: string[]): string | undefi
  */
 const LIVE_STATUSES: ReadonlySet<string> = new Set(['active', 'in-progress']);
 
-function parse(req: WebhookRequest): CallbackParams | null {
-  const raw = fields(req);
-  const callId = (first(raw, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
-  if (!callId) return null;
+/**
+ * Whether a SIP address is an anonymous one: its user a withheld word, or its host `anonymous.invalid`
+ * (RFC 3261 8.1.1.3's `sip:anonymous@anonymous.invalid` for a caller who withholds their identity).
+ */
+function anonymousSip(value: string): boolean {
+  const address = value.trim().replace(/^.*</, '').replace(/>.*$/, '').replace(/^sips?:/i, '');
+  const at = address.indexOf('@');
+  const user = at >= 0 ? address.slice(0, at) : address;
+  const host = at >= 0 ? address.slice(at + 1).replace(/[;:?].*$/, '') : '';
+  return isWithheldWord(user) || host.toLowerCase() === 'anonymous.invalid';
+}
+
+/**
+ * Whether the webhook marks the caller's number withheld, whatever number `From` holds. Seen on a live
+ * call (2026-10-13, dialled with *67): the answer webhook carried the caller's real number in `From`,
+ * with `CallerId` `anonymous` and `FromSipUri` `anonymous@anonymous.invalid` beside it. Any one mark is
+ * enough, in any case: a caller ID that is a withheld word (anonymous, restricted, private...), an
+ * anonymous SIP From (its user a withheld word, or its host anonymous.invalid), a `From` that is itself
+ * one of those, or a SIP Privacy header that hides the caller's identity (RFC 3323: `id`, `user` or
+ * `header`; not yet seen on a live call, read should Telnyx pass it on as `Privacy` or `SipHeader_Privacy`).
+ */
+function withheldMarked(raw: Record<string, string>): boolean {
+  const callerId = first(raw, 'CallerId', 'CallerID', 'caller_id', 'callerId');
+  if (callerId !== undefined && isWithheldWord(callerId)) return true;
+  const sipFrom = first(raw, 'FromSipUri', 'from_sip_uri', 'fromSipUri');
+  if (sipFrom !== undefined && anonymousSip(sipFrom)) return true;
   const from = first(raw, 'From', 'from');
+  if (from !== undefined && (isWithheldWord(from) || (/[a-z]/i.test(from) && anonymousSip(from)))) return true;
+  const privacy = first(raw, 'Privacy', 'SipHeader_Privacy', 'privacy');
+  return privacy !== undefined && privacy.toLowerCase().split(/[\s;,]+/).some((t) => t === 'id' || t === 'user' || t === 'header');
+}
+
+/** The fields that name the number called or the call, never taken out of a withheld call's webhook. */
+const KEPT_FIELDS: ReadonlySet<string> = new Set(['To', 'to', 'Called', 'CallSid', 'CallSidLegacy', 'call_control_id', 'CallControlId', 'CallSessionId', 'ConnectionId', 'AccountSid']);
+
+/**
+ * A withheld call's fields with every copy of the caller's number taken out: `From`, `Caller` and the
+ * caller's name by name, and any other field whose digits hold the number's last seven (a SIP From
+ * written with the number, say). The marks themselves (an anonymous caller ID or SIP From) stay, for
+ * the frame log to show why the number is not there.
+ */
+function withoutCaller(raw: Record<string, string>): Record<string, string> {
+  const digits = (first(raw, 'From', 'from') ?? '').replace(/\D/g, '');
+  const tail = digits.length >= 7 ? digits.slice(-7) : null;
+  const named = new Set(['From', 'from', 'Caller', 'caller', 'CallerName', 'CallerIdName', 'caller_id_name']);
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) =>
+    KEPT_FIELDS.has(k) || (!named.has(k) && (tail === null || !v.replace(/\D/g, '').includes(tail)))));
+}
+
+function parse(req: WebhookRequest): CallbackParams | null {
+  const all = fields(req);
+  const callId = (first(all, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
+  if (!callId) return null;
+  // A number the caller withheld is no number: left out here, and out of what the frame log writes.
+  const withheld = withheldMarked(all);
+  const raw = withheld ? withoutCaller(all) : all;
+  const from = withheld ? undefined : first(raw, 'From', 'from');
   const to = first(raw, 'To', 'to');
   const callStatus = first(raw, 'CallStatus', 'callStatus');
   const sessionStatus = first(raw, 'SessionStatus');
@@ -162,6 +217,7 @@ function parse(req: WebhookRequest): CallbackParams | null {
   return {
     callId,
     raw,
+    ...(withheld ? { withheld: true as const } : {}),
     ...(from !== undefined ? { from } : {}),
     ...(to !== undefined ? { to } : {}),
     ...(callStatus !== undefined ? { callStatus, live: LIVE_STATUSES.has(callStatus.trim().toLowerCase()) } : {}),
@@ -187,9 +243,15 @@ function startDocument(o: StartDocumentOptions): string {
     ...(o.events ? [attr('events', o.events)] : []),
   ];
   if (o.language) {
-    // One language for speech and recognition alike; its voice here only when every language has it (placeLanguages).
+    // One language for speech and recognition alike. Its voice goes here too: the shared one when every
+    // language has it (placeLanguages), else the start language's own. Seen on live calls (2026-10-13): with
+    // the voice only on each <Language> child, Telnyx said nothing at all, from the greeting on (three
+    // calls in three); with the start language's voice here as well, it spoke. Each child keeps its own
+    // voice, so a switch (set_language) still changes it. A start language with no voice of its own has
+    // none here either, and Telnyx speaks its default, never another language's voice.
     attrs.push(attr('language', o.language.tts));
     if (placed.voice.voice !== undefined) attrs.push(attr('voice', placed.voice.voice));
+    else if (o.language.voice !== undefined) attrs.push(attr('voice', o.language.voice));
   } else if (o.voice) attrs.push(`voice="${escapeXml(o.voice)}"`);
   const relay = relayElement(attrs, placed.children);
   return xmlResponse(`${pauseVerb(o.pauseS)}<Connect action="https://${escapeXml(o.publicHost)}/cr-action/telnyx">${relay}</Connect>`);
@@ -231,11 +293,14 @@ export const telnyxProvider: VoiceProvider = {
   // (a v3: id) arrives as callControlId.
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
   // Seen on a live call (2026-10-05): the setup's `from` is null, and the caller's number comes in
-  // customParameters as telnyx_call_from. How Telnyx writes a withheld number is not yet seen (docs/live-checks.md).
+  // customParameters as telnyx_call_from. For a withheld number Telnyx sends the real one there and in the
+  // answer webhook's From (seen 2026-10-13); the webhook's marks say so (withheldMarked, above), and the
+  // setup of such a call has telnyx_call_from taken out before it is read (callerParameters, below).
   setupCallerOf: (setup) => {
     const from = setup.customParameters?.telnyx_call_from;
     return typeof from === 'string' && from !== '' ? from : null;
   },
+  callerParameters: ['telnyx_call_from'],
   // As the caller's: the setup's `to` is null, and the number called comes in customParameters as
   // telnyx_call_to (seen on a live call's setup, 2026-10-05; its use for an app is in docs/live-checks.md).
   setupCalledOf: (setup) => {

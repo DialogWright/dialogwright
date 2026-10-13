@@ -98,3 +98,30 @@ describe.each(['twilio', 'telnyx'] as const)('BARGE_IN on %s', (provider) => {
     expect(texts.every((m) => m.interruptible === false)).toBe(true);
   });
 });
+
+describe('a carrier\'s own barge-in (BARGE_IN_TWILIO, BARGE_IN_TELNYX)', () => {
+  // One server answering both carriers, BARGE_IN for one and the other's own over it.
+  const both = { VOICE_PROVIDERS: 'twilio,telnyx', TELNYX_PUBLIC_KEY, TWILIO_AUTH_TOKEN: 'x'.repeat(32) };
+
+  it('BARGE_IN_TELNYX=none: Telnyx\'s calls have none, document and lines, while Twilio\'s keep BARGE_IN', async () => {
+    const telnyx = await startCall('telnyx', { ...both, BARGE_IN: 'any', BARGE_IN_TELNYX: 'none' });
+    expect(telnyx.document).toContain('interruptible="none"');
+    expect(telnyx.texts.every((m) => m.interruptible === false)).toBe(true);
+    await running?.close();
+    running = null;
+    const twilio = await startCall('twilio', { ...both, BARGE_IN: 'any', BARGE_IN_TELNYX: 'none' });
+    expect(twilio.document).toContain('interruptible="any"');
+    expect(twilio.texts.some((m) => m.interruptible === true)).toBe(true);
+  });
+
+  it('BARGE_IN_TWILIO=dtmf over BARGE_IN=speech: Twilio\'s calls dtmf, Telnyx\'s speech', async () => {
+    const twilio = await startCall('twilio', { ...both, BARGE_IN: 'speech', BARGE_IN_TWILIO: 'dtmf' });
+    expect(twilio.document).toContain('interruptible="dtmf"');
+    expect(twilio.texts.every((m) => m.interruptible === false)).toBe(true);
+    await running?.close();
+    running = null;
+    const telnyx = await startCall('telnyx', { ...both, BARGE_IN: 'speech', BARGE_IN_TWILIO: 'dtmf' });
+    expect(telnyx.document).toContain('interruptible="speech"');
+    expect(telnyx.texts.some((m) => m.interruptible === true)).toBe(true);
+  });
+});

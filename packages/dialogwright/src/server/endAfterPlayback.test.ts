@@ -23,7 +23,7 @@ import { TraceWriter } from '../trace/writer';
 import { useTestkit } from '../testing/apps';
 import { defaultCorpusFile } from '../run/fixtures';
 import { VOICE_RELAY } from '../channel/caps';
-import { DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_LEAD_MS } from '../channel/voiceProviders';
 import { endDropsSpeechOf } from './voice/registry';
 
 useTestkit();
@@ -184,15 +184,51 @@ describe('the end held until the lines play (END_AFTER_PLAYBACK)', () => {
     expect(ends(call.sock)).toEqual([]);
   });
 
-  it('sends the end at the ceiling, the estimate and a margin, when the carrier reports playback but not this one', async () => {
+  it('sends the end at the ceiling, twice the estimate and a margin, when the carrier reports playback but not this one', async () => {
     const call = await atAnythingElse('telnyx', deps(), true);
     await sayThatsAll(call);
-    await vi.advanceTimersByTimeAsync(GOODBYE_MS + END_PLAYBACK_MARGIN_MS - 1);
+    const ceiling = GOODBYE_MS * DEFAULT_END_PLAYBACK_FACTOR + DEFAULT_END_PLAYBACK_MARGIN_MS;
+    expect(ceiling).toBe(GOODBYE_MS * 2 + 2000);
+    await vi.advanceTimersByTimeAsync(ceiling - 1);
     expect(ends(call.sock)).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(ends(call.sock)).toHaveLength(1);
-    expect(endLogs(call.d.dir)).toEqual([{ endAfter: 'timeout', endHeldMs: GOODBYE_MS + END_PLAYBACK_MARGIN_MS, expectedMs: GOODBYE_MS }]);
+    expect(endLogs(call.d.dir)).toEqual([{ endAfter: 'timeout', endHeldMs: ceiling, expectedMs: GOODBYE_MS }]);
     expect(call.d.lines.some((l) => l.includes('end sent after') && l.includes('no report the lines finished'))).toBe(true);
+  });
+
+  it('does not cut a voice slower than the estimate: the end waits for the report past the estimate and 2 s (the live call, 2026-10-13)', async () => {
+    // On a live Telnyx call a goodbye estimated at 6.1 s was cut at 8.1 s, the old ceiling (the estimate
+    // and 2 s), still playing: agentSpeaking went off 140 ms after the end, as Telnyx hung up.
+    const call = await atAnythingElse('telnyx', deps(), true);
+    await sayThatsAll(call);
+    await call.send(info('agentSpeaking', 'on'));
+    const slow = GOODBYE_MS + 2500;
+    expect(slow).toBeGreaterThan(GOODBYE_MS + 2000);
+    await vi.advanceTimersByTimeAsync(slow);
+    expect(ends(call.sock)).toEqual([]);
+    await call.send(info('tokensPlayed', GOODBYE));
+    await call.send(info('agentSpeaking', 'off'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ends(call.sock)).toHaveLength(1);
+    expect(endLogs(call.d.dir)).toEqual([{ endAfter: 'played', endHeldMs: slow, expectedMs: GOODBYE_MS }]);
+  });
+
+  it('takes END_PLAYBACK_FACTOR and END_PLAYBACK_MARGIN_MS for the ceiling of a call that reports its playback', async () => {
+    const call = await atAnythingElse('telnyx', deps({ endPlaybackFactor: 1.5, endPlaybackMarginMs: 500 }), true);
+    await sayThatsAll(call);
+    const ceiling = Math.round(GOODBYE_MS * 1.5) + 500;
+    await vi.advanceTimersByTimeAsync(ceiling - 1);
+    expect(ends(call.sock)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(endLogs(call.d.dir)).toEqual([{ endAfter: 'timeout', endHeldMs: ceiling, expectedMs: GOODBYE_MS }]);
+  });
+
+  it('keeps a call that reports nothing to the estimate and the lead, whatever END_PLAYBACK_FACTOR says', async () => {
+    const call = await atAnythingElse('telnyx', deps({ endPlaybackFactor: 3, endPlaybackMarginMs: 5000 }), false);
+    await sayThatsAll(call);
+    await vi.advanceTimersByTimeAsync(GOODBYE_MS + END_PLAYBACK_LEAD_MS);
+    expect(endLogs(call.d.dir)).toEqual([{ endAfter: 'estimate', endHeldMs: GOODBYE_MS + END_PLAYBACK_LEAD_MS, expectedMs: GOODBYE_MS }]);
   });
 
   it('never holds longer than END_PLAYBACK_MAX_MS', async () => {
@@ -367,8 +403,20 @@ describe('END_AFTER_PLAYBACK and END_PLAYBACK_MAX_MS', () => {
     expect(() => loadConfig({ ...base, END_AFTER_PLAYBACK: 'yes' })).toThrow('END_AFTER_PLAYBACK must be auto, on or off, got "yes"');
     expect(() => loadConfig({ ...base, END_PLAYBACK_MAX_MS: '0' })).toThrow('END_PLAYBACK_MAX_MS');
   });
+  it('reads END_PLAYBACK_FACTOR (1 to 10, default 2) and END_PLAYBACK_MARGIN_MS (0 to 60000, default 2000), and refuses anything else', () => {
+    expect(loadConfig(base)).toMatchObject({ endPlaybackFactor: 2, endPlaybackMarginMs: 2000 });
+    expect(loadConfig({ ...base, END_PLAYBACK_FACTOR: ' 1.5 ', END_PLAYBACK_MARGIN_MS: '0' })).toMatchObject({ endPlaybackFactor: 1.5, endPlaybackMarginMs: 0 });
+    expect(loadConfig({ ...base, END_PLAYBACK_FACTOR: '1', END_PLAYBACK_MARGIN_MS: '60000' })).toMatchObject({ endPlaybackFactor: 1, endPlaybackMarginMs: 60000 });
+    for (const bad of ['0.5', '11', 'two', '-2']) {
+      expect(() => loadConfig({ ...base, END_PLAYBACK_FACTOR: bad }), bad).toThrow(`END_PLAYBACK_FACTOR must be a number from 1 to 10 (times the lines' estimated length), got "${bad}"`);
+    }
+    for (const bad of ['-1', '1.5', '60001', 'soon']) {
+      expect(() => loadConfig({ ...base, END_PLAYBACK_MARGIN_MS: bad }), bad).toThrow(`END_PLAYBACK_MARGIN_MS must be a whole number of milliseconds from 0 to 60000, got "${bad}"`);
+    }
+  });
   it('says at startup which carriers have their end held', () => {
-    expect(describeConfig(loadConfig(base))).toContain(`end after playback auto (telnyx), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms`);
+    expect(describeConfig(loadConfig(base))).toContain(`end after playback auto (telnyx), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms, 2x the estimate + 2000 ms awaiting the carrier's report`);
+    expect(describeConfig(loadConfig({ ...base, END_PLAYBACK_FACTOR: '3', END_PLAYBACK_MARGIN_MS: '1000' }))).toContain('3x the estimate + 1000 ms awaiting');
     expect(describeConfig(loadConfig({ ...base, END_AFTER_PLAYBACK: 'on' }))).toContain(`end after playback on (every carrier), up to ${DEFAULT_END_PLAYBACK_MAX_MS} ms`);
     expect(describeConfig(loadConfig({ ...base, END_AFTER_PLAYBACK: 'off' }))).toContain('end after playback off');
     const twilio = { PUBLIC_HOST: 'voice.example.com', HANDOFF_NUMBER: '+15555550100', TWILIO_AUTH_TOKEN: 'x'.repeat(32) };

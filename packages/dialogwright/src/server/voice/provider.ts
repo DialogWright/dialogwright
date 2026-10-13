@@ -27,7 +27,17 @@ export interface WebhookRequest {
 export interface CallbackParams {
   /** The carrier's id for the call (Twilio's CallSid; Telnyx's CallSid on TeXML, or call_control_id). */
   readonly callId: string;
+  /** The number the caller is calling from; absent when the carrier sent none, or when the caller withheld it (`withheld`). */
   readonly from?: string;
+  /**
+   * The caller withheld their number: the carrier marked it so (Telnyx's caller ID `anonymous`, an
+   * anonymous SIP From), whatever number it sent beside the marks. The provider leaves `from` out, and
+   * every copy of the number out of `raw`; the server's start document says so (WITHHELD_PARAMETER), and
+   * the setup that comes back has its copies taken out too, so the number is never kept, offered or
+   * looked up, exactly as a call with no number. Absent: not withheld, or the carrier marks nothing
+   * (Twilio sends a placeholder in place of the number, which core/callerNumber.ts refuses).
+   */
+  readonly withheld?: true;
   readonly to?: string;
   /** The call's status in the carrier's words, as it sent it (for the frame log and the notes). */
   readonly callStatus?: string;
@@ -157,6 +167,12 @@ export interface VoiceProvider {
    * parameters, as `telnyx_call_from`.
    */
   setupCallerOf?(setup: SetupFrame): string | null;
+  /**
+   * The custom parameters of a setup frame that carry the caller's number, beside its `from` (Telnyx's
+   * `telnyx_call_from`): taken out, with `from` and `callerName`, from the setup of a call whose caller
+   * withheld their number (WITHHELD_PARAMETER, registry.ts setupWithCallerWithheld). Absent: none.
+   */
+  readonly callerParameters?: readonly string[];
   /**
    * The number the caller called (the DNIS), as the setup frame carries it, or null when it carries
    * none: what an app that keeps it reads (SessionStart.calledNumber, App.callerNumber `called`).

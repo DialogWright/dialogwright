@@ -4,6 +4,7 @@ import { twilioProvider } from './twilio';
 import { telnyxProvider } from './telnyx';
 import { telnyxPublicKey } from './telnyxSignature';
 import { VOICE_PROVIDER_IDS, type VoiceProviderId } from '../../channel/voiceProviders';
+import { WITHHELD_PARAMETER } from '../../channel/callData';
 
 /** A carrier the engine knows: its provider, and the environment variable that holds its secret. */
 interface KnownProvider {
@@ -111,6 +112,30 @@ export function setupCalledOf(providerId: string | undefined, setup: SetupFrame)
   const p = providerOf(providerId);
   if (p?.setupCalledOf) return p.setupCalledOf(setup);
   return typeof setup.to === 'string' && setup.to !== '' ? setup.to : null;
+}
+
+/** Whether a setup's custom parameters say its caller withheld their number (WITHHELD_PARAMETER, written by the server). */
+export function callerWithheldIn(setup: SetupFrame): boolean {
+  const params = setup.customParameters as Record<string, unknown> | null | undefined;
+  return params !== null && typeof params === 'object' && params[WITHHELD_PARAMETER] === 'true';
+}
+
+/**
+ * A setup frame as the engine reads it. For a call whose caller withheld their number (its custom
+ * parameters carry WITHHELD_PARAMETER, which the server wrote from the answer webhook's marks, or
+ * `withheld`: the call's first setup said so), every copy of the number is taken out before anything
+ * reads the setup: its `from` (made empty, which no one reads as a number), its `callerName`, and the
+ * provider's own copies (VoiceProvider.callerParameters, Telnyx's `telnyx_call_from`); the parameter is
+ * kept, saying why. Nothing then keeps, offers, looks up, logs or shows the number: the session's start
+ * has no callerNumber, as for a call with no number. Any other setup as it came.
+ */
+export function setupWithCallerWithheld(providerId: string | undefined, setup: SetupFrame, withheld = false): SetupFrame {
+  if (!withheld && !callerWithheldIn(setup)) return setup;
+  const params = setup.customParameters !== null && typeof setup.customParameters === 'object' ? setup.customParameters : {};
+  const drop = new Set(providerOf(providerId)?.callerParameters ?? []);
+  const { callerName: _name, ...rest } = setup;
+  const kept = Object.fromEntries(Object.entries(params).filter(([k]) => !drop.has(k)));
+  return { ...rest, from: '', customParameters: { ...kept, [WITHHELD_PARAMETER]: 'true' } };
 }
 
 /** Which of a turn's text frames carry `last: true` on this carrier (VoiceProvider.textLast). */

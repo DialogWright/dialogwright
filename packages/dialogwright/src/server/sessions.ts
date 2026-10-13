@@ -52,6 +52,13 @@ export interface CallEntry extends CallResources {
    */
   heldHandoffData?: string | null;
   /**
+   * The caller withheld their number (the call's first setup carried WITHHELD_PARAMETER): a reconnect's
+   * setup, which carries the number again, has its copies taken out as the first one's were, and a
+   * reconnect's start document says so again (http.ts). Never saved: after a restart, the carrier's
+   * callback marks say it (CallbackParams.withheld).
+   */
+  callerWithheld?: true;
+  /**
    * When the carrier last reported the call's relay lost (its callback asking to reconnect), on this
    * server's clock: what the silence before the `resumed` line is measured from (RESUMED_AFTER_MS).
    */

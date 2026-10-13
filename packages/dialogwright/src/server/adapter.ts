@@ -1,9 +1,9 @@
-import { endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
+import { callerWithheldIn, endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, setupWithCallerWithheld, textLastOf } from './voice/registry';
 import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame, SetupFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
-import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_PLAYBACK_LEAD_MS, END_PLAYBACK_MARGIN_MS, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
+import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, END_PLAYBACK_LEAD_MS, bargeInOfCarrier, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
 import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
@@ -1005,8 +1005,8 @@ const heldEnds = new Map<string, HeldEnd>();
 
 /**
  * Calls whose carrier has reported its playback (Telnyx with TELNYX_EVENTS reports the greeting's), so a
- * held `end` waits for the report, up to the estimate and a margin; on any other call the estimate is all
- * there is to go by.
+ * held `end` waits for the report, up to a multiple of the estimate and a margin; on any other call the
+ * estimate is all there is to go by.
  */
 const reportsPlayback = new Set<string>();
 
@@ -1019,16 +1019,21 @@ function holdsEnd(deps: AdapterDeps, provider: string | undefined): boolean {
 /**
  * Wait until the lines a turn that ends the call just sent (`sent`) have played: until the carrier reports
  * the last of them played (or stopped, and stayed stopped for RESAY_SETTLE_MS, after it started), else
- * until the ceiling. The ceiling is the lines' estimate (playbackEstimateMs, as for the no-input wait) and
- * END_PLAYBACK_MARGIN_MS on a call whose carrier reports its playback, or the estimate and
- * END_PLAYBACK_LEAD_MS on one that reports nothing; never more than END_PLAYBACK_MAX_MS. A socket close
- * meanwhile ends the wait as `closed` (handleSocketClose).
+ * until the ceiling. On a call whose carrier reports its playback, the report is what ends the wait, and
+ * the ceiling is only an outer limit for a report that never comes: the lines' estimate
+ * (playbackEstimateMs, as for the no-input wait) times END_PLAYBACK_FACTOR, plus END_PLAYBACK_MARGIN_MS,
+ * so a voice slower than the estimate is not cut (seen on a live call, 2026-10-13: at the estimate and 2 s
+ * the goodbye was still playing). On a call that reports nothing the estimate is all there is: the
+ * estimate and END_PLAYBACK_LEAD_MS. Never more than END_PLAYBACK_MAX_MS. A socket close meanwhile ends
+ * the wait as `closed` (handleSocketClose).
  */
 function holdEnd(deps: AdapterDeps, callSid: string, sent: readonly OutboundFrame[]): Promise<{ after: EndAfter; heldMs: number; expectedMs: number }> {
   const said = sent.filter((f) => f.type === 'text' || f.type === 'play');
   const expectedMs = playbackEstimateMs(said, deps.clipDurations ?? new Map());
   const reported = reportsPlayback.has(callSid);
-  const wanted = expectedMs + (reported ? END_PLAYBACK_MARGIN_MS : END_PLAYBACK_LEAD_MS);
+  const wanted = reported
+    ? Math.round(expectedMs * (deps.endPlaybackFactor ?? DEFAULT_END_PLAYBACK_FACTOR)) + (deps.endPlaybackMarginMs ?? DEFAULT_END_PLAYBACK_MARGIN_MS)
+    : expectedMs + END_PLAYBACK_LEAD_MS;
   const waitMs = Math.min(deps.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS, wanted);
   // The last thing said, when it is a line: a clip after the last line still plays once the line has.
   const last = said.at(-1);
@@ -1400,6 +1405,11 @@ export interface AdapterDeps {
    */
   bargeIn?: BargeIn;
   /**
+   * BARGE_IN_TWILIO, BARGE_IN_TELNYX: a carrier's own barge-in, over `bargeIn` for that carrier's calls
+   * (by the call's provider id). Absent, or a carrier not in it: `bargeIn`.
+   */
+  bargeInByCarrier?: Readonly<Partial<Record<string, BargeIn>>>;
+  /**
    * END_AFTER_PLAYBACK: whether a turn that ends the call holds its `end` until the lines before it have
    * played (sendEndAfterPlayback). Absent: auto, held on a carrier that drops unsaid lines at `end`
    * (VoiceProvider.endDropsSpeech).
@@ -1407,6 +1417,13 @@ export interface AdapterDeps {
   endAfterPlayback?: EndAfterPlayback;
   /** END_PLAYBACK_MAX_MS: the longest an `end` is held. Absent: DEFAULT_END_PLAYBACK_MAX_MS. */
   endPlaybackMaxMs?: number;
+  /**
+   * END_PLAYBACK_FACTOR and END_PLAYBACK_MARGIN_MS: on a call whose carrier reports its playback, a held
+   * `end` waits for the report up to the lines' estimate times the factor, plus the margin (holdEnd).
+   * Absent: DEFAULT_END_PLAYBACK_FACTOR (2) and DEFAULT_END_PLAYBACK_MARGIN_MS (2000).
+   */
+  endPlaybackFactor?: number;
+  endPlaybackMarginMs?: number;
   /**
    * RESAY_SPURIOUS_INTERRUPTS and SPURIOUS_INTERRUPT_WINDOW_MS: a carrier's interrupt with no caller heard
    * around it is not the caller's, and the lines it cut are said again (a spurious interrupt, above).
@@ -1540,6 +1557,8 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const respell = pronounceFor(voice, localeOf(entry.session));
   // The values of the slots said digit by digit (SlotSpec.sayAs) the lines may hold (channel/sayDigits.ts).
   const digitsSaid = digitsSaidOf(appOf(entry.session), entry.session, decision);
+  // The call's carrier's own barge-in (BARGE_IN_<CARRIER>), else the server's (BARGE_IN), else any.
+  const bargeIn = bargeInOfCarrier(entry.provider, deps.bargeIn, deps.bargeInByCarrier);
   for (const [i, original] of frames.entries()) {
     // Digits spelled out first, by the app's rules written against the lines as written (a respelled
     // lead word still leads its digits), then any value of a slot said digit by digit that they left
@@ -1553,8 +1572,8 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
     const spoken: OutboundFrame = original.type === 'text'
       ? { ...original, token: spaced(sayDigits(spokenDigits(original.token, voice?.spokenDigits), digitsSaid), joined), ...(joined ? { last: false } : {}) }
       : original;
-    const frame = bargeInFrame(respelled(spoken, respell), deps.bargeIn ?? 'any');
-    const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub, appOf(entry.session)), respell), deps.bargeIn ?? 'any');
+    const frame = bargeInFrame(respelled(spoken, respell), bargeIn);
+    const logged = bargeInFrame(respelled(loggedFrame(spoken, scrub, appOf(entry.session)), respell), bargeIn);
     const socket = entry.socket;
     if (!socket) {
       log(`${entry.callSid}: no socket, dropped ${frame.type}`);
@@ -1833,6 +1852,11 @@ export function messageShape(raw: string): string {
   return `{${fields.join(' ')}}`;
 }
 
+/** The caller as the console shows them: the last four of their number, or `withheld` for a caller who withheld it. */
+function callerShown(provider: string | undefined, setup: SetupFrame): string {
+  return callerWithheldIn(setup) ? 'withheld' : maskNumber(setupCallerOf(provider, setup));
+}
+
 /** A setup whose token has been checked: refused, or its call taken up (resumed, or begun). */
 async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: ConnectionContext, parsed: SetupFrame, callId: string, verified: boolean): Promise<void> {
   if (!verified) {
@@ -1888,6 +1912,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   }
   const existing = deps.store.get(callId);
   if (existing) {
+    // A caller who withheld their number on the call's first setup: this one's copies of it are taken out too.
+    if (existing.callerWithheld) parsed = setupWithCallerWithheld(ctx.provider, parsed, true);
     // Masked at write time, not only when the dashboard reads it back: the setup frame carries
     // the caller's whole number, and the file on disk must never hold it either.
     existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
@@ -1954,7 +1980,7 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     publish(deps, {
       type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects,
       call: {
-        from: maskNumber(setupCallerOf(ctx.provider, parsed)), startedAt: entry.session.startedAtMs, todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+        from: callerShown(ctx.provider, parsed), startedAt: entry.session.startedAtMs, todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
         channel: 'voice', provider: ctx.provider, ...(deps.host ? { app: entry.session.appId } : {}),
       },
     });
@@ -1986,6 +2012,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)))
     : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
+  // A caller who withheld their number (its copies already taken out of this setup): so is a reconnect's.
+  if (callerWithheldIn(parsed)) entry.callerWithheld = true;
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
   entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
   // The carrier the call came in on, which the trace does not name: the console's Insights price its minutes by it.
@@ -2005,8 +2033,9 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
   publish(deps, {
     type: 'call_started', callSid: callId, at: Date.now(),
-    // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked.
-    from: maskNumber(caller), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+    // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked;
+    // `withheld` for a caller who withheld it.
+    from: callerShown(ctx.provider, parsed), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
     // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
     // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
     channel: 'voice', provider: ctx.provider, caller: null,
@@ -2081,7 +2110,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   }
 
   if (parsed.type === 'setup') {
-    const callId = setupCallIdOf(ctx.provider, parsed);
+    // A caller who withheld their number: its copies are taken out before anything reads the setup.
+    const setup = setupWithCallerWithheld(ctx.provider, parsed);
+    const callId = setupCallIdOf(ctx.provider, setup);
     const checked = ctx.token ? deps.tokens.verify(ctx.token, callId, ctx.provider) : false;
     // A store across the network answers with a promise (SESSION_STORE=postgres); the others at once, as always.
     if (typeof checked !== 'boolean') {
@@ -2096,12 +2127,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
           await sendOne(socket, endFrame('unavailable'), deps.sendTimeoutMs ?? SEND_TIMEOUT_MS).catch(() => undefined);
           return;
         }
-        return await setupVerified(deps, socket, ctx, parsed, callId, verified);
+        return await setupVerified(deps, socket, ctx, setup, callId, verified);
       } finally {
         ctx.setupReady?.();
       }
     }
-    return setupVerified(deps, socket, ctx, parsed, callId, checked);
+    return setupVerified(deps, socket, ctx, setup, callId, checked);
   }
 
   if (ctx.setupDone) await ctx.setupDone;

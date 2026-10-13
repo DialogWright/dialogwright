@@ -623,7 +623,8 @@ describe('Telnyx webhooks', () => {
     const base = await listen({ ...deps({ VOICE_PROVIDERS: 'telnyx', TELNYX_PUBLIC_KEY, TELNYX_VOICE: 'Telnyx.NaturalHD.astra' }), app: bilingual });
     const r = await postTelnyx(base, '/voice/telnyx', `CallSid=v2%3Aabc&To=${encodeURIComponent(SPANISH_NUMBER)}`);
     expect(r.text).toContain(
-      'language="es-US"><Language code="en-US" voice="Telnyx.Ultra.Callie"/><Language code="es-US" voice="Telnyx.Ultra.Asher" transcriptionProvider="google"/>' +
+      // The start language's voice on the relay element as well (Telnyx said nothing without it, 2026-10-13).
+      'language="es-US" voice="Telnyx.Ultra.Asher"><Language code="en-US" voice="Telnyx.Ultra.Callie"/><Language code="es-US" voice="Telnyx.Ultra.Asher" transcriptionProvider="google"/>' +
         '<Parameter name="locale" value="es"/></ConversationRelay>',
     );
     expect(r.text).not.toContain('ttsProvider=');

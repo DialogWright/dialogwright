@@ -199,6 +199,16 @@ describe('pnpm diagnose', () => {
       expect(results.map((r) => r.id)).toEqual(['config']);
     });
 
+    it('fails on a carrier\'s own barge-in or a playback ceiling the server would refuse, with its message', async () => {
+      const dir = tempDir();
+      const bargeIn = await runDoctor({ env: { ...goodEnv(dir), BARGE_IN_TELNYX: 'off' }, cwd: dir, offline: true }, deps());
+      expect(byId(bargeIn, 'config')).toMatchObject({ status: 'fail', message: 'BARGE_IN_TELNYX must be any, speech, dtmf or none, got "off"' });
+      const factor = await runDoctor({ env: { ...goodEnv(dir), END_PLAYBACK_FACTOR: '0.5' }, cwd: dir, offline: true }, deps());
+      expect(byId(factor, 'config')).toMatchObject({ status: 'fail', message: expect.stringContaining('END_PLAYBACK_FACTOR must be a number from 1 to 10') });
+      const margin = await runDoctor({ env: { ...goodEnv(dir), END_PLAYBACK_MARGIN_MS: '-5' }, cwd: dir, offline: true }, deps());
+      expect(byId(margin, 'config')).toMatchObject({ status: 'fail', message: expect.stringContaining('END_PLAYBACK_MARGIN_MS must be a whole number') });
+    });
+
     it('warns that a quick tunnel sets PUBLIC_HOST each run when it is unset', async () => {
       const dir = tempDir();
       const { PUBLIC_HOST: _p, ...env } = goodEnv(dir);

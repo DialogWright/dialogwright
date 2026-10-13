@@ -65,6 +65,20 @@
         "live": true,
         "sessionStatus": "failed"
       }
+    },
+    {
+      "source": "captured 2026-10-13 (a call dialled with *67; field names and the privacy marks as the TeXML answer webhook carried them, the caller's number replaced with a fictional +1555 one, ids made up): the caller's real number in From beside the marks of a withheld one, CallerId anonymous and FromSipUri anonymous@anonymous.invalid; read as withheld, with no from",
+      "headers": {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      "rawBody": "AccountSid=1f1a8b6f-1234-4abc-9def-1234567890ab&CallSid=v3%3AWITHHELDexampleCallIdForTestsOnly0000000000000000&CallSidLegacy=v2%3AWITHHELDexampleLegacyIdForTestsOnly00000000000000&CallStatus=ringing&CallerId=anonymous&CallSessionId=0b6e1f2a-6f5d-11ef-9692-02420aeffb1f&ConnectionId=2000000000000000001&Direction=inbound&From=%2B15555550142&FromSipUri=anonymous%40anonymous.invalid&To=%2B15555550111",
+      "expect": {
+        "callId": "v3:WITHHELDexampleCallIdForTestsOnly0000000000000000",
+        "to": "+15555550111",
+        "callStatus": "ringing",
+        "live": false,
+        "withheld": true
+      }
     }
   ],
   "callData": {

@@ -7,8 +7,8 @@ import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { parseScreenMode, type ScreenMode } from '../core/screen';
 import { checkSecretOf, endDropsSpeechOf, KNOWN_VOICE_PROVIDERS, readsPlaybackEvents, secretLabelOf, secretVarOf } from './voice/registry';
 import {
-  BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
-  type BargeIn, type EndAfterPlayback,
+  BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
+  VOICE_PROVIDER_IDS, type BargeIn, type EndAfterPlayback, type VoiceProviderId,
 } from '../channel/voiceProviders';
 import type { Recognition } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
@@ -156,6 +156,14 @@ export interface ServerConfig {
    */
   bargeIn?: BargeIn;
   /**
+   * BARGE_IN_TWILIO, BARGE_IN_TELNYX, each unset unless set: a carrier's own barge-in, over BARGE_IN for
+   * its calls alone (the relay element's `interruptible` in its start document, and the lines' own flag),
+   * with the same four values. A carrier may need its own: Telnyx's support advised barge-in off while
+   * a fault of theirs was open, while Twilio kept it. Absent (or a carrier not in it): BARGE_IN, as before.
+   * A mode its carrier does not take is refused at startup.
+   */
+  bargeInByCarrier?: Readonly<Partial<Record<VoiceProviderId, BargeIn>>>;
+  /**
    * END_AFTER_PLAYBACK=auto|on|off, default auto: whether a turn that ends the call (a goodbye before the
    * hang-up, a line before a transfer) holds its `end` frame until the lines before it have played. A
    * carrier that acts on `end` at once drops what it has not yet said, and the caller hears no goodbye
@@ -169,6 +177,17 @@ export interface ServerConfig {
   endAfterPlayback?: EndAfterPlayback;
   /** END_PLAYBACK_MAX_MS, default 15000 (DEFAULT_END_PLAYBACK_MAX_MS): the longest an `end` is held. */
   endPlaybackMaxMs?: number;
+  /**
+   * END_PLAYBACK_FACTOR, 1 to 10, default 2 (DEFAULT_END_PLAYBACK_FACTOR), and END_PLAYBACK_MARGIN_MS, 0 to
+   * 60000, default 2000 (DEFAULT_END_PLAYBACK_MARGIN_MS): on a carrier that reports its playback (Telnyx
+   * with TELNYX_EVENTS), a held `end` goes when the report says the lines played, and otherwise at their
+   * estimate times the factor, plus the margin (never past END_PLAYBACK_MAX_MS). The factor was 1 before
+   * it was a setting, and a slow voice's goodbye was cut at the estimate and 2 s on a live call
+   * (2026-10-13): the default changed to 2 to fix it. A carrier that reports nothing is unchanged (the
+   * estimate and half a second). Optional in the type only, for a config made by hand (absent: the defaults).
+   */
+  endPlaybackFactor?: number;
+  endPlaybackMarginMs?: number;
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
@@ -408,27 +427,60 @@ function resayOf(env: Env): { resayCutLines: boolean; resayMinFraction: number }
   return { resayCutLines: sw === 'on', resayMinFraction: fraction };
 }
 
-/** BARGE_IN, any unless set; a value an enabled voice provider does not take is refused with the provider named. */
-function bargeInOf(env: Env, voiceProviders: readonly string[]): BargeIn {
-  const raw = env.BARGE_IN?.trim().toLowerCase() || 'any';
+/** A barge-in mode as a variable holds it (BARGE_IN, BARGE_IN_<CARRIER>), `fallback` when unset; any other value is refused. */
+function bargeInModeOf(env: Env, name: string, fallback: BargeIn | null): BargeIn | null {
+  const raw = env[name]?.trim().toLowerCase() || '';
+  if (raw === '') return fallback;
   if (!(BARGE_IN_MODES as readonly string[]).includes(raw)) {
-    throw new Error(`BARGE_IN must be ${BARGE_IN_MODES.slice(0, -1).join(', ')} or ${BARGE_IN_MODES.at(-1)}, got "${env.BARGE_IN}"`);
+    throw new Error(`${name} must be ${BARGE_IN_MODES.slice(0, -1).join(', ')} or ${BARGE_IN_MODES.at(-1)}, got "${env[name]}"`);
   }
-  const mode = raw as BargeIn;
-  const refusal = bargeInRefusal(mode, voiceProviders);
-  if (refusal) throw new Error(refusal);
-  return mode;
+  return raw as BargeIn;
 }
 
-/** END_AFTER_PLAYBACK and END_PLAYBACK_MAX_MS, checked. */
-function endAfterPlaybackOf(env: Env): { endAfterPlayback: EndAfterPlayback; endPlaybackMaxMs: number } {
+/**
+ * BARGE_IN, any unless set, and each carrier's own (BARGE_IN_TWILIO, BARGE_IN_TELNYX), unset unless set:
+ * a carrier with its own takes it, every other carrier BARGE_IN. A value a carrier it applies to does not
+ * take is refused with the provider named. A carrier's own variable for a carrier not in VOICE_PROVIDERS
+ * applies to no call, and is checked for its value only.
+ */
+function bargeInOf(env: Env, voiceProviders: readonly string[]): { bargeIn: BargeIn; bargeInByCarrier?: Partial<Record<VoiceProviderId, BargeIn>> } {
+  const mode = bargeInModeOf(env, 'BARGE_IN', 'any')!;
+  const byCarrier: Partial<Record<VoiceProviderId, BargeIn>> = {};
+  for (const id of VOICE_PROVIDER_IDS) {
+    const own = bargeInModeOf(env, BARGE_IN_CARRIER_VARS[id], null);
+    if (own === null) continue;
+    byCarrier[id] = own;
+    if (voiceProviders.includes(id)) {
+      const refusal = bargeInRefusal(own, [id], undefined, BARGE_IN_CARRIER_VARS[id]);
+      if (refusal) throw new Error(refusal);
+    }
+  }
+  // BARGE_IN applies to the carriers with no barge-in of their own.
+  const refusal = bargeInRefusal(mode, voiceProviders.filter((id) => !Object.hasOwn(byCarrier, id)));
+  if (refusal) throw new Error(refusal);
+  return { bargeIn: mode, ...(Object.keys(byCarrier).length > 0 ? { bargeInByCarrier: byCarrier } : {}) };
+}
+
+/** END_AFTER_PLAYBACK, END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR and END_PLAYBACK_MARGIN_MS, checked. */
+function endAfterPlaybackOf(env: Env): { endAfterPlayback: EndAfterPlayback; endPlaybackMaxMs: number; endPlaybackFactor: number; endPlaybackMarginMs: number } {
   const mode = env.END_AFTER_PLAYBACK?.trim().toLowerCase() || 'auto';
   if (!(END_AFTER_PLAYBACK_MODES as readonly string[]).includes(mode)) {
     throw new Error(`END_AFTER_PLAYBACK must be auto, on or off, got "${env.END_AFTER_PLAYBACK}"`);
   }
   const maxMs = integer(env, 'END_PLAYBACK_MAX_MS', DEFAULT_END_PLAYBACK_MAX_MS);
   if (maxMs <= 0) throw new Error(`END_PLAYBACK_MAX_MS must be a positive number of milliseconds, got "${env.END_PLAYBACK_MAX_MS}"`);
-  return { endAfterPlayback: mode as EndAfterPlayback, endPlaybackMaxMs: maxMs };
+  const rawFactor = env.END_PLAYBACK_FACTOR?.trim() ?? '';
+  const factor = rawFactor === '' ? DEFAULT_END_PLAYBACK_FACTOR : Number(rawFactor);
+  const { min, max } = END_PLAYBACK_FACTOR_RANGE;
+  if (!Number.isFinite(factor) || factor < min || factor > max) {
+    throw new Error(`END_PLAYBACK_FACTOR must be a number from ${min} to ${max} (times the lines' estimated length), got "${env.END_PLAYBACK_FACTOR}"`);
+  }
+  const rawMargin = env.END_PLAYBACK_MARGIN_MS?.trim() ?? '';
+  const margin = rawMargin === '' ? DEFAULT_END_PLAYBACK_MARGIN_MS : Number(rawMargin);
+  if (!Number.isInteger(margin) || margin < 0 || margin > MAX_END_PLAYBACK_MARGIN_MS) {
+    throw new Error(`END_PLAYBACK_MARGIN_MS must be a whole number of milliseconds from 0 to ${MAX_END_PLAYBACK_MARGIN_MS}, got "${env.END_PLAYBACK_MARGIN_MS}"`);
+  }
+  return { endAfterPlayback: mode as EndAfterPlayback, endPlaybackMaxMs: maxMs, endPlaybackFactor: factor, endPlaybackMarginMs: margin };
 }
 
 /** KEY_WAIT_MS, checked: at least MIN_KEY_WAIT_MS (300), since a shorter wait settles a keyed number one key at a time. */
@@ -662,7 +714,7 @@ export function loadConfig(env: Env): ServerConfig {
     telnyxTranscriptionProvider,
     telnyxEvents,
     ...resayOf(env),
-    bargeIn: bargeInOf(env, voiceProviders),
+    ...bargeInOf(env, voiceProviders),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
@@ -982,11 +1034,22 @@ function describeIncompleteWait(c: ServerConfig): string {
   return `replies held up to ${waitMs} ms for an unfinished caller (under ${below}${inactiveWithoutVoice(c)})`;
 }
 
+/** BARGE_IN as the startup line says it, with each listed carrier's own where it has one (BARGE_IN_<CARRIER>). */
+function describeBargeIn(c: ServerConfig): string {
+  const own = c.voiceProviders.filter((id) => c.bargeInByCarrier !== undefined && Object.hasOwn(c.bargeInByCarrier, id));
+  const base = `barge-in ${c.bargeIn ?? 'any'}`;
+  return own.length === 0 ? base : `${base} (${own.map((id) => `${id} ${c.bargeInByCarrier![id as VoiceProviderId]}`).join(', ')})`;
+}
+
 /** END_AFTER_PLAYBACK as the startup line says it: which of the carriers listed have their `end` held. */
 function describeEndAfterPlayback(c: ServerConfig): string {
   const mode = c.endAfterPlayback ?? 'auto';
   if (mode === 'off') return 'end after playback off';
-  const upTo = `up to ${c.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS} ms`;
+  // A carrier that reports its playback ends the hold on the report, with a ceiling of its own under the most.
+  const reported = c.voiceProviders.some(readsPlaybackEvents)
+    ? `, ${c.endPlaybackFactor ?? DEFAULT_END_PLAYBACK_FACTOR}x the estimate + ${c.endPlaybackMarginMs ?? DEFAULT_END_PLAYBACK_MARGIN_MS} ms awaiting the carrier's report`
+    : '';
+  const upTo = `up to ${c.endPlaybackMaxMs ?? DEFAULT_END_PLAYBACK_MAX_MS} ms${reported}`;
   if (mode === 'on') return `end after playback on (every carrier), ${upTo}`;
   const held = c.voiceProviders.filter(endDropsSpeechOf);
   return held.length === 0 ? 'end after playback auto (no carrier listed needs it)' : `end after playback auto (${held.join(', ')}), ${upTo}`;
@@ -1026,7 +1089,7 @@ export function describeConfig(c: ServerConfig): string {
       : []),
     `jev timeout ${c.jevTimeoutMs} ms`,
     `screen ${c.screen}`,
-    `barge-in ${c.bargeIn ?? 'any'}`,
+    describeBargeIn(c),
     describeEndAfterPlayback(c),
     `dashboard ${c.dashboard ? 'on' : 'OFF'}`,
     c.consoleAuth ? describeConsoleAuth(c.consoleAuth) : `console ${c.consoleLocalOnly ? 'local only' : 'PUBLIC'}`,

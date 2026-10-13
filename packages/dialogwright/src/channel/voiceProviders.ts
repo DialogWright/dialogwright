@@ -29,16 +29,36 @@ export const BARGE_IN_SUPPORT: Readonly<Record<VoiceProviderId, readonly BargeIn
 
 /**
  * The message for the first enabled carrier that does not take `mode`; null when every one does.
- * `support` is the table to read, BARGE_IN_SUPPORT unless a test gives another.
+ * `support` is the table to read, BARGE_IN_SUPPORT unless a test gives another; `name` the variable
+ * that set it (BARGE_IN, or a carrier's own, BARGE_IN_<CARRIER>).
  */
-export function bargeInRefusal(mode: BargeIn, ids: readonly string[], support: Readonly<Record<string, readonly BargeIn[]>> = BARGE_IN_SUPPORT): string | null {
+export function bargeInRefusal(mode: BargeIn, ids: readonly string[], support: Readonly<Record<string, readonly BargeIn[]>> = BARGE_IN_SUPPORT, name = 'BARGE_IN'): string | null {
   for (const id of ids) {
     const takes = Object.hasOwn(support, id) ? support[id]! : BARGE_IN_MODES;
     if (!takes.includes(mode)) {
-      return `BARGE_IN=${mode} is not supported by the voice provider ${id} (it takes ${takes.join(', ')}); use one of those, or take ${id} out of VOICE_PROVIDERS`;
+      return `${name}=${mode} is not supported by the voice provider ${id} (it takes ${takes.join(', ')}); use one of those, or take ${id} out of VOICE_PROVIDERS`;
     }
   }
   return null;
+}
+
+/**
+ * BARGE_IN_TWILIO and BARGE_IN_TELNYX: a carrier's own barge-in, over BARGE_IN for its calls alone. A
+ * carrier may need its own (Telnyx's support advised turning barge-in off while a fault of theirs was
+ * open, 2026-10, while Twilio kept it on). The variable of each carrier, by its id.
+ */
+export const BARGE_IN_CARRIER_VARS: Readonly<Record<VoiceProviderId, string>> = {
+  twilio: 'BARGE_IN_TWILIO',
+  telnyx: 'BARGE_IN_TELNYX',
+};
+
+/**
+ * The barge-in a carrier's calls have: its own (BARGE_IN_<CARRIER>, `byCarrier`) when set, else the
+ * server's (BARGE_IN, `base`), else any, as the engine always connected.
+ */
+export function bargeInOfCarrier(providerId: string | undefined, base: BargeIn | undefined, byCarrier: Readonly<Partial<Record<string, BargeIn>>> | undefined): BargeIn {
+  const own = providerId !== undefined && byCarrier !== undefined && Object.hasOwn(byCarrier, providerId) ? byCarrier[providerId] : undefined;
+  return own ?? base ?? 'any';
 }
 
 /**
@@ -67,11 +87,22 @@ export type EndAfterPlayback = (typeof END_AFTER_PLAYBACK_MODES)[number];
 export const DEFAULT_END_PLAYBACK_MAX_MS = 15_000;
 
 /**
- * On a call whose carrier reports its playback, how long past the lines' estimate (playbackEstimateMs)
- * the `end` waits for the report that they finished before it goes anyway: the estimate is rough, and a
- * report that never comes must not hold a call open.
+ * END_PLAYBACK_FACTOR and END_PLAYBACK_MARGIN_MS unless set: on a call whose carrier reports its playback,
+ * the `end` waits for the report that the lines finished, up to their estimate (playbackEstimateMs) times
+ * the factor, plus the margin, before it goes anyway: a report that never comes must not hold a call open,
+ * and the ceiling must not cut a line that is still playing. The estimate is rough (2.5 words a second),
+ * and a slow voice takes longer: on a live Telnyx call (2026-10-13) a goodbye estimated at 6.1 s was still
+ * playing when the ceiling of the time (the estimate and 2 s, the factor 1) sent the `end` at 8.1 s, and
+ * the caller lost the end of it. Twice the estimate holds for a voice at half the estimated pace; the
+ * ceiling is only reached when no report comes, so the cost is a little silence before the hang-up, and
+ * END_PLAYBACK_MAX_MS still bounds it.
  */
-export const END_PLAYBACK_MARGIN_MS = 2_000;
+export const DEFAULT_END_PLAYBACK_FACTOR = 2;
+export const DEFAULT_END_PLAYBACK_MARGIN_MS = 2_000;
+/** END_PLAYBACK_FACTOR's range: at least the estimate itself, at most ten times it. */
+export const END_PLAYBACK_FACTOR_RANGE = { min: 1, max: 10 } as const;
+/** END_PLAYBACK_MARGIN_MS's largest value. */
+export const MAX_END_PLAYBACK_MARGIN_MS = 60_000;
 
 /**
  * On a call whose carrier reports nothing of its playback, what is added to the lines' estimate before
