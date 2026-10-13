@@ -1,0 +1,523 @@
+{
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_problem",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cs-01": {
+    "id": "cs-01",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cs-03": {
+    "id": "cs-03",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": "55505678",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cs-04": {
+    "id": "cs-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP"
+  },
+  "cs-02": {
+    "id": "cs-02",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "status_is"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readStatus:ALLOW"
+  },
+  "pr-01": {
+    "id": "pr-01",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "problem": "out",
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": null
+  },
+  "sm-01": {
+    "id": "sm-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "problem_reported"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "reportProblem:ALLOW"
+  },
+  "cm-01": {
+    "id": "cm-01",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "status_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readStatus:ALLOW"
+  },
+  "cm-02": {
+    "id": "cm-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_caller_declined"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-03": {
+    "id": "cm-03",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_caller_declined"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-04": {
+    "id": "cm-04",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "cm-05": {
+    "id": "cm-05",
+    "decision": "prompt",
+    "promptId": "ask_dob_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-06": {
+    "id": "cm-06",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "status_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readStatus:ALLOW"
+  },
+  "cm-07": {
+    "id": "cm-07",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_caller_declined"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-08": {
+    "id": "cm-08",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "identity_caller_declined"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": "55505678",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-09": {
+    "id": "cm-09",
+    "decision": "prompt",
+    "promptId": "ask_dob_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cm-10": {
+    "id": "cm-10",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_problem",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-01": {
+    "id": "id-01",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": "55505678",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-02": {
+    "id": "id-02",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "id-03": {
+    "id": "id-03",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-04": {
+    "id": "id-04",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": "55509012",
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "id-05": {
+    "id": "id-05",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "identity_failed"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "check_status",
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyCustomer:ALLOW"
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rr-01": {
+    "id": "rr-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "no-01": {
+    "id": "no-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": null
+  }
+}

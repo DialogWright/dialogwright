@@ -1,0 +1,402 @@
+{
+  "cb-01": {
+    "id": "cb-01",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "request_callback",
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cb-02": {
+    "id": "cb-02",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "request_callback",
+    "slots": {
+      "caller": "jordan avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-01": {
+    "id": "nm-01",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "jordan avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-01": {
+    "id": "of-01",
+    "decision": "prompt",
+    "promptId": "ask_reason",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550142",
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-02": {
+    "id": "of-02",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-03": {
+    "id": "of-03",
+    "decision": "prompt",
+    "promptId": "ask_reason",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550199",
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-04": {
+    "id": "of-04",
+    "decision": "prompt",
+    "promptId": "ask_reason",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550199",
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-05": {
+    "id": "of-05",
+    "decision": "prompt",
+    "promptId": "offer_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-01": {
+    "id": "ph-01",
+    "decision": "prompt",
+    "promptId": "ask_reason",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550199",
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rs-01": {
+    "id": "rs-01",
+    "decision": "prompt",
+    "promptId": "confirm_request_callback",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550142",
+      "reason": "order"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-01": {
+    "id": "sm-01",
+    "decision": "complete",
+    "promptId": "callback_booked",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550142",
+      "reason": "order"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "requestCallback:ALLOW"
+  },
+  "sm-02": {
+    "id": "sm-02",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": "order"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "no-01": {
+    "id": "no-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "caller": null,
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-06": {
+    "id": "of-06",
+    "decision": "prompt",
+    "promptId": "confirm_request_callback",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": "5555550142",
+      "reason": "order"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-07": {
+    "id": "of-07",
+    "decision": "prompt",
+    "promptId": "ask_phone_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-08": {
+    "id": "of-08",
+    "decision": "prompt",
+    "promptId": "ask_phone_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-02": {
+    "id": "nm-02",
+    "decision": "prompt",
+    "promptId": "ask_reason",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "jordan avery",
+      "phone": "5555550199",
+      "reason": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-02": {
+    "id": "ph-02",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "request_callback",
+    "slots": {
+      "caller": "Jordan Avery",
+      "phone": null,
+      "reason": "bill"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  }
+}

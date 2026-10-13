@@ -1,0 +1,173 @@
+{
+  "text-yes": {
+    "id": "text-yes",
+    "decision": "complete",
+    "promptId": "request_opened_text",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": "5555550142"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "sendUpdates:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-no-skips": {
+    "id": "text-no-skips",
+    "decision": "complete",
+    "promptId": "request_opened",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "openRequest:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-no-with-a-number": {
+    "id": "text-no-with-a-number",
+    "decision": "complete",
+    "promptId": "request_opened_text",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": "5555550199"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "sendUpdates:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-unanswered-skips": {
+    "id": "text-unanswered-skips",
+    "decision": "complete",
+    "promptId": "request_opened",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "openRequest:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-landline-not-offered": {
+    "id": "text-landline-not-offered",
+    "decision": "complete",
+    "promptId": "request_opened",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "openRequest:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-line-type-looked-up": {
+    "id": "text-line-type-looked-up",
+    "decision": "complete",
+    "promptId": "request_opened_text",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": "5555550144"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "sendUpdates:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-withheld-not-offered": {
+    "id": "text-withheld-not-offered",
+    "decision": "complete",
+    "promptId": "request_opened",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "openRequest:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-chat-not-offered": {
+    "id": "text-chat-not-offered",
+    "decision": "complete",
+    "promptId": "request_opened",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "openRequest:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "text-number-changed-at-the-summary": {
+    "id": "text-number-changed-at-the-summary",
+    "decision": "complete",
+    "promptId": "request_opened_text",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "open_request",
+    "slots": {
+      "topic": "order",
+      "textTo": "5555550199"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "sendUpdates:ALLOW",
+    "pass": true,
+    "mismatches": []
+  }
+}

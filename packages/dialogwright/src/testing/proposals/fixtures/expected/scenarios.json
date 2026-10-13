@@ -1,0 +1,240 @@
+{
+  "propose-yes": {
+    "id": "propose-yes",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "problem_reported"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "reportProblem:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-yes-with-more": {
+    "id": "propose-yes-with-more",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_problem",
+    "slots": {
+      "place": "22 Alder Street",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-no-asks": {
+    "id": "propose-no-asks",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "14 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-another-address": {
+    "id": "propose-another-address",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "7 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-unanswered-then-yes": {
+    "id": "propose-unanswered-then-yes",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "22 Alder Street",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-address-reopened": {
+    "id": "propose-address-reopened",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "14 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "no-proposal-not-on-file": {
+    "id": "no-proposal-not-on-file",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "14 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccountByPhone:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "no-proposal-withheld": {
+    "id": "no-proposal-withheld",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "14 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "no-proposal-chat": {
+    "id": "no-proposal-chat",
+    "decision": "prompt",
+    "promptId": "confirm_report_problem",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_problem",
+    "slots": {
+      "place": "14 Birch Lane",
+      "problem": "out",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-yes-then-status-asks-identity": {
+    "id": "propose-yes-then-status-asks-identity",
+    "decision": "prompt",
+    "promptId": "ask_accountId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "check_status",
+    "slots": {
+      "place": null,
+      "problem": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAccount:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "propose-yes-then-status-verified": {
+    "id": "propose-yes-then-status-verified",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "status_is"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "place": null,
+      "problem": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  }
+}

@@ -1,0 +1,687 @@
+{
+  "hv-01": {
+    "id": "hv-01",
+    "decision": "prompt",
+    "promptId": "ask_ownership",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hv-02": {
+    "id": "hv-02",
+    "decision": "prompt",
+    "promptId": "ask_ownership",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_visit",
+    "slots": {
+      "problem": "crack",
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hv-03": {
+    "id": "hv-03",
+    "decision": "prompt",
+    "promptId": "confirm_book_visit",
+    "acks": [
+      "ack_intent",
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "riverton",
+      "howUrgent": "soon",
+      "visitDay": "saturday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "hv-04": {
+    "id": "hv-04",
+    "decision": "complete",
+    "promptId": "decline_renter",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "rent",
+      "town": "ashford",
+      "howUrgent": "soon",
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:BLOCK"
+  },
+  "hv-05": {
+    "id": "hv-05",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hv-06": {
+    "id": "hv-06",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hv-07": {
+    "id": "hv-07",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "book_visit",
+    "slots": {
+      "problem": null,
+      "ownership": "own",
+      "town": null,
+      "howUrgent": null,
+      "visitDay": "saturday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:ALLOW"
+  },
+  "pr-01": {
+    "id": "pr-01",
+    "decision": "prompt",
+    "promptId": "ask_ownership",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "crack",
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ow-01": {
+    "id": "ow-01",
+    "decision": "complete",
+    "promptId": "decline_renter",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "rent",
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:BLOCK"
+  },
+  "ow-02": {
+    "id": "ow-02",
+    "decision": "prompt",
+    "promptId": "ask_town",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:ALLOW"
+  },
+  "tw-01": {
+    "id": "tw-01",
+    "decision": "complete",
+    "promptId": "decline_out_of_area",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "elsewhere",
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:BLOCK"
+  },
+  "tw-02": {
+    "id": "tw-02",
+    "decision": "prompt",
+    "promptId": "ask_howUrgent",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "cedar_falls",
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "hu-01": {
+    "id": "hu-01",
+    "decision": "prompt",
+    "promptId": "ask_visitDay",
+    "acks": [
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "hu-02": {
+    "id": "hu-02",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "urgent",
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkUrgency:NEEDS_HUMAN"
+  },
+  "hu-03": {
+    "id": "hu-03",
+    "decision": "prompt",
+    "promptId": "ask_visitDay",
+    "acks": [
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "soon",
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "vd-01": {
+    "id": "vd-01",
+    "decision": "prompt",
+    "promptId": "ask_timeOfDay",
+    "acks": [
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "td-01": {
+    "id": "td-01",
+    "decision": "prompt",
+    "promptId": "confirm_book_visit",
+    "acks": [
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkArea:ALLOW"
+  },
+  "cb-01": {
+    "id": "cb-01",
+    "decision": "complete",
+    "promptId": "visit_booked",
+    "acks": [
+      "visit_qualifies"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "bookVisit:ALLOW"
+  },
+  "cb-02": {
+    "id": "cb-02",
+    "decision": "complete",
+    "promptId": "decline_renter",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "rent",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:BLOCK"
+  },
+  "cb-03": {
+    "id": "cb-03",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "cb-04": {
+    "id": "cb-04",
+    "decision": "complete",
+    "promptId": "decline_renter",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "rent",
+      "town": "ashford",
+      "howUrgent": "routine",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "checkOwner:BLOCK"
+  },
+  "cb-05": {
+    "id": "cb-05",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": "ashford",
+      "howUrgent": "urgent",
+      "visitDay": "monday",
+      "timeOfDay": "morning",
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "no-01": {
+    "id": "no-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tw-03": {
+    "id": "tw-03",
+    "decision": "prompt",
+    "promptId": "ask_town_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "book_visit",
+    "slots": {
+      "problem": "leak",
+      "ownership": "own",
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ct-01": {
+    "id": "ct-01",
+    "decision": "complete",
+    "promptId": "office_will_call",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "office_call",
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": "afternoon"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ct-02": {
+    "id": "ct-02",
+    "decision": "prompt",
+    "promptId": "ask_callTime_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "office_call",
+    "slots": {
+      "problem": null,
+      "ownership": null,
+      "town": null,
+      "howUrgent": null,
+      "visitDay": null,
+      "timeOfDay": null,
+      "callTime": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  }
+}

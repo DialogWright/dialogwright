@@ -1,0 +1,270 @@
+{
+  "closed-evening": {
+    "id": "closed-evening",
+    "decision": "complete",
+    "promptId": "closed_now",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "closed-holiday": {
+    "id": "closed-holiday",
+    "decision": "complete",
+    "promptId": "closed_now",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "open-saturday": {
+    "id": "open-saturday",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_problem",
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "report-goes-on": {
+    "id": "report-goes-on",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "problem_reported"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "reportProblem:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-danger-hands-off": {
+    "id": "report-danger-hands-off",
+    "decision": "handoff",
+    "promptId": "handoff_emergency",
+    "acks": [
+      "problem_reported"
+    ],
+    "reason": "emergency",
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_problem",
+    "slots": {
+      "problem": "out",
+      "severity": "danger",
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "reportProblem:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "outage-notice": {
+    "id": "outage-notice",
+    "decision": "prompt",
+    "promptId": "greeting",
+    "acks": [
+      "outage_notice"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "lookupNotices:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "notices-fail-soft": {
+    "id": "notices-fail-soft",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_problem",
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "lookupNotices:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "spanish-line": {
+    "id": "spanish-line",
+    "decision": "prompt",
+    "promptId": "ask_problem",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_problem",
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "vip-caller": {
+    "id": "vip-caller",
+    "decision": "handoff",
+    "promptId": "handoff_vip",
+    "acks": [],
+    "reason": "vip",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "past-due-first": {
+    "id": "past-due-first",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "payment_plan_set",
+      "bridge_next",
+      "status_is"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": "55501234",
+      "dob": "1980-04-12"
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "readStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "billing-closed-transfer": {
+    "id": "billing-closed-transfer",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "billing-open-transfer": {
+    "id": "billing-open-transfer",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "problem": null,
+      "severity": null,
+      "accountId": null,
+      "dob": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  }
+}
