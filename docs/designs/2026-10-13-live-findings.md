@@ -1,0 +1,50 @@
+# What the live calls found (build plan)
+
+Date: 2026-10-13. Status: **decided (the maintainer, 2026-10-13: "go ahead and build it"); building.** Source: the second sitting of [docs/live-checks.md](../live-checks.md), checks 9 to 14 on both carriers, with three fixture apps (callback, texting, routed) on one server through a host file. Every check passed on both carriers in the end; this is what the calls found along the way.
+
+## At a glance
+
+Fourteen fixes in five items, each built through the usual loop (a worktree, an implementer, a reviewer, the full local suite, a fast-forward into local main). Every fix that is a choice is an option with a default; a fix that is a privacy fault is not a choice.
+
+| Item | Fixes |
+| --- | --- |
+| A. Carriers | a withheld number on Telnyx; Telnyx's voice on the relay element; ending a call after its last line has played; barge-in per carrier |
+| B. Understanding | a digits value read digit by digit; a number said with a pause; a bare name |
+| C. Languages | a language tag a carrier rejects; a recognizer per language; intent labels per language |
+| D. Small | an ending's own goodbye; an app's code reading its own settings; routes are first-match, said plainly |
+| E. The knowledge base in a demo app | a small knowledge base in the clinic |
+
+## A. Carriers
+
+1. **A withheld number on Telnyx (privacy).** A call made with the caller's number withheld (`*67`) reached the server with the real number in `From`, and the privacy markers beside it (a caller ID of `anonymous`, a SIP From of `anonymous@anonymous.invalid`). The engine took the number as given and offered it back. The Telnyx adapter treats any of those markers as a withheld number: nothing kept, nothing offered, no call-start lookup, exactly as a call with no number. The markers arrive with the answer webhook and are carried into the call the way the app's id is. A captured webhook (its number replaced by one in the 555 range) pins it. Not an option: a number the caller withheld is withheld.
+2. **Telnyx's voice on the relay element.** For an app with more than one language, the voice was written only on each language's element; Telnyx then said nothing at all, from the first line (three calls in three). The start language's voice goes on the relay element as well, for Telnyx; each language's element keeps its own, so a switch still changes the voice. Twilio is unchanged (it speaks either way). A test pins the document.
+3. **Ending after the last line has played.** A call that ends with a line was hung up while Telnyx was still saying it: the wait for playback ended at the line's estimated length plus a margin, and Telnyx's own word that it had finished came later. With the carrier's playback events, the call ends on them; the estimate becomes an outer limit, generous enough that a slow voice is not cut (its margin an option, the default chosen from the calls).
+4. **Barge-in per carrier.** `BARGE_IN` is the server's; a carrier may need its own (Telnyx's support advised turning barge-in off while a fault of theirs is open, while Twilio keeps it). `BARGE_IN_TWILIO` and `BARGE_IN_TELNYX` override it for their carrier; unset, `BARGE_IN` applies as before.
+
+## B. Understanding
+
+5. **A digits value read digit by digit.** A number the agent says back (a callback number, its last four) was read as a number ("nine thousand one hundred ten"). A digits slot's value, and its last four, are spoken digit by digit on voice by default, rewritten only on the voice wire as the app's `spokenDigits` rules are (the session, the trace and the console keep the readable form). The slot type takes an option to read it as a number instead.
+6. **A number said with a pause.** With barge-in off, a caller who said a digit, paused, then said the rest was answered after the first digit and sent to the keypad. When a digits slot with a known length has heard fewer digits than that, the engine waits a little for the rest (the next words joined to the first), before asking again; the wait is an option on the slot, with a default. (The same calls had a carrier hear eight digits as nine: the engine refused the value and asked again, which is right.)
+7. **A bare name.** A caller who answered the name question with only a name ("Jordan Avery") was asked again, the model unsure the words were a name given; the same words a turn later were taken. Right after the name question, a short answer the model found a confident name in is taken as given. The threshold is the slot type's, with a default.
+
+## C. Languages
+
+8. **A language tag a carrier rejects.** Twilio refuses a language element whose code has no region (`es` rather than `es-US`) and the call ends with an error. `pnpm check` warns of such a tag in an app's voice settings, and `pnpm diagnose` refuses it for a server with Twilio.
+9. **A recognizer per language.** The server's speech model (an English-only one) was applied to the Spanish language too; the carrier failed to connect it, and the engine's reconnect recovered the call. A language may name its own recognizer (its provider and model), and `pnpm check` warns when a language falls to a default the carrier documents as English-only.
+10. **Intent labels per language.** A Spanish line named the caller's request with its English label ("le puedo ayudar a report a problem"). An intent's label may be given per locale, in the locale's files; check warns when a locale lacks one a line of that locale uses.
+
+## D. Small
+
+11. **An ending's own goodbye.** A route that ends the call with its own line that says goodbye was followed by the app's goodbye line, so the caller heard goodbye twice. An ending outcome takes `goodbye: false` to end on its own line alone; unset, the goodbye follows as before. The routed fixture's closing route uses it.
+12. **An app's code reading its own settings.** An app on a host file has its own settings file, which the server reads for the app's routes and transfer targets, but the app's code reading `process.env` saw only the server's. The contexts an app's code is given (its hooks, its tools, its start hook and its predicates) carry `env(name)`, its own settings over the server's, the same lookup an `env.` value in YAML uses; the guide says that `process.env` is the server's.
+13. **Routes are first-match.** A Spanish call was greeted in English: the outage rule above the language rule matched first. The guide's routes chapter and the create-app skill say plainly that the first rule that holds is taken, with that example and the fix (order, or a rule that does both).
+
+## E. The knowledge base in a demo app
+
+14. **A knowledge base in the clinic.** None of the example apps has a knowledge base, and an adopter wants to see one. The clinic gets a small one (a fictional source document, a few topics such as parking, what to bring, opening hours), drafted into `kb/pending`. Passages are approved by a person, never by a tool, and the clinic's recorded run needs the decision model's answers for the topic questions: so this item is built up to the maintainer's approval (`pnpm kb:approve`) and recording, and waits for them before it merges.
+
+## What waits for the maintainer
+
+- Any regression baseline a fix changes is shown to the maintainer with the reason; only the maintainer runs `regress --update`.
+- Item E: the passages' approval and the clinic's re-recording.
+- A live call on each carrier for fixes 1 to 7, in the next sitting.
