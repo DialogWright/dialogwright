@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
-import { plan, resolve, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
+import { followUpOf, followUpQuestions, plan, resolve, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { pronounceFor, unpronounce } from '../channel/pronounce';
@@ -12,14 +12,14 @@ import type { Thresholds } from '../core/thresholds';
 import { DEFAULT_SCREEN_MODE, inlineScreenQuestions, screenQuestions, screenResult, screenState, splitInlineAnswers, withInlineScreen, type ScreenMode, type ScreenResult } from '../core/screen';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
-import { JevClientError, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
+import { JevClientError, type AnswerMap, type JevClient, type JevResponse, type JsonValue, type QuestionMap } from '../jev/types';
 import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
-import type { TraceRecord } from '../trace/types';
+import type { FollowUpRecord, TraceRecord } from '../trace/types';
 import type { AuditDraft, AuditEntry, Chained } from '../audit/types';
 import { topicsListening } from '../core/knowledge';
 import { localeOf } from '../core/locale';
-import { retrieve } from './retrieve';
+import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit } from '../render/turn';
 import type { Renderer } from '../render/types';
@@ -157,6 +157,8 @@ export interface TurnRun {
    * reading is `record.screen`)
    */
   screenResponse: JevResponse | null;
+  /** The turn's second request (core/turn.ts FollowUp), when it made one: its questions, and its response or error. */
+  followUp: FollowUpRun | null;
   record: TraceRecord;
   /** the turn's audit entries as the sink chained them; empty when no sink is set */
   audit: AuditEntry[];
@@ -167,6 +169,60 @@ export interface TurnRun {
  * the run. Anything else is a bug in the corpus/fixture authoring (e.g. a bad label) and should
  * stop the run rather than being scored as a client failure.
  */
+/** A turn's second request (core/turn.ts FollowUp) as it went: what it asked, and what came back or why nothing did. */
+export interface FollowUpRun {
+  readonly followUp: FollowUp;
+  readonly questions: QuestionMap;
+  readonly response: JevResponse | null;
+  readonly error: TurnError | null;
+}
+
+/**
+ * The turn's second request, for what its answers turned out to need (core/turn.ts followUpOf): made
+ * only when the gates settle on an aside to the form in hand whose topic is unknown. Retrieval runs
+ * for the words then (a topic slot asks only about what it nominates), and, when it nominated anything,
+ * the topic slot's question alone is asked of the same words with the same turn state: a request of its
+ * own, keyed by its own state and question in a cassette. Every other turn makes no second request and
+ * retrieves nothing more, so its request is the one it always made. The words were screened with the
+ * turn's own request (a quarantined turn never gets here). A failed or late follow-up is no answer: the
+ * turn goes on, and the aside asks its slot's own question.
+ */
+async function askFollowUp(session: Session, event: SessionEvent, words: string, turnState: unknown, answers: AnswerMap, tc: TurnContext, screen: ScreenResult | null, opts: RunOptions): Promise<{ tc: TurnContext; answers: AnswerMap; run: FollowUpRun | null; retrieved: Retrieved | null; ms: number | null }> {
+  const followUp = followUpOf(session, event, answers, tc, screen);
+  if (followUp === null) return { tc, answers, run: null, retrieved: null, ms: null };
+  const knowledge = appOf(session).knowledge;
+  const retrieved = knowledge !== undefined && tc.knowledge === undefined
+    ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
+    : null;
+  const known: TurnContext = retrieved ? { ...tc, knowledge: { nominated: retrieved.nominated } } : tc;
+  const questions = followUpQuestions(session, followUp, words, known);
+  if (Object.keys(questions).length === 0) return { tc: known, answers, run: null, retrieved, ms: null };
+  const t0 = performance.now();
+  const asked = await settle(opts.client.ask({ state: turnState as JsonValue, questions, timeoutMs: opts.thresholds.JEV_TIMEOUT_MS }));
+  const ms = performance.now() - t0;
+  if (asked.status === 'rejected') {
+    const reason = asked.reason;
+    const error = reason instanceof Error ? { name: reason.name, message: reason.message } : { name: 'Error', message: String(reason) };
+    return { tc: known, answers, run: { followUp, questions, response: null, error }, retrieved, ms };
+  }
+  // Only the follow-up's own questions are taken from it: the turn's answers stand as they came.
+  const added = Object.fromEntries(Object.entries(asked.value.answers).filter(([id]) => Object.hasOwn(questions, id) && !Object.hasOwn(answers, id)));
+  return { tc: known, answers: { ...answers, ...added }, run: { followUp, questions, response: asked.value, error: null }, retrieved, ms };
+}
+
+/** The trace's account of a follow-up (TraceRecord.followUp). */
+function followUpRecord(run: FollowUpRun): FollowUpRecord {
+  return {
+    reason: run.followUp.reason,
+    slot: run.followUp.slot,
+    questions: run.questions,
+    answers: run.response?.answers ?? null,
+    source: run.error ? 'error' : run.response!.source,
+    error: run.error,
+    usage: run.response?.usage ?? null,
+  };
+}
+
 function clientFailure(reason: unknown): TurnError {
   if (!(reason instanceof JevClientError)) throw reason;
   return { name: reason.name, message: reason.message };
@@ -325,8 +381,16 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     }
   }
   const t2 = performance.now();
-  const resolved = resolve(session, event, response?.answers ?? null, tc, error, screen);
+  // A second request on the same words, when the answers turn out to need one (askFollowUp).
+  const second = response !== null && words !== null && p.turnState !== null
+    ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts)
+    : null;
+  const turnTc = second?.tc ?? tc;
+  const t2f = performance.now();
+  const resolved = resolve(session, event, second?.answers ?? response?.answers ?? null, turnTc, error, screen);
   const t3 = performance.now();
+  // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
+  const retrievedAny = retrieved ?? second?.retrieved ?? null;
   // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
   // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
   const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null }) : null;
@@ -352,17 +416,21 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     result, event: traced, questions: p.questions, response, error, screenUsage: screenResponse?.usage ?? null,
     // What answers the call, on its first record only, and only from a client that asks a model.
     answeredBy: event.type === 'session.start' ? opts.client.answeredBy ?? null : null,
-    // Retrieval's time only on a turn a retriever ran; its total then counts from before it.
+    // Retrieval's time only on a turn a retriever ran; its total then counts from before it. A
+    // follow-up's time (its retrieval and its request) only on a turn that made one.
     timing: {
       ...(retrieved?.ms != null
-        ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - tr }
-        : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2, totalMs: t3 - t0 }),
+        ? { retrieveMs: retrieved.ms, planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - tr }
+        : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
+      ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
+      ...(second?.ms != null ? { followUpMs: second.ms } : {}),
       // A turn that rendered a generated line counts its rendering too.
       ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
     },
     render: rendered?.record ?? null,
     driftUsage: rendered?.driftUsage ?? null,
-    retrieval: retrieved?.record ?? null,
+    retrieval: retrievedAny?.record ?? null,
+    followUp: second?.run ? followUpRecord(second.run) : null,
     joined: fragments ?? null,
     ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
     ts: new Date(now()).toISOString(),
@@ -381,5 +449,5 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       /* observers are best effort */
     }
   }
-  return { result, questions: p.questions, response, error, screenResponse, record, audit: audited };
+  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited };
 }

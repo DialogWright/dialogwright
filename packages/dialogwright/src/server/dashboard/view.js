@@ -425,6 +425,18 @@ function median(xs) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/**
+ * The header's note of a turn's second request on the same words (TraceRecord.followUp: an aside's
+ * topic, asked once the turn's answers named the aside), its time and whether it failed; '' for a turn
+ * that made none. Its tokens and cost are in the turn's usage already.
+ */
+export function followUpNote(r) {
+  const f = r.followUp;
+  if (!f) return '';
+  const ms = r.timing?.followUpMs;
+  return ` · then ${Object.keys(f.questions ?? {}).length} more (${f.slot})${ms != null ? ` · ${Math.round(ms)} ms` : ''}${f.error ? ` · error: ${f.error.name}` : ''}`;
+}
+
 function tokensOf(usage) {
   return (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
 }
@@ -936,7 +948,8 @@ export function reduce(events, opts) {
         v.pending = pendingLine(r.pendingConfirmation);
         v.queued = r.queued ?? [];
         v.asking = askingLine(r, v.thresholds);
-        v.totals.askMs += r.timing?.askMs ?? 0;
+        // A turn's second request on the same words (TraceRecord.followUp) is time the caller waited on the model too.
+        v.totals.askMs += (r.timing?.askMs ?? 0) + (r.timing?.followUpMs ?? 0);
         v.totals.tokens += tokensOf(r.usage);
         // Every model's cost: the decision model's, and a generated line's (generated wording).
         v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0);
@@ -954,7 +967,7 @@ export function reduce(events, opts) {
             `${Math.round(r.timing?.askMs ?? 0)} ms`,
             `${tokensOf(r.usage).toLocaleString('en-US')} tokens`,
             money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0)),
-          ].join(' · ') + (r.error ? ` · error: ${r.error.name}` : '');
+          ].join(' · ') + (r.error ? ` · error: ${r.error.name}` : '') + followUpNote(r);
           // A record with a `turnState` answers this outright, including with a null: falling back
           // to the post-turn state when it says "nothing was pending" would put the group back on
           // the very turn that has no answer to group.

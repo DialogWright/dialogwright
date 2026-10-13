@@ -192,7 +192,7 @@ It applies alike to a form intent, an informational one and `done`; `check` refu
 
 #### Must never wait: `priority`
 
-Inside a form, a request for another form starts it only when the model reads the turn as replacing the task in hand (the `intentChange` question at `INTENT_CHANGE`, 0.6) and the intent at `INTENT_SWITCH` (0.85); a turn read as answering the question goes to the form, whatever intent it names. And a turn the model reads as not addressed to the line (`addressedToSystem` under `GATE_ADDRESSED`, 0.65) is ignored. Both are right for most requests and wrong for one that must never wait: "actually, water is pouring in right now", said at "Do you own the home?", reads as an answer, and "hold on, the wall just started giving way" reads as said half aside. Mark such an intent `priority`:
+Inside a form, a request for another form starts it only when the model reads the turn as replacing the task in hand (the `intentChange` question at `INTENT_CHANGE`, 0.6) and the intent at `INTENT_SWITCH` (0.85); a turn read as answering the question goes to the form, whatever intent it names. A form that answers from the knowledge base is the exception: asked for as a replacing or an added request, it is an aside, and the task resumes after the answer ([12.5](12-the-knowledge-base.md#125-answers-through-the-gate), `midTask`). And a turn the model reads as not addressed to the line (`addressedToSystem` under `GATE_ADDRESSED`, 0.65) is ignored. Both are right for most requests and wrong for one that must never wait: "actually, water is pouring in right now", said at "Do you own the home?", reads as an answer, and "hold on, the wall just started giving way" reads as said half aside. Mark such an intent `priority`:
 
 ```yaml
 intents:

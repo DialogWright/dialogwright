@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { RetrievalRecord, TraceRecord, TraceTiming } from './types';
+import type { FollowUpRecord, RetrievalRecord, TraceRecord, TraceTiming } from './types';
 import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
 import type { AnsweredBy, JevResponse, JevUsage, QuestionMap } from '../jev/types';
@@ -70,6 +70,8 @@ export interface TraceInput {
   render?: RenderRecord | null;
   /** The decision model's usage on the drift checks of generated lines, added into the record's usage; null or absent when none was asked. */
   driftUsage?: JevUsage | null;
+  /** The turn's second request (TraceRecord.followUp), its usage added into the record's; null or absent when it made none. */
+  followUp?: FollowUpRecord | null;
 }
 
 /** The record's `configHash`: the combined hash of the session's app (App.configHashes), when it has one. */
@@ -82,8 +84,10 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
   const { result, event, questions, response, error, timing, ts, pricePerMtok } = input;
   const screenUsage = input.screenUsage ?? null;
   const driftUsage = input.driftUsage ?? null;
+  const followUp = input.followUp ?? null;
+  const followUpUsage = followUp?.usage ?? null;
   const source = error ? 'error' : response ? response.source : event.type === 'user.key' ? 'dtmf' : event.type === 'user.silence' ? 'silence' : 'none';
-  const inputTokens = (response?.usage.inputTokens ?? 0) + (screenUsage?.inputTokens ?? 0) + (driftUsage?.inputTokens ?? 0);
+  const inputTokens = (response?.usage.inputTokens ?? 0) + (screenUsage?.inputTokens ?? 0) + (driftUsage?.inputTokens ?? 0) + (followUpUsage?.inputTokens ?? 0);
   return {
     v: 2,
     sessionId: result.session.sessionId,
@@ -123,6 +127,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     kb: result.kb,
     // Only on a turn the retriever ran: every other record is as it was.
     ...(input.retrieval ? { retrieval: input.retrieval } : {}),
+    // Only on a turn that made a second request: every other record is as it was.
+    ...(followUp ? { followUp: { ...followUp } } : {}),
     // Only on a joined turn: every other record is as it was.
     ...(input.joined ? { joined: { fragments: [...input.joined], ...(input.joinedWaitedFor !== undefined ? { waitedFor: input.joinedWaitedFor } : {}) } } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.
@@ -141,8 +147,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     timing,
     usage: {
       inputTokens,
-      outputTokens: (response?.usage.outputTokens ?? 0) + (screenUsage?.outputTokens ?? 0) + (driftUsage?.outputTokens ?? 0),
-      estimated: (response?.usage.estimated ?? true) || (screenUsage?.estimated ?? false) || (driftUsage?.estimated ?? false),
+      outputTokens: (response?.usage.outputTokens ?? 0) + (screenUsage?.outputTokens ?? 0) + (driftUsage?.outputTokens ?? 0) + (followUpUsage?.outputTokens ?? 0),
+      estimated: (response?.usage.estimated ?? true) || (screenUsage?.estimated ?? false) || (driftUsage?.estimated ?? false) || (followUpUsage?.estimated ?? false),
       costUsd: (inputTokens * pricePerMtok) / 1_000_000,
     },
   };

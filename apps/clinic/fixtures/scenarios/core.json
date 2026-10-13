@@ -2264,5 +2264,65 @@
       "decision": "prompt",
       "promptId": "ask_subject_retry"
     }
+  },
+  {
+    "id": "question-at-reschedule-summary",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "actually, what are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_time",
+      "form": "reschedule",
+      "text": "We're open Monday through Friday"
+    }
+  },
+  {
+    "id": "question-at-reschedule-summary-then-yes",
+    "steps": [
+      {
+        "say": "I need to reschedule my appointment, it's with Dr. Chen sometime next week"
+      },
+      {
+        "say": "Morgan Ellis"
+      },
+      {
+        "say": "June fourteenth nineteen seventy five"
+      },
+      {
+        "say": "Tuesday"
+      },
+      {
+        "say": "actually, what are your hours"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "reschedule_confirmed",
+      "form": "reschedule",
+      "slots": {
+        "name": "morgan ellis",
+        "dob": "1975-06-14",
+        "provider": "chen",
+        "date": "2026-09-22"
+      }
+    }
   }
 ]

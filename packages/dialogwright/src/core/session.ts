@@ -171,6 +171,30 @@ export type PendingConfirmation =
       why?: 'no-answer';
     };
 
+/**
+ * The task set aside for an aside (FormDef.aside: a question the knowledge base answers, asked in the
+ * middle of a task): the open form and everything about where it stood that entering another form
+ * resets (setForm), so it resumes exactly there when the aside is done (core/turn.ts). Its slots are
+ * not here: they stay on the session, untouched by the aside, whose own slots are other ones.
+ */
+export interface ParkedTask {
+  readonly form: FormId;
+  readonly entered: FormId | null;
+  readonly stepUp: StepUp | null;
+  readonly pendingConfirmation: PendingConfirmation | null;
+  readonly intentAttempts: number;
+  readonly menuActive: boolean;
+  readonly codeReasks: number;
+  readonly pendingHash: string | null;
+  readonly reachedThrough?: readonly FormId[];
+  readonly callerMatch?: 'offered';
+  readonly checked?: Readonly<Record<string, string>>;
+  readonly checkReadBackNos?: Readonly<Record<string, number>>;
+  readonly callerOffered?: readonly SlotId[];
+  /** The nos said to its slots' read-backs (SlotState.readBackNos), by slot, which entering the aside drops. */
+  readonly readBackNos?: Readonly<Record<SlotId, number>>;
+}
+
 /** The user spoke over our line: the part of it that had played (never the user's words), and how far in (UserInterrupt). */
 export interface Interrupt {
   heard: string;
@@ -202,6 +226,11 @@ export interface Session {
    * any other way, so every session of an app without `next` is as it was.
    */
   reachedThrough?: FormId[];
+  /**
+   * The task set aside while an aside form runs (FormDef.aside, ParkedTask), restored when the aside is
+   * done. Absent on every other turn, so every session of an app without an aside is as it was.
+   */
+  parked?: ParkedTask;
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -440,9 +469,85 @@ export function cloneSession(s: Session): Session {
     ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
     queued: [...s.queued],
     ...(s.reachedThrough ? { reachedThrough: [...s.reachedThrough] } : {}),
+    ...(s.parked ? { parked: cloneParked(s.parked) } : {}),
     completed: [...s.completed],
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
   };
+}
+
+/** A parked task's copy: what a later turn restores must not reach back into the session we were handed. */
+function cloneParked(p: ParkedTask): ParkedTask {
+  return {
+    ...p,
+    stepUp: p.stepUp ? { ...p.stepUp, call: { ...p.stepUp.call, params: { ...p.stepUp.call.params } } } : null,
+    pendingConfirmation: clonePending(p.pendingConfirmation),
+    ...(p.reachedThrough ? { reachedThrough: [...p.reachedThrough] } : {}),
+    ...(p.checked ? { checked: { ...p.checked } } : {}),
+    ...(p.checkReadBackNos ? { checkReadBackNos: { ...p.checkReadBackNos } } : {}),
+    ...(p.callerOffered ? { callerOffered: [...p.callerOffered] } : {}),
+    ...(p.readBackNos ? { readBackNos: { ...p.readBackNos } } : {}),
+  };
+}
+
+/**
+ * The open form set aside as it stands (Session.parked), before an aside form is entered: everything
+ * setForm resets is kept, to be put back by unparkTask. The form must be open.
+ */
+export function parkTask(session: Session): void {
+  const form = session.form;
+  if (form === null) throw new Error('parkTask: no form is open');
+  const readBackNos = Object.fromEntries(Object.entries(session.slots).filter(([, slot]) => slot.readBackNos !== undefined).map(([id, slot]) => [id, slot.readBackNos!]));
+  session.parked = cloneParked({
+    form,
+    entered: session.entered,
+    stepUp: session.stepUp,
+    pendingConfirmation: session.pendingConfirmation,
+    intentAttempts: session.intentAttempts,
+    menuActive: session.menuActive,
+    codeReasks: session.codeReasks,
+    pendingHash: session.pendingHash,
+    ...(session.reachedThrough ? { reachedThrough: session.reachedThrough } : {}),
+    ...(session.callerMatch === 'offered' ? { callerMatch: 'offered' as const } : {}),
+    ...(session.checked ? { checked: session.checked } : {}),
+    ...(session.checkReadBackNos ? { checkReadBackNos: session.checkReadBackNos } : {}),
+    ...(session.callerOffered ? { callerOffered: session.callerOffered } : {}),
+    ...(Object.keys(readBackNos).length > 0 ? { readBackNos } : {}),
+  });
+}
+
+/**
+ * The aside is done: its own slots are emptied (but those the task lists, and those the app carries)
+ * and the task set aside (Session.parked) is open again exactly as it stood. Nothing else of the aside
+ * closing runs: the task is not over, so the app's facts are not cleared for it (App.facts.onFormClosed).
+ */
+export function unparkTask(session: Session): void {
+  const p = session.parked;
+  if (p === undefined) return;
+  const app = appOf(session);
+  if (session.form !== null && session.form !== p.form) {
+    const task = formOf(app, p.form).slots;
+    for (const id of formOf(app, session.form).slots) if (!task.includes(id) && !isCarried(app, id)) session.slots[id] = emptySlot();
+  }
+  const back = cloneParked(p);
+  session.form = back.form;
+  session.entered = back.entered;
+  session.stepUp = back.stepUp;
+  session.pendingConfirmation = back.pendingConfirmation;
+  session.intentAttempts = back.intentAttempts;
+  session.menuActive = back.menuActive;
+  session.codeReasks = back.codeReasks;
+  session.pendingHash = back.pendingHash;
+  if (back.reachedThrough) session.reachedThrough = [...back.reachedThrough];
+  else delete session.reachedThrough;
+  if (back.callerMatch === 'offered' && session.callerMatch === undefined) session.callerMatch = 'offered';
+  if (back.checked) session.checked = { ...back.checked };
+  else delete session.checked;
+  if (back.checkReadBackNos) session.checkReadBackNos = { ...back.checkReadBackNos };
+  else delete session.checkReadBackNos;
+  if (back.callerOffered) session.callerOffered = [...back.callerOffered];
+  else delete session.callerOffered;
+  for (const [id, n] of Object.entries(back.readBackNos ?? {})) if (Object.hasOwn(session.slots, id)) session.slots[id]!.readBackNos = n;
+  delete session.parked;
 }
 
 export type AttemptBucket = 'first' | 'second' | 'third_or_more';

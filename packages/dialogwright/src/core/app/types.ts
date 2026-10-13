@@ -151,6 +151,16 @@ export interface FormDef {
    */
   listenBeforeEntered?: boolean;
   /**
+   * A form that is an aside to the task in hand, not a task of its own (forms.yaml `answers:`, unless
+   * its `midTask` is `task`): `slot` is its topic slot. Asked for while another form is open, as a
+   * replacing or an added request (core/gates.ts), the task is set aside as it stands (Session.parked),
+   * the form runs, and when it is done the task resumes where it was: its question, or its summary or
+   * confirmation asked again (core/turn.ts). The topic is asked on the turn of the switch, in a second
+   * request on the same words with the topic slot's question alone (run/turn.ts followUp), so a caller
+   * who says the question with the switch is answered at once. Without it, the form is a task like any other.
+   */
+  aside?: { readonly slot: SlotId };
+  /**
    * The call made before the form's own slots are asked (it may step identity up). Without it the
    * form is entered as it starts: no call, nothing to step up, and neither onEntry nor
    * principalEntry is called.

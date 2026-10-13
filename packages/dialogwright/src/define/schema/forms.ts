@@ -61,6 +61,15 @@ const form = z
           .describe('The gated action that resolves the answer (a tool in the code, with an action in policy.yaml, returning an answer or why there is none). Default: kb/kb.yaml\'s action.'),
         answer: identifier().optional().describe('The prompt the answer is said through; its text says {answer}. Default: kb_answer.'),
         unavailable: identifier().optional().describe('The prompt said when there is no answer to give, before a person is offered. Default: kb_unavailable.'),
+        midTask: z
+          .enum(['aside', 'task'])
+          .optional()
+          .describe(
+            'What asking for this form while another is open does to that form. aside (the default): the form in hand is set aside as it stands, the answer is said, and the form resumes where it was (its question, or its summary or confirmation asked again), ' +
+              'whether the caller replaced the task with the question or added it; the topic said with the question is the one answered (the topic is asked in a second, small request on the same words). ' +
+              'With no answer to give, the unavailable line is said and a person offered, once per call, as for an informational intent\'s passage; turned down, the form resumes. ' +
+              'task: the form is a task like any other, as before this option: it replaces the form in hand or is queued after it, as the model reads the turn, and its topic is asked once it is open.',
+          ),
       })
       .optional()
       .describe(

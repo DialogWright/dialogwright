@@ -242,6 +242,8 @@ Four steps, and only the second is a model's: nominate, select, resolve, speak.
 
 **When retrieval runs.** Only on a turn where all of these hold: the app has a knowledge base, the turn has the caller's words (speech or text, not after the call has ended or while a downstream service's answer is awaited), and a topic slot is among the slots the turn asks. A turn that is none of these is exactly the turn it was without a knowledge base: no retrieval, no extra question, the same request to the model. An app with no `kb/` folder is unchanged byte for byte.
 
+**On the turn a question interrupts a task.** With another form open, the topic slot is not among the slots the turn asks, so the turn's request has no topic question, as before. When the model's answers then name the form that answers as an aside to the task ([below](#125-answers-through-the-gate)) and its topic is not known, the engine retrieves for the same words and, when anything is nominated, makes a second, small request on them: the topic question alone, with the same turn state. Only that turn makes it, so every other turn's request is the one it always was. If nothing is nominated, or the second request fails or is late, the aside asks its own question ("What would you like to know?").
+
 **When the topics are asked.** Only when retrieval nominated something. Nominating is the cheap, fast check that a knowledge question is plausible, so a call that never asks one never pays for the question. A turn on which nothing was nominated asks nothing, and the slot has no value.
 
 **The budget.** The caller waits on retrieval, so it has 150 milliseconds (`RETRIEVE_BUDGET_MS`, fixed: it is a latency budget, not a threshold you tune). It fails open. A retriever that throws, returns something that is not a list of topics, or is not back in time nominates nothing, the turn goes on without a knowledge question, and the trace says which it was (`failed: 'error' | 'invalid' | 'late'`). The engine's own retrievers answer in well under a millisecond, so the budget is there for a retriever of your own that calls out. The budget bounds a retriever that returns a promise; one that answers synchronously runs to the end before the turn goes on (JavaScript cannot stop it), so a retriever of your own that may take long must be asynchronous.
@@ -302,7 +304,7 @@ forms:
     answers: { slot: subject }
 ```
 
-`answers` takes `slot` (the form's topic slot), and optionally `via` (the resolving action, default kb.yaml's `action`), `answer` and `unavailable` (the two lines). The intent is an ordinary form intent:
+`answers` takes `slot` (the form's topic slot), and optionally `via` (the resolving action, default kb.yaml's `action`), `answer` and `unavailable` (the two lines), and `midTask` (below). The intent is an ordinary form intent:
 
 ```yaml
 # intents.yaml
@@ -311,6 +313,34 @@ intents:
     criteria: Asks a question about the library, its cards or its fees
     label: answer a question
     kind: form
+```
+
+**In the middle of a task: an aside (`midTask`).** A caller at "Shall I make that change?" who asks "actually, what are your hours?" wants the hours and then the change. So a form with `answers:` is an aside by default (`midTask: aside`): asked for while another form is open, whether the model reads the turn as replacing the task or adding to it, the task is set aside exactly as it stands, the answer is said, and the task resumes where it was. Its question is asked again, or its summary or confirmation, with no attempt counted:
+
+```text
+Caller: Tuesday works.
+Agent:  It would move to Tuesday, September 22 at 8:30 AM. Shall I make that change?
+Caller: Actually, what are your hours?
+Agent:  We're open Monday through Friday, from 8 in the morning to 5 in the evening. Tuesday, September 22 at 8:30 AM. Does that work?
+Caller: Yes.
+```
+
+- **The topic said with the question is the one answered.** The turn of the switch asks the topic in a second, small request on the same words ([12.2](#122-how-a-call-uses-it)), so the caller is not asked "What would you like to know?" after saying it. When the topic cannot be read (nothing nominated, the model chose none), the aside asks its own question, answers, and the task resumes.
+- **What else the words said for the task fills it** first, as an informational intent's do ("Tuesday, and what are your hours?").
+- **No answer to give** is the same as anywhere else: the `kb_unavailable` line and a person offered, once per call ("...connect you to a person, or keep going?"). Turned down, the task resumes; once declined on the call, the unavailable line is followed by the task's question at once. One behaviour for a missing answer in the middle of a task, whether it came from an aside or an informational intent's passage, and the offer's line already says "or keep going".
+- **A turn read as answering the question** is the form's, as for any other intent: an aside is taken for a replacing or an added request only, at the thresholds a switch to another form uses (`INTENT_SWITCH`, or confirmed first between `INTENT_IMPLICIT` and it, or when the request is hedged).
+- **In the aside**, asking for the task again ("never mind, let's do the reschedule") goes back to it where it stood; asking for another task gives the one set aside up, as a replaced task is.
+- **A summary's yes said with the question** ("yes, and what are your hours?") is not taken: the answer is said and the summary is asked again, so nothing is written on a yes the caller said before hearing the answer.
+
+`midTask: task` keeps the form a task like any other: a replacing request replaces the form in hand (gone after the answer), an added one is queued after it, and its topic is asked once it is open. Its turns make the one request they always made. Choose it only for a form whose answer ends the task, which is rare.
+
+```yaml
+# forms.yaml
+forms:
+  ask_library:
+    slots: [subject]
+    summaryPromptId: null
+    answers: { slot: subject, midTask: task } # aside (the default): the task resumes after the answer
 ```
 
 **The resolving tool.** The action kb.yaml names is a tool in the app's code with an action in `policy.yaml`, like any other: the gate decides whether it may run, and the rules you give it (`identity`, `scope`, ...) apply as to any read. The engine ships the tool for an app with a `kb/` folder:
@@ -487,6 +517,7 @@ An app that keeps a retriever of its own and later moves to the engine's hybrid 
 ### 12.12 What is recorded
 
 - **The trace** has `retrieval` on each turn retrieval ran: the retriever's id (`hybrid:potion-base-8M`, `keyword`, or your own), the SHA-256 of the index it read, the topics it nominated each with score and `via`, and `failed` (with `message` for an error) when it nominated nothing because it did not answer as asked. The turn's timing has `retrieveMs`.
+- **The second request** of a turn a question interrupted a task on is `followUp` in its trace record: why it was made (`aside-topic`), the slot, its questions and answers, where they came from, and the error when it failed (the turn went on without it). Its tokens and cost are in the turn's `usage`, its time is `timing.followUpMs`, a cassette keys it by its own state and question (recorded and replayed like any request; a miss on it is a cassette miss), and the console's call detail notes it beside the turn's own. `kb:gaps` reads its topic question as the turn's.
 - **The knowledge record** is on the turn that answered (`kb` in the trace, `TurnOut.kb`) and on the console's source card: the passage, its version, the facts it answered for (`applies`, only those it depends on), its language, the source document and section, the days it is in force, who approved it and when, the first 12 hex characters of both hashes, and `fresh`. A passage that was withheld has its record with `fresh: false`. It is never part of what the model is asked.
 - **The audit** has a `kb_answer` row for each answer: the passage's id, its version, whether it was fresh, its language and the short hashes. It holds nothing of the caller's.
 - **The configuration hashes** include every file of `kb/` that is read (kb.yaml, topics, passages, sources and the locale files), so a call is tied to the exact knowledge it ran under. Drafts, rejected drafts, the approvals log and the index are not in them; the index's own hash is in the retrieval record.

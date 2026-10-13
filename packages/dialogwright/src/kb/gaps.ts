@@ -80,16 +80,21 @@ export function turnOf(raw: unknown, file: string, line: number): Turn | null {
       }
     : null;
 
+  // The turn's questions and answers, with its second request's on the same words (TraceRecord.followUp:
+  // the topic question of an aside asked in the middle of a task), which are the turn's as much.
+  const followUp = isObject(raw.followUp) ? raw.followUp : null;
   const questions: Record<string, TurnQuestion> = {};
-  if (isObject(raw.questions)) {
-    for (const [id, q] of Object.entries(raw.questions)) {
+  for (const asked of [raw.questions, followUp?.questions]) {
+    if (!isObject(asked)) continue;
+    for (const [id, q] of Object.entries(asked)) {
       if (!isObject(q)) continue;
       questions[id] = { type: str(q.type) ?? '', labels: isObject(q.criteria) ? Object.keys(q.criteria) : [] };
     }
   }
   const answers: Record<string, TurnAnswer> = {};
-  if (isObject(raw.answers)) {
-    for (const [id, a] of Object.entries(raw.answers)) {
+  for (const answered of [raw.answers, followUp?.answers]) {
+    if (!isObject(answered)) continue;
+    for (const [id, a] of Object.entries(answered)) {
       if (!isObject(a) || a.type !== 'choice') continue;
       const probabilities: Record<string, number> = {};
       if (isObject(a.probabilities)) for (const [label, p] of Object.entries(a.probabilities)) if (typeof p === 'number' && Number.isFinite(p)) probabilities[label] = p;

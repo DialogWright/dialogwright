@@ -65,6 +65,12 @@ function printRun(run: TurnRun, quiet: boolean): void {
     console.log(formatAnswers(questions, response.answers));
     console.log('');
   }
+  // The turn's second request on the same words, when it made one (TraceRecord.followUp).
+  if (run.followUp?.response) {
+    console.log(`follow-up (${run.followUp.followUp.reason})`);
+    console.log(formatAnswers(run.followUp.questions, run.followUp.response.answers));
+    console.log('');
+  } else if (run.followUp) console.log(`follow-up (${run.followUp.followUp.reason}) failed: ${run.followUp.error?.message ?? 'no response'}`);
   if (result.rows.length) {
     console.log(formatGates(result.rows));
     console.log('');

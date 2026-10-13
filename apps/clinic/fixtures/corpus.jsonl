@@ -260,6 +260,7 @@
 {"id":"aq-12","text":"What are your hours","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
 {"id":"aq-13","text":"Do you have parking","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
 {"id":"aq-14","text":"Where are you located","intent":"ask_question","context":"no_form","tags":["knowledge"]}
+{"id":"aq-15","text":"actually, what are your hours","intent":"ask_question","context":"confirm_reschedule","change":"replacing","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge","aside"]}
 {"id":"sq-01","text":"parking","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
 {"id":"sq-02","text":"your opening hours","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
 {"id":"sq-03","text":"whether you do flu shots","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"none"},"tags":["knowledge"]}

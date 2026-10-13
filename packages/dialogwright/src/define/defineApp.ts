@@ -69,7 +69,7 @@ import { transferProblems, type TransferProblem, type TransferWorld } from '../c
 export type FormHooks = Pick<FormDef, FormHook>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -1189,6 +1189,8 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.answers) {
     const { slot, via, answer, unavailable } = form.answers;
     def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
+    // An aside to the task in hand, unless the form says it is a task like any other.
+    if (form.answers.midTask !== 'task') def.aside = { slot };
   }
   // A form that goes on to the next with no complete hook of its own completes as `said`, with the
   // turn's lines: the next form is its answer.

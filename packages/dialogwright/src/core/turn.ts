@@ -10,7 +10,7 @@ import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, id
 import { appOf } from './app/registry';
 import type { App, CheckOutcome, Completion, FormCheck, FormId, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
-import { closeForm, cloneSession, emptySlot, missingSlots, setForm, type PendingConfirmation, type Session } from './session';
+import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
@@ -590,6 +590,12 @@ function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed
     agree(s, form);
   }
   if (then !== undefined) return goOn(s, form, then, acks, io);
+  // An aside done (FormDef.aside): the task set aside for it is open again where it stood, and its
+  // question, summary or confirmation is asked again after what the aside said.
+  if (s.parked !== undefined && form !== s.parked.form) {
+    unparkTask(s);
+    return resume(s, io, acks);
+  }
   closeForm(s);
   const next = s.queued.shift();
   if (!next) return prompt('anything_else', 'intent', {}, acks);
@@ -1687,7 +1693,18 @@ function summaryMove(s: Session, form: FormId, answers: AnswerMap, io: TurnIO): 
  * `answers` are what the form fills from; `yes`, after an explicit intent check, the answers of the
  * yes that confirmed it, which the form hears after the opener's (they are newer) but never fills from.
  */
-function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, queue?: FormId, yes?: AnswerMap): { decision: Decision; events: FillEvent[] } {
+function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, queue?: FormId, yes?: AnswerMap, aside?: { readonly acks: Ack[] }): { decision: Decision; events: FillEvent[] } {
+  if (aside === undefined && s.parked !== undefined) {
+    // In an aside, the task set aside asked for again ("let's get back to the reschedule"): it resumes
+    // where it stood, and what else the words said for it fills, as an informational answer's breath does.
+    if (form === s.parked.form) {
+      unparkTask(s);
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+      return { decision: resume(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
+    }
+    // Another task asked for in its place: the task set aside is given up, as a replaced one is.
+    delete s.parked;
+  }
   // Words said outside a form (the request, or the request a yes confirmed) asked nothing of a slot
   // that listens only in its form (SlotSpec.listen `form`), so nothing is taken for it up front,
   // whatever such a slot would make of the words without its question.
@@ -1702,13 +1719,38 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   // named on one utterance get one line, in the order they will be done ("Sure, I can help you track
   // a parcel, and then report a missing one."), not a promise about "that" before the first is named.
   const queued = enqueue(s, queue);
-  const acks: Ack[] = queued.length && queue !== undefined
-    ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form, s.locale), b: formLabel(io.app, queue, s.locale) } }]
-    : [ackIntent(s, form)];
+  // An aside says no "I can help you with that": its answer, or its topic question, is the reply.
+  const acks: Ack[] = aside !== undefined
+    ? [...aside.acks]
+    : queued.length && queue !== undefined
+      ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form, s.locale), b: formLabel(io.app, queue, s.locale) } }]
+      : [ackIntent(s, form)];
   // A yes to the greeting's proposal with the request in the same breath: the slot holds what the yes was to.
   const specs = (fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s)).filter((spec) => spec.id !== io.kept);
   const fill = fillSlots(s, answers, ctx, specs);
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+}
+
+/** Whether `form` is an aside to the task in hand (FormDef.aside) to be taken now: another form is open. */
+function asideNow(s: Session, form: string): boolean {
+  return s.form !== null && s.form !== form && Object.hasOwn(appOf(s).forms, form) && formOf(appOf(s), form).aside !== undefined;
+}
+
+/**
+ * An aside asked for in the middle of a task (FormDef.aside): what else the breath carried for the
+ * form in hand fills first, as an informational answer's does (the inform verdict), and its lines go
+ * first; then the form in hand is set aside as it stands (parkTask), unless it is itself an aside (the
+ * task first set aside stays the one to go back to), and the aside is entered with no acknowledgement
+ * of a new task. Its topic slot fills from `answers` (the turn's, with the topic question's answers the
+ * turn's second request brought: run/turn.ts), so a topic said with the question is answered at once,
+ * and the task resumes when the aside is done (finishForm). `yes`: the answers of a yes that confirmed it.
+ */
+function takeAside(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContext, io: TurnIO, yes?: AnswerMap): { decision: Decision; events: FillEvent[] } {
+  const inAside = s.form !== null && formOf(io.app, s.form).aside !== undefined && s.parked !== undefined;
+  const fill = inAside ? null : fillSlots(s, answers, ctx, slotsToFill(s));
+  if (!inAside) parkTask(s);
+  const entered = enterForm(s, form, answers, ctx, io, undefined, yes, { acks: fill?.acks ?? [] });
+  return { decision: entered.decision, events: [...(fill?.events ?? []), ...entered.events] };
 }
 
 /**
@@ -1844,6 +1886,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
       // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
       const said = slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated));
+      // An aside to the form in hand, confirmed: taken as one, and the form resumes after it.
+      if (asideNow(s, pc.intent)) return takeAside(s, pc.intent, pc.answers, said, io, answers);
       // A priority intent that corrects the form, checked first ("just to check, ..."): those words
       // were heard with the form left still open, and nothing has filled since, so the yes corrects
       // from them exactly as a switch taken at once would have (correctOnSwitch).
@@ -2036,6 +2080,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.
       if (verdict.intent === 'done') return { decision: goodbye(s), events: [] };
+      // An aside to the form in hand (FormDef.aside): the form is set aside and resumes after it.
+      if (verdict.aside === true && asideNow(s, verdict.intent)) return takeAside(s, verdict.intent, answers, ctx, io);
       // A switch to a priority intent that corrects the form (IntentDef.priority `correctsForm`):
       // what the turn said for the slots it was asked about replaces what they held, before the
       // priority form is entered.
@@ -2868,4 +2914,47 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       return { ...base(), turnState, rows: [...screened, ...rows], verdict, fillEvents: events, decision, actions: act(decision) };
     }
   }
+}
+
+/**
+ * A second request a turn makes on the same words, after its own, for what the turn turned out to
+ * need and its request did not ask (run/turn.ts): `questions` alone, with the same turn state. Today
+ * one reason makes it: `aside-topic`, the topic of an aside (FormDef.aside) asked for in the middle of
+ * a task, which the form in hand's request does not ask about (its topic slot is not one of the form's).
+ */
+export interface FollowUp {
+  readonly reason: 'aside-topic';
+  /** The slot whose question it asks: the aside's topic slot. */
+  readonly slot: SlotId;
+}
+
+/**
+ * The follow-up a spoken turn needs once its answers are in (FollowUp), or null, as the turn will
+ * read them (resolve): the gates settle on an aside (FormDef.aside) to the form in hand, taken now or
+ * confirmed first, and its topic slot holds nothing. Null for every other turn: no form open, a
+ * keypad turn, words the screen quarantined, a turn with no answers, one the call is not taking (over,
+ * or waiting on a service), and every app without an aside, whose turns make one request as always.
+ */
+export function followUpOf(session: Session, event: SessionEvent, answers: AnswerMap | null, turnContext: TurnContext, screen: ScreenResult | null = null): FollowUp | null {
+  if (event.type !== 'user.speech' && event.type !== 'user.text') return null;
+  if (answers === null || screen?.fired === true || session.form === null || session.ended || session.pendingService !== null || turnContext.duringService === true) return null;
+  const app = appOf(session);
+  if (!Object.values(app.forms).some((f) => f.aside !== undefined)) return null;
+  const tc = appTurnContext(app, turnContext);
+  const turnState = buildTurnState(session, heard(session, event), tc.nowMs);
+  const ctx = slotContext(session, event.text, tc);
+  const { verdict } = evaluateGates(session, turnState, answers, tc.thresholds, summaryValuesGiven(session, answers, ctx));
+  if (verdict.kind !== 'route' || verdict.aside !== true || !asideNow(session, verdict.intent)) return null;
+  const slot = formOf(app, verdict.intent).aside!.slot;
+  return session.slots[slot]?.value == null ? { reason: 'aside-topic', slot } : null;
+}
+
+/**
+ * The follow-up's questions (FollowUp): its slot's own, as the slot asks them of these words with what
+ * retrieval nominated for them (TurnContext.knowledge). Empty when the slot asks nothing (a topic slot
+ * with nothing nominated): then no request is made, and the aside asks its slot's question itself.
+ */
+export function followUpQuestions(session: Session, followUp: FollowUp, text: string, turnContext: TurnContext): QuestionMap {
+  const tc = appTurnContext(appOf(session), turnContext);
+  return slotSpecOf(appOf(session), followUp.slot).questions(slotCtx(session, slotContext(session, text, tc), followUp.slot));
 }

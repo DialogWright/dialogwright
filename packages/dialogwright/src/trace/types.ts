@@ -21,6 +21,8 @@ export interface TraceTiming {
   retrieveMs?: number;
   /** How long the generated lines took, after the core decided; only on a turn that rendered one (TraceRecord.render). */
   renderMs?: number;
+  /** How long the turn's second request took, its retrieval included (TraceRecord.followUp); only on a turn that made one. */
+  followUpMs?: number;
   planMs: number;
   askMs: number;
   resolveMs: number;
@@ -39,6 +41,22 @@ export interface RetrievalRecord {
   nominated: Array<{ topic: string; score: number; via: NominationVia }>;
   failed?: 'error' | 'invalid' | 'late';
   message?: string;
+}
+
+/**
+ * A turn's second request on the same words (core/turn.ts FollowUp; run/turn.ts): why it was made, the
+ * slot whose question it asked, its questions and answers (null when it failed), where they came from,
+ * the error when it failed (the turn went on without it), and its usage, which the record's `usage`
+ * includes. `answers` are not in the record's own `answers`, which are its first request's.
+ */
+export interface FollowUpRecord {
+  reason: 'aside-topic';
+  slot: SlotId;
+  questions: QuestionMap;
+  answers: AnswerMap | null;
+  source: TraceSource;
+  error: { name: string; message: string } | null;
+  usage: { inputTokens: number; outputTokens: number; estimated: boolean } | null;
 }
 
 export interface TraceUsage {
@@ -134,6 +152,11 @@ export interface TraceRecord {
    * other turn and for every other app.
    */
   retrieval?: RetrievalRecord;
+  /**
+   * The turn's second request (FollowUpRecord): only on a turn that made one (an aside asked for in
+   * the middle of a task, its topic unknown, retrieval nominating something); absent on every other.
+   */
+  followUp?: FollowUpRecord;
   /**
    * Only on a turn that joined the final prompts of a caller who had not finished (run/continuation.ts,
    * voice.continueWithinMs): the prompts, in order, as each was heard. The event's words are them

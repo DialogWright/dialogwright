@@ -206,5 +206,14 @@ export function modelAnswerLines(run: TurnRun, indent = '  '): string[] {
     const reading = screen.error !== null ? `none (${screen.error})` : `${screen.value === null ? '-' : p2(screen.value)}${screen.fired ? ', fired' : ''}`;
     lines.push(`${indent}   ${'screen'.padEnd(width)}  ${reading}   (${how})`);
   }
+  // The turn's second request on the same words (TraceRecord.followUp), when it made one.
+  const followUp = run.followUp;
+  if (followUp !== null) {
+    if (followUp.response === null) lines.push(`${indent}follow-up (${followUp.followUp.reason}): none (${followUp.error?.message ?? 'no response'})`);
+    else {
+      lines.push(`${indent}follow-up (${followUp.followUp.reason}, ${followUp.response.source})`);
+      for (const [id, a] of Object.entries(followUp.response.answers)) if (followUp.questions[id] !== undefined) lines.push(`${indent}   ${id.padEnd(width)}  ${answerCell(followUp.questions[id], a)}`);
+    }
+  }
   return lines;
 }

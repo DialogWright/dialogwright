@@ -47,8 +47,10 @@ export type Verdict =
    * A form to enter, or 'done': the caller is finished and the call ends with the goodbye. Or an
    * informational intent the model is unsure of, always with `confirm: 'explicit'`: the caller is
    * asked whether they want it, and its answer is said on a yes (turn.ts, the confirmed intent).
+   * `aside`: a form that is an aside to the form in hand (FormDef.aside), asked for while it is open,
+   * as a replacing or an added request: the form in hand is set aside and resumed after it (turn.ts).
    */
-  | ({ kind: 'route'; intent: FormId | 'done' | Intent; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId } & Frustrated)
+  | ({ kind: 'route'; intent: FormId | 'done' | Intent; confirm: 'none' | 'implicit' | 'explicit'; queue?: FormId; aside?: true } & Frustrated)
   | ({ kind: 'queue'; intent: FormId } & Frustrated)
   | ({ kind: 'disambiguate_intent'; a: Intent; b: Intent } & Frustrated)
   | ({ kind: 'intent_failed' } & Frustrated)
@@ -328,6 +330,9 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
 
     // Only an intent that is a form other than the one in hand can add or replace.
     const other = isFormIntent(app, label) && !inHand.includes(label) ? label : null;
+    // A form that is an aside to the task in hand (FormDef.aside): replacing or added, it is taken
+    // as an aside, and the form in hand resumes after it (turn.ts).
+    const isAside = (form: string): boolean => formOf(app, form).aside !== undefined;
 
     if (label === 'agent' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
@@ -339,14 +344,20 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       // my other parcel"), so the added task is read from the rest: the likeliest other form, as a
       // share of what is not the current one.
       const added = addedIntent(app, ranked, inHand);
-      if (added && atLeast(added.p, t.INTENT_IMPLICIT)) {
+      if (added && atLeast(added.p, t.INTENT_IMPLICIT) && isAside(added.label)) {
+        // An aside is not queued behind the task: it is taken now, and the task resumes after it.
+        routeVerdict = { kind: 'route', intent: added.label, confirm: tentative ? 'explicit' : 'none', aside: true }; outcome = tentative ? 'aside_tentative' : 'aside_added';
+        intentValue = added.p; intentLabel = added.label;
+      } else if (added && atLeast(added.p, t.INTENT_IMPLICIT)) {
         routeVerdict = { kind: 'queue', intent: added.label }; outcome = 'queue';
         intentValue = added.p; intentLabel = added.label;
       } else { routeVerdict = { kind: 'proceed' }; outcome = 'add_unused'; }
     }
     else if (mode === 'replacing') {
-      if (other && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'route', intent: other, confirm: tentative ? 'explicit' : 'none' }; outcome = tentative ? 'switch_tentative' : 'switch'; }
-      else if (other && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'route', intent: other, confirm: 'explicit' }; outcome = 'switch_explicit'; }
+      const aside = other !== null && isAside(other) ? { aside: true as const } : {};
+      const named = aside.aside ? 'aside' : 'switch';
+      if (other && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'route', intent: other, confirm: tentative ? 'explicit' : 'none', ...aside }; outcome = tentative ? `${named}_tentative` : named; }
+      else if (other && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'route', intent: other, confirm: 'explicit', ...aside }; outcome = `${named}_explicit`; }
       else { routeVerdict = { kind: 'proceed' }; outcome = 'replace_unresolved'; }
     }
     // An unrecognized change label decides nothing; carry on with the form.
@@ -434,7 +445,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   // top-1 >= 0.60 always has margin >= 0.20, so in practice this fires inside the
   // explicit-confirm band and turns "confirm the top one" into "ask which of two".
   let marginRow: GateRow | null = null;
-  if (routeVerdict.kind === 'route' && second && isFormIntent(app, second.label)) {
+  // Only for a route on the top intent: an aside added beside the task is read from below it.
+  if (routeVerdict.kind === 'route' && routeVerdict.intent === label && second && isFormIntent(app, second.label)) {
     const margin = top.p - second.p;
     const passed = atLeast(margin, t.GATE_INTENT_MARGIN);
     marginRow = { gate: 'intentMargin', value: margin, threshold: t.GATE_INTENT_MARGIN, passed, outcome: passed ? 'pass' : 'disambiguate', decided: false };

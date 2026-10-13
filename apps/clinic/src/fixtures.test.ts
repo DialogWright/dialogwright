@@ -15,8 +15,8 @@ describe('the clinic fixtures', () => {
   const scenarios = loadScenarios(scenariosDir());
 
   it('has the clinic\'s corpus and scripted calls, every label one the clinic\'s questions can pick', () => {
-    expect(corpus).toHaveLength(265);
-    expect(scenarios).toHaveLength(94);
+    expect(corpus).toHaveLength(266);
+    expect(scenarios).toHaveLength(96);
     // loadCorpus has checked each entry's slot labels (App.testing.checkCorpusSlots) and question labels.
     // A general question's topic is labelled by its question (subjectTopic), as a library topic slot's is; every other slot by its slot label.
     for (const slot of Object.keys(clinicApp.slots).filter((s) => s !== 'subject')) expect(corpus.some((e) => Object.hasOwn((e.slots ?? {}) as ClinicCorpusSlots, slot)), slot).toBe(true);

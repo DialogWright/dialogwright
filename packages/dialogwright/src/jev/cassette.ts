@@ -79,10 +79,14 @@ export const CASSETTE_MISS = 'cassette miss:';
  * request, and its miss fails the turn. With the screen separate either request can miss:
  * perception (the turn failed) or the injection screen, which fails open, so its miss leaves a turn
  * that looks answered and says so only in `screen.error`. A cassette is recorded in one screen mode
- * and replays only in that mode: the two make different requests.
+ * and replays only in that mode: the two make different requests. A turn's second request (its
+ * follow-up) can miss as well.
  */
-export function isCassetteMiss(record: Pick<TraceRecord, 'source' | 'error' | 'screen'>): boolean {
+export function isCassetteMiss(record: Pick<TraceRecord, 'source' | 'error' | 'screen' | 'followUp'>): boolean {
   if (record.screen?.error?.startsWith(CASSETTE_MISS)) return true;
+  // A turn's second request (TraceRecord.followUp) fails soft, as the screen does: its miss leaves a
+  // turn that went on without it, and says so only in `followUp.error`.
+  if (record.followUp?.error?.message.startsWith(CASSETTE_MISS) === true) return true;
   return record.source === 'error' && record.error !== null && record.error.message.startsWith(CASSETTE_MISS);
 }
 

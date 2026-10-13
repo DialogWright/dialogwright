@@ -12,7 +12,7 @@ export interface RegressSummaryInput {
   /** known-gap corpus entries (CorpusEntry.knownGap) the run tolerates, and how many of them drifted; omitted for a run that tolerates none */
   knownGaps?: { total: number; drifted: number };
   /** every turn the run made; only answered turns count toward cost and latency */
-  records: Pick<TraceRecord, 'source' | 'timing' | 'usage' | 'error' | 'screen'>[];
+  records: Pick<TraceRecord, 'source' | 'timing' | 'usage' | 'error' | 'screen' | 'followUp'>[];
 }
 
 // Turns that never produced an answer. Inverted (rather than an allow-list of answered
@@ -35,7 +35,9 @@ export function formatRegressSummary(i: RegressSummaryInput): string {
   if (priced.length > 0) {
     const cost = priced.reduce((s, r) => s + r.usage.costUsd, 0);
     const tokens = priced.reduce((s, r) => s + r.usage.inputTokens, 0);
-    lines.push(`cost usd   ${cost.toFixed(4)}  (${priced.length} requests, ${String(tokens).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} input tokens)${tag}`);
+    // A turn's second request (TraceRecord.followUp) is a request of its own; its usage is in the turn's.
+    const requests = priced.length + priced.filter((r) => r.followUp !== undefined && r.followUp.error === null).length;
+    lines.push(`cost usd   ${cost.toFixed(4)}  (${requests} requests, ${String(tokens).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} input tokens)${tag}`);
   }
   if (answered.length > 0) {
     const latencies = answered.map((r) => r.timing.askMs);
@@ -51,6 +53,9 @@ export function formatRegressSummary(i: RegressSummaryInput): string {
   // did come back (SCREEN_UNANSWERED) is the screen's own, and counted here.
   const screenErrors = i.records.filter((r) => r.screen?.error && (!r.screen.inline || r.screen.error === SCREEN_UNANSWERED) && !r.screen.error.startsWith(CASSETTE_MISS));
   if (screenErrors.length > 0) lines.push(`screen errors ${screenErrors.length} (first: ${screenErrors[0]!.screen!.error})`);
+  // A follow-up fails soft (the turn went on without it); its cassette misses are counted above.
+  const followUpErrors = i.records.filter((r) => r.followUp?.error && !r.followUp.error.message.startsWith(CASSETTE_MISS));
+  if (followUpErrors.length > 0) lines.push(`follow-up errors ${followUpErrors.length} (first: ${followUpErrors[0]!.followUp!.error!.message})`);
   return lines.join('\n');
 }
 
@@ -61,7 +66,7 @@ export interface TriageInput {
   scenariosFailing: readonly string[];
   /** scripted calls that differ from the baseline in a way `cosmeticDrift` does not allow, failing or not */
   scenariosDiffering: readonly string[];
-  records: Pick<TraceRecord, 'source' | 'error' | 'screen'>[];
+  records: Pick<TraceRecord, 'source' | 'error' | 'screen' | 'followUp'>[];
 }
 
 const counted = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
