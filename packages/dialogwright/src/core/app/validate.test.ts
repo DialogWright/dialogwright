@@ -194,6 +194,10 @@ describe('validateApp', () => {
 
   it('names a voice block that names a locale the app does not speak, or a carrier the engine does not know', () => {
     expect(() => validateApp({ ...copy(), voice: { numbers: { '+15555550142': 'es' } } })).toThrow(/voice\.numbers.*"es"/);
+    // A number is written out (E.164) or named by its variable (env.<NAME>), as in app.yaml.
+    expect(() => validateApp({ ...copy(), voice: { numbers: { 'env.SPANISH_LINE': 'en-US', '+15555550142': 'en-US' } } })).not.toThrow();
+    expect(() => validateApp({ ...copy(), voice: { numbers: { '555-0142': 'en-US' } } })).toThrow(/voice\.numbers names "555-0142", which is neither an E\.164 number nor env\.<NAME>/);
+    expect(() => validateApp({ ...copy(), voice: { numbers: { 'env.spanish': 'en-US' } } })).toThrow(/voice\.numbers names "env\.spanish"/);
     expect(() => validateApp({ ...copy(), voice: { locales: { es: {} } } })).toThrow(/voice\.locales.*"es"/);
     expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { acme: 'x' } } } } })).toThrow(/unknown voice provider "acme"/);
     expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { voices: { twilio: 'x' } } } } })).not.toThrow();

@@ -27,6 +27,7 @@ import type { App } from '../core/app/types';
 import type { VoiceProviderId } from '../channel/voiceProviders';
 import { buildHintsFrom } from './hints';
 import { DEFAULT_LOCALE, localesOf, speechLanguagesOf } from '../core/locale';
+import { localeOfNumber, numberLocalesOf, type NumberLocale } from '../core/numberLocales';
 
 /**
  * One app's part of the webhooks: the app, its hints, its start parameters, its transfer targets and its
@@ -41,6 +42,12 @@ export interface HttpApp {
   readonly audit?: AuditSink;
   /** Where a call put through with no transfer target goes: on a host, the app's HANDOFF_NUMBER; absent, the server's (config). */
   readonly handoffNumber?: string;
+  /**
+   * The numbers a call starts in a locale by (app.yaml's voice.numbers), read as the server started
+   * (transfer.ts voiceNumbersFrom: each env.<NAME> from the app's own settings). Absent, the numbers
+   * voice.numbers writes out, and none of its variables.
+   */
+  readonly numbers?: readonly NumberLocale[];
 }
 
 /**
@@ -360,12 +367,15 @@ export function telnyxUnvoicedLocales(app: App, deploymentVoice: string | null |
   return without.length === 0 || without.length === locales.length ? [] : without;
 }
 
-/** The locale a call starts in: the app's voice.numbers for the number called, else the app's default. Undefined for an app without locales. */
-export function startLocale(app: App, to: string | undefined): string | undefined {
+/**
+ * The locale a call starts in: the app's voice.numbers for the number called (`numbers`, read as the
+ * server started; absent, the numbers it writes out), compared as a called condition compares it, else
+ * the app's default. Undefined for an app without locales.
+ */
+export function startLocale(app: App, to: string | undefined, numbers?: readonly NumberLocale[]): string | undefined {
   if (!app.locales) return undefined;
-  const numbers = app.voice?.numbers;
-  const byNumber = to !== undefined && numbers && Object.hasOwn(numbers, to) ? numbers[to] : undefined;
-  return byNumber ?? app.locales.default;
+  const read = numbers ?? numberLocalesOf(app.voice, () => undefined).numbers;
+  return localeOfNumber(read, to) ?? app.locales.default;
 }
 
 /**
@@ -771,7 +781,7 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they
         // come back with the setup; on a host, the app's id too, so the setup starts the call in the same app;
         // and, for a caller who withheld their number, that they did, so the setup's copies of it are taken out.
-        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...withheldEcho(params) }, s);
+        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to, s.numbers) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...withheldEcho(params) }, s);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }

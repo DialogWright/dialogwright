@@ -552,9 +552,22 @@ describe('defineApp: the voice on the phone, by locale and by number called (voi
     ]);
   });
 
-  it('voice: a number that is not E.164', () => {
+  it('voice: a number that is neither E.164 nor env.<NAME>', () => {
+    const FIX = 'write env.<NAME> (capitals, digits and underscores) and set the variable to the number in the app\'s settings (.env), or write the number with + and the country code, in quotes ("+15555550142")';
     expect(loadProblems(withVoice('  numbers:', '    "555-0142": es'))).toEqual([
-      'app.yaml:24:5  voice.numbers["555-0142"]  the key "555-0142" must be an E.164 number like +15555550142  ->  write the number with + and the country code, in quotes ("+15555550142")',
+      `app.yaml:24:5  voice.numbers["555-0142"]  the key "555-0142" must be an E.164 number like +15555550142, or env.<NAME>  ->  ${FIX}`,
+    ]);
+    expect(loadProblems(withVoice('  numbers:', '    env.spanish_line: es'))).toEqual([
+      `app.yaml:24:5  voice.numbers["env.spanish_line"]  the key "env.spanish_line" must be an E.164 number like +15555550142, or env.<NAME>  ->  ${FIX}`,
+    ]);
+  });
+
+  it('voice: a number from the app\'s settings (env.<NAME>), beside a number written out, kept as written for the server to read', () => {
+    const app = defineApp(withVoice('  numbers:', '    env.SPANISH_LINE: es', '    "+15555550142": en-US'), libraryCode);
+    expect(app.voice?.numbers).toEqual({ 'env.SPANISH_LINE': 'es', '+15555550142': 'en-US' });
+    // A locale it does not have is refused at the key, as for a number written out.
+    expect(problems(libraryCode, withVoice('  numbers:', '    env.SPANISH_LINE: fr'))).toEqual([
+      'app.yaml:24:23  voice.numbers["env.SPANISH_LINE"]  "fr" is not a locale of this app  ->  add locale/fr/ or use one of en-US, es',
     ]);
   });
 

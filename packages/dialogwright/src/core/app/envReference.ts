@@ -17,14 +17,18 @@ export interface EnvReference {
   readonly path: string;
   readonly variable: string;
   readonly file?: string;
-  /** `called`: the reference is a `called` condition's (the number callers dial), found by where it is in the file's structure, never by its key's name. */
+  /**
+   * `called`: the reference is a number callers dial, a `called` condition's or a key of app.yaml's
+   * voice.numbers, found by where it is in the file's structure, never by its key's name.
+   */
   readonly kind?: 'called';
 }
 
 /**
- * The paths (dotted, as envReferencesIn writes them) of every `called` condition's references in a parsed
- * app.yaml (its transfer targets' `when`) or routes.yaml (each point's rules' `when`), read from the
- * file's structure: a key named `called` anywhere else (a startParameters entry) is not one.
+ * The paths (dotted, as envReferencesIn writes them) of every reference to a number callers dial in a
+ * parsed app.yaml (its transfer targets' `when`, and its voice.numbers) or routes.yaml (each point's
+ * rules' `when`), read from the file's structure: a key named `called` anywhere else (a startParameters
+ * entry) is not one.
  */
 export function calledReferencePaths(file: 'app.yaml' | 'routes.yaml', value: unknown): Set<string> {
   const out = new Set<string>();
@@ -44,6 +48,8 @@ export function calledReferencePaths(file: 'app.yaml' | 'routes.yaml', value: un
   if (file === 'app.yaml') {
     const transfer = value.transfer;
     if (isMap(transfer)) fromRules(transfer.targets, 'transfer.targets');
+    // voice.numbers' keys are numbers callers dial too: env.<NAME> there names one (envReferencesIn).
+    if (isMap(value.voice) && isMap(value.voice.numbers)) out.add(NUMBERS_PATH);
   } else {
     fromRules(value.start, 'start');
     fromRules(value.afterIdentity, 'afterIdentity');
@@ -52,13 +58,28 @@ export function calledReferencePaths(file: 'app.yaml' | 'routes.yaml', value: un
   return out;
 }
 
-/** Every `env.<NAME>` string in a parsed YAML document (app.yaml), in document order, with its path. */
+/** Where app.yaml's numbers by locale are (voice.numbers), whose keys may name a variable: the path its references are given. */
+const NUMBERS_PATH = 'voice.numbers';
+
+/**
+ * Every `env.<NAME>` string in a parsed YAML document (app.yaml), in document order, with its path: each
+ * value, and each key of app.yaml's voice.numbers (`env.SPANISH_LINE: es`, at the path `voice.numbers`),
+ * the one map whose keys may name a variable.
+ */
 export function envReferencesIn(value: unknown, path: readonly string[] = []): EnvReference[] {
   if (typeof value === 'string') {
     const variable = envVariableOf(value);
     return variable === null ? [] : [{ path: path.join('.'), variable }];
   }
   if (Array.isArray(value)) return value.flatMap((v, i) => envReferencesIn(v, [...path, String(i)]));
-  if (typeof value === 'object' && value !== null) return Object.entries(value).flatMap(([k, v]) => envReferencesIn(v, [...path, k]));
+  if (typeof value === 'object' && value !== null) {
+    if (path.join('.') === NUMBERS_PATH) {
+      return Object.keys(value).flatMap((k) => {
+        const variable = envVariableOf(k);
+        return variable === null ? [] : [{ path: NUMBERS_PATH, variable }];
+      });
+    }
+    return Object.entries(value).flatMap(([k, v]) => envReferencesIn(v, [...path, k]));
+  }
   return [];
 }

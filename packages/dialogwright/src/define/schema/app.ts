@@ -5,9 +5,13 @@ import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
 import { ENV_REFERENCE } from '../../core/app/envReference';
+import { NUMBER_KEY } from '../../core/numberLocales';
 import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
+
+/** A key of voice.numbers: a number written out (E.164) or env.<NAME>. */
+const NUMBER_LOCALE_KEY = new RegExp(`(?:${NUMBER_KEY.source})|(?:${ENV_REFERENCE.source})`);
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
@@ -242,9 +246,19 @@ const voice = z
         `A caller who had not finished: when the agent's reply to a final prompt is interrupted within this many milliseconds of starting, the next final prompt continues the one before it, and the turn runs on the words joined, as if they had been said at once, with the cut-off reply undone. 0 turns it off. Default ${DEFAULT_CONTINUE_WITHIN_MS}.`,
       ),
     numbers: z
-      .record(matching(/^\+\d{8,15}$/, 'must be an E.164 number like +15555550142', 'write the number with + and the country code, in quotes ("+15555550142")'), localeTag())
+      .record(
+        matching(
+          NUMBER_LOCALE_KEY,
+          'must be an E.164 number like +15555550142, or env.<NAME>',
+          'write env.<NAME> (capitals, digits and underscores) and set the variable to the number in the app\'s settings (.env), or write the number with + and the country code, in quotes ("+15555550142")',
+        ),
+        localeTag(),
+      )
       .optional()
-      .describe('The locale a call starts in, by the number called (E.164, in quotes). A number not listed starts in the app\'s default locale. Each locale must be one of the app\'s.'),
+      .describe(
+        'The locale a call starts in, by the number called: env.<NAME>, the number in the app\'s settings (.env) as every other number in its YAML, or the number written out (E.164, in quotes). ' +
+          'Chosen as the call starts, before any route. The number called is compared as a called condition compares it. A number not listed starts in the app\'s default locale. Each locale must be one of the app\'s.',
+      ),
     locales: z
       .record(localeTag(), voiceLocale)
       .optional()

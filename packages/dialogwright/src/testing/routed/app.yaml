@@ -24,15 +24,18 @@ wording:
   addressee: the Example Service Line
 
 # The numbers a call comes with, kept for the app's code and the routes: the caller's (the vip
-# predicate reads it) and the number called (the Spanish line's route reads it).
+# predicate reads it) and the number called (the engine's tests' variants route on it).
 callerNumber:
   use: hint
   called: true
 
-# The Spanish line on the phone: spoken and heard as es-US (a carrier's language element needs the
-# region: Twilio refuses a bare "es"), with a recognizer of its own on Twilio, since the server's default
-# there, Deepgram flux, hears English only.
+# A call is answered in English; a call to the Spanish line starts in Spanish, before any route, its
+# number in the settings (SPANISH_LINE), never here. On the phone Spanish is spoken and heard as es-US (a
+# carrier's language element needs the region: Twilio refuses a bare "es"), with a recognizer of its own
+# on Twilio, since the server's default there, Deepgram flux, hears English only.
 voice:
+  numbers:
+    env.SPANISH_LINE: es
   locales:
     es:
       tts: es-US

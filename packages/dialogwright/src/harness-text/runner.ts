@@ -25,6 +25,7 @@ import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { matchLocale } from '../core/locale';
+import { localeOfNumber, numberLocalesOf } from '../core/numberLocales';
 
 /** How a runner runs one turn: runTurn, unless a test runs each one another way (testing/sessionRoundTrip.ts). */
 export type TurnRunner = typeof runTurn;
@@ -493,8 +494,9 @@ export interface Scenario {
   callerNumber?: string;
   /**
    * The number the call is to (e.g. "+15555550100"): the start event carries it
-   * (SessionStart.calledNumber) when the app keeps it (app.yaml's callerNumber `called: true`).
-   * Without it, and on a chat, the call has none.
+   * (SessionStart.calledNumber) when the app keeps it (app.yaml's callerNumber `called: true`), and a
+   * call to a number app.yaml's voice.numbers lists starts in its locale, as on the phone (unless
+   * `locale` names one). Without it, and on a chat, the call has none.
    */
   calledNumber?: string;
   /**
@@ -517,8 +519,9 @@ export interface Scenario {
    */
   todayIso?: string;
   /**
-   * The environment the call's `called` conditions read (`env.<NAME>`, TurnContext.env), by variable
-   * (e.g. `{ "SPANISH_LINE": "+15555550188" }`). Without it, the run's own (the process's, in a regress).
+   * The environment the call's `called` conditions and app.yaml's voice.numbers read (`env.<NAME>`,
+   * TurnContext.env), by variable (e.g. `{ "SPANISH_LINE": "+15555550188" }`). Without it, the run's own
+   * (the process's, in a regress).
    */
   env?: Record<string, string>;
   steps: ScenarioStep[];
@@ -571,6 +574,17 @@ function dateAt(ms: number): string {
   return localDateIso(ms, getApp(defaultAppId()).hours?.timezone ?? 'UTC');
 }
 
+/**
+ * The locale a scripted call to `called` starts in by the app's voice.numbers (core/numberLocales.ts),
+ * each env.<NAME> read from `env`; undefined for no number, an app without locales, or a number not
+ * listed, so the call starts in the default as it always has.
+ */
+function numberLocale(app: App, called: string | undefined, env: RunOptions['env']): string | undefined {
+  if (called === undefined || !app.locales || app.voice?.numbers === undefined) return undefined;
+  const { numbers } = numberLocalesOf(app.voice, (name) => (env !== undefined && Object.hasOwn(env, name) ? env[name] : undefined));
+  return localeOfNumber(numbers, called);
+}
+
 export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions): Promise<ScenarioRun> {
   let failNext = false;
   const client: JevClient = {
@@ -585,8 +599,11 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(o)(), scenario.as);
   const turn = opts.turn ?? runTurn;
-  // A call's numbers only: a chat has none (SessionStart.callerNumber, calledNumber).
-  const calling = withCallerNumber(startEvent({}, scenario.locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
+  // A call's numbers only: a chat has none (SessionStart.callerNumber, calledNumber). A call to a number
+  // app.yaml's voice.numbers lists starts in its locale, as the server's start document asks
+  // (server/http.ts startLocale), its env.<NAME> read from the call's env; a scenario's own `locale` wins.
+  const locale = scenario.locale ?? (session.caps.speech ? numberLocale(appOf(session), scenario.calledNumber, o.env) : undefined);
+  const calling = withCallerNumber(startEvent({}, locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
   const start = withCallData(withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined), scenario.callData);
   const setup = await turn(session, start, o);
   runs.push(setup);

@@ -4,7 +4,8 @@ import { createServer, request, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clipName, createRequestHandler, decideAction, decideActionTwiml, telnyxUnvoicedLocales, type HttpDeps } from './http';
+import { clipName, createRequestHandler, decideAction, decideActionTwiml, startLocale, telnyxUnvoicedLocales, type HttpDeps } from './http';
+import { voiceNumbersFrom } from './transfer';
 import { telnyxProvider } from './voice/telnyx';
 import { twilioProvider } from './voice/twilio';
 import { loadConfig } from './config';
@@ -337,6 +338,22 @@ describe('a call\'s languages (voice.numbers, voice.locales)', () => {
     expect(r.text).not.toContain('" transcriptionProvider="Deepgram" speechModel="flux" partialPrompts');
     // The legacy /voice names the same languages.
     expect((await post(base, '/voice', { CallSid: 'CA2', To: SPANISH_NUMBER })).text).toContain('<Parameter name="locale" value="es"/>');
+  });
+
+  it('starts a call to a number from the settings (voice.numbers\' env.<NAME>, read as the server started) in its locale, the number compared as a called condition compares it', async () => {
+    const app: App = { ...bilingual, voice: { ...bilingual.voice, numbers: { 'env.SPANISH_LINE': 'es' } } };
+    const numbers = voiceNumbersFrom(app, { SPANISH_LINE: '+15555550188' });
+    const base = await listen({ ...deps(), app, numbers });
+    for (const to of ['+15555550188', '15555550188', 'sip:+15555550188@pbx.example.com']) {
+      expect((await post(base, '/voice/twilio', { CallSid: 'CA1', To: to })).text).toContain('<Parameter name="locale" value="es"/>');
+    }
+    // The number written out before is no longer listed, and another number starts in the default.
+    expect((await post(base, '/voice/twilio', { CallSid: 'CA2', To: SPANISH_NUMBER })).text).toContain('<Parameter name="locale" value="en-US"/>');
+    // startLocale itself: the numbers read, else those written out (a variable is read only at the server's start).
+    expect(startLocale(app, '+15555550188', numbers)).toBe('es');
+    expect(startLocale(app, '+15555550188')).toBe('en-US');
+    expect(startLocale(bilingual, SPANISH_NUMBER)).toBe('es');
+    expect(startLocale(bilingual, undefined)).toBe('en-US');
   });
 
   it('starts any other call in the default locale, with the app\'s voice for it and the app\'s hints', async () => {

@@ -57,3 +57,30 @@ describe('the languages at start', () => {
     expect((await startLogs(routedApp, {}, lines)).filter((l) => l.includes('the locale es'))).toEqual([]);
   });
 });
+
+describe('the numbers by language at start (voice.numbers)', () => {
+  const desks = { MAIN_LINE: '+15555550100', VIP_DESK: '+15555550101', AFTER_HOURS_DESK: '+15555550102' };
+
+  it('names which locale each number starts in, the number masked, and never says it whole', async () => {
+    const logs = await startLogs(routedApp, {}, { ...desks, SPANISH_LINE: '+15555550188' });
+    expect(logs).toContain('numbers by language: …0188 (SPANISH_LINE) starts in es; any other number starts in en-US');
+    expect(logs.join('\n')).not.toContain('5555550188');
+    // No called condition reads it: the language is voice.numbers', not a route's.
+    expect(logs.some((l) => l.startsWith('called numbers:'))).toBe(false);
+  });
+
+  it('refuses to start with the variable unset or not E.164, with the fix', async () => {
+    await expect(startLogs(routedApp, {}, desks)).rejects.toThrow("app.yaml's voice.numbers reads SPANISH_LINE, which is not set: set SPANISH_LINE in the app's .env to the E.164 number callers dial, or take it out of voice.numbers");
+    await expect(startLogs(routedApp, {}, { ...desks, SPANISH_LINE: 'sip:es@pbx.example.com' })).rejects.toThrow("SPANISH_LINE (read by app.yaml's voice.numbers) is not an E.164 number");
+  });
+
+  it('starts a call to the number in its locale: the start document asks for it', async () => {
+    await startLogs(routedApp, {}, { ...desks, SPANISH_LINE: '+15555550188' });
+    const answer = async (to: string): Promise<string> => {
+      const res = await fetch(`http://127.0.0.1:${running!.port}/voice/twilio`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ CallSid: 'CA0000000000000000000000000000es01', From: '+15555550100', To: to }).toString() });
+      return res.text();
+    };
+    expect(await answer('+15555550188')).toContain('<Parameter name="locale" value="es"/>');
+    expect(await answer('+15555550100')).toContain('<Parameter name="locale" value="en-US"/>');
+  });
+});

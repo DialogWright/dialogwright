@@ -453,11 +453,11 @@
           "maximum": 2000
         },
         "numbers": {
-          "description": "The locale a call starts in, by the number called (E.164, in quotes). A number not listed starts in the app's default locale. Each locale must be one of the app's.",
+          "description": "The locale a call starts in, by the number called: env.<NAME>, the number in the app's settings (.env) as every other number in its YAML, or the number written out (E.164, in quotes). Chosen as the call starts, before any route. The number called is compared as a called condition compares it. A number not listed starts in the app's default locale. Each locale must be one of the app's.",
           "type": "object",
           "propertyNames": {
             "type": "string",
-            "pattern": "^\\+\\d{8,15}$"
+            "pattern": "(?:^\\+\\d{8,15}$)|(?:^env\\.([A-Z][A-Z0-9_]*)$)"
           },
           "additionalProperties": {
             "type": "string",

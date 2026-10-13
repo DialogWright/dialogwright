@@ -161,6 +161,19 @@ describe('pnpm diagnose', () => {
       ]);
     });
 
+    it('reads voice.numbers\' keys too: a number in the settings (env.<NAME>) is E.164, as a called condition\'s, and the server will not start without it', async () => {
+      const yaml = 'id: lines\nvoice:\n  numbers:\n    env.SPANISH_LINE: es\n    "+15555550142": es\n    env.FRENCH_LINE: fr\n    env.GERMAN_LINE: de\n';
+      const dir = appDir(yaml);
+      const env = { ...goodEnv(dir), SPANISH_LINE: '+15555550188', GERMAN_LINE: '555-0189' };
+      const results = (await runDoctor({ env, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(results).toEqual([
+        { id: 'variables', status: 'ok', message: "app.yaml's voice.numbers reads SPANISH_LINE: set, a phone number (the number called is compared with it)" },
+        { id: 'variables', status: 'fail', message: "app.yaml's voice.numbers reads FRENCH_LINE, which is not set: the server will not start", fix: 'set FRENCH_LINE in the settings file' },
+        { id: 'variables', status: 'fail', message: "app.yaml's voice.numbers reads GERMAN_LINE: set, but it is not an E.164 number: the server will not start", fix: 'set GERMAN_LINE to the number callers dial, like +15551234567' },
+      ]);
+      expect(JSON.stringify(results)).not.toContain('5555550188');
+    });
+
     it('holds a transfer target to an E.164 number or a sip: URI, warns of a 555 one, and never says the value', async () => {
       const yaml = 'id: lines\ntransfer:\n  targets:\n    - when: { reason: emergency }\n      to: env.DESK_SIP\n    - when: { reason: security }\n      to: env.SECURITY_LINE\n    - when: { reason: frustrated }\n      to: env.BAD_LINE\n  default: env.MAIN_LINE\n';
       const dir = appDir(yaml);

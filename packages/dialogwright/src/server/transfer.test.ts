@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { callbackApp } from '../testing/callback/app';
-import { calledVariablesFrom, defaultTarget, describeDropped, dialPlan, maskTarget, parseHandoff, recordedPlan, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
+import { calledVariablesFrom, describeVoiceNumbers, voiceNumbersFrom, defaultTarget, describeDropped, dialPlan, maskTarget, parseHandoff, recordedPlan, targetNumber, transferTargetsFrom, type ServerTransfer } from './transfer';
 import { dialVerb, fitHeaders, SIP_HEADERS_MAX, sipUriWithHeaders } from './voice/dial';
 import { decideAction, type HttpDeps } from './http';
 import { twilioProvider } from './voice/twilio';
@@ -37,14 +37,45 @@ function transfer(): ServerTransfer {
 
 describe('the numbers a called condition reads, read as the server starts', () => {
   it('names each, and stops the server on one unset or not E.164', async () => {
+    const { routedVariants, SPANISH_BY_ROUTE } = await import('../testing/routed/variant');
+    const variants = routedVariants();
+    try {
+      // The routed fixture's Spanish line by a route (a called condition), as it was before voice.numbers took a variable.
+      const app = variants.variant(SPANISH_BY_ROUTE);
+      // The values checked, by name, and nothing else of the environment.
+      const called = calledVariablesFrom(app, { SPANISH_LINE: ' +15555550188 ', ANTHROPIC_API_KEY: 'not-a-real-key' });
+      expect(called).toEqual({ SPANISH_LINE: '+15555550188' });
+      expect(Object.isFrozen(called)).toBe(true);
+      expect(() => calledVariablesFrom(app, {})).toThrow("a called condition (routes.yaml or app.yaml's transfer) reads SPANISH_LINE, which is not set");
+      expect(() => calledVariablesFrom(app, { SPANISH_LINE: 'sip:es@pbx.example.com' })).toThrow('SPANISH_LINE (read by a called condition) is not an E.164 number');
+      expect(calledVariablesFrom(callbackApp, {})).toEqual({});
+    } finally {
+      variants.remove();
+    }
+  });
+});
+
+describe('the numbers a call starts in a locale by (voice.numbers), read as the server starts', () => {
+  it('reads each env.<NAME> from the app\'s environment and keeps a number written out, in the order written, and stops the server on one unset or not E.164', async () => {
     const { routedApp } = await import('../testing/routed/app');
-    // The values checked, by name, and nothing else of the environment.
-    const called = calledVariablesFrom(routedApp, { SPANISH_LINE: ' +15555550188 ', ANTHROPIC_API_KEY: 'not-a-real-key' });
-    expect(called).toEqual({ SPANISH_LINE: '+15555550188' });
-    expect(Object.isFrozen(called)).toBe(true);
-    expect(() => calledVariablesFrom(routedApp, {})).toThrow("a called condition (routes.yaml or app.yaml's transfer) reads SPANISH_LINE, which is not set");
-    expect(() => calledVariablesFrom(routedApp, { SPANISH_LINE: 'sip:es@pbx.example.com' })).toThrow('SPANISH_LINE (read by a called condition) is not an E.164 number');
-    expect(calledVariablesFrom(callbackApp, {})).toEqual({});
+    // The fixture's Spanish line is voice.numbers' env.SPANISH_LINE, and no called condition reads it any more.
+    expect(calledVariablesFrom(routedApp, {})).toEqual({});
+    const numbers = voiceNumbersFrom(routedApp, { SPANISH_LINE: ' +15555550188 ', ANTHROPIC_API_KEY: 'not-a-real-key' });
+    expect(numbers).toEqual([{ number: '+15555550188', variable: 'SPANISH_LINE', locale: 'es' }]);
+    expect(Object.isFrozen(numbers)).toBe(true);
+    // The server's start line: each number masked, its variable, its locale.
+    expect(describeVoiceNumbers(numbers)).toBe('…0188 (SPANISH_LINE) starts in es');
+    expect(() => voiceNumbersFrom(routedApp, {})).toThrow("app.yaml's voice.numbers reads SPANISH_LINE, which is not set: set SPANISH_LINE in the app's .env to the E.164 number callers dial, or take it out of voice.numbers");
+    expect(() => voiceNumbersFrom(routedApp, { SPANISH_LINE: '  ' })).toThrow('reads SPANISH_LINE, which is not set');
+    expect(() => voiceNumbersFrom(routedApp, { SPANISH_LINE: '555-0188' })).toThrow('SPANISH_LINE (read by app.yaml\'s voice.numbers) is not an E.164 number');
+    // A number written out is kept as it is, beside a variable, in the order written; an app with none has none.
+    const both = { voice: { numbers: { '+15555550142': 'es', 'env.FRENCH_LINE': 'fr' } } };
+    expect(voiceNumbersFrom(both, { FRENCH_LINE: '+15555550143' })).toEqual([{ number: '+15555550142', locale: 'es' }, { number: '+15555550143', variable: 'FRENCH_LINE', locale: 'fr' }]);
+    expect(describeVoiceNumbers(voiceNumbersFrom(both, { FRENCH_LINE: '+15555550143' }))).toBe('…0142 starts in es, …0143 (FRENCH_LINE) starts in fr');
+    expect(voiceNumbersFrom(callbackApp, {})).toEqual([]);
+    // One number in two locales is refused; in the same locale twice it is harmless.
+    expect(() => voiceNumbersFrom(both, { FRENCH_LINE: '+15555550142' })).toThrow("app.yaml's voice.numbers starts …0142 in es and …0142 (FRENCH_LINE), the same number, in fr: give each locale a number of its own");
+    expect(voiceNumbersFrom({ voice: { numbers: { '+15555550142': 'es', 'env.SPANISH_LINE': 'es' } } }, { SPANISH_LINE: '+15555550142' })).toHaveLength(2);
   });
 });
 

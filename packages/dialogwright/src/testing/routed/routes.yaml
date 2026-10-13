@@ -13,20 +13,11 @@ start:
   - when: { named: vip }
     then: handoff
     reason: vip
-  # An outage on a call to the Spanish line: the notice and the switch both, in Spanish. The outage
-  # rule below goes on without switching, so on its own it would take this call in English.
-  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]
-    say: outage_notice
-    then: locale
-    locale: es
-  # An outage in the caller's region (the start hook's fact): the notice, then the greeting.
+  # An outage in the caller's region (the start hook's fact): the notice, then the greeting. A call to
+  # the Spanish line started in Spanish (app.yaml's voice.numbers), so it hears both in Spanish.
   - when: { fact: outage, is: true }
     say: outage_notice
     then: continue
-  # A call to the Spanish line goes on in Spanish.
-  - when: { called: env.SPANISH_LINE }
-    then: locale
-    locale: es
   - else: continue
 
 afterIdentity:

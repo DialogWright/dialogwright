@@ -2,6 +2,7 @@ import type { App } from '../core/app/types';
 import { transferHeaderNames, transferVariables, HEADER_NAME } from '../core/transfer';
 import { envVariableOf } from '../core/app/envReference';
 import { calledVariables } from '../core/routes';
+import { clashingNumbers, numberLocalesOf, type NumberLocale } from '../core/numberLocales';
 import { writableValue } from '../channel/callData';
 import { maskNumber } from '../channel/maskByName';
 import { fitHeaders, isSipTarget, SIP_URI_MAX, type DialTarget } from './voice/dial';
@@ -84,6 +85,36 @@ export function calledVariablesFrom(app: Pick<App, 'routes' | 'transfer'> | unde
   }
   // The values checked here, frozen: what every turn of every call reads (TurnContext.env), and nothing else of the environment.
   return Object.freeze(values);
+}
+
+/**
+ * The numbers a call starts in a locale by (app.yaml's voice.numbers, core/numberLocales.ts), read as the
+ * server starts: a number written out as it is, `env.<NAME>` from `env` (on a host, the app's own). One
+ * unset or blank, or that is not an E.164 number, stops the server with the fix, as a called condition's
+ * does, since calls to that line would start in the default language; so do two entries that are one
+ * number and start in different locales. Frozen, in the order written; none for an app that lists none.
+ */
+export function voiceNumbersFrom(app: Pick<App, 'voice'> | undefined, env: Env): readonly NumberLocale[] {
+  const { numbers, unset, invalid } = numberLocalesOf(app?.voice, (name) => env[name]);
+  for (const key of invalid) throw new Error(`app.yaml's voice.numbers names ${JSON.stringify(key)}, which is neither an E.164 number nor env.<NAME>: write env.<NAME> and set the variable to the number callers dial`);
+  for (const variable of unset) throw new Error(`app.yaml's voice.numbers reads ${variable}, which is not set: set ${variable} in the app's .env to the E.164 number callers dial, or take it out of voice.numbers`);
+  for (const n of numbers) {
+    if (n.variable !== undefined && !E164.test(n.number)) throw new Error(`${n.variable} (read by app.yaml's voice.numbers) is not an E.164 number: set it to the number callers dial, like +15551234567`);
+  }
+  for (const [a, b] of clashingNumbers(numbers)) {
+    throw new Error(`app.yaml's voice.numbers starts ${numberName(a)} in ${a.locale} and ${numberName(b)}, the same number, in ${b.locale}: give each locale a number of its own`);
+  }
+  return Object.freeze(numbers.map((n) => Object.freeze({ ...n })));
+}
+
+/** A number of voice.numbers as the server's log names it: its last four, and the variable it was read from. */
+export function numberName(n: NumberLocale): string {
+  return n.variable === undefined ? maskNumber(n.number) : `${maskNumber(n.number)} (${n.variable})`;
+}
+
+/** The server's start line for voice.numbers: which locale each number starts in, each number masked. Empty for none. */
+export function describeVoiceNumbers(numbers: readonly NumberLocale[]): string {
+  return numbers.map((n) => `${numberName(n)} starts in ${n.locale}`).join(', ');
 }
 
 /** A handoff as the carrier posted it back (the end frame's handoff data, channel/relay/frames.ts endFrame). */

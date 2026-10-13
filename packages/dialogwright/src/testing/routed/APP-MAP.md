@@ -89,6 +89,10 @@ flowchart LR
   a_setUpPlan --> r_setUpPlan
 ```
 
+## The language a call starts in
+
+By the number called (app.yaml's `voice.numbers`), as the call starts, before any route: a call to `SPANISH_LINE` starts in `es`. Any other number starts in `en-US`.
+
 ## Routes
 
 What the call does at its start, once the caller is verified, and after a form: the rules at each point are tried in order, the first whose conditions all hold is taken, and the else last. What the caller says still decides every other turn.
@@ -108,20 +112,12 @@ flowchart TD
   w_start_0 -->|"no"| w_start_1
   o_start_1[["handoff vip"]]
   w_start_1 -->|"yes"| o_start_1
-  w_start_2{"fact outage is true and the number called is SPANISH_LINE"}
+  w_start_2{"fact outage is true"}
   w_start_1 -->|"no"| w_start_2
-  o_start_2[["say outage_notice, locale es, then go on"]]
+  o_start_2[["say outage_notice, continue: the greeting"]]
   w_start_2 -->|"yes"| o_start_2
-  w_start_3{"fact outage is true"}
-  w_start_2 -->|"no"| w_start_3
-  o_start_3[["say outage_notice, continue: the greeting"]]
-  w_start_3 -->|"yes"| o_start_3
-  w_start_4{"the number called is SPANISH_LINE"}
-  w_start_3 -->|"no"| w_start_4
-  o_start_4[["locale es, then go on"]]
-  w_start_4 -->|"yes"| o_start_4
-  o_start_5[["else<br/>continue: the greeting"]]
-  w_start_4 -->|"no"| o_start_5
+  o_start_3[["else<br/>continue: the greeting"]]
+  w_start_2 -->|"no"| o_start_3
 ```
 
 ### Once the caller is verified

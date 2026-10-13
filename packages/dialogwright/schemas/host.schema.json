@@ -21,7 +21,7 @@
                 "description": "The app's folder, the one with app.yaml, from host.yaml's folder (for example apps/clinic)."
               },
               "env": {
-                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
+                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers, voice.numbers) are read from it, for that app alone.",
                 "type": "string",
                 "minLength": 1
               },
@@ -53,7 +53,7 @@
                 "description": "An app installed as a package (for example \"@acme/repairs-line\"): its folder is the package's, found from host.yaml's folder as Node finds it. The package has app.yaml and app.ts (or src/app.ts), as an app folder has."
               },
               "env": {
-                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.",
+                "description": "The app's own settings file, from host.yaml's folder. Default: .env in the app's folder. Only the variables the app's YAML names (env.<NAME>: its transfer targets, startParameters, called numbers, voice.numbers) are read from it, for that app alone.",
                 "type": "string",
                 "minLength": 1
               },

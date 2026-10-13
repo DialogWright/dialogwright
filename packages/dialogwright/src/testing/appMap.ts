@@ -381,6 +381,17 @@ function routesSection(app: App): string[] {
   return lines;
 }
 
+/**
+ * The language a call starts in by the number called (app.yaml's voice.numbers), chosen before any
+ * route: each number by its variable, or written out. Nothing for an app that lists none.
+ */
+function numbersSection(app: App): string[] {
+  const entries = Object.entries(app.voice?.numbers ?? {});
+  if (entries.length === 0) return [];
+  const each = entries.map(([key, locale]) => `a call to ${code(envVariableOf(key) ?? key)} starts in ${code(locale)}`);
+  return ['', '## The language a call starts in', '', `By the number called (app.yaml's \`voice.numbers\`), as the call starts, before any route: ${each.join('; ')}. Any other number starts in ${code(app.locales?.default ?? 'en-US')}.`];
+}
+
 /** The app map for `app`, as Markdown. */
 export function appMapText(app: App): string {
   const forms = Object.keys(app.forms);
@@ -411,6 +422,7 @@ export function appMapText(app: App): string {
   }
   const identity = identityDiagram(app);
   if (identity.length > 0) lines.push('', '## When an identity factor runs out', '', 'Identity asks its factors for whichever form needs them; each factor below does something other than hand off when it runs out of attempts.', '', '```mermaid', ...identity, '```');
+  lines.push(...numbersSection(app));
   lines.push(...routesSection(app));
   const transfer = transferDiagram(app);
   if (transfer.length > 0) lines.push('', '## Where a handoff goes', '', 'The transfer targets, tried in order: the first whose conditions all hold is taken, else the default. Each dials the number or SIP address in its environment variable; the headers go only to a SIP address, the chat data only on a web chat.', '', '```mermaid', ...transfer, '```');

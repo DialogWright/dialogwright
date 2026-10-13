@@ -238,8 +238,7 @@ describe('the routed fixture (src/testing/routed)', () => {
     expect(r.problems.map(formatProblem)).toEqual([]);
     expect((r.warnings ?? []).map(formatProblem)).toEqual([
       expect.stringContaining('routes.yaml:15:11  start[1].form  the route enters "check_status", which needs identity level 1, and at start the caller is at level 0: the form will ask for it first'),
-      expect.stringContaining('start[2].when[0].fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
-      expect.stringContaining('start[3].when.fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
+      expect.stringContaining('start[2].when.fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
     ]);
   });
 });
@@ -270,12 +269,18 @@ describe('review fixes: warnings', () => {
 });
 
 describe('the live findings: an ending\'s own goodbye, and routes taken first-match', () => {
-  /** The routed fixture's routes.yaml changed by `change`, checked whole. */
+  /**
+   * The routed fixture with its Spanish line by a route (SPANISH_BY_ROUTE: the rule that does both, the
+   * outage rule and the language rule, as the live call's fix wrote them), its routes.yaml changed by
+   * `change`, checked whole.
+   */
   async function routedWith(change: (text: string) => string): Promise<{ problems: string[]; warnings: string[] }> {
     const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    const { SPANISH_BY_ROUTE } = await import('../testing/routed/variant');
     const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
     scratch.push(dir);
     cpSync(ROUTED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    for (const [file, by] of Object.entries(SPANISH_BY_ROUTE)) writeFileSync(join(dir, file), by(readFileSync(join(dir, file), 'utf8')));
     const before = readFileSync(join(dir, 'routes.yaml'), 'utf8');
     const after = change(before);
     expect(after).not.toBe(before);

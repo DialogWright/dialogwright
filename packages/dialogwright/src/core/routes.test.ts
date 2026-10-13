@@ -11,7 +11,7 @@ import type { App } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import type { TurnResult } from './turn';
 import { ROUTED_DIR, routedApp, routedCode, type RoutedFacts } from '../testing/routed/app';
-import { line, replace, routedVariants } from '../testing/routed/variant';
+import { line, replace, routedVariants, SPANISH_BY_ROUTE } from '../testing/routed/variant';
 import { callbackApp } from '../testing/callback/app';
 import { sessionConditionFacts } from './routes';
 import { newSession } from './session';
@@ -100,15 +100,28 @@ describe('start', () => {
     expect(heard(chat)).toBe(`${CLOSED} Thanks for chatting with Example Service Line. Goodbye.`);
   });
 
-  it('an outage on the Spanish line: the rule that does both says the notice in Spanish and switches; the outage rule alone would have taken it in English', async () => {
+  it('an outage on the Spanish line: the call started in Spanish (voice.numbers, before any route), so the outage rule says its notice in Spanish', async () => {
     const spanish = { calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' }, callData: { region: 'north' } };
+    const t = last(await call(spanish));
+    expect(t.session.locale).toBe('es');
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'greeting', acks: [{ promptId: 'outage_notice' }] });
+    expect(heard(t)).toMatch(/^Sabemos que hay un problema con el servicio en su zona, y estamos trabajando en ello. Gracias por llamar/);
+    expect(t.routes).toEqual([{ point: 'start', rule: 3, outcome: 'continue', subjects: ['fact.outage'], at: 1 }]);
+    // No switch was asked for: the call was in Spanish from its start.
+    expect(t.actions.some((a) => a.type === 'set_language')).toBe(false);
+  });
+
+  it('by a route instead (a then: locale on the number called): the rule that does both says the notice in Spanish and switches; the outage rule alone would have taken it in English', async () => {
+    const spanish = { calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' }, callData: { region: 'north' } };
+    use(variants.variant(SPANISH_BY_ROUTE));
     const t = last(await call(spanish));
     expect(t.session.locale).toBe('es');
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'greeting', acks: [{ promptId: 'outage_notice' }] });
     expect(heard(t)).toMatch(/^Sabemos que hay un problema con el servicio en su zona, y estamos trabajando en ello. Gracias por llamar/);
     expect(t.routes).toEqual([{ point: 'start', rule: 3, outcome: 'locale', subjects: ['fact.outage', 'called'], at: 1 }]);
     // Without that rule, the first rule that holds is the outage's, and the rules after it are not looked at.
-    use(variants.variant({ 'routes.yaml': replace('  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]\n    say: outage_notice\n    then: locale\n    locale: es\n', '') }));
+    const combined = '  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]\n    say: outage_notice\n    then: locale\n    locale: es\n';
+    use(variants.variant({ ...SPANISH_BY_ROUTE, 'routes.yaml': (text) => replace(combined, '')(SPANISH_BY_ROUTE['routes.yaml']!(text)) }));
     const english = last(await call(spanish));
     expect(english.session.locale).toBe('en-US');
     expect(heard(english)).toMatch(/^We know about a problem with the service in your area/);
@@ -143,17 +156,49 @@ describe('start', () => {
     expect((t.session.facts as RoutedFacts).outage).toBe(true);
     // The hook's call is first among the turn's rows, then the route, as it was taken after it.
     expect(t.audit.map((d) => d.type)).toEqual(['call_started', 'gate', 'tool_result', 'route']);
-    expect(routeRows(r)).toEqual([{ point: 'start', rule: 4, outcome: 'continue', subjects: ['fact.outage'] }]);
+    expect(routeRows(r)).toEqual([{ point: 'start', rule: 3, outcome: 'continue', subjects: ['fact.outage'] }]);
   });
 
-  it('locale: the call goes on in the language named, the greeting in it', async () => {
+  it('locale: the call goes on in the language named, the greeting in it (a route on the number called)', async () => {
+    use(variants.variant(SPANISH_BY_ROUTE));
     const t = last(await call({ calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' } }));
     expect(t.session.locale).toBe('es');
     expect(t.actions[0]).toMatchObject({ type: 'set_language' });
     expect(heard(t)).toMatch(/^Gracias por llamar/);
+    expect(t.routes).toEqual([{ point: 'start', rule: 5, outcome: 'locale', subjects: ['called'], at: 0 }]);
     // The number called is not the variable's: no switch. An unset variable: none either.
     expect(last(await call({ calledNumber: '+15555550100', env: { SPANISH_LINE: '+15555550188' } })).session.locale).toBe('en-US');
     expect(last(await call({ calledNumber: '+15555550188', env: {} })).session.locale).toBe('en-US');
+  });
+
+  it('locale: a route on a queue in the call data switches the language, as on anything else a condition reads', async () => {
+    use(variants.variant({
+      'app.yaml': replace('  region: { from: param.region, redact: keep }\n', '  region: { from: param.region, redact: keep }\n  queue: { from: param.queue, redact: keep }\n'),
+      'routes.yaml': replace('  - else: continue\n\nafterIdentity', '  - when: { callData: queue, is: spanish }\n    then: locale\n    locale: es\n  - else: continue\n\nafterIdentity'),
+    }));
+    const t = last(await call({ callData: { queue: 'spanish' } }));
+    expect(t.session.locale).toBe('es');
+    expect(t.actions[0]).toMatchObject({ type: 'set_language' });
+    expect(heard(t)).toMatch(/^Gracias por llamar/);
+    expect(t.routes).toEqual([{ point: 'start', rule: 4, outcome: 'locale', subjects: ['callData.queue'], at: 0 }]);
+    expect(last(await call({ callData: { queue: 'general' } })).session.locale).toBe('en-US');
+  });
+
+  it('voice.numbers: a call to the Spanish line starts in Spanish, its number from the call\'s env, before any route; any other number, or the variable unset, in English', async () => {
+    const t = last(await call({ calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' } }));
+    expect(t.session.locale).toBe('es');
+    expect(heard(t)).toMatch(/^Gracias por llamar/);
+    // Started in it: no switch asked for, and no route took it (the else).
+    expect(t.actions.some((a) => a.type === 'set_language')).toBe(false);
+    expect(t.routes).toEqual([{ point: 'start', rule: 'else', outcome: 'continue', subjects: [], at: 0 }]);
+    // The number as a carrier may write it is the same number (compared as a called condition compares it).
+    expect(last(await call({ calledNumber: '15555550188', env: { SPANISH_LINE: '+15555550188' } })).session.locale).toBe('es');
+    expect(last(await call({ calledNumber: '+15555550100', env: { SPANISH_LINE: '+15555550188' } })).session.locale).toBe('en-US');
+    expect(last(await call({ calledNumber: '+15555550188', env: {} })).session.locale).toBe('en-US');
+    // A scripted call's own locale wins over the number's.
+    expect(last(await call({ calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' }, locale: 'en-US' })).session.locale).toBe('en-US');
+    // A chat has no number called.
+    expect(last(await call({ calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' }, as: 'web' })).session.locale).toBe('en-US');
   });
 
   it('a named predicate: handed off for its reason, to the target that reason picks', async () => {
@@ -369,7 +414,7 @@ describe('review fixes: the turn\'s environment holds only the variables the app
     const seen: Record<string, unknown> = {};
     process.env.DIALOGWRIGHT_PROBE_SECRET = 'not-a-real-secret';
     try {
-      const app = variants.variant({}, {
+      const app = variants.variant(SPANISH_BY_ROUTE, {
         ...routedCode,
         onStart: (ctx) => { seen.hook = { ...ctx.tc.env }; seen.frozen = Object.isFrozen(ctx.tc.env); },
       });

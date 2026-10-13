@@ -119,10 +119,13 @@ describe('a host of two apps', () => {
     const two = await call(s, 'CA0000000000000000000000000000sl01', NUMBERS.SERVICE_LINE);
     expect(two.first).toBe(ROUTED_GREETING);
     expect(two.parameters[HOST_APP_PARAMETER]).toBe('routed');
-    // The second service line reaches the same app, whose own route (called: env.SPANISH_LINE, from its
-    // own settings file) puts the call into Spanish.
+    // The second service line reaches the same app, whose voice.numbers (env.SPANISH_LINE, from its own
+    // settings file) starts the call in Spanish: the start document asks for it.
     const es = await call(s, 'CA0000000000000000000000000000sl02', NUMBERS.SERVICE_LINE_ES);
+    expect(es.parameters.locale).toBe('es');
     expect(es.first).toBe(ROUTED_GREETING_ES);
+    expect(two.parameters.locale).toBe('en-US');
+    expect(s.logs).toContain('app routed: numbers by language: …0312 (SPANISH_LINE) starts in es; any other number starts in en-US');
     const other = await call(s, 'CA0000000000000000000000000000ot01', '+15555550999');
     expect(other.first).toBe(CALLBACK_GREETING);
     const none = await call(s, 'CA0000000000000000000000000000no01', undefined);
@@ -143,12 +146,22 @@ describe('a host of two apps', () => {
     // As Telnyx sends it: no `to`, the number called among the custom parameters.
     relay.setup('v3:host-telnyx-one', 'VX-t1', { to: null, customParameters: { ...parameters, telnyx_call_to: NUMBERS.SERVICE_LINE } });
     expect((await relay.waitForTexts(1))[0]).toBe(ROUTED_GREETING);
-    // A setup with no app named reads the number called from Telnyx's own parameter.
+    // A setup with no app named reads the number called from Telnyx's own parameter, and reaches the app.
+    // Its language is the start document's (voice.numbers, chosen as the call is answered): a setup that
+    // carries none of its parameters starts in the app's default, as a number written out always has.
     const token = running!.tokens.mint('v3:host-telnyx-two', 'telnyx') as string;
     const second = await FakeRelay.connect(`${s.ws}/conversation/telnyx?token=${token}`);
     relays.push(second);
     second.setup('v3:host-telnyx-two', 'VX-t2', { to: null, customParameters: { telnyx_call_to: NUMBERS.SERVICE_LINE_ES } });
-    expect((await second.waitForTexts(1))[0]).toBe(ROUTED_GREETING_ES);
+    expect((await second.waitForTexts(1))[0]).toBe(ROUTED_GREETING);
+    expect(running!.store.get('v3:host-telnyx-two')!.session.appId).toBe('routed');
+    // The answer to that number on Telnyx asks for Spanish, and a setup with the document's parameters starts in it.
+    const es = startOf(await answer(s.base, 'v3:host-telnyx-three', NUMBERS.SERVICE_LINE_ES, 'telnyx'), s.ws);
+    expect(es.parameters.locale).toBe('es');
+    const third = await FakeRelay.connect(es.url);
+    relays.push(third);
+    third.setup('v3:host-telnyx-three', 'VX-t3', { to: null, customParameters: { ...es.parameters, telnyx_call_to: NUMBERS.SERVICE_LINE_ES } });
+    expect((await third.waitForTexts(1))[0]).toBe(ROUTED_GREETING_ES);
   });
 
   it('starts the call in the app the answer chose, whatever number the setup carries, and by the setup\'s number when the answer named none', async () => {

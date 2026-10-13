@@ -51,3 +51,32 @@ export const routesFile = (body: string): string => `# yaml-language-server: $sc
 
 /** A line added to prompts.yaml. */
 export const line = (id: string, text: string) => (prompts: string): string => `${prompts}  ${id}:\n    text: ${text}\n    interruptible: false\n`;
+
+/**
+ * The Spanish line by a route instead of app.yaml's voice.numbers, as the fixture had it before the
+ * number could name a variable: a `locale` outcome on the number called, still the way to switch on
+ * anything else a condition reads (a queue in the call data). voice.numbers is taken out, and the start
+ * routes gain, above the else, the language rule and, above the outage rule, the rule that does both
+ * (the notice said in Spanish), so the outage rule is rule 4 and the language rule 5.
+ */
+export const SPANISH_BY_ROUTE: Record<string, (text: string) => string> = {
+  'app.yaml': replace('  numbers:\n    env.SPANISH_LINE: es\n', ''),
+  'routes.yaml': (text) =>
+    replace(
+      '  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n  - else: continue\n',
+      [
+        '  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]',
+        '    say: outage_notice',
+        '    then: locale',
+        '    locale: es',
+        '  - when: { fact: outage, is: true }',
+        '    say: outage_notice',
+        '    then: continue',
+        '  - when: { called: env.SPANISH_LINE }',
+        '    then: locale',
+        '    locale: es',
+        '  - else: continue',
+        '',
+      ].join('\n'),
+    )(text),
+};

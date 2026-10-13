@@ -5,7 +5,9 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { KeyObject } from 'node:crypto';
 import { checkJwksUrl, jwksKeys } from './chat/jwks';
-import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
+import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
+import type { NumberLocale } from '../core/numberLocales';
+import { defaultLocaleOf } from '../core/locale';
 import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
@@ -681,7 +683,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // Each app's part of the webhooks: its hints, and app.yaml's startParameters and transfer targets read
   // from its environment now: an unset one, or a target neither a number nor a sip: URI, stops the server
   // here, with the fix.
-  const httpApps = new Map<string, HttpApp & { readonly app: App; readonly hints: string; readonly startParameters: Readonly<Record<string, string>>; readonly transfer: ServerTransfer | null }>();
+  const httpApps = new Map<string, HttpApp & { readonly app: App; readonly hints: string; readonly startParameters: Readonly<Record<string, string>>; readonly transfer: ServerTransfer | null; readonly numbers: readonly NumberLocale[] }>();
   for (const a of appsRun) {
     const startParameters = forApp(a.id, () => startParametersFrom(a.app, a.env));
     if (Object.keys(startParameters).length > 0) log(`${tag(a.id)}start parameters: ${Object.keys(startParameters).join(', ')}`);
@@ -689,6 +691,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     if (transfer) log(`${tag(a.id)}transfer targets: ${[...transfer.numbers.keys()].join(', ')}; default ${transfer.defaultVariable}`);
     const called = calledOf(a.id);
     if (Object.keys(called).length > 0) log(`${tag(a.id)}called numbers: ${Object.keys(called).join(', ')}`);
+    // voice.numbers, each env.<NAME> read from the app's environment: an unset one, or not E.164, stops the server here.
+    const numbers = forApp(a.id, () => voiceNumbersFrom(a.app, a.env));
+    if (numbers.length > 0) log(`${tag(a.id)}numbers by language: ${describeVoiceNumbers(numbers)}; any other number starts in ${defaultLocaleOf(a.app)}`);
     // On Telnyx, a language with no voice of its own beside one with a voice may keep the start language's
     // voice after a switch (http.ts telnyxUnvoicedLocales): worth saying until a live call shows otherwise.
     const unvoiced = config.voiceProviders.includes('telnyx') ? telnyxUnvoicedLocales(a.app, config.telnyxVoice) : [];
@@ -712,7 +717,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const { message, fix } = englishOnlyFinding(h, true);
       log(`WARNING: ${tag(a.id)}${message}; ${fix}`);
     }
-    httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id), handoffNumber: handoffOf(a.id) });
+    httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id), handoffNumber: handoffOf(a.id), numbers });
     // On a host of several apps, an app with no transfer targets and no HANDOFF_NUMBER of its own puts its
     // callers through to the server's: worth saying, since another business's desk may answer.
     if (host && appsRun.length > 1 && !transfer && !hostOwns(a, 'HANDOFF_NUMBER')) {
@@ -722,6 +727,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const app = appsRun[0]!.app;
   const startParameters = httpApps.get(appsRun[0]!.id)!.startParameters;
   const transfer = httpApps.get(appsRun[0]!.id)!.transfer;
+  const numbers = httpApps.get(appsRun[0]!.id)!.numbers;
   let draining = false;
   /** Set by unready() (DRAIN_UNREADY_MS): /ready answers 503 while new calls are still answered. */
   let unready = false;
@@ -858,6 +864,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
+    ...(numbers.length > 0 ? { numbers } : {}),
     ...(consoleAuth ? { consoleAuth } : {}),
     draining: () => draining,
     unready: () => unready,

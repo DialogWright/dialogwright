@@ -986,13 +986,54 @@ HELP_DESK=+15555550123
 - **Test:** a scripted call per target, with `"expect": { "decision": "handoff", "transfer": { "target": "VIP_LINE", "headers": { ... } } }`, its call data in `"callData"`; one that reaches the default. Write each target's variable in the worksheet, and tell the owner to set it: the server will not start while one is unset (`pnpm diagnose` checks each).
 - **Pitfall:** a condition on call data is only as trustworthy as its source; a `chat.` key is the visitor's own word, fine for choosing a team, never for a line that trusts the caller more. `pnpm check` refuses a form, key or slot the app does not have, a `secret` key sent, and a header that is not an `X-` name or `User-to-User`; it warns of a reason no handoff has a line for and a rule after one that always holds ([authoring guide, 13.15](../../../docs/guide/13-channels.md#1315-where-a-handoff-goes-and-what-goes-with-it-transfer)).
 
-## Routes: the call's start, after identity, after a form
+## Languages: a number per language, and a choice on the main line
 
-**When:** "we're closed evenings and weekends", "during an outage, tell callers before anything else", "the Spanish line", "past-due accounts set up a payment plan first", "a danger goes straight to a person", "VIP callers go to their team". Without routes.yaml, every caller goes where they ask. With it, ordered rules decide at three points: as the call starts (before the greeting), the first time the caller is verified, and after a form completes. What the caller says still decides every other turn: routes are not a menu tree.
+**When:** "callers can call our Spanish line", "press 9 for Spanish", "we answer in English and Spanish". The usual design: the main line answers in the default language (app.yaml's `locale`); each other language has a number of its own, whose calls start in it; and a caller on the main line may choose another by asking or on the keypad menu.
 
 ```yaml
-# app.yaml (the hours a route reads, and the start hook's calls)
-callerNumber: { use: hint, called: true }
+# app.yaml
+locale: en-US
+voice:
+  numbers:
+    env.SPANISH_LINE: es        # the number in the owner's .env, never here
+  locales:
+    es:
+      tts: es-US                # a region: Twilio refuses a bare "es"
+      transcription: es-US
+      recognition:
+        twilio: { provider: Deepgram, model: nova-3-general }   # the server's default, flux, hears English only
+```
+
+```yaml
+# intents.yaml
+intents:
+  spanish:
+    kind: informational
+    label: continue in Spanish
+    criteria: The caller asks to continue in Spanish, or says they speak Spanish
+    locale: es
+    promptId: switched_to_spanish
+
+menu:
+  - digit: "9"
+    intent: spanish
+```
+
+- **The number:** a call to the number in `SPANISH_LINE` starts in Spanish as it is answered, before the start hook and any route, so the greeting and every route's line are in Spanish and no switch is made. Any other number starts in the default. The server will not start while the variable is unset or not E.164, names at start which language each number starts in, and `pnpm diagnose` checks it; under a host file, the app's own `.env` holds it. A number may be written out instead (`"+15555550142": es`, quoted), but the repository is no place for a real number.
+- **The choice on the main line:** the informational intent switches the call when the caller asks, from the first turn; its `menu` key does the same once the keypad menu has been offered (after a second missed answer). A greeting that invites it ("Para español, diga español.") lets a caller choose at once. Write `switched_to_spanish` in `locale/es/prompts.yaml`.
+- **Anything else** that decides the language (a queue the contact centre sets in the call data) is a `start` route with `then: locale` ([Routes](#routes-the-calls-start-after-identity-after-a-form)), taken in route order.
+- **The locale itself:** `locale/es/prompts.yaml` with every line, `locale/es/slots.yaml` for options' words, and the requests' labels in `locale/es/intents.yaml` (`intents: { <id>: { label: ... } }`, `forms.yaml` for an internal form), or its lines say the English label. `pnpm check` warns of a bare tag, an English-only recognizer and a missing label ([authoring guide, 8](../../../docs/guide/08-locales.md#8-locales), [13.3](../../../docs/guide/13-channels.md#133-languages-on-the-phone)).
+- **Test:** a scripted call to the number, `"calledNumber": "+15555550188"` with `"env": { "SPANISH_LINE": "+15555550188" }`, expecting a Spanish line (`"text"`); one to another number in the default; and one that asks to switch. Corpus lines for the intent, in both languages ("en español", "I speak Spanish").
+- **Pitfall:** a route's `then: locale` on the number called (`{ called: env.SPANISH_LINE }`) works, but a rule above it that holds first (an outage notice) keeps the call in the default language; `voice.numbers` has no such order.
+
+## Routes: the call's start, after identity, after a form
+
+**When:** "we're closed evenings and weekends", "during an outage, tell callers before anything else", "callers the contact centre queues for Spanish", "past-due accounts set up a payment plan first", "a danger goes straight to a person", "VIP callers go to their team". Without routes.yaml, every caller goes where they ask. With it, ordered rules decide at three points: as the call starts (before the greeting), the first time the caller is verified, and after a form completes. What the caller says still decides every other turn: routes are not a menu tree.
+
+```yaml
+# app.yaml (the hours a route reads, the queue the contact centre sets, and the start hook's calls)
+callData:
+  queue: { from: param.queue, redact: keep }
 hours:
   timezone: America/New_York
   weekly: { mon-fri: ["08:00-18:00"], sat: ["09:00-13:00"] }
@@ -1011,14 +1052,14 @@ start:
   - when: { named: vip }
     then: handoff
     reason: vip
-  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]
+  - when: [{ fact: outage, is: true }, { callData: queue, is: spanish }]
     say: outage_notice
     then: locale
     locale: es
   - when: { fact: outage, is: true }
     say: outage_notice
     then: continue
-  - when: { called: env.SPANISH_LINE }
+  - when: { callData: queue, is: spanish }
     then: locale
     locale: es
   - else: continue
@@ -1048,12 +1089,12 @@ onStart(ctx) {
 predicates: { vip: ({ s, env }) => (env('VIP_NUMBERS') ?? '').split(',').some((n) => n.trim() === callerOf(s as Session)?.number) },
 ```
 
-- **Order:** the app's: the first rule whose conditions all hold is taken, the rules after it are not looked at, and every point ends with an `else`. Put closed first, so no one reaches a desk that is not there. A rule that goes on (`continue`) goes on to the greeting, not to the rules below it: with the outage rule alone above the Spanish line's, a Spanish caller on an outage day is greeted in English (seen on a live call). Where two rules can both hold and both must act, write a rule that does both above them (`when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]`, `say: outage_notice`, `then: locale`: the switch first, so the notice is said in Spanish), or order them so the one that must win comes first. `pnpm check` warns of a rule with a `say` and `then: continue` above a `locale` rule both could hold for.
+- **Order:** the app's: the first rule whose conditions all hold is taken, the rules after it are not looked at, and every point ends with an `else`. Put closed first, so no one reaches a desk that is not there. A rule that goes on (`continue`) goes on to the greeting, not to the rules below it: with the outage rule alone above a language rule, a Spanish caller on an outage day is greeted in English (seen on a live call, on a Spanish line routed by its number). A language line by its number is not a route: app.yaml's `voice.numbers` starts the call in it before any route ([Languages](#languages-a-number-per-language-and-a-choice-on-the-main-line)), so every line here is said in it. For a language a route decides (a queue), where two rules can both hold and both must act, write a rule that does both above them (`when: [{ fact: outage, is: true }, { callData: queue, is: spanish }]`, `say: outage_notice`, `then: locale`: the switch first, so the notice is said in Spanish), or order them so the one that must win comes first. `pnpm check` warns of a rule with a `say` and `then: continue` above a `locale` rule both could hold for.
 - **What each does:** `say` a line first (at start, before the greeting), then `continue`, `locale` (a language the app has), `end` (with its line, the app's `goodbye` after it; `goodbye: false` for a line that says goodbye itself, as closed_now does at `start`; after identity or a form a request may be queued, and the line is then said mid-call, so keep the goodbye out of it there), `handoff` (with a `reason` and its `handoff_<reason>` line), `form` (at start after the welcome, `greeting_offer`; after identity the caller's own request follows; after a form, as its `next`), or `anything-else` (not at start).
 - **Facts:** a `fact` is whatever the code keeps in the facts: the start hook's (from the call data, the number called, a lookup), the call-start lookup's, or a form's `onEntry` (the account's standing, read after identity). Start them in `facts.initial()` so `pnpm check` can tell a misspelled one.
-- **Numbers stay out of YAML:** `called: env.SPANISH_LINE` is the number callers dial, set in the owner's `.env` (the server will not start without it); app.yaml keeps the number called (`called: true`).
-- **The language on the phone:** a `locale` route switches to a locale the app has (`locale/es/prompts.yaml`); give it, in app.yaml, `voice.locales.es: { tts: es-US, transcription: es-US, recognition: { twilio: { provider: Deepgram, model: nova-3-general } } }`, since Twilio refuses a tag with no region and the server's default recognizer, flux, hears English only; and its requests' labels in `locale/es/intents.yaml` (`intents: { <id>: { label: ... } }`, `forms.yaml` for an internal form), or its lines say the English label. `pnpm check` warns of each ([authoring guide, 8](../../../docs/guide/08-locales.md#8-locales), [13.3](../../../docs/guide/13-channels.md#133-languages-on-the-phone)).
-- **Test:** a scripted call per route with its clock and data: `"now": "2026-10-12T19:00:00-04:00"` for closed, a holiday, an open hour; `"callData"`, `"calledNumber"` with `"env"` (which the code's `ctx.env` reads too, so a setting such as `VIP_NUMBERS` goes there), `"callerNumber"`; a call two rules could both take (an outage on the Spanish line); set `testing.seed.now` to an open hour so the corpus runs. Expect the line (`"promptId": "closed_now"`, `"text"`) or the handoff and its target.
+- **Numbers stay out of YAML:** a route on the number dialed (`called: env.SALES_LINE`) reads the number from the owner's `.env` (the server will not start without it), and app.yaml keeps the number called (`callerNumber: { use: hint, called: true }`).
+- **The language on the phone:** a `locale` route switches to a locale the app has (`locale/es/prompts.yaml`), with its speech settings and labels as [Languages](#languages-a-number-per-language-and-a-choice-on-the-main-line) says.
+- **Test:** a scripted call per route with its clock and data: `"now": "2026-10-12T19:00:00-04:00"` for closed, a holiday, an open hour; `"callData"`, `"calledNumber"` with `"env"` (which the code's `ctx.env` reads too, so a setting such as `VIP_NUMBERS` goes there), `"callerNumber"`; a call two rules could both take (an outage for a caller queued for Spanish); set `testing.seed.now` to an open hour so the corpus runs. Expect the line (`"promptId": "closed_now"`, `"text"`) or the handoff and its target.
 - **Pitfall:** a route into a form that needs identity at `start` asks for it first (`pnpm check` warns); a `reason` condition never holds in a route (it is a transfer target's); the hours are the line's own time zone, not the server's. `pnpm check` refuses what a rule names that the app does not have, a missing `else` and a `then` its point does not take ([authoring guide, routes.yaml](../../../docs/guide/02-the-files-one-by-one.md#routesyaml-optional)).
 
 ## A knowledge form

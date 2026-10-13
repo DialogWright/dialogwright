@@ -26,7 +26,7 @@ const relativePath = (what: string) =>
 
 const envFile = relativePath('app\'s settings file')
   .optional()
-  .describe('The app\'s own settings file, from host.yaml\'s folder. Default: .env in the app\'s folder. Only the variables the app\'s YAML names (env.<NAME>: its transfer targets, startParameters, called numbers) are read from it, for that app alone.');
+  .describe('The app\'s own settings file, from host.yaml\'s folder. Default: .env in the app\'s folder. Only the variables the app\'s YAML names (env.<NAME>: its transfer targets, startParameters, called numbers, voice.numbers) are read from it, for that app alone.');
 
 const services = z
   .record(
