@@ -23,7 +23,7 @@ import { describeTraceStore, type S3TraceSetting } from '../trace/store';
 import { S3Client } from '../trace/s3/client';
 import { randomBytes } from 'node:crypto';
 import { hostFileOf, resolveHostFile, type ResolvedHost } from '../define/host';
-import { appEnvironment, hostNumbers, hostRouting, ownVariablesOf } from './host';
+import { appEnvironment, hostNumbers, hostRouting, ownSettingsLines, ownVariablesOf, OWN_SERVER_SETTING_FIX } from './host';
 import { parse as parseYaml } from 'yaml';
 import type { App } from '../core/app/types';
 
@@ -789,9 +789,11 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
       }
     }
     if (read.ignored.length > 0) {
-      // Not a fault: the app's code may read them (ctx.env). Named, never a value, so a server setting left
-      // here from before the host (which the server does not read from an app's file) is seen.
-      out.push(tag({ id: 'settings', status: 'ok', message: `${app.envFile} also sets ${read.ignored.join(', ')}, not named by its YAML: available to its code through ctx.env (the server's own settings come from the server's settings file)` }));
+      // A server setting left here (from before the host, say) does nothing: a warning. The rest is the
+      // app's code's (ctx.env), not a fault. Names, never a value.
+      const { warn, info } = ownSettingsLines(app.envFile, read.ignored);
+      if (warn !== null) out.push(tag({ id: 'settings', status: 'warn', message: warn, fix: OWN_SERVER_SETTING_FIX }));
+      if (info !== null) out.push(tag({ id: 'settings', status: 'ok', message: info }));
     }
   }
   for (const ids of audiences.values()) {

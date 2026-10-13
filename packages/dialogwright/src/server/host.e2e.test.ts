@@ -176,7 +176,8 @@ describe('a host of two apps', () => {
     const other = await call(s, 'CA0000000000000000000000000000sl08', NUMBERS.SERVICE_LINE, NUMBERS.SERVICE_LINE, '+15555550178');
     expect(other.first).toBe(ROUTED_GREETING);
     // What its own file sets beyond its YAML is named, as its code's, never as a fault.
-    expect(s.logs).toContain("app routed: its own settings file also sets VIP_NUMBERS, not named by its YAML: available to its code through ctx.env (the server's own settings come from the server's settings file)");
+    expect(s.logs).toContain('app routed: its own settings file also sets VIP_NUMBERS, not named by its YAML: available to its code through ctx.env');
+    expect(s.logs.some((l) => l.startsWith('WARNING') && l.includes('VIP_NUMBERS'))).toBe(false);
   });
 
   it('puts each app\'s handoff through to its own MAIN_LINE: two apps\' same-named variables stay separate', async () => {

@@ -10,6 +10,7 @@ import { formatProblem } from '../define/problems';
 import type { Env } from './config';
 import { readEnvFile } from './envFile';
 import { E164 } from './transfer';
+import { serverSettingNames } from './serverSettings';
 
 
 /**
@@ -56,6 +57,29 @@ export interface HostApp {
  * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own. Absent there, the server's.
  */
 export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL'];
+
+/**
+ * What an app's own settings file sets beyond what the server reads from it (`ignored`), in two: the
+ * server's own settings left there (serverSettingNames: a carrier's secret, a model's key, PUBLIC_HOST, a
+ * store's URL), which do nothing in an app's file under a host and are worth a warning; and the rest, the
+ * app's code's (ctx.env). Names only.
+ */
+export function splitOwnSettings(ignored: readonly string[]): { server: string[]; code: string[] } {
+  const known = serverSettingNames();
+  return { server: ignored.filter((n) => known.has(n)), code: ignored.filter((n) => !known.has(n)) };
+}
+
+/** What a server's log and diagnose say of an app's own settings file beyond what the server reads from it, a line each (WARNING for the server's settings). */
+export function ownSettingsLines(file: string, ignored: readonly string[]): { warn: string | null; info: string | null } {
+  const { server, code } = splitOwnSettings(ignored);
+  return {
+    warn: server.length === 0 ? null : `${file} sets ${server.join(', ')}, the server's own setting${server.length === 1 ? '' : 's'}: under a host the server reads ${server.length === 1 ? 'it' : 'them'} only from its own settings file, so here ${server.length === 1 ? 'it does' : 'they do'} nothing`,
+    info: code.length === 0 ? null : `${file} also sets ${code.join(', ')}, not named by its YAML: available to its code through ctx.env`,
+  };
+}
+
+/** The fix for a server setting left in an app's own settings file. */
+export const OWN_SERVER_SETTING_FIX = 'move it to the server\'s settings file (the .env beside host.yaml, or ENV_FILE), or delete it here';
 
 /** One number a host routes: the variable that holds it, its value, and the app it reaches. */
 export interface HostNumber {

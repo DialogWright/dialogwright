@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { appEnvironment, describeHost, hostRouting, loadHost, type HostApp } from './host';
+import { appEnvironment, describeHost, hostRouting, loadHost, ownSettingsLines, splitOwnSettings, type HostApp } from './host';
+import { serverSettingNames } from './serverSettings';
 import { sharedAudiences } from './index';
 import { useTestkit } from '../testing/apps';
 import { defaultAppId } from '../core/app/registry';
@@ -79,6 +80,20 @@ describe('appEnvironment', () => {
     // What the app's code reads by name (ctx.env): the whole of its own file over the server's settings.
     expect(r.settings).toEqual({ MAIN_LINE: '+15555550101', HANDOFF_NUMBER: '+15555550999', TWILIO_AUTH_TOKEN: 'x' });
     expect(appEnvironment({ MAIN_LINE: '+15555550900' }, null, ['MAIN_LINE']).settings).toEqual({ MAIN_LINE: '+15555550900' });
+  });
+});
+
+describe('the server\'s own settings, left in an app\'s own file', () => {
+  it('are known from what the server\'s readers read: carriers, model keys, the host, the stores, the chat', () => {
+    const names = serverSettingNames();
+    for (const n of ['TWILIO_AUTH_TOKEN', 'TELNYX_PUBLIC_KEY', 'TYPESAFE_API_KEY', 'OPENROUTER_API_KEY', 'AI_GATEWAY_API_KEY', 'JEV_API_KEY', 'ANTHROPIC_API_KEY', 'PUBLIC_HOST', 'PORT', 'SESSION_STORE', 'AUDIT_STORE', 'TRACE_STORE', 'S3_SECRET_ACCESS_KEY', 'CHAT_ALLOWED_ORIGINS', 'CONSOLE_SESSION_KEY']) expect(names.has(n), n).toBe(true);
+    for (const n of ['VIP_NUMBERS', 'MAIN_LINE', 'SPANISH_LINE']) expect(names.has(n), n).toBe(false);
+  });
+
+  it('are warned of by name; any other name is the app\'s code\'s, said as information', () => {
+    expect(splitOwnSettings(['VIP_NUMBERS', 'TWILIO_AUTH_TOKEN', 'PUBLIC_HOST'])).toEqual({ server: ['TWILIO_AUTH_TOKEN', 'PUBLIC_HOST'], code: ['VIP_NUMBERS'] });
+    expect(ownSettingsLines('apps/one/.env', ['VIP_NUMBERS'])).toEqual({ warn: null, info: 'apps/one/.env also sets VIP_NUMBERS, not named by its YAML: available to its code through ctx.env' });
+    expect(ownSettingsLines('apps/one/.env', ['TWILIO_AUTH_TOKEN', 'PUBLIC_HOST']).warn).toBe("apps/one/.env sets TWILIO_AUTH_TOKEN, PUBLIC_HOST, the server's own settings: under a host the server reads them only from its own settings file, so here they do nothing");
   });
 });
 

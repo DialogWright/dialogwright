@@ -690,7 +690,7 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     }
     writeFileSync(join(dir, 'apps', 'one', '.env'), 'MAIN_LINE=+15555550201\n', { mode: 0o600 });
     // An app's .env from before the host, with a server setting in it: not read under a host.
-    writeFileSync(join(dir, 'apps', 'two', '.env'), 'MAIN_LINE=sip:desk@pbx.example.com\nTWILIO_AUTH_TOKEN=not-read\n', { mode: 0o600 });
+    writeFileSync(join(dir, 'apps', 'two', '.env'), 'MAIN_LINE=sip:desk@pbx.example.com\nTWILIO_AUTH_TOKEN=not-read\nVIP_NUMBERS=+15555550177\n', { mode: 0o600 });
     writeFileSync(join(dir, 'host.yaml'), 'apps: [apps/one, apps/two]\nnumbers:\n  - { number: env.ONE_LINE, app: one }\n');
     writeFileSync(join(dir, '.env'), Object.entries({ ...goodEnv(dir), ONE_LINE: '+15555550301', ...serverExtra }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
     return dir;
@@ -705,9 +705,12 @@ describe('pnpm diagnose with a host file (host.yaml: several apps on one server)
     expect(out).toContain("ok    host.yaml's numbers: ONE_LINE (one), each set and its own; any other number reaches one");
     expect(out).toContain("warn  app one: app.yaml's transfer.default reads MAIN_LINE: a 555 number, so calls handed off there will go nowhere  ->  set MAIN_LINE to a phone a person answers");
     expect(out).toContain("ok    app two: app.yaml's transfer.default reads MAIN_LINE: set, a SIP address");
-    expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^ok    app two: .*also sets TWILIO_AUTH_TOKEN, not named by its YAML: available to its code through ctx.env/);
+    // A server setting left in an app's own file does nothing under a host: a warning, by name; any other name is the app's code's.
+    expect(out.find((l) => l.includes('app two:') && l.includes('TWILIO_AUTH_TOKEN'))).toMatch(/^warn  app two: .*sets TWILIO_AUTH_TOKEN, the server's own setting: under a host the server reads it only from its own settings file, so here it does nothing  ->  move it to the server's settings file/);
+    expect(out.find((l) => l.includes('app two:') && l.includes('VIP_NUMBERS'))).toMatch(/^ok    app two: .*also sets VIP_NUMBERS, not named by its YAML: available to its code through ctx.env$/);
     expect(out.join('\n')).not.toContain('+15555550201');
     expect(out.join('\n')).not.toContain('not-read');
+    expect(out.join('\n')).not.toContain('5555550177');
   });
 
   it('fails an app variable that only another app sets, and a number unset', async () => {

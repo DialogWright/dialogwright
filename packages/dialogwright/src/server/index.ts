@@ -27,7 +27,7 @@ import { defaultAppId, getApp } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { newSession, type Session } from '../core/session';
 import { ANONYMOUS } from '../gate/principal';
-import { appOfSetup, describeHost, type HostRouting } from './host';
+import { appOfSetup, describeHost, ownSettingsLines, OWN_SERVER_SETTING_FIX, type HostRouting } from './host';
 import type { AuditDraft } from '../audit/types';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { buildClient, modelHeader } from '../run/client';
@@ -341,7 +341,12 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     for (const warning of host.warnings) log(`WARNING: ${warning}`);
     // What an app's own settings file sets and its YAML does not name: its code's (ctx.env), not the
     // server's, said by name only.
-    for (const a of appsRun) if (a.ignored && a.ignored.length > 0) log(`${tag(a.id)}its own settings file also sets ${a.ignored.join(', ')}, not named by its YAML: available to its code through ctx.env (the server's own settings come from the server's settings file)`);
+    for (const a of appsRun) {
+      if (!a.ignored || a.ignored.length === 0) continue;
+      const { warn, info } = ownSettingsLines('its own settings file', a.ignored);
+      if (warn !== null) log(`WARNING: ${tag(a.id)}${warn}: ${OWN_SERVER_SETTING_FIX}`);
+      if (info !== null) log(`${tag(a.id)}${info}`);
+    }
   }
   // Each app's client, when it answers by the app's own heuristics: its own fixtures' corpus for the stub
   // (from the app's package, as its regression reads it), the heuristics alone where it has none.

@@ -237,7 +237,7 @@ describe('the testkit, not the default, on a host built in code', () => {
     const s = await start(apps, Date.parse('2026-09-18T15:00:00Z'));
     expect(s.logs).toContain("WARNING: app testkit: no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server's HANDOFF_NUMBER, as every such app's do; set HANDOFF_NUMBER in its own settings file");
     expect(s.logs).toContain("WARNING: app testkit: service depot: no URL (host.yaml's services names none for it), so its requests are answered with no result unless it needs none");
-    expect(s.logs).toContain("app callback: its own settings file also sets TWILIO_AUTH_TOKEN, not named by its YAML: available to its code through ctx.env (the server's own settings come from the server's settings file)");
+    expect(s.logs).toContain("WARNING: app callback: its own settings file sets TWILIO_AUTH_TOKEN, the server's own setting: under a host the server reads it only from its own settings file, so here it does nothing: move it to the server's settings file (the .env beside host.yaml, or ENV_FILE), or delete it here");
   });
 
   it('on its chat at /chat/testkit: greets in its own words', async () => {
