@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: first-visit
+topic: first_visit
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: your-first-visit
+answer: Please arrive 15 minutes before your first appointment. Bring a photo ID, your insurance or member ID card, a list of the medicines you take, and any recent test results from another doctor.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: Jason Stiles
+  on: 2026-10-13
+  sourceHash: 319dc888b8c1e6f78cf11bfde879c293a6f910f5b2d965eb6fe0f9ee2799a88b
+  hash: 1480a384b48e963d7d283c2f15b346f1c65136b31aed2186c658e7da4ad28ffa

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: parking
+topic: parking
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: parking
+answer: Parking is free in the lot behind the building, and its entrance is on Example Lane. The spaces next to the door are kept for patients with a disability parking permit.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: Jason Stiles
+  on: 2026-10-13
+  sourceHash: 0ed4d88704a25c6fc68b3a224609f82589df4f73094a5d4024235f26370bccc8
+  hash: c937d4c4e1545d4fd1b8629cffd69bf2c73c6519f6a701295f67c011bc0869b5

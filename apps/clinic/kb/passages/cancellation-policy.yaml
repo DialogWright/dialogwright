@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: cancellation-policy
+topic: cancellation_policy
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: cancelling-or-changing-an-appointment
+answer: If you can't come, please cancel or reschedule at least 24 hours before your appointment, so we can offer the time to another patient. You can do either at any time on this line.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: Jason Stiles
+  on: 2026-10-13
+  sourceHash: d5dafac1edf767688da9ec47e4088b4aa9f783613127bd16a51ab9dd236a06cb
+  hash: 7a74d72929a64fc49b1cdef818e984c68155030e8165f550fba5b558d2b9edf3

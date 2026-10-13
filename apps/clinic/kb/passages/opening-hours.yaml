@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-passage.schema.json
+
+id: opening-hours
+topic: opening_hours
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: opening-hours
+answer: We're open Monday through Friday, from 8 in the morning to 5 in the evening, and closed on weekends and public holidays.
+approval:
+  owner: DialogWright Dev Team
+  approvedBy: Jason Stiles
+  on: 2026-10-13
+  sourceHash: 45561caa0fe5c081d165189550caa9019046564194f9e0ef3e48860a0b3827ad
+  hash: 955bfb46e5718ea85b7182fac85be640e0ee1798eee6b20c78dd5e6c796ab43c
