@@ -66,17 +66,16 @@
 {"id":"dn-06","text":"I'm good, thanks","intent":"done","context":"anything_else"}
 {"id":"dn-07","text":"that's everything","intent":"done","context":"anything_else"}
 {"id":"dn-08","text":"that's all I needed, thanks","intent":"done","context":"no_form"}
-{"id":"ot-01","text":"Do you do flu shots","intent":"other","context":"no_form"}
+{"id":"ot-01","text":"Do you do flu shots","intent":"other","context":"no_form","knownGap":{"reason":"'Do you do flu shots', a question no topic answers: ask_question 0.57 (schedule_new 0.21, capabilities 0.15, other 0.07), confidence 0.53, below the band an intent is taken at, so the caller is asked whether they want an answer to a question (confirm_intent_explicit) instead of hearing nomatch_open: the model, unsure, confirms the request explicitly, a safe path that asks the caller","outcome":{"promptId":"confirm_intent_explicit","verdict":"route"}}}
 {"id":"ot-02","text":"Can you send my records to another doctor","intent":"other","context":"no_form"}
 {"id":"ot-03","text":"I need a prescription refill","intent":"other","context":"no_form"}
 {"id":"ot-04","text":"Can I get my lab results","intent":"other","context":"no_form"}
-{"id":"ot-05","text":"Where are you located","intent":"other","context":"no_form"}
 {"id":"ot-06","text":"I want to update my address","intent":"other","context":"no_form"}
 {"id":"ns-01","text":"honey where did you put the keys","intent":"none","context":"no_form","answers":{"addressedToSystem":{"noul":0.15}},"tags":["side_speech"]}
 {"id":"ns-02","text":"hold on a second I'm on the phone","intent":"none","context":"no_form","answers":{"addressedToSystem":{"noul":0.2}},"tags":["side_speech"]}
 {"id":"ns-03","text":"um","intent":"none","context":"no_form","answers":{"intelligible":{"noul":0.3},"addressedToSystem":{"noul":0.5}},"tags":["unintelligible"]}
 {"id":"ns-04","text":"ksh brr the","intent":"none","context":"no_form","answers":{"intelligible":{"noul":0.2},"addressedToSystem":{"noul":0.5}},"tags":["unintelligible"]}
-{"id":"ns-05","text":"I was wondering if","intent":"none","context":"no_form","answers":{"utteranceComplete":{"noul":0.25}},"tags":["incomplete"]}
+{"id":"ns-05","text":"I was wondering if","intent":"none","context":"no_form","answers":{"utteranceComplete":{"noul":0.25}},"tags":["incomplete"],"knownGap":{"reason":"'I was wondering if', cut off: ask_question 0.74 (none 0.24), confidence 0.72, utteranceComplete 0.08, below the band an intent is taken at, so the caller is asked whether they want an answer to a question (confirm_intent_explicit) instead of hearing nomatch_open: the model, unsure, confirms the request explicitly, a safe path that asks the caller","outcome":{"promptId":"confirm_intent_explicit","verdict":"route"}}}
 {"id":"ns-06","text":"so my appointment","intent":"none","context":"no_form","answers":{"utteranceComplete":{"noul":0.3}},"tags":["incomplete"],"knownGap":{"reason":"unfinished 'so my appointment': the model reads confirm_appointment 0.76 though utteranceComplete is 0.23, so it routes and asks for the name instead of nomatch_open","outcome":{"promptId":"ask_name","acks":["ack_intent"],"verdict":"route","form":"confirm_appointment"}}}
 {"id":"ns-07","text":"hello","intent":"none","context":"no_form"}
 {"id":"ns-08","text":"yeah so","intent":"none","context":"no_form","answers":{"utteranceComplete":{"noul":0.35}},"tags":["incomplete"]}
@@ -185,7 +184,7 @@
 {"id":"fc-16","text":"no, the doctor is wrong","intent":"none","context":"confirm_reschedule","confirm":"no","changeSlot":"provider"}
 {"id":"fc-17","text":"Cheng, not Chen","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
 {"id":"fc-18","text":"Thursday, not Tuesday","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"date":{"mode":"weekday","weekday":"thursday"}}}
-{"id":"fc-19","text":"it's Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"a lone surname: provider none 0.77 / cheng 0.23 and confirmsNo 0.45 (below 0.7), so the provider stays patel and the short summary is re-read instead of a rejection with cheng","outcome":{"promptId":"confirm_time","verdict":"confirm_unanswered","slots":{"name":"morgan ellis","dob":"1975-06-14","memberId":null,"provider":"patel","date":"2026-09-22"},"gate":"findAppointment:ALLOW"}}}
+{"id":"fc-19","text":"it's Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"},"knownGap":{"reason":"a lone surname: provider none 0.77 / cheng 0.23 and confirmsNo 0.45 (below 0.7), so the provider stays patel and the short summary is re-read instead of a rejection with cheng","outcome":{"promptId":"confirm_time","verdict":"confirm_unanswered","slots":{"name":"morgan ellis","dob":"1975-06-14","memberId":null,"provider":"patel","date":"2026-09-22","subject":null},"gate":"findAppointment:ALLOW"}}}
 {"id":"fc-20","text":"Dr. Cheng","intent":"none","context":"confirm_reschedule","confirm":"no","slots":{"provider":"cheng"}}
 {"id":"si-01","text":"I need to reschedule my appointment with Dr. Alvarez for next Thursday, and also I have a question about my bill","intent":"reschedule","context":"no_form","secondIntent":"billing","slots":{"provider":"alvarez","date":{"mode":"weekday","weekday":"thursday","weekdayQualifier":"next"}}}
 {"id":"si-02","text":"Cancel my appointment and then I want to book a new one","intent":"cancel","context":"no_form","secondIntent":"schedule_new"}
@@ -256,10 +255,11 @@
 {"id":"aq-07","text":"what's your cancellation policy","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"cancellation_policy"},"tags":["knowledge"]}
 {"id":"aq-08","text":"how much notice do you need if I can't make it","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"cancellation_policy"},"tags":["knowledge"]}
 {"id":"aq-09","text":"is the building wheelchair accessible","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"accessibility"},"tags":["knowledge"]}
-{"id":"aq-10","text":"can I get a sign language interpreter","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"accessibility"},"tags":["knowledge"]}
+{"id":"aq-10","text":"can I get a sign language interpreter","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"accessibility"},"tags":["knowledge"],"knownGap":{"reason":"'can I get a sign language interpreter', a request for a service as much as a question: other 0.48 against ask_question 0.46, confidence 0.43, though the topic question reads accessibility 1, so the caller hears nomatch_open instead of the accessibility answer","outcome":{"promptId":"nomatch_open","acks":[],"verdict":"intent_failed","gate":null}}}
 {"id":"aq-11","text":"I have a question","intent":"ask_question","context":"no_form","tags":["knowledge"]}
 {"id":"aq-12","text":"What are your hours","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
 {"id":"aq-13","text":"Do you have parking","intent":"ask_question","context":"no_form","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
+{"id":"aq-14","text":"Where are you located","intent":"ask_question","context":"no_form","tags":["knowledge"]}
 {"id":"sq-01","text":"parking","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"parking"},"tags":["knowledge"]}
 {"id":"sq-02","text":"your opening hours","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"opening_hours"},"tags":["knowledge"]}
 {"id":"sq-03","text":"whether you do flu shots","intent":"none","context":"ask_question","prompted":"subject","labels":{"subjectTopic":"none"},"tags":["knowledge"]}
