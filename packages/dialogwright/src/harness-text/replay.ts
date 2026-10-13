@@ -411,7 +411,7 @@ export async function replayFrameLines(
   const wordsGroups = wordsHeldGroups(lines);
   const joining = new Set([...wordsGroups.values()].flatMap((g) => g.rest));
   const neverRun = wordsNeverRun(lines);
-  let open: { group: WordsGroup; pending: Pending; texts: string[]; after: Pending[] } | null = null;
+  let open: { group: WordsGroup; pending: Pending; texts: string[]; after: (() => Promise<void>)[] } | null = null;
   const flushDeferred = async (): Promise<void> => {
     for (const d of deferred.splice(0)) {
       if (ended) skipped.push(`line ${d.lineNumber}: ${d.type} after the call ended`);
@@ -432,10 +432,7 @@ export async function replayFrameLines(
       if (ended) skipped.push(`line ${pending.lineNumber}: ${pending.type} after the call ended`);
       // Dropped live (a key pressed, the socket gone): no turn on them.
       else if (!group.dropped) await run({ ...pending, event, held: { fragments: texts, slot: group.slot } });
-      for (const p of after) {
-        if (ended) skipped.push(`line ${p.lineNumber}: ${p.type} after the call ended`);
-        else await run(p);
-      }
+      for (const next of after) await next();
       continue;
     }
     if (neverRun.has(index)) {
@@ -533,6 +530,17 @@ export async function replayFrameLines(
     // A `#` that ends keys held at an offer that takes a yes or a no only (keyBurstPending) is passed on,
     // as the adapter passes it on, decided from the session as its queue found it.
     if (event.type === 'user.key' && (event.digit === '#' || event.digit === '*')) {
+      // During held words, behind their turn, as the adapter queued it.
+      if (open !== null) {
+        const key = event;
+        const pending: Pending = { event: key, type, lineMs, lineNumber, arrival: undefined };
+        open.after.push(async () => {
+          continuation.reset();
+          if (ended) skipped.push(`line ${lineNumber}: ${type} after the call ended`);
+          else if (key.digit === '#' && session !== null && keyBurstPending(session)) await run(pending);
+        });
+        continue;
+      }
       continuation.reset();
       if (!(event.digit === '#' && keyBurstPending(session))) continue;
     }
@@ -569,7 +577,10 @@ export async function replayFrameLines(
     }
     // A turn that came while words were held runs after them, as it did live.
     if (open !== null) {
-      open.after.push(pending);
+      open.after.push(async () => {
+        if (ended) skipped.push(`line ${pending.lineNumber}: ${pending.type} after the call ended`);
+        else await run(pending);
+      });
       continue;
     }
     // Live, a frame that arrived during the service wait was queued behind the service's answer, so

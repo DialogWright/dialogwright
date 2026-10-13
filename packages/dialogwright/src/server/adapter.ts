@@ -855,9 +855,12 @@ async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEven
  *   prompt (Twilio's) starts it again too.
  * - **Nothing more** (the wait passes, or speech with no prompt after it): the words run alone, as they
  *   would have, a little later.
- * - **A key pressed**: the caller has gone to the keypad, and the keys answer the question already asked,
- *   so the words are dropped, no turn runs on them, and the keys are taken as keyed at that question (a
- *   turn on the words would have said a re-ask first, and the keys keyed ahead of it would be refused).
+ * - **A digit keyed**, for a slot that takes keys (SlotSpec.dtmf): the caller has gone to the keypad, and the
+ *   keys answer the question already asked, so the words are dropped, no turn runs on them, and the keys are
+ *   taken as keyed at that question (a turn on the words would have said a re-ask first, and the keys keyed
+ *   ahead of it would be refused). A `#` or a `*`, or a key for a slot that takes none, leaves the hold as it
+ *   is (a stray key is no answer, and ending the hold on it would lose the words): the key does what it does
+ *   behind the words' turn, as any frame behind a turn does.
  * - **The socket gone** (the caller hung up, a reconnect, the call forgotten): the words are dropped, as
  *   words said to a line that is no more; a reconnect asks its question again, as it always has.
  *
@@ -902,6 +905,14 @@ const heldWords = new Map<string, HeldWordsWait>();
 
 /** The words joined, single spaces. */
 const joinedWords = (fragments: readonly string[]): string => fragments.map((f) => f.trim()).filter(Boolean).join(' ');
+
+/** Whether a key ends a call's held words: a digit, for a held slot that takes keys (SlotSpec.dtmf). */
+function keyedForHeld(entry: CallEntry, callSid: string, digit: string): boolean {
+  const h = heldWords.get(callSid);
+  if (!h || !/^\d$/.test(digit)) return false;
+  const app = appOf(entry.session);
+  return Object.hasOwn(app.slots, h.slot) && app.slots[h.slot]!.dtmf !== undefined;
+}
 
 /** End a call's held words, if any: the turn on them runs. */
 function finishWords(callSid: string, end: WordsEnd): void {
@@ -2148,9 +2159,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // A reply held for a caller not finished: more words are the caller going on; a key sends it now.
   if (frame.type === 'prompt') releaseReply(ctx.callSid, 'prompt');
   else if (frame.type === 'dtmf') releaseReply(ctx.callSid, 'sent');
-  // Held words: a final prompt joins them, and runs no turn of its own; a key runs them now (holdWords).
+  // Held words: a final prompt joins them, and runs no turn of its own; a digit keyed for a slot that takes
+  // keys drops them, the keys answering its question (holdWords). `#`, `*`, or keys a slot does not take, leave
+  // the hold as it is: they are passed over, or run as their own turn after the words', as they would have.
   if (joinsHeld && event.type === 'user.speech' && joinHeldWords(ctx.callSid, event.text)) return;
-  if (frame.type === 'dtmf') finishWords(ctx.callSid, 'key');
+  if (event.type === 'user.key' && keyedForHeld(entry, ctx.callSid, event.digit)) finishWords(ctx.callSid, 'key');
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {

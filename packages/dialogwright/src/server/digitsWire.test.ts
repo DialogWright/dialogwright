@@ -407,6 +407,44 @@ describe('a number said with a pause (waitForRestMs): the words held, before any
     await sameOnReplay(call);
   });
 
+  it('a # or a * in the wait leaves the hold as it is: the rest still joins the words', async () => {
+    for (const stray of ['#', '*']) {
+      forgetNoInput(CALL);
+      const call = liveCall(accountApp());
+      await toAccount(call);
+      const { held } = firstDigit(call);
+      await vi.advanceTimersByTimeAsync(300);
+      await call.key(stray);
+      await vi.advanceTimersByTimeAsync(500);
+      await call.say(REST);
+      await held;
+      expect(call.session().slots.account?.value).toBe('55520417');
+      expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 800, fragments: 2, end: 'rest' }]);
+      await sameOnReplay(call);
+      vi.useFakeTimers();
+    }
+  });
+
+  it('a key for a slot that takes none leaves the hold as it is: the rest still joins the words, the key behind them', async () => {
+    for (const stray of ['*', '5']) {
+      forgetNoInput(CALL);
+      const call = liveCall(accountApp({ keypad: false }));
+      await toAccount(call);
+      const { held } = firstDigit(call);
+      await vi.advanceTimersByTimeAsync(300);
+      const key = call.key(stray);
+      await vi.advanceTimersByTimeAsync(500);
+      await call.say(REST);
+      await held;
+      await key;
+      expect(call.session().slots.account?.value).toBe('55520417');
+      expect(call.wire()).toContain(READ_BACK_SAID);
+      expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 800, fragments: 2, end: 'rest' }]);
+      await sameOnReplay(call);
+      vi.useFakeTimers();
+    }
+  });
+
   it('a reconnect before the old socket\'s close drops the words: the question is asked again once, on the new socket', async () => {
     const call = liveCall(accountApp());
     await toAccount(call);
