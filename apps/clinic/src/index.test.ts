@@ -37,6 +37,8 @@ function reachablePromptIds(): string[] {
   // The completions, and the scheduling hooks' lines.
   for (const id of ['schedule_confirmed', 'reschedule_confirmed', 'cancel_confirmed', 'appointment_details']) ids.add(id);
   for (const id of ['confirm_time', 'slot_nearest', 'slot_edge_earlier', 'slot_edge_later', 'no_appointment_found', 'no_openings']) ids.add(id);
+  // A general question: two topics asked about, the approved answer, and no answer to give.
+  for (const id of ['disambiguate_subject', 'kb_answer', 'kb_unavailable']) ids.add(id);
   return [...ids].sort();
 }
 
@@ -49,7 +51,7 @@ describe('the clinic app', () => {
 
   it('verifies no one, so every tool is at level 0', () => {
     expect(clinicApp.identity).toBeUndefined();
-    expect(Object.values(clinicApp.policy.toolLevel)).toEqual([0, 0, 0, 0, 0]);
+    expect(Object.values(clinicApp.policy.toolLevel)).toEqual([0, 0, 0, 0, 0, 0]);
     expect(() => validateApp({ ...clinicApp, policy: { ...clinicApp.policy, toolLevel: { ...clinicApp.policy.toolLevel, bookAppointment: 1 } } })).toThrow(/no identity/);
   });
 
@@ -59,7 +61,7 @@ describe('the clinic app', () => {
     for (const id of reachable) expect(Object.hasOwn(manifest, id), id).toBe(true);
     // A member ID is read back at the summary, so its implicit readback is never said.
     expect(Object.keys(manifest).filter((id) => !reachable.includes(id))).toEqual(['ack_memberId']);
-    expect(Object.keys(manifest)).toHaveLength(68);
+    expect(Object.keys(manifest)).toHaveLength(73);
     expect(manifest.greeting!.text).toBe('Thanks for calling Example Family Practice. How can I help you today?');
   });
 });

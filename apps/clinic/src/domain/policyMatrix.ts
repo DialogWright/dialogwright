@@ -23,7 +23,8 @@ export function clinicPolicyMatrix(): PolicyMatrix {
       outOfScope: { subject: '55507790', record: 'A-103' },
       unknown: { subject: '55500000', record: 'A-999' },
     },
-    // A write's confirmed fields, as a reschedule with Dr. Patel on Tuesday morning sends them.
-    values: { name: 'morgan ellis', dob: '1975-06-14', provider: 'patel', date: '2026-09-22', time: '09:00' },
+    // A write's confirmed fields, as a reschedule with Dr. Patel on Tuesday morning sends them, and
+    // the topic a general question is about.
+    values: { name: 'morgan ellis', dob: '1975-06-14', provider: 'patel', date: '2026-09-22', time: '09:00', topic: 'parking' },
   };
 }

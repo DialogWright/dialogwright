@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `527fce34e8b8b32e4be24b13c80b022b78b2c52ae1f65a2b01d476e3043c7ead` |
+| `policy.yaml` | `922b836639e187c8671e1f5d4439e4265ba8a992340dfe419c55ecb8a9f7c411` |
 | `identity.yaml` | none: this app verifies no one |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -55,6 +55,7 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 | Cancel an appointment (`cancelAppointment`) | provider (`provider`) | as it is |
 | Cancel an appointment (`cancelAppointment`) | day (`date`) | as it is |
 | Cancel an appointment (`cancelAppointment`) | time (`time`) | as it is |
+| Answer a question from the knowledge base (`answerQuestion`) | topic (`topic`) | as it is |
 
 ## Actions
 
@@ -67,6 +68,7 @@ One row per action the agent may take. Anything else is refused.
 | **Book an appointment**<br/>`bookAppointment` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: name, date of birth, provider, day and time |
 | **Move an appointment**<br/>`moveAppointment` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: name, date of birth, provider, day and time |
 | **Cancel an appointment**<br/>`cancelAppointment` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: name, date of birth, provider, day and time |
+| **Answer a question from the knowledge base**<br/>`answerQuestion` | 0 anonymous | 1. any caller may ask, verified or not |
 
 ### Actions by level, with their rules and what each role gets
 
@@ -78,5 +80,6 @@ flowchart LR
     a_bookAppointment["Book an appointment<br/>identity · confirmed"]
     a_moveAppointment["Move an appointment<br/>identity · confirmed"]
     a_cancelAppointment["Cancel an appointment<br/>identity · confirmed"]
+    a_answerQuestion["Answer a question from the knowledge base<br/>identity"]
   end
 ```

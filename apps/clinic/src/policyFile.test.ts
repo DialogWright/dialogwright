@@ -18,8 +18,8 @@ import { clinicApp, code } from './index';
  * each as it is, as it was recorded before.
  */
 
-/** How the clinic records the params no redacted slot covers: as they are, as before. */
-const AUDIT = { name: 'keep', provider: 'keep', date: 'keep', time: 'keep' };
+/** How the clinic records the params no redacted slot covers: as they are, as before (and a general question's topic id, since the knowledge base). */
+const AUDIT = { name: 'keep', provider: 'keep', date: 'keep', time: 'keep', topic: 'keep' };
 
 const POLICY = fileURLToPath(new URL('../policy.yaml', import.meta.url));
 const LEGACY = fileURLToPath(new URL('./__fixtures__/legacy', import.meta.url));

@@ -23,11 +23,11 @@ import { providerSlot } from './testing/oracles/provider';
 const FORM_INTENTS = ['schedule_new', 'reschedule', 'cancel', 'confirm_appointment', 'billing'];
 
 describe('the clinic folder: intents.yaml', () => {
-  it('has the eleven intents in the order the model is offered them, done among them: a caller who is finished hears the goodbye', () => {
-    expect(Object.keys(clinicApp.intents)).toEqual([...FORM_INTENTS, 'agent', 'repeat_prompt', 'done', 'capabilities', 'other', 'none']);
+  it('has the twelve intents in the order the model is offered them, done among them: a caller who is finished hears the goodbye', () => {
+    expect(Object.keys(clinicApp.intents)).toEqual([...FORM_INTENTS, 'ask_question', 'agent', 'repeat_prompt', 'done', 'capabilities', 'other', 'none']);
     expect(clinicApp.intents.done).toEqual({ criteria: expect.stringContaining("I don't need anything else"), label: 'finish up', kind: 'control' });
     expect(clinicApp.intents.capabilities).toEqual({ criteria: expect.any(String), label: 'hear what I can do', kind: 'informational', promptId: 'capabilities' });
-    for (const i of FORM_INTENTS) expect(clinicApp.intents[i]!.kind, i).toBe('form');
+    for (const i of [...FORM_INTENTS, 'ask_question']) expect(clinicApp.intents[i]!.kind, i).toBe('form');
     for (const i of ['agent', 'repeat_prompt', 'done', 'other', 'none']) expect(clinicApp.intents[i]!.kind, i).toBe('control');
     // The billing intent is the one that names a bill or the caller's cover.
     expect(clinicApp.intents.billing!.criteria).toBe('Asks about a bill, charge, payment, or insurance coverage');
@@ -39,8 +39,8 @@ describe('the clinic folder: intents.yaml', () => {
 });
 
 describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/forms.ts', () => {
-  it('has a form for each task, its slots the clinic\'s own', () => {
-    expect(Object.keys(clinicApp.forms)).toEqual(FORM_INTENTS);
+  it('has a form for each task and one for a general question, its slots the clinic\'s own', () => {
+    expect(Object.keys(clinicApp.forms)).toEqual([...FORM_INTENTS, 'ask_question']);
     const slots = Object.fromEntries(Object.entries(clinicApp.forms).map(([id, f]) => [id, [f.slots, f.summaryPromptId]]));
     expect(slots).toEqual({
       schedule_new: [['name', 'dob', 'provider', 'date'], 'confirm_schedule'],
@@ -48,8 +48,11 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
       cancel: [['name', 'dob', 'provider'], 'confirm_cancel'],
       confirm_appointment: [['name', 'dob', 'provider'], 'confirm_appointment_details'],
       billing: [['memberId'], null],
+      ask_question: [['subject'], null],
     });
     for (const form of Object.values(clinicApp.forms)) for (const slot of form.slots) expect(ALL_SLOTS).toContain(slot);
+    // A general question is answered by the engine's knowledge completion (no hooks), through the gated answerQuestion.
+    expect(clinicApp.forms.ask_question!.calls).toEqual(['answerQuestion']);
   });
 
   it('carries every hook the code writes for a form, and no other', () => {
@@ -69,10 +72,10 @@ describe('the clinic folder: forms.yaml, joined with the hooks in src/domain/for
 });
 
 describe('the clinic folder: slots.yaml', () => {
-  it('lists all five slots, none as code: the name as a library name slot, the birth date as a library birthdate slot, the member ID as a library digits slot, the provider as a library choice slot and the day as a library date slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
+  it('lists all six slots, none as code: the name as a library name slot, the birth date as a library birthdate slot, the member ID as a library digits slot, the provider as a library choice slot, the day as a library date slot and a question\'s topic as a library topic slot, and its order is the order of the app\'s slots (the order the engine fills and acknowledges them in)', () => {
     const slots = loadAppFolder(CLINIC_DIR).config?.slots;
     expect(Object.keys(slots ?? {})).toEqual([...ALL_SLOTS]);
-    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['name', 'birthdate', 'digits', 'choice', 'date']);
+    expect(Object.values(slots ?? {}).map((s) => s.type)).toEqual(['name', 'birthdate', 'digits', 'choice', 'date', 'topic']);
     expect(Object.keys(clinicApp.slots)).toEqual(Object.keys(slots ?? {}));
     expect(Object.keys(clinicApp.slots)).toEqual([...ALL_SLOTS]);
     expect(Object.keys(SLOTS)).toEqual([]);
@@ -203,12 +206,12 @@ describe('the clinic folder: slots.yaml', () => {
 describe('the clinic folder: policy.yaml', () => {
   it('verifies no one: no identity, and every tool at level 0', () => {
     expect(clinicApp.identity).toBeUndefined();
-    expect(clinicApp.policy.toolLevel).toEqual({ findAppointment: 0, listOpenings: 0, bookAppointment: 0, moveAppointment: 0, cancelAppointment: 0 });
+    expect(clinicApp.policy.toolLevel).toEqual({ findAppointment: 0, listOpenings: 0, bookAppointment: 0, moveAppointment: 0, cancelAppointment: 0, answerQuestion: 0 });
   });
 
   it('holds the three writes to what the caller confirmed, over who, with whom and when', () => {
     expect(clinicApp.policy.rulesFor).toEqual({
-      findAppointment: ['R1'], listOpenings: ['R1'], bookAppointment: ['R1', 'R3'], moveAppointment: ['R1', 'R3'], cancelAppointment: ['R1', 'R3'],
+      findAppointment: ['R1'], listOpenings: ['R1'], bookAppointment: ['R1', 'R3'], moveAppointment: ['R1', 'R3'], cancelAppointment: ['R1', 'R3'], answerQuestion: ['R1'],
     });
     expect(clinicApp.policy.confirmedFields).toEqual(['name', 'dob', 'provider', 'date', 'time']);
     expect(clinicApp.policy.maxAttempts).toBe(3);
@@ -221,7 +224,11 @@ describe('the clinic folder: app.yaml', () => {
     expect(clinicApp.id).toBe('clinic');
     expect(clinicApp.brand).toEqual({ name: 'Example Family Practice', mark: 'EF', key: 'example-family-practice' });
     expect(clinicApp.locales).toEqual({ default: 'en-US', prompts: {} });
-    expect(Object.keys(clinicApp.configHashes?.files ?? {}).sort()).toEqual(['app.yaml', 'forms.yaml', 'intents.yaml', 'policy.yaml', 'prompts.yaml', 'slots.yaml']);
+    const files = Object.keys(clinicApp.configHashes?.files ?? {}).sort();
+    expect(files.filter((f) => !f.startsWith('kb/'))).toEqual(['app.yaml', 'forms.yaml', 'intents.yaml', 'policy.yaml', 'prompts.yaml', 'slots.yaml']);
+    // The knowledge base it runs on is hashed too (its passages, once a person approves them), never its drafts.
+    expect(files).toEqual(expect.arrayContaining(['kb/kb.yaml', 'kb/topics.yaml', 'kb/sources/visitor-information.yaml']));
+    expect(files.filter((f) => f.startsWith('kb/') && !/^kb\/(kb|topics)\.yaml$|^kb\/(sources|passages)\/[^/]+\.yaml$/.test(f))).toEqual([]);
   });
 
   it('has the clinic\'s own thresholds, carries the caller\'s details, and finds its fixtures', () => {
@@ -256,11 +263,12 @@ describe('the clinic folder: dialogwright check', () => {
     for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** The clinic's YAML in a temporary folder, with prompts.yaml changed by `edit` and slots.yaml by `editSlots`. */
+  /** The clinic's YAML and its knowledge base in a temporary folder, with prompts.yaml changed by `edit` and slots.yaml by `editSlots`. */
   const copy = (edit: (text: string) => string, editSlots: (text: string) => string = (t) => t): string => {
     const dir = mkdtempSync(join(tmpdir(), 'clinic-check-'));
     scratch.push(dir);
     for (const file of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml', 'slots.yaml']) cpSync(join(CLINIC_DIR, file), join(dir, file));
+    cpSync(join(CLINIC_DIR, 'kb'), join(dir, 'kb'), { recursive: true });
     writeFileSync(join(dir, 'prompts.yaml'), edit(readFileSync(join(dir, 'prompts.yaml'), 'utf8')));
     writeFileSync(join(dir, 'slots.yaml'), editSlots(readFileSync(join(dir, 'slots.yaml'), 'utf8')));
     return dir;

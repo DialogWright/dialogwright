@@ -90,7 +90,7 @@ prompts:
     text: I understand, let's get this sorted.
     interruptible: false
   capabilities:
-    text: I can help you schedule, reschedule, cancel, or confirm an appointment, or connect you to billing. You can just tell me what you need in your own words, and if you'd rather talk to a person, say so anytime.
+    text: I can help you schedule, reschedule, cancel, or confirm an appointment, connect you to billing, or answer questions about the practice, like our hours or parking. You can just tell me what you need in your own words, and if you'd rather talk to a person, say so anytime.
     interruptible: true
   no_input:
     text: I didn't hear anything.
@@ -208,4 +208,23 @@ prompts:
     interruptible: false
   handoff_security:
     text: Let me connect you to someone who can help.
+    interruptible: false
+
+  # Answers from the knowledge base (kb/): a general question's topic, and the lines every answer is
+  # said through. kb_answer says the approved passage word for word; kb_unavailable is said when no
+  # passage may be said today (none approved, or one withheld), and a person is offered.
+  ask_subject:
+    text: What would you like to know?
+    interruptible: true
+  ask_subject_retry:
+    text: Sorry, I can answer questions about our opening hours, parking, your first visit, the cancellation policy, and accessibility. What would you like to know?
+    interruptible: true
+  disambiguate_subject:
+    text: Is that about {a}, or {b}?
+    interruptible: true
+  kb_answer:
+    text: '{answer}'
+    interruptible: false
+  kb_unavailable:
+    text: I'm sorry, I don't have an answer to that I can give you right now.
     interruptible: false

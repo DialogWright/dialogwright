@@ -4,7 +4,7 @@
 
 A knowledge base is for the questions callers ask that no form handles: when are you open, what happens if I return a book late, how do I renew my card. Its answers are short passages that people approved, chosen by what the caller means, and spoken word for word. No model writes them and none changes them: the model only picks which topic the caller asked about, and code finds the one approved passage for this caller and this day.
 
-This section is the whole of it, in the order you meet it: the folder, how a call uses it, the three places an answer is said from, approval and staleness, building one from documents, tuning retrieval, testing and what is recorded. The examples are one small knowledge base, Example Town Library's, whose files are the ones the engine's own tests build. [The topic slot's page](../slots/topic.md) has the question the model is asked.
+This section is the whole of it, in the order you meet it: the folder, how a call uses it, the three places an answer is said from, approval and staleness, building one from documents, tuning retrieval, testing and what is recorded. The examples are one small knowledge base, Example Town Library's, whose files are the ones the engine's own tests build. [The topic slot's page](../slots/topic.md) has the question the model is asked. Two example apps have one to read whole: [the clinic](../../apps/clinic/README.md#the-knowledge-base), the smallest (five topics from one visitor page, found by keywords alone), and [the utility](../../apps/utility/README.md#the-knowledge-base) (twelve topics from a website and two PDFs, found by meaning, with an account line).
 
 ### 12.1 The folder
 

@@ -34,13 +34,22 @@ actions:
     rules:
       - identity
       - confirmed: [name, dob, provider, date, time]
+  # Answers a general question from the knowledge base: the approved passage in force today for the
+  # topic (kbAnswerTool). Anyone may ask, and every answer is for every caller (kb/kb.yaml has no
+  # applies domain), so it reads nothing of the caller's.
+  answerQuestion:
+    say: answer a question from the knowledge base
+    level: 0
+    rules: [identity]
 
 # How each value an action is sent is recorded (the gate event, the trace, the console and the
 # audit), where it is not a slot with a redact setting: the date of birth is hidden, as its slot
 # says. Every other param the tools list (src/domain/tools.ts) is declared here; these are recorded
-# as they are. The time is no slot: the caller picks it from the openings read to them.
+# as they are. The time is no slot: the caller picks it from the openings read to them. The topic of
+# a general question is a topic id of the knowledge base (kb/topics.yaml), recorded as it is.
 audit:
   name: keep
   provider: keep
   date: keep
   time: keep
+  topic: keep

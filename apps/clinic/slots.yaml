@@ -134,3 +134,10 @@ date:
     qualifier: 'Read asr.text. If the caller names a day of the week, do they say "this" or "next" before it? When they correct this qualifier, the word not marks the one they are rejecting; choose the other one, as in "not this Thursday, next Thursday". A hedge such as "I''m not sure" or "either" is not a correction; name the qualifier they mention.'
     relative: 'Read asr.text. Does the caller say today, tomorrow, or the day after tomorrow? When they correct a relative day, the word not marks the one they are rejecting; choose the other one, as in "not today, the day after tomorrow". A hedge such as "I''m not sure" or "either" is not a correction; name the relative day they mention.'
     window: 'Read asr.text. Does the caller name a span of days such as this week, next week, this month, or next month? When they correct the span, the word not marks the one they are rejecting; choose the other one, as in "not next week, this week". A hedge such as "I''m not sure" or "either" is not a correction; name the span they mention.'
+
+# Which topic of the knowledge base (kb/topics.yaml) a general question is about. The model is asked
+# only about the topics retrieval nominates for the caller's words (at most kb.yaml's cap), so a turn
+# that nominates nothing asks nothing. Its value is a topic id, never an answer: the answer is the
+# approved passage for that topic, said word for word.
+subject:
+  type: topic

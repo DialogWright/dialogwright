@@ -21,13 +21,15 @@ console:
     cancel: Cancel an appointment
     confirm_appointment: Confirm an appointment
     billing: Billing
-  slotOrder: [name, dob, memberId, provider, date]
+    ask_question: Answer a question
+  slotOrder: [name, dob, memberId, provider, date, subject]
   slotLabels:
     name: Name
     dob: Date of birth
     memberId: Member ID
     provider: Provider
     date: Day
+    subject: Question topic
   # A slot owns the question ids that start with its own; the member ID's detection question does not.
   questionPrefixes:
     memberId: [memberId, containsMemberId]
@@ -64,11 +66,16 @@ console:
 voice:
   hints: [
     Chen, Cheng, Patel, Okafor, Nguyen, Rossi, Kim, Alvarez,
-    appointment, reschedule, cancel, confirm, billing, member ID, morning, afternoon, agent, representative
+    appointment, reschedule, cancel, confirm, billing, member ID, morning, afternoon, agent, representative,
+    parking, hours, wheelchair, interpreter
   ]
   spokenDigits:
     - pattern: '\d{4,}(?: \d{4,})+|\d{5,}'
       spell: groups
+
+# A knowledge answer (kb_answer's {answer}) is an approved passage: spoken whole, never stitched from clips.
+prompts:
+  dataVars: [answer]
 
 # The handoff note's words: who takes the call, and the clinic's own handoff reason.
 handoff:

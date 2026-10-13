@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/forms.schema.json
-# The clinic's five forms. None has an entry call (nothing to look up or verify before the slots).
+# The clinic's six forms. None has an entry call (nothing to look up or verify before the slots).
 # The four on an appointment confirm a summary and end the call on their line; billing collects the
 # member ID and hands off to the billing team. The hooks are TypeScript (src/domain/forms.ts and
 # src/domain/scheduling.ts); each form lists the ones it has, and the actions they call through the
@@ -35,3 +35,13 @@ forms:
     summaryPromptId: null
     hooks: [complete]
     calls: []
+  # A general question: the topic slot (`subject`) asks which of the topics retrieval nominates the
+  # caller means, and the engine's knowledge completion says the approved passage through
+  # answerQuestion (kbAnswerTool, level 0: anyone may ask). No passage in force (none approved yet,
+  # or one withheld as stale): the unavailable line, and a person offered once. No hooks: the
+  # completion is the engine's.
+  ask_question:
+    slots: [subject]
+    summaryPromptId: null
+    answers: { slot: subject }
+    calls: [answerQuestion]

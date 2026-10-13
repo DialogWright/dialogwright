@@ -65,7 +65,8 @@ describe('the shadow harness on the clinic', () => {
 
   it('pairs the name, the birth date, the member ID, the provider and the day, now library slots, with the oracles that replaced them', () => {
     expect(ORACLE_PAIRS.map((s) => s.id)).toEqual(['name', 'dob', 'memberId', 'provider', 'date']);
-    expect(ORACLE_PAIRS.map((s) => s.id)).toEqual(Object.keys(clinicApp.slots));
+    // The topic slot (a general question's) came with the knowledge base as a library slot: it never had a hand-written one.
+    expect(ORACLE_PAIRS.map((s) => s.id)).toEqual(Object.keys(clinicApp.slots).filter((id) => id !== 'subject'));
     expect((clinicApp.slots.provider as LibrarySlotSpec).type).toBe('choice');
     expect((clinicApp.slots.name as LibrarySlotSpec).type).toBe('name');
     expect((clinicApp.slots.dob as LibrarySlotSpec).type).toBe('birthdate');

@@ -4,7 +4,7 @@
 # recorded cassette (fixtures/recorded). Each label is said in acknowledgements and confirmations
 # ("I'd be happy to help you {label}").
 intents:
-  # The five tasks, one form each (forms.yaml)
+  # The five tasks, one form each (forms.yaml), and a general question
   schedule_new:
     criteria: Wants to book a new appointment that does not exist yet
     label: schedule a new appointment
@@ -24,6 +24,12 @@ intents:
   billing:
     criteria: Asks about a bill, charge, payment, or insurance coverage
     label: talk to billing
+    kind: form
+  # A general question, answered from the knowledge base (kb/): the topic slot asks which topic,
+  # among those retrieval nominates for the words, and the approved passage is said word for word.
+  ask_question:
+    criteria: Asks a general question about the practice, such as its opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility
+    label: answer a question
     kind: form
 
   # The engine's own
@@ -59,7 +65,7 @@ intents:
     label: nothing
     kind: control
 
-# The keypad menu: each task by digit, and 0 for a person.
+# The keypad menu: each task by digit, and 0 for a person. A general question has no key: it needs words.
 menu:
   - digit: "1"
     intent: schedule_new

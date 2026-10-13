@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: accessibility
+topic: accessibility
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: accessibility
+answer: The building has a step-free entrance and an elevator to every floor, and every exam room is wheelchair accessible. If you need an interpreter, tell us when you book, and we'll arrange one at no cost to you.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-13
+  excerpt: The building has a step-free entrance and an elevator to every floor, and every exam room is wheelchair accessible. If you need a sign language or spoken language interpreter, tell us when you book and we will arrange one at no cost to you.

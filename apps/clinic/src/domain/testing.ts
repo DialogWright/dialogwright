@@ -196,6 +196,7 @@ const HEURISTICS: NonNullable<TestingHooks['heuristics']> = {
     ['cancel', /\bcancel/],
     ['confirm_appointment', /\b(confirm|check|verify|when is|do i have|still on)\b/],
     ['billing', /\b(bill|billing|charge|charged|payment|invoice|insurance|copay|owe)\b/],
+    ['ask_question', /\b(question|hours|open|park\w*|bring|first visit|new patient|accessib\w*|wheelchair|elevator|interpreter|policy|notice)\b/],
   ],
   organization: 'example family practice',
   choice: {
@@ -278,6 +279,7 @@ export const CLINIC_TESTING: TestingHooks = {
       memberId: { value: '55507788', display: '5550 7788' },
       provider: { value: 'patel', display: 'Dr. Patel' },
       date: { value: '2026-09-22', display: 'Tuesday, September 22' },
+      subject: { value: 'parking', display: 'parking' },
     },
     // A corpus line at "anything else?" (context anything_else) follows a confirmed appointment: the
     // form just answered, by its own line, so there is no call to make again.

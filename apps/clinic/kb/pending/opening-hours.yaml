@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: opening-hours
+topic: opening_hours
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: opening-hours
+answer: We're open Monday through Friday, from eight in the morning to five in the afternoon, and closed on weekends and public holidays.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-13
+  excerpt: Example Family Practice is open Monday through Friday from 8 a.m. to 5 p.m. We are closed on weekends and public holidays.

@@ -2207,5 +2207,62 @@
       "form": "reschedule",
       "text": "Tuesday, September 22 at 12:30 PM"
     }
+  },
+  {
+    "id": "question-parking",
+    "steps": [
+      {
+        "say": "where do I park"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "Parking is free in the lot behind the building"
+    }
+  },
+  {
+    "id": "question-asked-for",
+    "steps": [
+      {
+        "say": "I have a question"
+      },
+      {
+        "say": "parking"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "Parking is free in the lot behind the building"
+    }
+  },
+  {
+    "id": "question-cancellation-policy",
+    "steps": [
+      {
+        "say": "what's your cancellation policy"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "at least twenty-four hours before your appointment"
+    }
+  },
+  {
+    "id": "question-none",
+    "steps": [
+      {
+        "say": "I have a question"
+      },
+      {
+        "say": "whether you do flu shots"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_subject_retry"
+    }
   }
 ]

@@ -1,0 +1,61 @@
+# Paraphrases of Example Family Practice's knowledge base topics (kb/topics.yaml): what callers say
+# about each topic in words other than its title, keywords and example questions, which retrieval
+# never sees, and, under none, what callers say that no topic answers. pnpm kb:bakeoff reads it:
+#
+#   pnpm kb:bakeoff apps/clinic --paraphrases apps/clinic/fixtures/kb/paraphrases.yaml --sweep
+#
+# and src/kb.test.ts holds the default retriever's recall on it.
+opening_hours:
+  - What time do you close today?
+  - Until when is the practice open?
+  - Can I come in on a Sunday?
+  - What time does the front desk open in the morning?
+  - Are you open over the holidays?
+  - When do you shut for the day?
+  - Are you closed on Saturdays?
+  - What days of the week are you open?
+parking:
+  - Where can I leave my car?
+  - Is there a lot for patients?
+  - Do you have parking for people with a disabled permit?
+  - Will I need to pay to park?
+  - Is there anywhere to park near the building?
+  - Where is the entrance to the car park?
+  - Can I park right by the door?
+  - Is there free parking?
+first_visit:
+  - It's my first time coming in, what do I need?
+  - Do I need my insurance card when I come in?
+  - What paperwork should I bring as a new patient?
+  - How early should I get there for my first visit?
+  - Should I bring a list of my medicines?
+  - Do I need a photo ID for my appointment?
+  - What do new patients have to bring with them?
+  - I've never been to your office before, anything I should know?
+cancellation_policy:
+  - How far ahead do I have to cancel?
+  - Is there a penalty if I cancel late?
+  - What happens if I miss my appointment?
+  - How many hours notice do you want before I cancel?
+  - Can I cancel the day before?
+  - What are the rules about cancelling?
+  - Do you charge for a no show?
+  - How late can I call to change my appointment?
+accessibility:
+  - Can I get in with a wheelchair?
+  - Are there stairs at the entrance?
+  - Is there a lift in the building?
+  - I need someone to translate for me, can you help?
+  - Do you have interpreters for deaf patients?
+  - My mother uses a walker, can she get around easily?
+  - Is the office accessible for people with disabilities?
+  - Can you arrange a Spanish interpreter?
+none:
+  - Do you do flu shots?
+  - Is Dr. Patel taking new patients?
+  - Can I get my test results over the phone?
+  - Do you take walk-ins?
+  - What is the copay for a visit?
+  - Can I get a prescription refilled?
+  - I'd like to speak to a nurse.
+  - Can you send my records to another doctor?

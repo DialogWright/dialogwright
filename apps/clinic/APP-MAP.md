@@ -13,10 +13,11 @@
 | `cancel` | form | cancel your appointment | opens the form, which asks for name, date of birth, provider |
 | `confirm_appointment` | form | confirm your appointment | opens the form, which asks for name, date of birth, provider |
 | `billing` | form | talk to billing | opens the form, which asks for member ID |
+| `ask_question` | form | answer a question | opens the form, which asks for question topic |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `done` | control | finish up | handled by the engine |
-| `capabilities` | informational | hear what I can do | says "I can help you schedule, reschedule, cancel, or confirm an appointment, or connect you ..." and goes back to the question |
+| `capabilities` | informational | hear what I can do | says "I can help you schedule, reschedule, cancel, or confirm an appointment, connect you to ..." and goes back to the question |
 | `other` | control | something else | handled by the engine |
 | `none` | control | nothing | handled by the engine |
 
@@ -159,6 +160,23 @@ flowchart LR
   intent --> slots
   done["Completes without calling an action"]
   slots --> done
+```
+
+## Answer a question
+
+Intent `ask_question` to its slots, the summary, the action and its rules.
+
+```mermaid
+flowchart LR
+  intent("Intent<br/>ask_question<br/>answer a question")
+  subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
+    s_subject["subject<br/>type: topic"]
+  end
+  intent --> slots
+  a_answerQuestion["Answer a question from the knowledge base<br/>level 0: anonymous"]
+  slots -->|"calls"| a_answerQuestion
+  r_answerQuestion(["Rules, in order<br/>1. identity"])
+  a_answerQuestion --> r_answerQuestion
 ```
 
 ## Dangling references

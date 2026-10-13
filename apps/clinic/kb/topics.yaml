@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-topics.schema.json
+# The topics callers ask about, by id. Retrieval reads each topic's title, keywords and example
+# questions (asks) to nominate a few for what a caller says; the topic question then asks the
+# decision model which one, if any, they mean. A title is spoken ("Is that about parking, or
+# accessibility?"), so an approval covers it: renaming a topic sends its passage back for review.
+# The words callers use in other ways are in fixtures/kb/paraphrases.yaml, held out from the asks
+# here so the recall test measures retrieval on words it has not seen.
+opening_hours:
+  title: Opening hours
+  keywords: [opening hours, hours, open, closed, closing time, what time, weekend, holidays]
+  asks:
+    - What are your hours?
+    - When are you open?
+    - Are you open on Saturday?
+    - What time do you close?
+  risk: low
+parking:
+  title: Parking
+  keywords: [parking, park, parking lot, car, disability parking]
+  asks:
+    - Where do I park?
+    - Is there parking at the clinic?
+    - Do I have to pay for parking?
+  risk: low
+first_visit:
+  title: Your first visit
+  keywords: [first visit, first appointment, new patient, what to bring, bring, photo ID, insurance card, medicines, arrive early]
+  asks:
+    - What should I bring to my first appointment?
+    - I'm a new patient, what do I need?
+    - How early should I arrive for my first visit?
+cancellation_policy:
+  title: The cancellation policy
+  keywords: [cancellation policy, cancellation, notice, how much notice, late cancellation, cancel late, missed appointment, twenty-four hours]
+  asks:
+    - What is your cancellation policy?
+    - How much notice do you need if I can't make it?
+    - What if I can't come to my appointment?
+accessibility:
+  title: Accessibility
+  keywords: [accessibility, accessible, wheelchair, elevator, lift, step-free, stairs, disability, interpreter, sign language, translator]
+  asks:
+    - Is the building wheelchair accessible?
+    - Is there an elevator?
+    - Can I get an interpreter?

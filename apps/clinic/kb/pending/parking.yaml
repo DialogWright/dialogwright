@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../node_modules/dialogwright/schemas/kb-pending.schema.json
+
+id: parking
+topic: parking
+version: "2026.1"
+effective:
+  from: 2026-01-01
+source:
+  document: visitor-information
+  section: parking
+answer: Parking is free in the lot behind the building, and its entrance is on Example Lane. The spaces next to the door are kept for patients with a disability parking permit.
+drafted:
+  by: assistant (drafted by hand in the drafter's format, no model call)
+  on: 2026-10-13
+  excerpt: Parking is free in the lot behind the building, with its entrance on Example Lane. The spaces next to the door are kept for patients with a disability parking permit.

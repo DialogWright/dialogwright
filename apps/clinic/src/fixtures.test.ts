@@ -15,11 +15,12 @@ describe('the clinic fixtures', () => {
   const scenarios = loadScenarios(scenariosDir());
 
   it('has the clinic\'s corpus and scripted calls, every label one the clinic\'s questions can pick', () => {
-    expect(corpus).toHaveLength(249);
-    expect(scenarios).toHaveLength(90);
+    expect(corpus).toHaveLength(264);
+    expect(scenarios).toHaveLength(94);
     // loadCorpus has checked each entry's slot labels (App.testing.checkCorpusSlots) and question labels.
-    for (const slot of Object.keys(clinicApp.slots)) expect(corpus.some((e) => Object.hasOwn((e.slots ?? {}) as ClinicCorpusSlots, slot)), slot).toBe(true);
-    for (const id of ['timeOfDay', 'timePreference', 'providerUnsure', 'providerNameStatus']) expect(corpus.some((e) => e.labels && Object.hasOwn(e.labels, id)), id).toBe(true);
+    // A general question's topic is labelled by its question (subjectTopic), as a library topic slot's is; every other slot by its slot label.
+    for (const slot of Object.keys(clinicApp.slots).filter((s) => s !== 'subject')) expect(corpus.some((e) => Object.hasOwn((e.slots ?? {}) as ClinicCorpusSlots, slot)), slot).toBe(true);
+    for (const id of ['timeOfDay', 'timePreference', 'providerUnsure', 'providerNameStatus', 'subjectTopic']) expect(corpus.some((e) => e.labels && Object.hasOwn(e.labels, id)), id).toBe(true);
   });
 
   it('has every spoken step of every scripted call in the corpus, so the stub answers it from labels', () => {

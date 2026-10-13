@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineApp, type App, type AppCode } from 'dialogwright';
+import { defineApp, kbAnswerTool, type App, type AppCode } from 'dialogwright';
 import { CLINIC_FACTS } from './domain/facts';
 import { CLINIC_FORM_HOOKS } from './domain/forms';
 import { clinicQuestions } from './domain/scheduling';
@@ -9,9 +9,9 @@ import { CLINIC_LOOKUPS, CLINIC_TOOLS, ClinicSystems } from './domain/tools';
 
 /**
  * Example Family Practice, built from its folder. The YAML in apps/clinic (app.yaml, intents.yaml,
- * forms.yaml, prompts.yaml, policy.yaml) holds what is data: the intents and the keypad menu, the
- * forms' slots and summaries, every line the caller hears, the gate's tables, and how the line
- * presents itself. This file holds what runs: the slot specs, the tools and the directory behind
+ * forms.yaml, prompts.yaml, policy.yaml, slots.yaml) holds what is data: the intents and the keypad
+ * menu, the forms' slots and summaries, every line the caller hears, the gate's tables, and how the
+ * line presents itself; kb/ holds the knowledge base, the approved answers to general questions. This file holds what runs: the slot specs, the tools and the directory behind
  * them, the forms' hooks and the scheduling questions, what the clinic keeps on the session, and the
  * hooks the regression harness and the stubs use. There is no identity.yaml: the clinic verifies no one.
  *
@@ -25,7 +25,10 @@ export const CLINIC_DIR = fileURLToPath(new URL('..', import.meta.url));
 /** The clinic's TypeScript parts: everything the YAML names that runs. */
 export const code: AppCode = {
   slots: SLOTS,
-  tools: CLINIC_TOOLS,
+  // The scheduling tools, and the knowledge base's: answerQuestion resolves the approved passage in
+  // force today for the topic a caller asks about (kb/). Every answer is for every caller, so it reads
+  // none of the caller's facts.
+  tools: { ...CLINIC_TOOLS, answerQuestion: kbAnswerTool() },
   systems: () => ({ sys: new ClinicSystems(), lookups: CLINIC_LOOKUPS }),
   forms: CLINIC_FORM_HOOKS,
   facts: CLINIC_FACTS,

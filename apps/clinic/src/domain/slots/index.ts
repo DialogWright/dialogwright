@@ -1,7 +1,7 @@
 import type { SlotSpec } from 'dialogwright';
 
 /** Every slot, in the order the console and the change question list them. */
-export const ALL_SLOTS = ['name', 'dob', 'memberId', 'provider', 'date'] as const;
+export const ALL_SLOTS = ['name', 'dob', 'memberId', 'provider', 'date', 'subject'] as const;
 export type ClinicSlot = (typeof ALL_SLOTS)[number];
 
 /**

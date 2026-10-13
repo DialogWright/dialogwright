@@ -46,5 +46,8 @@ cancelAppointment · level 0 · identity, confirmed(name, dob, provider, date, t
                  fields exact, confirmed match          ALLOW
                  fields extra|missing                   BLOCK confirmation
 
+answerQuestion · level 0 · identity
+  every caller   ALLOW
+
 (unlisted) · not in the policy
   every caller   BLOCK unknown-tool

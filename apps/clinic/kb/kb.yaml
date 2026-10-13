@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-settings.schema.json
+# Example Family Practice's knowledge base: what a caller hears when they ask a general question
+# about the practice (its opening hours, parking, a first visit, the cancellation policy,
+# accessibility). Each answer is a short passage a person approved against a section of the
+# practice's visitor page (docs-src/visitor-information.md, read into kb/sources by pnpm kb:ingest),
+# said word for word. answerQuestion (kbAnswerTool) resolves the passage in force today; anyone may
+# ask (level 0). Until a person approves the drafts in kb/pending, no topic has a passage, so a
+# question is answered with kb_unavailable and the offer of a person.
+action: answerQuestion
+# Every answer is for every caller: no passage depends on who is asking.
+applies: {}
+# The line speaks English only.
+localeFallback: none
+# A spoken answer is one or two short sentences.
+maxAnswerChars: 300
+# Topics are found by their words alone (keyword retrieval, the default): five topics whose callers'
+# words rarely miss them, nothing to download and no index to keep. The cap is the default's;
+# fixtures/kb/paraphrases.yaml and src/kb.test.ts hold the recall (pnpm kb:bakeoff prints it).
+retrieval:
+  cap: 8

@@ -31,7 +31,7 @@ describe('the shadow gate on the clinic', () => {
     const report = createGateShadowReport();
     runGateGrid(input, shadowGate(gateEvaluator(clinicApp), legacyGateEvaluator(input), { mode: 'report', report }));
     expect(report.mismatches, formatGateShadowReport(report)).toEqual([]);
-    expect(report.compared).toBe(3 * 6 * 18 * 6);
+    expect(report.compared).toBe(3 * 7 * 18 * 6);
     // No call can fail identity at level 0; every other rule of every action passes and fails.
     expect(gateShadowUnexercised(report, FROZEN_CLINIC_POLICY.rulesFor, true)).toEqual(Object.keys(FROZEN_CLINIC_POLICY.rulesFor).map((t) => `${t} identity never fails`));
   });
