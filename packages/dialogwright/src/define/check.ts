@@ -22,6 +22,7 @@ import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks'
 import { moveCycles, slotOutcomeForm, slotOutcomesOf } from '../core/app/next';
 import { digitsMayBeShort } from '../slots/digits/fill';
 import { generatedWordingWarnings } from '../render/config';
+import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfFolder } from '../channel/speechLanguages';
 
 /**
  * `dialogwright check`: everything that can be wrong with an app folder, found in one pass.
@@ -362,6 +363,14 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  localeLabelWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
+  speechLanguageWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   shortSecretWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -379,6 +388,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkPrompts(config, locate, code, linked, codeFile));
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
+  problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
@@ -711,6 +721,120 @@ function telnyxVoiceWarnings(config: LoadedConfig, report: (file: string, path: 
   if (named.length === 0 || named.length === locales.length) return;
   const missing = locales.filter((tag) => !voiced(tag));
   report('app.yaml', ['voice', 'locales'], `a Telnyx voice is named for ${named.join(', ')} but not for ${missing.join(', ')}: on Telnyx the start language's voice is on the relay element too, so a call that switches to ${missing.length === 1 ? 'that locale' : 'one of those'} may keep the voice it started with, reading its language in another's voice (not yet checked on a live call)`, `name a Telnyx voice for every locale (voice.locales.<tag>.voices.telnyx), or for none`);
+}
+
+/**
+ * The warnings for what a carrier is sent of the app's languages (channel/speechLanguages.ts), never
+ * refusals, since a folder does not say which carriers the server answers on: a locale spoken or heard
+ * as a language tag with no region (`es`), which Twilio refused on a live call; and a language other
+ * than English heard by a recognizer that hears English only, its own, the server's default for the
+ * default locale (Deepgram flux on Twilio, unless TWILIO_SPEECH_MODEL names another), or, where the
+ * locale names none, the one the document names for another language. `pnpm diagnose` says the same
+ * with the server's own settings, and refuses a bare tag on a server that answers on Twilio.
+ */
+function speechLanguageWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const speech = speechLocalesOfFolder(config);
+  const voiceLocales = config.app.voice?.locales;
+  const at = (locale: string, field?: 'tts' | 'transcription' | 'recognition', carrier?: string): DataPath => {
+    const own = voiceLocales !== undefined && Object.hasOwn(voiceLocales, locale) ? voiceLocales[locale] : undefined;
+    if (own === undefined) return voiceLocales !== undefined ? ['voice', 'locales'] : config.app.voice !== undefined ? ['voice'] : config.app.locale !== undefined ? ['locale'] : ['id'];
+    if (field === undefined || own[field] === undefined) return ['voice', 'locales', locale];
+    return field === 'recognition' && carrier !== undefined && own.recognition !== undefined && Object.hasOwn(own.recognition, carrier) ? ['voice', 'locales', locale, 'recognition', carrier] : ['voice', 'locales', locale, field];
+  };
+  const bare = bareSpeechTags(speech);
+  for (const locale of [...new Set(bare.map((b) => b.locale))]) {
+    const mine = bare.filter((b) => b.locale === locale);
+    const { message, fix } = bareTagFinding(locale, mine);
+    report('app.yaml', at(locale, mine.find((b) => b.own)?.field), message, fix);
+  }
+  for (const h of englishOnlyHearings(speech)) {
+    const { message, fix } = englishOnlyFinding(h, false);
+    report('app.yaml', at(h.locale, 'recognition', h.carrier), message, fix);
+  }
+}
+
+/**
+ * The lines the engine says an intent's or a form's label in (core/turn.ts: {intentLabel}, and {a} and {b}
+ * of the two lines that name two), with what they name: `forms` the form intents and the internal forms
+ * (formLabel), `confirmed` also done, which a caller may be asked to confirm (gates.ts isRoutable).
+ */
+const LABEL_LINES: Readonly<Record<string, 'forms' | 'confirmed'>> = {
+  ack_intent: 'forms',
+  confirm_intent_explicit: 'confirmed',
+  disambiguate_intent: 'forms',
+  ack_intent_then: 'forms',
+  ack_queued: 'forms',
+  bridge_next: 'forms',
+};
+
+/**
+ * A locale's labels that name nothing: an intent intents.yaml does not have (locale/<tag>/intents.yaml),
+ * and a form forms.yaml does not have, or one that is no internal form (locale/<tag>/forms.yaml: a form
+ * intent's label is its intent's). Problems, each at its key, with the near name.
+ */
+function checkLocaleLabels(config: LoadedConfig, locateKey: LoadResult['locate']): Problem[] {
+  const problems: Problem[] = [];
+  const intents = Object.keys(config.intents.intents);
+  const internal = Object.entries(config.forms.forms).filter(([, f]) => f.internal === true).map(([id]) => id);
+  for (const [tag, file] of Object.entries(config.localeIntents ?? {})) {
+    const name = `locale/${tag}/intents.yaml`;
+    for (const id of Object.keys(file.intents)) {
+      if (intents.includes(id)) continue;
+      const at = locateKey(name, ['intents', id]) ?? { line: 1, column: 1 };
+      const near = closest(id, intents);
+      problems.push({ file: name, ...at, path: formatPath(['intents', id]), message: `"${id}" is not an intent in ${FILE_NAMES.intents}, so its label is never said`, fix: near ? `rename it to "${near}" if it is that intent, or delete it` : `delete it, or add the intent "${id}" to ${FILE_NAMES.intents}` });
+    }
+  }
+  for (const [tag, file] of Object.entries(config.localeForms ?? {})) {
+    const name = `locale/${tag}/forms.yaml`;
+    for (const id of Object.keys(file.forms)) {
+      if (internal.includes(id)) continue;
+      const at = locateKey(name, ['forms', id]) ?? { line: 1, column: 1 };
+      if (Object.hasOwn(config.forms.forms, id)) {
+        problems.push({ file: name, ...at, path: formatPath(['forms', id]), message: `the form "${id}" is an intent's, so its label is the intent's, not the form's`, fix: `move it to locale/${tag}/intents.yaml as "intents: { ${id}: { label: ... } }"` });
+        continue;
+      }
+      const near = closest(id, internal);
+      problems.push({ file: name, ...at, path: formatPath(['forms', id]), message: `"${id}" is not an internal form in ${FILE_NAMES.forms}, so its label is never said`, fix: near ? `rename it to "${near}" if it is that form, or delete it` : `delete it: only an internal form (internal: true) has a label of its own` });
+    }
+  }
+  return problems;
+}
+
+/**
+ * The warning for a locale whose lines say an intent's label (LABEL_LINES, in its own words in
+ * locale/<tag>/prompts.yaml) and that gives no label of its own for an intent or a form they can name:
+ * the label is said in the default locale's words in the middle of the locale's line ("le puedo ayudar a
+ * report a problem", on a live call of 2026-10-13). One per locale, with every id it lacks. A warning,
+ * never a refusal: a label the same in both languages is the app's to leave out.
+ */
+function localeLabelWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const intents = config.intents.intents;
+  const formIntents = Object.entries(intents).filter(([, d]) => d.kind === 'form').map(([id]) => id);
+  const internal = Object.entries(config.forms.forms).filter(([, f]) => f.internal === true).map(([id]) => id);
+  for (const [tag, prompts] of Object.entries(config.prompts)) {
+    if (tag === config.defaultLocale) continue;
+    const lines = Object.keys(LABEL_LINES).filter((id) => Object.hasOwn(prompts, id));
+    if (lines.length === 0) continue;
+    const named = new Set([...formIntents, ...internal]);
+    if (lines.some((id) => LABEL_LINES[id] === 'confirmed') && Object.hasOwn(intents, 'done')) named.add('done');
+    const own = { ...(config.localeIntents?.[tag]?.intents ?? {}), ...(config.localeForms?.[tag]?.forms ?? {}) };
+    const missing = [...named].filter((id) => !Object.hasOwn(own, id));
+    if (missing.length === 0) continue;
+    const said = (id: string): string => `${id} ("${Object.hasOwn(intents, id) ? intents[id]!.label : config.forms.forms[id]!.label}")`;
+    const inIntents = missing.filter((id) => Object.hasOwn(intents, id));
+    const inForms = missing.filter((id) => !Object.hasOwn(intents, id));
+    const where = [
+      ...(inIntents.length > 0 ? [`locale/${tag}/intents.yaml (intents: { ${inIntents[0]}: { label: ... } })`] : []),
+      ...(inForms.length > 0 ? [`locale/${tag}/forms.yaml (forms: { ${inForms[0]}: { label: ... } })`] : []),
+    ];
+    report(
+      `locale/${tag}/prompts.yaml`,
+      ['prompts', lines[0]!],
+      `the ${tag} lines ${lines.join(', ')} say an intent's label, and the locale gives none of its own for ${missing.map(said).join(', ')}: ${missing.length === 1 ? 'it is' : 'they are'} said in the default locale's words in the middle of those ${tag} lines`,
+      `give each its label in ${tag} in ${where.join(' and ')}`,
+    );
+  }
 }
 
 /**

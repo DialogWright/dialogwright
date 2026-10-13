@@ -4,8 +4,8 @@ import { LineCounter, Document as YamlDocument, isMap, isScalar, isSeq, parseDoc
 import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape';
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
-  FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeSlotsSchema, slotsSchema,
-  type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
+  FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeFormsSchema, localeIntentsSchema, localeSlotsSchema, slotsSchema,
+  type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleFormsYaml, type LocaleIntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
   type PromptsYaml, type SlotsYaml, type StyleYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
@@ -76,6 +76,13 @@ export interface LoadedConfig {
    */
   localeSlots: Record<string, LocaleSlotsYaml>;
   /**
+   * Each other locale's labels, for the locales that have the files: its intents' (locale/<tag>/intents.yaml)
+   * and its internal forms' (locale/<tag>/forms.yaml), by locale tag then id. What each names is checked
+   * against intents.yaml and forms.yaml when the app is built (defineApp).
+   */
+  localeIntents: Record<string, LocaleIntentsYaml>;
+  localeForms: Record<string, LocaleFormsYaml>;
+  /**
    * The knowledge base, when the folder has a kb/ (../kb/folder.ts reads it; the rules that need
    * only the knowledge base itself, ../kb/rules.ts kbContentProblems, have passed). Absent without one.
    */
@@ -142,19 +149,25 @@ const STARTS_WITH: Record<Kind, string> = {
   routes: 'a point and its rules, for example "start: [{ when: { hours: closed }, say: after_hours, then: end }, { else: continue }]"',
   slots: 'a slot id and its type, for example "note: { type: code }"',
   localeSlots: 'a slot id and what it says in this locale, for example "branch: { options: { north: Norte } }"',
+  localeIntents: 'the "intents:" map, each intent with its label in this locale, for example "intents: { renew_loan: { label: renovar un libro } }"',
+  localeForms: 'the "forms:" map, each internal form with its label in this locale, for example "forms: { book_inspection: { label: reservar su inspección } }"',
   host: '"apps:", the apps the server runs, for example "apps: [apps/clinic, apps/utility]"',
 };
 
 /** A kind of file the loader checks: the six, the optional slots.yaml, a locale's optional slots.yaml, and the knowledge base's. */
-type Kind = FileKind | 'slots' | 'localeSlots' | 'host' | KbKind;
+type Kind = FileKind | 'slots' | 'localeSlots' | 'localeIntents' | 'localeForms' | 'host' | KbKind;
 const SCHEMAS_OF: Record<Kind, z.ZodType> = {
   ...SCHEMAS,
   slots: slotsSchema,
   localeSlots: localeSlotsSchema,
+  localeIntents: localeIntentsSchema,
+  localeForms: localeFormsSchema,
   host: hostSchema,
   ...(Object.fromEntries(Object.entries(KB_KINDS).map(([kind, def]) => [kind, def.schema])) as unknown as Record<KbKind, z.ZodType>),
 };
 const isKbKind = (kind: Kind): kind is KbKind => Object.hasOwn(KB_KINDS, kind);
+/** A kind that is not one of the folder's own kinds (FILE_KINDS): its JSON Schema is its zod schema's, and no other file shares its keys. */
+const isOtherKind = (kind: Kind): kind is Exclude<Kind, FileKind> => kind === 'slots' || kind === 'localeSlots' || kind === 'localeIntents' || kind === 'localeForms' || kind === 'host' || isKbKind(kind);
 
 /** What to do about each kind of YAML syntax error (the codes are the `yaml` library's). */
 const SYNTAX_FIXES: Record<string, string> = {
@@ -226,6 +239,8 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
   const defaultLocale = valid.app?.locale ?? DEFAULT_LOCALE;
   const prompts: Record<string, Record<string, PromptYaml>> = {};
   const localeSlots: Record<string, LocaleSlotsYaml> = {};
+  const localeIntents: Record<string, LocaleIntentsYaml> = {};
+  const localeForms: Record<string, LocaleFormsYaml> = {};
   if (valid.prompts) prompts[defaultLocale] = valid.prompts.prompts;
   for (const { tag, dirName } of listLocales(root.real, problems)) {
     if (tag.toLowerCase() === defaultLocale.toLowerCase() && valid.app) {
@@ -258,6 +273,15 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     }
     const checked = checkFile(file, 'prompts', read.text, problems, documents, contents);
     if (checked) prompts[tag] = (checked as { prompts: Record<string, PromptYaml> }).prompts;
+    // The locale's labels for the intents and the internal forms, when it has them.
+    for (const [name, kind, into] of [['intents.yaml', 'localeIntents', localeIntents], ['forms.yaml', 'localeForms', localeForms]] as const) {
+      const labelsFile = `locale/${dirName}/${name}`;
+      const labelsRead = readFile(root.real, labelsFile);
+      if (labelsRead.kind === 'problem') problems.push(labelsRead.problem);
+      if (labelsRead.kind !== 'ok') continue;
+      const labels = checkFile(labelsFile, kind, labelsRead.text, problems, documents, contents);
+      if (labels !== undefined) (into as Record<string, unknown>)[tag] = labels;
+    }
     // The locale's wording for the library slots, when it has any.
     const slotsFile = `locale/${dirName}/${SLOTS_FILE}`;
     const slotsRead = readFile(root.real, slotsFile);
@@ -289,6 +313,8 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     defaultLocale,
     prompts,
     localeSlots,
+    localeIntents,
+    localeForms,
     ...(knowledge ? { knowledge } : {}),
     hashes: configHashesOf(contents),
   };
@@ -531,7 +557,7 @@ function listLocales(root: string, problems: Problem[]): { tag: string; dirName:
  * `kind` does not know at its top level. Only the six kinds: slots.yaml's top-level keys are slot ids.
  */
 function homesOf(kind: Kind, key: string): string[] {
-  if (kind === 'slots' || kind === 'localeSlots' || kind === 'host' || isKbKind(kind)) return [];
+  if (isOtherKind(kind)) return [];
   return FILE_KINDS.filter((other) => other !== kind && Object.hasOwn((jsonSchemaOf(other).properties as object | undefined) ?? {}, key)).map((other) => FILE_NAMES[other]);
 }
 
@@ -541,7 +567,7 @@ function jsonSchemaOf(kind: Kind): JsonSchema {
   let schema = jsonSchemas.get(kind);
   if (!schema) {
     // slots.yaml's published schema is the full union over the types (and a locale's, over their wording); the loader checks the outer shape, whose schema is this.
-    schema = kind === 'slots' || kind === 'localeSlots' || kind === 'host' || isKbKind(kind) ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
+    schema = isOtherKind(kind) ? (z.toJSONSchema(SCHEMAS_OF[kind], { io: 'input', target: 'draft-7' }) as JsonSchema) : jsonSchemaFor(kind);
     jsonSchemas.set(kind, schema);
   }
   return schema;

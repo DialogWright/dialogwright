@@ -205,6 +205,15 @@ describe('validateApp', () => {
     expect(() => validateApp({ ...copy(), voice: { locales: { 'en-US': { recognition: { twilio: { provider: 'Google', model: 'telephony' } } } } } })).not.toThrow();
   });
 
+  it('holds a locale\'s labels to another of the app\'s locales, and to an intent or an internal form', () => {
+    const withLabels = (labels: Record<string, Record<string, string>>): App => ({ ...copy(), locales: { default: 'en-US', prompts: { es: {} }, labels } });
+    expect(() => validateApp(withLabels({ es: { track_parcel: 'rastrear un paquete' } }))).not.toThrow();
+    expect(() => validateApp(withLabels({ fr: { track_parcel: 'suivre un colis' } }))).toThrow(/locales\.labels names the locale "fr", which is not one of the app's other locales/);
+    expect(() => validateApp(withLabels({ 'en-US': { track_parcel: 'track it' } }))).toThrow(/locales\.labels names the locale "en-US"/);
+    expect(() => validateApp(withLabels({ es: { track_parcels: 'rastrear' } }))).toThrow(/locales\.labels\.es names "track_parcels", which is neither an intent nor an internal form/);
+    expect(() => validateApp(withLabels({ es: { track_parcel: ' ' } }))).toThrow(/locales\.labels\.es\.track_parcel is not a label/);
+  });
+
   it.each(['agent', 'repeat_prompt'])('requires the control intent %s', (id) => {
     const app = copy();
     delete app.intents[id];

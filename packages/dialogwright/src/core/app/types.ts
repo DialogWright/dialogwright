@@ -1563,6 +1563,13 @@ export interface AppLocales {
    * not have every line: one it leaves out is said from App.prompts.manifest. Never the default locale.
    */
   readonly prompts: Readonly<Record<string, Readonly<Record<string, PromptManifestEntry>>>>;
+  /**
+   * The spoken labels of each other locale (locale/<tag>/intents.yaml, and locale/<tag>/forms.yaml for an
+   * internal form), by language tag, then intent or internal form id: what a line of that locale says
+   * for {intentLabel} (core/app/intents.ts intentLabel, formLabel). An id a locale leaves out is said by
+   * its default label (IntentDef.label, FormDef.label). Absent when no locale gives one.
+   */
+  readonly labels?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /**

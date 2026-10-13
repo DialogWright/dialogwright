@@ -3,7 +3,7 @@ import { useTestkit } from '../../testing/apps';
 import { testkitApp } from '../../testing/testkit';
 import { FORM_INTENTS, INTENTS, MENU } from '../../testing/testkit/domain/intents';
 import {
-  formIntents, informationalIntents, informationalPrompt, intentCriteria, intentLabel, intentList, isFormIntent,
+  formIntents, formLabel, informationalIntents, informationalPrompt, intentCriteria, intentLabel, intentList, isFormIntent,
 } from './intents';
 
 useTestkit();
@@ -56,5 +56,22 @@ describe('intent helpers, over the testkit app', () => {
   it('keeps the menu order', () => {
     expect(testkitApp.menu).toEqual(MENU);
     expect(testkitApp.menu.map((m) => m.digit)).toEqual(['1', '2', '3', '0']);
+  });
+});
+
+describe('a label in a locale (AppLocales.labels)', () => {
+  it('says a locale\'s own label for an intent and for an internal form, else the default\'s', async () => {
+    const { routedApp } = await import('../../testing/routed/app');
+    expect(intentLabel(routedApp, 'report_problem', 'es')).toBe('reportar un problema');
+    expect(formLabel(routedApp, 'report_problem', 'es')).toBe('reportar un problema');
+    expect(formLabel(routedApp, 'payment_plan', 'es')).toBe('preparar un plan de pago');
+    // The default locale, a session with no locale, and an intent the locale leaves out: the default's.
+    expect(intentLabel(routedApp, 'report_problem', 'en-US')).toBe('report a problem');
+    expect(intentLabel(routedApp, 'report_problem')).toBe('report a problem');
+    expect(formLabel(routedApp, 'payment_plan')).toBe('set up a payment plan');
+    expect(intentLabel(routedApp, 'agent', 'es')).toBe('speak with someone');
+    // An app whose locales give no labels: the default's in every locale.
+    const { labels: _labels, ...without } = routedApp.locales!;
+    expect(intentLabel({ ...routedApp, locales: without }, 'report_problem', 'es')).toBe('report a problem');
   });
 });

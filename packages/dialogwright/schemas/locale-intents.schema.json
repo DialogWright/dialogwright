@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "intents": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The intent's spoken label in this locale (\"reportar un problema\"), in place of intents.yaml's for a call in it: said in its acknowledgements and confirmations."
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "description": "One intent, by its id in intents.yaml: its label in this locale."
+      },
+      "description": "The intents whose labels this locale says its own way, by id. An intent left out is said by its label in intents.yaml."
+    }
+  },
+  "required": [
+    "intents"
+  ],
+  "additionalProperties": false,
+  "description": "locale/<tag>/intents.yaml: the intents' spoken labels in this locale.",
+  "title": "DialogWright locale/<tag>/intents.yaml"
+}

@@ -5,7 +5,9 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { gb as gbOf, loadConfig, type Env, type ServerConfig } from './config';
+import { gb as gbOf, loadConfig, recognitionFor, type Env, type ServerConfig } from './config';
+import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
+import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
@@ -64,7 +66,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'languages';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -306,6 +308,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
   // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
+  // The app's languages as the carriers listed are sent them: a tag with no region, a recognizer that hears English only.
+  if (o.appDir !== undefined) results.push(...languageChecks(o.appDir, config));
 
   // 7. The folders, read from where the server runs.
   const traceDir = resolve(o.cwd, config.traceDir);
@@ -419,6 +423,51 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
     return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
+  }
+}
+
+/**
+ * The app's languages as the server's carriers would be sent them (channel/speechLanguages.ts), for an app
+ * whose start document names its languages; nothing for any other, or a folder that cannot be read (pnpm
+ * check says why). A locale spoken or heard as a tag with no region fails on a server that answers on
+ * Twilio, which refused such a tag on a live call and ended the call with an error; on Telnyx alone it is
+ * a warning, since whether Telnyx takes one is not known. A language other than English heard by a
+ * recognizer that hears English only, the server's own (TWILIO_SPEECH_MODEL) for the default locale
+ * included, is a warning on each carrier listed. Otherwise one line names each locale's languages.
+ */
+export function languageChecks(appDir: string, config: Pick<ServerConfig, 'voiceProviders' | 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider'>): CheckResult[] {
+  const loaded = loadAppFolder(appDir).config;
+  if (loaded === null) return [];
+  const speech = speechLocalesOfFolder(loaded);
+  if (!namesSpeechLanguages(speech)) return [];
+  const carriers = VOICE_PROVIDER_IDS.filter((id) => config.voiceProviders.includes(id));
+  const out: CheckResult[] = [];
+  const bare = bareSpeechTags(speech);
+  for (const locale of [...new Set(bare.map((b) => b.locale))]) {
+    const { message, fix } = bareTagFinding(locale, bare.filter((b) => b.locale === locale));
+    out.push(carriers.includes('twilio')
+      ? { id: 'languages', status: 'fail', message: `${message}: Twilio, which this server answers on, will refuse it`, fix }
+      : { id: 'languages', status: 'warn', message, fix });
+  }
+  for (const h of englishOnlyHearings(speech, (c) => recognitionFor(config, c), carriers)) {
+    const { message, fix } = englishOnlyFinding(h, true);
+    out.push({ id: 'languages', status: 'warn', message, fix });
+  }
+  if (out.length > 0) return out;
+  const named = (speech.locales ?? []).map((l) => {
+    const t = speechTagsOf(speech, l);
+    return t.tts === t.transcription ? `${l} as ${t.tts}` : `${l} spoken as ${t.tts}, heard as ${t.transcription}`;
+  });
+  return [{ id: 'languages', status: 'ok', message: `languages: ${named.join('; ')}, each with its region, and none heard by a recognizer that hears English only` }];
+}
+
+/** The server's settings as `pnpm start` would load them, PUBLIC_HOST aside; null where they do not load (the config check says why). */
+function serverConfigOf(env: Env): ServerConfig | null {
+  const raw = env.PUBLIC_HOST?.trim();
+  try {
+    return loadConfig(!raw || raw === 'quick' ? { ...env, PUBLIC_HOST: QUICK_PLACEHOLDER } : env);
+  } catch {
+    return null;
   }
 }
 
@@ -753,6 +802,8 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     const read = appEnvironment(env, own, ownVariablesOf(app));
     out.push(...variableChecks(app.dir, read.env).map(tag));
     out.push(...wordingChecks(app.dir, read.env).map(tag));
+    const server = serverConfigOf(env);
+    if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.
     for (const [name, variable] of Object.entries(app.services)) {
       const url = read.env[variable]?.trim();

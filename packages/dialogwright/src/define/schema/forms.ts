@@ -177,3 +177,26 @@ export const formsSchema = z
 
 export type FormsYaml = z.infer<typeof formsSchema>;
 export type FormYaml = FormsYaml['forms'][string];
+
+/**
+ * locale/<tag>/forms.yaml: an internal form's spoken label in another locale (forms.yaml's `label`, said
+ * as bridge_next's {intentLabel}), in the shape of forms.yaml (`forms:`, each with its `label`). Only an
+ * internal form has a label of its own; a form intent's label in a locale is in locale/<tag>/intents.yaml.
+ */
+export const localeFormsSchema = z
+  .strictObject({
+    forms: z
+      .record(
+        identifier(),
+        z
+          .strictObject({
+            label: text().describe('The internal form\'s spoken label in this locale ("preparar un plan de pago"), in place of forms.yaml\'s for a call in it.'),
+          })
+          .describe('One internal form, by its id in forms.yaml: its label in this locale.'),
+      )
+      .describe('The internal forms whose labels this locale says its own way, by id. A form left out is said by its label in forms.yaml.'),
+  })
+  .describe('locale/<tag>/forms.yaml: the internal forms\' spoken labels in this locale.');
+
+/** A parsed locale/<tag>/forms.yaml. */
+export type LocaleFormsYaml = z.infer<typeof localeFormsSchema>;

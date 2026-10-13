@@ -20,18 +20,34 @@ export function isFormIntent(app: App, intent: string): boolean {
   return app.intents[intent]?.kind === 'form';
 }
 
-/** The spoken label for confirmations ("track a parcel"). */
-export function intentLabel(app: App, intent: Intent): string {
-  return app.intents[intent]!.label;
+/**
+ * The label a locale gives an intent or an internal form (AppLocales.labels), or undefined where it gives
+ * none, or for the default locale and a session with no locale, whose labels are intents.yaml's and forms.yaml's.
+ */
+function localeLabel(app: App, id: string, locale: string | undefined): string | undefined {
+  const labels = locale !== undefined ? app.locales?.labels : undefined;
+  const own = labels !== undefined && Object.hasOwn(labels, locale!) ? labels[locale!] : undefined;
+  return own !== undefined && Object.hasOwn(own, id) ? own[id] : undefined;
+}
+
+/**
+ * The spoken label for confirmations ("track a parcel"), in `locale` (the session's: Session.locale) where
+ * that locale gives one, else the default's. A label the decision model is given (core/state.ts) is the
+ * default's, as every question and criterion it reads is.
+ */
+export function intentLabel(app: App, intent: Intent, locale?: string): string {
+  return localeLabel(app, intent, locale) ?? app.intents[intent]!.label;
 }
 
 /**
  * A form's spoken label, wherever a form id is said (an ack, a bridge, the form the caller is in):
  * its intent's label (intentLabel), or, for a form that is no intent (FormDef.internal, reached only
- * by another form's `next`), the form's own `label`. For an app whose forms are all intents, exactly
- * intentLabel.
+ * by another form's `next`), the form's own `label`; each in `locale` where it gives one. For an app
+ * whose forms are all intents, exactly intentLabel.
  */
-export function formLabel(app: App, form: FormId): string {
+export function formLabel(app: App, form: FormId, locale?: string): string {
+  const own = localeLabel(app, form, locale);
+  if (own !== undefined) return own;
   const intent = app.intents[form];
   if (intent !== undefined) return intent.label;
   const label = Object.hasOwn(app.forms, form) ? app.forms[form]!.label : undefined;

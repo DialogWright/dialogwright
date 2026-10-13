@@ -65,7 +65,7 @@
     "calledNumber": "+15555550188",
     "env": { "SPANISH_LINE": "+15555550188" },
     "steps": [{ "say": "quiero reportar un problema" }],
-    "expect": { "decision": "prompt", "promptId": "ask_problem", "form": "report_problem", "text": "Claro, le puedo ayudar" }
+    "expect": { "decision": "prompt", "promptId": "ask_problem", "form": "report_problem", "text": "Claro, le puedo ayudar a reportar un problema." }
   },
   {
     "id": "vip-caller",

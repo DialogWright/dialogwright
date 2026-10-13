@@ -42,6 +42,22 @@ async function lines(dir: string, options: Parameters<typeof checkApp>[1] = { co
   return (await checkApp(dir, options)).map(formatProblem);
 }
 
+/**
+ * What check warns of in the library's own folder, formatted: its Spanish locale is written to a carrier as
+ * its own tag, `es`, with no region, and names no recognizer of its own beside the server's English-only
+ * default (channel/speechLanguages.ts). The engine's document tests rely on the library as it is (another
+ * locale gets the carrier's defaults: server/http.test.ts), so it stays, and the tests of other things
+ * leave these two out (otherThanSpeech).
+ */
+const LIBRARY_SPEECH: readonly string[] = [
+  'app.yaml:18:1  voice  the locale es is spoken and heard as "es" (its own tag: voice.locales.es names no tts or transcription), a language tag with no region: Twilio refused a start document with such a <Language> code on a live call (error 64101, and the caller heard "an application error has occurred"); whether Telnyx takes one is not known  ->  set voice.locales.es.tts and voice.locales.es.transcription to a tag with its region, such as es-US or es-MX',
+  'app.yaml:18:1  voice  the locale es (heard as es) names no recognizer of its own on Twilio, while en-US is heard with Deepgram flux (the server\'s, unless its TWILIO_SPEECH_MODEL names another), which hears English only: on a live Twilio call such a language was heard with the start language\'s flux after a switch, and Twilio failed to connect it  ->  name a recognizer that hears es for the locale: voice.locales.es.recognition.twilio: { provider: Deepgram, model: nova-3-general }',
+];
+/** The library's two warnings of its speech settings, as check's command line prints them. */
+const LIBRARY_SPEECH_LINES = LIBRARY_SPEECH.map((w) => `warning: ${w}`);
+/** Whether a formatted warning is of something other than what a carrier is sent of a locale's language (its tag, its recognizer). */
+const otherThanSpeech = (w: string): boolean => !/a language tag with no region|which hears English only/.test(w);
+
 /** Removes one prompt (its three lines) from a prompts.yaml's text. */
 const without = (id: string) => (text: string): string => text.replace(new RegExp(`^  ${id}:\\n(    .*\\n)+`, 'm'), '');
 
@@ -66,7 +82,10 @@ function cli(): { io: Io; out: string[]; err: string[] } {
 describe('checkApp: the example app', () => {
   it('has no problems, with its code given or imported from its app.ts', async () => {
     expect(await checkApp(LIBRARY_DIR, { code: libraryCode })).toEqual([]);
-    expect(await checkAppFully(LIBRARY_DIR)).toEqual({ problems: [], codeChecked: true });
+    const full = await checkAppFully(LIBRARY_DIR);
+    expect({ problems: full.problems, codeChecked: full.codeChecked }).toEqual({ problems: [], codeChecked: true });
+    // Its only warnings are its Spanish locale's speech settings: a bare tag and no recognizer of its own.
+    expect((full.warnings ?? []).map(formatProblem)).toEqual(LIBRARY_SPEECH);
   });
 
   it('reports what the loader finds, and nothing else when the folder does not load', async () => {
@@ -303,9 +322,15 @@ describe('checkApp: a caller asked "anything else?" can say they are done', () =
     expect(text).toContain(DONE);
     return text.replace(DONE, '');
   };
+  /** The Spanish label of done goes with it (locale/es/intents.yaml): a label for an intent the app lacks is a problem of its own. */
+  const DONE_ES = '  done:\n    label: terminar\n';
+  const withoutDoneEs = (text: string): string => {
+    expect(text).toContain(DONE_ES);
+    return text.replace(DONE_ES, '');
+  };
 
   it('an app that says anything_else and has no done intent is a problem at intents, with the intent to paste', async () => {
-    const dir = folder({ 'intents.yaml': withoutDone });
+    const dir = folder({ 'intents.yaml': withoutDone, 'locale/es/intents.yaml': withoutDoneEs });
     const problems = await checkApp(dir, { code: libraryCode });
     expect(problems).toHaveLength(1);
     expect(formatProblem(problems[0]!)).toBe(
@@ -322,7 +347,7 @@ describe('checkApp: a caller asked "anything else?" can say they are done', () =
   });
 
   it('an app without the anything_else line is told the line is missing, and nothing about done until it has it', async () => {
-    const dir = folder({ 'intents.yaml': withoutDone, 'prompts.yaml': without('anything_else') });
+    const dir = folder({ 'intents.yaml': withoutDone, 'locale/es/intents.yaml': withoutDoneEs, 'prompts.yaml': without('anything_else') });
     const found = await lines(dir);
     expect(found).toHaveLength(1);
     expect(found[0]).toContain('prompt "anything_else" is missing from prompts.yaml');
@@ -415,7 +440,7 @@ describe('checkApp: the app module', () => {
 
   it('takes a default export too', async () => {
     const dir = folder({ 'app.mjs': 'import { code } from ' + JSON.stringify(fixtureModule) + '; export default code;\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toMatchObject({ problems: [], codeChecked: true });
   });
 
   it('a module that does not load is a problem, not a crash', async () => {
@@ -500,11 +525,14 @@ describe('checkApp: the app module', () => {
 
   it('prefers the folder\'s own app module to one in src/', async () => {
     const dir = folder({ 'app.mjs': `export { code } from ${JSON.stringify(fixtureModule)};\n`, 'src/app.mjs': 'throw new Error("not this one");\n' });
-    expect(await checkAppFully(dir)).toEqual({ problems: [], codeChecked: true });
+    expect(await checkAppFully(dir)).toMatchObject({ problems: [], codeChecked: true });
   });
 
   it('a folder with no app module is checked as YAML only, and says so', async () => {
-    expect(await checkAppFully(folder())).toEqual({ problems: [], codeChecked: false });
+    const yamlOnly = await checkAppFully(folder());
+    expect({ problems: yamlOnly.problems, codeChecked: yamlOnly.codeChecked }).toEqual({ problems: [], codeChecked: false });
+    // The speech settings are YAML's alone, so a folder checked without its code is warned of them too.
+    expect((yamlOnly.warnings ?? []).map(formatProblem)).toEqual(LIBRARY_SPEECH);
   });
 });
 
@@ -605,7 +633,7 @@ describe('dialogwright check', () => {
   it('a good folder: a summary line, exit 0', async () => {
     const { io, out, err } = cli();
     expect(await main(['check', LIBRARY_DIR], io)).toBe(0);
-    expect(out).toEqual([`${LIBRARY_DIR}: ok`]);
+    expect(out).toEqual([...LIBRARY_SPEECH_LINES, `${LIBRARY_DIR}: ok`]);
     expect(err).toEqual([]);
   });
 
@@ -618,6 +646,7 @@ describe('dialogwright check', () => {
     const { io, out } = cli();
     expect(await main(['check', dir], io)).toBe(1);
     expect(out).toEqual([
+      ...LIBRARY_SPEECH_LINES,
       'forms.yaml:8:19  forms.check_hold.slots[1]  slot "amount" is not defined  ->  add it to the app\'s slots in app.ts (code.slots.amount)',
       'prompts.yaml:2:1  prompts  prompt "goodbye" is missing from prompts.yaml; the engine says it when a call ends  ->  add "goodbye:" with its text and interruptible to prompts.yaml',
       expect.stringContaining('"ask_amount" is missing'),
@@ -639,7 +668,7 @@ describe('dialogwright check', () => {
     const dir = folder();
     const { io, out, err } = cli();
     expect(await main(['check', dir], io)).toBe(0);
-    expect(out).toEqual([`${dir}: ok`]);
+    expect(out).toEqual([...LIBRARY_SPEECH_LINES, `${dir}: ok`]);
     expect(err).toEqual([`${dir}: checked the YAML only; there is no app.ts (or src/app.ts) to check it against (it exports the app's code parts as \`code\`)`]);
   });
 
@@ -694,7 +723,7 @@ describe('dialogwright check', () => {
     const found = cli();
     found.io.cwd = join(root, 'apps');
     expect(await main(['check'], found.io)).toBe(0);
-    expect(found.out).toEqual(['apps/library: ok', 'apps/town/app: ok']);
+    expect(found.out).toEqual([...LIBRARY_SPEECH_LINES, 'apps/library: ok', ...LIBRARY_SPEECH_LINES, 'apps/town/app: ok']);
     const json = cli();
     json.io.cwd = root;
     await main(['check', '--json'], json.io);
@@ -713,7 +742,7 @@ describe('dialogwright check', () => {
   it('runs as the package bin does, through tsx: the exit code and the output of a real process', () => {
     const run = (args: string[]) => spawnSync(join(PACKAGE_DIR, 'node_modules', '.bin', 'tsx'), [join(here, 'cli.ts'), ...args], { encoding: 'utf8', env: withShortTmp() });
     const good = run(['check', LIBRARY_DIR]);
-    expect({ status: good.status, stdout: good.stdout }).toEqual({ status: 0, stdout: `${LIBRARY_DIR}: ok\n` });
+    expect({ status: good.status, stdout: good.stdout }).toEqual({ status: 0, stdout: [...LIBRARY_SPEECH_LINES, `${LIBRARY_DIR}: ok`, ''].join('\n') });
     const bad = run(['check', folder({ 'prompts.yaml': without('goodbye') })]);
     expect(bad.status).toBe(1);
     expect(bad.stdout).toMatch(/prompt "goodbye" is missing from prompts\.yaml/);
@@ -726,7 +755,7 @@ describe('dialogwright check', () => {
 });
 
 describe('checkAppFully: a priority switch\'s correction and the handoff\'s unconfirmed values', () => {
-  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem).filter(otherThanSpeech);
   const intent = (id: string, line: string) => (text: string): string => text.replace(`  ${id}:\n`, `  ${id}:\n    ${line}\n`);
   const handoffData = (lines: string) => (text: string): string => `${text}\nhandoff:\n  data:\n${lines}`;
 
@@ -757,7 +786,7 @@ describe('checkAppFully: a priority switch\'s correction and the handoff\'s unco
 });
 
 describe('checkAppFully: Telnyx voices for some locales and not others', () => {
-  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem).filter(otherThanSpeech);
   const voices = (locales: string) => (text: string): string => text.replace('voice:\n', `voice:\n  locales:\n${locales}`);
 
   it('warns when a Telnyx voice is named for one locale and not the other: a switch may keep the start language\'s voice', async () => {
@@ -772,6 +801,75 @@ describe('checkAppFully: Telnyx voices for some locales and not others', () => {
   it('says nothing when every locale has a Telnyx voice, or none does', async () => {
     expect(await warnings(folder({ 'app.yaml': voices('    en-US: { voices: { telnyx: Telnyx.NaturalHD.astra } }\n    es: { voices: { telnyx: Telnyx.NaturalHD.luna } }\n') }))).toEqual([]);
     expect(await warnings(folder({ 'app.yaml': voices('    en-US: { voices: { twilio: en-US-Journey-O } }\n') }))).toEqual([]);
+  });
+});
+
+describe('checkAppFully: what a carrier is sent of the languages (live findings, 2026-10-13)', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem);
+  const voices = (locales: string) => (text: string): string => text.replace('voice:\n', `voice:\n  locales:\n${locales}`);
+
+  it('warns of the library\'s Spanish as it is: its own tag, es, with no region, and no recognizer of its own beside flux', async () => {
+    expect(await warnings(folder())).toEqual(LIBRARY_SPEECH);
+  });
+
+  it('says nothing once the locale names a regional tag and a recognizer that hears it', async () => {
+    const dir = folder({ 'app.yaml': voices('    es: { tts: es-US, transcription: es-US, recognition: { twilio: { provider: Deepgram, model: nova-3-general } } }\n') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([]);
+  });
+
+  it('points at the key that is bare, and at a recognizer the locale names that hears English only', async () => {
+    const dir = folder({ 'app.yaml': voices('    es:\n      tts: es-US\n      transcription: es\n      recognition:\n        twilio: { provider: Deepgram, model: flux }\n') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([
+      'app.yaml:22:22  voice.locales.es.transcription  the locale es is heard as "es", a language tag with no region: Twilio refused a start document with such a <Language> code on a live call (error 64101, and the caller heard "an application error has occurred"); whether Telnyx takes one is not known  ->  set voice.locales.es.transcription to a tag with its region, such as es-US or es-MX',
+      'app.yaml:24:9  voice.locales.es.recognition.twilio  voice.locales.es.recognition.twilio names Deepgram flux, which hears English only, and the locale es is heard as es: its callers would not be understood, or Twilio fails to connect the recognizer  ->  name a recognizer that hears es for the locale: voice.locales.es.recognition.twilio: { provider: Deepgram, model: nova-3-general }',
+    ]);
+  });
+});
+
+describe('checkApp: the intents\' labels in a locale (locale/<tag>/intents.yaml, forms.yaml)', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem).filter(otherThanSpeech);
+  const HEAD = '# yaml-language-server: $schema=../../../../../schemas/locale-intents.schema.json\n';
+
+  it('takes the library\'s Spanish labels, with nothing to warn of', async () => {
+    const dir = folder();
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([]);
+  });
+
+  it('warns, once per locale, of the labels a locale that says them does not give, as the live call heard', async () => {
+    const dir = folder({ 'locale/es/intents.yaml': `${HEAD}intents:\n  renew_loan:\n    label: renovar un libro\n` });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([
+      'locale/es/prompts.yaml:23:3  prompts.ack_intent  the es lines ack_intent, confirm_intent_explicit, disambiguate_intent, ack_intent_then, ack_queued, bridge_next say an intent\'s label, and the locale gives none of its own for check_hold ("check a hold"), check_loans ("check your loans"), done ("finish"): they are said in the default locale\'s words in the middle of those es lines  ->  give each its label in es in locale/es/intents.yaml (intents: { check_hold: { label: ... } })',
+    ]);
+  });
+
+  it('says nothing of a locale that says no label in its own words: the default\'s lines say them', async () => {
+    const lines = ['ack_intent', 'confirm_intent_explicit', 'disambiguate_intent', 'ack_intent_then', 'ack_queued', 'bridge_next'];
+    const dir = folder({ 'locale/es/prompts.yaml': (t) => lines.reduce((text, id) => without(id)(text), t) });
+    rmSync(join(dir, 'locale/es/intents.yaml'));
+    expect(await warnings(dir)).toEqual([]);
+  });
+
+  it('refuses a label for an intent the app does not have, and an internal form\'s label for a form that is an intent', async () => {
+    const dir = folder({
+      'locale/es/intents.yaml': `${HEAD}intents:\n  renew_loans:\n    label: renovar un libro\n`,
+      'locale/es/forms.yaml': '# yaml-language-server: $schema=../../../../../schemas/locale-forms.schema.json\nforms:\n  check_hold:\n    label: revisar una reserva\n  nothing_here:\n    label: nada\n',
+    });
+    expect(await lines(dir)).toEqual([
+      'locale/es/forms.yaml:3:3  forms.check_hold  the form "check_hold" is an intent\'s, so its label is the intent\'s, not the form\'s  ->  move it to locale/es/intents.yaml as "intents: { check_hold: { label: ... } }"',
+      'locale/es/forms.yaml:5:3  forms.nothing_here  "nothing_here" is not an internal form in forms.yaml, so its label is never said  ->  delete it: only an internal form (internal: true) has a label of its own',
+      'locale/es/intents.yaml:3:3  intents.renew_loans  "renew_loans" is not an intent in intents.yaml, so its label is never said  ->  rename it to "renew_loan" if it is that intent, or delete it',
+    ]);
+  });
+
+  it('holds the file to its shape: a label and nothing else', async () => {
+    const dir = folder({ 'locale/es/intents.yaml': `${HEAD}intents:\n  renew_loan:\n    label: renovar un libro\n    criteria: Quiere renovar\n` });
+    const found = await lines(dir);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatch(/^locale\/es\/intents\.yaml:5:5  intents\.renew_loan/);
   });
 });
 

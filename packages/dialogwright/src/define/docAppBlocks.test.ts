@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { withParentKey } from '../testing/docBlocks';
 import type { z } from 'zod';
-import { appSchema, intentsSchema } from './schema';
+import { appSchema, intentsSchema, localeIntentsSchema } from './schema';
 
 /**
  * Every app.yaml and intents.yaml block in the docs is read by the schema that reads the real file, so
@@ -42,7 +42,8 @@ function docFiles(): string[] {
   return out;
 }
 
-type Kind = 'app' | 'intents';
+/** `locale-intents`: a block whose first line names a locale's intents.yaml (`# locale/es/intents.yaml`), the labels alone. */
+type Kind = 'app' | 'intents' | 'locale-intents';
 
 interface Block {
   kind: Kind;
@@ -56,7 +57,7 @@ const APP_KEYS = Object.keys(appSchema.shape);
 const INTENTS_KEYS = Object.keys(intentsSchema.shape);
 
 /** The file a block's first comment line names (`# app.yaml`, `# intents.yaml: why`), or null. */
-const named = (text: string): string | null => /^#\s+([A-Za-z0-9_./<>-]+\.yaml)\b/.exec(text.split('\n')[0] ?? '')?.[1] ?? null;
+const named = (text: string): string | null => /^#\s+([A-Za-z0-9_./<>-]+\.yaml)\b/.exec((text.split('\n')[0] ?? '').trimStart())?.[1] ?? null;
 
 /** app.yaml's keys that no other file has: `prompts` is prompts.yaml's too, and `wording` policy.yaml's. */
 const APP_ONLY = APP_KEYS.filter((k) => k !== 'prompts' && k !== 'wording');
@@ -69,6 +70,7 @@ const APP_ONLY = APP_KEYS.filter((k) => k !== 'prompts' && k !== 'wording');
 function piecesOf(text: string, value: unknown): { kind: Kind; value: Record<string, unknown> }[] {
   if (!isMap(value)) return [];
   const file = named(text);
+  if (file !== null && /^locale\/[^/]+\/intents\.yaml$/.test(file)) return [{ kind: 'locale-intents', value }];
   if (file !== null && file !== 'app.yaml' && file !== 'intents.yaml') return [];
   const keys = Object.keys(value);
   if (keys.length === 0 || !keys.every((k) => APP_KEYS.includes(k) || INTENTS_KEYS.includes(k))) return [];
@@ -102,6 +104,10 @@ const FIXTURE_INTENTS = parse(readFileSync(join(ROOT, 'packages/dialogwright/src
 
 /** What the file's schema says is wrong with a block, one line each: its path and the message. */
 export function problemsOfBlock(block: Pick<Block, 'kind' | 'value'>): string[] {
+  if (block.kind === 'locale-intents') {
+    const result = localeIntentsSchema.safeParse(block.value);
+    return result.success ? [] : result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+  }
   const schema: z.ZodType = block.kind === 'app' ? appSchema : intentsSchema;
   const value = block.kind === 'app'
     ? ('id' in block.value ? block.value : { id: 'doc-example', ...block.value })
@@ -123,6 +129,8 @@ describe('the app.yaml and intents.yaml in the docs', () => {
     // A Twilio voice with its own provider is shown, as well as a name alone.
     expect(Object.values(locales).some((l) => isMap(l.voices?.twilio))).toBe(true);
     expect(guide('intents').some((b) => isMap(b.value.intents) && Object.values(b.value.intents).some((i) => isMap(i) && typeof i.locale === 'string'))).toBe(true);
+    // A locale's intents.yaml (section 8), its labels alone, read by its own schema.
+    expect(guide('locale-intents').length).toBeGreaterThanOrEqual(1);
   });
 
   it('is found in the create-app skill too, its pieces under a key read with the key', () => {

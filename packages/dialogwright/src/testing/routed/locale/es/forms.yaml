@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../../../../schemas/locale-forms.schema.json
+# The internal form's label as the Spanish line says it, after another form ("Ahora, vamos a {intentLabel}.").
+forms:
+  payment_plan:
+    label: preparar un plan de pago

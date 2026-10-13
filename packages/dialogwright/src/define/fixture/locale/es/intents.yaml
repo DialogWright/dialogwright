@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../../../../schemas/locale-intents.schema.json
+# The library's requests as a Spanish line says them: "Claro, puedo ayudarle a {intentLabel}." Only the
+# labels; the criteria stay as intents.yaml has them, since the model reads them as written.
+intents:
+  renew_loan:
+    label: renovar un libro
+  check_hold:
+    label: revisar una reserva
+  check_loans:
+    label: revisar sus préstamos
+  done:
+    label: terminar

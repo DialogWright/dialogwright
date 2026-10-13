@@ -172,3 +172,28 @@ export const intentsSchema = z
 
 export type IntentsYaml = z.infer<typeof intentsSchema>;
 export type IntentYaml = IntentsYaml['intents'][string];
+
+/**
+ * locale/<tag>/intents.yaml: the intents' spoken labels in another locale, by intent id, in the shape of
+ * intents.yaml (`intents:`, each with its `label`). A line of that locale that says an intent's label
+ * (ack_intent, confirm_intent_explicit, disambiguate_intent, ack_intent_then, ack_queued, bridge_next)
+ * says this one; an intent it leaves out is said by intents.yaml's label. Only the label: the criteria
+ * are what the model reads, in the default language, and the rest is the intent's in every locale.
+ */
+export const localeIntentsSchema = z
+  .strictObject({
+    intents: z
+      .record(
+        identifier(),
+        z
+          .strictObject({
+            label: text().describe('The intent\'s spoken label in this locale ("reportar un problema"), in place of intents.yaml\'s for a call in it: said in its acknowledgements and confirmations.'),
+          })
+          .describe('One intent, by its id in intents.yaml: its label in this locale.'),
+      )
+      .describe('The intents whose labels this locale says its own way, by id. An intent left out is said by its label in intents.yaml.'),
+  })
+  .describe('locale/<tag>/intents.yaml: the intents\' spoken labels in this locale.');
+
+/** A parsed locale/<tag>/intents.yaml. */
+export type LocaleIntentsYaml = z.infer<typeof localeIntentsSchema>;

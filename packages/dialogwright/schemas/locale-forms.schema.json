@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "forms": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The internal form's spoken label in this locale (\"preparar un plan de pago\"), in place of forms.yaml's for a call in it."
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "description": "One internal form, by its id in forms.yaml: its label in this locale."
+      },
+      "description": "The internal forms whose labels this locale says its own way, by id. A form left out is said by its label in forms.yaml."
+    }
+  },
+  "required": [
+    "forms"
+  ],
+  "additionalProperties": false,
+  "description": "locale/<tag>/forms.yaml: the internal forms' spoken labels in this locale.",
+  "title": "DialogWright locale/<tag>/forms.yaml"
+}

@@ -3,6 +3,7 @@ import type { CallbackParams, StartDocumentOptions, VoiceProvider, WebhookReques
 import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import type { Recognition } from '../../core/app/types';
+import { DEFAULT_RECOGNITION } from '../../channel/voiceProviders';
 
 /**
  * Twilio request signature: HMAC-SHA1 over the full URL followed by every POST
@@ -38,7 +39,7 @@ export interface RelayPaths {
 export const TWILIO_PATHS: RelayPaths = { socket: '/conversation/twilio', action: '/cr-action/twilio' };
 
 /** Twilio's recognizer when a caller of the document names none: Deepgram flux, as the document always had. */
-const TWILIO_DEFAULT_RECOGNITION: Recognition = { provider: 'Deepgram', model: 'flux' };
+const TWILIO_DEFAULT_RECOGNITION: Recognition = DEFAULT_RECOGNITION.twilio;
 
 /**
  * The ConversationRelay connect document. Attributes follow Twilio's ConversationRelay TwiML reference.

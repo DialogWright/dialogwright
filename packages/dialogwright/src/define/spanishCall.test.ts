@@ -60,7 +60,7 @@ describe('a call in Spanish', () => {
 
     // The card: asked for, then said in Spanish number words, tens joined by "y".
     const loans = say(start, 'quiero saber qué tengo prestado', { intent: choice({ check_loans: 0.95, none: 0.05 }) }, t).turn;
-    expect(heard(loans)).toBe('Claro, puedo ayudarle a check your loans. ¿Cuál es el número de su tarjeta de la biblioteca?');
+    expect(heard(loans)).toBe('Claro, puedo ayudarle a revisar sus préstamos. ¿Cuál es el número de su tarjeta de la biblioteca?');
     const SPAN = 'cincuenta y cinco cincuenta y dos cero cuatro diecisiete';
     const card = say(loans, `es la cincuenta y cinco cincuenta y dos cero cuatro diecisiete`, {
       cardGiven: noul(0.95), cardSpan: choice({ [SPAN]: 0.9, none: 0.1 }), cardComplete: noul(0.9),
@@ -83,7 +83,7 @@ describe('a call in Spanish', () => {
 
     // A hold: the book named, the branch asked for in Spanish and picked.
     const hold = say(card.turn, '¿ya llegó mi reserva de El atlas del río?', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
-    expect(heard(hold)).toBe('Claro, puedo ayudarle a check a hold. ¿En qué sucursal está la reserva, Norte o Ribera?');
+    expect(heard(hold)).toBe('Claro, puedo ayudarle a revisar una reserva. ¿En qué sucursal está la reserva, Norte o Ribera?');
     const branch = say(hold, 'en la sucursal Norte', { branch: choice({ north: 0.92, none: 0.08 }) }, t);
     // The model's turn state shows the book as the call says it.
     expect(branch.asked.branch?.type).toBe('choice');
@@ -93,7 +93,7 @@ describe('a call in Spanish', () => {
 
     // A renewal: the summary reads the book back in Spanish, and the new due day is said in Spanish.
     const renew = say(branch.turn, 'quiero renovar Un huerto tranquilo', { intent: choice({ renew_loan: 0.95, none: 0.05 }), book: choice({ quiet_orchard: 0.9, none: 0.1 }) }, t).turn;
-    expect(heard(renew)).toBe('Claro, puedo ayudarle a renew a book. Quiere renovar Un huerto tranquilo por dos semanas más. ¿Lo hago?');
+    expect(heard(renew)).toBe('Claro, puedo ayudarle a renovar un libro. Quiere renovar Un huerto tranquilo por dos semanas más. ¿Lo hago?');
     const yes = say(renew, 'sí, por favor', { confirmsYes: noul(0.95), confirmsNo: noul(0.05), changeSlot: choice({ none: 0.95, book: 0.05 }) }, t).turn;
     expect(yes.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`)).toEqual(['renewLoan:ALLOW']);
     expect(heard(yes)).toBe('Listo. Ahora Un huerto tranquilo se devuelve el viernes, 2 de octubre. ¿Hay algo más en que pueda ayudarle?');
@@ -111,6 +111,29 @@ describe('a call in Spanish', () => {
     const hold = say(fresh, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
     const branch = say(hold, 'North', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
     expect(heard(branch)).toBe('Good news, The River Atlas is waiting for you at the North branch. Is there anything else I can help with?');
+  });
+});
+
+describe('the intents\' labels in Spanish (locale/es/intents.yaml)', () => {
+  const started = (locale?: string): TurnResult => resolve(newSession(`labels-${locale ?? 'en'}`, 0, VOICE_RELAY, ANONYMOUS, libraryApp.id), startEvent({}, locale), null, tc());
+
+  it('confirms an unsure reading with the Spanish label, and the model is still told the label it reads, in English', () => {
+    const t = tc();
+    const unsure = say(started('es'), 'algo de una reserva', { intent: choice({ check_hold: 0.5, none: 0.5 }) }, t).turn;
+    expect(heard(unsure)).toBe('Para confirmar, ¿quiere revisar una reserva? Sí o no.');
+    expect(plan(unsure.session, speechEvent('sí', true, 'es-US'), t).turnState!.pendingConfirmation).toEqual({ target: 'intent', value: 'check a hold' });
+  });
+
+  it('asks which of two in Spanish, and asks it again with the same Spanish labels', () => {
+    const t = tc();
+    const which = say(started('es'), 'algo de un libro', { intent: choice({ check_hold: 0.5, renew_loan: 0.45, none: 0.05 }) }, t).turn;
+    expect(heard(which)).toBe('¿Quiere revisar una reserva, o renovar un libro?');
+    expect(which.session.lastPromptOptions).toEqual(['revisar una reserva', 'renovar un libro']);
+  });
+
+  it('keeps the English labels in an English call', () => {
+    const english = resolve(started().session, speechEvent('something about a hold', true, 'en-US'), { ...BASE, intent: choice({ check_hold: 0.5, none: 0.5 }) }, tc());
+    expect(spokenText(libraryApp, english.decision, english.session.locale)).toBe('Just to check, do you want to check a hold? Yes or no.');
   });
 });
 
@@ -194,7 +217,7 @@ describe('switching language mid-call (an informational intent with locale:)', (
     ]);
     // The call goes on in Spanish.
     const loans = say(switched, 'quiero saber qué tengo prestado', { intent: choice({ check_loans: 0.95, none: 0.05 }) }, t).turn;
-    expect(heard(loans)).toBe('Claro, puedo ayudarle a check your loans. ¿Cuál es el número de su tarjeta de la biblioteca?');
+    expect(heard(loans)).toBe('Claro, puedo ayudarle a revisar sus préstamos. ¿Cuál es el número de su tarjeta de la biblioteca?');
     expect(loans.actions.some((a) => a.type === 'set_language')).toBe(false);
   });
 

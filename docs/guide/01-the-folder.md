@@ -14,7 +14,7 @@ my-app/
   identity.yaml     optional: who the app serves, and how a caller proves who they are
   routes.yaml       optional: what the call does at its start, once the caller is verified, and after a form
   slots.yaml        optional: every slot the app has, and their order
-  locale/<tag>/     optional: prompts.yaml for each extra language, and slots.yaml for how its slots say values
+  locale/<tag>/     optional: prompts.yaml for each extra language, slots.yaml for how its slots say values, and intents.yaml (and forms.yaml) for its requests' labels
   app.ts            the code: export const code: AppCode = { ... }
   fixtures/         optional: corpus.jsonl, scripted calls, a baseline, recorded cassettes
 ```

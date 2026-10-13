@@ -29,6 +29,17 @@ callerNumber:
   use: hint
   called: true
 
+# The Spanish line on the phone: spoken and heard as es-US (a carrier's language element needs the
+# region: Twilio refuses a bare "es"), with a recognizer of its own on Twilio, since the server's default
+# there, Deepgram flux, hears English only.
+voice:
+  locales:
+    es:
+      tts: es-US
+      transcription: es-US
+      recognition:
+        twilio: { provider: Deepgram, model: nova-3-general }
+
 # The region a call is put through from, a custom parameter the start hook reads.
 callData:
   region: { from: param.region, redact: keep }

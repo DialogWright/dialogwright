@@ -569,6 +569,10 @@ The prompts for another language, in the same shape as prompts.yaml. See section
 
 How the library slots say their values in that language: a choice option's `say`, a text slot's stand-in. Never what the model is asked. See section 8.
 
+### locale/&lt;tag&gt;/intents.yaml and forms.yaml (optional)
+
+The labels the lines of that language name the caller's request by (`{intentLabel}`): each intent's, in the shape of intents.yaml (`intents: { <id>: { label: ... } }`), and an internal form's in forms.yaml's (`forms: { <id>: { label: ... } }`). The label alone; the criteria stay as the model reads them. See section 8.
+
 ### fixtures/ (optional)
 
 The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, the baseline, and recorded cassettes. They are how an app is tested with no keys: the stub decision model answers from the corpus labels. The clinic's README explains the harness; the only rule `check` adds is that every intent has examples in the corpus when `app.yaml` names a fixtures directory:

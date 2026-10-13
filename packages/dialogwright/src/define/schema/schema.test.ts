@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import type { ZodType } from 'zod';
 import { SCHEMAS, FILE_KINDS, FILE_NAMES, type FileKind } from './index';
 import { SCHEMAS_DIR } from './generate';
-import { hostJsonSchema, jsonSchemas, kbJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
+import { hostJsonSchema, jsonSchemas, kbJsonSchemas, localeLabelsJsonSchemas, localeSlotsJsonSchema, serializeSchema, slotsJsonSchema } from './json';
 import { slotsSchema } from './slots';
 
 const FIXTURE = join(__dirname, '..', '__fixtures__', 'valid');
@@ -209,6 +209,13 @@ describe('the JSON Schemas', () => {
     expect(committed, 'schemas/locale-slots.schema.json is stale: run `pnpm --filter dialogwright schemas` and commit the result').toBe(serializeSchema(localeSlotsJsonSchema()));
   });
 
+  for (const [name, schema] of Object.entries(localeLabelsJsonSchemas())) {
+    it(`schemas/${name}.schema.json is up to date (run: pnpm --filter dialogwright schemas)`, () => {
+      const committed = readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8');
+      expect(committed, `schemas/${name}.schema.json is stale: run \`pnpm --filter dialogwright schemas\` and commit the result`).toBe(serializeSchema(schema));
+    });
+  }
+
   for (const [name, schema] of Object.entries(kbJsonSchemas())) {
     it(`schemas/${name}.schema.json is up to date (run: pnpm --filter dialogwright schemas)`, () => {
       const committed = readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8');
@@ -243,6 +250,7 @@ describe('the JSON Schemas', () => {
     for (const kind of FILE_KINDS) walk(generated[kind], kind);
     walk(slotsJsonSchema(), 'slots');
     walk(localeSlotsJsonSchema(), 'locale-slots');
+    for (const [name, schema] of Object.entries(localeLabelsJsonSchemas())) walk(schema, name);
     expect(undescribed).toEqual([]);
   });
 

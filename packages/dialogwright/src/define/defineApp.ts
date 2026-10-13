@@ -1241,7 +1241,17 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
 function localesOf(config: LoadedConfig): AppLocales | undefined {
   const others = Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale);
   if (config.app.locale === undefined && others.length === 0) return undefined;
-  return { default: config.defaultLocale, prompts: Object.fromEntries(others.map(([locale, prompts]) => [locale, manifestOf(prompts)])) };
+  const locales: AppLocales = { default: config.defaultLocale, prompts: Object.fromEntries(others.map(([locale, prompts]) => [locale, manifestOf(prompts)])) };
+  // Each locale's labels (locale/<tag>/intents.yaml, forms.yaml), for the locales that give any: an App
+  // whose locales give none has no labels, as before they could be given.
+  const labels = Object.fromEntries(others.flatMap(([locale]) => {
+    const own = {
+      ...Object.fromEntries(Object.entries(config.localeIntents?.[locale]?.intents ?? {}).map(([id, l]) => [id, l.label])),
+      ...Object.fromEntries(Object.entries(config.localeForms?.[locale]?.forms ?? {}).map(([id, l]) => [id, l.label])),
+    };
+    return Object.keys(own).length > 0 ? [[locale, own]] : [];
+  }));
+  return Object.keys(labels).length > 0 ? { ...locales, labels } : locales;
 }
 
 function promptsOf(config: LoadedConfig, a: AppYaml): App['prompts'] {

@@ -82,7 +82,9 @@ describe('the published packages', () => {
     expect(readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true);
     expect(statSync(bin).mode & 0o111, 'executable').not.toBe(0);
     const run = spawnSync(process.execPath, [bin, 'check', LIBRARY_DIR], { encoding: 'utf8', env: withShortTmp() });
-    expect({ status: run.status, stdout: run.stdout }).toEqual({ status: 0, stdout: `${LIBRARY_DIR}: ok\n` });
+    // The library's only warnings are its Spanish locale's speech settings (define/check.test.ts LIBRARY_SPEECH).
+    expect({ status: run.status, last: run.stdout.split('\n').at(-2) }).toEqual({ status: 0, last: `${LIBRARY_DIR}: ok` });
+    expect(run.stdout.split('\n').slice(0, -2).every((l) => l.startsWith('warning: app.yaml:18:1  voice  the locale es '))).toBe(true);
   }, 60_000);
 
   it('kb-author and the widget: dist/ with declarations, and kb-author\'s own bin', () => {

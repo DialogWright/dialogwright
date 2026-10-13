@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { withParentKey } from '../testing/docBlocks';
-import { formsSchema } from './schema';
+import { formsSchema, localeFormsSchema } from './schema';
 
 /**
  * Every forms.yaml block in the docs and the create-app skill is read by the schema that reads the
@@ -38,6 +38,8 @@ function docFiles(): string[] {
 interface Block {
   where: string;
   value: unknown;
+  /** A locale's forms.yaml, read by its own schema. */
+  locale?: boolean;
 }
 
 const isMap = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -57,14 +59,16 @@ function blocksOf(file: string): Block[] {
       continue;
     }
     if (!isMap(value) || Object.keys(value).length !== 1 || !('forms' in value)) continue;
-    out.push({ where: `${relative(ROOT, file)}:${text.slice(0, m.index).split('\n').length}`, value });
+    // A locale's forms.yaml (its first line names it: # locale/es/forms.yaml) holds an internal form's label alone.
+    const locale = /^#\s+locale\/[^/\s]+\/forms\.yaml\b/.test(raw.split('\n')[0] ?? '');
+    out.push({ where: `${relative(ROOT, file)}:${text.slice(0, m.index).split('\n').length}`, value, ...(locale ? { locale } : {}) });
   }
   return out;
 }
 
 /** What the schema says is wrong with a block, one line each: its path and the message. */
-function problemsOfBlock(value: unknown): string[] {
-  const result = formsSchema.safeParse(value);
+function problemsOfBlock(value: unknown, locale = false): string[] {
+  const result = (locale ? localeFormsSchema : formsSchema).safeParse(value);
   return result.success ? [] : result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
 }
 
@@ -75,10 +79,12 @@ describe('the forms.yaml in the docs and the skill', () => {
     const files = new Set(blocks.map((b) => b.where.split(':')[0]));
     for (const file of ['docs/guide/02-the-files-one-by-one.md', '.claude/skills/create-app/patterns.md']) expect(files, file).toContain(file);
     expect(blocks.length).toBeGreaterThanOrEqual(10);
+    // A locale's forms.yaml (section 8), read by its own schema.
+    expect(blocks.some((b) => b.locale === true && b.where.startsWith('docs/guide/08-locales.md'))).toBe(true);
   });
 
   it('reads, every block of it, as written', () => {
-    const failed = blocks.flatMap((b) => problemsOfBlock(b.value).map((p) => `${b.where}: ${p}`));
+    const failed = blocks.flatMap((b) => problemsOfBlock(b.value, b.locale).map((p) => `${b.where}: ${p}`));
     expect(failed).toEqual([]);
   });
 

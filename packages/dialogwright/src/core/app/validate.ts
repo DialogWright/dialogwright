@@ -233,6 +233,15 @@ export function validateApp(app: App): void {
   if (within !== undefined && (!Number.isInteger(within) || within < 0 || within > MAX_CONTINUE_WITHIN_MS)) fail(`voice.continueWithinMs ${within} is not a whole number from 0 to ${MAX_CONTINUE_WITHIN_MS}`);
   for (const p of pronounceProblems(app.voice?.pronounce ?? {})) fail(`voice.pronounce: ${p.message}`);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) for (const p of pronounceProblems(settings.pronounce ?? {})) fail(`voice.locales.${tag}.pronounce: ${p.message}`);
+  // A locale's labels (AppLocales.labels): another of the app's locales, and an intent or an internal form of the app.
+  for (const [tag, labels] of Object.entries(app.locales?.labels ?? {})) {
+    if (!speaks.includes(tag) || tag === app.locales?.default) fail(`locales.labels names the locale "${tag}", which is not one of the app's other locales`);
+    for (const [id, label] of Object.entries(labels)) {
+      const named = Object.hasOwn(app.intents, id) || (Object.hasOwn(app.forms, id) && app.forms[id]!.internal === true);
+      if (!named) fail(`locales.labels.${tag} names "${id}", which is neither an intent nor an internal form`);
+      if (typeof label !== 'string' || label.trim() === '') fail(`locales.labels.${tag}.${id} is not a label`);
+    }
+  }
   for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) if (!speaks.includes(tag)) fail(`voice.numbers starts ${number} in the locale "${tag}", which the app does not speak`);
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {
     if (!speaks.includes(tag)) fail(`voice.locales names the locale "${tag}", which the app does not speak`);

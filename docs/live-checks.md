@@ -263,6 +263,21 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and fix in the results log, and anything that differed in the design's As built.
 
+## 16. The language fixes of 2026-10-13, on Twilio and on Telnyx
+
+**Why.** Fixes 8 to 10 of [the live findings](designs/2026-10-13-live-findings.md) are held by tests on the documents and the lines; two things only a carrier settles are left: whether Telnyx takes a tag with no region, and whether a language with a recognizer of its own keeps it after a switch.
+
+**Set.** A scratch copy of the routed fixture (check 13's settings), which now names `voice.locales.es` (`es-US` spoken and heard, Deepgram `nova-3-general` on Twilio) and its Spanish labels (`locale/es/intents.yaml`, `forms.yaml`). `pnpm diagnose` should say `ok  languages: en-US as en-US; es as es-US, ...`.
+
+**Do and look for.**
+
+1. **A regional tag.** Call the Spanish line on each carrier: the greeting in Spanish, no application error, and the start document's `<Language code="es-US" .../>`.
+2. **A recognizer per language.** On Twilio, call the main number and switch to Spanish ("en español", or a Spanish line routed mid-call), then answer in Spanish: heard (the `prompt` frame's text), with no "Error connecting to Deepgram Flux" in the Twilio debugger and no reconnect in the frame log. Then take `recognition` out of the copy's `voice.locales.es`: `pnpm check` and the server's start warn of it, and a call that switches may fail as before (note whether it does).
+3. **A bare tag on Telnyx.** Set the copy's `tts` and `transcription` to `es` and call the Spanish line on Telnyx (only Telnyx: `pnpm diagnose` fails it where the server answers on Twilio). Note whether Telnyx takes it; write the answer into the guide's 13.3 and `bareTagFinding` in `channel/speechLanguages.ts`.
+4. **Labels.** On the Spanish line: "Claro, le puedo ayudar a reportar un problema" (never the English label); for a past-due account checking on a request, the payment plan and the request it goes back to named in Spanish ("preparar un plan de pago", "revisar una solicitud").
+
+**Record.** One row per carrier and step in the results log.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

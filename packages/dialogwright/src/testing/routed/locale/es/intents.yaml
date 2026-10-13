@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../../../schemas/locale-intents.schema.json
+# The requests as the Spanish line says them ("Claro, le puedo ayudar a {intentLabel}."), where a live
+# call once heard "le puedo ayudar a report a problem". Only the labels: the criteria stay as written.
+intents:
+  report_problem:
+    label: reportar un problema
+  check_status:
+    label: revisar una solicitud
+  done:
+    label: terminar

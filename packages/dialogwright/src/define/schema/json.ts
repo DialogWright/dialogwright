@@ -7,6 +7,8 @@ import { KB_KINDS } from '../../kb/schema';
 import { CODE_SLOT_TYPE } from './slots';
 import { FILE_KINDS, SCHEMAS, type FileKind } from './index';
 import { hostSchema } from './host';
+import { localeIntentsSchema } from './intents';
+import { localeFormsSchema } from './forms';
 
 /** A JSON Schema document, as zod generates it. */
 export type JsonSchema = Record<string, unknown>;
@@ -88,6 +90,17 @@ export function kbJsonSchemas(): Record<string, JsonSchema> {
 /** host.yaml's JSON Schema (several apps on one server): schemas/host.schema.json. */
 export function hostJsonSchema(): JsonSchema {
   return { ...(z.toJSONSchema(hostSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright host.yaml' };
+}
+
+/**
+ * A locale's labels' JSON Schemas (locale/<tag>/intents.yaml and locale/<tag>/forms.yaml), keyed by the
+ * name each is written under: schemas/<name>.schema.json.
+ */
+export function localeLabelsJsonSchemas(): Record<'locale-intents' | 'locale-forms', JsonSchema> {
+  return {
+    'locale-intents': { ...(z.toJSONSchema(localeIntentsSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright locale/<tag>/intents.yaml' },
+    'locale-forms': { ...(z.toJSONSchema(localeFormsSchema, { io: 'input', target: 'draft-7' }) as JsonSchema), title: 'DialogWright locale/<tag>/forms.yaml' },
+  };
 }
 
 /** A JSON Schema as it is written to schemas/<kind>.schema.json: two-space indent and a final newline. */

@@ -464,7 +464,7 @@ function enqueue(s: Session, intent: FormId | undefined): Ack[] {
   // A form the open one was reached through by next on this call is the task in hand, not another.
   if (intent === undefined || intent === s.form || s.queued.includes(intent) || s.reachedThrough?.includes(intent) === true) return [];
   s.queued.push(intent);
-  return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent) } }];
+  return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent, s.locale) } }];
 }
 
 /** No slot agreed to at a summary: a completion with no summary's yes behind it. */
@@ -596,7 +596,7 @@ function finishForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, completed
   setForm(s, next);
   // The request was added on this very turn, so the caller already hears it bridged into;
   // promising it "after this" as well would say the same thing twice.
-  const label = formLabel(io.app, next);
+  const label = formLabel(io.app, next, s.locale);
   const kept = acks.filter((a) => !(a.promptId === 'ack_queued' && a.vars.intentLabel === label));
   return continueForm(s, io, [...kept, { promptId: 'bridge_next', vars: { intentLabel: label } }], null);
 }
@@ -629,9 +629,9 @@ function goOn(s: Session, form: FormId, then: FormId, acks: Ack[], io: TurnIO): 
   if (passed.length > 0) s.checked = Object.fromEntries(passed);
   const movedThrough = (io.out.movedOn ?? []).some((m) => m.next === form);
   io.out.movedOn = [...(io.out.movedOn ?? []), { form, next: then, at: io.out.gateEvents.length }];
-  const label = formLabel(io.app, form);
+  const label = formLabel(io.app, form, s.locale);
   const said = movedThrough ? acks.filter((a) => !(a.promptId === 'bridge_next' && a.vars.intentLabel === label)) : acks;
-  return continueForm(s, io, [...said, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, then) } }], null);
+  return continueForm(s, io, [...said, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, then, s.locale) } }], null);
 }
 
 /** "Thanks for calling Example Parcels. Goodbye." (or "chatting", on a chat): the caller said they are done. */
@@ -736,7 +736,7 @@ function reaskCurrent(s: Session, acks: Ack[]): Decision {
       case 'check':
         return checkConfirmPrompt(s, pc, acks);
       case 'intent':
-        return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(app, pc.intent) }, acks, ['yes', 'no']);
+        return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(app, pc.intent, s.locale) }, acks, ['yes', 'no']);
     }
   }
   const asked = s.promptedFor;
@@ -959,13 +959,13 @@ function reaskConfirmation(s: Session, io: TurnIO, acks: Ack[] = [], count = tru
     if (step === 'dtmf') return prompt('confirm_dtmf', 'confirm', {}, acks, ['1', '2']);
     return summaryPrompt(s, pc.form, acks);
   }
-  if (!count) return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent) }, acks, ['yes', 'no']);
+  if (!count) return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent, s.locale) }, acks, ['yes', 'no']);
   s.intentAttempts += 1;
   if (retryStep(s.intentAttempts, t) === 'agent') {
     s.pendingConfirmation = null;
     return handoff(s, 'max-attempts', acks);
   }
-  return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent) }, acks, ['yes', 'no']);
+  return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, pc.intent, s.locale) }, acks, ['yes', 'no']);
 }
 
 const NO_INPUT_ACK: Ack = { promptId: 'no_input', vars: {} };
@@ -1377,7 +1377,7 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
   // A form reached by next on this very turn: the forms moved through are dropped as well, their
   // entering lines and their checksPassed ("Good news, ..."), so the refusal is all that is heard.
   const moved = (io.out.movedOn ?? []).map((m) => m.form);
-  const labels = new Set([form, ...moved].map((f) => formLabel(io.app, f)));
+  const labels = new Set([form, ...moved].map((f) => formLabel(io.app, f, s.locale)));
   const passedLines = new Set(moved.flatMap((f) => formOf(io.app, f).checksPassed ?? []));
   const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
   const kept = acks.filter((a) => !entering(a));
@@ -1466,7 +1466,7 @@ function enterByOutcome(s: Session, from: FormId | null, to: FormId, acks: Ack[]
   const keep = from === null ? [] : formOf(io.app, from).slots.filter((id) => target.slots.includes(id));
   closeForm(s, keep);
   setForm(s, to);
-  return continueForm(s, io, [...acks, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, to) } }], null);
+  return continueForm(s, io, [...acks, { promptId: 'bridge_next', vars: { intentLabel: formLabel(io.app, to, s.locale) } }], null);
 }
 
 /**
@@ -1662,7 +1662,7 @@ export function pendingAtSignIn(pc: PendingConfirmation | null): PendingConfirma
  * in by completeForm is bridged with bridge_next instead.
  */
 function ackIntent(s: Session, form: FormId): Ack {
-  return { promptId: 'ack_intent', vars: { intentLabel: formLabel(appOf(s), form) } };
+  return { promptId: 'ack_intent', vars: { intentLabel: formLabel(appOf(s), form, s.locale) } };
 }
 
 /**
@@ -1703,7 +1703,7 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   // a parcel, and then report a missing one."), not a promise about "that" before the first is named.
   const queued = enqueue(s, queue);
   const acks: Ack[] = queued.length && queue !== undefined
-    ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form), b: formLabel(io.app, queue) } }]
+    ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form, s.locale), b: formLabel(io.app, queue, s.locale) } }]
     : [ackIntent(s, form)];
   // A yes to the greeting's proposal with the request in the same breath: the slot holds what the yes was to.
   const specs = (fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s)).filter((spec) => spec.id !== io.kept);
@@ -2032,7 +2032,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (verdict.confirm === 'explicit') {
         // The words' nominations go with them, for the form the yes opens (only when retrieval ran).
         s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text, ...(ctx.nominated !== undefined ? { nominated: ctx.nominated } : {}) };
-        return { decision: prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, verdict.intent) }, [], ['yes', 'no']), events: [] };
+        return { decision: prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, verdict.intent, s.locale) }, [], ['yes', 'no']), events: [] };
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.
       if (verdict.intent === 'done') return { decision: goodbye(s), events: [] };
@@ -2048,7 +2048,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // on an explicit-confirm route it is dropped and the caller can re-add it.
       return enterForm(s, verdict.intent, answers, ctx, io, verdict.queue);
     case 'disambiguate_intent':
-      return { decision: prompt('disambiguate_intent', 'intent', { a: intentLabel(io.app, verdict.a), b: intentLabel(io.app, verdict.b) }, [], [intentLabel(io.app, verdict.a), intentLabel(io.app, verdict.b)]), events: [] };
+      return { decision: prompt('disambiguate_intent', 'intent', { a: intentLabel(io.app, verdict.a, s.locale), b: intentLabel(io.app, verdict.b, s.locale) }, [], [intentLabel(io.app, verdict.a, s.locale), intentLabel(io.app, verdict.b, s.locale)]), events: [] };
     case 'intent_failed':
       return { decision: failAttempt(s, 'intent', io), events: [] };
     case 'queue': {

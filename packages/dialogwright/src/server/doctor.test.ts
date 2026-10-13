@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { formatResult, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { formatResult, languageChecks, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
 import { openPostgresAudit } from '../audit/postgres';
@@ -797,5 +797,37 @@ describe('pnpm diagnose: generated wording counts the lines as the app is built 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10-13)', () => {
+  const LIBRARY = fileURLToPath(new URL('../define/fixture', import.meta.url));
+  const ROUTED = fileURLToPath(new URL('../testing/routed', import.meta.url));
+  const server = (voiceProviders: string[], twilioSpeechModel: string | null = 'flux') => ({ voiceProviders, twilioTranscriptionProvider: 'Deepgram', twilioSpeechModel, telnyxTranscriptionProvider: null });
+
+  it('refuses a bare tag on a server that answers on Twilio, and warns of it on Telnyx alone, where it is not known', () => {
+    const twilio = languageChecks(LIBRARY, server(['twilio']));
+    expect(twilio[0]).toMatchObject({ id: 'languages', status: 'fail', fix: 'set voice.locales.es.tts and voice.locales.es.transcription to a tag with its region, such as es-US or es-MX' });
+    expect(twilio[0]!.message).toMatch(/^the locale es is spoken and heard as "es" .*: Twilio, which this server answers on, will refuse it$/);
+    const telnyx = languageChecks(LIBRARY, server(['telnyx']));
+    expect(telnyx).toEqual([expect.objectContaining({ status: 'warn', message: expect.stringContaining('whether Telnyx takes one is not known') })]);
+  });
+
+  it('warns of a language with no recognizer of its own beside the server\'s English-only model, by the server\'s own setting', () => {
+    const flux = languageChecks(LIBRARY, server(['twilio']));
+    expect(flux[1]).toEqual({
+      id: 'languages', status: 'warn',
+      message: 'the locale es (heard as es) names no recognizer of its own on Twilio, while en-US is heard with Deepgram flux (the server\'s), which hears English only: on a live Twilio call such a language was heard with the start language\'s flux after a switch, and Twilio failed to connect it',
+      fix: 'name a recognizer that hears es for the locale: voice.locales.es.recognition.twilio: { provider: Deepgram, model: nova-3-general }',
+    });
+    // TWILIO_SPEECH_MODEL names a model that hears more than English: the tag alone is left.
+    expect(languageChecks(LIBRARY, server(['twilio'], 'nova-3-general'))).toHaveLength(1);
+  });
+
+  it('names each locale\'s languages when nothing is wrong, and says nothing of an app that names none', () => {
+    expect(languageChecks(ROUTED, server(['twilio', 'telnyx']))).toEqual([
+      { id: 'languages', status: 'ok', message: 'languages: en-US as en-US; es as es-US, each with its region, and none heard by a recognizer that hears English only' },
+    ]);
+    expect(languageChecks(fileURLToPath(new URL('../testing/callback', import.meta.url)), server(['twilio']))).toEqual([]);
   });
 });

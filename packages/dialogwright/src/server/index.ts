@@ -6,8 +6,9 @@ import { existsSync } from 'node:fs';
 import type { KeyObject } from 'node:crypto';
 import { checkJwksUrl, jwksKeys } from './chat/jwks';
 import { calledVariablesFrom, transferTargetsFrom, type ServerTransfer } from './transfer';
-import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
-import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS } from '../channel/voiceProviders';
+import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
+import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
@@ -693,6 +694,20 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const unvoiced = config.voiceProviders.includes('telnyx') ? telnyxUnvoicedLocales(a.app, config.telnyxVoice) : [];
     if (unvoiced.length > 0) {
       log(`WARNING: ${tag(a.id)}on Telnyx, ${unvoiced.join(', ')} ${unvoiced.length === 1 ? 'has' : 'have'} no voice of ${unvoiced.length === 1 ? 'its' : 'their'} own while another locale has one: a call that starts in a voiced locale and switches may keep that voice (not yet checked on a live call); name a Telnyx voice for every locale in app.yaml (voice.locales.<tag>.voices.telnyx)`);
+    }
+    // What the carriers listed are sent of the app's languages (channel/speechLanguages.ts), as pnpm check
+    // and pnpm diagnose say it: a tag with no region (Twilio refused one on a live call), and a language
+    // heard by a recognizer that hears English only, the server's own for the default locale included.
+    const speech = speechLocalesOfApp(a.app);
+    const carriers = VOICE_PROVIDER_IDS.filter((id) => config.voiceProviders.includes(id));
+    const bare = carriers.length > 0 ? bareSpeechTags(speech) : [];
+    for (const locale of [...new Set(bare.map((b) => b.locale))]) {
+      const { message, fix } = bareTagFinding(locale, bare.filter((b) => b.locale === locale));
+      log(`WARNING: ${tag(a.id)}${message}${carriers.includes('twilio') ? ': Twilio will refuse its calls\' start document' : ''}; ${fix}`);
+    }
+    for (const h of englishOnlyHearings(speech, (c) => recognitionFor(config, c), carriers)) {
+      const { message, fix } = englishOnlyFinding(h, true);
+      log(`WARNING: ${tag(a.id)}${message}; ${fix}`);
     }
     httpApps.set(a.id, { app: a.app, hints: buildHints(a.app), startParameters, transfer, audit: auditOf(a.id), handoffNumber: handoffOf(a.id) });
     // On a host of several apps, an app with no transfer targets and no HANDOFF_NUMBER of its own puts its

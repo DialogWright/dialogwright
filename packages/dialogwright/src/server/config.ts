@@ -961,7 +961,7 @@ export function voiceFor(c: ServerConfig, providerId: string): { ttsProvider?: s
  * default locale's; an app's voice.locales.<tag>.recognition.<provider> wins over it, and another
  * locale does not get it (server/http.ts connectOptions).
  */
-export function recognitionFor(c: ServerConfig, providerId: string): Recognition {
+export function recognitionFor(c: Pick<ServerConfig, 'twilioTranscriptionProvider' | 'twilioSpeechModel' | 'telnyxTranscriptionProvider'>, providerId: string): Recognition {
   if (providerId === 'twilio') return c.twilioSpeechModel === null ? { provider: c.twilioTranscriptionProvider } : { provider: c.twilioTranscriptionProvider, model: c.twilioSpeechModel };
   if (providerId === 'telnyx') return c.telnyxTranscriptionProvider === null ? {} : { provider: c.telnyxTranscriptionProvider };
   return {};
