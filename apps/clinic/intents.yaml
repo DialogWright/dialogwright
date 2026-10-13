@@ -29,7 +29,7 @@ intents:
   # among those retrieval nominates for the words, and the approved passage is said word for word.
   ask_question:
     criteria: Asks a general question about the practice, such as its opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility
-    label: answer a question
+    label: get an answer to your question
     kind: form
 
   # The engine's own

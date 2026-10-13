@@ -8,8 +8,8 @@ effective:
 source:
   document: visitor-information
   section: opening-hours
-answer: We're open Monday through Friday, from eight in the morning to five in the afternoon, and closed on weekends and public holidays.
+answer: We're open Monday through Friday, from 8 in the morning to 5 in the evening, and closed on weekends and public holidays.
 drafted:
-  by: assistant (drafted by hand in the drafter's format, no model call)
+  by: an AI coding assistant, written directly in kb:draft's format (kb:draft's model not called)
   on: 2026-10-13
   excerpt: Example Family Practice is open Monday through Friday from 8 a.m. to 5 p.m. We are closed on weekends and public holidays.

@@ -86,8 +86,9 @@ function isWeekend(iso: string): boolean {
 /**
  * Invents bookings and openings deterministically from the day it is asked on, so the same caller
  * hears the same appointment on every call and a run is reproduced from its date alone (the
- * harness pins today). Never returns null and never an empty day: those paths belong to the engine
- * and a real directory, not to the demo.
+ * harness pins today). Never returns null. The practice is closed on weekends (its visitor page,
+ * docs-src/visitor-information.md, says so), so a Saturday or Sunday has no openings and the
+ * caller hears no_openings; every weekday has three.
  */
 export class DemoDirectory implements AppointmentDirectory {
   constructor(private readonly todayIso: string) {}
@@ -105,6 +106,8 @@ export class DemoDirectory implements AppointmentDirectory {
   }
 
   openings(provider: string, date: string): string[] {
+    // Closed on weekends: no openings, so the caller is told so and asked for another day.
+    if (isWeekend(date)) return [];
     // Three of the nine times, drawn without replacement from one hash: base-(9,8,7) digits of the
     // hash pick the draw order (9*8*7 = 504 fits well inside 32 bits), so the three are distinct by
     // construction and there is no loop that can stall. Then sorted back into clock order.

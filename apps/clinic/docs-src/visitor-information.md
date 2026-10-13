@@ -22,7 +22,7 @@ If you cannot come, please cancel or reschedule at least 24 hours before your ap
 
 ## Accessibility
 
-The building has a step-free entrance and an elevator to every floor, and every exam room is wheelchair accessible. If you need a sign language or spoken language interpreter, tell us when you book and we will arrange one at no cost to you.
+The building has a step-free entrance and an elevator to every floor, and every exam room is wheelchair accessible. If you need a sign language or spoken language interpreter, ask to speak with the front desk when you book, and we will arrange one at no cost to you.
 
 ## Contact
 

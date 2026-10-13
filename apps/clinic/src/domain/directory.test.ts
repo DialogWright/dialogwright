@@ -71,11 +71,13 @@ describe('DemoDirectory', () => {
     expect(dir.openings('kim', '2026-10-06')).not.toEqual(times);
   });
 
-  it('terminates and stays in the table for every provider and day in a month', () => {
+  it('terminates and stays in the table for every provider and day in a month, three on a weekday and none on a weekend (the practice is closed)', () => {
     for (const p of KEYS) {
       for (let d = 0; d < 31; d += 1) {
-        const times = dir.openings(p, addDays(TODAY, d));
-        expect(times).toHaveLength(3);
+        const date = addDays(TODAY, d);
+        const times = dir.openings(p, date);
+        const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+        expect(times, date).toHaveLength(weekday === 0 || weekday === 6 ? 0 : 3);
         for (const t of times) expect(DEMO_TIMES).toContain(t);
       }
     }
@@ -86,14 +88,16 @@ describe('DemoDirectory', () => {
     let missingOne = 0;
     for (const p of KEYS) {
       for (let d = 0; d < 31; d += 1) {
-        const parts = new Set(dir.openings(p, addDays(TODAY, d)).map(daypartOf));
+        const times = dir.openings(p, addDays(TODAY, d));
+        if (times.length === 0) continue; // a weekend
+        const parts = new Set(times.map(daypartOf));
         if (parts.size === 3) oneEach += 1;
         else missingOne += 1;
       }
     }
     // Both the ordinary case and the one the nearest-opening rule needs (a day that skips a part)
-    // must turn up. A fair draw covers every part in 27 of the 84 possible sets, about 80 of these
-    // 248 days; 40 leaves room.
+    // must turn up. A fair draw covers every part in 27 of the 84 possible sets, about 57 of these
+    // 176 weekdays (a weekend has none); 40 leaves room.
     expect(oneEach).toBeGreaterThan(40);
     expect(missingOne).toBeGreaterThan(0);
   });

@@ -8,8 +8,8 @@ effective:
 source:
   document: visitor-information
   section: your-first-visit
-answer: Please arrive fifteen minutes before your first appointment. Bring a photo ID, your insurance or member ID card, a list of the medicines you take, and any recent test results from another doctor.
+answer: Please arrive 15 minutes before your first appointment. Bring a photo ID, your insurance or member ID card, a list of the medicines you take, and any recent test results from another doctor.
 drafted:
-  by: assistant (drafted by hand in the drafter's format, no model call)
+  by: an AI coding assistant, written directly in kb:draft's format (kb:draft's model not called)
   on: 2026-10-13
   excerpt: Please arrive 15 minutes before your first appointment, so there is time to fill in a short form. Bring a photo ID, your insurance card or member ID card, a list of the medicines you take, and any recent test results from another doctor.

@@ -2247,7 +2247,7 @@
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
-      "text": "at least twenty-four hours before your appointment"
+      "text": "at least 24 hours before your appointment"
     }
   },
   {

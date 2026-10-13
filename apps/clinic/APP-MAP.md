@@ -13,7 +13,7 @@
 | `cancel` | form | cancel your appointment | opens the form, which asks for name, date of birth, provider |
 | `confirm_appointment` | form | confirm your appointment | opens the form, which asks for name, date of birth, provider |
 | `billing` | form | talk to billing | opens the form, which asks for member ID |
-| `ask_question` | form | answer a question | opens the form, which asks for question topic |
+| `ask_question` | form | get an answer to your question | opens the form, which asks for question topic |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `done` | control | finish up | handled by the engine |
@@ -168,7 +168,7 @@ Intent `ask_question` to its slots, the summary, the action and its rules.
 
 ```mermaid
 flowchart LR
-  intent("Intent<br/>ask_question<br/>answer a question")
+  intent("Intent<br/>ask_question<br/>get an answer to your question")
   subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
     s_subject["subject<br/>type: topic"]
   end

@@ -33,7 +33,7 @@ describe('the knowledge base', () => {
       expect(d.problems, d.id).toEqual([]);
       expect(d.draft!.drafted.excerpt, d.id).toBeDefined();
       expect(collapseWhitespace(d.draft!.answer).length, d.id).toBeLessThanOrEqual(kb.settings.maxAnswerChars);
-      expect(d.draft!.drafted.by, d.id).toMatch(/^assistant /);
+      expect(d.draft!.drafted.by, d.id).toMatch(/^an AI coding assistant, /);
     }
   });
 
