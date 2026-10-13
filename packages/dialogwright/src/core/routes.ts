@@ -43,18 +43,19 @@ export function routeTaken(rules: readonly RouteRule[], facts: ConditionFacts): 
   return index < 0 ? null : { rule: rules[index]!, index };
 }
 
-/** What the turn knows beside the session: its clock and the environment `called` reads. */
+/** What the turn knows beside the session: its clock, the environment `called` reads, and the app's settings its predicates read (TurnContext.settings). */
 export interface ConditionClock {
   readonly nowMs: number;
   readonly todayIso: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly settings?: (name: string) => string | undefined;
 }
 
 /**
  * Everything a condition may read on this call, at this moment: the form open (or, with none, the last
  * completed), the call data, the facts, the slots' values, the caller's level, the hours at the turn's
  * clock, the number called, the environment and the app's predicates (each given the session read-only:
- * a copy, so what one writes is lost; one that throws is false). With no clock (null), what only the
+ * a copy, so what one writes is lost; and the app's settings, by name; one that throws is false). With no clock (null), what only the
  * turn knows is not known: no hours, no environment and no predicate holds.
  */
 export function sessionConditionFacts(app: App, s: Session, clock: ConditionClock | null, reason?: string): ConditionFacts {
@@ -78,7 +79,8 @@ export function sessionConditionFacts(app: App, s: Session, clock: ConditionCloc
       const p = predicates !== undefined && Object.hasOwn(predicates, name) ? predicates[name] : undefined;
       if (typeof p !== 'function') return false;
       try {
-        const ctx: PredicateContext = { s: structuredClone(s), nowMs: clock.nowMs, todayIso: clock.todayIso };
+        const settings = clock.settings;
+        const ctx: PredicateContext = { s: structuredClone(s), nowMs: clock.nowMs, todayIso: clock.todayIso, env: (name) => settings?.(name) };
         return p(ctx) === true;
       } catch {
         return false;
@@ -190,6 +192,27 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
       }
       outcomeProblems(rule.outcome, here, point, form);
     });
+    lostSwitches(rules as RouteRule[], at);
+  };
+  // A rule that says a line and goes on (`continue`) above a `locale` rule: a call both hold for is taken
+  // by the first and never switched, so its line and the rest of the call are in the default language
+  // (live: an outage notice above the Spanish line's rule greeted a Spanish call in English). Warned only
+  // where it is likely: not where both read the number called (a call dials one), nor where a rule above
+  // the first already does both (the combined rule, the fix).
+  const lostSwitches = (rules: readonly RouteRule[], at: readonly (string | number)[]): void => {
+    const plain = (r: unknown): r is RouteRule => typeof r === 'object' && r !== null && (r as RouteRule).else !== true && Array.isArray((r as RouteRule).when) && typeof (r as RouteRule).outcome === 'object' && (r as RouteRule).outcome !== null;
+    const key = (c: Condition): string => JSON.stringify(c);
+    rules.forEach((rule, i) => {
+      if (!plain(rule) || rule.outcome.then !== 'continue' || rule.outcome.say === undefined) return;
+      const j = rules.findIndex((later, k) => k > i && plain(later) && later.outcome.then === 'locale'
+        && !(rule.when.some((c) => c.kind === 'called') && later.when.some((c) => c.kind === 'called'))
+        && !rules.slice(0, i).some((above) => plain(above) && above.outcome.then === 'locale' && above.outcome.locale === (later.outcome as { locale: string }).locale
+          && [...rule.when, ...later.when].every((c) => above.when.some((a) => key(a) === key(c)))));
+      if (j < 0) return;
+      const locale = (rules[j]!.outcome as { locale: string }).locale;
+      add([...at, i], `says ${rule.outcome.say} and goes on, so a call it takes is never switched to ${locale}, even where rule ${j + 1} (then: locale) holds too: the first rule that holds is taken, and the rules after it are not looked at`,
+        `above this rule, add one that does both: when both rules' conditions hold, say: ${rule.outcome.say}, then: locale, locale: ${locale} (the line is said in the new language); or move rule ${j + 1} above this one, if its callers need not hear ${rule.outcome.say}`, { warning: true });
+    });
   };
   const outcomeProblems = (o: RouteOutcome | undefined, at: readonly (string | number)[], point: RoutePoint, form?: FormId): void => {
     if (typeof o !== 'object' || o === null) {
@@ -202,6 +225,7 @@ export function routeProblems(routes: Routes | undefined, world: RouteWorld): Ro
     }
     if (!ROUTE_THEN_AT[point].includes(o.then)) add([...at, 'then'], `then: ${o.then} is not taken at ${point}: nothing has been asked yet, so there is no "anything else?" to go on to`, `write one of ${ROUTE_THEN_AT[point].join(', ')}`);
     if ((o.then === 'end' || o.then === 'anything-else') && o.say === undefined) add(at, `then: ${o.then} says a line first, and this route names none`, 'add "say: <a prompt id in prompts.yaml>"');
+    if ((o as { goodbye?: unknown }).goodbye !== undefined && o.then !== 'end') add([...at, 'goodbye'], `goodbye says whether the goodbye follows the line a call ends on, and this route does not end the call (then: ${o.then})`, 'delete "goodbye", or write "then: end"');
     if (o.say !== undefined && world.hasLine !== undefined && !world.hasLine(o.say)) add([...at, 'say'], `prompt "${o.say}" is not in prompts.yaml`, `add "${o.say}:" to prompts.yaml, or name a line that is there`);
     if (o.then === 'form') {
       if (!world.forms.includes(o.form)) add([...at, 'form'], `form "${o.form}" is not defined`, `name one of ${world.forms.join(', ')}`);
@@ -239,8 +263,9 @@ export function calledVariables(app: Pick<App, 'routes' | 'transfer'>): string[]
 
 /** A route as routes.yaml writes it: a rule with its outcome beside `when`, or the else with its outcome under `else`. */
 export interface WrittenRoute {
-  readonly else?: 'continue' | { readonly then?: string; readonly say?: string; readonly reason?: string; readonly form?: string; readonly locale?: string };
+  readonly else?: 'continue' | { readonly then?: string; readonly say?: string; readonly reason?: string; readonly form?: string; readonly locale?: string; readonly goodbye?: boolean };
   readonly then?: string;
+  readonly goodbye?: boolean;
   readonly say?: string;
   readonly reason?: string;
   readonly form?: string;

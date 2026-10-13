@@ -23,7 +23,9 @@ import { E164 } from './transfer';
  * numbers host.yaml lists. Each app's own settings file (its .env, or the one host.yaml names) is read
  * only for the variables the app's YAML names (env.<NAME>: transfer targets, startParameters, called
  * numbers), and only for that app: two apps may each give MAIN_LINE a number of their own. A variable an
- * app names and its own file does not set is read from the server's settings.
+ * app names and its own file does not set is read from the server's settings. The app's code reads its
+ * settings by name at call time (AppContext.env): its own file, the whole of it, over the server's
+ * settings; `process.env` is the server's alone.
  */
 
 /** One app a host runs. */
@@ -36,8 +38,13 @@ export interface HostApp {
   readonly env: Env;
   /** The variables its own file set for it, by name only (the log says them, never a value). */
   readonly own: readonly string[];
-  /** The variables in its own file it does not name, which are not read (a server setting left in an app's .env, say). */
+  /** The variables in its own file it does not name, which the server does not read for it (a server setting left in an app's .env, say); its code may (`settings`). */
   readonly ignored: readonly string[];
+  /**
+   * What the app's code reads by name (AppContext.env, RunOptions.settings): the server's settings with
+   * the whole of its own file over them, its variables and the rest. Absent, `env`.
+   */
+  readonly settings?: Env;
   /** The variable that holds each of its services' URLs (host.yaml's `services`), by service name; absent, none. */
   readonly services?: Readonly<Record<string, string>>;
 }
@@ -155,9 +162,11 @@ export function appOfSetup(host: Pick<HostRouting, 'appFor' | 'has'>, named: str
 /**
  * The environment one app's references are read from: `server` with the values `own` (its own settings
  * file, or null for none) gives the variables the app names (`variables`) over it. The rest of its own
- * file is not read: `ignored` names them (a server setting left in an app's .env from before the host).
+ * file is not read for the server's purposes: `ignored` names them (a server setting left in an app's
+ * .env from before the host). `settings` is what the app's code reads by name (AppContext.env): `server`
+ * with the whole of `own` over it.
  */
-export function appEnvironment(server: Env, own: Readonly<Record<string, string>> | null, variables: readonly string[]): { env: Env; own: string[]; ignored: string[] } {
+export function appEnvironment(server: Env, own: Readonly<Record<string, string>> | null, variables: readonly string[]): { env: Env; own: string[]; ignored: string[]; settings: Env } {
   const named = new Set(variables);
   const env: Env = { ...server };
   const set: string[] = [];
@@ -168,7 +177,7 @@ export function appEnvironment(server: Env, own: Readonly<Record<string, string>
       set.push(k);
     } else ignored.push(k);
   }
-  return { env, own: set, ignored };
+  return { env, own: set, ignored, settings: { ...server, ...(own ?? {}) } };
 }
 
 /**
@@ -247,7 +256,7 @@ async function hostApp(ref: HostAppRef, server: Env): Promise<HostApp> {
   const app = ensureRegistered(await importApp(ref.dir, ref.id));
   const own = existsSync(ref.envFile) ? readEnvFile(ref.envFile) : null;
   const env = appEnvironment(server, own, ownVariablesOf(ref));
-  return { id: app.id, app, dir: ref.dir, env: env.env, own: env.own, ignored: env.ignored, services: ref.services };
+  return { id: app.id, app, dir: ref.dir, env: env.env, own: env.own, ignored: env.ignored, settings: env.settings, services: ref.services };
 }
 
 /** What a server's log says of a host, a line each: the apps, and which numbers reach each. Names only, never a number. */

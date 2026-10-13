@@ -319,9 +319,11 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // host's (host.yaml, server/host.ts), each with its own environment. Each per-app line below is said as
   // it always was for one app, and with `app <id>: ` in front of it for each of a host's.
   const host = overrides.apps ?? null;
-  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env; readonly dir?: string; readonly services?: Readonly<Record<string, string>>; readonly ignored?: readonly string[]; readonly own?: readonly string[] }[] = host
-    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
-    : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env }];
+  // `settings` is what each app's code reads by name (AppContext.env): on a host, its own settings file over
+  // the server's; on a server of one, its environment.
+  const appsRun: readonly { readonly id: string; readonly app: App; readonly env: Env; readonly settings: Env; readonly dir?: string; readonly services?: Readonly<Record<string, string>>; readonly ignored?: readonly string[]; readonly own?: readonly string[] }[] = host
+    ? host.apps.map((a) => ({ id: a.id, app: a.app, env: a.env, settings: a.settings ?? a.env, ...(a.dir !== undefined ? { dir: a.dir } : {}), ...(a.services ? { services: a.services } : {}), ignored: a.ignored, own: a.own }))
+    : [{ id: defaultAppId(), app: getApp(defaultAppId()), env: overrides.env ?? process.env, settings: overrides.env ?? process.env }];
   const tag = (id: string): string => (host ? `app ${id}: ` : '');
   /** A call's app: on a host, the one of this id (the default for one it does not run); on a server of one, its one app. */
   const appRun = (id: string | undefined): (typeof appsRun)[number] => (host && id !== undefined ? appsRun.find((a) => a.id === id) : undefined) ?? appsRun[0]!;
@@ -337,8 +339,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   if (host) {
     for (const line of describeHost(host)) log(line);
     for (const warning of host.warnings) log(`WARNING: ${warning}`);
-    // What an app's own settings file sets and does not name: not read under a host, said by name only.
-    for (const a of appsRun) if (a.ignored && a.ignored.length > 0) log(`${tag(a.id)}its own settings file sets ${a.ignored.join(', ')}, which it does not name: not read under a host (the server's settings file holds what every app shares)`);
+    // What an app's own settings file sets and its YAML does not name: not read by the server under a host
+    // (its code may, with ctx.env), said by name only.
+    for (const a of appsRun) if (a.ignored && a.ignored.length > 0) log(`${tag(a.id)}its own settings file sets ${a.ignored.join(', ')}, which its YAML does not name: not read by the server under a host (the server's settings file holds what every app shares); the app's code reads them with ctx.env`);
   }
   // Each app's client, when it answers by the app's own heuristics: its own fixtures' corpus for the stub
   // (from the app's package, as its regression reads it), the heuristics alone where it has none.
@@ -632,7 +635,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
         trace,
         frames,
       };
@@ -730,7 +733,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id) },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
         frames,
       };
     },

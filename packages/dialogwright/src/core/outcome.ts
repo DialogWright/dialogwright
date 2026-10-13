@@ -58,10 +58,11 @@ export function hasOwnRetries(spec: Pick<SlotSpec, 'attempts' | 'onMaxAttempts'>
 
 /**
  * An outcome as it acts (core/turn.ts actOn), its line placed: `acks` are the turn's acks with the
- * outcome's `say` last, except for `end`, whose line is `line`, said last of all as the call's end.
+ * outcome's `say` last, except for `end`, whose line is `line`, said last of all as the call's end,
+ * the goodbye after it unless `goodbye` is false.
  */
 export type Ending =
-  | { then: 'end'; acks: Ack[]; line: Ack }
+  | { then: 'end'; acks: Ack[]; line: Ack; goodbye?: false }
   | { then: 'anything-else'; acks: Ack[] }
   | { then: 'handoff'; reason: string; acks: Ack[] }
   | { then: 'form'; form: FormId; acks: Ack[] }
@@ -75,7 +76,7 @@ export function endingOf(outcome: Outcome, acks: Ack[], vars: Record<string, str
   const said: Ack[] = outcome.say === undefined ? [] : [{ promptId: outcome.say, vars }];
   switch (outcome.then) {
     case 'end':
-      return { then: 'end', acks, line: said[0]! };
+      return { then: 'end', acks, line: said[0]!, ...(outcome.goodbye === false ? { goodbye: false as const } : {}) };
     case 'anything-else':
       return { then: 'anything-else', acks: [...acks, ...said] };
     case 'handoff':

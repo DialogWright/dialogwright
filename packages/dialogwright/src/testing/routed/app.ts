@@ -9,9 +9,11 @@ import { callDataOf, callerOf, defineApp, replyShape, type AppCode, type AppCont
  *
  * - The start hook asks for the notices in the region the call came from (a custom parameter), through
  *   the gate, with `failSoft`: a notices service that fails is no notice, and the call goes on.
- * - At start: outside the hours (or on a holiday) a line and goodbye; a caller on the vip list (the
- *   `vip` predicate below) to a person; an outage the hook found, its notice before the greeting; a
- *   call to the Spanish line's number, in Spanish.
+ * - At start: outside the hours (or on a holiday) a line that says goodbye itself, and no goodbye line
+ *   after it (`goodbye: false`); a caller on the vip list (the `vip` predicate below, which reads the
+ *   app's own VIP_NUMBERS setting with ctx.env) to a person; an outage the hook found, its notice before
+ *   the greeting, in Spanish on the Spanish line (a rule that does both, above the outage rule: the
+ *   first rule that holds is taken); a call to the Spanish line's number, in Spanish.
  * - After identity: an account past due (what the status form's entry kept) sets up a payment plan
  *   first, and the caller's own request follows.
  * - After a report: a danger to someone goes to a person.
@@ -44,6 +46,9 @@ export const ACCOUNTS: readonly Account[] = [
   { accountId: '55501234', dob: '1980-04-12', first: 'Avery', phone: '+15555550142', pastDue: true, vip: false, latest: { ref: 'P100', status: 'open' } },
   { accountId: '55505678', dob: '1975-06-14', first: 'Morgan', phone: '+15555550143', pastDue: false, vip: true, latest: null },
 ];
+
+/** The app's own setting that lists more vip numbers (E.164, comma-separated), read by the vip predicate with ctx.env. */
+export const VIP_NUMBERS = 'VIP_NUMBERS';
 
 /** The regions with a notice, and the one whose notices service is down (its lookup throws). */
 export const OUTAGE_REGION = 'north';
@@ -214,8 +219,15 @@ export const routedCode: AppCode = {
   },
   onStart,
   predicates: {
-    // A caller on the vip list, by the number they call from: read from the session, which is a copy.
-    vip: ({ s }) => ACCOUNTS.some((a) => a.vip && a.phone === callerOf(s as Session)?.number),
+    // A caller on the vip list, by the number they call from: an account on file marked vip, or a number
+    // the app's own VIP_NUMBERS setting lists (comma-separated). The setting is read as the call needs
+    // it, through ctx.env, never process.env at import: under a host, it is in the app's own settings
+    // file, which process.env never sees. The session is a copy.
+    vip: ({ s, env }) => {
+      const number = callerOf(s as Session)?.number;
+      if (number === undefined) return false;
+      return ACCOUNTS.some((a) => a.vip && a.phone === number) || (env(VIP_NUMBERS) ?? '').split(',').some((n) => n.trim() === number);
+    },
   },
   testing: {
     heuristics: {

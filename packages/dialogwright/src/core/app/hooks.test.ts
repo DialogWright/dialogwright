@@ -4,7 +4,7 @@ import { useTestkit } from '../../testing/apps';
 import { testkitApp } from '../../testing/testkit';
 import { CUSTOMERS, STAFF } from '../../testing/testkit/domain/data';
 import { agentPrincipal, customerPrincipal } from '../../testing/testkit/domain/principals';
-import { callTool, ensureEntry, newTurnOut, sendCodeAndAsk, takeSummaryHash, verifyFactors } from '../lifecycle';
+import { appContext, callTool, ensureEntry, newTurnOut, sendCodeAndAsk, takeSummaryHash, verifyFactors } from '../lifecycle';
 import { cloneSession, closeForm, newSession, setForm } from '../session';
 import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { demoTools } from '../tools';
@@ -92,6 +92,27 @@ describe('tool dispatch', () => {
     const { decision, value } = callTool(s, { tool: 'getAccount', params: { accountId: CUSTOMERS[0]!.id } }, tc(), out);
     expect([decision.verdict, value]).toEqual(['ALLOW', null]);
     expect(out.gateEvents[0]!.summary).toBe('the fake app\'s account');
+  });
+});
+
+describe('the app\'s own settings, read by name at call time (ctx.env)', () => {
+  /** The fake app with a getAccount that says, in its summary, the setting its tool reads. */
+  const reading: App = { ...fake, id: 'fake-settings', tools: { ...fake.tools, getAccount: { run: (_call, _sys, ctx) => ({ value: null, summary: `desk ${ctx.env('ACCOUNT_DESK') ?? 'unset'}` }) } } };
+  registerApp(reading);
+  const settings: Record<string, string> = { ACCOUNT_DESK: 'east' };
+  const withSettings = (): TurnContext => ({ ...tc(), settings: (name) => (Object.hasOwn(settings, name) ? settings[name] : undefined) });
+
+  it('a hook\'s context and a tool read the turn\'s settings; with none on the turn, every setting is unset', () => {
+    const s = newSession('f', 0, VOICE_RELAY, customerPrincipal(CUSTOMERS[0]!, 1), 'fake-settings');
+    const ctx = appContext(s, withSettings(), newTurnOut());
+    expect([ctx.env('ACCOUNT_DESK'), ctx.env('OTHER')]).toEqual(['east', undefined]);
+    const out = newTurnOut();
+    callTool(s, { tool: 'getAccount', params: { accountId: CUSTOMERS[0]!.id } }, withSettings(), out);
+    expect(out.gateEvents[0]!.summary).toBe('desk east');
+    const bare = newTurnOut();
+    expect(appContext(s, tc(), bare).env('ACCOUNT_DESK')).toBeUndefined();
+    callTool(s, { tool: 'getAccount', params: { accountId: CUSTOMERS[0]!.id } }, tc(), bare);
+    expect(bare.gateEvents[0]!.summary).toBe('desk unset');
   });
 });
 

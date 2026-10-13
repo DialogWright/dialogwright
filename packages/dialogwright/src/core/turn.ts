@@ -22,7 +22,7 @@ import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckRecon
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
 import { keptCallData } from './callData';
-import { routeRecord, routeTaken, rulesAt, sessionConditionFacts, ROUTE_HANDOFF_REASON } from './routes';
+import { routeRecord, routeTaken, rulesAt, sessionConditionFacts, ROUTE_HANDOFF_REASON, type ConditionClock } from './routes';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
 import { CONSENT_PROMPT, consentCovers, grantedFor } from './textConsent';
 import { recordedValue, recordingOf } from './recording';
@@ -87,6 +87,13 @@ export interface TurnContext {
    * never holds.
    */
   env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * The app's own settings, which its code reads by name (AppContext.env, a tool's and a predicate's
+   * ctx.env): runTurn makes it from RunOptions.settings, else RunOptions.env. A lookup, never a record,
+   * so no setting is carried into anything the turn writes. Unlike `env`, it is read only by the app's
+   * code: no condition, no gate rule and no record reads it. Absent, every setting is unset.
+   */
+  settings?: (name: string) => string | undefined;
 }
 
 /**
@@ -558,7 +565,7 @@ function endOnCompletion(s: Session, form: FormId, c: Extract<Completion, { kind
   const def = formOf(appOf(s), form);
   if (def.summaryPromptId !== null) for (const id of def.slots) if (s.slots[id]!.value !== null) s.slots[id]!.confirmed = true;
   agree(s, form);
-  return { kind: 'complete', form, promptId: c.promptId, vars: c.vars, acks: c.acks, completed: [...s.completed] };
+  return { kind: 'complete', form, promptId: c.promptId, vars: c.vars, acks: c.acks, completed: [...s.completed], ...(c.goodbye === false ? { goodbye: false as const } : {}) };
 }
 
 /**
@@ -1375,8 +1382,8 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
  * attempts (slotRunsOut), in `form`, the form open (null for a slot asked with none open, an identity
  * factor at the greeting). The form is never counted as completed.
  * - `end`: the line, and the call ends with the form and its slots left on the session as they were, as
- *   a completion that ends the call leaves them, with no question pending; with a request queued, the
- *   call goes on to it instead.
+ *   a completion that ends the call leaves them, with no question pending (the goodbye after the line,
+ *   unless the outcome says `goodbye: false`); with a request queued, the call goes on to it instead.
  * - `anything-else`: the form closes and the call carries on (the next queued request, or "anything else?").
  * - `handoff`: to a person, for its reason.
  * - `form`: the form closes, keeping the slots the form entered lists too, and that form is entered
@@ -1389,7 +1396,7 @@ function actOn(s: Session, form: FormId | null, ending: Ending, io: TurnIO): Dec
       if (s.queued.length > 0 && form !== null) return finishForm(s, form, [...ending.acks, ending.line], io, false);
       s.pendingConfirmation = null;
       s.pendingHash = null;
-      return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed] };
+      return { kind: 'complete', form, promptId: ending.line.promptId, vars: ending.line.vars, acks: ending.acks, completed: [...s.completed], ...(ending.goodbye === false ? { goodbye: false as const } : {}) };
     case 'anything-else':
       if (form === null) return withNoForm(s, ending.acks);
       return finishForm(s, form, ending.acks, io, false);
@@ -2534,11 +2541,16 @@ function errorKind(err: unknown): string {
 function takeRoute(s: Session, point: RoutePoint, io: TurnIO, form?: FormId): RouteOutcome | null {
   const rules = rulesAt(io.app, point, form);
   if (rules.length === 0) return null;
-  const taken = routeTaken(rules, sessionConditionFacts(io.app, s, { nowMs: io.tc.nowMs, todayIso: io.tc.todayIso, ...(io.tc.env !== undefined ? { env: io.tc.env } : {}) }));
+  const taken = routeTaken(rules, sessionConditionFacts(io.app, s, clockOf(io.tc)));
   if (taken === null) return null;
   const noted: RouteNoted = { ...routeRecord(point, taken, form), at: io.out.gateEvents.length };
   io.out.routes = [...(io.out.routes ?? []), noted];
   return taken.rule.outcome;
+}
+
+/** What a condition reads of the turn (core/routes.ts ConditionClock): its clock, the environment its conditions name, and the settings a predicate reads. */
+function clockOf(tc: TurnContext): ConditionClock {
+  return { nowMs: tc.nowMs, todayIso: tc.todayIso, ...(tc.env !== undefined ? { env: tc.env } : {}), ...(tc.settings !== undefined ? { settings: tc.settings } : {}) };
 }
 
 /** A route's line, where it has one, rendered with the open form's slot displays as an outcome's is. */
@@ -2622,7 +2634,7 @@ function afterFormRoute(s: Session, form: FormId, acks: Ack[], io: TurnIO): Deci
       return finishForm(s, form, said, io, true, o.form);
     case 'end':
       if (s.queued.length > 0) return finishForm(s, form, said, io);
-      return endOnCompletion(s, form, { kind: 'end', promptId: o.say!, vars: summaryVars(s), acks: [...acks] });
+      return endOnCompletion(s, form, { kind: 'end', promptId: o.say!, vars: summaryVars(s), acks: [...acks], ...(o.goodbye === false ? { goodbye: false as const } : {}) });
     case 'handoff':
       s.completed.push(form);
       agree(s, form);
@@ -2676,7 +2688,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // The turn's actions: what it asks first (a language switch), then its decision's lines in the session's locale, as it is now.
   // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
   const act = (decision: Decision): Action[] => {
-    if (decision.kind === 'handoff') withTurnTransfer(s, decision, { nowMs: tc.nowMs, todayIso: tc.todayIso, ...(tc.env !== undefined ? { env: tc.env } : {}) });
+    if (decision.kind === 'handoff') withTurnTransfer(s, decision, clockOf(tc));
     return [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale)];
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.

@@ -102,22 +102,26 @@ flowchart TD
   p_start("The call starts<br/>after the start hook, before the greeting")
   w_start_0{"the hours are closed"}
   p_start --> w_start_0
-  o_start_0[["say closed_now, end"]]
+  o_start_0[["say closed_now, end, no goodbye"]]
   w_start_0 -->|"yes"| o_start_0
   w_start_1{"vip holds (in code)"}
   w_start_0 -->|"no"| w_start_1
   o_start_1[["handoff vip"]]
   w_start_1 -->|"yes"| o_start_1
-  w_start_2{"fact outage is true"}
+  w_start_2{"fact outage is true and the number called is SPANISH_LINE"}
   w_start_1 -->|"no"| w_start_2
-  o_start_2[["say outage_notice, continue: the greeting"]]
+  o_start_2[["say outage_notice, locale es, then go on"]]
   w_start_2 -->|"yes"| o_start_2
-  w_start_3{"the number called is SPANISH_LINE"}
+  w_start_3{"fact outage is true"}
   w_start_2 -->|"no"| w_start_3
-  o_start_3[["locale es, then go on"]]
+  o_start_3[["say outage_notice, continue: the greeting"]]
   w_start_3 -->|"yes"| o_start_3
-  o_start_4[["else<br/>continue: the greeting"]]
-  w_start_3 -->|"no"| o_start_4
+  w_start_4{"the number called is SPANISH_LINE"}
+  w_start_3 -->|"no"| w_start_4
+  o_start_4[["locale es, then go on"]]
+  w_start_4 -->|"yes"| o_start_4
+  o_start_5[["else<br/>continue: the greeting"]]
+  w_start_4 -->|"no"| o_start_5
 ```
 
 ### Once the caller is verified

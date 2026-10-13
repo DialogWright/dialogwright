@@ -67,6 +67,11 @@ export const REQUIRED_CONTROL_INTENTS = ['agent', 'repeat_prompt'] as const;
  */
 export const CONTROL_INTENTS = [...REQUIRED_CONTROL_INTENTS, 'done'] as const;
 
+/** An outcome that names `goodbye` (whether the goodbye follows its line) and does not end the call: a goodbye only follows an ending. */
+function goodbyeOffEnd(outcome: { then: string }): boolean {
+  return (outcome as { goodbye?: unknown }).goodbye !== undefined && outcome.then !== 'end';
+}
+
 /**
  * Checks an app's internal references so a broken one fails when it is registered, not mid-call.
  * Throws on the first problem, naming the app and the bad id.
@@ -117,6 +122,7 @@ export function validateApp(app: App): void {
     const outcome = o === 'skip' ? { then: 'skip' as const } : (o as { say?: string; then: string; reason?: string; form?: string });
     if ((outcome.then === 'end' || outcome.then === 'anything-else') && !('say' in outcome && outcome.say !== undefined)) fail(`slot "${id}" ends with ${outcome.then} when it runs out of attempts and says no line`);
     if ('reason' in outcome && outcome.reason !== undefined && outcome.then !== 'handoff') fail(`slot "${id}" names a handoff reason for an outcome that does not hand off`);
+    if (goodbyeOffEnd(outcome)) fail(`slot "${id}" says goodbye for an outcome that does not end the call (then: ${outcome.then})`);
     if (outcome.then === 'skip' && app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, which may not be skipped: verification could never finish`);
     if (outcome.then === 'form') {
       const to = 'form' in outcome ? outcome.form : undefined;
@@ -289,6 +295,7 @@ export function validateApp(app: App): void {
       if (check.with.length === 0) fail(`form "${id}"'s check "${check.action}" reads no slot`);
       for (const [reason, outcome] of Object.entries(check.on ?? {})) {
         if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) fail(`form "${id}"'s check "${check.action}" ends with ${outcome.then} for "${reason}" and says no line`);
+        if (goodbyeOffEnd(outcome)) fail(`form "${id}"'s check "${check.action}" says goodbye for "${reason}", an outcome that does not end the call (then: ${outcome.then})`);
         if (outcome.then === 'form') {
           if (outcome.form === undefined || !Object.hasOwn(app.forms, outcome.form)) fail(`form "${id}"'s check "${check.action}" goes for "${reason}" to the unknown form "${outcome.form}"`);
           else if (outcome.form === id) fail(`form "${id}"'s check "${check.action}" goes for "${reason}" to its own form`);

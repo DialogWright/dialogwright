@@ -362,6 +362,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  goodbyeTwiceWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   // A line generated whole from what the caller said: the framed form is the pattern (render/config.ts).
   const redacted = Object.fromEntries(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => (spec?.redact !== undefined ? [[id, spec.redact]] : [])));
   for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: {}, redacted })) {
@@ -453,6 +457,60 @@ function routeWarnings(config: LoadedConfig, code: AppCode | undefined, slots: r
       report('routes.yaml', path, `the route enters "${written.form}", which needs identity level ${need}, and at ${point} the caller is at level ${level}: the form will ask for it first`, 'nothing to do if that is meant; otherwise route to it after identity (afterIdentity), or to a form the caller can use now');
     });
   }
+}
+
+/**
+ * The warning for a goodbye said twice: an ending outcome (`then: end`: a route's, a check's, a library
+ * slot's onMaxAttempts) whose line itself ends as the goodbye line does (its last sentence: "Goodbye."
+ * for "Thanks for calling. Goodbye."), in any locale, where the outcome leaves the goodbye after it.
+ * The caller would hear goodbye twice; `goodbye: false` ends the call on the line alone. A warning,
+ * never a refusal: the line's words are the app's.
+ */
+function goodbyeTwiceWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const endings: { file: string; path: DataPath; say: string }[] = [];
+  const ending = (o: unknown, file: string, path: DataPath): void => {
+    const { then, say, goodbye } = (typeof o === 'object' && o !== null ? o : {}) as { then?: unknown; say?: unknown; goodbye?: unknown };
+    if (then === 'end' && typeof say === 'string' && goodbye !== false) endings.push({ file, path, say });
+  };
+  const lists: [DataPath, readonly RouteRuleYaml[]][] = [];
+  if (config.routes?.start) lists.push([['start'], config.routes.start]);
+  if (config.routes?.afterIdentity) lists.push([['afterIdentity'], config.routes.afterIdentity]);
+  for (const [form, rules] of Object.entries(config.routes?.afterForm ?? {})) lists.push([['afterForm', form], rules]);
+  for (const [at, rules] of lists) {
+    rules.forEach((rule, i) => {
+      const w = writtenOutcome(rule);
+      if (w !== null) ending(w.outcome, 'routes.yaml', [...at, i, ...w.at]);
+    });
+  }
+  for (const [id, form] of Object.entries(config.forms.forms)) {
+    (form.checks ?? []).forEach((check, i) => {
+      for (const [reason, o] of Object.entries(check.on ?? {})) ending(o, 'forms.yaml', ['forms', id, 'checks', i, 'on', reason]);
+    });
+  }
+  for (const [id, raw] of Object.entries(config.slots ?? {})) ending((raw as { onMaxAttempts?: unknown }).onMaxAttempts, SLOTS_FILE, [id, 'onMaxAttempts']);
+  const defaults = config.prompts[config.defaultLocale] ?? {};
+  for (const e of endings) {
+    for (const prompts of Object.values(config.prompts)) {
+      const line = (prompts[e.say] ?? defaults[e.say])?.text;
+      const goodbye = (prompts.goodbye ?? defaults.goodbye)?.text;
+      if (line === undefined || goodbye === undefined || !endsAsGoodbye(line, goodbye)) continue;
+      report(e.file, [...e.path, 'say'], `the line "${e.say}" ends the call with a goodbye of its own ("${lastSentence(goodbye)}"), and the goodbye line follows it: the caller hears goodbye twice`, 'add "goodbye: false" to this outcome, so the call ends on its line alone; or take the goodbye out of the line');
+      break;
+    }
+  }
+}
+
+/** A line's words, lowercased, its punctuation dropped: what two lines are compared by. */
+const wordsOfLine = (text: string): string[] => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter((w) => w !== '');
+
+/** The last sentence of a line ("Goodbye." of "Thanks for calling. Goodbye."), as written. */
+const lastSentence = (text: string): string => text.trim().split(/(?<=[.!?])\s+/).filter((t) => t.trim() !== '').at(-1)?.trim() ?? text.trim();
+
+/** Whether `line` ends with the goodbye line's last sentence, word for word. */
+function endsAsGoodbye(line: string, goodbye: string): boolean {
+  const tail = wordsOfLine(lastSentence(goodbye));
+  const words = wordsOfLine(line);
+  return tail.length > 0 && words.length >= tail.length && tail.every((w, i) => words[words.length - tail.length + i] === w);
 }
 
 /**

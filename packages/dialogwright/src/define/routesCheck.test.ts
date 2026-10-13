@@ -230,15 +230,16 @@ describe('the routed fixture (src/testing/routed)', () => {
     cpSync(ROUTED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
     const routes = readFileSync(join(dir, 'routes.yaml'), 'utf8')
       .replace('  - when: { named: vip }\n    then: handoff\n    reason: vip\n', '  - when: { named: vip }\n    then: form\n    form: check_status\n')
-      .replace('{ fact: outage, is: true }', '{ fact: notice.outage, is: true }');
+      .replaceAll('{ fact: outage, is: true }', '{ fact: notice.outage, is: true }');
     writeFileSync(join(dir, 'routes.yaml'), routes);
     // A start route into a form says the welcome first (greeting_offer), in every locale.
     for (const file of ['prompts.yaml', 'locale/es/prompts.yaml']) writeFileSync(join(dir, file), `${readFileSync(join(dir, file), 'utf8')}  greeting_offer:\n    text: Thanks for calling.\n    interruptible: false\n`);
     const r = await checkAppFully(dir, { code: routedCode, fixturesRoot: PACKAGE_DIR });
     expect(r.problems.map(formatProblem)).toEqual([]);
     expect((r.warnings ?? []).map(formatProblem)).toEqual([
-      expect.stringContaining('routes.yaml:13:11  start[1].form  the route enters "check_status", which needs identity level 1, and at start the caller is at level 0: the form will ask for it first'),
-      expect.stringContaining('start[2].when.fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
+      expect.stringContaining('routes.yaml:15:11  start[1].form  the route enters "check_status", which needs identity level 1, and at start the caller is at level 0: the form will ask for it first'),
+      expect.stringContaining('start[2].when[0].fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
+      expect.stringContaining('start[3].when.fact  the facts\' initial value has no "notice", so this fact is set only if the app\'s code adds it'),
     ]);
   });
 });
@@ -265,5 +266,80 @@ describe('review fixes: warnings', () => {
     expect(r.problems).toEqual([]);
     expect(r.warnings.join('\n')).toContain('start[0].when.level  no caller reaches level 2: the app\'s identity stops at level 1, so this condition never holds');
     expect(r.warnings.join('\n')).toContain('start[1].when.slot  no slot holds a value at start');
+  });
+});
+
+describe('the live findings: an ending\'s own goodbye, and routes taken first-match', () => {
+  /** The routed fixture's routes.yaml changed by `change`, checked whole. */
+  async function routedWith(change: (text: string) => string): Promise<{ problems: string[]; warnings: string[] }> {
+    const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
+    scratch.push(dir);
+    cpSync(ROUTED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    const before = readFileSync(join(dir, 'routes.yaml'), 'utf8');
+    const after = change(before);
+    expect(after).not.toBe(before);
+    writeFileSync(join(dir, 'routes.yaml'), after);
+    const r = await checkAppFully(dir, { code: routedCode, fixturesRoot: PACKAGE_DIR });
+    return { problems: r.problems.map(formatProblem), warnings: (r.warnings ?? []).map(formatProblem) };
+  }
+  const COMBINED = '  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]\n    say: outage_notice\n    then: locale\n    locale: es\n';
+
+  it('warns of an ending whose line says goodbye itself, with the goodbye after it', async () => {
+    const r = await routedWith((t) => t.replace('    goodbye: false\n', ''));
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toEqual([expect.stringContaining('start[0].say  the line "closed_now" ends the call with a goodbye of its own ("Goodbye."), and the goodbye line follows it: the caller hears goodbye twice  ->  add "goodbye: false" to this outcome')]);
+  });
+
+  it('warns of the same on a check\'s ending (its punctuation aside), and not once it says goodbye: false', async () => {
+    const s = await import('../testing/screened/app');
+    const checked = async (forms: (t: string) => string): Promise<string[]> => {
+      const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
+      scratch.push(dir);
+      cpSync(s.SCREENED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      const prompts = readFileSync(join(dir, 'prompts.yaml'), 'utf8');
+      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace('but the owner is welcome to call us.\n', 'but the owner is welcome to call us. Goodbye!\n'));
+      writeFileSync(join(dir, 'forms.yaml'), forms(readFileSync(join(dir, 'forms.yaml'), 'utf8')));
+      const r = await checkAppFully(dir, { code: s.screenedCode, fixturesRoot: PACKAGE_DIR });
+      expect(r.problems).toEqual([]);
+      return (r.warnings ?? []).map(formatProblem);
+    };
+    expect(await checked((t) => t)).toEqual([expect.stringContaining('forms.yaml:18:29  forms.book_visit.checks[1].on.not-owner.say  the line "decline_renter" ends the call with a goodbye of its own ("Goodbye."), and the goodbye line follows it')]);
+    expect(await checked((t) => t.replace('not-owner: { say: decline_renter, then: end }', 'not-owner: { say: decline_renter, then: end, goodbye: false }'))).toEqual([]);
+  });
+
+  it('refuses goodbye on a route that does not end the call', async () => {
+    const r = await routedWith((t) => t.replace('    then: handoff\n    reason: vip\n', '    then: handoff\n    reason: vip\n    goodbye: false\n'));
+    expect(r.problems).toEqual([expect.stringContaining('start[1].goodbye  goodbye says whether the goodbye follows the line a call ends on, and this route does not end the call (then: handoff)  ->  delete "goodbye", or write "then: end"')]);
+  });
+
+  it('refuses goodbye on a check\'s outcome that does not end the call, and an app built in code with one', async () => {
+    const { ROUTED_DIR, routedCode } = await import('../testing/routed/app');
+    const s = await import('../testing/screened/app');
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-routes-'));
+    scratch.push(dir);
+    cpSync(s.SCREENED_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+    writeFileSync(join(dir, 'forms.yaml'), readFileSync(join(dir, 'forms.yaml'), 'utf8').replace('not-owner: { say: decline_renter, then: end }', 'not-owner: { say: decline_renter, then: anything-else, goodbye: false }'));
+    const r = await checkAppFully(dir, { code: s.screenedCode, fixturesRoot: PACKAGE_DIR });
+    expect(r.problems.map(formatProblem)).toEqual([expect.stringContaining('not-owner.goodbye  goodbye says whether the goodbye follows the line a call ends on, and this outcome does not end the call (then: anything-else)')]);
+    // In code, validateApp refuses the same, a route's too.
+    const app = defineApp(ROUTED_DIR, routedCode);
+    const start = app.routes!.start!.map((r, i) => (i === 1 ? { ...r, outcome: { ...r.outcome, goodbye: false } } : r));
+    expect(() => validateApp({ ...app, id: 'routed-goodbye', routes: { ...app.routes, start } } as App)).toThrow(/goodbye says whether the goodbye follows the line a call ends on, and this route does not end the call \(then: handoff\) \(routes.start.1.goodbye\)/);
+  });
+
+  it('warns of a rule that says a line and goes on above a locale rule: a call both hold for is never switched', async () => {
+    const r = await routedWith((t) => t.replace(COMBINED, ''));
+    expect(r.problems).toEqual([]);
+    expect(r.warnings).toEqual([
+      expect.stringContaining('start[2]  says outage_notice and goes on, so a call it takes is never switched to es, even where rule 4 (then: locale) holds too: the first rule that holds is taken, and the rules after it are not looked at  ->  above this rule, add one that does both: when both rules\' conditions hold, say: outage_notice, then: locale, locale: es (the line is said in the new language); or move rule 4 above this one'),
+    ]);
+  });
+
+  it('says nothing where the two cannot both hold (each reads the number called), or the rule says no line', async () => {
+    const both = await routedWith((t) => t.replace(COMBINED, '').replace('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: [{ fact: outage, is: true }, { called: env.MAIN_LINE }]\n    say: outage_notice\n    then: continue\n'));
+    expect(both.warnings.filter((w) => w.includes('never switched'))).toEqual([]);
+    const silent = await routedWith((t) => t.replace(COMBINED, '').replace('  - when: { fact: outage, is: true }\n    say: outage_notice\n    then: continue\n', '  - when: { fact: outage, is: true }\n    then: continue\n'));
+    expect(silent.warnings).toEqual([]);
   });
 });

@@ -94,6 +94,13 @@ export interface RunOptions {
    */
   env?: Readonly<Record<string, string | undefined>>;
   /**
+   * The app's own settings, which its code reads by name with ctx.env (TurnContext.settings): the server
+   * passes the app's environment (on a host, its own settings file over the server's). Unset, `env` is
+   * read (the text CLI's environment, a scripted call's `env`), so a scripted call is the same wherever
+   * it runs; with neither, every setting is unset. Never written to the trace or any other record.
+   */
+  settings?: Readonly<Record<string, string | undefined>>;
+  /**
    * How long a turn waits for the app's knowledge retriever (run/retrieve.ts RETRIEVE_BUDGET_MS,
    * unset). Tests shorten it; a retriever not back in time nominates nothing.
    */
@@ -126,6 +133,13 @@ function conditionEnv(session: Session, env: RunOptions['env']): Pick<TurnContex
     if (value !== undefined) picked[name] = value;
   }
   return { env: Object.freeze(picked) };
+}
+
+/** The app's settings its code reads (TurnContext.settings): RunOptions.settings, else RunOptions.env; none with neither. */
+function settingsOf(opts: RunOptions): Pick<TurnContext, 'settings'> {
+  const from = opts.settings ?? opts.env;
+  if (from === undefined) return {};
+  return { settings: (name) => (Object.hasOwn(from, name) ? from[name] : undefined) };
 }
 
 export function nowOf(opts: RunOptions): () => number {
@@ -246,6 +260,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     tools: opts.tools ?? demoTools(),
     render: opts.render ?? null,
     ...conditionEnv(session, opts.env),
+    ...settingsOf(opts),
     ...digit,
   };
   const tr = performance.now();

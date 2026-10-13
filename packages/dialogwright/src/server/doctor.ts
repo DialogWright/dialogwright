@@ -788,7 +788,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
       }
     }
     if (read.ignored.length > 0) {
-      out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host an app's own file is read for its own variables alone`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file, and delete the rest here' }));
+      out.push(tag({ id: 'settings', status: 'warn', message: `${app.envFile} sets ${read.ignored.join(', ')}, which the app's YAML does not name: under a host the server reads an app's own file for its own variables alone (the app's code may read any of them with ctx.env)`, fix: 'keep what every app shares (the carrier, the model, PUBLIC_HOST, the stores) in the server\'s settings file; keep here only what the app\'s YAML or its code (ctx.env) reads' }));
     }
   }
   for (const ids of audiences.values()) {

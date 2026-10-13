@@ -52,6 +52,28 @@ export const LIBRARY_TOOLS: Record<string, ToolDef> = {
 
 A custom rule is written with `defineRule`, with the examples that say what it allows and refuses; [section 3.4](03-policy-and-identity.md#34-rules-of-your-own-definerule) has the library's rule in full.
 
+### Settings: `ctx.env`, never `process.env`
+
+The app's code reads its own settings (a desk's number, a list of numbers, a switch) by name with `ctx.env(name)`, as the call needs it: every hook's context has it (a form's hooks, `complete`, the start hook, `callerOffer`, `onServiceResult`), and so do a tool's (`run(call, sys, ctx)`) and a predicate's (`{ s, nowMs, todayIso, env }`). It returns the setting, or `undefined` where it is not set. It reads the same settings an `env.<NAME>` in the app's YAML does:
+
+- on a server of one app, the server's environment (its `.env`, or the file `ENV_FILE` names);
+- on a server of several apps (a host file, [14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)), the app's own settings file, the whole of it, over the server's settings, so two apps may each set a variable of one name;
+- in a scripted call, the call's `"env"` (the server's way, `RunOptions.settings`, is read over it), so a test never reads the shell's.
+
+`process.env` is the server's alone: under a host it never holds an app's own file. And code at a module's top level runs once, as the module is imported, before any call: a constant read from `process.env` there is the server's setting at start, whatever the app's own file says. In a live call a predicate's list read that way was empty under a host. Read a setting inside the hook, the tool or the predicate:
+
+```ts
+predicates: {
+  vip: ({ s, env }) => {
+    const number = callerOf(s as Session)?.number;
+    if (number === undefined) return false;
+    return ACCOUNTS.some((a) => a.vip && a.phone === number) || (env('VIP_NUMBERS') ?? '').split(',').some((n) => n.trim() === number);
+  },
+},
+```
+
+A setting read this way is never recorded: the trace, the audit and the console see only what the code does with it. The gate never reads one: a rule of the app's own (`defineRule`) and the lookups decide from the call, the session and the app's systems, so the policy matrix holds whatever the settings are, and what the agent may do is in policy.yaml, not in a server's settings.
+
 ### A tool's reply is not trusted: `check`
 
 What a tool returns comes from a downstream system, and the line that says it trusts it: a billing system's balance, a scheduling system's time, a reference number a case system made. A record someone could write to (a name, a description, an address) can hold a sentence with instructions in it, and a line that says the field would say the sentence. A tool says what its reply must look like with `check`, a function of the value, true when it fits; `replyShape` (from `'dialogwright'`) has the small checks it is usually written with:

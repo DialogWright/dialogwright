@@ -48,6 +48,23 @@ describe('onMaxAttempts', () => {
   });
 });
 
+describe('goodbye: an ending\'s own', () => {
+  it('takes goodbye: false or true on then: end, the engine keeping only false (true is the default written out)', () => {
+    expect(messages(parseOnMaxAttempts({ say: 'closed_now', then: 'end', goodbye: false }))).toEqual([]);
+    expect(parseOnMaxAttempts({ say: 'closed_now', then: 'end', goodbye: false })).toMatchObject({ success: true, data: { say: 'closed_now', then: 'end', goodbye: false } });
+    const unset = parseOnMaxAttempts({ say: 'closed_now', then: 'end', goodbye: true });
+    expect(unset.success && unset.data).toEqual({ say: 'closed_now', then: 'end' });
+    expect(checkOutcomeSchema.safeParse({ say: 'decline_renter', then: 'end', goodbye: false }).success).toBe(true);
+  });
+
+  it('refuses it on an outcome that does not end the call: no goodbye is said there to leave out', () => {
+    for (const then of ['anything-else', 'skip', 'handoff'] as const) {
+      expect(messages(parseOnMaxAttempts({ say: 'sorry', then, goodbye: false }))).toEqual([`goodbye: goodbye says whether the goodbye follows the line a call ends on, and this outcome does not end the call (then: ${then})`]);
+    }
+    expect(messages(checkOutcomeSchema.safeParse({ say: 'decline_renter', then: 'anything-else', goodbye: false }))).toEqual(['goodbye: goodbye says whether the goodbye follows the line a call ends on, and this outcome does not end the call (then: anything-else)']);
+  });
+});
+
 describe('attempts', () => {
   it('takes 1 to 10', () => {
     for (const n of [1, 2, 3, 4, 10]) expect(slotAttemptsSchema.safeParse(n).success, String(n)).toBe(true);

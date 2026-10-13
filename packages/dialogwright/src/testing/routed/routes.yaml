@@ -1,16 +1,24 @@
 # yaml-language-server: $schema=../../../schemas/routes.schema.json
 # What the call does at its start, once the caller is verified, and after a report: ordered rules,
-# the first whose conditions all hold taken, an else last. What the caller says still decides every
-# other turn.
+# the first whose conditions all hold taken, an else last; the rules after it are not looked at. What
+# the caller says still decides every other turn.
 start:
-  # Outside the hours (app.yaml), a line and goodbye, with no greeting.
+  # Outside the hours (app.yaml), a line that says goodbye itself, with no greeting, and no goodbye
+  # line after it.
   - when: { hours: closed }
     say: closed_now
     then: end
+    goodbye: false
   # A caller on the vip list (the vip predicate in app.ts) goes straight to a person.
   - when: { named: vip }
     then: handoff
     reason: vip
+  # An outage on a call to the Spanish line: the notice and the switch both, in Spanish. The outage
+  # rule below goes on without switching, so on its own it would take this call in English.
+  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]
+    say: outage_notice
+    then: locale
+    locale: es
   # An outage in the caller's region (the start hook's fact): the notice, then the greeting.
   - when: { fact: outage, is: true }
     say: outage_notice

@@ -20,6 +20,8 @@ export interface RenderContext {
 
 /** The line every completed call ends on. */
 const GOODBYE = 'goodbye';
+/** The goodbye on a chat (core/turn.ts goodbye): itself the goodbye, as `goodbye` is. */
+const GOODBYE_CHAT = 'goodbye_chat';
 
 export function renderTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(VAR, (_, name: string) => {
@@ -203,9 +205,13 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
   }
 }
 
-/** The completion is itself the goodbye, so it is not said a second time. */
+/**
+ * The completion is itself the goodbye (the goodbye, or on a chat its own, goodbye_chat), or its line
+ * says goodbye itself (`goodbye: false`, an ending outcome's or a completion's), so the goodbye is not
+ * said a second time.
+ */
 function closesWithGoodbye(decision: Extract<Decision, { kind: 'complete' }>): boolean {
-  return decision.promptId === GOODBYE;
+  return decision.goodbye === false || decision.promptId === GOODBYE || decision.promptId === GOODBYE_CHAT;
 }
 
 /**

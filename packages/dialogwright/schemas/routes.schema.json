@@ -323,7 +323,7 @@
                       "form",
                       "anything-else"
                     ],
-                    "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+                    "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
                   },
                   "reason": {
                     "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -339,13 +339,17 @@
                     "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
                     "type": "string",
                     "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "then"
                 ],
                 "additionalProperties": false,
-                "description": "What the else does, written out: { say, then, reason, form, locale }."
+                "description": "What the else does, written out: { say, then, reason, form, locale, goodbye }."
               }
             ]
           },
@@ -364,7 +368,7 @@
               "form",
               "anything-else"
             ],
-            "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+            "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
           },
           "reason": {
             "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -380,10 +384,14 @@
             "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
             "type": "string",
             "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          },
+          "goodbye": {
+            "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
-        "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale); or else, the last."
+        "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale, goodbye); or else, the last."
       }
     },
     "afterIdentity": {
@@ -707,7 +715,7 @@
                       "form",
                       "anything-else"
                     ],
-                    "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+                    "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
                   },
                   "reason": {
                     "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -723,13 +731,17 @@
                     "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
                     "type": "string",
                     "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "then"
                 ],
                 "additionalProperties": false,
-                "description": "What the else does, written out: { say, then, reason, form, locale }."
+                "description": "What the else does, written out: { say, then, reason, form, locale, goodbye }."
               }
             ]
           },
@@ -748,7 +760,7 @@
               "form",
               "anything-else"
             ],
-            "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+            "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
           },
           "reason": {
             "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -764,10 +776,14 @@
             "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
             "type": "string",
             "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          },
+          "goodbye": {
+            "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
-        "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale); or else, the last."
+        "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale, goodbye); or else, the last."
       }
     },
     "afterForm": {
@@ -1097,7 +1113,7 @@
                         "form",
                         "anything-else"
                       ],
-                      "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+                      "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
                     },
                     "reason": {
                       "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -1113,13 +1129,17 @@
                       "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
                       "type": "string",
                       "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+                    },
+                    "goodbye": {
+                      "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "then"
                   ],
                   "additionalProperties": false,
-                  "description": "What the else does, written out: { say, then, reason, form, locale }."
+                  "description": "What the else does, written out: { say, then, reason, form, locale, goodbye }."
                 }
               ]
             },
@@ -1138,7 +1158,7 @@
                 "form",
                 "anything-else"
               ],
-              "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
+              "description": "What follows: continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else \"anything else?\"); locale (the call switches to `locale`, one of the app's, as the language intent does, then goes on); end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting); handoff (to a person, with the line handoff_<reason>; reason default needs-human); form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer); anything-else (say required; not at start: the form closes and \"anything else?\" is asked)."
             },
             "reason": {
               "description": "For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.",
@@ -1154,10 +1174,14 @@
               "description": "For then: locale, the locale the call switches to: one of the app's (app.yaml's locale, or a locale/<tag>/ folder).",
               "type": "string",
               "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+            },
+            "goodbye": {
+              "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+              "type": "boolean"
             }
           },
           "additionalProperties": false,
-          "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale); or else, the last."
+          "description": "One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale, goodbye); or else, the last."
         },
         "description": "The rules, tried in order: the first whose conditions all hold is taken. The last is the else, required."
       }

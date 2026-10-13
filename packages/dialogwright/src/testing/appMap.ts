@@ -194,9 +194,9 @@ function identityDiagram(app: App): string[] {
   ];
 }
 
-/** An outcome in words: its line, then what follows (a handoff's reason, `reason` by default; the form entered). */
+/** An outcome in words: its line, then what follows (a handoff's reason, `reason` by default; the form entered; an end with no goodbye after its line). */
 function outcomeWords(o: Outcome, reason: string): string {
-  const then = o.then === 'handoff' ? `handoff ${o.reason ?? reason}` : o.then === 'form' ? `form ${o.form}` : o.then;
+  const then = o.then === 'handoff' ? `handoff ${o.reason ?? reason}` : o.then === 'form' ? `form ${o.form}` : endWords(o);
   return `${o.say !== undefined ? `say ${o.say}, ` : ''}${then}`;
 }
 
@@ -332,8 +332,13 @@ function routeWords(o: RouteOutcome, point: string): string {
     : o.then === 'form' ? `form ${o.form}`
       : o.then === 'locale' ? `locale ${o.locale}, then go on`
         : o.then === 'continue' ? (point === 'start' ? 'continue: the greeting' : point === 'afterIdentity' ? 'continue: the form that asked for it' : 'continue: its next, else anything else?')
-          : o.then;
+          : endWords(o);
   return `${o.say !== undefined ? `say ${o.say}, ` : ''}${then}`;
+}
+
+/** An outcome's `then` as it is written, an end that leaves out the goodbye (`goodbye: false`) saying so. */
+function endWords(o: { readonly then: string; readonly goodbye?: false }): string {
+  return o.then === 'end' && o.goodbye === false ? 'end, no goodbye' : o.then;
 }
 
 /** One point's rules as a chain of questions, each to its outcome, the else last. */

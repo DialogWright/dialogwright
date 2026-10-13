@@ -146,6 +146,10 @@
                         "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                      },
+                      "goodbye": {
+                        "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                        "type": "boolean"
                       }
                     },
                     "required": [

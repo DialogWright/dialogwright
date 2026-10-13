@@ -143,6 +143,16 @@ describe('decisionToActions', () => {
       .toEqual([say('goodbye', {}, false), endAction(['track_parcel'])]);
   });
 
+  it('a completion whose line says goodbye itself (goodbye: false) ends on it alone; a chat\'s goodbye is not followed by the voice\'s', () => {
+    const ended: Decision = { kind: 'complete', form: 'report_missing', promptId: 'report_filed', vars: { report: '1001' }, acks: [], completed: ['report_missing'], goodbye: false };
+    expect(decisionToActions(app, ended)).toEqual([say('report_filed', { report: '1001' }, false), endAction(['report_missing'])]);
+    expect(spokenText(app, ended)).toBe(promptText(app, 'report_filed', { report: '1001' }));
+    // "No, that's all" on a chat: goodbye_chat, which is itself the goodbye ("Thanks for chatting ... Goodbye."), and nothing after it.
+    const chat: Decision = { kind: 'complete', form: null, promptId: 'goodbye_chat', vars: {}, acks: [], completed: [] };
+    expect(decisionToActions(app, chat)).toEqual([say('goodbye_chat', {}, false), endAction([])]);
+    expect(spokenText(app, chat)).toBe('Thanks for chatting with Example Parcels. Goodbye.');
+  });
+
   it('transfers a handoff with its reason, what was done and queued, and the slots collected', () => {
     expect(decisionToActions(app, {
       kind: 'handoff', reason: 'needs-human', promptId: 'handoff_needs_human', acks: [{ promptId: 'depot_unavailable', vars: {} }],

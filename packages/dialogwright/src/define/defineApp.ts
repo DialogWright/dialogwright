@@ -1081,9 +1081,9 @@ function routeRuleOf(r: RouteRuleYaml): RouteRule {
   return { when: whenFrom(r.when), outcome: routeOutcomeOf(r as RouteOutcomeYaml) };
 }
 
-type RouteOutcomeYaml = { say?: string; then: RouteOutcome['then']; reason?: string; form?: string; locale?: string };
+type RouteOutcomeYaml = { say?: string; then: RouteOutcome['then']; reason?: string; form?: string; locale?: string; goodbye?: boolean };
 
-/** A route's outcome as written, as the engine's RouteOutcome: only a handoff keeps a reason, only form a form, only locale a locale; `say` first. */
+/** A route's outcome as written, as the engine's RouteOutcome: only a handoff keeps a reason, only form a form, only locale a locale, only end a `goodbye: false`; `say` first. */
 function routeOutcomeOf(o: RouteOutcomeYaml): RouteOutcome {
   const say = o.say !== undefined ? { say: o.say } : {};
   switch (o.then) {

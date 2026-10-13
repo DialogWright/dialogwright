@@ -7,7 +7,8 @@ import { CHECK_THEN, MAX_ATTEMPTS_SHORT, OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_A
  * An outcome: what follows when a form's check refuses (forms.yaml `checks[].on`) or a slot runs out
  * of attempts (slots.yaml `onMaxAttempts`). One shape and one validator for both, so the two read and
  * act the same (core/outcome.ts runs them):
- * - `end`: `say` (required), then the call ends (with a request queued, the call goes on to it);
+ * - `end`: `say` (required), then the call ends, the goodbye after the line unless `goodbye: false`
+ *   (with a request queued, the call goes on to it);
  * - `anything-else`: `say` (required), the form closes uncompleted, and the call carries on;
  * - `handoff`: to a person, with the handoff line handoff_<reason>, after `say` if there is one;
  * - `form`: the form closes uncompleted and `form` is entered, as a `next:` is (the slots both list are
@@ -27,6 +28,10 @@ const THEN_WORDS: Record<OutcomeThen, string> = {
   skip: 'skip (the slot is left empty and declined, and the form goes on to its next question)',
 };
 
+/** What `goodbye:` means on an ending outcome, as the JSON Schema and an editor say it (routes.yaml's too). */
+export const GOODBYE_DESCRIPTION =
+  'For then: end, whether the app\'s goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself ("... We\'re closed right now. Goodbye."), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.';
+
 /** What `then` says, for the thens an outcome of this kind takes. */
 const thenDescription = (thens: readonly OutcomeThen[]): string => `What follows the line: ${thens.map((t) => THEN_WORDS[t]).join('; ')}.`;
 
@@ -43,12 +48,16 @@ function outcomeFields<T extends readonly [OutcomeThen, ...OutcomeThen[]]>(thens
     form: identifier()
       .optional()
       .describe('For then: form, the form entered: a form in forms.yaml (an internal one too).'),
+    goodbye: z
+      .boolean()
+      .optional()
+      .describe(GOODBYE_DESCRIPTION),
   };
 }
 
 /** The rules every outcome is held to, whichever thens it takes. */
 export const outcomeRules = checkAlways((value, ctx) => {
-  const outcome = value as { say?: unknown; then?: unknown; reason?: unknown; form?: unknown } | null;
+  const outcome = value as { say?: unknown; then?: unknown; reason?: unknown; form?: unknown; goodbye?: unknown } | null;
   if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome)) return;
   if ((outcome.then === 'end' || outcome.then === 'anything-else') && outcome.say === undefined) {
     ctx.addIssue({ code: 'custom', path: [], message: `then: ${outcome.then} says a line first, and this outcome names none`, params: { fix: 'add "say: <a prompt id in prompts.yaml>" with the line the caller hears' } });
@@ -62,7 +71,18 @@ export const outcomeRules = checkAlways((value, ctx) => {
   if (outcome.form !== undefined && outcome.then !== 'form') {
     ctx.addIssue({ code: 'custom', path: ['form'], message: 'a form is entered only by then: form, and this outcome does something else', params: { fix: 'delete "form", or write "then: form"' } });
   }
+  goodbyeRule(outcome, ctx, ['goodbye'], 'outcome');
 });
+
+/**
+ * `goodbye:` is the call's end's alone: on any other `then` the call does not end there, and no goodbye
+ * is said for it to leave out. Shared with routes.yaml's outcomes.
+ */
+export function goodbyeRule(o: { then?: unknown; goodbye?: unknown }, ctx: z.core.$RefinementCtx, path: (string | number)[], what: 'outcome' | 'route'): void {
+  if (o.goodbye !== undefined && o.then !== 'end') {
+    ctx.addIssue({ code: 'custom', path, message: `goodbye says whether the goodbye follows the line a call ends on, and this ${what} does not end the call (then: ${String(o.then)})`, params: { fix: 'delete "goodbye", or write "then: end"' } });
+  }
+}
 
 /** A check's outcome (forms.yaml `checks[].on.<reason>`): an outcome with its read-back, `confirm`. */
 export const checkOutcomeSchema = z
@@ -92,7 +112,7 @@ export const slotOutcomeSchema = z
 export const ON_MAX_ATTEMPTS_DESCRIPTION =
   'What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). ' +
   '"handoff" (the default): to a person, with handoff_max_attempts. "skip": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form\'s summary names. ' +
-  'Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and "anything else?" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. ' +
+  'Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and "anything else?" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. ' +
   'An offer of the caller\'s number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot\'s ladder goes on to it.';
 
 /** What `attempts:` means, as the JSON Schema, the slot pages and an editor say it. */
@@ -142,7 +162,7 @@ export function parseOnMaxAttempts(value: unknown): { success: true; data: 'hand
  * engine's Outcome, discriminated on `then`: only a handoff keeps a `reason` and only `then: form` a
  * `form`. The keys keep the order they are written in, `say` first.
  */
-export function outcomeFrom(o: { say?: string; then: OutcomeThen; reason?: string; form?: string }): Outcome {
+export function outcomeFrom(o: { say?: string; then: OutcomeThen; reason?: string; form?: string; goodbye?: boolean }): Outcome {
   const say = o.say !== undefined ? { say: o.say } : {};
   switch (o.then) {
     case 'handoff':
@@ -152,6 +172,9 @@ export function outcomeFrom(o: { say?: string; then: OutcomeThen; reason?: strin
       return { ...say, then: 'form', form: o.form };
     case 'skip':
       return { ...say, then: 'skip' };
+    case 'end':
+      // `goodbye: true` is the default written out: kept as absent, so the engine's outcome is as it was.
+      return { ...say, then: 'end', ...(o.goodbye === false ? { goodbye: false as const } : {}) };
     default:
       return { ...say, then: o.then };
   }

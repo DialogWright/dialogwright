@@ -245,6 +245,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -253,7 +257,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -585,6 +589,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -593,7 +601,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -881,6 +889,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -889,7 +901,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -1193,6 +1205,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1201,7 +1217,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -1414,6 +1430,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1422,7 +1442,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -1644,6 +1664,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1652,7 +1676,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -1938,6 +1962,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1946,7 +1974,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },
@@ -2125,6 +2153,10 @@
                     "description": "For then: form, the form entered: a form in forms.yaml (an internal one too).",
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "goodbye": {
+                    "description": "For then: end, whether the app's goodbye line follows `say`. false: the call ends on `say` alone, for a line that says goodbye itself (\"... We're closed right now. Goodbye.\"), so the caller does not hear goodbye twice. Default true: the goodbye follows the line.",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -2133,7 +2165,7 @@
                 "additionalProperties": false
               }
             ],
-            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
+            "description": "What happens when the slot runs out of attempts (a missed answer, a silence, an unanswered read-back, or a second no to its read-back). \"handoff\" (the default): to a person, with handoff_max_attempts. \"skip\": the slot is left empty and declined, and the form goes on; never on an identity factor, nor on a slot its form's summary names. Or written out, { say, then, reason, form, goodbye }: then is handoff (reason names the handoff, default max-attempts), skip, end (say required; the call ends, the goodbye after the line unless goodbye: false), anything-else (say required; the form closes uncompleted and \"anything else?\" is asked) or form (the form closes uncompleted and `form` is entered, keeping the slots both list); say, a prompt said first. An offer of the caller's number with onNo: skip that runs out leaves the slot empty whatever this says; with no onNo: skip, the slot's ladder goes on to it.",
             "default": "handoff"
           }
         },

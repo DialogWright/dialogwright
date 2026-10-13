@@ -253,6 +253,16 @@ describe('each ending', () => {
     expect(t.stopped?.then).toBe('anything-else');
   });
 
+  it('end with goodbye: false: the call ends on the check\'s line alone, with no goodbye after it; unset, the goodbye follows', async () => {
+    use(variant('screened-own-goodbye', [OWNER({ 'not-owner': { say: 'decline_renter', then: 'end', goodbye: false } })]));
+    const t = last(await call("there's water in my basement", 'I rent it'));
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'decline_renter', goodbye: false });
+    expect(heard(t)).toBe(RENTER_LINE.replace(/ Goodbye\.$/, ''));
+    expect(t.actions.filter((a) => a.type === 'say')).toHaveLength(1);
+    use(screenedApp);
+    expect(heard(last(await call("there's water in my basement", 'I rent it')))).toBe(RENTER_LINE);
+  });
+
   it('handoff with a reason of its own and a line before it', async () => {
     use(variant('screened-handoff', [OWNER({ 'not-owner': { say: 'decline_renter', then: 'handoff', reason: 'urgent' } })]));
     const t = last(await call("there's water in my basement", 'I rent it'));

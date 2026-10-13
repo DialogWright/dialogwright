@@ -44,6 +44,12 @@ export interface CompleteDecision {
   acks: Ack[];
   /** forms closed by a completion prompt on this call */
   completed: FormId[];
+  /**
+   * `false`: the line is the call's last, and the app's goodbye is not said after it (an ending
+   * outcome's or a completion's `goodbye: false`, for a line that says goodbye itself). Absent, the
+   * goodbye follows the line, unless the line is the goodbye.
+   */
+  goodbye?: false;
 }
 
 export interface HandoffDecision {

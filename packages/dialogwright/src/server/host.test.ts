@@ -76,6 +76,9 @@ describe('appEnvironment', () => {
     expect(r.env.TWILIO_AUTH_TOKEN).toBeUndefined();
     expect(r.own).toEqual(['MAIN_LINE']);
     expect(r.ignored).toEqual(['TWILIO_AUTH_TOKEN']);
+    // What the app's code reads by name (ctx.env): the whole of its own file over the server's settings.
+    expect(r.settings).toEqual({ MAIN_LINE: '+15555550101', HANDOFF_NUMBER: '+15555550999', TWILIO_AUTH_TOKEN: 'x' });
+    expect(appEnvironment({ MAIN_LINE: '+15555550900' }, null, ['MAIN_LINE']).settings).toEqual({ MAIN_LINE: '+15555550900' });
   });
 });
 

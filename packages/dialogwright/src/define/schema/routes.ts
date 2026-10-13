@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { checkAlways, identifier, localeTag, name } from './common';
 import { whenSchema } from './condition';
 import { ROUTE_THEN } from '../../core/app/types';
+import { GOODBYE_DESCRIPTION, goodbyeRule } from './outcome';
 
 /**
  * routes.yaml (optional): what the call does at three points, decided by ordered rules, the first whose
@@ -17,7 +18,7 @@ import { ROUTE_THEN } from '../../core/app/types';
 const THEN_WORDS: Record<(typeof ROUTE_THEN)[number], string> = {
   continue: 'continue (the call goes on as if no route were written: at start the greeting, after identity the form that asked for it, after a form its next, else "anything else?")',
   locale: 'locale (the call switches to `locale`, one of the app\'s, as the language intent does, then goes on)',
-  end: 'end (say required; the call ends; at start, without the greeting)',
+  end: 'end (say required; the call ends, the goodbye after the line unless goodbye: false; at start, without the greeting)',
   handoff: 'handoff (to a person, with the line handoff_<reason>; reason default needs-human)',
   form: 'form (the form named by `form` is entered, keeping the slots both list; at start after the welcome, greeting_offer)',
   'anything-else': 'anything-else (say required; not at start: the form closes and "anything else?" is asked)',
@@ -31,11 +32,12 @@ const outcomeFields = {
   reason: name().optional().describe('For then: handoff, the handoff reason, whose line is handoff_<reason> (and which a transfer target may read). Default needs-human.'),
   form: identifier().optional().describe('For then: form, the form entered: a form in forms.yaml (an internal one too).'),
   locale: localeTag().optional().describe('For then: locale, the locale the call switches to: one of the app\'s (app.yaml\'s locale, or a locale/<tag>/ folder).'),
+  goodbye: z.boolean().optional().describe(GOODBYE_DESCRIPTION),
 };
 
 /** The rules every route's outcome is held to: what each then needs, and nothing it does not take. */
 const outcomeRules = (where: (key: string) => (string | number)[]) => (value: unknown, ctx: z.core.$RefinementCtx): void => {
-  const o = value as { say?: unknown; then?: unknown; reason?: unknown; form?: unknown; locale?: unknown };
+  const o = value as { say?: unknown; then?: unknown; reason?: unknown; form?: unknown; locale?: unknown; goodbye?: unknown };
   if ((o.then === 'end' || o.then === 'anything-else') && o.say === undefined) {
     ctx.addIssue({ code: 'custom', path: where(''), message: `then: ${o.then} says a line first, and this route names none`, params: { fix: 'add "say: <a prompt id in prompts.yaml>" with the line the caller hears' } });
   }
@@ -44,6 +46,7 @@ const outcomeRules = (where: (key: string) => (string | number)[]) => (value: un
   if (o.form !== undefined && o.then !== 'form') ctx.addIssue({ code: 'custom', path: where('form'), message: 'a form is entered only by then: form, and this route does something else', params: { fix: 'delete "form", or write "then: form"' } });
   if (o.then === 'locale' && o.locale === undefined) ctx.addIssue({ code: 'custom', path: where(''), message: 'then: locale switches the language, and this route names none', params: { fix: 'add "locale: <one of the app\'s locales>"' } });
   if (o.locale !== undefined && o.then !== 'locale') ctx.addIssue({ code: 'custom', path: where('locale'), message: 'a locale is switched to only by then: locale, and this route does something else', params: { fix: 'delete "locale", or write "then: locale"' } });
+  goodbyeRule(o, ctx, where('goodbye'), 'route');
 };
 
 /** An outcome written out, as an `else` takes it. */
@@ -53,7 +56,7 @@ const routeOutcome = z
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
     outcomeRules((key) => (key === '' ? [] : [key]))(value, ctx);
   }))
-  .describe('What the else does, written out: { say, then, reason, form, locale }.');
+  .describe('What the else does, written out: { say, then, reason, form, locale, goodbye }.');
 
 /** One route: `when` and an outcome, or the point's `else`. */
 const routeRule = z
@@ -68,13 +71,14 @@ const routeRule = z
     reason: outcomeFields.reason,
     form: outcomeFields.form,
     locale: outcomeFields.locale,
+    goodbye: outcomeFields.goodbye,
   })
   .check(checkAlways((value, ctx) => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
     const r = value as Record<string, unknown>;
     if (r.else !== undefined) {
       if (r.when !== undefined) ctx.addIssue({ code: 'custom', path: ['when'], message: 'the else is taken when no rule before it is, and has no when', params: { fix: 'delete "when", or write this rule as when: ..., then: ... and add - else: continue after it' } });
-      for (const key of ['say', 'then', 'reason', 'form', 'locale']) {
+      for (const key of ['say', 'then', 'reason', 'form', 'locale', 'goodbye']) {
         if (r[key] !== undefined) ctx.addIssue({ code: 'custom', path: [key], message: `the else holds its outcome itself, and "${key}" is beside it`, params: { fix: `write else: { ${key}: ..., then: ... }, or else: continue` } });
       }
       return;
@@ -86,7 +90,7 @@ const routeRule = z
     }
     outcomeRules((key) => (key === '' ? [] : [key]))(r, ctx);
   }))
-  .describe('One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale); or else, the last.');
+  .describe('One route: when (one condition, or a list that must all hold) and what follows (say, then, reason, form, locale, goodbye); or else, the last.');
 
 const routeList = z
   .array(routeRule)

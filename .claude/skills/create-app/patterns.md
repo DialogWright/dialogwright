@@ -384,7 +384,7 @@ function completeFault(c: CompletionContext): Completion {
 `said` carries on to "anything else?"; `{ kind: 'end', promptId, vars, acks }` ends the call on the line instead.
 
 - **Test:** each form start to finish with a yes; a no that names what to change (`changeSlot`); a no with the new value ("no, make it Thursday"); "yes, but Thursday" (refused and read again).
-- **Pitfall:** the engine says the `goodbye` line after an `end` completion's line, so a line that ends the call never says goodbye itself, or the caller hears "Goodbye. Goodbye.". The same holds for a check's `then: end` line.
+- **Pitfall:** the engine says the `goodbye` line after an `end` completion's line, so a line that ends the call does not say goodbye itself, or the caller hears "Goodbye. Goodbye.". Where it must (a closing line that reads whole: "... We're closed right now. Goodbye."), end on it alone: `{ kind: 'end', promptId, vars, acks, goodbye: false }`, and `goodbye: false` on a check's, a slot's or a route's `then: end` (`pnpm check` warns of an ending whose line ends as the goodbye does, with the goodbye after it).
 
 ## One of the caller's own records: `record`
 
@@ -1007,9 +1007,14 @@ start:
   - when: { hours: closed }
     say: closed_now
     then: end
+    goodbye: false
   - when: { named: vip }
     then: handoff
     reason: vip
+  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]
+    say: outage_notice
+    then: locale
+    locale: es
   - when: { fact: outage, is: true }
     say: outage_notice
     then: continue
@@ -1039,14 +1044,15 @@ onStart(ctx) {
   const { decision, value, failed } = ctx.callTool({ tool: 'lookupNotices', params: { region } }, { failSoft: true });
   if (decision.verdict === 'ALLOW' && failed !== true) (ctx.s.facts as Facts).outage = (value as { outage?: unknown } | null)?.outage === true;
 },
-predicates: { vip: ({ s }) => vipNumbers.includes(callerOf(s as Session)?.number ?? '') },
+// A setting read at call time with env (the app's own, on a host too), never process.env at the module's top level.
+predicates: { vip: ({ s, env }) => (env('VIP_NUMBERS') ?? '').split(',').some((n) => n.trim() === callerOf(s as Session)?.number) },
 ```
 
-- **Order:** the app's: the first rule whose conditions all hold is taken, and every point ends with an `else`. Put closed first, so no one reaches a desk that is not there.
-- **What each does:** `say` a line first (at start, before the greeting), then `continue`, `locale` (a language the app has), `end` (with its line), `handoff` (with a `reason` and its `handoff_<reason>` line), `form` (at start after the welcome, `greeting_offer`; after identity the caller's own request follows; after a form, as its `next`), or `anything-else` (not at start).
+- **Order:** the app's: the first rule whose conditions all hold is taken, the rules after it are not looked at, and every point ends with an `else`. Put closed first, so no one reaches a desk that is not there. A rule that goes on (`continue`) goes on to the greeting, not to the rules below it: with the outage rule alone above the Spanish line's, a Spanish caller on an outage day is greeted in English (seen on a live call). Where two rules can both hold and both must act, write a rule that does both above them (`when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]`, `say: outage_notice`, `then: locale`: the switch first, so the notice is said in Spanish), or order them so the one that must win comes first. `pnpm check` warns of a rule with a `say` and `then: continue` above a `locale` rule both could hold for.
+- **What each does:** `say` a line first (at start, before the greeting), then `continue`, `locale` (a language the app has), `end` (with its line, the app's `goodbye` after it; `goodbye: false` for a line that says goodbye itself, as closed_now does), `handoff` (with a `reason` and its `handoff_<reason>` line), `form` (at start after the welcome, `greeting_offer`; after identity the caller's own request follows; after a form, as its `next`), or `anything-else` (not at start).
 - **Facts:** a `fact` is whatever the code keeps in the facts: the start hook's (from the call data, the number called, a lookup), the call-start lookup's, or a form's `onEntry` (the account's standing, read after identity). Start them in `facts.initial()` so `pnpm check` can tell a misspelled one.
 - **Numbers stay out of YAML:** `called: env.SPANISH_LINE` is the number callers dial, set in the owner's `.env` (the server will not start without it); app.yaml keeps the number called (`called: true`).
-- **Test:** a scripted call per route with its clock and data: `"now": "2026-10-12T19:00:00-04:00"` for closed, a holiday, an open hour; `"callData"`, `"calledNumber"` with `"env"`, `"callerNumber"`; set `testing.seed.now` to an open hour so the corpus runs. Expect the line (`"promptId": "closed_now"`, `"text"`) or the handoff and its target.
+- **Test:** a scripted call per route with its clock and data: `"now": "2026-10-12T19:00:00-04:00"` for closed, a holiday, an open hour; `"callData"`, `"calledNumber"` with `"env"` (which the code's `ctx.env` reads too, so a setting such as `VIP_NUMBERS` goes there), `"callerNumber"`; a call two rules could both take (an outage on the Spanish line); set `testing.seed.now` to an open hour so the corpus runs. Expect the line (`"promptId": "closed_now"`, `"text"`) or the handoff and its target.
 - **Pitfall:** a route into a form that needs identity at `start` asks for it first (`pnpm check` warns); a `reason` condition never holds in a route (it is a transfer target's); the hours are the line's own time zone, not the server's. `pnpm check` refuses what a rule names that the app does not have, a missing `else` and a `then` its point does not take ([authoring guide, routes.yaml](../../../docs/guide/02-the-files-one-by-one.md#routesyaml-optional)).
 
 ## A knowledge form

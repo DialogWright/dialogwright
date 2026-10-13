@@ -20,6 +20,7 @@ import { loadCorpus } from '../jev/corpus';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
+import { spokenText } from '../prompts/render';
 
 /**
  * Per-slot retries (design 2026-10-09-per-slot-retries): a slot's own `attempts` walks its ladder
@@ -352,7 +353,16 @@ describe('what follows when a slot runs out (decisions 2 and 4)', () => {
     use(withNote('end', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'end' } } }));
     const t = say(atTown(), 'hmm', MISS);
     expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'town_unclear' });
+    expect('goodbye' in t.decision).toBe(false);
     expect(t.session.completed).toEqual([]);
+  });
+
+  it('end with goodbye: false: the call ends on the line, and the goodbye is not said after it', () => {
+    const app = withNote('end-own-goodbye', { town: { attempts: 1, onMaxAttempts: { say: 'town_unclear', then: 'end', goodbye: false } } });
+    use(app);
+    const t = say(atTown(), 'hmm', MISS);
+    expect(t.decision).toMatchObject({ kind: 'complete', form: 'book_visit', promptId: 'town_unclear', goodbye: false });
+    expect(spokenText(app, t.decision)).toBe('Sorry, I could not make out the town.');
   });
 
   it('anything-else: the line, the form closes uncompleted, and "anything else?"', () => {

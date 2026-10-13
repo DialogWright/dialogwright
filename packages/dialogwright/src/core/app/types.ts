@@ -230,14 +230,16 @@ export interface FormCheck {
  * What follows a check's refusal (CheckOutcome) or a slot that runs out of attempts
  * (SlotSpec.onMaxAttempts): one shape, run by one executor (core/outcome.ts). `say` its line (with the
  * form's slot displays as variables), then:
- * - `end`: the call ends (the goodbye follows; with a request queued, the call goes on to it); `say` required;
+ * - `end`: the call ends (the goodbye follows, unless `goodbye: false`: the line is the call's last; with a
+ *   request queued, the call goes on to it); `say` required;
  * - `anything-else`: the form closes uncounted and the call carries on; `say` required;
  * - `handoff`: to a person, for `reason` (its line handoff_<reason>);
  * - `form`: the form closes uncounted and `form` (required, and only here) is entered, as a `next` is, the slots both list kept;
  * - `skip` (a slot's only): the slot is left empty and declined (SlotState.declined), and the form goes on.
  */
 export type Outcome =
-  | { readonly then: 'end' | 'anything-else'; readonly say?: string }
+  | { readonly then: 'end'; readonly say?: string; readonly goodbye?: false }
+  | { readonly then: 'anything-else'; readonly say?: string }
   | { readonly then: 'skip'; readonly say?: string }
   | { readonly then: 'handoff'; readonly say?: string; readonly reason?: string }
   | { readonly then: 'form'; readonly say?: string; readonly form: FormId };
@@ -293,6 +295,14 @@ export interface AppContext {
    * as it always has.
    */
   callTool(call: ToolCall, opts?: CallToolOptions): AppToolResult;
+  /**
+   * One of the app's own settings, by name, at call time (TurnContext.settings): on a server of several
+   * apps (host.yaml), the app's own settings file over the server's settings, the same lookup an
+   * `env.<NAME>` in its YAML reads; on a server of one, its environment; in a scripted call, its `env`.
+   * Undefined where it is not set. `process.env` is the server's alone, and module-level code runs
+   * once, as the module is imported: read a setting here, as the call needs it.
+   */
+  env(name: string): string | undefined;
 }
 
 /** How an app hook's call is made (AppContext.callTool). */
@@ -361,11 +371,13 @@ export interface Routes {
   readonly afterForm?: Readonly<Record<FormId, readonly RouteRule[]>>;
 }
 
-/** What a predicate (App.predicates) is given: the session, read-only, and the turn's clock. */
+/** What a predicate (App.predicates) is given: the session, read-only, the turn's clock and the app's own settings. */
 export interface PredicateContext {
   readonly s: Readonly<Session>;
   readonly nowMs: number;
   readonly todayIso: string;
+  /** One of the app's own settings, by name, at call time: AppContext.env. */
+  env(name: string): string | undefined;
 }
 
 /** A condition the app writes in code (routes.yaml's `{ named: <id> }`): true or false, given the session, read-only. */
@@ -398,7 +410,8 @@ export interface Refused {
  * - `end`: the form is completed and the call ends on its line (`promptId` with `vars`, after
  *   `acks`), the form and its slots left on the session as they were, its filled slots confirmed
  *   where it has a summary (the caller just agreed to them). With a request queued, the call carries
- *   on instead: the line is said, then the next request is bridged into, as after `said`.
+ *   on instead: the line is said, then the next request is bridged into, as after `said`. The app's
+ *   goodbye follows the line, unless `goodbye: false`, for a line that says goodbye itself.
  * - `refused`: the form ends without its answer (the gate refused the call, or there was none to
  *   give and no transfer to offer); its line is said and the call carries on, the form uncounted.
  * - `reconfirm`: the gate refused the write and the form loop asks again. On the confirmed rule (the values changed
@@ -409,7 +422,7 @@ export interface Refused {
  */
 export type Completion =
   | { kind: 'said'; acks: Ack[] }
-  | { kind: 'end'; promptId: string; vars: Record<string, string>; acks: Ack[] }
+  | { kind: 'end'; promptId: string; vars: Record<string, string>; acks: Ack[]; goodbye?: false }
   | Refused
   | { kind: 'reconfirm'; acks: Ack[] }
   | { kind: 'decision'; decision: Decision };
@@ -496,6 +509,21 @@ export interface IdentityConfig {
  */
 export type VerifyOutcome = { ok: true; principal: Party } | { ok: false };
 
+/** What a tool is given as it runs (ToolDef.run), beside its call and the app's systems. */
+export interface ToolContext {
+  s: Session;
+  /** The turn: its clock and the systems (only ever reached through the gate). */
+  tc: TurnContext;
+  /** The turn's output, where a tool may queue an effect. */
+  out: TurnOut;
+  /** The one-time code the caller keyed, for the tool that checks it. */
+  code?: string;
+  /** For a tool that writes (`idempotent`), the key of its write. */
+  idempotencyKey?: string;
+  /** One of the app's own settings, by name, at call time: AppContext.env. */
+  env(name: string): string | undefined;
+}
+
 export interface ToolDef {
   /**
    * Runs the tool against the app's systems. Only ever called after the gate allowed it. `tc` is the
@@ -507,7 +535,7 @@ export interface ToolDef {
    * as policy.yaml's `audit:` declares it (PolicyTables.audit). `check` refuses a param the tool
    * lists (its params, below) that neither covers.
    */
-  run(call: ToolCall, sys: unknown, ctx: { s: Session; tc: TurnContext; out: TurnOut; code?: string; idempotencyKey?: string }): { value: unknown; summary: string; ref?: string };
+  run(call: ToolCall, sys: unknown, ctx: ToolContext): { value: unknown; summary: string; ref?: string };
   /**
    * The tool writes (files, books, sends), and a repeat of the same write must not be done twice: it is
    * given `ctx.idempotencyKey` as it runs (core/idempotency.ts idempotencyKey: the same for the same

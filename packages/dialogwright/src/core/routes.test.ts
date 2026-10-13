@@ -82,6 +82,50 @@ describe('start', () => {
     expect(t.routes).toEqual([{ point: 'start', rule: 1, outcome: 'end', subjects: ['hours'], at: 0 }]);
   });
 
+  it('closed, goodbye: false: the line says goodbye itself, so the call ends on it alone; unset, the goodbye follows it', async () => {
+    const CLOSED = "Thanks for calling Example Service Line. We're closed right now. We're open weekdays from eight to six, and Saturday from nine to one. Goodbye.";
+    const t = last(await call({ now: EVENING }));
+    expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'closed_now', goodbye: false });
+    expect(heard(t)).toBe(CLOSED);
+    expect(t.actions.map((a) => a.type)).toEqual(['say', 'end']);
+    // The same route without it: the app's goodbye after the line, as before the option.
+    use(variants.variant({ 'routes.yaml': replace('    goodbye: false\n', '') }));
+    const before = last(await call({ now: EVENING }));
+    expect('goodbye' in before.decision).toBe(false);
+    expect(heard(before)).toBe(`${CLOSED} Goodbye.`);
+    expect(before.actions.map((a) => a.type)).toEqual(['say', 'say', 'end']);
+  });
+
+  it('an outage on the Spanish line: the rule that does both says the notice in Spanish and switches; the outage rule alone would have taken it in English', async () => {
+    const spanish = { calledNumber: '+15555550188', env: { SPANISH_LINE: '+15555550188' }, callData: { region: 'north' } };
+    const t = last(await call(spanish));
+    expect(t.session.locale).toBe('es');
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'greeting', acks: [{ promptId: 'outage_notice' }] });
+    expect(heard(t)).toMatch(/^Sabemos que hay un problema con el servicio en su zona, y estamos trabajando en ello. Gracias por llamar/);
+    expect(t.routes).toEqual([{ point: 'start', rule: 3, outcome: 'locale', subjects: ['fact.outage', 'called'], at: 1 }]);
+    // Without that rule, the first rule that holds is the outage's, and the rules after it are not looked at.
+    use(variants.variant({ 'routes.yaml': replace('  - when: [{ fact: outage, is: true }, { called: env.SPANISH_LINE }]\n    say: outage_notice\n    then: locale\n    locale: es\n', '') }));
+    const english = last(await call(spanish));
+    expect(english.session.locale).toBe('en-US');
+    expect(heard(english)).toMatch(/^We know about a problem with the service in your area/);
+    expect(english.routes).toEqual([{ point: 'start', rule: 3, outcome: 'continue', subjects: ['fact.outage'], at: 1 }]);
+  });
+
+  it('a predicate reads the app\'s own settings with ctx.env: a scripted call\'s env, or the settings the server passes over it', async () => {
+    const listed = '+15555550177';
+    const vip = await call({ callerNumber: listed, env: { VIP_NUMBERS: `+15555550100, ${listed}` } });
+    expect(last(vip).decision).toMatchObject({ kind: 'handoff', reason: 'vip' });
+    // A setting is read, never recorded: nothing of it in the trace or the audit.
+    expect(JSON.stringify(vip.runs.map((x) => [x.record, x.result.audit]))).not.toContain('5555550100');
+    // Not listed, or no setting: the greeting.
+    expect(promptOf(last(await call({ callerNumber: listed, env: { VIP_NUMBERS: '+15555550100' } })))).toBe('greeting');
+    expect(promptOf(last(await call({ callerNumber: listed })))).toBe('greeting');
+    // RunOptions.settings (the server's: on a host, the app's own settings file over the server's) is read over the call's env.
+    const run = (settings: Record<string, string>) => runScenario({ id: 'call', now: OPEN, callerNumber: listed, env: {}, steps: [], expect: { decision: 'any' } }, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, settings });
+    expect(last(await run({ VIP_NUMBERS: listed })).decision).toMatchObject({ kind: 'handoff', reason: 'vip' });
+    expect(promptOf(last(await run({})))).toBe('greeting');
+  });
+
   it('a holiday is closed all day; a Saturday morning open', async () => {
     expect(promptOf(last(await call({ now: '2027-01-01T11:00:00-05:00' })))).toBe('closed_now');
     expect(promptOf(last(await call({ now: '2026-10-17T12:59:00-04:00' })))).toBe('greeting');
@@ -95,7 +139,7 @@ describe('start', () => {
     expect((t.session.facts as RoutedFacts).outage).toBe(true);
     // The hook's call is first among the turn's rows, then the route, as it was taken after it.
     expect(t.audit.map((d) => d.type)).toEqual(['call_started', 'gate', 'tool_result', 'route']);
-    expect(routeRows(r)).toEqual([{ point: 'start', rule: 3, outcome: 'continue', subjects: ['fact.outage'] }]);
+    expect(routeRows(r)).toEqual([{ point: 'start', rule: 4, outcome: 'continue', subjects: ['fact.outage'] }]);
   });
 
   it('locale: the call goes on in the language named, the greeting in it', async () => {
@@ -118,7 +162,7 @@ describe('start', () => {
 
   it('form: the welcome, then the form entered in place of the greeting\'s open question', async () => {
     const app = variants.variant({
-      'routes.yaml': replace('    then: end\n', '    then: end\n  - when: { callData: region, is: north }\n    say: outage_notice\n    then: form\n    form: report_problem\n'),
+      'routes.yaml': replace('    goodbye: false\n', '    goodbye: false\n  - when: { callData: region, is: north }\n    say: outage_notice\n    then: form\n    form: report_problem\n'),
       'prompts.yaml': line('greeting_offer', 'Thanks for calling Example Service Line.'),
     });
     use(app);
@@ -202,11 +246,16 @@ describe('after identity', () => {
     expect(heard(t)).toBe("Thank you, Avery. You're verified. Before that, your account has a balance past due. Your latest request, P100, is open. Is there anything else I can help with?");
   });
 
-  it('end: the line, and the call ends', async () => {
+  it('end: the line, and the call ends; with goodbye: false, on the line alone', async () => {
     const app = variants.variant({ 'routes.yaml': (t) => keepPlan(replace('    say: past_due_first\n    then: form\n    form: payment_plan\n', '    say: past_due_first\n    then: end\n')(t)) });
     use(app);
     const t = last(await call({}, ...says(STATUS, ACCOUNT, DOB)));
     expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'past_due_first', acks: [{ promptId: 'identity_verified' }] });
+    expect(heard(t)).toMatch(/balance past due\. Goodbye\.$/);
+    use(variants.variant({ 'routes.yaml': (x) => keepPlan(replace('    say: past_due_first\n    then: form\n    form: payment_plan\n', '    say: past_due_first\n    then: end\n    goodbye: false\n')(x)) }));
+    const alone = last(await call({}, ...says(STATUS, ACCOUNT, DOB)));
+    expect(alone.decision).toMatchObject({ kind: 'complete', promptId: 'past_due_first', goodbye: false });
+    expect(heard(alone)).toMatch(/balance past due\.$/);
   });
 });
 
@@ -238,6 +287,11 @@ describe('after a form', () => {
     use(ending);
     const e = last(await call({}, ...says(REPORT, 'nothing is working at all', 'no, no one is at risk', 'yes, file it')));
     expect(e.decision).toMatchObject({ kind: 'complete', form: 'report_problem', promptId: 'past_due_first', completed: ['report_problem'] });
+    expect(heard(e)).toBe('Done. Your report number is P201. Before that, your account has a balance past due. Goodbye.');
+    use(variants.variant({ 'routes.yaml': replace('    - else: continue\n', '    - else: { say: past_due_first, then: end, goodbye: false }\n') }));
+    const alone = last(await call({}, ...says(REPORT, 'nothing is working at all', 'no, no one is at risk', 'yes, file it')));
+    expect(alone.decision).toMatchObject({ kind: 'complete', form: 'report_problem', promptId: 'past_due_first', goodbye: false });
+    expect(heard(alone)).toBe('Done. Your report number is P201. Before that, your account has a balance past due.');
   });
 });
 

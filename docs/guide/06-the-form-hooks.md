@@ -24,8 +24,8 @@ Where they run in a turn: the turn fills slots (speech, the keypad, a correction
 
 Three pieces of code an app may write beside its forms' hooks:
 
-- **`code.onStart(ctx)`**, the start hook: runs once as every call or chat starts (not only one with a caller number), before the call-start lookup and the start routes. It may read the call data (`callDataOf(ctx.s)`), the numbers (`callerOf`, `calledOf`), the clock (`ctx.tc.nowMs`), write the facts a route or a line reads, and call tools through the gate (`ctx.callTool`), each recorded as any call is. One that throws leaves the session as it was before the hook ran (the facts, the call data, anything else it wrote) and drops the side effects it queued; the calls it made stay recorded (one whose tool threw, as failed, with or without `failSoft`), the trace's start record says `startHookFailed` with the kind of error (its class's name, never its message), the server's log and the frame log say so too, and the call goes on. The hook cannot hand off: a refusal or a `NEEDS_HUMAN` one of its calls gets (a result the policy's `redact:` cannot strip, say) is the hook's to read, and the call goes on to the routes and the greeting, as after a call-start lookup the gate refused. The hook runs before the greeting, so its tools' time is the caller's wait at pickup: answer from the app's systems as they are. app.yaml says so, with the actions it calls, so `pnpm check` knows they are reached: `onStart: { calls: [lookupNotices] }` (`onStart: {}` for none). The call-start lookup is unchanged.
-- **`code.predicates`**: conditions of the app's own, by name, for a route's or a transfer target's `{ named: <name> }`. Each is given `{ s, nowMs, todayIso }`, the session a copy (what it writes is lost), and returns true or false; one that throws is false. A predicate decides only; it calls no tool.
+- **`code.onStart(ctx)`**, the start hook: runs once as every call or chat starts (not only one with a caller number), before the call-start lookup and the start routes. It may read the call data (`callDataOf(ctx.s)`), the numbers (`callerOf`, `calledOf`), the clock (`ctx.tc.nowMs`), the app's own settings (`ctx.env(name)`, [chapter 4](04-what-stays-in-typescript-and-why.md#settings-ctxenv-never-processenv)), write the facts a route or a line reads, and call tools through the gate (`ctx.callTool`), each recorded as any call is. One that throws leaves the session as it was before the hook ran (the facts, the call data, anything else it wrote) and drops the side effects it queued; the calls it made stay recorded (one whose tool threw, as failed, with or without `failSoft`), the trace's start record says `startHookFailed` with the kind of error (its class's name, never its message), the server's log and the frame log say so too, and the call goes on. The hook cannot hand off: a refusal or a `NEEDS_HUMAN` one of its calls gets (a result the policy's `redact:` cannot strip, say) is the hook's to read, and the call goes on to the routes and the greeting, as after a call-start lookup the gate refused. The hook runs before the greeting, so its tools' time is the caller's wait at pickup: answer from the app's systems as they are. app.yaml says so, with the actions it calls, so `pnpm check` knows they are reached: `onStart: { calls: [lookupNotices] }` (`onStart: {}` for none). The call-start lookup is unchanged.
+- **`code.predicates`**: conditions of the app's own, by name, for a route's or a transfer target's `{ named: <name> }`. Each is given `{ s, nowMs, todayIso, env }`, the session a copy (what it writes is lost) and `env(name)` the app's own settings, and returns true or false; one that throws is false. A predicate decides only; it calls no tool.
 - **`failSoft`**: `ctx.callTool(call, { failSoft: true })`, in any hook, makes a tool that throws fail the call, not the turn: the call is recorded as allowed with the summary `the tool failed: nothing was returned` (nothing of the error, whose message may hold a value), the side effects it queued are dropped, and the result is `{ decision, value: null, failed: true }`, so the hook treats a failed dip as no data, as the call-start lookup does. Without it, a throw goes up to the turn, as it always has.
 
 From the routed fixture:
@@ -39,6 +39,13 @@ onStart(ctx) {
   (ctx.s.facts as RoutedFacts).outage = (value as { outage?: unknown } | null)?.outage === true;
 },
 predicates: {
-  vip: ({ s }) => ACCOUNTS.some((a) => a.vip && a.phone === callerOf(s as Session)?.number),
+  // An account marked vip, or a number the app's own VIP_NUMBERS setting lists, read at call time.
+  vip: ({ s, env }) => {
+    const number = callerOf(s as Session)?.number;
+    if (number === undefined) return false;
+    return ACCOUNTS.some((a) => a.vip && a.phone === number) || (env('VIP_NUMBERS') ?? '').split(',').some((n) => n.trim() === number);
+  },
 },
 ```
+
+A completion that ends the call (`{ kind: 'end', promptId, vars, acks }`) is followed by the app's `goodbye` line, as a `then: end` outcome is; `goodbye: false` on it ends the call on its own line, for a line that says goodbye itself.
