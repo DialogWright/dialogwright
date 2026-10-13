@@ -40,6 +40,11 @@ describe('digitsSaidOf', () => {
     expect(digitsSaidOf(app, s, null)).toEqual([]);
     expect(sayDigits('Born April 12, 1980.', digitsSaidOf(app, s, null))).toBe('Born April 12, 1980.');
     expect(digitsSaidOf(app, s, { vars: { phone: '1980' } })).toEqual(['1980']);
+    // A repeat of the line (no variables left) says what the read-back said: a short value too.
+    expect(digitsSaidOf(app, s, { kind: 'replay', text: 'x' })).toEqual(['1980']);
+    const readBack = session({ phone: { value: null } }, { target: 'slot', slot: 'phone', value: '0142', display: '0142' });
+    expect(digitsSaidOf(app, readBack, { kind: 'replay', text: 'x' })).toEqual(['0142']);
+    expect(digitsSaidOf(app, readBack, null)).toEqual([]);
     // Five digits or more: looked for wherever a line says it, a repeat included.
     expect(digitsSaidOf(app, session({ phone: { value: '55520', display: '55520' } }), { kind: 'replay', text: 'x' })).toEqual(['55520']);
   });

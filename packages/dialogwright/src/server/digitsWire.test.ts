@@ -141,6 +141,13 @@ function liveCall(app: App, provider = 'twilio', bargeIn: BargeIn = 'any', more:
     say: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true }),
     partial: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: false }),
     key: (digit: string) => send({ type: 'dtmf', digit }),
+    /** A reconnect: the carrier's new socket for the call, before the old one's close; the lines it was sent. */
+    reconnect: async () => {
+      const sent2: Record<string, unknown>[] = [];
+      const sock2: SocketLike = { send: (d, cb) => { sent2.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} };
+      await handleSocketMessage(deps, sock2, newConnectionContext(tokens.mint(CALL, provider), sock2, provider), JSON.stringify({ type: 'setup', sessionId: 'VX8', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} }));
+      return () => sent2.filter((f) => f.type === 'text').map((f) => (f.token as string).trimEnd());
+    },
     caller: (on: boolean) => send({ type: 'info', name: 'clientSpeaking', value: on ? 'on' : 'off' }),
     /** The lines as they went out on the wire. */
     wire: () => sent.filter((f) => f.type === 'text').map((f) => (f.token as string).trimEnd()),
@@ -364,17 +371,69 @@ describe('a number said with a pause (waitForRestMs): the words held, before any
     await sameOnReplay(call);
   });
 
-  it('a key pressed in the wait runs the words at once, then the key', async () => {
+  /** Eight keys, 500 ms apart, each awaited once the clock has passed. */
+  async function keyIn(call: Call, digits: string): Promise<void> {
+    for (const d of digits) {
+      await vi.advanceTimersByTimeAsync(500);
+      await call.key(d);
+    }
+  }
+
+  it('words then keys: the keys answer the question already asked, and the words are dropped (a key ends the hold)', async () => {
     const call = liveCall(accountApp());
     await toAccount(call);
     const { held } = firstDigit(call);
-    await vi.advanceTimersByTimeAsync(300);
-    const key = call.key('5');
+    await keyIn(call, '55520417');
     await held;
-    await key;
-    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 300, fragments: 1, end: 'key' }]);
-    expect(call.wire()).toContain(REASK);
+    expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 0 });
+    expect(call.wire()).not.toContain(REASK);
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 500, fragments: 1, end: 'key', dropped: '[code].' }]);
+    expect(logged(call, 'aheadIgnored')).toEqual([]);
+    expect(call.records().map((r) => (r.event as { text?: string }).text)).not.toContain(FIRST);
     await sameOnReplay(call);
+  });
+
+  it('words then keys on the last attempt: the keys fill the slot, and no one is handed to a person', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none');
+    await toAccount(call, 2);
+    expect(call.wire().at(-1)).toBe(KEYPAD);
+    const { held } = firstDigit(call);
+    await keyIn(call, '55520417');
+    await held;
+    expect(call.session().ended).toBe(false);
+    expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 2 });
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    await sameOnReplay(call);
+  });
+
+  it('a reconnect before the old socket\'s close drops the words: the question is asked again once, on the new socket', async () => {
+    const call = liveCall(accountApp());
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(400);
+    const second = await call.reconnect();
+    await held;
+    // The last line said, said again by the reconnect, once; no re-ask on the dropped words.
+    expect(second()).toHaveLength(1);
+    expect(second()[0]).toMatch(/What is your account number\?$/);
+    expect(call.wire()).not.toContain(REASK);
+    expect(call.session().slots.account?.attempts).toBe(0);
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 400, fragments: 1, end: 'reconnect', dropped: '[code].' }]);
+  });
+
+  it('a hold the log never saw end (a restart) runs no turn on replay, and says so', async () => {
+    const call = liveCall(accountApp());
+    await toAccount(call);
+    firstDigit(call);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(logged(call, 'wordsHolding')).toEqual([{ slot: 'account' }]);
+    // The log as a server that stopped here left it: the hold began, and never ended.
+    const live = call.records();
+    vi.useRealTimers();
+    const replayed = await call.replay();
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+    expect(replayed.skipped).toEqual([expect.stringMatching(/words held when the hold was lost \(a restart\), never run/)]);
   });
 
   it('the slot\'s own wait; 0 holds nothing; nor does continueWithinMs 0 stop it', async () => {

@@ -57,8 +57,9 @@ const digitCount = (value: string): number => value.replace(/\D/g, '').length;
  * - held by the session, when it has SHORT_DIGITS digits or more: the slot's value and display, and a
  *   value read back or offered for it (the pending read-back), so a repeat of the last line, which has no
  *   variables, and a line of the app's own code say it too;
- * - on a repeat of the last line (a `replay` decision, which has no variables), the last four of the
- *   caller's number while its offer, or the consent to text, is the question still asked.
+ * - on a repeat of the last line (a `replay` decision, which has no variables), what it can have said:
+ *   the session's values of any length (a short read-back), and the last four of the caller's number
+ *   while its offer, or the consent to text, is the question still asked.
  *
  * Every value is digits only (DIGIT_VALUE) of at least MIN_DIGITS digits. Empty for an app with no such slot.
  */
@@ -80,21 +81,24 @@ export function digitsSaidOf(
     if (!DIGIT_VALUE.test(value) || digitCount(value) < MIN_DIGITS) return;
     if (named || digitCount(value) >= SHORT_DIGITS) out.add(value);
   };
+  // A repeat of the last line (no variables left) says what that line said: a short value the session
+  // holds for such a slot is taken as named there, as its variables named it the first time.
+  const replay = isObject(decision) && decision.kind === 'replay';
   for (const [id, st] of Object.entries(session.slots)) {
     if (!spelled(id) || !isObject(st)) continue;
-    add(st.value, false);
-    add(st.display, false);
+    add(st.value, replay);
+    add(st.display, replay);
     if (typeof st.value === 'string') lastFours.add(lastFour(st.value));
   }
   const pc = session.pendingConfirmation;
   if (isObject(pc) && pc.target === 'slot' && spelled(pc.slot)) {
-    add(pc.value, false);
-    add(pc.display, false);
+    add(pc.value, replay);
+    add(pc.display, replay);
     if (typeof pc.value === 'string') {
       lastFours.add(lastFour(pc.value));
       // The caller's number offered (or the consent to text, by the same number), asked again word for word.
       const offered = pc.from === undefined && (pc.offered === true || pc.consent === true);
-      if (offered && isObject(decision) && decision.kind === 'replay') add(lastFour(pc.value), true);
+      if (offered && replay) add(lastFour(pc.value), true);
     }
   }
   const vars = (v: unknown): void => {

@@ -251,6 +251,7 @@ export function forgetNoInput(callSid: string): void {
   forgetResumed(callSid);
   settleHeard(callSid);
   releaseReply(callSid, 'sent');
+  finishWords(callSid, 'closed');
 }
 
 /**
@@ -853,14 +854,23 @@ async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEven
  *   it starts again, whole, when they stop: the transcript of what they said is still to come. A partial
  *   prompt (Twilio's) starts it again too.
  * - **Nothing more** (the wait passes, or speech with no prompt after it): the words run alone, as they
- *   would have, a little later. A key pressed, or the socket closing, runs them at once.
+ *   would have, a little later.
+ * - **A key pressed**: the caller has gone to the keypad, and the keys answer the question already asked,
+ *   so the words are dropped, no turn runs on them, and the keys are taken as keyed at that question (a
+ *   turn on the words would have said a re-ask first, and the keys keyed ahead of it would be refused).
+ * - **The socket gone** (the caller hung up, a reconnect, the call forgotten): the words are dropped, as
+ *   words said to a line that is no more; a reconnect asks its question again, as it always has.
  *
  * One turn runs, on the words as held, so there is nothing to undo, at any rung of the slot's ladder, the
- * last included. No silence turn runs over the hold (the no-input wait is not armed during it). The frame log
- * has `{ wordsHeld: { slot, ms, fragments, end } }` just before the turn, `fragments` the number of final
- * prompts its words join; replay joins those prompts as the log says, whatever the app's settings are now
- * (harness-text/replay.ts). The turn's trace record names them (`joined: { fragments, waitedFor }`), and
- * the console notes the hold. Never on a chat, whose messages come whole.
+ * last included. No silence turn runs over the hold (the no-input wait is not armed during it). The frame
+ * log has `{ wordsHolding: { slot } }` when the hold starts and `{ wordsHeld: { slot, ms, fragments, end } }`
+ * when it ends, just before the turn, `fragments` the number of final prompts its words join, with
+ * `dropped` (the words, digits masked as a code said aloud is) where no turn runs on them; replay joins, or
+ * drops, those prompts as the log says, whatever the app's settings are now (harness-text/replay.ts). The
+ * hold lives in memory: a server restarted during it has lost the words, and the caller is asked again,
+ * and replay runs no turn on words whose hold the log never saw end. The turn's trace record names the
+ * prompts it joined (`joined: { fragments, waitedFor }`), and the console notes the hold. Never on a chat,
+ * whose messages come whole.
  */
 interface HeldWordsWait {
   readonly slot: string;
@@ -874,8 +884,14 @@ interface HeldWordsWait {
   readonly done: (end: WordsEnd) => void;
 }
 
-/** How held words came to run: joined into a whole value (`rest`), the wait passed (`timeout`), a key, the socket closed, the ceiling. */
-type WordsEnd = 'rest' | 'timeout' | 'key' | 'closed' | 'ceiling';
+/**
+ * How held words ended: they run, joined into a whole value (`rest`), the wait passed (`timeout`) or the
+ * ceiling did; or they are dropped, a key pressed, the socket closed or replaced by a reconnect (WORDS_DROPPED).
+ */
+type WordsEnd = 'rest' | 'timeout' | 'ceiling' | 'key' | 'closed' | 'reconnect';
+
+/** The ends on which held words are dropped, and no turn runs on them. */
+const WORDS_DROPPED: ReadonlySet<WordsEnd> = new Set(['key', 'closed', 'reconnect']);
 
 /** The most final prompts held words join (8 digits said in fours, pairs or singles still fit). */
 export const HELD_WORDS_MAX_FRAGMENTS = 10;
@@ -922,6 +938,8 @@ function holdWords(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arr
   const locale = slotLocaleOf(entry.session);
   if (waitMs <= 0 || spec.startOfValue === undefined || !spec.startOfValue(event.text, locale)) return null;
   const heldAtMs = Date.now();
+  // Where replay learns a hold began, so one the log never saw end (a restart) runs no turn there either.
+  entry.frames.write('log', { wordsHolding: { slot } });
   return new Promise((resolve) => {
     const fragments = [event.text];
     const h: HeldWordsWait = {
@@ -1884,6 +1902,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     forgetResumed(callId);
     settleHeard(callId);
     releaseReply(callId, 'sent');
+    // Words held on the old connection are dropped: the reconnect asks its question again (holdWords).
+    finishWords(callId, 'reconnect');
     const previous = existing.socket;
     if (previous && previous !== socket) {
       // Twilio reconnected before the old socket's close reached us; retire it explicitly so
@@ -2192,9 +2212,16 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   const run = async (e: CallEntry): Promise<void> => {
     if (held) {
       const words = await held;
+      const text = joinedWords(words.held.fragments);
+      const line = { slot: words.held.slot, ms: words.ms, fragments: words.held.fragments.length, end: words.end };
+      // Dropped (a key, the socket gone): no turn, and the words in the log only as a code said aloud is.
+      if (WORDS_DROPPED.has(words.end)) {
+        logDelivery(deps, e, { wordsHeld: { ...line, dropped: maskSpokenCode(text, 1).text } });
+        return;
+      }
       // Before the turn, where replay reads it; the console notes it on the join, which the turn logs after it.
-      logDelivery(deps, e, { wordsHeld: { slot: words.held.slot, ms: words.ms, fragments: words.held.fragments.length, end: words.end } });
-      const joined = event.type === 'user.speech' ? { ...event, text: joinedWords(words.held.fragments) } : event;
+      logDelivery(deps, e, { wordsHeld: line });
+      const joined = event.type === 'user.speech' ? { ...event, text } : event;
       await turn(deps, e, joined, arrival, arrivedAtMs, words.held);
       return;
     }
@@ -2294,7 +2321,7 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   forgetResumed(ctx.callSid);
   settleHeard(ctx.callSid);
   releaseReply(ctx.callSid, 'sent');
-  // Held words run as they are: the call's turn on them still runs, as any queued turn does.
+  // Held words are dropped: said to a line that is no more (holdWords).
   finishWords(ctx.callSid, 'closed');
   // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
   heldEnds.get(ctx.callSid)?.release('closed');

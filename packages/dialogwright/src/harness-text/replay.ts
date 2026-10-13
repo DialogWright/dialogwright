@@ -276,6 +276,8 @@ interface WordsGroup {
   readonly slot: string;
   /** The line indexes of the prompts after the first, which run no turn of their own. */
   readonly rest: readonly number[];
+  /** The words were dropped (a key, the socket gone): no turn runs on them. */
+  readonly dropped: boolean;
 }
 
 /** A final prompt's `in` line. */
@@ -294,13 +296,42 @@ function wordsHeldGroups(lines: readonly ReadFrameLogLine[]): Map<number, WordsG
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
     const w = (line.msg as { wordsHeld?: unknown }).wordsHeld;
     if (typeof w !== 'object' || w === null) continue;
-    const { slot, fragments } = w as { slot?: unknown; fragments?: unknown };
+    const { slot, fragments, dropped } = w as { slot?: unknown; fragments?: unknown; dropped?: unknown };
     if (typeof slot !== 'string' || typeof fragments !== 'number' || !Number.isInteger(fragments) || fragments < 1) continue;
     const prompts: number[] = [];
     for (let i = at - 1; i >= 0 && prompts.length < fragments; i--) if (isFinalPrompt(lines[i]!)) prompts.unshift(i);
-    if (prompts.length === fragments) groups.set(prompts[0]!, { at, slot, rest: prompts.slice(1) });
+    if (prompts.length === fragments) groups.set(prompts[0]!, { at, slot, rest: prompts.slice(1), dropped: dropped !== undefined });
   }
   return groups;
+}
+
+/**
+ * The final prompts of words whose hold the log never saw end (a `{ wordsHolding }` line with no
+ * `{ wordsHeld }` after it before the next hold or the log's end: the server restarted, or stopped,
+ * during the hold, and the words were lost with it): no turn ran on them live, so none runs here. The
+ * prompt before the line, and every final prompt after it the hold would have taken (up to the first
+ * setup after it: a restarted server takes prompts as its own).
+ */
+function wordsNeverRun(lines: readonly ReadFrameLogLine[]): Set<number> {
+  const out = new Set<number>();
+  const has = (line: ReadFrameLogLine, key: string): boolean => line.dir === 'log' && typeof line.msg === 'object' && line.msg !== null && key in line.msg;
+  for (const [at, line] of lines.entries()) {
+    if (!has(line, 'wordsHolding')) continue;
+    let end = at + 1;
+    while (end < lines.length && !has(lines[end]!, 'wordsHeld') && !has(lines[end]!, 'wordsHolding')) end++;
+    if (end < lines.length && has(lines[end]!, 'wordsHeld')) continue;
+    for (let i = at - 1; i >= 0; i--) {
+      if (isFinalPrompt(lines[i]!)) {
+        out.add(i);
+        break;
+      }
+    }
+    for (let i = at + 1; i < end; i++) {
+      if (lines[i]!.dir === 'in' && rawType(lines[i]!.msg) === 'setup') break;
+      if (isFinalPrompt(lines[i]!)) out.add(i);
+    }
+  }
+  return out;
 }
 
 /**
@@ -379,6 +410,7 @@ export async function replayFrameLines(
   // prompts after it join it, and a turn that came meanwhile (a key that ended the hold) runs after it.
   const wordsGroups = wordsHeldGroups(lines);
   const joining = new Set([...wordsGroups.values()].flatMap((g) => g.rest));
+  const neverRun = wordsNeverRun(lines);
   let open: { group: WordsGroup; pending: Pending; texts: string[]; after: Pending[] } | null = null;
   const flushDeferred = async (): Promise<void> => {
     for (const d of deferred.splice(0)) {
@@ -398,11 +430,16 @@ export async function replayFrameLines(
       const words = texts.map((t) => t.trim()).filter(Boolean).join(' ');
       const event = pending.event.type === 'user.speech' ? { ...pending.event, text: words } : pending.event;
       if (ended) skipped.push(`line ${pending.lineNumber}: ${pending.type} after the call ended`);
-      else await run({ ...pending, event, held: { fragments: texts, slot: group.slot } });
+      // Dropped live (a key pressed, the socket gone): no turn on them.
+      else if (!group.dropped) await run({ ...pending, event, held: { fragments: texts, slot: group.slot } });
       for (const p of after) {
         if (ended) skipped.push(`line ${p.lineNumber}: ${p.type} after the call ended`);
         else await run(p);
       }
+      continue;
+    }
+    if (neverRun.has(index)) {
+      skipped.push(`line ${line.line}: words held when the hold was lost (a restart), never run`);
       continue;
     }
     if (open !== null && joining.has(index) && line.dir === 'in') {
