@@ -47,7 +47,7 @@
 {"id":"bl-07","text":"I got an invoice I don't understand","intent":"billing","context":"no_form"}
 {"id":"bl-08","text":"How much do I owe","intent":"billing","context":"no_form"}
 {"id":"ag-01","text":"I want to talk to a person","intent":"agent","context":"no_form"}
-{"id":"ag-02","text":"Agent","intent":"agent","context":"no_form","knownGap":{"reason":"a single word 'Agent': addressedToSystem reads 0.60 to 0.65, on the 0.65 gate, and wantsHuman 0.49 is below 0.7; at 0.60 the turn is ignored instead of handed off","outcome":{"decision":"ignore","promptId":null,"reason":null,"decidedGate":"addressedToSystem","verdict":"ignore"}}}
+{"id":"ag-02","text":"Agent","intent":"agent","context":"no_form","knownGap":{"reason":"a single word 'Agent': addressedToSystem reads 0.60 to 0.65, on the 0.65 gate, and wantsHuman 0.49 to 0.52 is below 0.7; in the recording of 2026-10-13 addressedToSystem is 0.65, so the turn passes the gate, and the intent question splits agent 0.44 against none 0.55 (ask_question 0), so it is not understood (nomatch_open) instead of handed off; at 0.60 it was ignored","outcome":{"decision":"prompt","promptId":"nomatch_open","reason":null,"decidedGate":"intent","verdict":"intent_failed"}}}
 {"id":"ag-03","text":"Can I speak with a representative","intent":"agent","context":"no_form"}
 {"id":"ag-04","text":"Operator please","intent":"agent","context":"no_form"}
 {"id":"ag-05","text":"Just get me a human","intent":"agent","context":"no_form"}

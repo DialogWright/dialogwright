@@ -30,7 +30,7 @@ intents:
   # The criteria name the five topics the knowledge base answers, not every question about the
   # practice: one it cannot answer (where it is, flu shots, records) stays `other`.
   ask_question:
-    criteria: Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question to ask
+    criteria: Asks about the practice's opening hours, parking, what to bring to a first visit, the cancellation policy, or accessibility, or says they have a question without saying what it is
     label: get an answer to your question
     kind: form
 
