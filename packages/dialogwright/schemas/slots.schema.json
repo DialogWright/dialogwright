@@ -1255,7 +1255,7 @@
             ]
           },
           "bareAnswer": {
-            "description": "A bare name, right after the name question: when the slot was just asked and the answer is short (at most `words` words), a span the model chose as the name with a probability of at least `span` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT. A caller who answers the question with only a name (\"Jordan Avery\") was otherwise asked again, the words read as a name too weakly on their own; the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: 4, span: SLOT_DETECT }.",
+            "description": "A bare name, right after the name question: when the slot was just asked and the answer is short (at most `words` words), a span the model chose as the name with a probability of at least `span` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT, as long as it reaches `given`. A caller who answers the question with only a name (\"Jordan Avery\") was otherwise asked again, the words read as a name too weakly on their own (0.41 on a live call, the span 0.74); the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: 4, given: NAME_BARE_GIVEN, span: NAME_BARE_SPAN }.",
             "type": "object",
             "properties": {
               "words": {
@@ -1265,9 +1265,15 @@
                 "minimum": 0,
                 "maximum": 10
               },
+              "given": {
+                "default": "NAME_BARE_GIVEN",
+                "description": "The threshold the model's yes-or-no that the caller gave their name must still reach: a bare answer overrules a yes-or-no that is unsure, never a confident no. An engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: NAME_BARE_GIVEN (0.2).",
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
               "span": {
-                "default": "SLOT_DETECT",
-                "description": "The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: SLOT_DETECT.",
+                "default": "NAME_BARE_SPAN",
+                "description": "The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: NAME_BARE_SPAN (0.7).",
                 "type": "string",
                 "pattern": "^[A-Z][A-Z0-9_]*$"
               }

@@ -5,7 +5,7 @@ export const SWEEPABLE: readonly ThresholdName[] = [
   'GATE_ADDRESSED', 'GATE_INTELLIGIBLE', 'GATE_COMPLETE', 'GATE_WANTS_HUMAN',
   'INTENT_ROUTE', 'INTENT_IMPLICIT', 'INTENT_EXPLICIT', 'INTENT_SWITCH', 'PRIORITY_INTENT', 'GATE_INTENT_MARGIN', 'GATE_FRUSTRATION_HIGH',
   'INTENT_TENTATIVE', 'INTENT_CHANGE', 'SLOT_CHANGE', 'INTENT_SECOND',
-  'SLOT_DETECT', 'SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM', 'SLOT_CHOICE_MARGIN', 'SLOT_HELP',
+  'SLOT_DETECT', 'SLOT_CHOICE_FILL', 'SLOT_CHOICE_CONFIRM', 'SLOT_CHOICE_MARGIN', 'SLOT_HELP', 'NAME_BARE_GIVEN', 'NAME_BARE_SPAN',
   'KB_TOPIC_MARGIN',
   'CONFIRM_YES', 'CONFIRM_NO', 'MENU_NUMBER',
   'SCREEN_FIRE',
@@ -49,6 +49,8 @@ export const CONSTRAINTS: ReadonlyArray<{ lower: ThresholdName; upper: Threshold
   { lower: 'INTENT_IMPLICIT', upper: 'INTENT_ROUTE' },
   { lower: 'INTENT_ROUTE', upper: 'INTENT_SWITCH' },
   { lower: 'SLOT_CHOICE_CONFIRM', upper: 'SLOT_CHOICE_FILL' },
+  // A bare name overrules a yes-or-no under SLOT_DETECT, never a confident no.
+  { lower: 'NAME_BARE_GIVEN', upper: 'SLOT_DETECT' },
 ];
 
 /** The first violated constraint as "A <= B", or null when the set is allowed. */

@@ -3,8 +3,8 @@ import { CONSTRAINTS, EXCLUDED, gridFor, parseOnly, SWEEPABLE, violated } from '
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 
 describe('sweep space', () => {
-  it('lists the twenty-five sweepable thresholds and no fixed ones', () => {
-    expect(SWEEPABLE).toHaveLength(25);
+  it('lists the twenty-seven sweepable thresholds and no fixed ones', () => {
+    expect(SWEEPABLE).toHaveLength(27);
     expect(SWEEPABLE).not.toContain('MAX_ATTEMPTS');
     expect(SWEEPABLE).not.toContain('STUB_SHARPNESS');
     expect(SWEEPABLE).not.toContain('JEV_TIMEOUT_MS');
@@ -25,7 +25,8 @@ describe('sweep space', () => {
     expect(violated({ ...DEFAULT_THRESHOLDS, INTENT_EXPLICIT: 0.7 })).toBe('INTENT_EXPLICIT <= INTENT_IMPLICIT');
     expect(violated({ ...DEFAULT_THRESHOLDS, INTENT_SWITCH: 0.5 })).toBe('INTENT_ROUTE <= INTENT_SWITCH');
     expect(violated({ ...DEFAULT_THRESHOLDS, SLOT_CHOICE_FILL: 0.4 })).toBe('SLOT_CHOICE_CONFIRM <= SLOT_CHOICE_FILL');
-    expect(CONSTRAINTS).toHaveLength(4);
+    expect(violated({ ...DEFAULT_THRESHOLDS, NAME_BARE_GIVEN: 0.65 })).toBe('NAME_BARE_GIVEN <= SLOT_DETECT');
+    expect(CONSTRAINTS).toHaveLength(5);
   });
 
   it('leaves the excluded thresholds out of the default set but sweeps them on request', () => {
@@ -33,7 +34,7 @@ describe('sweep space', () => {
     expect(EXCLUDED.GATE_WANTS_HUMAN).toMatch(/safety change/);
     expect(EXCLUDED.PRIORITY_INTENT).toMatch(/safety change/);
     expect(EXCLUDED.SCREEN_FIRE).toMatch(/safety change/);
-    expect(parseOnly(undefined)).toHaveLength(22);
+    expect(parseOnly(undefined)).toHaveLength(24);
     expect(parseOnly(undefined)).not.toContain('GATE_WANTS_HUMAN');
     expect(parseOnly(undefined)).not.toContain('SCREEN_FIRE');
     expect(parseOnly(undefined)).not.toContain('PRIORITY_INTENT');

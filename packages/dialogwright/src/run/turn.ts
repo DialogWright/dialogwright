@@ -220,8 +220,8 @@ function heardAsWritten(session: Session, event: SessionEvent): SessionEvent {
  * Unset (the harness, the CLI, which run each event as it arrives), it is made here from `session`,
  * by the same predicate. `joined` is set only by a Continuation (run/continuation.ts), for a turn
  * whose words join the final prompts of a caller who had not finished: the prompts, in order, which
- * the trace record keeps beside the joined words, with `waitedFor`, the slot whose rest the reply to
- * them was held for, where it was (run/continuation.ts waitsForRest).
+ * the trace record keeps beside the joined words; and by the voice server for words it held for the
+ * rest of a value, with `waitedFor`, the slot whose value they began (run/continuation.ts HeldWords).
  */
 export async function runTurn(session: Session, heard: SessionEvent, opts: RunOptions, arrival?: Arrival, joined?: readonly string[], waitedFor?: string): Promise<TurnRun> {
   // A code said aloud at the code prompt goes no further than this, whoever called: the screen,

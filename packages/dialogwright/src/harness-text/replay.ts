@@ -12,7 +12,7 @@ import { standInCallerNumber } from '../core/callerNumber';
 import { SHORT_MASK } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
-import { Continuation, MAX_CONTINUE_WITHIN_MS } from '../run/continuation';
+import { Continuation, MAX_CONTINUE_WITHIN_MS, type HeldWords } from '../run/continuation';
 
 
 export interface ReplayResult {
@@ -219,17 +219,16 @@ function isCallerResumed(line: ReadFrameLogLine): boolean {
  * holdReply): `{ replyHeld: { outcome: 'joined', turn } }`, by the held turn's turnIndex. The line is
  * written when the hold ends, which can be after frames that came during it (a prompt), whose turns ran
  * after it; so replay reads them all first, and tells its Continuation straight after that turn, as the
- * adapter did, with the slot whose rest it was held for where the line names one (`slot`). A reply held
- * and then sent changes nothing.
+ * adapter did. A reply held and then sent changes nothing.
  */
-function heldAndJoined(lines: readonly ReadFrameLogLine[]): Map<number, string | undefined> {
-  const turns = new Map<number, string | undefined>();
+function heldAndJoined(lines: readonly ReadFrameLogLine[]): Set<number> {
+  const turns = new Set<number>();
   for (const line of lines) {
     if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
     const h = (line.msg as { replyHeld?: unknown }).replyHeld;
     if (typeof h !== 'object' || h === null) continue;
-    const { outcome, turn, slot } = h as { outcome?: unknown; turn?: unknown; slot?: unknown };
-    if (outcome === 'joined' && typeof turn === 'number' && Number.isInteger(turn)) turns.set(turn, typeof slot === 'string' ? slot : undefined);
+    const { outcome, turn } = h as { outcome?: unknown; turn?: unknown };
+    if (outcome === 'joined' && typeof turn === 'number' && Number.isInteger(turn)) turns.add(turn);
   }
   return turns;
 }
@@ -266,6 +265,42 @@ interface Pending {
   lineMs: number;
   lineNumber: number;
   arrival: Arrival | undefined;
+  /** Words the adapter held for the rest of a value, this turn's words joined (wordsHeldGroups). */
+  held?: HeldWords;
+}
+
+/** Final prompts the adapter held as one turn's words (server/adapter.ts holdWords), by the line of the first. */
+interface WordsGroup {
+  /** The line index of its `{ wordsHeld }` line, where the turn runs. */
+  readonly at: number;
+  readonly slot: string;
+  /** The line indexes of the prompts after the first, which run no turn of their own. */
+  readonly rest: readonly number[];
+}
+
+/** A final prompt's `in` line. */
+function isFinalPrompt(line: ReadFrameLogLine): boolean {
+  return line.dir === 'in' && rawType(line.msg) === 'prompt' && (line.msg as { last?: unknown }).last === true;
+}
+
+/**
+ * The words the adapter held for the rest of a value (server/adapter.ts holdWords): each
+ * `{ wordsHeld: { slot, fragments } }` line, with the `fragments` final prompts before it, which ran as
+ * one turn there. Read from the log as it is, whatever the app's settings are now.
+ */
+function wordsHeldGroups(lines: readonly ReadFrameLogLine[]): Map<number, WordsGroup> {
+  const groups = new Map<number, WordsGroup>();
+  for (const [at, line] of lines.entries()) {
+    if (line.dir !== 'log' || typeof line.msg !== 'object' || line.msg === null) continue;
+    const w = (line.msg as { wordsHeld?: unknown }).wordsHeld;
+    if (typeof w !== 'object' || w === null) continue;
+    const { slot, fragments } = w as { slot?: unknown; fragments?: unknown };
+    if (typeof slot !== 'string' || typeof fragments !== 'number' || !Number.isInteger(fragments) || fragments < 1) continue;
+    const prompts: number[] = [];
+    for (let i = at - 1; i >= 0 && prompts.length < fragments; i--) if (isFinalPrompt(lines[i]!)) prompts.unshift(i);
+    if (prompts.length === fragments) groups.set(prompts[0]!, { at, slot, rest: prompts.slice(1) });
+  }
+  return groups;
 }
 
 /**
@@ -327,10 +362,10 @@ export async function replayFrameLines(
   const run = async (p: Pending): Promise<void> => {
     const turnOpts: RunOptions = { ...opts, now: () => p.lineMs, todayIso: options?.todayIsoOverride ?? setupDate! };
     try {
-      const r = await continuation.run(session!, p.event, turnOpts, p.arrival);
+      const r = await continuation.run(session!, p.event, turnOpts, p.arrival, p.held);
       session = r.result.session;
       // Its reply held, and the caller went on: the next final prompt continues it (heldAndJoined).
-      if (p.event.type === 'user.speech' && p.event.final && joinedHolds.has(session.turnIndex)) continuation.resumed(joinedHolds.get(session.turnIndex));
+      if (p.event.type === 'user.speech' && p.event.final && joinedHolds.has(session.turnIndex)) continuation.resumed();
       runs.push(r);
       onRun?.(r);
       if (session.ended) ended = true;
@@ -340,6 +375,11 @@ export async function replayFrameLines(
     }
   };
   const ahead = aheadOutcomes(lines);
+  // Words held as one turn's (wordsHeldGroups): the first prompt's turn waits for its group's line, the
+  // prompts after it join it, and a turn that came meanwhile (a key that ended the hold) runs after it.
+  const wordsGroups = wordsHeldGroups(lines);
+  const joining = new Set([...wordsGroups.values()].flatMap((g) => g.rest));
+  let open: { group: WordsGroup; pending: Pending; texts: string[]; after: Pending[] } | null = null;
   const flushDeferred = async (): Promise<void> => {
     for (const d of deferred.splice(0)) {
       if (ended) skipped.push(`line ${d.lineNumber}: ${d.type} after the call ended`);
@@ -352,6 +392,24 @@ export async function replayFrameLines(
     // during the wait).
     // (`session` is assigned in `run` too, which the compiler does not follow; hence the cast.)
     const current = session as Session | null;
+    if (open !== null && index === open.group.at) {
+      const { group, pending, texts, after } = open;
+      open = null;
+      const words = texts.map((t) => t.trim()).filter(Boolean).join(' ');
+      const event = pending.event.type === 'user.speech' ? { ...pending.event, text: words } : pending.event;
+      if (ended) skipped.push(`line ${pending.lineNumber}: ${pending.type} after the call ended`);
+      else await run({ ...pending, event, held: { fragments: texts, slot: group.slot } });
+      for (const p of after) {
+        if (ended) skipped.push(`line ${p.lineNumber}: ${p.type} after the call ended`);
+        else await run(p);
+      }
+      continue;
+    }
+    if (open !== null && joining.has(index) && line.dir === 'in') {
+      const frame = parseInbound(JSON.stringify(line.msg));
+      if (frame?.type === 'prompt') open.texts.push(frame.voicePrompt);
+      continue;
+    }
     if (isServiceWaitAbandoned(line) && current && !ended) {
       session = { ...current, pendingService: null };
       await flushDeferred();
@@ -466,6 +524,17 @@ export async function replayFrameLines(
       }
     }
     const pending: Pending = { event, type, lineMs, lineNumber, arrival };
+    // The first of words held as one turn's: it runs at its group's line, joined (wordsHeldGroups).
+    const group = wordsGroups.get(index);
+    if (group !== undefined && event.type === 'user.speech') {
+      open = { group, pending, texts: [event.text], after: [] };
+      continue;
+    }
+    // A turn that came while words were held runs after them, as it did live.
+    if (open !== null) {
+      open.after.push(pending);
+      continue;
+    }
     // Live, a frame that arrived during the service wait was queued behind the service's answer, so
     // its turn ran after the answer's even though its line is logged before the answer's.
     if (flags?.duringService && session.pendingService !== null) {

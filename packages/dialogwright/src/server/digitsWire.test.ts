@@ -22,23 +22,24 @@ import { spokenToDigits } from '../core/extract/spokenNumber';
 import type { App } from '../core/app/types';
 import type { AnswerMap, JevClient, Question } from '../jev/types';
 import type { BargeIn } from '../channel/voiceProviders';
-import { waitsForRest } from '../run/continuation';
-import type { TurnResult } from '../core/turn';
 
 /**
  * A `digits` slot on the phone (live calls, 2026-10-13, both carriers):
  *
  * - Its value said back digit by digit (`sayAs`): the voice read "0142" as "one hundred forty-two". The
  *   wire carries each digit; the session, the trace and the frame log's masking keep the value as written.
- * - A number said with a pause (`waitForRestMs`): asked for an eight-digit number, a caller said "Five.",
- *   paused, then the rest; the engine answered the first digit with a re-ask, and the rest was lost. The
- *   re-ask is held for the rest, and the words that follow are joined to the first.
+ * - A number said with a pause (`waitForRestMs`): after a nine-digit miss, a caller asked again for an
+ *   eight-digit number said "Five." and paused; the keypad line answered it, the caller spoke over it
+ *   235 ms later, and Telnyx (barge-in off) transcribed nothing while the line it could not interrupt
+ *   played: the rest was lost. Words that are only the start of the number are held, before any turn,
+ *   and the words that follow are joined to them; one turn runs, so nothing is undone.
  */
 
 const CALL = 'CA7';
 const APP_ID = 'account-line';
 const ASK = 'What is your account number?';
 const REASK = 'Sorry, what is the account number?';
+const KEYPAD = 'Please key in the account number on your keypad.';
 const FIRST = 'Five.';
 const REST = 'five five two zero four one seven.';
 const READ_BACK = 'Account 5552 0417. Is that right?';
@@ -49,7 +50,7 @@ const READ_BACK_TRACED = 'Account ...0417. Is that right?';
 /** The place app's one form, asking an eight-digit account number, said back in two groups of four. */
 function accountApp(options: Record<string, unknown> = {}, over: Partial<App> = {}): App {
   const base = placeApp();
-  const account = defineSlot('account', { type: 'digits', noun: 'account', length: 8, group: [4, 4], ...options });
+  const account = defineSlot('account', { type: 'digits', noun: 'account', length: 8, group: [4, 4], keypad: true, ...options });
   return placeApp({
     id: APP_ID,
     forms: { report: { ...base.forms.report!, slots: ['account'] } },
@@ -59,6 +60,7 @@ function accountApp(options: Record<string, unknown> = {}, over: Partial<App> = 
         ...base.prompts.manifest,
         ask_account: { text: ASK, interruptible: true },
         ask_account_retry: { text: REASK, interruptible: true },
+        ask_account_dtmf: { text: KEYPAD, interruptible: false },
         confirm_report: { text: 'Account {account}. Is that right?', interruptible: true },
       },
       tags: {},
@@ -170,13 +172,22 @@ async function sameOnReplay(call: Call): Promise<void> {
   expect(replayed.records.map(shape)).toEqual(live.map(shape));
 }
 
-/** To the account question, then the first digit, its turn not awaited (its reply may be held). */
-async function toFirstDigit(call: Call): Promise<{ held: Promise<void> }> {
+/** To the account question; then `misses` wrong numbers, each answered by the slot's ladder. */
+async function toAccount(call: Call, misses = 0): Promise<void> {
   await call.start();
   await call.say('i want to report a problem');
   expect(call.wire().at(-1)).toBe(ASK);
-  // In an object: an async function's returned promise would be waited for.
+  for (let i = 0; i < misses; i++) await call.say('five five five zero one one two three four');
+}
+
+/** The first digit, its turn not awaited (its words may be held). In an object: an async function's returned promise would be waited for. */
+function firstDigit(call: Call): { held: Promise<void> } {
   return { held: call.say(FIRST) };
+}
+
+/** The frame log's lines of one kind, by key, with no silence turn among the frames. */
+function silences(call: Call): number {
+  return call.frameLog().filter((l) => l.dir === 'in' && l.msg.type === 'silence').length;
 }
 
 describe('a digits value said back digit by digit (sayAs)', () => {
@@ -229,71 +240,147 @@ describe('a digits value said back digit by digit (sayAs)', () => {
   });
 });
 
-describe('a number said with a pause (waitForRestMs)', () => {
-  it('Twilio: the re-ask is held, a partial prompt in the wait is the caller going on, and the words are joined', async () => {
-    const call = liveCall(accountApp());
-    const { held } = await toFirstDigit(call);
-    await vi.advanceTimersByTimeAsync(700);
-    expect(call.wire().at(-1)).toBe(ASK);
-    await call.partial('five five');
-    await held;
-    expect(logged(call, 'replyHeld')).toEqual([{ ms: 700, outcome: 'joined', slot: 'account', turn: expect.any(Number) }]);
-    await vi.advanceTimersByTimeAsync(900);
+describe('a number said with a pause (waitForRestMs): the words held, before any turn', () => {
+  it('the live call: Telnyx, barge-in off, a nine-digit miss, then "Five.", the caller back in 235 ms later, then the rest: filled, the keypad line never said', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none');
+    await toAccount(call, 1);
+    expect(call.wire().at(-1)).toBe(REASK);
+    expect(call.session().slots.account?.attempts).toBe(1);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(235);
+    await call.caller(true);
+    // Held while they speak, however long.
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(call.wire().at(-1)).toBe(REASK);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(600);
     await call.say(REST);
-    // The re-ask was never said: the line after the question is the read-back of the whole number.
+    await held;
+    expect(call.wire()).not.toContain(KEYPAD);
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 1 });
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 4_835, fragments: 2, end: 'rest' }]);
+    expect(call.records().at(-1)!.joined).toEqual({ fragments: [FIRST, REST], waitedFor: 'account' });
+    expect(silences(call)).toBe(0);
+    await sameOnReplay(call);
+  });
+
+  it('Twilio: a partial prompt in the wait starts it again, and the final one joins', async () => {
+    const call = liveCall(accountApp());
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(1_400);
+    await call.partial('five five');
+    await vi.advanceTimersByTimeAsync(1_400);
+    expect(call.wire().at(-1)).toBe(ASK);
+    await call.say(REST);
+    await held;
     expect(call.wire().slice(-2)).toEqual([ASK, READ_BACK_SAID]);
     expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 0 });
-    expect(call.records().at(-1)!.joined).toEqual({ fragments: [FIRST, REST], waitedFor: 'account' });
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 2_800, fragments: 2, end: 'rest' }]);
     await sameOnReplay(call);
   });
 
-  it('a final prompt within the wait joins too', async () => {
+  it('a number said in four parts is joined whole: the hold goes on while the words are still the start of it', async () => {
     const call = liveCall(accountApp());
-    const { held } = await toFirstDigit(call);
-    await vi.advanceTimersByTimeAsync(1_200);
-    const rest = call.say(REST);
+    await toAccount(call);
+    const held = call.say('five five');
+    for (const part of ['five two', 'zero four']) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await call.say(part);
+    }
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say('one seven');
     await held;
-    await rest;
-    expect(logged(call, 'replyHeld')).toEqual([{ ms: 1_200, outcome: 'joined', slot: 'account', turn: expect.any(Number) }]);
     expect(call.wire().slice(-2)).toEqual([ASK, READ_BACK_SAID]);
+    expect(call.records().at(-1)!.joined).toEqual({ fragments: ['five five', 'five two', 'zero four', 'one seven'], waitedFor: 'account' });
     await sameOnReplay(call);
   });
 
-  it('Telnyx with the barge-in off: the caller heard speaking in the wait joins', async () => {
-    const call = liveCall(accountApp(), 'telnyx', 'none');
-    const { held } = await toFirstDigit(call);
-    await vi.advanceTimersByTimeAsync(900);
-    await call.caller(true);
-    await held;
-    expect(logged(call, 'replyHeld')).toEqual([{ ms: 900, outcome: 'joined', slot: 'account', turn: expect.any(Number) }]);
-    await vi.advanceTimersByTimeAsync(1_500);
-    await call.caller(false);
-    await call.say(REST);
-    expect(call.wire().slice(-2)).toEqual([ASK, READ_BACK_SAID]);
-    expect(call.session().slots.account?.value).toBe('55520417');
-    await sameOnReplay(call);
-  });
-
-  it('no one goes on: the re-ask goes when the wait is over, the miss counted, and the next prompt is its own', async () => {
+  it('nothing more: the words run alone when the wait is over, once, as they would have', async () => {
     const call = liveCall(accountApp());
-    const { held } = await toFirstDigit(call);
+    await toAccount(call);
+    const { held } = firstDigit(call);
     await vi.advanceTimersByTimeAsync(1_499);
     expect(call.wire().at(-1)).toBe(ASK);
     await vi.advanceTimersByTimeAsync(1);
     await held;
     expect(call.wire().at(-1)).toBe(REASK);
-    expect(logged(call, 'replyHeld')).toEqual([{ ms: 1_500, outcome: 'sent', slot: 'account', turn: expect.any(Number) }]);
     expect(call.session().slots.account?.attempts).toBe(1);
-    await vi.advanceTimersByTimeAsync(3_000);
-    await call.say('five five five two zero four one seven');
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 1_500, fragments: 1, end: 'timeout' }]);
     expect(call.records().at(-1)!.joined).toBeUndefined();
+    await call.say('five five five two zero four one seven');
     expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
     await sameOnReplay(call);
   });
 
-  it('the slot\'s own wait, and 0 waits not at all', async () => {
+  it('a cough on Telnyx, no prompt after it: the words run alone once the caller stops and the wait passes, with no silence turn and no second failure', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none', { noInputMs: 2_000 });
+    await toAccount(call, 1);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(200);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(1_499);
+    expect(call.wire().at(-1)).toBe(REASK);
+    await vi.advanceTimersByTimeAsync(1);
+    await held;
+    // "Five." alone: the second miss, the keypad line; nothing else.
+    expect(call.wire().at(-1)).toBe(KEYPAD);
+    expect(call.session().slots.account?.attempts).toBe(2);
+    expect(call.session().ended).toBe(false);
+    expect(silences(call)).toBe(0);
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 2_000, fragments: 1, end: 'timeout' }]);
+    await sameOnReplay(call);
+  });
+
+  it('a partial on Twilio with no final after it: the words run alone, with no silence turn and no second failure', async () => {
+    const call = liveCall(accountApp(), 'twilio', 'any', { noInputMs: 2_000 });
+    await toAccount(call, 1);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.partial('uh');
+    await vi.advanceTimersByTimeAsync(1_500);
+    await held;
+    expect(call.wire().at(-1)).toBe(KEYPAD);
+    expect(call.session().slots.account?.attempts).toBe(2);
+    expect(silences(call)).toBe(0);
+    await sameOnReplay(call);
+  });
+
+  it('on the last attempt too: two misses, then "Five." and the rest, filled rather than handed to a person', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none');
+    await toAccount(call, 2);
+    expect(call.wire().at(-1)).toBe(KEYPAD);
+    expect(call.session().slots.account?.attempts).toBe(2);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say(REST);
+    await held;
+    expect(call.session().ended).toBe(false);
+    expect(call.session().slots.account?.value).toBe('55520417');
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    await sameOnReplay(call);
+  });
+
+  it('a key pressed in the wait runs the words at once, then the key', async () => {
+    const call = liveCall(accountApp());
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(300);
+    const key = call.key('5');
+    await held;
+    await key;
+    expect(logged(call, 'wordsHeld')).toEqual([{ slot: 'account', ms: 300, fragments: 1, end: 'key' }]);
+    expect(call.wire()).toContain(REASK);
+    await sameOnReplay(call);
+  });
+
+  it('the slot\'s own wait; 0 holds nothing; nor does continueWithinMs 0 stop it', async () => {
     const slow = liveCall(accountApp({ waitForRestMs: 3_000 }));
-    const { held } = await toFirstDigit(slow);
+    await toAccount(slow);
+    const { held } = firstDigit(slow);
     await vi.advanceTimersByTimeAsync(2_999);
     expect(slow.wire().at(-1)).toBe(ASK);
     await vi.advanceTimersByTimeAsync(1);
@@ -301,69 +388,46 @@ describe('a number said with a pause (waitForRestMs)', () => {
     expect(slow.wire().at(-1)).toBe(REASK);
     forgetNoInput(CALL);
     const at = liveCall(accountApp({ waitForRestMs: 0 }));
-    await (await toFirstDigit(at)).held;
+    await toAccount(at);
+    await firstDigit(at).held;
     expect(at.wire().at(-1)).toBe(REASK);
-    expect(logged(at, 'replyHeld')).toEqual([]);
-  });
-
-  it('waits with continueWithinMs at 0, which joins nothing else', async () => {
-    const call = liveCall(accountApp({}, { voice: { continueWithinMs: 0 } }));
-    const { held } = await toFirstDigit(call);
+    expect(logged(at, 'wordsHeld')).toEqual([]);
+    forgetNoInput(CALL);
+    const off = liveCall(accountApp({}, { voice: { continueWithinMs: 0 } }));
+    await toAccount(off);
+    const second = firstDigit(off);
     await vi.advanceTimersByTimeAsync(500);
-    const rest = call.say(REST);
-    await held;
-    await rest;
-    expect(call.wire().slice(-2)).toEqual([ASK, READ_BACK_SAID]);
-    expect(call.records().at(-1)!.joined).toEqual({ fragments: [FIRST, REST], waitedFor: 'account' });
-    await sameOnReplay(call);
+    await off.say(REST);
+    await second.held;
+    expect(off.wire().slice(-2)).toEqual([ASK, READ_BACK_SAID]);
+    await sameOnReplay(off);
   });
 
-  it('a whole number is never held, nor a number too long', async () => {
+  it('a whole number, a number too long, and words with no digits are never held', async () => {
     const call = liveCall(accountApp());
-    await call.start();
-    await call.say('i want to report a problem');
+    await toAccount(call);
+    await call.say('five five five zero one one two three four');
+    expect(call.wire().at(-1)).toBe(REASK);
+    await call.say('i do not have it');
     await call.say('five five five two zero four one seven');
     expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
-    await call.say('no');
-    expect(logged(call, 'replyHeld')).toEqual([]);
-    forgetNoInput(CALL);
-    const long = liveCall(accountApp());
-    await long.start();
-    await long.say('i want to report a problem');
-    await long.say('five five five two zero four one seven seven');
-    expect(long.wire().at(-1)).toBe(REASK);
-    expect(logged(long, 'replyHeld')).toEqual([]);
+    expect(logged(call, 'wordsHeld')).toEqual([]);
   });
 
-  it('a key pressed in the wait sends the re-ask at once', async () => {
+  it('replay joins as the log says, whatever the slot says now', async () => {
     const call = liveCall(accountApp());
-    const { held } = await toFirstDigit(call);
-    await vi.advanceTimersByTimeAsync(300);
-    const key = call.key('5');
+    await toAccount(call);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(700);
+    await call.say(REST);
     await held;
-    await key;
-    expect(call.wire()).toContain(REASK);
-    expect(logged(call, 'replyHeld')).toEqual([{ ms: 300, outcome: 'sent', slot: 'account', turn: expect.any(Number) }]);
-  });
-});
-
-describe('waitsForRest', () => {
-  const result = (over: Partial<TurnResult> = {}): TurnResult => ({
-    decision: { kind: 'prompt', promptId: 'ask_account_retry', vars: {}, acks: [], target: 'account', options: [] },
-    actions: [{ type: 'say', parts: [{ text: REASK }], interruptible: true }],
-    gateEvents: [], effects: [], quarantined: false,
-    session: { ended: false, pendingService: null, appId: APP_ID },
-    fillEvents: [{ slot: 'account', outcome: { kind: 'invalid', reason: 'length', raw: '5' }, rest: true }],
-    ...over,
-  } as unknown as TurnResult);
-
-  it('is the slot and its wait, for a turn that only asks again a slot whose fill is marked as the start of a value', () => {
-    registerApp(accountApp());
+    const live = call.records();
+    // The slot no longer waits: the log's line still joins the two prompts.
+    resetAppsForTest();
+    registerApp(accountApp({ waitForRestMs: 0 }));
     registerTestkit();
-    expect(waitsForRest(result())).toEqual({ slot: 'account', ms: 1500 });
-    expect(waitsForRest(result({ fillEvents: [{ slot: 'account', outcome: { kind: 'invalid', reason: 'length', raw: '5' } }] }))).toBeNull();
-    expect(waitsForRest(result({ decision: { kind: 'prompt', promptId: 'ask_place', vars: {}, acks: [], target: 'intent', options: [] } }))).toBeNull();
-    expect(waitsForRest(result({ gateEvents: [{} as never] }))).toBeNull();
-    expect(waitsForRest(result({ decision: { kind: 'handoff' } as never }))).toBeNull();
+    vi.useRealTimers();
+    const replayed = await call.replay();
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
   });
 });

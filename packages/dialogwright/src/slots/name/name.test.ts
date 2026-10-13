@@ -131,12 +131,18 @@ describe('a bare name, right after the name question (bareAnswer)', () => {
     expect(wordCount('')).toBe(0);
   });
 
-  it('takes a short answer whose span reaches SLOT_DETECT as the name given, the yes-or-no under it (a live call: 0.41, the span 0.74)', () => {
+  it('takes a short answer whose span reaches NAME_BARE_SPAN as the name given, the yes-or-no under SLOT_DETECT (a live call: 0.41, the span 0.74)', () => {
+    expect(T.NAME_BARE_SPAN).toBe(0.7);
+    expect(T.NAME_BARE_GIVEN).toBe(0.2);
     expect(name.fill(bare(0.74), asked('Jordan Avery.'))).toEqual({ kind: 'filled', value: 'jordan avery', display: 'Jordan Avery', confidence: 0.74, confirm: 'none' });
-    expect(name.fill(bare(T.SLOT_DETECT), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
-    expect(name.fill(bare(T.SLOT_DETECT - 0.01), asked('Jordan Avery'))).toEqual({ kind: 'absent' });
-    // The yes-or-no is not needed at all, however low.
-    expect(name.fill(bare(0.74, 0), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(name.fill(bare(T.NAME_BARE_SPAN), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(name.fill(bare(T.NAME_BARE_SPAN - 0.01), asked('Jordan Avery'))).toEqual({ kind: 'absent' });
+  });
+
+  it('never overrules a confident no: the yes-or-no must reach NAME_BARE_GIVEN', () => {
+    expect(name.fill(bare(0.9, T.NAME_BARE_GIVEN), asked('Jordan Avery'))).toMatchObject({ kind: 'filled' });
+    expect(name.fill(bare(0.9, T.NAME_BARE_GIVEN - 0.01), asked('Jordan Avery'))).toEqual({ kind: 'absent' });
+    expect(name.fill(bare(0.95, 0), asked('Jordan Avery'))).toEqual({ kind: 'absent' });
   });
 
   it('only when the slot was just asked, the answer is at most four words, and the span was offered', () => {
@@ -147,18 +153,21 @@ describe('a bare name, right after the name question (bareAnswer)', () => {
     expect(name.fill({ nameGiven: noul(0.41), nameSpan: choice({ none: 0.9, 'jordan avery': 0.1 }) }, asked('Jordan Avery'))).toEqual({ kind: 'absent' });
   });
 
-  it('reads its threshold by name, the slot\'s own when it names one, which it declares', () => {
-    const strict = defineSlot('name', { type: 'name', bareAnswer: { span: 'NAME_BARE' } });
-    expect(strict.thresholds).toEqual(['NAME_BARE']);
+  it('reads its thresholds by name, the slot\'s own when it names them, which it declares', () => {
+    const strict = defineSlot('name', { type: 'name', bareAnswer: { span: 'NAME_BARE', given: 'NAME_SAID' } });
+    expect(strict.thresholds).toEqual(['NAME_SAID', 'NAME_BARE']);
     expect(name.thresholds).toBeUndefined();
-    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, NAME_BARE: 0.8 } }))).toEqual({ kind: 'absent' });
-    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, NAME_BARE: 0.7 } }))).toMatchObject({ kind: 'filled' });
-    // The run's SLOT_DETECT moves the default with it.
-    expect(name.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, SLOT_DETECT: 0.8 } }))).toEqual({ kind: 'absent' });
+    expect(defineSlot('name', { type: 'name', bareAnswer: { span: 'SLOT_CHOICE_FILL' } }).thresholds).toBeUndefined();
+    const own = { ...T, NAME_SAID: 0.3 };
+    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...own, NAME_BARE: 0.8 } }))).toEqual({ kind: 'absent' });
+    expect(strict.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...own, NAME_BARE: 0.7 } }))).toMatchObject({ kind: 'filled' });
+    expect(strict.fill(bare(0.74, 0.25), asked('Jordan Avery', { thresholds: { ...own, NAME_BARE: 0.7 } }))).toEqual({ kind: 'absent' });
+    // The run's NAME_BARE_SPAN moves the default with it.
+    expect(name.fill(bare(0.74), asked('Jordan Avery', { thresholds: { ...T, NAME_BARE_SPAN: 0.8 } }))).toEqual({ kind: 'absent' });
   });
 
   it('takes no bare answer with words: 0, nor more words than it says', () => {
-    const off = defineSlot('name', { type: 'name', bareAnswer: { words: 0 } });
+    const off = defineSlot('name', { type: 'name', bareAnswer: { words: 0, span: 'NAME_BARE' } });
     expect(off.thresholds).toBeUndefined();
     expect(off.fill(bare(0.95), asked('Jordan'))).toEqual({ kind: 'absent' });
     const two = defineSlot('name', { type: 'name', bareAnswer: { words: 2 } });

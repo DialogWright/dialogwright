@@ -4,7 +4,7 @@ import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { digitsDisplay } from './display';
-import { digitsFill, digitsFit, digitsRestToCome } from './fill';
+import { digitsFill, digitsFit, digitsStartOfValue } from './fill';
 import { digitsOptions, type DigitsOptions } from './options';
 import { digitsQuestions, idsOf, thingOf } from './questions';
 
@@ -92,9 +92,8 @@ export const digitsType: SlotType<DigitsOptions> = defineSlotType<DigitsOptions>
       display,
       // Said back one digit at a time on the phone, unless it is a quantity (channel/sayDigits.ts).
       ...(o.sayAs === 'digits' ? { sayAs: 'digits' as const } : {}),
-      // The re-ask held on the phone for the rest of a number begun (a miss that may be only its start).
-      restToCome: digitsRestToCome(o, ids),
-      ...(o.waitForRestMs > 0 ? { waitForRestMs: o.waitForRestMs } : {}),
+      // On the phone, the words of a number begun held for the rest of it (server/adapter.ts holdWords).
+      ...(o.waitForRestMs > 0 && o.length !== undefined ? { startOfValue: digitsStartOfValue(o.length), waitForRestMs: o.waitForRestMs } : {}),
     };
   },
   get examples() {

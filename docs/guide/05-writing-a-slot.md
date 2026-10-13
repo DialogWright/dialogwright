@@ -226,12 +226,18 @@ account:
   length: 8
   group: [4, 4]
   sayAs: digits          # the default; number for a quantity the voice may read as a number
-  waitForRestMs: 1500    # the default; 0 asks again at once
+  waitForRestMs: 1500    # the default; 0 takes the words at once
 ```
 
 **Said back digit by digit (`sayAs`).** A text-to-speech voice reads "0142" as "one hundred forty-two" and an account number as a number in the millions. So wherever a line says the slot's value (a read-back, the form's summary, a line worded by a model, a repeat of the last line, a line of the app's own code), the last four of the caller's number at its offer, or the consent to text, the voice is sent each digit, with a short pause between the display's groups: "Account 5552 0417" goes out as "Account 5 5 5 2, 0 4 1 7". Only the text sent to the voice changes, as for app.yaml's `voice.spokenDigits` and `voice.pronounce` ([13.8](13-channels.md#138-a-caller-who-had-not-finished-and-how-a-word-is-said)): the session, the trace, the console, a chat and the regression baselines keep the line as written. The engine finds the value in a line by the value itself (the slot's value and display, a value read back or offered, the last four offered), whole, never inside a longer number, so a line needs no marking. An app's own `spokenDigits` rules run first, and a value they spelled out stays as they spelled it. `sayAs: number` leaves the value to the voice.
 
-**A number said with a pause (`waitForRestMs`).** A recognizer ends a prompt at a short pause. A caller reading an account number off a card says "five", looks again, and says the rest: the engine is sent "Five." as a whole answer, and the re-ask it would say goes out over the rest (or, with the carrier's barge-in off, the rest is not heard at all). So when the slot was just asked and heard fewer digits than its `length` (or a number the model heard trail off), and the turn would only ask again, the voice server holds the re-ask up to `waitForRestMs`. If the caller goes on in that time, it is never said, and their next words are joined to the first and read as one answer ("Five. five five two zero four one seven." is 55520417), on the session as it was before the first: no attempt is counted. If not, the re-ask goes when the wait is over, a little later than it would have. It is the same joining that serves a caller who had not finished ([13.8](13-channels.md#138-a-caller-who-had-not-finished-and-how-a-word-is-said)), on every carrier, whatever `continueWithinMs` and `INCOMPLETE_WAIT_MS` say; a chat, where a message comes whole, never waits. A slot with a `mask` and no `length` waits only for a number trailed off. The trace keeps both turns, and the joined one says so (`joined: { fragments: [...], waitedFor: account }`); the frame log's `replyHeld` line names the slot, and the console notes the hold on the line. A number a carrier heard with a digit too many is refused and asked again, as before: no wait for that.
+**A number said with a pause (`waitForRestMs`).** A recognizer ends a prompt at a short pause. A caller reading an account number off a card says "five", looks again, and says the rest: the engine is sent "Five." as a whole answer. Taken alone it is a miss, and its re-ask goes out as the caller goes on. Seen on a live call (Telnyx, barge-in off): after a nine-digit miss, "Five." got the keypad line, the caller spoke over it 235 ms later, and Telnyx, which does not transcribe while a line it may not interrupt is playing, heard none of the rest. So when the slot the caller was just asked has a `length`, and a final prompt's words hold, read without the model, at least one digit and fewer than `length`, the voice server holds the words, before any turn runs, for up to `waitForRestMs`:
+
+- A prompt in that time is joined to them ("Five. five five two zero four one seven." is 55520417), and runs no turn of its own. While the words joined are still fewer digits than `length`, the wait starts again (a number said in fours, pairs or single digits is joined whole, up to ten prompts); once they are not, the turn runs at once.
+- The caller heard speaking (a carrier that reports it, Telnyx) stops the clock until they stop, and it then starts again whole, for their transcript; on Twilio a partial prompt starts it again.
+- Nothing more, or speech with no prompt after it (a cough): the words run alone, as they would have, a little later. A key pressed runs them at once.
+
+One turn runs, on the words as held: nothing is said and taken back, no attempt is counted twice, no silence turn runs over the hold, and it works at every rung of the slot's ladder, the keypad line and the last attempt included. It is on every carrier, whatever `continueWithinMs` and `INCOMPLETE_WAIT_MS` say; a chat, where a message comes whole, never waits; a slot with a `mask` and no `length` never waits (it knows no least length), nor does a number as long as the slot's or longer, which is taken or refused at once (a carrier that heard eight digits as nine is still refused and asked again). The frame log has `{ wordsHeld: { slot, ms, fragments, end } }` before the turn, which replay follows as logged, whatever the app's settings are then; the turn's record names the prompts it joined (`joined: { fragments: [...], waitedFor: account }`), and the console notes the join with the hold. Why 1500 ms: words of fewer digits than the number are certainly not a whole answer, so waiting costs only a miss taken a little later, and a caller reading a number pauses longer than one finishing a sentence (`INCOMPLETE_WAIT_MS`, for words the model reads as unfinished, is 1000).
 
 ### A bare name: `bareAnswer`
 
@@ -240,10 +246,10 @@ A caller who answers the name question with only a name ("Jordan Avery") gives t
 ```yaml
 caller:
   type: name
-  bareAnswer: { words: 4, span: SLOT_DETECT }   # the defaults; words: 0 turns it off
+  bareAnswer: { words: 4, given: NAME_BARE_GIVEN, span: NAME_BARE_SPAN }   # the defaults; words: 0 turns it off
 ```
 
-`words` is the most words the answer may have ("it's Jordan Avery" is three), and `span` the threshold the span's probability must reach, an engine threshold or one of the app's own (app.yaml `thresholds:`), read by name like every other. Anywhere else (a turn the slot was not just asked, a longer answer) the yes-or-no decides, as always, so a name said in passing, which may be someone else's, is never taken on the span alone. The questions are the same either way, so a recording made before the option reads the same.
+`words` is the most words the answer may have ("it's Jordan Avery" is three); `span` the threshold the span's probability must reach (`NAME_BARE_SPAN`, 0.7); `given` the threshold the yes-or-no must still reach (`NAME_BARE_GIVEN`, 0.2), so an unsure yes-or-no is overruled and a confident no never is. Each is an engine threshold or one of the app's own (app.yaml `thresholds:`), read by name like every other. Anywhere else (a turn the slot was not just asked, a longer answer) the yes-or-no decides, as always, so a name said in passing, which may be someone else's, is never taken on the span alone. The questions are the same either way, so a recording made before the option reads the same.
 
 ### A text offer: `onNo` and `ifNone`
 
@@ -558,6 +564,8 @@ Compare the model's numbers against `ctx.thresholds`, by name, never against a n
 | `SLOT_CHOICE_MARGIN` | 0.15 | Two labels closer than this are asked about (`disambiguate`). |
 | `SLOT_HELP` | 0.6 | A help answer ("I don't know it") to take as one. |
 | `KB_TOPIC_MARGIN` | 0.15 | Two knowledge-base topics closer than this are asked about (a `topic` slot's `disambiguate`). |
+| `NAME_BARE_SPAN` | 0.7 | A bare name (a `name` slot's `bareAnswer`): the name span's least probability. |
+| `NAME_BARE_GIVEN` | 0.2 | A bare name: the least the yes-or-no that a name was given may read; under it, a no. |
 
 An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
 

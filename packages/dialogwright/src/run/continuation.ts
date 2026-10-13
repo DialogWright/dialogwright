@@ -1,6 +1,5 @@
 import type { SessionEvent } from '../channel/events';
-import type { App, SlotId } from '../core/app/types';
-import { appOf } from '../core/app/registry';
+import type { App } from '../core/app/types';
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { runTurn, type Arrival, type RunOptions, type TurnRun } from './turn';
@@ -67,30 +66,16 @@ export function undoable(result: TurnResult): boolean {
     && !session.ended && session.pendingService === null;
 }
 
-/** A slot whose re-ask waits on the phone for the rest of a value begun (waitsForRest): the slot, and how long. */
-export interface RestWait {
-  readonly slot: SlotId;
-  readonly ms: number;
-}
-
 /**
- * Whether a turn's reply waits for the rest of a value the caller began (SlotSpec.waitForRestMs, a
- * `digits` slot's `waitForRestMs`): the turn only spoke (undoable), it asks a slot again (a prompt whose
- * target is the slot), and its fill of that slot is marked as the start of a value (FillEvent.rest: the slot just asked
- * heard fewer digits than its length, or a number trailing off), on a slot that waits. Null otherwise.
- * A fact of the turn alone, so the voice server and the frame-log replay decide it alike; the turn
- * itself, its trace and every scripted call are as they were. Only the voice server waits
- * (server/adapter.ts holdReply): a chat's message comes whole.
+ * A final prompt's words the voice server held for the rest of a value (SlotSpec.waitForRestMs,
+ * server/adapter.ts holdWords) before any turn ran: the prompts, in order, and the slot whose value they
+ * began. The turn runs once, on them joined, and, where it joined more than one, its trace record names
+ * them (`joined: { fragments, waitedFor }`) and its run's `joined` is them. Nothing is undone: no turn ran
+ * on any of them alone.
  */
-export function waitsForRest(result: TurnResult): RestWait | null {
-  const { decision } = result;
-  if (decision.kind !== 'prompt' || typeof decision.target !== 'string' || !undoable(result)) return null;
-  const slot = decision.target;
-  const marked = result.fillEvents.some((e) => e.slot === slot && e.rest === true);
-  if (!marked) return null;
-  const app = appOf(result.session);
-  const ms = Object.hasOwn(app.slots, slot) ? app.slots[slot]!.waitForRestMs ?? 0 : 0;
-  return ms > 0 ? { slot, ms } : null;
+export interface HeldWords {
+  readonly fragments: readonly string[];
+  readonly slot: string;
 }
 
 /** A turn as a Continuation ran it: `joined` is the prompts its words joined, in order, or null for a turn of its own. */
@@ -100,11 +85,8 @@ type State =
   | { kind: 'idle' }
   /** A final prompt's turn spoke, and only spoke: `base` is the session before the first fragment's turn. */
   | { kind: 'replied'; base: Session; fragments: readonly string[] }
-  /**
-   * ... and the caller talked over the reply within the window: the next final prompt continues.
-   * `waitedFor`: the reply was held for the rest of this slot's value, and never said (resumed).
-   */
-  | { kind: 'cut'; base: Session; fragments: readonly string[]; waitedFor?: SlotId }
+  /** ... and the caller talked over the reply within the window: the next final prompt continues. */
+  | { kind: 'cut'; base: Session; fragments: readonly string[] }
   /**
    * ... and the carrier cut the reply off after the window: an ordinary barge-in, so the next final prompt
    * is its own, unless the caller is found to have come back in at once (resumed), whose speech the
@@ -129,13 +111,12 @@ export class Continuation {
    * reaches the core, and nothing changes unless the last turn was a reply to a final prompt that only
    * spoke, with nothing but interrupts since (so never with `withinMs` 0). The adapter tells it too when it
    * held such a turn's reply for a caller not finished and they went on (server/adapter.ts holdReply;
-   * replay reads that from the frame log's `replyHeld`): the reply was never said. `waitedFor`: it was held
-   * for the rest of that slot's value (waitsForRest), which the joined turn's trace record names.
+   * replay reads that from the frame log's `replyHeld`): the reply was never said.
    */
-  resumed(waitedFor?: SlotId): void {
+  resumed(): void {
     const state = this.state;
     if (state.kind !== 'idle') {
-      this.state = { kind: 'cut', base: state.base, fragments: state.fragments, ...(waitedFor !== undefined ? { waitedFor } : {}) };
+      this.state = { kind: 'cut', base: state.base, fragments: state.fragments };
     }
   }
 
@@ -148,7 +129,7 @@ export class Continuation {
    * Run one turn of the call (runTurn), joined to the fragments before it when the caller had not
    * finished. Every turn of the call goes through here, in order; a turn that throws ends joining.
    */
-  async run(session: Session, event: SessionEvent, opts: RunOptions, arrival?: Arrival): Promise<ContinuedRun> {
+  async run(session: Session, event: SessionEvent, opts: RunOptions, arrival?: Arrival, held?: HeldWords): Promise<ContinuedRun> {
     const state = this.state;
     this.state = IDLE;
     if (event.type === 'user.speech' && event.final) {
@@ -159,21 +140,23 @@ export class Continuation {
           // The session before the first fragment, with the turn count as it is now: a turn number is
           // never given twice (the trace, a service request's idempotency key).
           const base: Session = { ...state.base, turnIndex: session.turnIndex };
-          const run = await runTurn(base, { ...event, text }, opts, arrival, fragments, state.waitedFor);
+          const run = await runTurn(base, { ...event, text }, opts, arrival, fragments);
           if (undoable(run.result)) this.state = { kind: 'replied', base: state.base, fragments };
           return { ...run, joined: fragments };
         }
       }
-      const run = await runTurn(session, event, opts, arrival);
-      // A reply that waits for the rest of a value (waitsForRest) may be joined whatever the window.
-      if ((this.withinMs > 0 || waitsForRest(run.result) !== null) && undoable(run.result)) this.state = { kind: 'replied', base: session, fragments: [event.text] };
-      return { ...run, joined: null };
+      // Words the voice server held for the rest of a value (HeldWords): one turn, its record naming the
+      // prompts it joined, when it joined more than one.
+      const words = held !== undefined && held.fragments.length > 1 ? held : undefined;
+      const run = await runTurn(session, event, opts, arrival, words?.fragments, words?.slot);
+      if (this.withinMs > 0 && undoable(run.result)) this.state = { kind: 'replied', base: session, fragments: [event.text] };
+      return { ...run, joined: words?.fragments ?? null };
     }
     const run = await runTurn(session, event, opts, arrival);
     if (event.type === 'user.interrupt' && state.kind !== 'idle') {
       // Within the window, or over a reply already cut off: the caller had not finished. After it, a
       // barge-in, which a caller found to have come back in at once (resumed) still continues.
-      const cut = state.kind === 'cut' || (this.withinMs > 0 && event.afterMs <= this.withinMs);
+      const cut = state.kind === 'cut' || event.afterMs <= this.withinMs;
       this.state = { kind: cut ? 'cut' : 'barged', base: state.base, fragments: state.fragments };
     } else if (event.type === 'user.speech') {
       // A partial (only a harness hands one to a turn) holds: the final prompt is still to come.

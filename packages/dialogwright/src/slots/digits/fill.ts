@@ -71,19 +71,15 @@ export function digitsFill(
 }
 
 /**
- * Whether a digits slot's miss may be only the start of its number (SlotSpec.restToCome): a number
- * stated (SLOT_DETECT) but not said whole (under SLOT_DETECT), or a span of fewer digits than `length`
- * (never by length without one: a mask alone knows no least length). The engine asks it only of the
- * slot just asked whose fill was invalid; on the phone the re-ask then waits `waitForRestMs` for the rest.
+ * Whether words said to a digits slot's question are, read without the model, only the start of its
+ * number (SlotSpec.startOfValue): they hold at least one digit and fewer than `length` ("Five." is 5).
+ * Read on the session's language, as the fill reads its span. Never for a slot with no `length` (a mask
+ * alone knows no least length), and never for a number as long as the slot's or longer: that one is
+ * taken, or refused, at once.
  */
-export function digitsRestToCome(o: Pick<DigitsOptions, 'length'>, ids: DigitsIds): (answers: AnswerMap, ctx: SlotContext) => boolean {
-  return (answers, ctx) => {
-    const t = ctx.thresholds;
-    if (!meetsThreshold(t, 'SLOT_DETECT', noulValue(answers, ids.given))) return false;
-    if (!meetsThreshold(t, 'SLOT_DETECT', noulValue(answers, ids.complete))) return true;
-    const span = answers[ids.span];
-    if (o.length === undefined || !isChoice(span) || typeof span.choice !== 'string' || span.choice === 'none') return false;
-    const digits = spokenToDigits(span.choice, ctx.locale);
-    return digits.length > 0 && digits.length < o.length;
+export function digitsStartOfValue(length: number): (text: string, locale?: string) => boolean {
+  return (text, locale) => {
+    const digits = spokenToDigits(text, locale);
+    return digits.length > 0 && digits.length < length;
   };
 }

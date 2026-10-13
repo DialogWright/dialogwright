@@ -41,6 +41,12 @@ export const DEFAULT_THRESHOLDS = {
   SLOT_CHOICE_CONFIRM: 0.45,
   SLOT_CHOICE_MARGIN: 0.15,
   SLOT_HELP: 0.6,
+  // a bare name (a `name` slot's bareAnswer): right after the name question, a short answer is the name
+  // given when the model's span for it reaches NAME_BARE_SPAN and its yes-or-no that a name was given is
+  // not a confident no (at least NAME_BARE_GIVEN). A live call read "Jordan Avery" at 0.41 and its span
+  // at 0.74, and was asked again; the span floor sits above SLOT_DETECT since the yes-or-no is overruled.
+  NAME_BARE_GIVEN: 0.2,
+  NAME_BARE_SPAN: 0.7,
   // knowledge: a topic slot with `disambiguate` asks which of two topics when the model's top two are
   // both topics it may fill and closer than this (slots/topic/fill.ts)
   KB_TOPIC_MARGIN: 0.15,

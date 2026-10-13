@@ -84,6 +84,13 @@
         nameGiven: { noul: 0.2 }
         nameSpan: { choice: { tuesday: 0.3, none: 0.7 } }
       expect: { kind: absent }
+      # Nor one the yes-or-no says is no name at all, however sure the span (under NAME_BARE_GIVEN).
+    - text: Avery Street
+      context: { prompted: true }
+      answers:
+        nameGiven: { noul: 0.1 }
+        nameSpan: { choice: { avery street: 0.8, none: 0.2 } }
+      expect: { kind: absent }
 
 - name: name beside a second person's
   about: A call where the caller names someone else too (a technician, a manager). The words that are never the caller's name are listed, and no span holding one is offered, so a correction to the other person's name cannot be taken as the caller's own.

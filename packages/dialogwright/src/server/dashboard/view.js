@@ -141,13 +141,10 @@ export const DELIVERY_NOTES = {
   interrupt: { on: 'agent', text: (f) => `caller talked over this, ${secs(f.afterMs)} in` },
   // The adapter's decision that an interrupt was not the caller's (RESAY_SPURIOUS_INTERRUPTS): not passed to the core.
   spuriousInterrupt: { on: 'agent', text: (f) => `interrupted ${secs(f.afterMs)} in with no caller speaking`, replaces: () => ['interrupt'] },
-  // A reply held for a caller not finished (INCOMPLETE_WAIT_MS), or for the rest of a slot's value (`slot`, its
-  // waitForRestMs): said after the wait, or never, the caller going on.
+  // A reply held for a caller not finished (INCOMPLETE_WAIT_MS): said after the wait, or never, the caller going on.
   replyHeld: {
     on: 'agent',
-    text: (f) => (f.outcome === 'joined'
-      ? 'not said: the caller went on'
-      : f.slot ? `reply held ${secs(f.ms)} for the rest of ${f.slot}, then said` : `reply held ${secs(f.ms)} for the caller to finish, then said`),
+    text: (f) => (f.outcome === 'joined' ? 'not said: the caller went on' : `reply held ${secs(f.ms)} for the caller to finish, then said`),
     unsaid: (f) => f.outcome === 'joined',
   },
   // A turn's `end` held until its lines played (END_AFTER_PLAYBACK); `value` is how it came to go.
@@ -159,10 +156,14 @@ export const DELIVERY_NOTES = {
   })[f.value] ?? `call end held ${secs(f.endHeldMs)}` },
   // The caller came back in over the reply to their last answer: `joined` reads its pause.
   callerResumed: { on: null },
+  // The caller's words held for the rest of a value (a digits slot's waitForRestMs): `joined` reads it.
+  wordsHeld: { on: null },
   // The caller's words joined to their previous answer, as one turn (run/continuation.ts).
-  joined: { on: 'caller', text: (f, held) => (held.callerResumed
-    ? `joined with the previous answer (paused ${secs(held.callerResumed.pauseMs)})`
-    : 'joined with the previous answer') },
+  joined: { on: 'caller', text: (f, held) => (held.wordsHeld
+    ? `joined with the previous answer (held ${secs(held.wordsHeld.ms)} for the rest of ${held.wordsHeld.slot})`
+    : held.callerResumed
+      ? `joined with the previous answer (paused ${secs(held.callerResumed.pauseMs)})`
+      : 'joined with the previous answer') },
 };
 
 /**

@@ -137,9 +137,9 @@ export interface TraceRecord {
   /**
    * Only on a turn that joined the final prompts of a caller who had not finished (run/continuation.ts,
    * voice.continueWithinMs): the prompts, in order, as each was heard. The event's words are them
-   * joined; each fragment's own turn is an earlier record. `waitedFor`: the slot whose rest the reply
-   * to the words before was held for, and never said (a `digits` slot's `waitForRestMs`,
-   * run/continuation.ts waitsForRest); absent where the join came another way. Absent on every other turn.
+   * joined; each fragment's own turn is an earlier record. With `waitedFor`, the words the voice server
+   * held for the rest of that slot's value before any turn ran (a `digits` slot's `waitForRestMs`,
+   * run/continuation.ts HeldWords): no fragment had a turn of its own. Absent on every other turn.
    */
   joined?: { fragments: string[]; waitedFor?: string };
   effects?: Effect[];

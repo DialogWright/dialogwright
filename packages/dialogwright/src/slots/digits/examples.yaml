@@ -58,9 +58,9 @@
         accountSpan: { choice: { five five five: 0.9, none: 0.1 } }
         accountComplete: { noul: 0.2 }
       expect: { kind: invalid, reason: incomplete }
-    # Asked for the number, a caller says the first digit and pauses: a miss that may be only the start
-    # of the number (restToCome), so on the phone the re-ask waits waitForRestMs for the rest, and the
-    # words that follow are joined to these.
+    # Asked for the number, a caller says the first digit and pauses: only the start of the number
+    # (startOfValue), so on the phone the words are held waitForRestMs for the rest, and the words that
+    # follow are joined to them before any turn runs (the utterance below). Taken alone, it is a miss.
     - text: Five.
       context: { prompted: true }
       answers:

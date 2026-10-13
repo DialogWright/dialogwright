@@ -1474,8 +1474,8 @@ default: utility                               # any other number, or none
 | `thresholds:` and `priority: { threshold: NAME }` | app.yaml, intents.yaml | the engine's (`PRIORITY_INTENT` 0.8, and the rest in the guide) | a recording shows one intent needs its own bar: name a threshold of the app's own and point the intent at it, never a number in code |
 | `voice.continueWithinMs` | app.yaml | `300` | the recognizer breaks a caller's words at longer pauses |
 | a `digits` slot's `sayAs` | slots.yaml | `digits`: said back one digit at a time on the phone | `number` for a value that is a quantity, not an identifier |
-| a `digits` slot's `waitForRestMs` | slots.yaml | `1500`: a slot just asked that heard fewer digits than its `length` holds its re-ask for the rest | longer where callers read a long number off a card; `0` to ask again at once |
-| a `name` slot's `bareAnswer` | slots.yaml | `{ words: 4, span: SLOT_DETECT }`: a short answer to the name question whose name span the model is sure of is the name given | `words: 0` where callers often answer the name question with someone else's name |
+| a `digits` slot's `waitForRestMs` | slots.yaml | `1500`: words of fewer digits than the `length` of the slot just asked are held for the rest before any turn | longer where callers read a long number off a card; `0` to take the words at once |
+| a `name` slot's `bareAnswer` | slots.yaml | `{ words: 4, given: NAME_BARE_GIVEN, span: NAME_BARE_SPAN }`: a short answer to the name question whose name span the model is sure of (0.7) is the name given, unless the yes-or-no is a confident no (under 0.2) | `words: 0` where callers often answer the name question with someone else's name |
 
 ```yaml
 # app.yaml

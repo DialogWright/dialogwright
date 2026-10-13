@@ -102,43 +102,31 @@ describe('fill', () => {
   });
 });
 
-describe('the rest of a number begun (restToCome, waitForRestMs)', () => {
-  const asked = (text: string) => testSlotContext(text, { prompted: true });
-  const rest = (slot: SlotSpec, answers: Parameters<SlotSpec['fill']>[0], text: string) => slot.restToCome!(answers, asked(text));
+describe('the rest of a number begun (startOfValue, waitForRestMs)', () => {
+  const start = (slot: SlotSpec, text: string, locale?: string) => slot.startOfValue!(text, locale);
 
-  it('says a number of fewer digits than its length, and one trailing off, may be only the start of it; the fill is as it was', () => {
-    expect(account.fill(heard('five'), asked('Five.'))).toEqual({ kind: 'invalid', reason: 'length', raw: '5' });
-    expect(rest(account, heard('five'), 'Five.')).toBe(true);
-    expect(rest(account, heard('five five', 0.9, 0.9, 0.2), 'it is five five')).toBe(true);
-    expect(rest(account, heard('5550 778'), '5550 778')).toBe(true);
+  it('reads, without the model, words of 1 to length - 1 digits as only the start of the number', () => {
+    expect(start(account, 'Five.')).toBe(true);
+    expect(start(account, 'um five five five two')).toBe(true);
+    expect(start(account, '5550 778')).toBe(true);
+    expect(start(account, 'cinco cinco', 'es')).toBe(true);
   });
 
-  it('says no of a number too long, of no number stated, and of no span', () => {
-    expect(rest(account, heard('five five five zero seven seven eight eight eight'), 'five five five zero seven seven eight eight eight')).toBe(false);
-    expect(rest(account, heard('five', 0.9, 0.2), 'Five.')).toBe(false);
-    expect(rest(account, { ...heard('x'), accountSpan: choice({ none: 0.9, five: 0.1 }) }, 'five')).toBe(false);
-    expect(rest(account, {}, '')).toBe(false);
+  it('never a number as long as the slot\'s or longer, nor words with no digits', () => {
+    expect(start(account, 'five five five two zero four one seven')).toBe(false);
+    expect(start(account, '555011234')).toBe(false);
+    expect(start(account, 'I want to cancel')).toBe(false);
+    expect(start(account, '')).toBe(false);
   });
 
-  it('reads SLOT_DETECT by name', () => {
-    expect(account.restToCome!(heard('five', 0.9, 0.9), testSlotContext('Five.', { prompted: true, thresholds: { ...T, SLOT_DETECT: 0.95 } }))).toBe(false);
-  });
-
-  it('with a mask too, by the slot\'s length; with a mask alone, only a number trailing off', () => {
-    const both = defineSlot('code', { type: 'digits', noun: 'code', length: 6, mask: '9\\d{5}' });
-    const said = (span: string, complete = 0.9) => ({ codeGiven: noul(0.95), codeSpan: choice({ [span]: 0.9, none: 0.1 }), codeComplete: noul(complete) });
-    expect(rest(both, said('nine one'), 'nine one')).toBe(true);
-    const masked = defineSlot('code', { type: 'digits', noun: 'code', mask: '9\\d{5}' });
-    expect(rest(masked, said('nine one'), 'nine one')).toBe(false);
-    expect(rest(masked, said('nine one', 0.2), 'nine one')).toBe(true);
-  });
-
-  it('waits 1500 ms by default; 0 waits not at all; more than 5000 is refused', () => {
+  it('waits 1500 ms by default; 0 waits not at all, nor does a slot with no length; more than 5000 is refused', () => {
     expect(account.waitForRestMs).toBe(1500);
-    expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 0 }).waitForRestMs).toBeUndefined();
+    const off = defineSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 0 });
+    expect([off.waitForRestMs, off.startOfValue]).toEqual([undefined, undefined]);
     expect(defineSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 2500 }).waitForRestMs).toBe(2500);
-    const long = buildSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 5001 });
-    expect(long.ok).toBe(false);
+    const masked = defineSlot('code', { type: 'digits', noun: 'code', mask: '9\\d{5}' });
+    expect([masked.waitForRestMs, masked.startOfValue]).toEqual([undefined, undefined]);
+    expect(buildSlot('account', { type: 'digits', noun: 'account', length: 8, waitForRestMs: 5001 }).ok).toBe(false);
   });
 });
 

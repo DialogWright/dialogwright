@@ -19,9 +19,13 @@ describe('sayDigits', () => {
     expect(sayDigits('Your card is 55520417.', ['55520417', '5552 0417'])).toBe('Your card is 5 5 5 2 0 4 1 7.');
   });
 
-  it('never inside a longer number, nor beside a decimal point or a thousands comma', () => {
+  it('never inside a longer number, nor across a separator of dates, times and amounts', () => {
     expect(sayDigits('Call 155550142 or 01425.', ['0142'])).toBe('Call 155550142 or 01425.');
     expect(sayDigits('It costs 10,142 or 0142.50 or 3.0142, ending in 0142.', ['0142'])).toBe('It costs 10,142 or 0142.50 or 3.0142, ending in 0 1 4 2.');
+    expect(sayDigits('On 10/13/2026, or 2026-10-13, at 10:42.', ['2026', '42', '10'])).toBe('On 10/13/2026, or 2026-10-13, at 10:42.');
+    expect(sayDigits('Ending in 0142-7 or 7-0142.', ['0142'])).toBe('Ending in 0142-7 or 7-0142.');
+    // A sentence's own punctuation is no separator: nothing numeric across it.
+    expect(sayDigits('Your number is 55520417. Is that right?', ['55520417'])).toBe('Your number is 5 5 5 2 0 4 1 7. Is that right?');
   });
 
   it('leaves a line with none of them, or with no values, as it is', () => {
@@ -31,6 +35,15 @@ describe('sayDigits', () => {
 });
 
 describe('digitsSaidOf', () => {
+  it('a short value the session holds is not looked for unless the decision names it: "born April 12, 1980" stays a date', () => {
+    const s = session({ phone: { value: '1980', display: '1980' } });
+    expect(digitsSaidOf(app, s, null)).toEqual([]);
+    expect(sayDigits('Born April 12, 1980.', digitsSaidOf(app, s, null))).toBe('Born April 12, 1980.');
+    expect(digitsSaidOf(app, s, { vars: { phone: '1980' } })).toEqual(['1980']);
+    // Five digits or more: looked for wherever a line says it, a repeat included.
+    expect(digitsSaidOf(app, session({ phone: { value: '55520', display: '55520' } }), { kind: 'replay', text: 'x' })).toEqual(['55520']);
+  });
+
   it("is a slot's value and display, for a slot said digit by digit only", () => {
     const s = session({ phone: { value: '5555550142', display: '555 555 0142' }, count: { value: '12', display: '12' }, caller: { value: 'jordan avery', display: 'Jordan Avery' } });
     expect(digitsSaidOf(app, s, null).sort()).toEqual(['555 555 0142', '5555550142']);
@@ -43,8 +56,11 @@ describe('digitsSaidOf', () => {
   it("is the caller's number offered and its last four, a value read back, and none proposed from the facts by its last four", () => {
     const offered = session({ phone: { value: null } }, { target: 'slot', slot: 'phone', value: '5555550142', display: '555 555 0142', offered: true });
     expect(digitsSaidOf(app, offered, { vars: { last4: '0142' } }).sort()).toEqual(['0142', '555 555 0142', '5555550142']);
+    // Asked again word for word (a repeat has no variables): the offer is still the question.
+    expect(digitsSaidOf(app, offered, { kind: 'replay', text: 'x' })).toContain('0142');
+    expect(digitsSaidOf(app, offered, null)).not.toContain('0142');
     const consent = session({ phone: { value: null } }, { target: 'slot', slot: 'phone', value: '5555550142', display: '555 555 0142', offered: true, consent: true, at: 'greeting' });
-    expect(digitsSaidOf(app, consent, null)).toContain('0142');
+    expect(digitsSaidOf(app, consent, { kind: 'replay', text: 'x' })).toContain('0142');
     const readBack = session({ phone: { value: null } }, { target: 'slot', slot: 'phone', value: '5555550177', display: '555 555 0177' });
     expect(digitsSaidOf(app, readBack, null).sort()).toEqual(['555 555 0177', '5555550177']);
     const facts = session({ phone: { value: null } }, { target: 'slot', slot: 'phone', value: '5555550177', display: '555 555 0177', offered: true, from: 'facts' });
@@ -60,6 +76,6 @@ describe('digitsSaidOf', () => {
   it('keeps only digits in groups, of two digits or more', () => {
     const s = session({ phone: { value: '7', display: '7' } }, null);
     expect(digitsSaidOf(app, s, { vars: { phone: '•••• 0142' } })).toEqual([]);
-    expect(digitsSaidOf(app, session({ phone: { value: '55', display: '5-5' } }), null)).toEqual(['55']);
+    expect(digitsSaidOf(app, session({ phone: { value: '55', display: '5-5' } }), { vars: { phone: '55' } })).toEqual(['55']);
   });
 });

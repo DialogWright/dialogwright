@@ -47,9 +47,10 @@ export const NAME_QUESTIONS = questionParts({
   span: 'which span of the caller\'s words is their name',
 });
 
-/** A bare answer's defaults (`bareAnswer`): at most four words, a span the model is at least SLOT_DETECT sure of. */
+/** A bare answer's defaults (`bareAnswer`): at most four words, the engine's NAME_BARE_GIVEN and NAME_BARE_SPAN. */
 export const BARE_ANSWER_WORDS = 4;
-export const BARE_ANSWER_SPAN = 'SLOT_DETECT';
+export const BARE_ANSWER_GIVEN = 'NAME_BARE_GIVEN';
+export const BARE_ANSWER_SPAN = 'NAME_BARE_SPAN';
 
 /** One word of the `exclude` list: what a span's words are compared with, so letters and digits only. */
 const excludedWord = () =>
@@ -87,12 +88,15 @@ export const nameOptions = z.strictObject({
         .max(10)
         .default(BARE_ANSWER_WORDS)
         .describe(`The most words an answer may have to be taken as a bare name (words are what spaces separate, punctuation aside: "Jordan Avery" is two, "it's Jordan Avery" three). 0 takes no bare answer: the model must judge the name given, as before. Default: ${BARE_ANSWER_WORDS}.`),
+      given: thresholdName()
+        .default(BARE_ANSWER_GIVEN)
+        .describe(`The threshold the model's yes-or-no that the caller gave their name must still reach: a bare answer overrules a yes-or-no that is unsure, never a confident no. An engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: ${BARE_ANSWER_GIVEN} (0.2).`),
       span: thresholdName()
         .default(BARE_ANSWER_SPAN)
-        .describe(`The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: ${BARE_ANSWER_SPAN}.`),
+        .describe(`The threshold the model's probability for the name span must reach: an engine threshold, or one of the app's own (app.yaml thresholds), read from the turn by name. Default: ${BARE_ANSWER_SPAN} (0.7).`),
     })
     .optional()
-    .describe(`A bare name, right after the name question: when the slot was just asked and the answer is short (at most \`words\` words), a span the model chose as the name with a probability of at least \`span\` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT. A caller who answers the question with only a name ("Jordan Avery") was otherwise asked again, the words read as a name too weakly on their own; the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: ${BARE_ANSWER_WORDS}, span: ${BARE_ANSWER_SPAN} }.`),
+    .describe(`A bare name, right after the name question: when the slot was just asked and the answer is short (at most \`words\` words), a span the model chose as the name with a probability of at least \`span\` is taken as the name given, though the model's yes-or-no that a name was given is under SLOT_DETECT, as long as it reaches \`given\`. A caller who answers the question with only a name ("Jordan Avery") was otherwise asked again, the words read as a name too weakly on their own (0.41 on a live call, the span 0.74); the span question, which sees them beside the other spans, is surer. Anywhere else (a slot not just asked, a longer answer), the yes-or-no decides as always. Default: { words: ${BARE_ANSWER_WORDS}, given: ${BARE_ANSWER_GIVEN}, span: ${BARE_ANSWER_SPAN} }.`),
   text: NAME_PARTS.schema,
   ids: NAME_QUESTIONS.schema,
 });

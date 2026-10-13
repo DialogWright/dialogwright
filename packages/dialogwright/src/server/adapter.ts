@@ -10,10 +10,10 @@ import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNu
 import { callDataFrom, HOST_APP_PARAMETER } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
-import { CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, waitsForRest, type ContinuedRun } from '../run/continuation';
+import { CONTINUE_MAX_CHARS, CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun, type HeldWords } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { digitsSaidOf, sayDigits } from '../channel/sayDigits';
-import { localeOf } from '../core/locale';
+import { localeOf, slotLocaleOf } from '../core/locale';
 import { digitAtRun, keyBurstPending, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
@@ -382,6 +382,8 @@ function onCallerSpeech(deps: AdapterDeps, entry: CallEntry, speaking: boolean):
   const callSid = entry.callSid;
   // Whether this is a caller coming back in over the reply to their last final prompt.
   followResumed(deps, entry, speaking);
+  // Held words wait while the caller speaks, and the whole wait again once they stop (holdWords).
+  wordsClock(callSid, !speaking);
   if (speaking) {
     callerSpeaking.add(callSid);
     // Nor is a line the carrier stopped playing then one to say again (RESAY_CUT_LINES), nor an interrupt
@@ -486,8 +488,6 @@ const lastStart = new Map<string, number>();
 const lastStop = new Map<string, number>();
 /** Calls whose caller has stopped speaking since their last final prompt came. */
 const stoppedSincePrompt = new Set<string>();
-/** When a partial prompt last came (Twilio's, which reports no caller speaking): the caller is speaking. */
-const lastPartial = new Map<string, number>();
 
 /** RESUME_AFTER_PAUSE_MS: the longest pause that leaves a caller not finished. */
 function resumeAfterPauseOf(deps: AdapterDeps): number {
@@ -500,7 +500,6 @@ function forgetResumed(callSid: string): void {
   lastStart.delete(callSid);
   lastStop.delete(callSid);
   stoppedSincePrompt.delete(callSid);
-  lastPartial.delete(callSid);
 }
 
 /** The caller started or stopped speaking: whether they are coming back in over the reply to their last final prompt. */
@@ -774,16 +773,6 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
  * frame log has `{ replyHeld: { ms, outcome: 'joined' | 'sent', utteranceComplete, turn } }`
  * when it ends, `turn` being the held turn's turnIndex, by which replay tells its Continuation after that
  * turn, as here (harness-text/replay.ts).
- *
- * **The rest of a value begun** (run/continuation.ts waitsForRest): a turn whose fill of the slot just
- * asked heard only the start of its value (fewer digits than a `digits` slot's `length`, or a number
- * trailing off) and that only asks again is held the same way, for the slot's `waitForRestMs`, on every
- * carrier: the caller going on is a prompt (on Twilio a partial one, which comes as they start speaking,
- * and is taken as speech: the final prompt is still to come) or, where the carrier reports it, their
- * voice. It is not the model's reading, so it holds whatever INCOMPLETE_WAIT_MS and continueWithinMs
- * say (the Continuation joins it with the window at 0 too). Where the model's reading would hold the
- * reply as well, the slot's wait is the one taken. The frame log's line names the slot:
- * `{ replyHeld: { ms, outcome, slot, turn } }`, with `utteranceComplete` beside it when the words were read.
  */
 interface HeldReply {
   timer: ReturnType<typeof setTimeout>;
@@ -818,40 +807,147 @@ export function holdsReply(result: TurnResult, below: number): number | null {
  * one to hold. `promptAtMs` is when the prompt came: a caller heard starting since then has gone on.
  */
 async function holdReply(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, run: ContinuedRun, promptAtMs: number | undefined): Promise<HeldOutcome | null> {
-  // A socket already gone has no one to wait for (and nothing left to end the wait early).
-  if (entry.socket === null || event.type !== 'user.speech' || !event.final) return null;
-  if ((run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
-  const continuation = continuationOf(entry);
-  // The rest of a value begun, on every carrier (above); the model's reading, where the carrier reports the caller's voice.
-  const rest = waitsForRest(run.result);
   const wait = deps.incompleteWait;
-  const reads = wait !== undefined && wait.waitMs > 0 && readsPlaybackEvents(entry.provider) && continuation.withinMs > 0;
-  const complete = reads ? holdsReply(run.result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE) : null;
-  if (rest === null && complete === null) return null;
-  const waitMs = rest?.ms ?? wait!.waitMs;
+  // A socket already gone has no one to wait for (and nothing left to end the wait early).
+  if (!wait || wait.waitMs <= 0 || !readsPlaybackEvents(entry.provider) || entry.socket === null) return null;
+  if (event.type !== 'user.speech' || !event.final) return null;
+  const continuation = continuationOf(entry);
+  if (continuation.withinMs === 0 || (run.joined?.length ?? 1) >= CONTINUE_MAX_FRAGMENTS) return null;
+  const complete = holdsReply(run.result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE);
+  if (complete === null) return null;
   const callSid = entry.callSid;
   // No silence turn over the hold: the turn arms the wait once it ends.
   clearNoInput(callSid);
   const heldAtMs = Date.now();
-  const since = promptAtMs ?? heldAtMs;
-  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= since || (lastPartial.get(callSid) ?? -Infinity) > since;
+  const back = callerSpeaking.has(callSid) || (lastStart.get(callSid) ?? -Infinity) >= (promptAtMs ?? heldAtMs);
   const ended = back ? 'speech' : await new Promise<HeldOutcome>((resolve) => {
     releaseReply(callSid, 'sent');
-    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), waitMs), resolve };
+    const h: HeldReply = { timer: setTimeout(() => releaseReply(callSid, 'sent'), wait.waitMs), resolve };
     h.timer.unref?.();
     heldReplies.set(callSid, h);
   });
   const outcome = ended === 'sent' ? 'sent' : 'joined';
-  logDelivery(deps, entry, {
-    replyHeld: {
-      ms: Date.now() - heldAtMs, outcome,
-      ...(complete !== null ? { utteranceComplete: complete } : {}),
-      ...(rest !== null ? { slot: rest.slot } : {}),
-      turn: run.result.session.turnIndex,
-    },
-  });
-  if (outcome === 'joined') continuation.resumed(rest?.slot);
+  logDelivery(deps, entry, { replyHeld: { ms: Date.now() - heldAtMs, outcome, utteranceComplete: complete, turn: run.result.session.turnIndex } });
+  if (outcome === 'joined') continuation.resumed();
   return ended;
+}
+
+/**
+ * Words held for the rest of a value (SlotSpec.waitForRestMs, a `digits` slot's), before any turn runs.
+ * A recognizer ends a prompt at a short pause: asked for an eight-digit number, a caller says "Five.",
+ * looks at the card again, and says the rest. Taken alone, "Five." is a miss, and its re-ask goes out over
+ * the rest of the number; a carrier that does not transcribe while a line it may not interrupt is playing
+ * (Telnyx with the barge-in off) then hears nothing of it at all. Seen on a live call (2026-10-13): after
+ * a nine-digit miss, the keypad line answered "Five.", the caller spoke over it 235 ms later, and the rest
+ * was lost.
+ *
+ * So when the slot the caller was just asked has a wait, and a final prompt's words are, read without the
+ * model, only the start of its value (SlotSpec.startOfValue: a digits slot hears 1 to `length` - 1 digits),
+ * and no turn is queued or running (the question it answers is the one on the session), the words are held
+ * for up to `waitForRestMs`:
+ *
+ * - **A final prompt in the wait** is joined to them (single spaces) and runs no turn of its own. While the
+ *   words joined are still only the start of a value the wait starts again, up to HELD_WORDS_MAX_FRAGMENTS
+ *   prompts; once they are not (a whole number, or one too long), the turn runs at once.
+ * - **The caller heard speaking** (a carrier that reports their voice) stops the clock while they speak, and
+ *   it starts again, whole, when they stop: the transcript of what they said is still to come. A partial
+ *   prompt (Twilio's) starts it again too.
+ * - **Nothing more** (the wait passes, or speech with no prompt after it): the words run alone, as they
+ *   would have, a little later. A key pressed, or the socket closing, runs them at once.
+ *
+ * One turn runs, on the words as held, so there is nothing to undo, at any rung of the slot's ladder, the
+ * last included. No silence turn runs over the hold (the no-input wait is not armed during it). The frame log
+ * has `{ wordsHeld: { slot, ms, fragments, end } }` just before the turn, `fragments` the number of final
+ * prompts its words join; replay joins those prompts as the log says, whatever the app's settings are now
+ * (harness-text/replay.ts). The turn's trace record names them (`joined: { fragments, waitedFor }`), and
+ * the console notes the hold. Never on a chat, whose messages come whole.
+ */
+interface HeldWordsWait {
+  readonly slot: string;
+  readonly waitMs: number;
+  readonly startOfValue: (text: string, locale?: string) => boolean;
+  readonly locale: string | undefined;
+  readonly fragments: string[];
+  readonly heldAtMs: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  readonly ceiling: ReturnType<typeof setTimeout>;
+  readonly done: (end: WordsEnd) => void;
+}
+
+/** How held words came to run: joined into a whole value (`rest`), the wait passed (`timeout`), a key, the socket closed, the ceiling. */
+type WordsEnd = 'rest' | 'timeout' | 'key' | 'closed' | 'ceiling';
+
+/** The most final prompts held words join (8 digits said in fours, pairs or singles still fit). */
+export const HELD_WORDS_MAX_FRAGMENTS = 10;
+/** However long the caller speaks, held words run by this long after they were first held. */
+export const HELD_WORDS_MAX_MS = 15_000;
+
+const heldWords = new Map<string, HeldWordsWait>();
+
+/** The words joined, single spaces. */
+const joinedWords = (fragments: readonly string[]): string => fragments.map((f) => f.trim()).filter(Boolean).join(' ');
+
+/** End a call's held words, if any: the turn on them runs. */
+function finishWords(callSid: string, end: WordsEnd): void {
+  const h = heldWords.get(callSid);
+  if (!h) return;
+  heldWords.delete(callSid);
+  if (h.timer) clearTimeout(h.timer);
+  clearTimeout(h.ceiling);
+  h.done(end);
+}
+
+/** (Re)start the wait of a call's held words, whole; `null` stops it (the caller is speaking). */
+function wordsClock(callSid: string, run: boolean): void {
+  const h = heldWords.get(callSid);
+  if (!h) return;
+  if (h.timer) clearTimeout(h.timer);
+  h.timer = run ? setTimeout(() => finishWords(callSid, 'timeout'), h.waitMs) : null;
+  h.timer?.unref?.();
+}
+
+/**
+ * Hold a final prompt's words for the rest of a value (above), or null when they are not to be held. The
+ * promise is the words to run, joined, when the hold ends.
+ */
+function holdWords(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival: Arrival): Promise<{ held: HeldWords; ms: number; end: WordsEnd }> | null {
+  if (event.type !== 'user.speech' || !event.final || entry.ended || entry.socket === null || arrival.duringService === true) return null;
+  const callSid = entry.callSid;
+  if ((pendingTurns.get(callSid) ?? 0) > 0 || heldWords.has(callSid) || entry.session.pendingService !== null) return null;
+  const slot = entry.session.promptedFor;
+  const app = appOf(entry.session);
+  if (typeof slot !== 'string' || !Object.hasOwn(app.slots, slot)) return null;
+  const spec = app.slots[slot]!;
+  const waitMs = spec.waitForRestMs ?? 0;
+  const locale = slotLocaleOf(entry.session);
+  if (waitMs <= 0 || spec.startOfValue === undefined || !spec.startOfValue(event.text, locale)) return null;
+  const heldAtMs = Date.now();
+  return new Promise((resolve) => {
+    const fragments = [event.text];
+    const h: HeldWordsWait = {
+      slot, waitMs, startOfValue: spec.startOfValue!, locale, fragments, heldAtMs, timer: null,
+      ceiling: setTimeout(() => finishWords(callSid, 'ceiling'), HELD_WORDS_MAX_MS),
+      done: (end) => resolve({ held: { fragments: [...fragments], slot }, ms: Date.now() - heldAtMs, end }),
+    };
+    h.ceiling.unref?.();
+    heldWords.set(callSid, h);
+    // A caller already speaking again: the clock waits for them to stop.
+    wordsClock(callSid, !callerSpeaking.has(callSid));
+  });
+}
+
+/**
+ * A final prompt that came while a call's words are held: joined to them, and no turn of its own (true).
+ * The hold goes on while the words joined are still only the start of a value; otherwise they run now.
+ */
+function joinHeldWords(callSid: string, text: string): boolean {
+  const h = heldWords.get(callSid);
+  if (!h) return false;
+  h.fragments.push(text);
+  const joined = joinedWords(h.fragments);
+  if (h.fragments.length >= HELD_WORDS_MAX_FRAGMENTS || joined.length >= CONTINUE_MAX_CHARS || !h.startOfValue(joined, h.locale)) finishWords(callSid, 'rest');
+  else wordsClock(callSid, !callerSpeaking.has(callSid));
+  return true;
 }
 
 /**
@@ -1550,7 +1646,7 @@ function fireHandoffSummary(deps: AdapterDeps, entry: CallEntry): void {
  * Run one turn and send what it decided. False when the turn threw (the apology was spoken instead).
  * `promptAtMs`, for a prompt, is when it came (a reply held for a caller not finished, holdReply).
  */
-async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival, promptAtMs?: number): Promise<boolean> {
+async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, arrival?: Arrival, promptAtMs?: number, words?: HeldWords): Promise<boolean> {
   let ending = false;
   // The turn's `end` waits for its lines to play, and is sent (with the grace after it) by the wait.
   let endHeld = false;
@@ -1560,7 +1656,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   try {
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
-    const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival);
+    const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival, words);
     if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
@@ -2011,8 +2107,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   const logged: InboundFrame = frame.type === 'dtmf' && arrival.sensitive !== null ? { type: 'dtmf', digit: CODE_DIGIT } : frame;
   // A final prompt from a caller who came back in over the last reply continues the one before it;
   // logged ahead of the prompt's own line, where replay reads it. Then this prompt's speech is the one followed.
+  // A final prompt that comes while words are held is joined to them (holdWords): it continues nothing else.
+  const joinsHeld = frame.type === 'prompt' && frame.last && heldWords.has(ctx.callSid);
   if (frame.type === 'prompt' && frame.last && !entry.ended) {
-    takeResumed(deps, entry);
+    if (!joinsHeld) takeResumed(deps, entry);
     notePrompt(deps, entry);
   }
   entry.frames.write('in', logged);
@@ -2027,11 +2125,12 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     // Nor is a line the carrier stopped playing then one to say again, nor an interrupt settling one the caller did not make.
     callerHeard(ctx.callSid);
   }
-  // A reply held for a caller not finished: more words are the caller going on; a key sends it now. A
-  // partial prompt (Twilio's) is the caller speaking, the final prompt still to come.
-  if (frame.type === 'prompt' && !frame.last) lastPartial.set(ctx.callSid, Date.now());
-  if (frame.type === 'prompt') releaseReply(ctx.callSid, frame.last ? 'prompt' : 'speech');
+  // A reply held for a caller not finished: more words are the caller going on; a key sends it now.
+  if (frame.type === 'prompt') releaseReply(ctx.callSid, 'prompt');
   else if (frame.type === 'dtmf') releaseReply(ctx.callSid, 'sent');
+  // Held words: a final prompt joins them, and runs no turn of its own; a key runs them now (holdWords).
+  if (joinsHeld && event.type === 'user.speech' && joinHeldWords(ctx.callSid, event.text)) return;
+  if (frame.type === 'dtmf') finishWords(ctx.callSid, 'key');
   // Before the ignore/turn split below: a digit the adapter drops is still a digit the caller pressed.
   if (logged.type === 'dtmf') publish(deps, { type: 'dtmf', callSid: ctx.callSid, at: Date.now(), digit: logged.digit });
   if (frame.type === 'interrupt') {
@@ -2072,7 +2171,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       ctx.partialLogged = true;
       deps.log(`${ctx.callSid}: dropped a non-final prompt; partials only cancel the no-input wait`);
     }
-    if (entry.session.pendingService === null) armNoInput(deps, entry, []);
+    // Held words: the caller is speaking (Twilio reports no voice), so their wait starts again, and no silence wait runs over it.
+    if (heldWords.has(ctx.callSid)) wordsClock(ctx.callSid, true);
+    else if (entry.session.pendingService === null) armNoInput(deps, entry, []);
     return;
   }
   // What replay cannot work out from the session it rebuilds: that this frame arrived during a
@@ -2086,7 +2187,17 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   const unheard = event.type === 'user.interrupt' ? interruptUnheard(deps, entry) : null;
   const settled = event.type === 'user.interrupt' && unheard ? settleInterrupt(deps, entry, event.afterMs, unheard.quietMs) : null;
   const cutLines = settled ? watched.get(ctx.callSid) : undefined;
+  // Words that are only the start of the value the caller was just asked for, held for the rest (holdWords).
+  const held = holdWords(deps, entry, event, arrival);
   const run = async (e: CallEntry): Promise<void> => {
+    if (held) {
+      const words = await held;
+      // Before the turn, where replay reads it; the console notes it on the join, which the turn logs after it.
+      logDelivery(deps, e, { wordsHeld: { slot: words.held.slot, ms: words.ms, fragments: words.held.fragments.length, end: words.end } });
+      const joined = event.type === 'user.speech' ? { ...event, text: joinedWords(words.held.fragments) } : event;
+      await turn(deps, e, joined, arrival, arrivedAtMs, words.held);
+      return;
+    }
     if (settled && event.type === 'user.interrupt' && (await settled)) {
       await recoverSpurious(deps, e, cutLines, event.afterMs);
       return;
@@ -2183,6 +2294,8 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   forgetResumed(ctx.callSid);
   settleHeard(ctx.callSid);
   releaseReply(ctx.callSid, 'sent');
+  // Held words run as they are: the call's turn on them still runs, as any queued turn does.
+  finishWords(ctx.callSid, 'closed');
   // A held `end` has no one left to hear its lines: it is not sent (the call already ended for the store).
   heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });

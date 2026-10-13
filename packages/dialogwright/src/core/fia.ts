@@ -30,12 +30,6 @@ export interface Ack {
 export interface FillEvent {
   slot: SlotId;
   outcome: SlotOutcome;
-  /**
-   * The words may be only the start of the slot's value, the caller not finished: an invalid fill of the
-   * slot just asked that its spec's `restToCome` says so of. Read by the voice server alone (a re-ask held
-   * for the rest, run/continuation.ts waitsForRest); nothing the turn decides. Absent otherwise.
-   */
-  rest?: true;
 }
 
 export interface FillResult {
@@ -260,12 +254,6 @@ export function valuesGiven(session: Session, answers: AnswerMap, ctx: SlotConte
   return given;
 }
 
-/** Whether an invalid fill of the slot just asked may be the start of its value (SlotSpec.restToCome, FillEvent.rest). */
-function restToCome(session: Session, answers: AnswerMap, ctx: SlotContext, spec: SlotSpec, outcome: SlotOutcome, opts: FillOptions): boolean {
-  if (outcome.kind !== 'invalid' || spec.restToCome === undefined || session.promptedFor !== spec.id) return false;
-  return spec.restToCome(answers, slotCtx(session, ctx, spec.id, opts)) === true;
-}
-
 export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext, specs: SlotSpec[], opts: FillOptions = {}): FillResult {
   const events: FillEvent[] = [];
   const acks: Ack[] = [];
@@ -288,7 +276,7 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
       progress = true;
       continue;
     }
-    events.push(restToCome(session, answers, ctx, spec, outcome, opts) ? { slot: spec.id, outcome, rest: true } : { slot: spec.id, outcome });
+    events.push({ slot: spec.id, outcome });
     // Read before the slot is written: what counts as new is judged against what it held.
     const isNew = givesNew(session, spec.id, outcome, opts);
     switch (outcome.kind) {

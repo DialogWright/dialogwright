@@ -305,21 +305,19 @@ export interface SlotSpec {
    */
   sayAs?: 'digits';
   /**
-   * Whether words the slot could not take as its value may be only the start of one, the caller not
-   * finished (a `digits` slot that heard fewer digits than its `length`, or a number the model heard
-   * trail off). Asked by the engine only of the slot just asked, with the answers and context its
-   * fill had, when that fill was invalid; a yes marks the turn's fill event (FillEvent.rest). Like
-   * `fill`, it reads and changes nothing, and it changes nothing the turn decides: on the phone, a slot
-   * with `waitForRestMs` waits for the rest before its re-ask is said. Absent: never.
+   * Whether words said to the slot's own question are, read without the model, only the start of a
+   * value: the caller may not have finished (a `digits` slot: the words hold 1 to `length` - 1 digits).
+   * Read by the voice server alone, on a final prompt's words before any turn runs, so it must be quick,
+   * local and deterministic (`locale` is the session's). Absent: never.
    */
-  restToCome?(answers: AnswerMap, ctx: SlotContext): boolean;
+  startOfValue?(text: string, locale?: string): boolean;
   /**
    * How long the phone waits for the rest of a value the caller began, in milliseconds (a `digits`
-   * slot's `waitForRestMs`): when the turn's fill of the slot just asked is marked as the start of a
-   * value (`restToCome`, FillEvent.rest) and the turn only asks again, the voice server holds that reply
-   * up to this long; if the caller goes on in that time it is never said, and their next words are joined
-   * to these, run on the session before them (run/continuation.ts waitsForRest, server/adapter.ts
-   * holdReply). Not on a chat, where a message comes whole. Absent or 0: the reply goes at once, as always.
+   * slot's `waitForRestMs`): when the slot was just asked and a final prompt's words are only the start
+   * of a value (`startOfValue`), the voice server holds the words, before any turn runs, for up to this
+   * long; a prompt in that time is joined to them, and the turn runs once on the words joined, or on the
+   * words alone when nothing more comes (server/adapter.ts holdWords). Nothing is said or undone. Not on
+   * a chat, where a message comes whole. Absent or 0: the words are taken at once, as always.
    */
   waitForRestMs?: number;
   /**
