@@ -1,4 +1,6 @@
-import { E164, targetValueProblem } from './transfer';
+import { E164, numberName, targetValueProblem } from './transfer';
+import { clashingNumbers, numberLocalesOf } from '../core/numberLocales';
+import type { EnvReference } from '../core/app/envReference';
 import { isSipTarget } from './voice/dial';
 import { accessSync, constants, existsSync, readFileSync, realpathSync, statfsSync, statSync } from 'node:fs';
 import { lookup as dnsLookup } from 'node:dns/promises';
@@ -483,6 +485,33 @@ function serverConfigOf(env: Env): ServerConfig | null {
 export function variableChecks(appDir: string, env: Env): CheckResult[] {
   const refs = appYamlEnvReferences(appDir);
   if (refs === null) return [{ id: 'variables', status: 'skip', message: 'the variables app.yaml names: app.yaml cannot be read (pnpm check says why)' }];
+  return [...referenceChecks(refs, env), ...numberClashChecks(appDir, env)];
+}
+
+/**
+ * Two entries of app.yaml's voice.numbers that are one number in two locales, as the server will read
+ * them (server/transfer.ts voiceNumbersFrom refuses to start on one): a fail each, the numbers by their
+ * last four. Nothing where app.yaml cannot be read (the variables check says so) or lists no numbers.
+ */
+function numberClashChecks(appDir: string, env: Env): CheckResult[] {
+  let voice: unknown;
+  try {
+    voice = (parseYaml(readFileSync(join(appDir, 'app.yaml'), 'utf8')) as { voice?: unknown } | null)?.voice;
+  } catch {
+    return [];
+  }
+  const numbers = typeof voice === 'object' && voice !== null ? (voice as { numbers?: unknown }).numbers : undefined;
+  if (typeof numbers !== 'object' || numbers === null || Array.isArray(numbers)) return [];
+  const listed = Object.fromEntries(Object.entries(numbers).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  const read = numberLocalesOf({ numbers: listed }, (name) => env[name]).numbers.filter((n) => E164.test(n.number));
+  return clashingNumbers(read).map(([a, b]) => ({
+    id: 'variables' as const, status: 'fail' as const,
+    message: `app.yaml's voice.numbers starts ${numberName(a)} in ${a.locale} and ${numberName(b)}, the same number, in ${b.locale}: the server will not start`,
+    fix: 'give each locale a number of its own',
+  }));
+}
+
+function referenceChecks(refs: readonly EnvReference[], env: Env): CheckResult[] {
   return refs.map(({ path, variable, file, kind }) => {
     const value = env[variable];
     const where = `${file ?? 'app.yaml'}'s ${path} reads ${variable}`;

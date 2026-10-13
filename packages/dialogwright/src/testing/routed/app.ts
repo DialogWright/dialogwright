@@ -12,8 +12,8 @@ import { callDataOf, callerOf, defineApp, replyShape, type AppCode, type AppCont
  * - At start: outside the hours (or on a holiday) a line that says goodbye itself, and no goodbye line
  *   after it (`goodbye: false`); a caller on the vip list (the `vip` predicate below, which reads the
  *   app's own VIP_NUMBERS setting with ctx.env) to a person; an outage the hook found, its notice before
- *   the greeting, in Spanish on the Spanish line (a rule that does both, above the outage rule: the
- *   first rule that holds is taken); a call to the Spanish line's number, in Spanish.
+ *   the greeting, in Spanish on the Spanish line, since a call to that number (app.yaml's voice.numbers,
+ *   env.SPANISH_LINE) starts in Spanish before any route.
  * - After identity: an account past due (what the status form's entry kept) sets up a payment plan
  *   first, and the caller's own request follows.
  * - After a report: a danger to someone goes to a person.

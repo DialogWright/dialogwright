@@ -11,8 +11,11 @@ import { digitsOf, sameNumber } from './conditions';
  * a `called` condition compares (core/conditions.ts sameNumber), a number digit for digit first.
  */
 
-/** A number written out as a key of voice.numbers: E.164, a + and 8 to 15 digits. */
-export const NUMBER_KEY = /^\+\d{8,15}$/;
+/**
+ * An E.164 number as the engine holds one: a + and 8 to 15 digits. A number written out as a key of
+ * voice.numbers, and every number a variable holds (server/transfer.ts reads its numbers by this one).
+ */
+export const E164 = /^\+\d{8,15}$/;
 
 /** One entry of voice.numbers, read: its number, the variable it was read from (absent for a number written out), the locale its calls start in. */
 export interface NumberLocale {
@@ -33,7 +36,7 @@ export function numberLocalesOf(voice: Pick<VoiceConfig, 'numbers'> | undefined,
   for (const [key, locale] of Object.entries(voice?.numbers ?? {})) {
     const variable = envVariableOf(key);
     if (variable === null) {
-      if (NUMBER_KEY.test(key)) numbers.push({ number: key, locale });
+      if (E164.test(key)) numbers.push({ number: key, locale });
       else invalid.push(key);
       continue;
     }
@@ -45,13 +48,14 @@ export function numberLocalesOf(voice: Pick<VoiceConfig, 'numbers'> | undefined,
 }
 
 /**
- * The locale a call to `called` starts in: the entry whose number is `called` as written, else the first
- * that is the same number by its digits (sameNumber: `+1 (555) 555-0188`, `15555550188` or a SIP
- * address's user part); undefined when none is, or no number was called.
+ * The locale a call to `called` starts in, matched as host.yaml's numbers are (server/host.ts appFor):
+ * digit for digit first (`+1 (555) 555-0188`, or a SIP address's user part), and a ten-digit national
+ * number's match (sameNumber) only when none is exact; undefined when none matches, or no number was called.
  */
 export function localeOfNumber(numbers: readonly NumberLocale[], called: string | null | undefined): string | undefined {
   if (called === null || called === undefined || called.trim() === '') return undefined;
-  return (numbers.find((n) => n.number === called) ?? numbers.find((n) => sameNumber(called, n.number)))?.locale;
+  const digits = digitsOf(called);
+  return (numbers.find((n) => digitsOf(n.number) === digits) ?? numbers.find((n) => sameNumber(called, n.number)))?.locale;
 }
 
 /**
@@ -62,7 +66,7 @@ export function localeOfNumber(numbers: readonly NumberLocale[], called: string 
 export function clashingNumbers(numbers: readonly NumberLocale[]): [NumberLocale, NumberLocale][] {
   const out: [NumberLocale, NumberLocale][] = [];
   numbers.forEach((a, i) => {
-    for (const b of numbers.slice(i + 1)) if (a.locale !== b.locale && digitsOf(a.number) !== '' && sameNumber(a.number, b.number)) out.push([a, b]);
+    for (const b of numbers.slice(i + 1)) if (a.locale !== b.locale && sameNumber(a.number, b.number)) out.push([a, b]);
   });
   return out;
 }

@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../../schemas/host.schema.json
 # Two of the engine's fixture apps on one server: the engine's tests of a host file (several apps,
 # each reached by the numbers callers dial, ../../server/host.ts) build it. A call to the callback
-# line reaches Example Callbacks; a call to either service line reaches Example Service Line (whose own
-# routes put the Spanish line's calls into Spanish); a call to any other number, or with none, reaches
-# the default. Each app keeps its own settings file, so MAIN_LINE, which both apps name as their
+# line reaches Example Callbacks; a call to either service line reaches Example Service Line (whose
+# voice.numbers starts the Spanish line's calls in Spanish); a call to any other number, or with none,
+# reaches the default. Each app keeps its own settings file, so MAIN_LINE, which both apps name as their
 # transfer default, is a different number for each. The numbers themselves are in the server's
 # settings, never here.
 apps:

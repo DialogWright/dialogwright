@@ -22,7 +22,7 @@ import { hoursProblems } from '../hours';
 import { conditionWorldOf, formsEnteredByRoutes, routeProblems } from '../routes';
 import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
 import { envVariableOf } from './envReference';
-import { NUMBER_KEY } from '../numberLocales';
+import { E164 } from '../numberLocales';
 
 /** What an intent the model is unsure of may get (App.unsureIntent, IntentDef.unsure). */
 const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
@@ -244,7 +244,7 @@ export function validateApp(app: App): void {
     }
   }
   for (const [number, tag] of Object.entries(app.voice?.numbers ?? {})) {
-    if (!NUMBER_KEY.test(number) && envVariableOf(number) === null) fail(`voice.numbers names ${JSON.stringify(number)}, which is neither an E.164 number nor env.<NAME>`);
+    if (!E164.test(number) && envVariableOf(number) === null) fail(`voice.numbers names ${JSON.stringify(number)}, which is neither an E.164 number nor env.<NAME>`);
     if (!speaks.includes(tag)) fail(`voice.numbers starts ${number} in the locale "${tag}", which the app does not speak`);
   }
   for (const [tag, settings] of Object.entries(app.voice?.locales ?? {})) {

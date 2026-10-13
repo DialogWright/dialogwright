@@ -162,6 +162,10 @@ describe('a host of two apps', () => {
     relays.push(third);
     third.setup('v3:host-telnyx-three', 'VX-t3', { to: null, customParameters: { ...es.parameters, telnyx_call_to: NUMBERS.SERVICE_LINE_ES } });
     expect((await third.waitForTexts(1))[0]).toBe(ROUTED_GREETING_ES);
+    // The server says so of the setup that came without the document's parameters, once, with no number in it; of the others, nothing.
+    const missing = s.logs.filter((l) => l.includes('carries no locale parameter'));
+    expect(missing).toEqual(["v3:host-telnyx-two: the setup carries no locale parameter, so the call starts in en-US: the carrier did not hand back the start document's parameters, where the language (voice.numbers) is chosen"]);
+    expect(missing.join('\n')).not.toMatch(/\d{4}/);
   });
 
   it('starts the call in the app the answer chose, whatever number the setup carries, and by the setup\'s number when the answer named none', async () => {

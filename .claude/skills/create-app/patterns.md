@@ -988,7 +988,7 @@ HELP_DESK=+15555550123
 
 ## Languages: a number per language, and a choice on the main line
 
-**When:** "callers can call our Spanish line", "press 9 for Spanish", "we answer in English and Spanish". The usual design: the main line answers in the default language (app.yaml's `locale`); each other language has a number of its own, whose calls start in it; and a caller on the main line may choose another by asking or on the keypad menu.
+**When:** "callers can call our Spanish line", "Spanish on the menu", "we answer in English and Spanish". The usual design: the main line answers in the default language (app.yaml's `locale`); each other language has a number of its own, whose calls start in it; and a caller on the main line may choose another by asking or on the keypad menu.
 
 ```yaml
 # app.yaml
@@ -1020,11 +1020,11 @@ menu:
 ```
 
 - **The number:** a call to the number in `SPANISH_LINE` starts in Spanish as it is answered, before the start hook and any route, so the greeting and every route's line are in Spanish and no switch is made. Any other number starts in the default. The server will not start while the variable is unset or not E.164, names at start which language each number starts in, and `pnpm diagnose` checks it; under a host file, the app's own `.env` holds it. A number may be written out instead (`"+15555550142": es`, quoted), but the repository is no place for a real number.
-- **The choice on the main line:** the informational intent switches the call when the caller asks, from the first turn; its `menu` key does the same once the keypad menu has been offered (after a second missed answer). A greeting that invites it ("Para español, diga español.") lets a caller choose at once. Write `switched_to_spanish` in `locale/es/prompts.yaml`.
+- **The choice on the main line:** the informational intent switches the call when the caller asks, from the first turn; its `menu` key does the same once the keypad menu has been offered (after a second missed answer). A greeting that invites it ("Para español, diga español.") lets a caller choose at once. Write `switched_to_spanish` in `prompts.yaml` (the default language's words; `pnpm check` requires every `promptId` there) and in `locale/es/prompts.yaml`.
 - **Anything else** that decides the language (a queue the contact centre sets in the call data) is a `start` route with `then: locale` ([Routes](#routes-the-calls-start-after-identity-after-a-form)), taken in route order.
 - **The locale itself:** `locale/es/prompts.yaml` with every line, `locale/es/slots.yaml` for options' words, and the requests' labels in `locale/es/intents.yaml` (`intents: { <id>: { label: ... } }`, `forms.yaml` for an internal form), or its lines say the English label. `pnpm check` warns of a bare tag, an English-only recognizer and a missing label ([authoring guide, 8](../../../docs/guide/08-locales.md#8-locales), [13.3](../../../docs/guide/13-channels.md#133-languages-on-the-phone)).
-- **Test:** a scripted call to the number, `"calledNumber": "+15555550188"` with `"env": { "SPANISH_LINE": "+15555550188" }`, expecting a Spanish line (`"text"`); one to another number in the default; and one that asks to switch. Corpus lines for the intent, in both languages ("en español", "I speak Spanish").
-- **Pitfall:** a route's `then: locale` on the number called (`{ called: env.SPANISH_LINE }`) works, but a rule above it that holds first (an outage notice) keeps the call in the default language; `voice.numbers` has no such order.
+- **Test:** a scripted call to the number, `"calledNumber": "+15555550188"` with `"env": { "SPANISH_LINE": "+15555550188" }`, expecting a Spanish line (`"text"`); one to another number in the default; and one that asks to switch. Corpus lines for the intent, in both languages ("en español", "I speak Spanish"), and as an English recognizer writes the Spanish word ("espanol", "in espanol"): on Twilio the main line's recognizer (Deepgram flux, the server's default) hears English only, so a caller who says "español" there is heard by an English model.
+- **Pitfall:** never offer a key in the greeting ("press 9 for Spanish"): a key pressed before the keypad menu is offered is ignored. Invite by voice, or give the language its own number. A route's `then: locale` on the number called (`{ called: env.SPANISH_LINE }`) works, but a rule above it that holds first (an outage notice) keeps the call in the default language; `voice.numbers` has no such order.
 
 ## Routes: the call's start, after identity, after a form
 

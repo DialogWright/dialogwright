@@ -5,13 +5,13 @@ import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
 import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
 import { ENV_REFERENCE } from '../../core/app/envReference';
-import { NUMBER_KEY } from '../../core/numberLocales';
+import { E164 } from '../../core/numberLocales';
 import { whenSchema } from './condition';
 import { CHAT_DATA_KEY, HEADER_NAME } from '../../core/transfer';
 import { hoursProblems } from '../../core/hours';
 
 /** A key of voice.numbers: a number written out (E.164) or env.<NAME>. */
-const NUMBER_LOCALE_KEY = new RegExp(`(?:${NUMBER_KEY.source})|(?:${ENV_REFERENCE.source})`);
+const NUMBER_LOCALE_KEY = new RegExp(`(?:${E164.source})|(?:${ENV_REFERENCE.source})`);
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation

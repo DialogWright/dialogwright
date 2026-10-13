@@ -13,7 +13,8 @@ import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/tu
 import { CONTINUE_MAX_CHARS, CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun, type HeldWords } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { digitsSaidOf, sayDigits } from '../channel/sayDigits';
-import { localeOf, slotLocaleOf } from '../core/locale';
+import { defaultLocaleOf, localeOf, slotLocaleOf } from '../core/locale';
+import { namesSpeechLanguages, speechLocalesOfApp } from '../channel/speechLanguages';
 import { digitAtRun, keyBurstPending, promptEpoch, sensitiveDigit, type ArrivalDigit, type TurnResult } from '../core/turn';
 import { maskSpokenCode, spokenCodeMinDigits } from '../core/spokenCode';
 import { DEFAULT_SCREEN_MODE, requestsPerTurn } from '../core/screen';
@@ -2018,6 +2019,13 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   ctx.setupReady?.();
   // A caller who withheld their number (its copies already taken out of this setup): so is a reconnect's.
   if (callerWithheldIn(parsed)) entry.callerWithheld = true;
+  // The language a call starts in is the start document's (`locale`, from voice.numbers): a setup without
+  // it, for an app whose documents name their languages, came without the document's parameters (a carrier
+  // that dropped them), so the call starts in the default. Said once, as the call starts; no number in it.
+  const named = appOf(entry.session);
+  if (named.locales && namesSpeechLanguages(speechLocalesOfApp(named)) && !hasLocaleParameter(parsed)) {
+    deps.log(`${callId}: the setup carries no locale parameter, so the call starts in ${defaultLocaleOf(named)}: the carrier did not hand back the start document's parameters, where the language (voice.numbers) is chosen`);
+  }
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
   entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
   // The carrier the call came in on, which the trace does not name: the console's Insights price its minutes by it.
@@ -2375,4 +2383,10 @@ export async function handleSocketClose(deps: AdapterDeps, ctx: ConnectionContex
   heldEnds.get(ctx.callSid)?.release('closed');
   entry.frames.write('log', { socketClosed: true, ended: entry.ended });
   deps.store.detach(ctx.callSid);
+}
+
+/** Whether a setup frame carries the start document's `locale` custom parameter (channel/relay/map.ts frameToEvent reads it). */
+function hasLocaleParameter(setup: { readonly customParameters?: unknown }): boolean {
+  const params = setup.customParameters;
+  return typeof params === 'object' && params !== null && typeof (params as Record<string, unknown>).locale === 'string';
 }

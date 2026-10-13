@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=../../../../../schemas/prompts.schema.json
-# The Spanish line's words: routes.yaml's start switches a call to the Spanish line's number to es.
+# The Spanish line's words: a call to the Spanish line's number starts in es (app.yaml's voice.numbers).
 prompts:
   greeting:
     text: "Gracias por llamar a Example Service Line. Puedo tomar un reporte de un problema, o revisar una solicitud. ¿En qué le puedo ayudar?"

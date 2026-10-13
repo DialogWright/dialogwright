@@ -174,6 +174,20 @@ describe('pnpm diagnose', () => {
       expect(JSON.stringify(results)).not.toContain('5555550188');
     });
 
+    it('fails a number voice.numbers lists in two locales, as the server refuses to start on it, the numbers by their last four', async () => {
+      const yaml = 'id: lines\nvoice:\n  numbers:\n    "+15555550142": es\n    env.FRENCH_LINE: fr\n    env.OTHER_SPANISH: es\n';
+      const dir = appDir(yaml);
+      const results = (await runDoctor({ env: { ...goodEnv(dir), FRENCH_LINE: '15555550142', OTHER_SPANISH: '+15555550142' }, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      // FRENCH_LINE is not E.164 (a fail of its own) and is left out of the comparison, as the server stops on it first.
+      expect(results.filter((r) => r.message.includes('the same number'))).toEqual([]);
+      const clash = (await runDoctor({ env: { ...goodEnv(dir), FRENCH_LINE: '+15555550142', OTHER_SPANISH: '+15555550142' }, cwd: dir, appDir: dir, offline: true }, deps())).filter((r) => r.id === 'variables');
+      expect(clash.filter((r) => r.status === 'fail')).toEqual([
+        { id: 'variables', status: 'fail', message: "app.yaml's voice.numbers starts …0142 in es and …0142 (FRENCH_LINE), the same number, in fr: the server will not start", fix: 'give each locale a number of its own' },
+        { id: 'variables', status: 'fail', message: "app.yaml's voice.numbers starts …0142 (FRENCH_LINE) in fr and …0142 (OTHER_SPANISH), the same number, in es: the server will not start", fix: 'give each locale a number of its own' },
+      ]);
+      expect(JSON.stringify(clash)).not.toContain('5555550142');
+    });
+
     it('holds a transfer target to an E.164 number or a sip: URI, warns of a 555 one, and never says the value', async () => {
       const yaml = 'id: lines\ntransfer:\n  targets:\n    - when: { reason: emergency }\n      to: env.DESK_SIP\n    - when: { reason: security }\n      to: env.SECURITY_LINE\n    - when: { reason: frustrated }\n      to: env.BAD_LINE\n  default: env.MAIN_LINE\n';
       const dir = appDir(yaml);

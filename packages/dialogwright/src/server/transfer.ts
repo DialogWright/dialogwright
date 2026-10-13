@@ -2,7 +2,7 @@ import type { App } from '../core/app/types';
 import { transferHeaderNames, transferVariables, HEADER_NAME } from '../core/transfer';
 import { envVariableOf } from '../core/app/envReference';
 import { calledVariables } from '../core/routes';
-import { clashingNumbers, numberLocalesOf, type NumberLocale } from '../core/numberLocales';
+import { clashingNumbers, E164, numberLocalesOf, type NumberLocale } from '../core/numberLocales';
 import { writableValue } from '../channel/callData';
 import { maskNumber } from '../channel/maskByName';
 import { fitHeaders, isSipTarget, SIP_URI_MAX, type DialTarget } from './voice/dial';
@@ -17,8 +17,8 @@ import type { Env } from './config';
  * lost for good, a server stopping, a saved call it cannot read) goes to the default.
  */
 
-/** An E.164 number: a plus and 8 to 15 digits, as HANDOFF_NUMBER is held to (config.ts). */
-export const E164 = /^\+\d{8,15}$/;
+/** An E.164 number: a plus and 8 to 15 digits, as HANDOFF_NUMBER is held to (config.ts); the engine's one (core/numberLocales.ts). */
+export { E164 };
 
 /** A SIP URI a target may be: `sip:` and no space, quote or angle bracket. */
 const SIP_URI = /^sip:[^\s"<>]+$/i;

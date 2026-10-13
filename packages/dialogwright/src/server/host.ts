@@ -23,10 +23,10 @@ import { serverSettingNames } from './serverSettings';
  * every app shares: carrier secrets, the model and its key, PUBLIC_HOST, the stores, the port, and the
  * numbers host.yaml lists. Each app's own settings file (its .env, or the one host.yaml names) is read
  * only for the variables the app's YAML names (env.<NAME>: transfer targets, startParameters, called
- * numbers, voice.numbers), and only for that app: two apps may each give MAIN_LINE a number of their own. A variable an
- * app names and its own file does not set is read from the server's settings. The app's code reads its
- * settings by name at call time (AppContext.env): its own file, the whole of it, over the server's
- * settings; `process.env` is the server's alone.
+ * numbers, voice.numbers), and only for that app: two apps may each give MAIN_LINE a number of their
+ * own. A variable an app names and its own file does not set is read from the server's settings. The
+ * app's code reads its settings by name at call time (AppContext.env): its own file, the whole of it,
+ * over the server's settings; `process.env` is the server's alone.
  */
 
 /** One app a host runs. */
