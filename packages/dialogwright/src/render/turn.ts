@@ -151,8 +151,13 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
   };
 }
 
-/** The act of one line, or why the line is not tried on this turn. */
-function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { act: SpeechAct; judgeFixed: string; conflicts: string[] } | { skipped: RenderSkip } {
+/**
+ * The act of one line, or why the line is not tried on this turn. `afterAck`: the turn says an
+ * acknowledgement before it (an ack the core put before the line, such as ack_intent or
+ * read_back_exact, or a line of the engine's own such as a language switch's), so the line adds none
+ * of its own, as with `acknowledge: false`: two acknowledgements never stack.
+ */
+function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>, afterAck = false): { act: SpeechAct; judgeFixed: string; conflicts: string[] } | { skipped: RenderSkip } {
   const { before, result, event } = input;
   const after = result.session;
   // A line the core said must be heard word for word (a summary read back exactly after a no): always fixed.
@@ -181,6 +186,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   const style = app.generated!.style;
   // A question a yes or a no settles (a confirmation is pending once it is said) is kept word for word.
   const keep = said.role === 'ask' && after.pendingConfirmation !== null ? decisionQuestionOf(fixed) : undefined;
+  const quiet = line.acknowledge === false || afterAck;
   const act: SpeechAct = {
     act: said.role,
     goal,
@@ -189,8 +195,9 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     ...(keep !== undefined ? { keep } : {}),
     items: vars.filter((v) => !from.has(v)).map(value),
     ...(content.length > 0 ? { content } : {}),
-    ...(words !== null && !sensitivePrompt(app, before.promptedFor) ? { heard: words } : {}),
-    ...(line.acknowledge === false ? { acknowledge: false as const } : {}),
+    // A line that adds no acknowledgement is not sent the caller's words: it has nothing to say back of them.
+    ...(words !== null && !sensitivePrompt(app, before.promptedFor) && !quiet ? { heard: words } : {}),
+    ...(quiet ? { acknowledge: false as const } : {}),
     frustration: frustrationOf(after),
     situations,
     channel,
@@ -242,14 +249,18 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const identifiers = identifierVarsFrom(app.slots, identityOf(app).factorSlots);
   const planned: { index: number; said: SaidLine; plan: ReturnType<typeof planLine> }[] = [];
   const framed: { index: number; said: SaidLine; plan: ReturnType<typeof planFramed> }[] = [];
+  // Whether the turn has said an acknowledgement before the line at hand: an ack of the decision's, or a line of the engine's own.
+  let acked = false;
   result.actions.forEach((a, index) => {
     if (a.type !== 'say') return;
     const said = saidLineOf(a);
+    const wasAcked = acked;
+    if (said === undefined || said.role === 'acknowledge') acked = true;
     if (said === undefined || !Object.hasOwn(generated.lines, said.promptId)) return;
     const line = generated.lines[said.promptId]!;
     // A framed line: only its spans are worded, each spliced into its fixed text.
     if (isFramed(line)) framed.push({ index, said, plan: planFramed(app, input, line, said, group, identifiers) });
-    else planned.push({ index, said, plan: planLine(app, input, line, said, group, identifiers) });
+    else planned.push({ index, said, plan: planLine(app, input, line, said, group, identifiers, wasAcked) });
   });
   if (planned.length === 0 && framed.length === 0 && !start) return null;
 

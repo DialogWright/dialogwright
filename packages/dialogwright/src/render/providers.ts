@@ -74,7 +74,27 @@ export function renderThinkingOf(model: string, env: Env): RenderThinking {
     overridden: false,
   };
   out.overridden = out.mode !== row.mode || out.effort !== row.effort;
+  const refused = refusedThinking(model, out.mode);
+  if (refused !== null) throw new Error(`RENDER_THINKING=${out.mode} is refused by ${model}: ${refused}; unset RENDER_THINKING for the model's own (${row.mode})`);
   return out;
+}
+
+/** The models before adaptive thinking (Claude 3, and the 4 family before 4.6): they refuse `adaptive`. */
+const BEFORE_ADAPTIVE = /^claude-(?:3|(?:haiku|sonnet|opus)-(?:3|4(?:-[0-5])?)(?:-\d{8})?$)/;
+
+/**
+ * Why `model` refuses thinking `mode` (the API answers a 400), or null: so the server and `pnpm
+ * diagnose` refuse the setting before any call. By the model id's start, as THINKING_BY_MODEL; a model
+ * neither names is let through, as the API is the judge of what it does not know.
+ */
+export function refusedThinking(model: string, mode: RenderThinkingMode): string | null {
+  const sonnet55 = model.startsWith('claude-sonnet-5-5');
+  if (mode === 'disabled' && (sonnet55 || model.startsWith('claude-opus-5-5') || model.startsWith('claude-fable-') || model.startsWith('claude-mythos-'))) {
+    return sonnet55 ? 'it cannot turn thinking off that way (its way is between-tools)' : 'it cannot turn thinking off (omit it, and lower RENDER_EFFORT)';
+  }
+  if (mode === 'between-tools' && !sonnet55) return 'only Claude Sonnet 5.5 takes between-tools';
+  if (mode === 'adaptive' && BEFORE_ADAPTIVE.test(model)) return 'it is older than adaptive thinking';
+  return null;
 }
 
 /** The `thinking` and `output_config` an Anthropic request carries for `t`. */
@@ -188,6 +208,8 @@ function apiError(json: unknown, key: string): { type?: string; message?: string
   const e = (json as { error?: unknown } | null)?.error;
   if (e === null || typeof e !== 'object') return {};
   const o = e as { type?: unknown; code?: unknown; message?: unknown };
+  // Anthropic's error has a type; OpenRouter's a code, which may be the HTTP status again (a number:
+  // then nothing is added to the status), or a name. OpenRouter's shape is to be confirmed on a live call.
   const type = typeof o.type === 'string' ? o.type : typeof o.code === 'string' ? o.code : undefined;
   const clean = (t: string): string => t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
   return { ...(type !== undefined && /^[A-Za-z0-9_.-]{1,64}$/.test(type) ? { type } : {}), ...(typeof o.message === 'string' && o.message.trim() !== '' ? { message: clean(o.message) } : {}) };
@@ -249,7 +271,7 @@ function anthropicAnswer(json: unknown): Answer {
   if (b === null || typeof b !== 'object' || !Array.isArray(b.content)) return { stopped: null };
   if (b.stop_reason === 'refusal' || b.stop_reason === 'max_tokens') return { stopped: b.stop_reason };
   // The line is the text blocks alone: a thinking block (empty, with display omitted) is never read or kept.
-  const text = b.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+  const text = b.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join(' ').trim();
   // The output tokens include any thinking's, so the cost counts it.
   return { text, ...(typeof b.model === 'string' ? { model: b.model } : {}), usage: { inputTokens: b.usage?.input_tokens ?? 0, outputTokens: b.usage?.output_tokens ?? 0 } };
 }

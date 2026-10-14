@@ -106,16 +106,18 @@ describe('ModelRenderClient', () => {
   });
 
   it('a request the API refuses says why: the status and the API\'s error type, and its message apart, never the key or the request', async () => {
-    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_MODEL: 'claude-sonnet-5-5', RENDER_THINKING: 'disabled' })!;
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY })!;
     const e = await new ModelRenderClient(p, answering(400, { type: 'error', error: { type: 'invalid_request_error', message: `thinking.type: "disabled" is not supported for this model;\n  key ${KEY} was sent` } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect(e).toBeInstanceOf(RenderClientError);
     expect(e.message).toBe('anthropic: HTTP 400 invalid_request_error');
     expect(e.detail).toBe('thinking.type: "disabled" is not supported for this model; key • was sent');
     expect(JSON.stringify([e.message, e.detail])).not.toContain('And who is the message from?');
-    // OpenRouter's shape: its code as the type.
     const or = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!;
-    const o = await new ModelRenderClient(or, answering(429, { error: { code: 'rate_limited', message: 'Slow down' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
-    expect([o.message, o.detail]).toEqual(['openrouter: HTTP 429 rate_limited', 'Slow down']);
+    // OpenRouter's code may be the HTTP status again (a number): the status alone; a name is taken as the type. To confirm live.
+    const o = await new ModelRenderClient(or, answering(429, { error: { code: 429, message: 'Slow down' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([o.message, o.detail]).toEqual(['openrouter: HTTP 429', 'Slow down']);
+    const named = await new ModelRenderClient(or, answering(400, { error: { code: 'bad_request', message: 'No' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(named.message).toBe('openrouter: HTTP 400 bad_request');
     // A body that is not JSON: the status alone.
     const bare = await new ModelRenderClient(p, (async () => new Response('Bad gateway', { status: 502 })) as typeof fetch).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect([bare.message, bare.detail]).toEqual(['anthropic: HTTP 502', undefined]);
@@ -198,7 +200,23 @@ describe('how an Anthropic model thinks while it words a line', () => {
     expect(await bodyFor({ RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' })).toEqual({ model: 'claude-haiku-5-5', max_tokens: 4000, thinking: { type: 'adaptive', display: 'omitted' }, output_config: { effort: 'low' } });
     expect(await bodyFor({ RENDER_MODEL: 'claude-sonnet-5-5', RENDER_THINKING: 'omit', RENDER_EFFORT: 'medium' })).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 4000, output_config: { effort: 'medium' } });
     expect(await bodyFor({ RENDER_EFFORT: 'high' })).toEqual({ model: 'claude-haiku-5-5', max_tokens: 200, thinking: { type: 'disabled' }, output_config: { effort: 'high' } });
-    expect(await bodyFor({ RENDER_MODEL: 'claude-opus-5-5', RENDER_THINKING: 'between-tools' })).toEqual({ model: 'claude-opus-5-5', max_tokens: 200, thinking: { type: 'between_tools' }, output_config: { effort: 'low' } });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-haiku-4-5', RENDER_THINKING: 'omit' })).toEqual({ model: 'claude-haiku-4-5', max_tokens: 4000 });
+  });
+
+  it('the line is the text blocks joined by a space and trimmed, the thinking never read', async () => {
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_THINKING: 'adaptive' })!;
+    const blocks = { content: [{ type: 'thinking', thinking: 'the caller wants' }, { type: 'text', text: 'And who is' }, { type: 'text', text: 'the message from? ' }], stop_reason: 'end_turn' };
+    const g = await new ModelRenderClient(p, (async () => new Response(JSON.stringify(blocks), { status: 200 })) as typeof fetch).generate(req, signal);
+    expect(g.text).toBe('And who is the message from?');
+  });
+
+  it('a combination the API refuses is refused before any call, so the server does not start and diagnose fails it', () => {
+    const at = (env: Record<string, string>) => () => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, ...env });
+    expect(at({ RENDER_MODEL: 'claude-sonnet-5-5', RENDER_THINKING: 'disabled' })).toThrow('RENDER_THINKING=disabled is refused by claude-sonnet-5-5: it cannot turn thinking off that way (its way is between-tools); unset RENDER_THINKING for the model\'s own (between-tools)');
+    for (const model of ['claude-opus-5-5', 'claude-fable-5-1', 'claude-mythos-5-1']) expect(at({ RENDER_MODEL: model, RENDER_THINKING: 'disabled' })).toThrow(`RENDER_THINKING=disabled is refused by ${model}: it cannot turn thinking off`);
+    for (const model of ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-fable-5', 'claude-haiku-4-5']) expect(at({ RENDER_MODEL: model, RENDER_THINKING: 'between-tools' })).toThrow('only Claude Sonnet 5.5 takes between-tools');
+    for (const model of ['claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1', 'claude-sonnet-4-20250514', 'claude-3-5-haiku-latest']) expect(at({ RENDER_MODEL: model, RENDER_THINKING: 'adaptive' }), model).toThrow('it is older than adaptive thinking');
+    for (const model of ['claude-haiku-5-5', 'claude-sonnet-4-6', 'claude-opus-4-8', 'claude-sonnet-5-5', 'some-new-model']) expect(at({ RENDER_MODEL: model, RENDER_THINKING: 'adaptive' })(), model).toMatchObject({ thinking: { mode: 'adaptive' } });
   });
 
   it('each setting checked; neither for OpenRouter, which is asked to turn reasoning off', () => {

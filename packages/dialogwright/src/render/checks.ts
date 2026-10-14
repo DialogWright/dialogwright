@@ -103,7 +103,9 @@ const fold = (s: string): string => s.toLowerCase().replace(/\s+/g, ' ').trim();
  */
 function allowedSources(act: SpeechAct): { names: string[]; figures: string[] } {
   const given = [act.fixed, act.goal, ...act.items.map((i) => i.value), ...(act.content ?? []).map((c) => c.value)];
-  const heard = act.heard !== undefined ? [act.heard] : [];
+  // A line that adds no acknowledgement (acknowledge: false) says nothing back of what the caller said:
+  // a name or a figure only the caller's words have is `foreign` in it, whatever the model was told.
+  const heard = act.heard !== undefined && act.acknowledge !== false ? [act.heard] : [];
   return { names: [...given, ...heard], figures: act.act === 'acknowledge' ? [...given, ...heard] : given };
 }
 

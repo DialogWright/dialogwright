@@ -19,7 +19,7 @@ import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
-import { RenderClientError, type Renderer } from './types';
+import { RenderClientError, type Renderer, type SpeechAct } from './types';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
 import { policyCardText } from '../testing/policyCard';
@@ -488,32 +488,61 @@ describe('a line that adds no acknowledgement (acknowledge: false; live findings
     registerApp(app);
   };
 
-  it('on a line: its act says so, it is worded with no acknowledgement, and every other line is as it was', async () => {
+  // Asked for the caller's name after the recipient was named alone: no acknowledgement of the core's before it.
+  const TO_CALLER: Scenario['steps'] = [{ say: "I'd like to leave a message" }, { say: 'for Lee Park please' }];
+
+  it('on a line: its act says so, it is not sent the caller\'s words, it is worded with no acknowledgement, and every other line is as it was', async () => {
     use(onLine);
     expect(onLine.generated!.lines.ask_caller).toMatchObject({ acknowledge: false });
     expect(onLine.generated!.lines.ask_phone!.acknowledge).toBeUndefined();
-    // The policy card says so on the line, and only there.
+    // The policy card says what the model is told, on the line, and only there.
     const card = policyCardText(onLine, MESSAGE_DIR);
-    expect(card).toContain("| `ask_caller` | And who is the message from? | Ask for the caller's name. (no acknowledgement: the fixed line reworded alone) |");
+    expect(card).toContain("| `ask_caller` | And who is the message from? | Ask for the caller's name. (told to add no acknowledgement) |");
     expect(card.match(/no acknowledgement/g)).toHaveLength(1);
     expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain('no acknowledgement');
     for (const as of [undefined, 'web']) {
       const client = new FakeRenderClient();
-      const r = await call([TO_SUMMARY[0]!], { client }, [], as);
+      const r = await call(TO_CALLER, { client }, [], as);
       const caller = client.asked.find((a) => a.promptId === 'ask_caller')!.act;
       expect(caller.acknowledge).toBe(false);
-      // The caller's words still go with it, for the checks: only the leave to acknowledge them is gone.
-      expect(caller.heard).toBe('can I leave a message for Dana');
+      // Nothing to say back: the caller's words are not sent.
+      expect(Object.hasOwn(caller, 'heard')).toBe(false);
       expect(r.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'generated', said: 'And who is the message from?' });
     }
-    const client = new FakeRenderClient();
-    await call(TO_SUMMARY.slice(0, 2), { client });
-    expect(Object.hasOwn(client.asked.find((a) => a.promptId === 'ask_phone')!.act, 'acknowledge')).toBe(false);
-    // The default fixture's acts carry no such field: their recordings' keys are unchanged.
+    // The same turn on the fixture as it is: the caller's words sent, the act as it was.
     use(messageApp);
     const plain = new FakeRenderClient();
-    await call([TO_SUMMARY[0]!], { client: plain });
-    expect(Object.hasOwn(plain.asked.find((a) => a.promptId === 'ask_caller')!.act, 'acknowledge')).toBe(false);
+    await call(TO_CALLER, { client: plain });
+    const act = plain.asked.find((a) => a.promptId === 'ask_caller')!.act;
+    expect(act.heard).toBe('for Lee Park please');
+    expect(Object.hasOwn(act, 'acknowledge')).toBe(false);
+  });
+
+  it('a name only the caller said is refused in such a line (foreign), whatever the model was told; allowed where an acknowledgement is', async () => {
+    use(onLine);
+    const thanks = (act: SpeechAct): string => `Thanks, Lee. ${act.fixed}`;
+    const quiet = await call(TO_CALLER, { client: new FakeRenderClient({ say: { ask_caller: thanks } }) });
+    expect(quiet.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: 'Thanks, Lee. And who is the message from?' });
+    use(messageApp);
+    const plain = await call(TO_CALLER, { client: new FakeRenderClient({ say: { ask_caller: thanks } }) });
+    expect(plain.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')!.fallback).not.toBe('foreign');
+  });
+
+  it('after an acknowledgement the core put before it, a line adds none of its own: two never stack (message-for-lee)', async () => {
+    use(messageApp);
+    for (const as of [undefined, 'web']) {
+      const client = new FakeRenderClient();
+      // "I'd like to leave a message": ack_intent, then the recipient's question.
+      const r = await call([TO_CALLER[0]!], { client }, [], as);
+      const asked = client.asked.find((a) => a.promptId === 'ask_recipient')!.act;
+      expect(asked.acknowledge).toBe(false);
+      expect(Object.hasOwn(asked, 'heard')).toBe(false);
+      expect(lastSaid(r)).toBe('Sure, I can help you take a message. Who is the message for, Dana Reyes or Lee Park?');
+    }
+    // The line said first on its turn keeps its leave to acknowledge.
+    const client = new FakeRenderClient();
+    await call(TO_CALLER, { client });
+    expect(Object.hasOwn(client.asked.find((a) => a.promptId === 'ask_caller')!.act, 'acknowledge')).toBe(false);
   });
 
   it('on a form: every line its switch generates, unless a line says otherwise', async () => {

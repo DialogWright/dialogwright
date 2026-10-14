@@ -530,7 +530,7 @@ function wordingSection(app: App): string[] {
       const masked = vars.filter((v) => Object.hasOwn(app.slots, v) && app.slots[v]!.redact !== undefined);
       const by = line.by === 'prompt' ? '' : ` (its form ${code(line.by.form)})`;
       const list = (xs: readonly string[]): string => (xs.length === 0 ? 'nothing' : xs.map((v) => code(`{${v}}`)).join(', '));
-      out.push(`| ${code(id)} | ${cell(text)} | ${cell(line.goal)}${line.acknowledge === false ? ' (no acknowledgement: the fixed line reworded alone)' : ''} | ${cell(whereWords(line))}${by} | ${list(carried)} | ${list(masked)} | ${list([...from])}${line.summarizesConfirmed === true ? ', a value the caller confirms' : ''} |`);
+      out.push(`| ${code(id)} | ${cell(text)} | ${cell(line.goal)}${line.acknowledge === false ? ' (told to add no acknowledgement)' : ''} | ${cell(whereWords(line))}${by} | ${list(carried)} | ${list(masked)} | ${list([...from])}${line.summarizesConfirmed === true ? ', a value the caller confirms' : ''} |`);
     }
   }
   if (framed.length > 0) {
