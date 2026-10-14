@@ -72,7 +72,7 @@ fixtures/       the corpus, the scripted calls and the stub baseline
 
 ## Try it with no keys
 
-Run these at the repository root. Nothing here needs a key: the stub decision model answers from the labels in `fixtures/corpus.jsonl`, and the span is worded by the engine's fake renderer (the message's first clause), with every check run on it. So a one-clause message comes back as itself, said unchanged with the exact-words frame ("called and said: ..."); a longer one is "summarized" to its first clause with the "in short" frame, unless that leaves out a clause that says "no" or sets a condition (`omitted`), and the exact words are said instead.
+Run these at the repository root. Nothing here needs a key: the stub decision model answers from the labels in `fixtures/corpus.jsonl`, and the span is worded by the engine's fake renderer (the message's first clause), with every check run on it. So a one-clause message with no "I" comes back as itself, said unchanged with the exact-words frame ("as you said it: ..."); a longer one, or one with an "I" or "my" turned to the caller, is said with the "in short" frame, unless a check refuses it and the exact words are said instead. The span runs at the checks' default level, `standard` (guide 16.6; the policy card's Checks column): the core checks, and the drift judge for the rest, such as a clause with a "no" left out.
 
 ```sh
 pnpm --filter @dialogwright/example-secretary regress                       # every corpus line and scripted call: "no changes", then a summary
@@ -81,7 +81,7 @@ pnpm --filter @dialogwright/example-secretary regress --scenario urgent-at-the-r
 pnpm --filter @dialogwright/example-secretary cli --client heuristic        # a text console that understands by keywords
 ```
 
-A scripted call's transcript shows each line the caller hears, and under the read-back whether the span was generated or why it was said exact (`line confirm_take_message: generated; fixed "..."`, `fixed, said unchanged` when the wording was the message itself, `fixed, fell back (omitted)` and the like when a check refused it, `fixed (exact)` after a no, `fixed (when)` on a later reading). The run's last line counts the generated lines: how many were tried, said generated, said unchanged and fell back, and why.
+A scripted call's transcript shows each line the caller hears, and under the read-back whether the span was generated or why it was said exact (`line confirm_take_message: generated; fixed "..."`, `fixed, said unchanged` when the wording was the message itself, `fixed, fell back (drift)` and the like when a check refused it, `fixed (exact)` after a no, `fixed (when)` on a later reading). The run's last line counts the generated lines: how many were tried, said generated, said unchanged and fell back, and why.
 
 To try the web chat and the console on this computer, `pnpm configure --app secretary` (choose "on this computer"; it asks for the studio's main line, `STUDIO_MAIN_LINE`, where every handoff goes: a 555 number such as +15555550100 is fine on a laptop, or give it as `--number STUDIO_MAIN_LINE=+15555550100`), then `pnpm start --app secretary`.
 
