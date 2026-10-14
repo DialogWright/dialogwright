@@ -42,6 +42,12 @@ export interface SpeechAct {
   readonly content?: readonly SpeechItem[];
   /** The caller's words on this turn, quoted as data; absent on a turn without words, or at a sensitive question. */
   readonly heard?: string;
+  /**
+   * False where the app says the line adds no acknowledgement (prompts.yaml's or the form's
+   * `acknowledge: false`): the model only rewords the fixed line, and is told so. Absent otherwise (an
+   * acknowledgement allowed), so the act of every other line is as it was.
+   */
+  readonly acknowledge?: false;
   /** How frustrated the caller has been on this call: none, some (once), high (more than once). */
   readonly frustration: 'none' | 'some' | 'high';
   /** The situations the line is said in (first-ask or re-ask, after-correction, frustrated). */
@@ -106,7 +112,12 @@ export interface Generation {
 
 /** A render client's failure to word a line: a timeout, a transport or API error, a cassette with no line for it. */
 export class RenderClientError extends Error {
-  constructor(message: string, readonly kind: 'error' | 'cassette-miss' = 'error') {
+  /**
+   * `message` names the provider and how the request failed (`anthropic: HTTP 400 invalid_request_error`,
+   * `anthropic: TypeError`), never the key or the request; `detail` is the API's own message, for the
+   * trace (RenderLine.error), made safe the same way.
+   */
+  constructor(message: string, readonly kind: 'error' | 'cassette-miss' = 'error', readonly detail?: string) {
     super(message);
     this.name = 'RenderClientError';
   }
@@ -191,6 +202,12 @@ export interface RenderLine {
   fallback?: RenderFallback;
   /** The wording a check refused, for whoever reads the trace; never said. */
   refused?: string;
+  /**
+   * Why the request failed, for a line that fell back as `error`: `reason` the provider, the HTTP status
+   * and the API's error type (`anthropic: HTTP 400 invalid_request_error`), what a run's summary groups
+   * by; `message` the API's own words. Never the key or the request.
+   */
+  error?: { reason: string; message?: string };
   /** How long the line's generation and checks took, ms. */
   ms?: number;
   usage?: RenderUsage;

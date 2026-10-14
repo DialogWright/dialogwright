@@ -218,6 +218,10 @@
               "generative"
             ]
           },
+          "acknowledge": {
+            "description": "With wording: generative: whether the lines its switch generates may begin by acknowledging what the caller just said. false: each only rewords its fixed line. Default true; a line's own `acknowledge` in prompts.yaml wins.",
+            "type": "boolean"
+          },
           "listenBeforeEntered": {
             "description": "Whether the form's slots fill from what the caller says before the form is open (on the turn that opens it, as `listen: up-front` does). false: a slot every form that lists it says false for behaves as `listen: form`, and is asked once its form is open, even when it was said earlier. A slot's own `listen` overrides it. Default true for a form intent, false for an internal form.",
             "type": "boolean"

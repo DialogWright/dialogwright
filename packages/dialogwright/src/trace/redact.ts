@@ -425,6 +425,7 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
         fixed: scrub(l.fixed),
         ...(l.said !== undefined ? { said: scrub(l.said) } : {}),
         ...(l.refused !== undefined ? { refused: scrub(l.refused) } : {}),
+        ...(l.error?.message !== undefined ? { error: { ...l.error, message: scrub(l.error.message) } } : {}),
       })),
     };
   }

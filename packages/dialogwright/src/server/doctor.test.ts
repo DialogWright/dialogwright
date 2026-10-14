@@ -806,8 +806,12 @@ describe('pnpm diagnose: generated wording', () => {
   it('who words the lines, the key by its variable only; every line fixed with RENDER_PROVIDER unset; a setting the server would refuse', () => {
     expect(wordingChecks(MESSAGE, {})[0]).toMatchObject({ id: 'wording', status: 'warn', message: '9 generated lines, but RENDER_PROVIDER is unset: every line is said fixed' });
     const ok = wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_SHARE: '50' })[0]!;
-    expect(ok).toMatchObject({ status: 'ok', message: '9 generated lines, worded by claude-haiku-5-5 from anthropic (key in ANTHROPIC_API_KEY), 50% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms' });
+    expect(ok).toMatchObject({ status: 'ok', message: '9 generated lines, worded by claude-haiku-5-5 from anthropic (key in ANTHROPIC_API_KEY; thinking disabled), 50% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms' });
     expect(JSON.stringify(ok)).not.toContain('sk-test-not-real');
+    // How the model thinks: its own least (Sonnet 5.5's between-tools), or the settings', each checked.
+    expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_MODEL: 'claude-sonnet-5-5' })[0]!.message).toContain('(key in ANTHROPIC_API_KEY; thinking between-tools)');
+    expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' })[0]!.message).toContain('(key in ANTHROPIC_API_KEY; thinking adaptive, effort low)');
+    expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_THINKING: 'on' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: RENDER_THINKING must be disabled, between-tools, adaptive, omit, got "on": the server will not start' });
     expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'openrouter' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: missing required environment variable OPENROUTER_API_KEY (RENDER_PROVIDER=openrouter): the server will not start' });
   });
 });

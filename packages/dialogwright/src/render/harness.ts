@@ -3,7 +3,7 @@ import type { TraceRecord } from '../trace/types';
 import { generatesLines } from './config';
 import { RenderCassette, renderCassettePath } from './cassette';
 import { FakeRenderClient } from './fake';
-import { ModelRenderClient, renderLines, renderSettings, resolveRenderProvider } from './providers';
+import { ModelRenderClient, renderCassetteModel, renderLines, renderSettings, resolveRenderProvider } from './providers';
 import type { RenderFallback, Renderer } from './types';
 
 /**
@@ -25,15 +25,15 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
   }
   if (kind === 'recorded') {
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...env }, { needKey: false })!;
-    const client = new RenderCassette({ path: renderCassettePath(recordedDir, p.model), mode: 'replay', model: p.model });
+    const client = new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'replay', model: p.model });
     client.preload();
     return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
   }
   const p = resolveRenderProvider(env);
   if (p === null) return { renderer: null, header: renderLines(null) };
   const live = new ModelRenderClient(p);
-  const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, p.model), mode: 'record', model: p.model, inner: live }) : live;
-  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: renderLines(p) };
+  const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'record', model: p.model, inner: live }) : live;
+  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p), ...(client instanceof RenderCassette ? [`render cassette ${client.path}`] : [])] };
 }
 
 /** What a run's generated lines came to: how many were tried, said generated, and fell back, by reason. */
@@ -44,10 +44,14 @@ export interface RenderTally {
   /** Lines the app generates that were said fixed without being tried (RENDER_SHARE, `when`, a locale, the screen). */
   skipped: number;
   costUsd: number;
+  /** The lines that fell back as `error`, by why the request failed (RenderLine.error.reason). */
+  errors: Record<string, number>;
+  /** How long each line tried took, its wording and its checks, ms: the run's latency per line. */
+  ms: number[];
 }
 
 export function emptyRenderTally(): RenderTally {
-  return { tried: 0, generated: 0, fellBack: {}, skipped: 0, costUsd: 0 };
+  return { tried: 0, generated: 0, fellBack: {}, skipped: 0, costUsd: 0, errors: {}, ms: [] };
 }
 
 /** Adds a trace record's generated lines to `tally`. */
@@ -58,16 +62,34 @@ export function tallyRender(tally: RenderTally, record: TraceRecord): void {
       continue;
     }
     tally.tried += 1;
+    if (line.ms !== undefined) tally.ms.push(line.ms);
     if (line.mode === 'generated') tally.generated += 1;
     else if (line.fallback !== undefined) tally.fellBack[line.fallback] = (tally.fellBack[line.fallback] ?? 0) + 1;
+    if (line.fallback === 'error') {
+      const why = line.error?.reason ?? 'unknown';
+      tally.errors[why] = (tally.errors[why] ?? 0) + 1;
+    }
   }
   tally.costUsd += record.render?.usage?.costUsd ?? 0;
 }
 
-/** The run's line about its generated lines: tried, said generated, the fallback rate and its reasons. */
+/** The value at fraction `q` of `xs`, by rank. */
+function quantile(xs: readonly number[], q: number): number {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))]!;
+}
+
+/**
+ * The run's line about its generated lines: tried, said generated, the fallback rate and its reasons
+ * (a request's failures by why: `error 36 (anthropic: HTTP 400 invalid_request_error)`), and how long a
+ * line tried took, its wording and its checks (p50 and p95, ms; a replay's wording takes none).
+ */
 export function formatRenderTally(t: RenderTally): string {
   const fell = Object.values(t.fellBack).reduce((a, b) => a + (b ?? 0), 0);
   const rate = t.tried === 0 ? 0 : (100 * fell) / t.tried;
-  const reasons = Object.entries(t.fellBack).sort(([a], [b]) => a.localeCompare(b)).map(([r, n]) => `${r} ${n}`).join(', ');
-  return `generated lines  ${t.tried} tried, ${t.generated} said generated, ${fell} fell back (${rate.toFixed(1)}%)${reasons ? `: ${reasons}` : ''}${t.skipped > 0 ? `; ${t.skipped} said fixed untried` : ''}`;
+  const why = Object.entries(t.errors).sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+  const errors = why.length === 0 ? '' : ` (${why.length === 1 ? why[0]![0] : why.map(([r, n]) => `${r} ${n}`).join('; ')})`;
+  const reasons = Object.entries(t.fellBack).sort(([a], [b]) => a.localeCompare(b)).map(([r, n]) => `${r} ${n}${r === 'error' ? errors : ''}`).join(', ');
+  const latency = t.ms.length > 0 ? `; latency ms p50 ${quantile(t.ms, 0.5).toFixed(0)} p95 ${quantile(t.ms, 0.95).toFixed(0)}` : '';
+  return `generated lines  ${t.tried} tried, ${t.generated} said generated, ${fell} fell back (${rate.toFixed(1)}%)${reasons ? `: ${reasons}` : ''}${t.skipped > 0 ? `; ${t.skipped} said fixed untried` : ''}${latency}`;
 }

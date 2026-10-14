@@ -71,6 +71,10 @@
             "additionalProperties": false,
             "description": "Where a generated line is generated; everywhere else its fixed text is said. Both parts must hold."
           },
+          "acknowledge": {
+            "description": "Whether the generated wording of this line may begin by acknowledging what the caller just said (\"Thanks.\", \"Got it.\"). false: the model only rewords the fixed line, and is told so. Default true; a line's own setting wins over its form's (forms.yaml's `acknowledge`). Only with a generated line; never on a framed line (a span acknowledges nothing).",
+            "type": "boolean"
+          },
           "from": {
             "description": "Generated from collected content: the line's variables (its {names}) that hold content the call collected (a message, a note) and the model may summarize rather than repeat word for word. The exact content is always kept and is what is stored; the fixed text, which reads it word for word, is the fallback, and a caller who asks to hear it again hears it. Only with a generated line.",
             "minItems": 1,

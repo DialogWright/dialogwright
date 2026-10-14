@@ -76,6 +76,12 @@ const prompt = z
       .optional()
       .describe('true: the line is prescribed (regulated, legal or otherwise fixed by the app designer) and is always said word for word: never generated, whatever its form says; `pnpm check` refuses mode: generative on it. The policy card lists it.'),
     when: when.optional(),
+    acknowledge: z
+      .boolean({ error: 'must be true or false' })
+      .optional()
+      .describe(
+        'Whether the generated wording of this line may begin by acknowledging what the caller just said ("Thanks.", "Got it."). false: the model only rewords the fixed line, and is told so. Default true; a line\'s own setting wins over its form\'s (forms.yaml\'s `acknowledge`). Only with a generated line; never on a framed line (a span acknowledges nothing).',
+      ),
     from: unique(identifier(), 'variable')
       .min(1, { error: 'must name at least one variable' })
       .optional()

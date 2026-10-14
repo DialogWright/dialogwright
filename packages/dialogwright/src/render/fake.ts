@@ -49,7 +49,8 @@ export function fakeWording(act: SpeechAct): string {
   }
   // The summary's ellipsis takes the place of the content's own last stop: no "..." followed by a ".".
   line = line.replace(/\.\.\.\./g, '...');
-  const lead = act.frustration !== 'none' ? 'I understand. ' : act.situations.includes('re-ask') ? 'Let me ask that again. ' : act.content !== undefined ? 'Got it. ' : act.heard !== undefined && act.act === 'ask' ? 'Thanks. ' : '';
+  // A line the app says adds no acknowledgement (acknowledge: false) is the fixed line reworded, with no lead.
+  const lead = act.acknowledge === false ? '' : act.frustration !== 'none' ? 'I understand. ' : act.situations.includes('re-ask') ? 'Let me ask that again. ' : act.content !== undefined ? 'Got it. ' : act.heard !== undefined && act.act === 'ask' ? 'Thanks. ' : '';
   const led = `${lead}${line}`;
   return wordCount(led) <= act.style.words ? led : line;
 }

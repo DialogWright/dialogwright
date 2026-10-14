@@ -1513,6 +1513,12 @@ export interface GeneratedLine {
   /** The app accepts that the line may summarize a value a `confirmed` rule holds the caller to (prompts.yaml's `summarizesConfirmed`). */
   readonly summarizesConfirmed?: true;
   /**
+   * False: its wording adds no acknowledgement of what the caller said, only rewords the fixed line
+   * (prompts.yaml's `acknowledge: false`, or its form's for the lines the form's switch generates).
+   * Absent: an acknowledgement is allowed, as always.
+   */
+  readonly acknowledge?: false;
+  /**
    * A framed line (prompts.yaml's `generate`): only these spans of it are generated, each a variable
    * of its text, by name; every other word is its fixed text, never sent to a model. Its `goal` is
    * then unused (each span has its own) and it has no `from` of its own. Absent for a line generated whole.

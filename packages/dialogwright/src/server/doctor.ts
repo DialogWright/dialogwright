@@ -15,7 +15,7 @@ import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
-import { renderSettings, resolveRenderProvider } from '../render/providers';
+import { renderSettings, resolveRenderProvider, thinkingLabel } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
@@ -422,7 +422,7 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
     const p = resolveRenderProvider(env);
     if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated' }];
     const r = renderSettings(env);
-    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
+    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}${p.thinking !== undefined ? `; ${thinkingLabel(p.thinking)}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }

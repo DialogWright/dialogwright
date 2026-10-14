@@ -125,6 +125,12 @@ const form = z
         'How the form\'s lines are produced (generated wording). generative: each of its lines (its slots\' questions, ask_<slot> and their retry, no-input and partial lines, their read-backs, confirm_<slot>, and its summary) is generated as a prompt with mode: generative is, ' +
           'unless the line says mode: fixed or is prescribed (prescribed: true). A line without a goal of its own is worded to say what its fixed text says. Default fixed: every line word for word.',
       ),
+    acknowledge: z
+      .boolean({ error: 'must be true or false' })
+      .optional()
+      .describe(
+        'With wording: generative: whether the lines its switch generates may begin by acknowledging what the caller just said. false: each only rewords its fixed line. Default true; a line\'s own `acknowledge` in prompts.yaml wins.',
+      ),
     listenBeforeEntered: z
       .boolean()
       .optional()

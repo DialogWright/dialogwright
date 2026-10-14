@@ -13,15 +13,16 @@ import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
 import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
-import { messageVariants, WHOLE_LINE } from '../testing/message/variant';
+import { messageVariants, replace, WHOLE_LINE } from '../testing/message/variant';
 import type { App } from '../core/app/types';
 import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
-import type { Renderer } from './types';
+import { RenderClientError, type Renderer } from './types';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
+import { policyCardText } from '../testing/policyCard';
 
 /**
  * Generated wording on a turn (render/turn.ts), on the message fixture (src/testing/message), whose
@@ -474,5 +475,73 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a line that adds no acknowledgement (acknowledge: false; live findings, item 18)', () => {
+  const ASK_CALLER = "  ask_caller:\n    text: And who is the message from?\n    interruptible: true\n    goal: Ask for the caller's name.\n";
+  const onLine = variants.variant({ 'app.yaml': replace('id: message', 'id: message-quiet'), 'prompts.yaml': replace(ASK_CALLER, `${ASK_CALLER}    acknowledge: false\n`) });
+  const onForm = variants.variant({ 'app.yaml': replace('id: message', 'id: message-quiet-form'), 'forms.yaml': replace('    wording: generative\n', '    wording: generative\n    acknowledge: false\n') });
+  const use = (app: App): void => {
+    resetAppsForTest();
+    current = app;
+    registerApp(app);
+  };
+
+  it('on a line: its act says so, it is worded with no acknowledgement, and every other line is as it was', async () => {
+    use(onLine);
+    expect(onLine.generated!.lines.ask_caller).toMatchObject({ acknowledge: false });
+    expect(onLine.generated!.lines.ask_phone!.acknowledge).toBeUndefined();
+    // The policy card says so on the line, and only there.
+    const card = policyCardText(onLine, MESSAGE_DIR);
+    expect(card).toContain("| `ask_caller` | And who is the message from? | Ask for the caller's name. (no acknowledgement: the fixed line reworded alone) |");
+    expect(card.match(/no acknowledgement/g)).toHaveLength(1);
+    expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain('no acknowledgement');
+    for (const as of [undefined, 'web']) {
+      const client = new FakeRenderClient();
+      const r = await call([TO_SUMMARY[0]!], { client }, [], as);
+      const caller = client.asked.find((a) => a.promptId === 'ask_caller')!.act;
+      expect(caller.acknowledge).toBe(false);
+      // The caller's words still go with it, for the checks: only the leave to acknowledge them is gone.
+      expect(caller.heard).toBe('can I leave a message for Dana');
+      expect(r.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'generated', said: 'And who is the message from?' });
+    }
+    const client = new FakeRenderClient();
+    await call(TO_SUMMARY.slice(0, 2), { client });
+    expect(Object.hasOwn(client.asked.find((a) => a.promptId === 'ask_phone')!.act, 'acknowledge')).toBe(false);
+    // The default fixture's acts carry no such field: their recordings' keys are unchanged.
+    use(messageApp);
+    const plain = new FakeRenderClient();
+    await call([TO_SUMMARY[0]!], { client: plain });
+    expect(Object.hasOwn(plain.asked.find((a) => a.promptId === 'ask_caller')!.act, 'acknowledge')).toBe(false);
+  });
+
+  it('on a form: every line its switch generates, unless a line says otherwise', async () => {
+    use(onForm);
+    for (const id of ['ask_recipient', 'ask_caller', 'ask_phone', 'ask_message']) expect(onForm.generated!.lines[id], id).toMatchObject({ acknowledge: false });
+    // A framed line's span never acknowledges, with or without it.
+    expect(onForm.generated!.lines.confirm_take_message!.acknowledge).toBeUndefined();
+    const lineWins = variants.variant({ 'app.yaml': replace('id: message', 'id: message-quiet-but-one'), 'forms.yaml': replace('    wording: generative\n', '    wording: generative\n    acknowledge: false\n'), 'prompts.yaml': replace(ASK_CALLER, `${ASK_CALLER}    acknowledge: true\n`) });
+    expect(lineWins.generated!.lines.ask_caller!.acknowledge).toBeUndefined();
+    expect(lineWins.generated!.lines.ask_phone).toMatchObject({ acknowledge: false });
+  });
+});
+
+describe('a request that fails is recorded with why (live findings, item 18)', () => {
+  it('the trace\'s render record names the status and the API\'s error type and message; the fixed line is said', async () => {
+    const client = {
+      model: 'claude-sonnet-5-5',
+      async generate(): Promise<never> {
+        throw new RenderClientError('anthropic: HTTP 400 invalid_request_error', 'error', 'thinking.type: "disabled" is not supported');
+      },
+    };
+    const r = await call([TO_SUMMARY[0]!], { client });
+    expect(r.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'fixed', fallback: 'error', error: { reason: 'anthropic: HTTP 400 invalid_request_error', message: 'thinking.type: "disabled" is not supported' } });
+    expect(lastSaid(r)).toContain('And who is the message from?');
+    // A miss in a replay is no error of the request's.
+    const missing = await call([TO_SUMMARY[0]!], { client: { model: 'x', generate: async () => { throw new RenderClientError('render cassette miss: k', 'cassette-miss'); } } });
+    const miss = missing.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')!;
+    expect(miss.fallback).toBe('cassette-miss');
+    expect(miss.error).toBeUndefined();
   });
 });

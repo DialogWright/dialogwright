@@ -84,7 +84,16 @@ export interface RenderInput {
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
-type Attempt = { said: string; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage };
+type Attempt = { said: string; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']> };
+
+/** A failed request as the trace records it (RenderLine.error): the client's own account, never the request. */
+function requestFailed(e: unknown): Attempt {
+  if (e instanceof RenderClientError && e.kind === 'cassette-miss') return { fallback: 'cassette-miss' };
+  const error: NonNullable<RenderLine['error']> = e instanceof RenderClientError
+    ? { reason: e.message, ...(e.detail !== undefined ? { message: e.detail } : {}) }
+    : { reason: e instanceof Error ? e.name : 'error' };
+  return { fallback: 'error', error };
+}
 
 /**
  * What a request the turn stopped waiting for was likely billed: its input, estimated from the
@@ -181,6 +190,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     items: vars.filter((v) => !from.has(v)).map(value),
     ...(content.length > 0 ? { content } : {}),
     ...(words !== null && !sensitivePrompt(app, before.promptedFor) ? { heard: words } : {}),
+    ...(line.acknowledge === false ? { acknowledge: false as const } : {}),
     frustration: frustrationOf(after),
     situations,
     channel,
@@ -303,7 +313,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
       gen = wording;
     } catch (e) {
-      return { fallback: e instanceof RenderClientError && e.kind === 'cassette-miss' ? 'cassette-miss' : 'error' };
+      return requestFailed(e);
     }
     const text = cleanGenerated(gen.text);
     const failed = checkGenerated(text, act, { conflicts });
@@ -332,7 +342,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
       gen = wording;
     } catch (e) {
-      return { fallback: e instanceof RenderClientError && e.kind === 'cassette-miss' ? 'cassette-miss' : 'error' };
+      return requestFailed(e);
     }
     const text = cleanSpan(gen.text);
     const failed = checkSpan(text, act, { conflicts });
@@ -394,7 +404,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       lines.push({ ...base, mode: 'generated', said: got.said, ...meta });
       return;
     }
-    lines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}) });
+    lines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
     audit.push({ type: 'render_fallback', detail: { prompt: p.said.promptId, reason: got.fallback } });
   });
   // A framed line: each span said as worded or as its exact content, spliced into the line's fixed
@@ -432,7 +442,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
         spanLines.push({ ...base, mode: 'generated', said: got.said, ...meta });
         return;
       }
-      spanLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}) });
+      spanLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
       audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: sp.name, reason: got.fallback } });
     });
     if (Object.keys(worded).length > 0) {

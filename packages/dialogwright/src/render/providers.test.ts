@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { RenderCassette, loadRenderCassette, renderCassettePath } from './cassette';
 import { FakeRenderClient } from './fake';
-import { RENDER_INSTRUCTIONS, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
-import { ModelRenderClient, renderLines, renderSettings, resolveRenderProvider } from './providers';
+import { createHash } from 'node:crypto';
+import { canonicalJson } from '../jev/cassette';
+import { instructionsOf, RENDER_INSTRUCTIONS, RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
+import { ModelRenderClient, renderCassetteModel, renderLines, renderSettings, resolveRenderProvider } from './providers';
 import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
 /**
@@ -94,12 +96,29 @@ describe('ModelRenderClient', () => {
       return (e as Error).message;
     };
     expect(await fails(answering(401, { error: 'bad key' }))).toBe('anthropic: HTTP 401');
-    expect(await fails(answering(200, { content: [], stop_reason: 'refusal' }))).toBe('anthropic: the answer had no line');
-    expect(await fails(answering(200, { content: [{ type: 'text', text: 'And who is the mess' }], stop_reason: 'max_tokens' }))).toBe('anthropic: the answer had no line');
+    expect(await fails(answering(200, { content: [], stop_reason: 'refusal' }))).toBe('anthropic: the answer had no line (refusal)');
+    expect(await fails(answering(200, { content: [{ type: 'text', text: 'And who is the mess' }], stop_reason: 'max_tokens' }))).toBe('anthropic: the answer had no line (max_tokens)');
+    expect(await fails(answering(200, { nothing: true }))).toBe('anthropic: the answer had no line');
     const or = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!;
     const cut = await new ModelRenderClient(or, answering(200, { choices: [{ message: { content: 'Who is it' }, finish_reason: 'length' }] })).generate(req, signal).catch((x: unknown) => x);
-    expect((cut as Error).message).toBe('openrouter: the answer had no line');
+    expect((cut as Error).message).toBe('openrouter: the answer had no line (length)');
     expect(await fails((async () => { throw new TypeError(`fetch failed with ${KEY}`); }) as typeof fetch)).toBe('anthropic: TypeError');
+  });
+
+  it('a request the API refuses says why: the status and the API\'s error type, and its message apart, never the key or the request', async () => {
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_MODEL: 'claude-sonnet-5-5', RENDER_THINKING: 'disabled' })!;
+    const e = await new ModelRenderClient(p, answering(400, { type: 'error', error: { type: 'invalid_request_error', message: `thinking.type: "disabled" is not supported for this model;\n  key ${KEY} was sent` } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(e).toBeInstanceOf(RenderClientError);
+    expect(e.message).toBe('anthropic: HTTP 400 invalid_request_error');
+    expect(e.detail).toBe('thinking.type: "disabled" is not supported for this model; key • was sent');
+    expect(JSON.stringify([e.message, e.detail])).not.toContain('And who is the message from?');
+    // OpenRouter's shape: its code as the type.
+    const or = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!;
+    const o = await new ModelRenderClient(or, answering(429, { error: { code: 'rate_limited', message: 'Slow down' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([o.message, o.detail]).toEqual(['openrouter: HTTP 429 rate_limited', 'Slow down']);
+    // A body that is not JSON: the status alone.
+    const bare = await new ModelRenderClient(p, (async () => new Response('Bad gateway', { status: 502 })) as typeof fetch).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([bare.message, bare.detail]).toEqual(['anthropic: HTTP 502', undefined]);
   });
 
   it('a framed line\'s span: its own instructions and its span act alone, the frame never sent', async () => {
@@ -142,10 +161,77 @@ describe('ModelRenderClient', () => {
     expect(spanKey('confirm_take_message', 'summary', span)).toBe('82c11e6f76db15de0a40c19507714b0aa9346faff1aab7def851d47d4f53198b');
   });
 
-  it('says which model, from where, never the key', () => {
+  it('says which model, from where, how it thinks, never the key', () => {
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY })!;
-    expect(renderLines(p)).toEqual(['generated lines worded by claude-haiku-5-5 from anthropic']);
+    expect(renderLines(p)).toEqual(['generated lines worded by claude-haiku-5-5 from anthropic (thinking disabled)']);
+    expect(renderLines(resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!)).toEqual(['generated lines worded by anthropic/claude-haiku-5.5 from openrouter']);
     expect(renderLines(p, { replayed: true }).join(' ')).not.toContain(KEY);
+  });
+});
+
+describe('how an Anthropic model thinks while it words a line', () => {
+  const sent: Record<string, unknown>[] = [];
+  const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init!.body)) as Record<string, unknown>);
+    return new Response(JSON.stringify({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'And who is the message from?' }], usage: { input_tokens: 600, output_tokens: 90 }, stop_reason: 'end_turn' }), { status: 200 });
+  }) as typeof fetch;
+  const bodyFor = async (env: Record<string, string>): Promise<Record<string, unknown>> => {
+    sent.length = 0;
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, ...env })!;
+    const g = await new ModelRenderClient(p, fetchFn).generate(req, signal);
+    // The line is the text block alone; the thinking block is never read, its tokens counted in the output.
+    expect(g).toMatchObject({ text: 'And who is the message from?', usage: { inputTokens: 600, outputTokens: 90 } });
+    const { system: _s, messages: _m, ...rest } = sent[0]!;
+    return rest;
+  };
+
+  it('each model its own least thinking by default, the table\'s; a model it does not name as before', async () => {
+    expect(await bodyFor({})).toEqual({ model: 'claude-haiku-5-5', max_tokens: 200, thinking: { type: 'disabled' } });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-sonnet-5-5' })).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 200, thinking: { type: 'between_tools' } });
+    // Opus 5.5 cannot stop thinking: no thinking field, the least effort, and room for its thinking.
+    expect(await bodyFor({ RENDER_MODEL: 'claude-opus-5-5' })).toEqual({ model: 'claude-opus-5-5', max_tokens: 4000, output_config: { effort: 'low' } });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-fable-5-1' })).toEqual({ model: 'claude-fable-5-1', max_tokens: 4000 });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-haiku-4-5' })).toEqual({ model: 'claude-haiku-4-5', max_tokens: 200, thinking: { type: 'disabled' } });
+  });
+
+  it('RENDER_THINKING and RENDER_EFFORT override it: thinking on for a model that can turn it off, to compare', async () => {
+    expect(await bodyFor({ RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' })).toEqual({ model: 'claude-haiku-5-5', max_tokens: 4000, thinking: { type: 'adaptive', display: 'omitted' }, output_config: { effort: 'low' } });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-sonnet-5-5', RENDER_THINKING: 'omit', RENDER_EFFORT: 'medium' })).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 4000, output_config: { effort: 'medium' } });
+    expect(await bodyFor({ RENDER_EFFORT: 'high' })).toEqual({ model: 'claude-haiku-5-5', max_tokens: 200, thinking: { type: 'disabled' }, output_config: { effort: 'high' } });
+    expect(await bodyFor({ RENDER_MODEL: 'claude-opus-5-5', RENDER_THINKING: 'between-tools' })).toEqual({ model: 'claude-opus-5-5', max_tokens: 200, thinking: { type: 'between_tools' }, output_config: { effort: 'low' } });
+  });
+
+  it('each setting checked; neither for OpenRouter, which is asked to turn reasoning off', () => {
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_THINKING: 'enabled' })).toThrow('RENDER_THINKING must be disabled, between-tools, adaptive, omit, got "enabled"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_EFFORT: 'max' })).toThrow('RENDER_EFFORT must be low, medium, high, got "max"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_THINKING: 'adaptive' })).toThrow('RENDER_THINKING applies to RENDER_PROVIDER=anthropic only');
+    expect(resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!.thinking).toBeUndefined();
+  });
+
+  it('a run that changes how a model thinks is recorded in a cassette of its own, beside the default one', () => {
+    const at = (env: Record<string, string>) => renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, ...env })!);
+    expect(at({})).toBe('claude-haiku-5-5');
+    expect(at({ RENDER_THINKING: 'disabled' })).toBe('claude-haiku-5-5');
+    expect(at({ RENDER_MODEL: 'claude-opus-5-5', RENDER_EFFORT: 'low' })).toBe('claude-opus-5-5');
+    expect(at({ RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' })).toBe('claude-haiku-5-5.thinking-adaptive.effort-low');
+    expect(renderCassettePath('/r', at({ RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' }))).toBe(join('/r', 'render', 'claude-haiku-5-5.thinking-adaptive.effort-low.jsonl'));
+    expect(renderLines(resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' })!)).toEqual(['generated lines worded by claude-haiku-5-5 from anthropic (thinking adaptive, effort low)']);
+  });
+});
+
+describe('a line that adds no acknowledgement (acknowledge: false)', () => {
+  it('is sent instructions of its own, in place of leave to acknowledge, and its act says so; every other line\'s are as they were', () => {
+    const quiet: SpeechAct = { ...act, acknowledge: false };
+    expect(instructionsOf(act)).toBe(RENDER_INSTRUCTIONS);
+    expect(instructionsOf(quiet)).toBe(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT);
+    expect(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT).toContain('"acknowledge" is false: add no acknowledgement of what the caller said, before the line or within it (no thanks, no "got it", no repeating their words, no name); reword the fixed line alone.');
+    expect(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT).not.toContain('you may briefly acknowledge');
+    expect(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT).not.toContain('An acknowledgement only shows');
+    // Every rule after the acknowledgement is the same.
+    expect(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT.slice(RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT.indexOf('Say every value'))).toBe(RENDER_INSTRUCTIONS.slice(RENDER_INSTRUCTIONS.indexOf('Say every value')));
+    expect(renderKey('ask_caller', quiet)).not.toBe(renderKey('ask_caller', act));
+    // The default line's key is the act and RENDER_INSTRUCTIONS, as it was recorded.
+    expect(renderKey('ask_caller', act)).toBe(createHash('sha256').update(canonicalJson({ promptId: 'ask_caller', act, instructions: RENDER_INSTRUCTIONS })).digest('hex'));
   });
 });
 

@@ -230,3 +230,43 @@ describe('a framed line (review fixes)', () => {
     expect(generatedWordingProblems({ prompts: { confirm_f: span('phone') }, forms, localePrompts: {}, identifierVars: new Set(), slots: ['caller', 'message', 'phone'] })).toEqual([]);
   });
 });
+
+describe('acknowledge: false (live findings, item 18)', () => {
+  it('a line\'s own wins over its form\'s; absent everywhere, the line is as it was', () => {
+    const g = generatedWordingOf({
+      prompts: {
+        thanks: line('Thanks.', { mode: 'generative', goal: 'Thank them.', acknowledge: false }),
+        ask_a: line('What is a?'),
+        ask_a_retry: line('Sorry, a?', { acknowledge: true }),
+        ask_b: line('What is b?'),
+      },
+      forms: { f: form(['a'], { wording: 'generative', acknowledge: false }), g: form(['b'], { wording: 'generative' }) },
+      style: null,
+      localePrompts: {},
+    })!;
+    expect(g.lines.thanks).toMatchObject({ acknowledge: false });
+    expect(g.lines.ask_a).toMatchObject({ acknowledge: false });
+    expect(Object.hasOwn(g.lines.ask_a_retry!, 'acknowledge')).toBe(false);
+    expect(Object.hasOwn(g.lines.ask_b!, 'acknowledge')).toBe(false);
+  });
+
+  it('check refuses it where it does nothing: a line not generated, a framed line, a form that generates nothing, a locale', () => {
+    const problems = generatedWordingProblems({
+      prompts: {
+        fixed: line('Fixed.', { acknowledge: false }),
+        confirm_note: line('You said: {summary}. Right?', { generate: { summary: { from: 'note', goal: 'Sum it up.' } }, acknowledge: false }),
+        ask_note: line('Your note?'),
+      },
+      forms: { f: form(['note'], { acknowledge: false }) },
+      localePrompts: { es: { ask_note: line('¿Su nota?', { acknowledge: false }) } },
+      identifierVars: new Set(),
+      slots: ['note'],
+    }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+    expect(problems).toEqual([
+      'prompts.yaml prompts.fixed.acknowledge: the line "fixed" is not generated (no mode: generative, and no form that generates its lines), so its "acknowledge" does nothing',
+      'prompts.yaml prompts.confirm_note.acknowledge: the line "confirm_note" is framed (generate): only its spans are generated, and a span never acknowledges the caller, so "acknowledge" does nothing',
+      'forms.yaml forms.f.acknowledge: the form "f" does not generate its lines (no wording: generative), so its "acknowledge" does nothing',
+      'locale/es/prompts.yaml prompts.ask_note.acknowledge: "acknowledge" is read from prompts.yaml, for every locale; a locale gives a generated line only its goal',
+    ]);
+  });
+});
