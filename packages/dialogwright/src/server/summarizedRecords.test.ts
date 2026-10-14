@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
@@ -24,6 +24,8 @@ import { FakeRenderClient, type FakeRenderOptions } from '../render/fake';
 import { policyCardText } from '../testing/policyCard';
 import type { App } from '../core/app/types';
 import type { JevClient } from '../jev/types';
+import { FileCallStateStore } from './stores/file';
+import { SESSION_SCHEMA } from '../core/session';
 
 /**
  * A slot masked in every record though a model summarizes it (a text slot's `redact: length-summarized`,
@@ -150,9 +152,20 @@ describe('redact: length-summarized (live findings, item 20)', () => {
     nowhere(r.records, PIECES);
   });
 
-  it('an interruption during the read-back: what was heard of our line is kept by its length', async () => {
-    const r = await call({}, [...TO_READ_BACK, { interrupt: "Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: please call me about the March" }]);
+  it('an interruption during the read-back: what was heard of our line is kept by its length, in the records and in the session at rest', async () => {
+    const heard = "Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: please call me about the March";
+    const r = await call({}, [...TO_READ_BACK, { interrupt: heard }]);
     nowhere(r.records, PIECES);
+    // The session as a store keeps it between turns: only that an interruption happened, the heard words by their length.
+    expect(r.session.lastInterrupt).toEqual({ heard: `<${heard.length} chars>`, afterMs: expect.any(Number) });
+    const dir = mkdtempSync(join(tmpdir(), 'summarized-store-'));
+    const store = new FileCallStateStore(dir);
+    await store.save({ callId: 'CA1', provider: 'twilio', schema: SESSION_SCHEMA, session: r.session, reconnects: 0, createdAtMs: 0, lastActivityMs: 0, auditTail: [] });
+    const loaded = await store.load('CA1');
+    expect(loaded?.session.lastInterrupt?.heard).toBe(`<${heard.length} chars>`);
+    // The saved record's interruption carries no words (the slot itself holds the message while the call is open, as every slot holds its value).
+    const saved = JSON.parse(readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => readFileSync(join(dir, f), 'utf8'))[0]!) as { session: { lastInterrupt: unknown } };
+    expect(JSON.stringify(saved.session.lastInterrupt)).not.toContain('March');
   });
 
   it('"read that back word for word": the exact words are said again, and recorded by their length', async () => {

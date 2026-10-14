@@ -2899,7 +2899,10 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     }
     case 'user.interrupt':
       // Barge-in is state, not a turn: the next speech turn reports it to the model.
-      s.lastInterrupt = { heard: event.heard, afterMs: event.afterMs };
+      // In an app with a slot the records mask whose words a model summarizes (SlotSpec.summarized), what was
+      // heard of our line (the message, or its summary) is kept by its length alone: the session is at rest
+      // in its store, and only that an interruption happened is ever read.
+      s.lastInterrupt = { heard: Object.values(io.app.slots).some((spec) => spec.summarized === true) && event.heard !== '' ? `<${event.heard.length} chars>` : event.heard, afterMs: event.afterMs };
       return { ...base(), decision: { kind: 'ignore' }, actions: [] };
     case 'channel.error':
       return { ...base(), decision: { kind: 'ignore' }, actions: [] };
