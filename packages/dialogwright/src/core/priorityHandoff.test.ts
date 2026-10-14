@@ -284,6 +284,60 @@ describe('a priority switch at a dictation (live findings item 27, review fixes)
   });
 });
 
+describe('at the read-back, a text slot\'s changed question is read by the yes\'s fill alone (live findings item 28, review fixes)', () => {
+  // The booking with a free-text slot that the summary holds: at its read-back the text type asks whether
+  // the caller, besides agreeing, changes its words (detailsChanged). Only a yes to the summary may give
+  // the slot new words by it, read back before anything is done; a switch's correction on the way out,
+  // and an answer said over the read-back, fill as any turn does, and the slot keeps what is on file.
+  const details = defineSlot('details', { type: 'text', what: 'the details of the problem', say: null, redact: 'none' });
+  const DETAILS = 'the ceiling above the sink is dripping';
+  const withDetails: App = {
+    ...screenedApp,
+    id: 'screened-details-summary',
+    intents: { ...screenedApp.intents, opening_hours: { criteria: 'Asks when the office is open', label: 'hear the opening hours', kind: 'informational', promptId: 'opening_hours' } },
+    slots: { ...screenedApp.slots, details },
+    forms: { ...screenedApp.forms, book_visit: { ...screenedApp.forms.book_visit!, slots: [...screenedApp.forms.book_visit!.slots, 'details'] } },
+    prompts: { ...screenedApp.prompts, manifest: { ...screenedApp.prompts.manifest, opening_hours: { text: 'We are open nine to five, Monday to Friday.', interruptible: true } } },
+  };
+  const atReadBack = (): Session => {
+    const s = inBooking(withDetails, {
+      problem: ['leak', 'a leak'], ownership: ['own', 'you own it'], town: ['ashford', 'Ashford'], howUrgent: ['soon', 'this week'],
+      visitDay: ['monday', 'Monday'], timeOfDay: ['morning', 'the morning'], details: [DETAILS, DETAILS],
+    });
+    s.pendingConfirmation = { target: 'form', form: 'book_visit', attempts: 0 };
+    s.promptedFor = 'confirm';
+    s.lastPromptId = 'confirm_book_visit';
+    return s;
+  };
+  const words = 'wait, actually the water is coming through the wall now, and it is urgent';
+  const changed = { detailsGiven: noul(0.9), detailsChanged: noul(0.9) };
+
+  it('a priority switch with a correction at the read-back: the urgency corrected, the details kept as accepted, and the handoff carries them', () => {
+    use(withDetails);
+    const t = resolve(atReadBack(), speechEvent(words, true), { ...URGENT, howUrgent: choice({ urgent: 0.92, soon: 0.05, none: 0.03 }), ...changed }, turnContext());
+    expect(t.rows.find((g) => g.decided)).toMatchObject({ gate: 'priorityIntent' });
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', slots: { howUrgent: 'right away', details: DETAILS } });
+    expect(t.session.slots.details!.value).toBe(DETAILS);
+  });
+
+  it('an informational question said over the read-back: answered, and the details kept', () => {
+    use(withDetails);
+    const asked = { ...PLAIN, intent: choice({ opening_hours: 0.95, none: 0.05 }), intentChange: choice({ replacing: 0.9, answering: 0.1 }), ...changed };
+    const t = resolve(atReadBack(), speechEvent('hang on, when are you open, the water is getting worse', true), asked, turnContext());
+    expect(t.verdict).toMatchObject({ kind: 'inform' });
+    expect(t.session.slots.details!.value).toBe(DETAILS);
+  });
+
+  it('the yes to the read-back with new words for the details: the one fill that takes them', () => {
+    use(withDetails);
+    const yes = { ...PLAIN, confirmsYes: noul(0.95), confirmsNo: noul(0.02), ...changed };
+    const t = resolve(atReadBack(), speechEvent('yes, and the water is coming through the wall now', true), yes, turnContext());
+    // (Whether the summary is then read again is the app's confirmed rule, as for any value a yes changes:
+    // this fixture's booking has none; the message fixture's has, core/summaryYes.test.ts.)
+    expect(t.session.slots.details!.value).toBe('yes, and the water is coming through the wall now');
+  });
+});
+
 describe('a priority switch with no form open ("anything else?")', () => {
   // A two-form call: the booking says its line and the call goes on, and the qualifying answers are
   // carried for the call, so a later emergency's handoff still has them.

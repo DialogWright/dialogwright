@@ -68,6 +68,8 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       ...quietOf(othersOf(o)),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId, changedId],
+      // Asked only at a form's summary read-back (questions.ts changeableAtSummary), never with pick.
+      ...(o.pick ? {} : { summaryQuestion: changedId }),
       prompts: readBackPrompts(id, o.confirm ?? 'summary'),
       questions: textQuestions(id, o),
       fill: textFill(o, { given: givenId, pick: pickId, changed: changedId }, display),

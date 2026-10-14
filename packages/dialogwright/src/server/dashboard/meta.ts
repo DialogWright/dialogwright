@@ -32,6 +32,8 @@ export interface ConsoleMeta {
   slotLabels: Record<string, string>;
   questionPrefixes: Record<string, string[]>;
   detectQuestions: string[];
+  /** The questions slots ask only at a form's summary read-back (SlotSpec.summaryQuestion), measured against SUMMARY_WORDS_CHANGED. */
+  summaryQuestions: string[];
   levels: [string, string, string];
   handoffReasons: Record<string, string>;
   facts: ConsoleFact[];
@@ -105,6 +107,7 @@ export function consoleMetaOf(app: App): ConsoleMeta {
     slotLabels: { ...c.slotLabels },
     questionPrefixes: Object.fromEntries(Object.entries(c.questionPrefixes ?? {}).map(([k, v]) => [k, [...v]])),
     detectQuestions: [...(c.detectQuestions ?? [])],
+    summaryQuestions: Object.values(app.slots).flatMap((spec) => (spec.summaryQuestion === undefined ? [] : [spec.summaryQuestion])),
     levels: c.levels ? [...c.levels] : levelWords(app),
     handoffReasons: { ...c.handoffReasons },
     facts: [...(c.facts ?? [])],

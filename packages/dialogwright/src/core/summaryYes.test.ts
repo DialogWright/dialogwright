@@ -155,3 +155,30 @@ describe('a yes with new words for the message (the text type\'s changed questio
     expect(delivered(tools)).toEqual([expect.objectContaining({ message: MESSAGE })]);
   });
 });
+
+describe('the changed question on the other turns of a pending summary changes nothing (live findings item 28, review fixes)', () => {
+  const NO = { ...PLAIN, confirmsYes: noul(0.02), confirmsNo: noul(0.95), changeSlot: choice({ none: 0.95, message: 0.05 }) };
+  /** The turn resolved twice, the message's changed question read high and low: the same turn either way. */
+  function bothWays(session: Session, tools: Tools, text: string, answers: AnswerMap): TurnResult {
+    const high = say(structuredClone(session), tools, text, { ...answers, messageChanged: noul(0.95) });
+    const low = say(structuredClone(session), tools, text, { ...answers, messageChanged: noul(0.05) });
+    expect(high.decision).toEqual(low.decision);
+    expect(high.session.slots).toEqual(low.session.slots);
+    expect(high.session.pendingConfirmation).toEqual(low.session.pendingConfirmation);
+    return high;
+  }
+
+  it('the no after the read-back (read_back_exact said), then the no at it (ask_change asked), then the new words at ask_change', async () => {
+    const { session, tools } = await atReadBack();
+    const first = bothWays(session, tools, "no, that's not quite what I said", { ...NO, messageGiven: noul(0.1) });
+    expect(first.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message', acks: [{ promptId: 'read_back_exact' }] });
+    // The question is still asked on these turns: the summary is pending.
+    expect(Object.keys(plan(first.session, speechEvent('no', true), turnContext(tools)).questions!)).toContain('messageChanged');
+    const second = bothWays(first.session, tools, 'no', { ...NO, messageGiven: noul(0.1) });
+    expect(second.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_change' });
+    expect(second.session.slots.message!.value).toBe(MESSAGE);
+    const words = 'tell her the boiler inspection moved to Tuesday';
+    const third = bothWays(second.session, tools, words, { ...PLAIN, confirmsYes: noul(0.1), confirmsNo: noul(0.1), changeSlot: choice({ none: 0.95, message: 0.05 }), messageGiven: noul(0.9) });
+    expect(third.session.slots.message!.value).toBe(words);
+  });
+});

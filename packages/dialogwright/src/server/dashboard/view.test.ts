@@ -1012,6 +1012,11 @@ describe('row helpers', () => {
     expect(thresholdFor('dobGiven', DEFAULT_THRESHOLDS)).toBe(DEFAULT_THRESHOLDS.SLOT_DETECT);
     expect(thresholdFor('describesParcel', DEFAULT_THRESHOLDS)).toBe(DEFAULT_THRESHOLDS.SLOT_DETECT);
     expect(thresholdFor('dobMonth', DEFAULT_THRESHOLDS)).toBe(DEFAULT_THRESHOLDS.SLOT_CHOICE_CONFIRM);
+    // A text slot's question at the summary's read-back, by the id the slot declares (SlotSpec.summaryQuestion),
+    // asked on the correction's turn above; never by a name's ending.
+    expect(ids).toContain('missingNoteChanged');
+    expect(thresholdFor('missingNoteChanged', DEFAULT_THRESHOLDS)).toBe(DEFAULT_THRESHOLDS.SUMMARY_WORDS_CHANGED);
+    expect(thresholdFor('somethingChanged', DEFAULT_THRESHOLDS)).toBeNull();
   });
 
   it("draws replay ticks at today's defaults, for every threshold the view reads", () => {

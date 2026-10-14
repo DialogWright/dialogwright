@@ -165,16 +165,27 @@ function withoutYesNoOffered(session: Session, specs: SlotSpec[]): SlotSpec[] {
  * on file, so a slot can refuse to let a later unprompted turn overwrite it; a correcting fill
  * (opts.correcting) hides it as null so the same slot can still replace what is there, but for a yes
  * to the summary (opts.accepted), which accepts what is there in every slot but the one it names.
- * `summary` says the turn answers the read-back of a form that holds the slot.
+ * `summary` is set for the yes to a form's summary being filled (opts.accepted) and nowhere else a slot
+ * fills: a switch's correction or an answer said over the read-back fills as any turn does
+ * (questionCtx sets it for the questions asked while the summary is pending).
  */
 export function slotCtx(session: Session, ctx: SlotContext, id: SlotId, opts: FillOptions = {}): SlotContext {
   const slot = session.slots[id]!;
   const hidden = opts.correcting === true && (opts.accepted === undefined || opts.accepted.except === id);
-  // The summary pending (the questions are built), or the yes to it being filled (opts.accepted: the
-  // confirmation is settled by then, and only the form's slots are filled).
-  const pc = session.pendingConfirmation;
-  const summary = opts.accepted !== undefined || (pc?.target === 'form' && formOf(appOf(session), pc.form).slots.includes(id));
+  // The yes to the summary being filled: the confirmation is settled by then, and only the form's slots fill.
+  const summary = opts.accepted !== undefined;
   return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value, ...(summary ? { summary: true as const } : {}) };
+}
+
+/**
+ * The context one spec's `questions` are built with (core/questions.ts): slotCtx's, with `summary` set
+ * while a form's summary that holds the slot is pending, so a slot asks what only the read-back asks (a
+ * text slot's `changed` question). Its answer is read only by the yes's fill (slotCtx, opts.accepted).
+ */
+export function questionCtx(session: Session, ctx: SlotContext, id: SlotId): SlotContext {
+  const pc = session.pendingConfirmation;
+  const summary = pc?.target === 'form' && formOf(appOf(session), pc.form).slots.includes(id);
+  return { ...slotCtx(session, ctx, id), ...(summary ? { summary: true as const } : {}) };
 }
 
 /**

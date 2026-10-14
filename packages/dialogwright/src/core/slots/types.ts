@@ -386,6 +386,13 @@ export interface SlotSpec {
    */
   quietsOthers?: true;
   /**
+   * The id of the question the slot asks only at the read-back of a form's summary that holds it: whether
+   * the caller, besides agreeing, gives it new or changed words (a `text` slot's `changed`, without
+   * `pick`), measured against SUMMARY_WORDS_CHANGED. Declared so the console draws its threshold. Absent:
+   * the slot asks none.
+   */
+  summaryQuestion?: string;
+  /**
    * With quietsOthers (a `text` slot's `others: { listen: [...] }`): the slots that still fill or change
    * from the dictation turn, as on any other turn (an urgency read from the content of a message). Each
    * a slot of a form that holds this one (pnpm check). Absent: none.

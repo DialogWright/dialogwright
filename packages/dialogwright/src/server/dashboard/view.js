@@ -186,7 +186,7 @@ export function deliveryNote(fact, held) {
 
 /** The console metadata in force: neutral until the page (or a test) configures the app's. */
 let META = {
-  formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], stepUp: [], chipStyle: {}, slotAttempts: {},
+  formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], summaryQuestions: [], stepUp: [], chipStyle: {}, slotAttempts: {},
   handoffReasons: {}, facts: [], serviceNote: { label: 'Downstream service', answered: 'answered', reasons: {} },
   signIn: { marker: 'signed in · portal', role: null }, chatPrefixes: [],
 };
@@ -233,9 +233,10 @@ function slotOf(id) {
 export function thresholdFor(id, thresholds, activeForm) {
   const t = thresholds ?? {};
   if (Object.hasOwn(GATE_THRESHOLD, id)) return t[GATE_THRESHOLD[id]] ?? null;
+  // A slot's question at a form's summary read-back, by the id it declares (SlotSpec.summaryQuestion: a
+  // text slot's `changed`): besides agreeing, does the caller change its words.
+  if ((META.summaryQuestions ?? []).includes(id)) return t.SUMMARY_WORDS_CHANGED ?? null;
   if (/Given$/.test(id) || META.detectQuestions.includes(id)) return t.SLOT_DETECT ?? null;
-  // A text slot's question at a form's summary: besides agreeing, does the caller change its words.
-  if (/Changed$/.test(id)) return t.SUMMARY_WORDS_CHANGED ?? null;
   // INTENT_ROUTE is never applied: outside a form the ladder routes from INTENT_EXPLICIT up (the
   // lowest rung that still routes, with a confirmation), and inside one only a switch at
   // INTENT_SWITCH takes the turn away from the form (src/core/gates.ts step 8).

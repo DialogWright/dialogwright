@@ -21,6 +21,8 @@ describe('consoleMetaOf', () => {
     expect(m.stepUp).toEqual(['accountId', 'dob']);
     // From each slot spec: an ID redacted to its last four, a verified factor, words redacted to their length.
     expect(m.chipStyle).toEqual({ accountId: 'last4', dob: 'verified', missingNote: 'recorded' });
+    // The question a text slot asks only at the summary's read-back (SlotSpec.summaryQuestion).
+    expect(m.summaryQuestions).toEqual(['missingNoteChanged']);
     expect(m).toMatchObject({
       formLabels: {}, slotLabels: {}, questionPrefixes: {}, detectQuestions: [], levels: ['anonymous', 'verified', 'confirmed by code'],
       handoffReasons: {}, facts: [], goodAuditTypes: [], serviceNote: { label: 'Downstream service', answered: 'answered' },

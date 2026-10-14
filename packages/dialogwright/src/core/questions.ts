@@ -4,7 +4,7 @@ import { formIntents, intentCriteria } from './app/intents';
 import { formOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, SlotId } from './app/types';
-import { activeSlots, slotCtx } from './fia';
+import { activeSlots, questionCtx } from './fia';
 import { ENGINE_QUESTION_IDS } from './questionIds';
 import type { Session } from './session';
 
@@ -273,7 +273,7 @@ export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap 
   // only those.
   const askedBy = new Map<string, SlotId>();
   for (const spec of [...activeSlots(session), ...heldByCallerMatch(session)]) {
-    const own = spec.questions(slotCtx(session, ctx, spec.id));
+    const own = spec.questions(questionCtx(session, ctx, spec.id));
     for (const id of Object.keys(own)) {
       if (ENGINE_QUESTION_IDS.includes(id)) throw new Error(`app "${app.id}": slot "${spec.id}" asks the question "${id}", which is one the engine asks`);
       const other = askedBy.get(id);

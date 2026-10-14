@@ -567,7 +567,7 @@ Compare the model's numbers against `ctx.thresholds`, by name, never against a n
 | `KB_TOPIC_MARGIN` | 0.15 | Two knowledge-base topics closer than this are asked about (a `topic` slot's `disambiguate`). |
 | `NAME_BARE_SPAN` | 0.7 | A bare name (a `name` slot's `bareAnswer`): the name span's least probability. |
 | `NAME_BARE_GIVEN` | 0.2 | A bare name: the least the yes-or-no that a name was given may read; under it, a no. |
-| `SUMMARY_WORDS_CHANGED` | 0.6 | At a form's summary, a `text` slot's `changed` question: at this or more, a yes that also adds to or changes the slot's words gives it the turn's words, and the summary is read again. |
+| `SUMMARY_WORDS_CHANGED` | 0.6 | At a form's summary, a `text` slot's `changed` question: at this or more, a yes that also adds to or changes the slot's words gives it the turn's words (read again where the action's `confirmed` rule holds the write to what the summary said). |
 
 An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
 
