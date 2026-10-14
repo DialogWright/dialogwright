@@ -85,10 +85,12 @@ export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened'
  * the line; `numbers`, an amount and a number it was not given before the line; `frame` (a framed line's
  * span only), words of a line of its own written into the span, turning the line's decision;
  * `leave-out-negation` (a span only), the content summarized with its clauses that say "no" left out,
- * the rest word for word. A framed
+ * the rest word for word; `person` (a span that speaks to the caller only), the content turned toward the
+ * caller wrongly (TO_CALLER_ATTACKS: who does what to whom swapped, a "no" about a person dropped, the
+ * message's own "you" kept as the caller, a "your" for no "my"). A framed
  * line's span is answered the same way, from its content alone (it is never given the frame).
  */
-export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame';
+export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame' | 'person';
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a

@@ -20,7 +20,7 @@ import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
-import { SPAN_INSTRUCTIONS_TO_CALLER, spanKey } from './prompt';
+import { spanKey } from './prompt';
 import { RenderClientError, type Renderer, type SpeechAct } from './types';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
@@ -45,12 +45,17 @@ const PROOFS = 'the brochure proofs are back from the printer and they look grea
 const PROJECT = 'the project is complete and I just need him to give his approval';
 const PRINTER = 'tell Riley I need him to call the printer';
 const BUDGET = 'I do not need him to approve the budget';
+/** The review's cases, on a turn: who does what to whom swapped, a "no" about a person, the message's own "you". */
+const OWE = 'I owe him the deposit';
+const NOT_ME = 'he can sign, not me';
+const LEASE = 'I need you to sign the lease';
 const corpus = [
   ...loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp),
   { id: 'ms-proofs', text: PROOFS, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
   { id: 'ms-project', text: PROJECT, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
   { id: 'ms-printer', text: PRINTER, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
   { id: 'ms-budget', text: BUDGET, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
+  ...[OWE, NOT_ME, LEASE].map((text, i) => ({ id: `ms-review-${i}`, text, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } }) as CorpusEntry),
 ];
 let current: App = whole;
 const stub = (asked: JevRequest[] = []): JevClient => {
@@ -586,7 +591,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
   const spanOf = (r: ScenarioRun) => r.runs.at(-1)!.record.render?.lines.find((l) => l.promptId === 'confirm_take_message');
   const saying = (say: string): Renderer => ({ client: new FakeRenderClient({ spans: { confirm_take_message: say } }) });
 
-  it('is sent its own instructions, the content, and the names the line says (never the number); its drift check is told it speaks to the caller, with the names and their kind', async () => {
+  it('is sent its own instructions, the content and the names it lists (the recipient: never the caller\'s name, never the number), each screened; its drift check is told it speaks to the caller, with the names', async () => {
     const client = new FakeRenderClient();
     const asked: JevRequest[] = [];
     const r = await call(steps(PROJECT), { client }, asked);
@@ -599,9 +604,12 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
       language: 'en-US',
       style: { persona: 'a warm, brief office receptionist', words: 25, avoid: ['unfortunately', 'I apologize for the inconvenience'] },
       speaks: 'to-caller',
-      names: [{ name: 'recipient', value: 'Dana Reyes' }, { name: 'caller', value: 'Morgan Lee' }],
+      names: [{ name: 'recipient', value: 'Dana Reyes' }],
     });
-    for (const frame of ['0142', 'Okay, thanks', 'pass it on', 'In short']) expect(JSON.stringify(act)).not.toContain(frame);
+    for (const frame of ['Morgan', '0142', 'Okay, thanks', 'pass it on', 'In short']) expect(JSON.stringify(act)).not.toContain(frame);
+    // The names are screened as the content is, before the span is worded.
+    const screenedWords = asked.filter((q) => q.questions.manipulation !== undefined && q.questions.renderSpanDrift === undefined).map((q) => JSON.stringify(q.state));
+    expect(screenedWords.some((st) => st.includes('Dana Reyes') && !st.includes(PROJECT))).toBe(true);
     // Its recording key is its own: the act and the to-caller instructions.
     expect(spanKey('confirm_take_message', 'summary', act)).not.toBe(spanKey('confirm_take_message', 'summary', { ...act, speaks: undefined, names: undefined }));
     // The fake words it as a well-behaved model would: the first clause, turned toward the caller.
@@ -611,50 +619,48 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(judged.state).toEqual({
       span: { goal: act.goal, said: 'the project is complete and you just need him to give his approval', speaks: 'to-caller' },
       quoted: [{ name: 'message', words: PROJECT }],
-      frame: [{ name: 'recipient', value: 'Dana Reyes', kind: 'option' }, { name: 'caller', value: 'Morgan Lee', kind: 'name' }],
+      frame: [{ name: 'recipient', value: 'Dana Reyes' }],
     });
     expect((judged.questions.renderSpanDrift as { instructions: string }).instructions).toContain('span.speaks is "to-caller"');
-    expect(SPAN_INSTRUCTIONS_TO_CALLER).toContain('their "I", "me", "my", "mine", "we", "us" and "our" become "you", "your" and "yours"');
   });
 
   it('may name the one a "him" means, where the message makes it clear: "you need Dana Reyes\'s approval"', async () => {
-    for (const said of ['your project is complete and you need Dana Reyes\'s approval', 'the project is complete and you just need Dana to approve it']) {
+    for (const said of ["the project is complete and you need Dana Reyes's approval", 'the project is complete and you just need Dana to approve it']) {
       const r = await call(steps(PROJECT), saying(said));
       expect(spanOf(r), said).toMatchObject({ mode: 'generated', said });
       expect(lastSaid(r), said).toBe(`${OPEN} In short, ${said}${END}`);
     }
   });
 
-  it('a name for a pronoun the message does not make clear, the caller\'s own name for "him", or an "I" of its own falls back to the exact frame', async () => {
+  it('falls back to the exact frame: a name for a pronoun not clearly meant, the caller\'s name, an "I" of its own, a "your" for no "my", persons swapped, a "no" about a person, the message\'s own "you"', async () => {
     const EXACT = (message: string): string => `${OPEN} Here it is as you said it: ${message}${END}`;
     const cases: [string, string, string][] = [
       // "him" is Riley: the recipient's name in its place passes the shape checks, and the judge refuses it.
       [PRINTER, 'you need Dana Reyes to call the printer', 'drift'],
       [PRINTER, 'tell Riley you need Dana Reyes to call the printer', 'drift'],
-      // The caller's own name for "him": the stub's judge lets only a choice's option stand for a pronoun.
-      [PROJECT, 'the project is complete and you need Morgan Lee\'s approval', 'drift'],
-      // The agent's own first person, kept or added: never in a span that speaks to the caller.
+      // The caller's own name: never one it lists.
+      [PROJECT, "the project is complete and you need Morgan Lee's approval", 'foreign'],
       [PROJECT, 'the project is complete and I just need his approval', 'person'],
       [PROJECT, 'we will get you the approval', 'person'],
-      // A name the line does not say.
-      [PROJECT, 'the project is complete and you need Jordan\'s approval', 'foreign'],
-      // A "no" dropped, turned toward the caller or not.
+      [PROJECT, "your project is complete and you need Dana Reyes's approval", 'person'],
+      [PROJECT, "the project is complete and you need Jordan's approval", 'foreign'],
       [BUDGET, 'you need Dana Reyes to approve the budget', 'negation'],
+      [OWE, 'Dana Reyes owes you the deposit', 'person'],
+      [NOT_ME, 'you can sign', 'negation'],
+      [LEASE, 'you need to sign the lease', 'person'],
     ];
     for (const [message, said, reason] of cases) {
       const r = await call(steps(message), saying(said));
       expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: reason, refused: said });
       expect(lastSaid(r), said).toBe(EXACT(message));
     }
-    // Speaking to the caller where the message has no first person of theirs: "your" is no one's.
     const proofs = await call(steps(PROOFS), saying('your brochure proofs are back and look great, no changes needed'));
     expect(spanOf(proofs)).toMatchObject({ mode: 'fixed', fallback: 'person' });
-    // A "no" kept, turned toward the caller: said.
     const kept = await call(steps(BUDGET), saying('you do not need Dana Reyes to approve the budget'));
     expect(spanOf(kept)).toMatchObject({ mode: 'generated' });
   });
 
-  it('the fixture\'s own span is as it was: no "speaks", no names, its own instructions; the policy card says the option on the line', async () => {
+  it('the fixture\'s own span is as it was: no "speaks", no names, its own instructions; the policy card says the option and the names on the line', async () => {
     resetAppsForTest();
     current = messageApp;
     registerApp(messageApp);
@@ -663,7 +669,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(client.askedSpans[0]!.act).not.toHaveProperty('speaks');
     expect(client.askedSpans[0]!.act).not.toHaveProperty('names');
     const card = policyCardText(toCaller, MESSAGE_DIR);
-    expect(card).toContain('Give the caller their message back in one sentence, speaking to them. (spoken to the caller: their "I" and "my" said as "you" and "your"; also sent the names `{recipient}`, `{caller}`)');
+    expect(card).toContain('Give the caller their message back in one sentence, speaking to them. (spoken to the caller: their "I" and "my" said as "you" and "your"; also sent the names it may say for a pronoun: `{recipient}`)');
     expect(card).toContain('A span that speaks to the caller (`speaks: to-caller`, English only)');
     expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain('speaks: to-caller');
   });

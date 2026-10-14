@@ -1,4 +1,4 @@
-import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, hasFirstPerson, hasPronounFor, isFigureWord, isSecondPerson, leftOut, straight, toCaller } from '../render/checks';
+import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, straight, toCaller } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -93,19 +93,20 @@ const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', '
  * carries no words of an injection. A span that speaks to the caller (`span.speaks: to-caller`) is held
  * to the quoted words turned toward the caller, and may say a name of the line (`frame`) that they do not
  * only in place of a pronoun the stub can tell is that one: the quoted words have a third-person pronoun
- * or a "you" and name no one of their own, and the name is a choice's option (who a message is for),
- * never a name the caller gave ("tell Riley I need him to call the printer" summarized with the
- * recipient's name is unfaithful). A real model is asked the question itself.
+ * or a "you" and name no one of their own (the names are only those the span lists, who the message is
+ * for; never the caller's), and the persons are held as the checks hold them (personBroken: whose words,
+ * and who does what to whom). "tell Riley I need him to call the printer" summarized with the
+ * recipient's name is unfaithful. A real model is asked the question itself.
  */
 export function stubSpanDrift(state: unknown): boolean {
-  const s = state as { span?: { said?: unknown; goal?: unknown; speaks?: unknown }; quoted?: { words?: unknown }[]; frame?: { value?: unknown; kind?: unknown }[] } | null;
+  const s = state as { span?: { said?: unknown; goal?: unknown; speaks?: unknown }; quoted?: { words?: unknown }[]; frame?: { value?: unknown }[] } | null;
   const said = typeof s?.span?.said === 'string' ? s.span.said : '';
   const goal = new Set(tokens(typeof s?.span?.goal === 'string' ? s.span.goal : ''));
   const quotedWords = (s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? [q.words] : []));
   // A span that speaks to the caller: the quoted words turned toward the caller ("I need" as "you need"),
   // and a name of the line said for a pronoun faithful only where the stub can tell it is the one meant.
   const toCallerSpan = s?.span?.speaks === 'to-caller';
-  const frame = (s?.frame ?? []).flatMap((f) => (typeof f.value === 'string' ? [{ value: f.value, kind: f.kind }] : []));
+  const frame = (s?.frame ?? []).flatMap((f) => (typeof f.value === 'string' ? [{ value: f.value }] : []));
   const quoted = new Set((toCallerSpan ? quotedWords.map(toCaller) : quotedWords).flatMap(tokens));
   // A negated statement or a condition of the quoted words left out (the criteria's; render/checks.ts leftOut).
   if (toCallerSpan) {
@@ -115,17 +116,17 @@ export function stubSpanDrift(state: unknown): boolean {
   // A time, an amount or who is to act left out.
   const kept = new Set(tokens(said));
   if (quotedWords.some((q) => mustKeep(q).some((w) => !kept.has(w)))) return true;
-  // A to-caller span may say a name of the line for a pronoun, conservatively: only where the quoted
-  // words have a third-person pronoun or a "you", name no one of their own, and the name is a choice's
-  // option (who a message is for), never a name the caller gave. Any other name of the line is unfaithful.
+  // Who does what to whom, and whose words they are: the checks' own reading (render/checks.ts personBroken).
+  if (toCallerSpan && personBroken(said, quotedWords, frame.map((f) => f.value))) return true;
+  // A to-caller span may say a name the line lists (who the message is for) for a pronoun, conservatively:
+  // only where the quoted words have a third-person pronoun or a "you" and name no one of their own.
   const bare = (w: string): string => w.replace(/'s$/, '');
   const frameWords = new Set(frame.flatMap((f) => tokens(f.value)));
   const standsIn = toCallerSpan && quotedWords.some(hasPronounFor) && quotedWords.every((q) => mustKeep(q).every((w) => isFigureWord(w)));
-  const allowed = new Set(standsIn ? frame.filter((f) => f.kind === 'option').flatMap((f) => tokens(f.value)) : []);
+  const allowed = new Set(standsIn ? frameWords : []);
   if (tokens(said).some((w) => !quoted.has(bare(w)) && frameWords.has(bare(w)) && !allowed.has(bare(w)))) return true;
-  // Speaking to the caller, "you" and "your" stand for the caller's own first person, where the quoted words have one.
-  const you = toCallerSpan && quotedWords.some(hasFirstPerson);
-  const own = tokens(said).filter((w) => !quoted.has(w) && !allowed.has(bare(w)) && !(you && isSecondPerson(w)));
+  // Speaking to the caller, "you" and "your" stand for the caller's own first person (personBroken has held them to it).
+  const own = tokens(said).filter((w) => !quoted.has(w) && !allowed.has(bare(w)) && !(toCallerSpan && isSecondPerson(w)));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some((w) => PERSON.has(w) || isFigureWord(w))) return true;
   const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => (toCallerSpan ? straight(w) : w).toLowerCase());

@@ -63,8 +63,15 @@ const span = z
       .optional()
       .describe(
         'Whose person the span speaks in. as-caller (the default): in the caller\'s own terms, as they said it ("call me back"), under a frame that gives their words ("{caller} left this message: {summary}"). ' +
-          'to-caller: to the caller, about their own message, as a receptionist reads one back: their I, me, my, we and our said as you and your ("call you back"), and a name the line says ({recipient}, {caller}) put in place of a pronoun only where the message makes clear who is meant; under a frame that speaks to them ("{recipient} gets your message, in short: {summary}"), never one that says they "said" it. ' +
+          'to-caller: to the caller, about their own message, as a receptionist reads one back: their I, me, my, we and our said as you and your ("call you back"), and a name the span lists in `names` (who the message is for, {recipient}) put in place of a pronoun only where the message makes clear who is meant; under a frame that speaks to them ("{recipient} gets your message, in short: {summary}"), never one that says they "said" it. ' +
           'English only for now: in another language the span is worded as-caller. Read from prompts.yaml, for every locale.',
+      ),
+    names: unique(identifier(), 'variable')
+      .min(1, { error: 'must name at least one variable' })
+      .optional()
+      .describe(
+        'A to-caller span only (`speaks: to-caller`): the line\'s variables whose value the span may say in place of a pronoun of the message, where the message makes clear who is meant: each a `choice` slot of the line (who the message is for, as said, such as [recipient]). ' +
+          'They are screened as the content is, sent to the model and to the drift check, and the only names the checks let the span say beside the content\'s. Never a `name` slot (the caller\'s own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.',
       ),
   })
   .describe('One generated span of a fixed line.');

@@ -365,7 +365,12 @@ describe('generated wording under the suite (the wording family, on the message 
   it('holds with a span that speaks to the caller (speaks: to-caller; live findings, item 22): every span case falls back, held deterministically, the person and conflict cases among them', async () => {
     const report = await run(variants.variant(TO_CALLER), { renderer: fake() });
     expect(failing(report)).toEqual([]);
-    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']];
+    // The span cases every framed line gets, and the review's cases of a message turned toward the caller wrongly (TO_CALLER_ATTACKS).
+    const reasons: [string, string][] = [
+      ['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation'],
+      ['persons-swapped', 'person'], ['their-you', 'person'], ['not-me', 'negation'], ['your-own', 'person'],
+    ];
+    expect(report.results.filter((r) => r.case.id.startsWith('wording/span-')).map((r) => r.case.id)).toEqual(reasons.map(([id]) => `wording/span-message/${id}/fooled/en`));
     for (const [id, reason] of reasons) {
       const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
       expect(r.status, id).toBe('hold');
@@ -375,6 +380,9 @@ describe('generated wording under the suite (the wording family, on the message 
       // The exact words, in the frame for them.
       expect(sayText(last.result.actions), id).toContain(`Here it is as you said it: ${span.fixed}. Shall I pass it on?`);
     }
+    // The renderer did turn it: what it wrote is in the trace, refused.
+    const swapped = report.results.find((x) => x.case.id === 'wording/span-message/persons-swapped/fooled/en')!;
+    expect(swapped.calls[0]!.turns.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')!.refused).toBe('Dana Reyes owes you the deposit');
     for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
       const r = report.results.find((x) => x.case.id === id)!;
       const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);

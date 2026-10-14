@@ -13,7 +13,7 @@ import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextC
 import { slotOutcomeOf } from '../core/outcome';
 import { outcomeFrom, parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
 import { handoffPromptId } from '../prompts/render';
-import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom } from '../render/config';
+import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom, type SlotFacts } from '../render/config';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -917,6 +917,7 @@ export function crossLink(
     slots: Object.keys(linked.slots),
     summarized: Object.keys(linked.slots).filter((id) => linked.slots[id]!.summarized === true),
     factors: config.identity?.levels[1].factors ?? [],
+    slotSpecs: slotFactsOf(linked.slots),
   })) yaml(p.file, p.path, p.message, p.fix, p.atKey === true);
 
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
@@ -1270,3 +1271,11 @@ function promptsOf(config: LoadedConfig, a: AppYaml): App['prompts'] {
   return prompts;
 }
 
+/** Each slot's type, redact setting and a choice's options as said (render/config.ts SlotFacts): what a to-caller span's names are held to. */
+function slotFactsOf(slots: Readonly<Record<string, unknown>>): Record<string, SlotFacts> {
+  return Object.fromEntries(Object.entries(slots).map(([id, raw]) => {
+    const spec = raw as { type?: unknown; redact?: string; config?: { options?: Record<string, unknown> }; display?: (value: string) => string };
+    const said = spec.type === 'choice' && spec.config?.options !== undefined && typeof spec.display === 'function' ? Object.keys(spec.config.options).map((o) => spec.display!(o)) : undefined;
+    return [id, { type: spec.type, ...(spec.redact !== undefined ? { redact: spec.redact } : {}), ...(said !== undefined ? { said } : {}) }];
+  }));
+}

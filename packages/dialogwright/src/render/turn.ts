@@ -11,11 +11,11 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { frameNameVars, generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, speaksToCallerIn, summarizedVarsFrom } from './config';
+import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type FrameName, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -103,12 +103,8 @@ function requestUsage(act: RenderAct): RenderUsage {
   return { inputTokens: Math.ceil((instructionsOf(act).length + actMessage(act).length) / 4), outputTokens: 0, estimated: true };
 }
 
-/**
- * One span of a framed line to word on this turn: its act, the values it must not name in place of the
- * frame's items, and, for a span that speaks to the caller, the names the line says (for its drift
- * check); or why it is not tried.
- */
-type SpanPlan = { name: string; content: string } & ({ act: SpanAct; conflicts: string[]; frame: FrameName[] } | { skipped: RenderSkip });
+/** One span of a framed line to word on this turn: its act and the values it must not name in place of the frame's items; or why it is not tried. */
+type SpanPlan = { name: string; content: string } & ({ act: SpanAct; conflicts: string[] } | { skipped: RenderSkip });
 
 /**
  * The spans of a framed line (prompts.yaml's `generate`) to word on this turn, or why none is tried.
@@ -136,11 +132,6 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
   const conflicts = conflictsOf(app, items, said.vars, locale);
   const style = app.generated!.style;
   const language = locale ?? defaultLocale ?? 'en-US';
-  // The names the line says around a span that speaks to the caller: its choices' options and the names
-  // the caller gave, none a value the records hide (frameNameVars), each as the line says it.
-  const frame: FrameName[] = frameNameVars(app.slots, template, names, identityOf(app).factorSlots)
-    .map(({ name, kind }) => ({ name, value: said.vars[name] ?? '', kind }))
-    .filter((n) => n.value.trim() !== '' && !/\d/.test(n.value));
   return {
     spans: Object.entries(line.spans).map(([name, span]): SpanPlan => {
       const content = said.vars[span.from] ?? '';
@@ -151,6 +142,10 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
       if (content.trim() === '') return { name, content, skipped: 'no-content' };
       // Speaking to the caller is English only for now: in another language the span is worded in the caller's own terms.
       const toCaller = span.speaks === 'to-caller' && speaksToCallerIn(language);
+      // The names it may say for a pronoun, those it lists (who the message is for), as the line says them.
+      const names: SpeechItem[] = toCaller
+        ? spanNameVars(app.slots as Readonly<Record<string, { type?: unknown; redact?: string }>>, span.names, identityOf(app).factorSlots).map((v) => ({ name: v, value: said.vars[v] ?? '' })).filter((n) => n.value.trim() !== '' && !/\d/.test(n.value))
+        : [];
       const act: SpanAct = {
         kind: 'span',
         goal,
@@ -159,9 +154,9 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
         language,
         style: { persona: style.persona, words: span.words, avoid: [...style.avoid] },
         ...(toCaller ? { speaks: 'to-caller' as const } : {}),
-        ...(toCaller && frame.length > 0 ? { names: frame.map((n) => ({ name: n.name, value: n.value })) } : {}),
+        ...(names.length > 0 ? { names } : {}),
       };
-      return { name, content, act, conflicts, frame: toCaller ? frame : [] };
+      return { name, content, act, conflicts };
     }),
   };
 }
@@ -360,9 +355,10 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   };
   // A framed line's span: screened, worded, held to its content alone (checkSpan), and asked of the
   // drift check as a summary of its content; never the frame.
-  const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[], frame: readonly FrameName[]): Promise<Attempt> => {
+  const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[]): Promise<Attempt> => {
     const c = checker();
-    const flagged = await screened(act.content, c);
+    // The content, and the names a to-caller span is sent, screened as the content is.
+    const flagged = await screened([...act.content, ...(act.names ?? [])], c);
     if (flagged !== null) return flagged;
     let gen: Generation;
     try {
@@ -378,7 +374,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const failed = checkSpan(text, act, { conflicts });
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {
-      const r = await c.check(drift.ask({ state: renderSpanDriftState(act, text, frame) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks), timeoutMs: c.left(), signal: abort.signal }));
+      const r = await c.check(drift.ask({ state: renderSpanDriftState(act, text) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks), timeoutMs: c.left(), signal: abort.signal }));
       if (r === 'late') return { fallback: 'timeout', refused: text, gen };
       used(r.usage);
       const a = r.answers[SPAN_DRIFT_QUESTION_ID];
@@ -402,7 +398,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     })),
     Promise.all(framed.map(async (f) => {
       if (!('spans' in f.plan)) return [];
-      return Promise.all(f.plan.spans.map(async (sp) => ('act' in sp ? timed(sp.act, () => attemptSpan(f.said.promptId, sp.name, sp.act, sp.conflicts, sp.frame)) : null)));
+      return Promise.all(f.plan.spans.map(async (sp) => ('act' in sp ? timed(sp.act, () => attemptSpan(f.said.promptId, sp.name, sp.act, sp.conflicts)) : null)));
     })),
   ]);
   for (const t of timers) clearTimeout(t);

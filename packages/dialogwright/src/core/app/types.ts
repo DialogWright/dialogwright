@@ -1536,10 +1536,15 @@ export interface GeneratedSpan {
   readonly words: number;
   /**
    * `to-caller`: the span speaks to the caller about their own message (prompts.yaml's `speaks:
-   * to-caller`): their I and my said as you and your, and the frame's names given to the model and the
-   * checks. Absent: in the caller's own terms (`as-caller`), as before.
+   * to-caller`): their I and my said as you and your. Absent: in the caller's own terms (`as-caller`), as before.
    */
   readonly speaks?: 'to-caller';
+  /**
+   * A to-caller span only: the line's variables (each a `choice` slot, who the message is for) whose
+   * value it may say in place of a pronoun of the message; given to the model and the drift check, and
+   * the only names its checks let it say beside the content's. Never the caller's own name.
+   */
+  readonly names?: readonly string[];
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */

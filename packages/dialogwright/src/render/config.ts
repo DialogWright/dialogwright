@@ -15,7 +15,7 @@ export const FRAMED_GOAL = 'Said as written, but for its generated spans.';
 /** A framed line's spans (prompts.yaml's `generate`) as the engine holds them, each with its word budget. */
 function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
   if (p.generate === undefined) return undefined;
-  return Object.fromEntries(Object.entries(p.generate).map(([name, s]) => [name, { from: s.from ?? '', goal: s.goal, words: s.words ?? DEFAULT_SPAN_WORDS, ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}) }]));
+  return Object.fromEntries(Object.entries(p.generate).map(([name, s]) => [name, { from: s.from ?? '', goal: s.goal, words: s.words ?? DEFAULT_SPAN_WORDS, ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}) }]));
 }
 
 /** style.yaml with its defaults filled in. */
@@ -159,20 +159,13 @@ export function speaksToCallerIn(language: string | undefined): boolean {
 }
 
 /**
- * The names a framed line says around its spans, which a span that speaks to the caller is given (to put
- * one in place of a pronoun where the content makes clear who is meant) and may say: each of the line's
- * variables, other than its spans, that is a `choice` slot (`option`: its option as said, who a message
- * is for) or a `name` slot (`name`: a name the caller gave), with no redact setting and no identity
- * factor (a value the records hide is never sent), in the line's order. A value with a digit is left out
- * where the line is said (render/turn.ts).
+ * The names a to-caller span may say (its `names`), as the engine holds to them where the line is said:
+ * each a `choice` slot with no redact setting and no identity factor (`pnpm check` refuses any other,
+ * and an app built in code is held the same way here), in the order the span lists them. A value with a
+ * digit is left out where the line is said (render/turn.ts).
  */
-export function frameNameVars(slots: Readonly<Record<string, { type?: unknown; redact?: string }>>, text: string, spans: readonly string[], factors: readonly string[]): { name: string; kind: 'option' | 'name' }[] {
-  return lineVars(text).flatMap((v): { name: string; kind: 'option' | 'name' }[] => {
-    if (spans.includes(v) || factors.includes(v) || !Object.hasOwn(slots, v)) return [];
-    const spec = slots[v]!;
-    if (spec.redact !== undefined) return [];
-    return spec.type === 'choice' ? [{ name: v, kind: 'option' as const }] : spec.type === 'name' ? [{ name: v, kind: 'name' as const }] : [];
-  });
+export function spanNameVars(slots: Readonly<Record<string, { type?: unknown; redact?: string }>>, names: readonly string[] | undefined, factors: readonly string[]): string[] {
+  return (names ?? []).filter((v) => Object.hasOwn(slots, v) && !factors.includes(v) && slots[v]!.type === 'choice' && slots[v]!.redact === undefined);
 }
 
 /** A problem with an app's generated wording, at its place in a file (the loader's format, unpositioned). */
@@ -204,6 +197,8 @@ export function generatedWordingProblems(input: {
   summarized?: readonly string[];
   /** The identity factors (identity.yaml): a slot marked to be summarized may be none of them. */
   factors?: readonly string[];
+  /** Each slot's type, redact setting and, for a choice, its options as said: what a to-caller span's `names` are held to. Absent, they are held to the line's variables alone. */
+  slotSpecs?: Readonly<Record<string, SlotFacts>>;
 }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
@@ -320,7 +315,7 @@ export function generatedWordingProblems(input: {
           out.push({ file: dir, path: ['prompts', id, 'generate', name], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a span here does nothing` : `prompts.yaml frames no span {${name}} in the line "${id}" (it frames ${Object.keys(spans).map((v) => `{${v}}`).join(', ')}), so this one does nothing`, fix: spans === undefined ? 'frame the line in prompts.yaml (generate), or delete it here' : `rename it to one of the spans prompts.yaml frames, or delete it here`, atKey: true });
           continue;
         }
-        for (const key of ['from', 'words', 'speaks'] as const) {
+        for (const key of ['from', 'words', 'speaks', 'names'] as const) {
           if (sp[key] !== undefined) out.push({ file: dir, path: ['prompts', id, 'generate', name, key], message: `a span's "${key}" is read from prompts.yaml, for every locale; a locale gives a span only its goal`, fix: `move "${key}" to the span in prompts.yaml, or delete it here`, atKey: true });
         }
       }
@@ -348,7 +343,41 @@ export function summarizedFrom(line: GeneratedLine): string[] {
  * a goal or a `from` of the whole line; each span one of its text's variables and none of the app's
  * slots (a span is worded, not collected), worded from a slot (`from`) that is no identifier.
  */
-function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; identifierVars: ReadonlySet<string>; slots?: readonly string[]; summarized: ReadonlySet<string> }): WordingProblem[] {
+/** What `pnpm check` reads of a slot for a to-caller span's `names`: its type, its redact setting, and a choice's options as said. */
+export interface SlotFacts {
+  readonly type?: unknown;
+  readonly redact?: string;
+  readonly said?: readonly string[];
+}
+
+/**
+ * A to-caller span's `names` (who the message is for): only on a span that speaks to the caller; each
+ * one of the line's variables, not a span, a `choice` slot (never a `name` slot: the caller's own name is
+ * never put for a pronoun), no identity factor, no redact setting, and no option said with a digit.
+ */
+function spanNamesProblems(id: string, name: string, sp: NonNullable<PromptYaml['generate']>[string], vars: readonly string[], spans: readonly string[], input: { identifierVars: ReadonlySet<string>; factors?: readonly string[]; slotSpecs?: Readonly<Record<string, SlotFacts>> }): WordingProblem[] {
+  const out: WordingProblem[] = [];
+  if (sp.names === undefined) return out;
+  const at = ['prompts', id, 'generate', name, 'names'];
+  if (sp.speaks !== 'to-caller') {
+    out.push({ file: 'prompts.yaml', path: at, message: `the span "${name}" lists names, which only a span that speaks to the caller (speaks: to-caller) may say for a pronoun, so they do nothing`, fix: 'add "speaks: to-caller" to the span, or delete "names"', atKey: true });
+    return out;
+  }
+  sp.names.forEach((v, i) => {
+    const here = [...at, i];
+    const spec = input.slotSpecs?.[v];
+    if (!vars.includes(v) || spans.includes(v)) out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is not ${spans.includes(v) ? 'a value' : 'a variable'} of the line "${id}", so the span has no name of it to say`, fix: `name a variable of the line's frame that holds who the message is for (${vars.filter((x) => !spans.includes(x)).map((x) => `{${x}}`).join(', ') || 'it has none'})` });
+    else if ((input.factors ?? []).includes(v)) out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is an identity factor, which is never sent to a model`, fix: `delete "${v}" from names` });
+    else if (input.slotSpecs !== undefined && spec === undefined) out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is not a slot, so nothing holds what it may say: a span's names are choice slots (who the message is for)`, fix: `delete "${v}" from names, or name a choice slot of the line` });
+    else if (spec?.type === 'name') out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is a name slot (a name the caller gave, such as their own), and the caller's own name is never put in place of a pronoun of their message`, fix: `delete "${v}" from names; list only who the message is for (a choice slot, such as {recipient})` });
+    else if (spec !== undefined && spec.type !== 'choice') out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is a ${String(spec.type ?? 'code')} slot; a span's names are choice slots, whose values the app wrote (who the message is for)`, fix: `delete "${v}" from names` });
+    else if (spec?.redact !== undefined || input.identifierVars.has(v)) out.push({ file: 'prompts.yaml', path: here, message: `{${v}} is masked in the records (redact: ${spec?.redact ?? 'mask'}), and a model is never sent a value the records hide`, fix: `delete "${v}" from names` });
+    else if ((spec?.said ?? []).some((x) => /\d/.test(x))) out.push({ file: 'prompts.yaml', path: here, message: `{${v}}'s options say a digit (${(spec?.said ?? []).filter((x) => /\d/.test(x)).join(', ')}), which is no name`, fix: `delete "${v}" from names` });
+  });
+  return out;
+}
+
+function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; identifierVars: ReadonlySet<string>; slots?: readonly string[]; summarized: ReadonlySet<string>; factors?: readonly string[]; slotSpecs?: Readonly<Record<string, SlotFacts>> }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
   const at = (...key: (string | number)[]): (string | number)[] => ['prompts', id, ...key];
@@ -368,6 +397,7 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
   const slots = input.slots === undefined ? undefined : new Set(input.slots);
   const names = Object.keys(p.generate ?? {});
   for (const [name, sp] of Object.entries(p.generate ?? {})) {
+    out.push(...spanNamesProblems(id, name, sp, vars, names, input));
     if (!vars.includes(name)) out.push({ file, path: at('generate', name), message: `the line "${id}" has no {${name}}, so the span "${name}" would never be said`, fix: `name one of the line's own variables (${vars.length > 0 ? vars.map((x) => `{${x}}`).join(', ') : 'it has none'}), or add {${name}} to its text where the span goes`, atKey: true });
     else if (slots?.has(name) === true) out.push({ file, path: at('generate', name), message: `{${name}} is a slot, the value the call collected, so it cannot also be a span the model words`, fix: `give the span a name of its own ({summary}, say), write it in the text, and say "from: ${name}"`, atKey: true });
     if (sp.from === undefined) {
@@ -394,15 +424,22 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
 export type WordingWarning = WordingProblem;
 
 /**
- * Whether a frame says the caller "said" what its span gives, in the sentence before the span ("{caller}
- * called and said, in short, {summary}"): a third-person frame, which a span that speaks to the caller
- * ("you need...") reads wrong after. A cheap reading of the frame's words, English only.
+ * Whether a frame gives its span as the caller's words in the third person, in the sentence before the
+ * span, where a span that speaks to the caller ("you need...") reads wrong: it says the caller "said",
+ * "says" or "told" it, it "left" a message, someone "wants" someone "to know", or it names the caller (a
+ * `name` slot of `nameSlots`, "{caller} ... {summary}"). What it found, or null. A cheap reading of the
+ * frame's words, English only.
  */
-export function saysSaidBefore(text: string, span: string): boolean {
+export function thirdPersonFrame(text: string, span: string, nameSlots: ReadonlySet<string> = new Set()): string | null {
   const at = text.indexOf(`{${span}}`);
-  if (at === -1) return false;
+  if (at === -1) return null;
   const sentence = text.slice(0, at).split(/[.!?](?:\s|$)/).at(-1) ?? '';
-  return /\b(?:said|says|saying|told|tells)\b/i.test(sentence);
+  const said = sentence.match(/\b(?:said|says|saying|told|tells)\b/i);
+  if (said !== null) return `says they "${said[0]}" it`;
+  if (/\bleft\b.*\bmessage\b/i.test(sentence)) return 'says they "left" a message';
+  if (/\bwants?\b.*\bto know\b/i.test(sentence)) return 'says who "wants" someone "to know"';
+  const named = [...sentence.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map((m) => m[1]!).find((v) => nameSlots.has(v));
+  return named !== undefined ? `names the caller in the third person ({${named}})` : null;
 }
 
 /**
@@ -422,6 +459,8 @@ export function generatedWordingWarnings(input: {
   summarized?: ReadonlySet<string>;
   /** prompts.yaml's locale (app.yaml's locales.default): a span that speaks to the caller does so in English only. */
   defaultLocale?: string;
+  /** The `name` slots: a frame that names one before a to-caller span gives the caller's words in the third person. */
+  nameSlots?: ReadonlySet<string>;
 }): WordingWarning[] {
   const generated = generatedWordingOf({ ...input, style: null })?.lines ?? {};
   const out: WordingWarning[] = [];
@@ -430,8 +469,12 @@ export function generatedWordingWarnings(input: {
       if (span.speaks !== 'to-caller') continue;
       const english = speaksToCallerIn(input.defaultLocale);
       const text = input.prompts[id]?.text ?? '';
-      if (english && saysSaidBefore(text, name)) {
-        out.push({ file: 'prompts.yaml', path: ['prompts', id, 'text'], message: `the span "${name}" speaks to the caller (speaks: to-caller: "you need..."), but the line's frame says they "said" it, so the two read wrong together ("...called and said, in short, you need...")`, fix: `word the frame to the caller ("{recipient} gets your message, in short: {${name}}"), or let the span speak in the caller's own terms (delete "speaks: to-caller")` });
+      const third = english ? thirdPersonFrame(text, name, input.nameSlots) : null;
+      if (third !== null) {
+        out.push({ file: 'prompts.yaml', path: ['prompts', id, 'text'], message: `the span "${name}" speaks to the caller (speaks: to-caller: "you need..."), but the line's frame ${third} before it, so the two read wrong together ("...called and said, in short, you need...")`, fix: `word the frame to the caller ("{recipient} gets your message, in short: {${name}}"), or let the span speak in the caller's own terms (delete "speaks: to-caller")` });
+      }
+      if (input.prompts[id]?.exactText === undefined) {
+        out.push({ file: 'prompts.yaml', path: ['prompts', id], message: `the span "${name}" speaks to the caller (speaks: to-caller), but the line has no frame of its own for the exact words, which are the caller's own, in the first person: its text is said with them too ("...in short, I just need him to...")`, fix: `add "exactText:" with a frame for the caller's own words ("... Here it is as you said it: {${name}}. ...")`, atKey: true });
       }
       if (!english) {
         out.push({ file: 'prompts.yaml', path: ['prompts', id, 'generate', name, 'speaks'], message: `the span "${name}" speaks to the caller (speaks: to-caller), which is English only for now, and prompts.yaml's locale is ${input.defaultLocale}: the span is worded in the caller's own terms there`, fix: 'word the frame for the caller\'s own terms ("{caller} left this message: {' + name + '}"), and delete "speaks: to-caller"', atKey: true });
@@ -441,8 +484,9 @@ export function generatedWordingWarnings(input: {
         if (own?.generate?.[name] === undefined) continue;
         if (!speaksToCallerIn(locale)) {
           out.push({ file: `locale/${locale}/prompts.yaml`, path: ['prompts', id, 'generate', name], message: `the span "${name}" speaks to the caller in prompts.yaml (speaks: to-caller), which is English only for now: in ${locale} it is worded in the caller's own terms`, fix: `word this locale's frame for the caller's own terms ("... left this message: {${name}}"), or give the span no goal here, so it is said as the caller's exact words`, atKey: true });
-        } else if (saysSaidBefore(own.text, name)) {
-          out.push({ file: `locale/${locale}/prompts.yaml`, path: ['prompts', id, 'text'], message: `the span "${name}" speaks to the caller (speaks: to-caller), but this locale's frame says they "said" it, so the two read wrong together`, fix: `word the frame to the caller ("... gets your message, in short: {${name}}")` });
+        } else {
+          const third = thirdPersonFrame(own.text, name, input.nameSlots);
+          if (third !== null) out.push({ file: `locale/${locale}/prompts.yaml`, path: ['prompts', id, 'text'], message: `the span "${name}" speaks to the caller (speaks: to-caller), but this locale's frame ${third} before it, so the two read wrong together`, fix: `word the frame to the caller ("... gets your message, in short: {${name}}")` });
         }
       }
     }

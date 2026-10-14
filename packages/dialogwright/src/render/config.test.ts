@@ -353,27 +353,56 @@ describe('a slot masked in the records that a model summarizes (redact: length-s
 });
 
 describe('a span that speaks to the caller (speaks: to-caller; live findings, item 22)', () => {
-  const forms = { f: form(['recipient', 'caller', 'message'], { summaryPromptId: 'confirm_f' }) };
-  const framed = (text: string, speaks?: 'as-caller' | 'to-caller'): PromptYaml => line(text, { generate: { summary: { from: 'message', goal: 'Give it back.', ...(speaks !== undefined ? { speaks } : {}) } } });
-  const SPEAKING = "{recipient} gets your message, in short: {summary}. Shall I pass it on?";
+  const forms = { f: form(['recipient', 'caller', 'message', 'account', 'masked', 'room'], { summaryPromptId: 'confirm_f' }) };
+  const SPEAKING = '{recipient} gets your message, in short: {summary}. Shall I pass it on?';
+  const EXACT = '{recipient} gets your message. Here it is as you said it: {summary}. Shall I pass it on?';
+  const framed = (text: string, speaks?: 'as-caller' | 'to-caller', more: Record<string, unknown> = {}, exactText: string | null = EXACT): PromptYaml =>
+    line(text, { ...(exactText !== null ? { exactText } : {}), generate: { summary: { from: 'message', goal: 'Give it back.', ...(speaks !== undefined ? { speaks } : {}), ...more } } });
   const warn = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}, defaultLocale = 'en-US') =>
-    generatedWordingWarnings({ prompts, forms, localePrompts, defaultLocale }).map((w) => `${w.file} ${w.path.join('.')}: ${w.message}  ->  ${w.fix}`);
+    generatedWordingWarnings({ prompts, forms, localePrompts, defaultLocale, nameSlots: new Set(['caller']) }).map((w) => `${w.file} ${w.path.join('.')}: ${w.message}  ->  ${w.fix}`);
+  const slotSpecs = {
+    recipient: { type: 'choice', said: ['Sam Ortiz', 'Lee Park'] }, caller: { type: 'name' }, message: { type: 'text' }, account: { type: 'digits' },
+    masked: { type: 'choice', redact: 'mask', said: ['A'] }, room: { type: 'choice', said: ['Room 4', 'Hall'] },
+  };
+  const problems = (p: PromptYaml, localePrompts: Record<string, Record<string, PromptYaml>> = {}) => generatedWordingProblems({
+    prompts: { confirm_f: p }, forms, identifierVars: new Set(['masked']), slots: Object.keys(slotSpecs), localePrompts, factors: [], slotSpecs,
+  }).map((x) => `${x.file} ${x.path.join('.')}: ${x.message}`);
 
-  it('is held on the span; as-caller, or none, is the span as it was', () => {
-    const g = generatedWordingOf({ prompts: { confirm_f: framed(SPEAKING, 'to-caller'), c2: framed(SPEAKING, 'as-caller'), c3: framed(SPEAKING) }, forms, style: null, localePrompts: {} })!;
-    expect(g.lines.confirm_f!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25, speaks: 'to-caller' });
+  it('is held on the span with the names it lists; as-caller, or none, is the span as it was', () => {
+    const g = generatedWordingOf({ prompts: { confirm_f: framed(SPEAKING, 'to-caller', { names: ['recipient'] }), c2: framed(SPEAKING, 'as-caller'), c3: framed(SPEAKING) }, forms, style: null, localePrompts: {} })!;
+    expect(g.lines.confirm_f!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25, speaks: 'to-caller', names: ['recipient'] });
     expect(g.lines.c2!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25 });
     expect(g.lines.c3!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25 });
   });
 
-  it('check warns of a frame that says the caller "said" it, before the span in its sentence', () => {
+  it('check holds its names: choice slots of the line, never a name slot, an identity factor, a masked slot, an option with a digit, nor without to-caller', () => {
+    expect(problems(framed(SPEAKING, 'to-caller', { names: ['recipient'] }))).toEqual([]);
+    const at = (t: string) => line(t, { exactText: t, generate: { summary: { from: 'message', goal: 'Give it back.', speaks: 'to-caller', names: [t.match(/\{(\w+)\}/)![1]!] } } });
+    expect(problems(at('{caller} gets your message: {summary}.'))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {caller} is a name slot (a name the caller gave, such as their own), and the caller\'s own name is never put in place of a pronoun of their message']);
+    expect(problems(at('{account} gets your message: {summary}.'))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {account} is a digits slot; a span\'s names are choice slots, whose values the app wrote (who the message is for)']);
+    expect(problems(at('{masked} gets your message: {summary}.'))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {masked} is masked in the records (redact: mask), and a model is never sent a value the records hide']);
+    expect(problems(at('{room} gets your message: {summary}.'))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {room}\'s options say a digit (Room 4), which is no name']);
+    expect(problems(framed(SPEAKING, 'to-caller', { names: ['caller'] }))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {caller} is not a variable of the line "confirm_f", so the span has no name of it to say']);
+    expect(problems(framed(SPEAKING, 'to-caller', { names: ['summary'] }))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names.0: {summary} is not a value of the line "confirm_f", so the span has no name of it to say']);
+    expect(problems(framed(SPEAKING, undefined, { names: ['recipient'] }))).toEqual(['prompts.yaml prompts.confirm_f.generate.summary.names: the span "summary" lists names, which only a span that speaks to the caller (speaks: to-caller) may say for a pronoun, so they do nothing']);
+    const factor = generatedWordingProblems({ prompts: { confirm_f: framed(SPEAKING, 'to-caller', { names: ['recipient'] }) }, forms, identifierVars: new Set(), slots: Object.keys(slotSpecs), localePrompts: {}, factors: ['recipient'], slotSpecs }).map((x) => x.message);
+    expect(factor).toEqual(['{recipient} is an identity factor, which is never sent to a model']);
+  });
+
+  it('check warns of a frame that gives the caller\'s words in the third person before the span in its sentence, and of a span with no frame for the exact words', () => {
     expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') })).toEqual([]);
-    expect(warn({ confirm_f: framed("{caller} called and said, in short, {summary}. Shall I pass it on?", 'to-caller') })).toEqual([
-      'prompts.yaml prompts.confirm_f.text: the span "summary" speaks to the caller (speaks: to-caller: "you need..."), but the line\'s frame says they "said" it, so the two read wrong together ("...called and said, in short, you need...")  ->  word the frame to the caller ("{recipient} gets your message, in short: {summary}"), or let the span speak in the caller\'s own terms (delete "speaks: to-caller")',
-    ]);
-    // "Said" in an earlier sentence, or a span in the caller's own terms after "said": no warning.
-    expect(warn({ confirm_f: framed('You said it. {recipient} gets your message, in short: {summary}.', 'to-caller') })).toEqual([]);
+    const fix = '  ->  word the frame to the caller ("{recipient} gets your message, in short: {summary}"), or let the span speak in the caller\'s own terms (delete "speaks: to-caller")';
+    const says = (what: string) => `prompts.yaml prompts.confirm_f.text: the span "summary" speaks to the caller (speaks: to-caller: "you need..."), but the line's frame ${what} before it, so the two read wrong together ("...called and said, in short, you need...")${fix}`;
+    expect(warn({ confirm_f: framed('{recipient} hears that you called and said, in short, {summary}. Shall I pass it on?', 'to-caller') })).toEqual([says('says they "said" it')]);
+    expect(warn({ confirm_f: framed('You called and left this message for {recipient}: {summary}.', 'to-caller') })).toEqual([says('says they "left" a message')]);
+    expect(warn({ confirm_f: framed('Someone wants {recipient} to know: {summary}.', 'to-caller') })).toEqual([says('says who "wants" someone "to know"')]);
+    expect(warn({ confirm_f: framed('{recipient} hears from {caller}, in short: {summary}.', 'to-caller') })).toEqual([says('names the caller in the third person ({caller})')]);
+    // In an earlier sentence, or a span in the caller's own terms after "said": no warning.
+    expect(warn({ confirm_f: framed('{caller} called. {recipient} gets your message, in short: {summary}.', 'to-caller') })).toEqual([]);
     expect(warn({ confirm_f: framed('{caller} called and said, in short, {summary}.') })).toEqual([]);
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller', {}, null) })).toEqual([
+      'prompts.yaml prompts.confirm_f: the span "summary" speaks to the caller (speaks: to-caller), but the line has no frame of its own for the exact words, which are the caller\'s own, in the first person: its text is said with them too ("...in short, I just need him to...")  ->  add "exactText:" with a frame for the caller\'s own words ("... Here it is as you said it: {summary}. ...")',
+    ]);
   });
 
   it('check warns where it is worded in the caller\'s own terms: prompts.yaml in another language, or a locale that is not English giving the span its goal', () => {
@@ -384,16 +413,14 @@ describe('a span that speaks to the caller (speaks: to-caller; live findings, it
     expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { es })).toEqual([
       'locale/es/prompts.yaml prompts.confirm_f.generate.summary: the span "summary" speaks to the caller in prompts.yaml (speaks: to-caller), which is English only for now: in es it is worded in the caller\'s own terms  ->  word this locale\'s frame for the caller\'s own terms ("... left this message: {summary}"), or give the span no goal here, so it is said as the caller\'s exact words',
     ]);
-    // A locale that gives the span no goal says its exact words: nothing to warn of. An English locale's frame is read for "said".
     expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { es: { confirm_f: line('{recipient}: {summary}.') } })).toEqual([]);
     expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { 'en-GB': { confirm_f: line('{caller} rang and said {summary}.', { generate: { summary: { goal: 'Give it back.' } } }) } })).toHaveLength(1);
   });
 
-  it('check refuses it in a locale\'s prompts.yaml: read from prompts.yaml, for every locale', () => {
-    const problems = generatedWordingProblems({
-      prompts: { confirm_f: framed(SPEAKING, 'to-caller') }, forms, identifierVars: new Set(), slots: ['recipient', 'caller', 'message'],
-      localePrompts: { 'en-GB': { confirm_f: line(SPEAKING, { generate: { summary: { goal: 'Give it back.', speaks: 'to-caller' } } }) } },
-    }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
-    expect(problems).toEqual(['locale/en-GB/prompts.yaml prompts.confirm_f.generate.summary.speaks: a span\'s "speaks" is read from prompts.yaml, for every locale; a locale gives a span only its goal']);
+  it('check refuses its speaks and its names in a locale\'s prompts.yaml: read from prompts.yaml, for every locale', () => {
+    expect(problems(framed(SPEAKING, 'to-caller'), { 'en-GB': { confirm_f: line(SPEAKING, { exactText: EXACT, generate: { summary: { goal: 'Give it back.', speaks: 'to-caller', names: ['recipient'] } } }) } })).toEqual([
+      'locale/en-GB/prompts.yaml prompts.confirm_f.generate.summary.speaks: a span\'s "speaks" is read from prompts.yaml, for every locale; a locale gives a span only its goal',
+      'locale/en-GB/prompts.yaml prompts.confirm_f.generate.summary.names: a span\'s "names" is read from prompts.yaml, for every locale; a locale gives a span only its goal',
+    ]);
   });
 });

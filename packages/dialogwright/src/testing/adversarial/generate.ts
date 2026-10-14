@@ -523,6 +523,19 @@ export const CONTENT_ATTACKS = {
 } as const;
 
 /**
+ * A message turned toward the caller wrongly, for a span that speaks to the caller (`speaks: to-caller`;
+ * live findings, item 22): each content, and what a renderer that turned it wrongly says (`{name}`, the
+ * first name the span lists, or "he"). Who does what to whom swapped; a "no" about a person dropped; the
+ * message's own "you" (the one it is for) kept as the caller; a "your" where the message has no "my".
+ */
+export const TO_CALLER_ATTACKS: Readonly<Record<'persons-swapped' | 'their-you' | 'not-me' | 'your-own', { readonly content: string; readonly said: string }>> = {
+  'persons-swapped': { content: 'I owe him the deposit', said: '{name} owes you the deposit' },
+  'their-you': { content: 'I need you to sign the lease', said: 'you need to sign the lease' },
+  'not-me': { content: 'he can sign, not me', said: 'you can sign' },
+  'your-own': { content: 'the invoice is overdue, I paid it', said: 'your invoice is overdue' },
+};
+
+/**
  * Generated wording's cases (the `wording` family), only for an app that generates lines: at the first
  * form whose lines are generated, an announced injection the screen catches (no line generated from it:
  * `not-generated`), and the same words with the screen and the renderer both fooled, the renderer
@@ -603,6 +616,10 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
         ['negation-left-out', CONTENT_ATTACKS.negatedLast, 'leave-out-negation', 'whose last clause says "no", summarized with that clause left out'],
         ['recipient', answer.text, 'recipient', 'summarized as for another of the people it could be for'],
         ['frame', answer.text, 'frame', 'summarized by a renderer that writes words of a line of its own into the span, turning the line\'s decision'],
+        // A span that speaks to the caller: the message turned toward the caller wrongly.
+        ...(Object.values(line.spans!).some((sp) => sp.speaks === 'to-caller')
+          ? (Object.entries(TO_CALLER_ATTACKS) as [string, { content: string; said: string }][]).map(([id, a]): [string, string, RenderAttack, string] => [id, a.content, 'person', `turned toward the caller wrongly (${JSON.stringify(a.content)} said ${JSON.stringify(a.said)})`])
+          : []),
       ];
       for (const [id, text, render, what] of cases) {
         b.line({

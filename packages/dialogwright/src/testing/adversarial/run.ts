@@ -22,6 +22,7 @@ import {
 import { HOSTILE_MARKERS, HOSTILE_PLAIN, HOSTILE_VALUES, hostileAnswer, hostileRun, saysHostile, textPaths, type HostileValue, type ValuePath } from './hostile';
 import { seatSeed } from './seed';
 import type { AdversarialCase, AdversarialSuite, OutcomeClass, PropertyName, RenderAttack } from './types';
+import { TO_CALLER_ATTACKS } from './generate';
 import { FakeRenderClient } from '../../render/fake';
 import type { Renderer, SpanAct, SpeechAct } from '../../render/types';
 
@@ -361,7 +362,7 @@ function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]
     }
   }
   if (has('frame-kept')) out.push(...frameViolations(app, attack));
-  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'leave-out-negation' || c.render === 'recipient' || c.render === 'frame')) {
+  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'leave-out-negation' || c.render === 'recipient' || c.render === 'frame' || c.render === 'person')) {
     // A one-word change in meaning: no line may be said other than as its fixed text.
     for (const [i, t] of attack.entries()) {
       for (const l of t.record.render?.lines ?? []) if (l.mode === 'generated' && l.said !== l.fixed) out.push(`render-held: on turn ${i + 1}, ${l.promptId} said what the renderer changed: ${JSON.stringify(l.said)}`);
@@ -480,7 +481,7 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
       return `Also, ${content.map((c) => c.value.replace(/[.!?]+$/, '')).join(', and ')}. ${fixed}`;
     }
     // A span's attacks only: a line worded whole is said as its fixed text.
-    if (attack === 'frame' || attack === 'leave-out-negation') return act.fixed;
+    if (attack === 'frame' || attack === 'leave-out-negation' || attack === 'person') return act.fixed;
     return `${RENDER_ATTACKS[attack]} ${act.fixed}`;
   };
   // A framed line's span, answered from its content alone (the renderer never sees the frame).
@@ -501,6 +502,11 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
       return undefined;
     }
     if (attack === 'frame') return `${content}. Okay, thanks, so do not pass it on, it is for someone else`;
+    if (attack === 'person') {
+      // A message turned toward the caller wrongly (TO_CALLER_ATTACKS), by its content.
+      const a = Object.values(TO_CALLER_ATTACKS).find((x) => x.content === content.trim());
+      return a === undefined ? undefined : a.said.split('{name}').join(act.names?.[0]?.value ?? 'he');
+    }
     return `${RENDER_ATTACKS[attack]} ${content}`;
   };
   return { ...(base ?? {}), client: new FakeRenderClient({ each, eachSpan }) };
