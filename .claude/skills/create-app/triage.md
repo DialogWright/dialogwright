@@ -15,9 +15,9 @@ It replays the model's answers from the cassette and compares each outcome with 
 | Line | What it means |
 |---|---|
 | `~ corpus <id>.<field>: <before> -> <after>` | The model read the line otherwise than its label, on that field. |
-| `... (allowed: knownGap: <reason>)` | A difference a tag already allows: the line shows the outcome its `knownGap` pins. |
+| `... (allowed: knownGap: <reason>)` | A difference a tag already allows: the line (or the scripted call) shows the outcome its `knownGap` pins. |
 | `... (knownGap pins <value>)` | A tagged line that now gives yet another outcome: a finding, as for an untagged one. |
-| `knownGap now matches: <id>` | A tagged line the model now reads as labelled: the tag can go. |
+| `knownGap now matches: <id>` | A tagged line the model now reads as labelled: the tag can go (`knownGap now matches: scenario <id>` for a scripted call). |
 | `FAIL scenario <id>: ...` | A scripted call that did not reach what it expects. |
 | `... (allowed: cosmeticDrift)` | A scripted call marked `cosmeticDrift` that reached the same end by another gate. |
 | a cassette miss | A request the cassette does not hold: what the model is sent has changed since the recording. |
@@ -62,7 +62,13 @@ A stub run ignores the tag and still holds the line to its label. List each tagg
 
 **3. A scripted call broke on an incidental line.** The call tests something else (the keypad menu, a refusal, a handoff), and a step on the way there read otherwise. Change the incidental step, not the expectation. The common one: a keypad-menu call that opens with words the model may ignore as not addressed to the line, so the menu is never offered. Open it with silences instead (`{ "silence": true }`, [patterns.md](patterns.md#keypad-entry)): a silence is a miss with no model call, so no recording can change it. Other cases: a call that reaches a form through a borderline opener can open with one of the form's plain corpus lines. If the call's outcome in the stub baseline moves, edit its entry in `fixtures/expected/scenarios.json` by hand and log it.
 
-**A scripted call has no allowance but `cosmeticDrift`.** There is no `knownGap` for a call: the only thing a recorded call may differ in is which gate decided and its verdict, and only when the call says `"cosmeticDrift": true`. So a call whose real subject is a gap (an emergency said mid-form that the model reads as an answer) stays failing. Do not reword its steps or move its expectation to make it pass: it is the evidence, and you report it to the owner.
+**A scripted call's allowances: `cosmeticDrift`, and a `knownGap` the owner accepted.** A recorded call may differ in which gate decided and its verdict when it says `"cosmeticDrift": true`. A call the model ends elsewhere can carry a `knownGap`, in a corpus line's shape, but only when the owner has accepted that end as safe (the request checked with one more yes or no, say): bring it to the owner with the model's numbers and what the caller hears, and tag it once they agree:
+
+```json
+"knownGap":{"reason":"\"sure, okay\" read at 0.55, so the request is checked with a yes or no first: one more question, safe","outcome":{"promptId":"confirm_intent_explicit","acks":[],"form":null}}
+```
+
+The outcome is the fields of the call's end that differ from the baseline's (`regress --client recorded --scenario <id>` prints them as `~` lines); a replay that ends exactly there is not a failing call, and any other end still fails. A stub run ignores the tag. A call whose real subject is a gap that is not safe (an emergency said mid-form that the model reads as an answer) is never tagged: it stays failing. Do not reword its steps or move its expectation to make it pass: it is the evidence, and you report it to the owner.
 
 ## The order of the fixes
 

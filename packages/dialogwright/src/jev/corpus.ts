@@ -238,30 +238,34 @@ const ENTRY_KEYS = new Set([
   'confirm', 'changeSlot', 'secondIntent', 'manipulation', 'answers', 'tags', 'as', 'labels', 'knownGap',
 ]);
 
-/** A known gap (CorpusEntry.knownGap): a reason, and the outcome it pins or a list of a few, each pinning at least one field. */
-function checkKnownGap(entry: CorpusEntry, gap: unknown): void {
-  const shape = `corpus ${entry.id}: knownGap must be { reason, outcome } or { reason, outcomes }, a one-line reason and the outcome fields the model is known to produce (outcomes: a list of them, any one allowed)`;
+/**
+ * A known gap (CorpusEntry.knownGap, Scenario.knownGap): a reason, and the outcome it pins or a list of
+ * a few, each pinning at least one field. Throws, naming `owner` (`corpus <id>`, `scenario <id>`), when
+ * it is not one.
+ */
+export function assertKnownGap(owner: string, gap: unknown): asserts gap is KnownGap {
+  const shape = `${owner}: knownGap must be { reason, outcome } or { reason, outcomes }, a one-line reason and the outcome fields the model is known to produce (outcomes: a list of them, any one allowed)`;
   if (typeof gap !== 'object' || gap === null || Array.isArray(gap)) throw new Error(shape);
   const { reason, outcome, outcomes, ...rest } = gap as Record<string, unknown>;
   if (Object.keys(rest).length > 0) throw new Error(`${shape}; unknown key ${Object.keys(rest)[0]}`);
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error(`${shape}; the reason is missing`);
-  if (outcome !== undefined && outcomes !== undefined) throw new Error(`corpus ${entry.id}: knownGap takes outcome or outcomes, not both`);
+  if (outcome !== undefined && outcomes !== undefined) throw new Error(`${owner}: knownGap takes outcome or outcomes, not both`);
   if (outcomes !== undefined) {
     if (!Array.isArray(outcomes) || outcomes.length === 0) throw new Error(`${shape}; outcomes must be a list of at least one outcome`);
-    outcomes.forEach((o, i) => checkPinned(entry, o, `knownGap.outcomes[${i}]`, shape));
+    outcomes.forEach((o, i) => checkPinned(owner, o, `knownGap.outcomes[${i}]`, shape));
     return;
   }
   if (outcome === undefined) throw new Error(`${shape}; the outcome pins no field: give outcome, or outcomes (a list of the outcomes it may show)`);
-  checkPinned(entry, outcome, 'knownGap.outcome', shape);
+  checkPinned(owner, outcome, 'knownGap.outcome', shape);
 }
 
 /** One pinned outcome of a known gap: an object of at least one outcome field. */
-function checkPinned(entry: CorpusEntry, outcome: unknown, where: string, shape: string): void {
+function checkPinned(owner: string, outcome: unknown, where: string, shape: string): void {
   if (typeof outcome !== 'object' || outcome === null || Array.isArray(outcome) || Object.keys(outcome).length === 0) {
     throw new Error(`${shape}; ${where === 'knownGap.outcome' ? 'the outcome' : where} pins no field`);
   }
   for (const key of Object.keys(outcome)) {
-    if (!PINNABLE.has(key)) throw new Error(`corpus ${entry.id}: ${where} pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
+    if (!PINNABLE.has(key)) throw new Error(`${owner}: ${where} pins ${key}, which is not an outcome field (${[...PINNABLE].join(', ')})`);
   }
 }
 
@@ -346,7 +350,7 @@ export function parseCorpus(jsonl: string, app: App = corpusApp()): CorpusEntry[
     if (entry.manipulation !== undefined && typeof entry.manipulation !== 'boolean') {
       throw new Error(`corpus ${entry.id}: manipulation must be a boolean`);
     }
-    if (entry.knownGap !== undefined) checkKnownGap(entry, entry.knownGap);
+    if (entry.knownGap !== undefined) assertKnownGap(`corpus ${entry.id}`, entry.knownGap);
     if (entry.change !== undefined) {
       if (entry.change !== 'adding' && entry.change !== 'replacing') throw new Error(`corpus ${entry.id}: change must be adding or replacing`);
       if (form === null) throw new Error(`corpus ${entry.id}: change needs a form context`);

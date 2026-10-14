@@ -6,7 +6,7 @@ import { defaultCorpusFile, expectedDir, recordedDir, scenariosDir } from '../ru
 import { emptyRenderTally, formatRenderTally, harnessRenderer, tallyRender } from '../render/harness';
 import type { Renderer } from '../render/types';
 import { isCassetteMiss } from '../jev/cassette';
-import { diff, differingIds, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
+import { diff, differingIds, failingScenarios, gapsNowMatching, knownGapsFor, REAL_MODEL_KINDS } from './regressDiff';
 import { formatRegressSummary, formatTriage } from './regressSummary';
 import type { TraceRecord } from '../trace/types';
 import { loadScenarios, runCorpusEntry, runScenario, unanswerableSteps, type RunOptions, type Scenario } from './runner';
@@ -170,6 +170,8 @@ async function run(argv?: readonly string[]): Promise<void> {
   // Likewise a corpus entry's documented gap (CorpusEntry.knownGap): its known outcome, and only
   // that, is tolerated under a real model; the stubs still have to match the baseline exactly.
   const gaps = knownGapsFor(kind, corpus);
+  // And a scripted call's (Scenario.knownGap): its known end, and only that, is not a failing call.
+  const scenarioGaps = knownGapsFor(kind, scenarioDefs);
 
   const actual = emptyRunAll();
   try {
@@ -190,17 +192,18 @@ async function run(argv?: readonly string[]): Promise<void> {
       return;
     }
 
-    const scenarioDiff = diff('scenario', expected.scenarios, actual.scenarios, drift);
+    const scenarioDiff = diff('scenario', expected.scenarios, actual.scenarios, drift, scenarioGaps);
     const corpusDiff = diff('corpus', expected.corpus, actual.corpus, new Set(), gaps);
     const lines = [...corpusDiff.lines, ...scenarioDiff.lines];
-    const failing = Object.values(actual.scenarios).filter((s) => !s.pass);
+    const failing = failingScenarios(expected.scenarios, actual.scenarios, scenarioGaps).map((id) => actual.scenarios[id]!);
     for (const s of failing) console.log(`FAIL scenario ${s.id}: ${s.mismatches.join('; ')}`);
     for (const l of lines) console.log(l);
     for (const l of corpusDiff.allowed) console.log(l);
     for (const l of scenarioDiff.allowed) console.log(l);
     // A gap the model no longer shows is worth a look (the tag may be removable), never a failure.
     for (const id of gapsNowMatching(expected.corpus, actual.corpus, gaps)) console.log(`knownGap now matches: ${id}`);
-    const allowedKind = corpusDiff.allowed.length > 0 ? 'drift' : scenarioDiff.allowed.length > 0 ? 'cosmetic drift' : null;
+    for (const id of gapsNowMatching(expected.scenarios, actual.scenarios, scenarioGaps)) console.log(`knownGap now matches: scenario ${id}`);
+    const allowedKind = corpusDiff.allowed.length > 0 || scenarioDiff.gapped.length > 0 ? 'drift' : scenarioDiff.allowed.length > 0 ? 'cosmetic drift' : null;
     if (lines.length === 0 && failing.length === 0) console.log(allowedKind ? `no changes beyond the allowed ${allowedKind} above` : 'no changes');
     else process.exitCode = 1;
     // The adversarial suite, for an app that turns it on (app.yaml testing.adversarial): its own
@@ -219,14 +222,18 @@ async function run(argv?: readonly string[]): Promise<void> {
     try {
       if (!args.update && actual.records.length > 0) {
         const ran = Object.values(actual.scenarios);
+        const ranDiff = diff('scenario', expected.scenarios, actual.scenarios, drift, scenarioGaps);
         console.log('');
         console.log(formatRegressSummary({
           corpusTotal: corpus.length,
           corpusMatching: diff('corpus', expected.corpus, actual.corpus, new Set(), gaps).matching,
-          knownGaps: { total: gaps.size, drifted: diff('corpus', expected.corpus, actual.corpus, new Set(), gaps).gapped.length },
+          knownGaps: {
+            total: gaps.size + scenarioGaps.size,
+            drifted: diff('corpus', expected.corpus, actual.corpus, new Set(), gaps).gapped.length + ranDiff.gapped.length,
+          },
           scenarioTotal: scenarioDefs.length,
           scenarioPassing: ran.filter((s) => s.pass).length,
-          scenarioMatching: diff('scenario', expected.scenarios, actual.scenarios, drift).matching,
+          scenarioMatching: ranDiff.matching,
           records: actual.records,
         }));
         // For an app that generates lines: how many were tried, said generated, and fell back, and why.
@@ -239,8 +246,8 @@ async function run(argv?: readonly string[]): Promise<void> {
         if (REAL_MODEL_KINDS.has(kind)) {
           console.log(formatTriage({
             corpusDiffering: differingIds('corpus', expected.corpus, actual.corpus, new Set(), gaps),
-            scenariosFailing: ran.filter((s) => !s.pass).map((s) => s.id),
-            scenariosDiffering: differingIds('scenario', expected.scenarios, actual.scenarios, drift),
+            scenariosFailing: failingScenarios(expected.scenarios, actual.scenarios, scenarioGaps),
+            scenariosDiffering: differingIds('scenario', expected.scenarios, actual.scenarios, drift, scenarioGaps),
             records: actual.records,
           }));
         }
@@ -313,6 +320,7 @@ async function transcripts(
   const entries = pick('corpus line', picked.corpus, corpus);
   const calls = pick('scenario', picked.scenarios, scenarios);
   const gaps = knownGapsFor(kind, corpus);
+  const scenarioGaps = knownGapsFor(kind, scenarios);
   let failed = false;
   /** The outcome against the baseline: its differences (a failure), the allowed ones, or none. */
   const against = (what: string, had: boolean, d: { lines: string[]; allowed: string[] }): void => {
@@ -324,6 +332,10 @@ async function transcripts(
     if (d.lines.length > 0) failed = true;
     else console.log(d.allowed.length > 0 ? '  baseline: no changes beyond the allowed ones above' : '  baseline: no changes');
   };
+  /** A tagged outcome that is the baseline's again: the tag may be removable. */
+  const nowMatching = <T extends object>(expectedOne: Record<string, T>, actualOne: Record<string, T>, tagged: typeof gaps): void => {
+    for (const id of gapsNowMatching(expectedOne, actualOne, tagged)) console.log(`  knownGap now matches: ${id}`);
+  };
   for (const entry of entries) {
     const r = await runCorpusEntry(entry, opts);
     for (const l of corpusTranscript(entry, r)) console.log(l);
@@ -331,16 +343,19 @@ async function transcripts(
     if (REAL_MODEL_KINDS.has(kind)) for (const l of [...modelAnswerLines(r.setup), ...modelAnswerLines(r.run)]) console.log(l);
     const had = expected.corpus[entry.id];
     against('line', had !== undefined, had ? diff('corpus', { [entry.id]: had }, { [entry.id]: r.outcome }, new Set(), gaps) : { lines: [], allowed: [] });
+    if (had) nowMatching({ [entry.id]: had }, { [entry.id]: r.outcome }, gaps);
     console.log('');
   }
   for (const scenario of calls) {
     const r = await runScenario(scenario, opts);
     for (const l of scenarioTranscript(scenario, r)) console.log(l);
-    if (!r.pass) failed = true;
     const drift = new Set(REAL_MODEL_KINDS.has(kind) && scenario.cosmeticDrift === true ? [scenario.id] : []);
     const actual: ScenarioOutcome = { ...r.outcome, pass: r.pass, mismatches: r.mismatches };
     const had = expected.scenarios[scenario.id];
-    against('call', had !== undefined, had ? diff('scenario', { [scenario.id]: had }, { [scenario.id]: actual }, drift) : { lines: [], allowed: [] });
+    // A call that misses its expectation fails, unless its run shows its known gap (a real model's only).
+    if (failingScenarios(had ? { [scenario.id]: had } : {}, { [scenario.id]: actual }, scenarioGaps).length > 0) failed = true;
+    against('call', had !== undefined, had ? diff('scenario', { [scenario.id]: had }, { [scenario.id]: actual }, drift, scenarioGaps) : { lines: [], allowed: [] });
+    if (had) nowMatching({ [scenario.id]: had }, { [scenario.id]: actual }, scenarioGaps);
     console.log('');
   }
   return failed ? 1 : 0;

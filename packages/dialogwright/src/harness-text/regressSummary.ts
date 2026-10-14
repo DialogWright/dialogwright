@@ -9,7 +9,7 @@ export interface RegressSummaryInput {
   scenarioTotal: number;
   scenarioPassing: number;
   scenarioMatching: number;
-  /** known-gap corpus entries (CorpusEntry.knownGap) the run tolerates, and how many of them drifted; omitted for a run that tolerates none */
+  /** known-gap corpus entries and scripted calls (CorpusEntry.knownGap, Scenario.knownGap) the run tolerates, and how many of them drifted; omitted for a run that tolerates none */
   knownGaps?: { total: number; drifted: number };
   /** every turn the run made; only answered turns count toward cost and latency */
   records: Pick<TraceRecord, 'source' | 'timing' | 'usage' | 'error' | 'screen' | 'followUp'>[];
@@ -63,9 +63,9 @@ export function formatRegressSummary(i: RegressSummaryInput): string {
 export interface TriageInput {
   /** corpus ids that differ from the baseline in a way no known gap allows (regressDiff.ts differingIds) */
   corpusDiffering: readonly string[];
-  /** scripted calls that miss their own expectation */
+  /** scripted calls that miss their own expectation, but one whose run shows its known gap */
   scenariosFailing: readonly string[];
-  /** scripted calls that differ from the baseline in a way `cosmeticDrift` does not allow, failing or not */
+  /** scripted calls that differ from the baseline in a way neither `cosmeticDrift` nor a known gap allows, failing or not */
   scenariosDiffering: readonly string[];
   records: Pick<TraceRecord, 'source' | 'error' | 'screen' | 'followUp'>[];
 }

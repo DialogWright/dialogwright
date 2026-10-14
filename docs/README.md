@@ -108,7 +108,7 @@ The same app answers on the phone through Twilio, Telnyx or both (`VOICE_PROVIDE
 - [designs/](designs/README.md): the design documents for engine features, each with the problem, the options and the decision; the guide is the reference for how a feature works today.
 - [trials/](trials/README.md): fresh assistants building apps from a paragraph with the create-app skill, with their logs and what each stumble changed.
 - [live-checks.md](live-checks.md): what only real carrier, model and identity accounts can confirm, as a checklist for the maintainer.
-- [known-gaps.md](known-gaps.md): what a known gap in a corpus is, and how a recording tolerates one.
+- [known-gaps.md](known-gaps.md): what a known gap in a corpus line or a scripted call is, and how a recording tolerates one.
 - [CONTRIBUTING.md](../CONTRIBUTING.md): rules, pull requests, and adding a slot type, a built-in policy rule, a retriever or an embedder, an extraction format, a voice provider and a session store. [SECURITY.md](../SECURITY.md) says how to report a vulnerability, [CLA.md](CLA.md) is the contributor agreement, and [RELEASING.md](../RELEASING.md) is the maintainer's release.
 
 ## Commands

@@ -8,6 +8,8 @@ A known gap is an utterance where the real perception model, in a recorded run, 
 
 The pin is the baseline's outcome with `outcome`'s fields overlaid. If the model does anything else on the entry (a different prompt, a different gate call), the run fails as for any other entry; if it matches the baseline, the run says `knownGap now matches`. None of the current gaps leads to a wrong action: each ends in a re-ask, a different but reasonable question, or a person.
 
+A scripted call takes the same tag, in the same shape, on its end outcome, when the owner has accepted the end the model gives (a request checked with one more yes or no, say): a recorded run that ends exactly there is not counted as a failing call, and its lines print as allowed; any other end fails, and `knownGap now matches: scenario <id>` says when the tag can go ([after a recorded run](guide/11-walkthroughs.md#after-a-recorded-run)).
+
 This page lists them so they can be closed later. They are not blocking.
 
 ## A design note: terse callers

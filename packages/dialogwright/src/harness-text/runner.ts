@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
-import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type PinnedOutcome } from '../jev/corpus';
+import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
+import { scenarioGapProblems } from './scenarioGap';
 import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
 import { prompt, type Decision } from '../core/decision';
@@ -539,6 +540,17 @@ export interface Scenario {
    * field are checked as usual, and the stub run is held to the baseline exactly.
    */
   cosmeticDrift?: boolean;
+  /**
+   * A documented gap between this call's expectation and what a real decision model does on it, as a
+   * corpus line's (CorpusEntry.knownGap): the reason, and the end outcome the model is known to give
+   * (the baseline's end outcome with these fields overlaid; `outcomes`, a few such, any one allowed).
+   * A run against a real model's answers (jev, record, recorded) reports that exact end as allowed: the
+   * call is not counted as failing, and each difference prints `(allowed: knownGap: <reason>)`; the
+   * misses of the call's own expectation must follow from the pin (scenarioGap.ts scenarioShowsGap).
+   * Any other difference still fails, and a run whose end is the baseline's again says `knownGap now
+   * matches`. A stub run ignores it: the call is held to its expectation and the baseline exactly.
+   */
+  knownGap?: KnownGap;
 }
 
 export interface ScenarioRun {
@@ -715,6 +727,8 @@ export function loadScenarios(dir: string): Scenario[] {
     for (const [index, s] of parsed.entries()) {
       if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
+      const [gapProblem] = scenarioGapProblems(s);
+      if (gapProblem !== undefined) throw new Error(`scenarios ${file}: ${gapProblem.message}`);
       seen.add(s.id);
       out.push(s);
     }

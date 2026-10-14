@@ -78,6 +78,16 @@ A run against a model or its cassette (`--client record`, `recorded` or `jev`, a
 
 A borderline line the model reads one way in one recording and another way in the next can be tagged with a few outcomes instead of one: `"knownGap": {"reason": "...", "outcomes": [{"promptId": "ask_name"}, {"promptId": "anything_else"}]}`. Any one of them shown is allowed (`allowed: knownGap: <reason>`), anything else fails, and the baseline itself reads `knownGap now matches`. A tag has `outcome` or `outcomes`, never both ([known gaps](../known-gaps.md)).
 
+A scripted call takes the same tag, in the same shape, when the owner has accepted the end a real model gives on it: the reason, and the end outcome fields the model gives (the baseline's end with them overlaid). A call whose caller says "sure, okay" to the offer of a message, which the model reads at 0.55 and so checks with a yes or no first, carries:
+
+```json
+{"id": "offer-then-sure", "steps": [...], "expect": {"decision": "prompt", "promptId": "ask_recipient"},
+ "knownGap": {"reason": "\"sure, okay\" read at 0.55, so the request is checked with a yes or no first: one more question, safe",
+              "outcome": {"promptId": "confirm_intent_explicit", "acks": [], "form": null}}}
+```
+
+Against a model or its cassette, a run that ends exactly there is allowed: the call is not counted as failing, and each difference prints `(allowed: knownGap: <reason>)`. What the call misses of its own expectation must follow from the pin (a field it changes; the last turn's `text` or `transfer` only when it changes what that turn does: its decision, prompt, acknowledgements or reason). Any other end fails, and a run that is the baseline's again prints `knownGap now matches: scenario <id>`. A stub run ignores the tag and holds the call to its expectation and the baseline exactly. `pnpm check` refuses a tag with no reason, and a pin that is the call's own expectation. `cosmeticDrift: true` stays the lighter allowance for a call that reaches its expectation by another gate.
+
 ### Where to start
 
 To build an app from a description (a paragraph of what callers can ask for, who must verify, what is confirmed), follow the create-app skill, [.claude/skills/create-app/SKILL.md](../../.claude/skills/create-app/SKILL.md): it plans the app in a worksheet, maps it onto slot types, policy and identity, scaffolds it, and iterates on the checks until green. Its [options index](../../.claude/skills/create-app/options.md) (each option by the need it answers), [patterns](../../.claude/skills/create-app/patterns.md) and [corpus guide](../../.claude/skills/create-app/corpus.md) are useful on their own.

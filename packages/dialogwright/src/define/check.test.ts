@@ -426,6 +426,23 @@ describe('checkApp: every intent has corpus examples', () => {
     writeFileSync(join(dir, 'app.yaml'), `${readFileSync(join(dir, 'app.yaml'), 'utf8')}\nfixtures:\n  dir: fixtures\n`);
     expect(await lines(dir)).toEqual([]);
   });
+
+  it("a scripted call's known gap needs a reason, and a pin other than the call's own expectation", async () => {
+    const { dir, root } = withFixtures(folder(), `${ALL.map(entry).join('\n')}\n`);
+    mkdirSync(join(root, 'fixtures', 'scenarios'));
+    const expect_ = { decision: 'prompt', promptId: 'ask_card' };
+    const calls = [
+      { id: 'renew-ok', steps: [{ say: 'say renew_loan' }], expect: expect_, knownGap: { reason: 'the opener is checked with a yes or no first', outcome: { promptId: 'confirm_intent_explicit' } } },
+      { id: 'renew-no-reason', steps: [{ say: 'say renew_loan' }], expect: expect_, knownGap: { reason: '', outcome: { promptId: 'confirm_intent_explicit' } } },
+      { id: 'renew-restated', steps: [{ say: 'say renew_loan' }], expect: expect_, knownGap: { reason: 'r', outcome: { promptId: 'ask_card' } } },
+    ];
+    writeFileSync(join(root, 'fixtures', 'scenarios', 'core.json'), `${JSON.stringify(calls, null, 2)}\n`);
+    const problems = (await lines(dir, { code: libraryCode, fixturesRoot: root })).map((l) => l.replace(/^.*scenarios\/core\.json/, 'core.json'));
+    expect(problems).toEqual([
+      'core.json:31:5  [1].knownGap  scenario renew-no-reason: knownGap must be { reason, outcome } or { reason, outcomes }, a one-line reason and the outcome fields the model is known to produce (outcomes: a list of them, any one allowed); the reason is missing  ->  write "knownGap": {"reason": "<what the model reads, and what the caller hears>", "outcome": {<the end outcome fields the model gives, e.g. "promptId": "confirm_intent_explicit">}}',
+      'core.json:49:5  [2].knownGap  scenario renew-restated: knownGap.outcome {"promptId":"ask_card"} is the call\'s own expectation, so it allows nothing: a known gap pins the end the model gives instead  ->  pin the end the model gives instead (regress --client recorded --scenario renew-restated shows it), or remove the tag: a call that reaches its own expectation needs none',
+    ]);
+  });
 });
 
 describe('checkApp: the app module', () => {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
@@ -24,6 +24,7 @@ import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks'
 import { moveCycles, slotOutcomeForm, slotOutcomesOf } from '../core/app/next';
 import { digitsMayBeShort } from '../slots/digits/fill';
 import { generatedWordingWarnings } from '../render/config';
+import { scenarioGapProblems } from '../harness-text/scenarioGap';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfFolder } from '../channel/speechLanguages';
 
 /**
@@ -43,6 +44,8 @@ import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings
  *  - every line of another locale is a line prompts.yaml has, and uses no variable the
  *    prompts.yaml line lacks (the code fills the default line's variables, and no others);
  *  - every intent has examples in the app's corpus, when app.yaml names a fixtures directory;
+ *  - every scripted call's known gap (`knownGap` in fixtures/scenarios/*.json) has a reason and pins
+ *    an end other than the call's own expectation;
  *  - the knowledge base, when the folder has a kb/ (../kb/rules.ts): what it names in policy.yaml
  *    (crossLink checks it against the code when it runs; without the code, this does against
  *    policy.yaml), and what changes with time and review: every passage approved and fresh, and a
@@ -406,6 +409,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkDone(config, locate));
   problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
   problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
+  problems.push(...checkScenarioGaps(config, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
     problems.push(...kbStateProblems(config.knowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), locate));
@@ -1527,6 +1531,64 @@ function checkCorpus(config: LoadedConfig, locate: LoadResult['locate'], dir: st
       message: `intent "${id}" has no examples in the corpus (${corpus})`,
       fix: `add a line to ${corpus} such as {"id":"${id}-01","text":"<what a caller says to mean this>","intent":"${id}","context":"no_form"}`,
     });
+  }
+  return problems;
+}
+
+/**
+ * Every scripted call's known gap (Scenario.knownGap, harness-text/scenarioGap.ts): its shape, as a
+ * corpus line's is checked (a one-line reason, and an outcome of outcome fields), and a pinned end
+ * other than the call's own expectation, for an app whose app.yaml names a fixtures directory with a
+ * scenarios/ folder. A file that is not a JSON list is left to the regression, which refuses it.
+ */
+function checkScenarioGaps(config: LoadedConfig, dir: string, fixturesRoot?: string): Problem[] {
+  const fixtures = config.app.fixtures;
+  if (!fixtures) return [];
+  const root = fixturesRoot ?? packageRootOf(dir);
+  const folder = `${fixtures.dir.replace(/\/+$/, '')}/scenarios`;
+  const absolute = resolve(root, folder);
+  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [];
+  const real = realpathSync(absolute);
+  if (!isInside(realpathSync(root), real)) return [];
+  const problems: Problem[] = [];
+  for (const name of readdirSync(real).filter((f) => f.endsWith('.json')).sort()) {
+    const path = join(real, name);
+    const stat = statSync(path);
+    if (!stat.isFile() || stat.size > MAX_CORPUS_BYTES) continue;
+    const text = readFileSync(path, 'utf8');
+    let calls: unknown;
+    try {
+      calls = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(calls)) continue;
+    const file = relative(resolve(dir), join(absolute, name)).split('\\').join('/');
+    const lines = text.split('\n');
+    for (const [index, call] of calls.entries()) {
+      if (typeof call !== 'object' || call === null) continue;
+      const { id, expect, knownGap } = call as { id?: unknown; expect?: unknown; knownGap?: unknown };
+      if (knownGap === undefined || typeof id !== 'string') continue;
+      const found = scenarioGapProblems({ id, knownGap, ...(typeof expect === 'object' && expect !== null ? { expect: expect as never } : {}) });
+      if (found.length === 0) continue;
+      // The call's "knownGap" key, the first after its id; the id's line, else the file's first.
+      const idLine = lines.findIndex((l) => l.includes(`"id"`) && l.includes(JSON.stringify(id)));
+      const gapLine = idLine === -1 ? -1 : lines.findIndex((l, i) => i >= idLine && l.includes('"knownGap"'));
+      const line = (gapLine !== -1 ? gapLine : Math.max(idLine, 0)) + 1;
+      const column = gapLine !== -1 ? lines[gapLine]!.indexOf('"knownGap"') + 1 : 1;
+      for (const { kind, message } of found) {
+        problems.push({
+          file,
+          line,
+          column,
+          path: formatPath([index, 'knownGap']),
+          message,
+          fix: kind === 'restates'
+            ? `pin the end the model gives instead (regress --client recorded --scenario ${id} shows it), or remove the tag: a call that reaches its own expectation needs none`
+            : 'write "knownGap": {"reason": "<what the model reads, and what the caller hears>", "outcome": {<the end outcome fields the model gives, e.g. "promptId": "confirm_intent_explicit">}}',
+        });
+      }
+    }
   }
   return problems;
 }

@@ -155,6 +155,7 @@ Filled in once the owner has recorded the app (step 9 of the create-app skill, a
 - Recording <n>, <date>, model `<model>`: corpus <matching>/<total>, scripted calls <passing>/<total>; `to triage: <N> untagged corpus differences, <M> failing scripted calls, <K> passing scripted calls that differ from the baseline, <J> cassette misses`.
 - Labels fixed (the model was right): `<id>`, ... (each also under "Baseline edits").
 - Tagged `knownGap` (the label is the truth): `<id>`: <the model's numbers>; <what the caller hears>.
+- Scripted calls tagged `knownGap` (the owner accepted the model's end): `<id>`: <the end the model gives>; <what the caller hears>.
 - Scripted calls changed on an incidental line: `<id>`: <the step, before and after>.
 - Checked on this recording without a new one: <code, policy or flag changes, and what the replay showed>.
 - For the owner: <each engine gap or open question, with its numbers and caller impact, and any scripted call left failing because of it>.

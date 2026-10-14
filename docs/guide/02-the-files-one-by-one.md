@@ -611,7 +611,7 @@ The labels the lines of that language name the caller's request by (`{intentLabe
 
 ### fixtures/ (optional)
 
-The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, the baseline, and recorded cassettes. They are how an app is tested with no keys: the stub decision model answers from the corpus labels. The clinic's README explains the harness; the only rule `check` adds is that every intent has examples in the corpus when `app.yaml` names a fixtures directory:
+The corpus (`corpus.jsonl`, one labelled utterance per line), scripted calls, the baseline, and recorded cassettes. They are how an app is tested with no keys: the stub decision model answers from the corpus labels. The clinic's README explains the harness; the rules `check` adds are that every intent has examples in the corpus when `app.yaml` names a fixtures directory, and that a scripted call's `knownGap` has a reason and pins an end other than the call's own expectation:
 
 ```json
 {"id":"sn-01","text":"I'd like to make an appointment","intent":"schedule_new","context":"no_form"}

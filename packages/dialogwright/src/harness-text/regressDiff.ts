@@ -1,4 +1,5 @@
 import { gapOutcomes, type CorpusEntry, type KnownGap } from '../jev/corpus';
+import { canonical, scenarioShowsGap } from './scenarioGap';
 
 /**
  * The two fields that say how a decision was reached rather than what it was: which gate decided
@@ -11,7 +12,7 @@ export const DRIFT_FIELDS: ReadonlySet<string> = new Set(['decidedGate', 'verdic
 export type DriftAllowance = ReadonlySet<string>;
 
 /**
- * Ids with a documented gap (CorpusEntry.knownGap), each with its reason and the outcome fields the
+ * Ids with a documented gap (CorpusEntry.knownGap, Scenario.knownGap), each with its reason and the outcome fields the
  * model is known to produce (or a few such outcomes). Such an id may differ from the baseline only by
  * exactly those fields: when its outcome equals the baseline's with one pinned outcome's fields
  * overlaid, each difference is allowed and says why; any other outcome fails as usual. Only a run against a real model's answers
@@ -26,18 +27,21 @@ export type KnownGaps = ReadonlyMap<string, KnownGap>;
  */
 export const REAL_MODEL_KINDS: ReadonlySet<string> = new Set(['jev', 'record', 'recorded']);
 
-/** The known gaps a run of `kind` tolerates: every corpus entry's, against a real model; none otherwise. */
-export function knownGapsFor(kind: string, corpus: readonly CorpusEntry[]): KnownGaps {
+/**
+ * The known gaps a run of `kind` tolerates: every corpus entry's (or every scripted call's: each is an
+ * id with an optional `knownGap`), against a real model; none otherwise.
+ */
+export function knownGapsFor(kind: string, tagged: readonly Pick<CorpusEntry, 'id' | 'knownGap'>[]): KnownGaps {
   if (!REAL_MODEL_KINDS.has(kind)) return new Map();
-  return new Map(corpus.flatMap((e): [string, KnownGap][] => (e.knownGap === undefined ? [] : [[e.id, e.knownGap]])));
+  return new Map(tagged.flatMap((e): [string, KnownGap][] => (e.knownGap === undefined ? [] : [[e.id, e.knownGap]])));
 }
 
-/** JSON with object keys sorted, so two outcomes compare by value whatever order their keys were written in. */
-function canonical(v: unknown): string {
-  return JSON.stringify(v, (_k, x: unknown) => (typeof x === 'object' && x !== null && !Array.isArray(x)
-    ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-    : x));
-}
+/**
+ * How a gap is shown: `a` is the baseline `e` with one of the gap's pinned outcomes overlaid. A corpus
+ * outcome is compared whole (showsGap); a scripted call's also carries its own expectation's verdict,
+ * which the pin may explain (scenarioGap.ts scenarioShowsGap).
+ */
+export type GapTest = (e: object, a: object, gap: KnownGap) => boolean;
 
 /**
  * The known-gap ids whose outcome now matches the baseline exactly: the model no longer shows the
@@ -49,7 +53,7 @@ export function gapsNowMatching<T extends object>(expected: Record<string, T>, a
 }
 
 /** True when `a` is the baseline outcome `e` with one of the gap's pinned outcomes overlaid, and nothing else. */
-function showsGap(e: object, a: object, gap: KnownGap): boolean {
+export function showsGap(e: object, a: object, gap: KnownGap): boolean {
   return gapOutcomes(gap).some((pinned) => canonical({ ...e, ...pinned }) === canonical(a));
 }
 
@@ -60,12 +64,12 @@ function pinnedValues(gap: KnownGap, key: string): string | null {
 }
 
 /** One diff line per differing key, so a changed outcome names exactly what moved. */
-function diffOne<T extends object>(name: string, id: string, e: T | undefined, a: T | undefined, drift: boolean, gap: KnownGap | undefined): { lines: string[]; allowed: string[] } {
+function diffOne<T extends object>(name: string, id: string, e: T | undefined, a: T | undefined, drift: boolean, gap: KnownGap | undefined, shows: GapTest): { lines: string[]; allowed: string[] } {
   if (!e) return { lines: [`+ ${name} ${id}: new`], allowed: [] };
   if (!a) return { lines: [`- ${name} ${id}: removed`], allowed: [] };
   const lines: string[] = [];
   const allowed: string[] = [];
-  const known = gap !== undefined && showsGap(e, a, gap);
+  const known = gap !== undefined && shows(e, a, gap);
   for (const key of new Set([...Object.keys(e), ...Object.keys(a)])) {
     const ev = JSON.stringify((e as Record<string, unknown>)[key]);
     const av = JSON.stringify((a as Record<string, unknown>)[key]);
@@ -87,7 +91,9 @@ function diffOne<T extends object>(name: string, id: string, e: T | undefined, a
  * difference `drift` or `gaps` allows is reported in `allowed`, not `lines`, and the id does not
  * count as matching: it is shown, and it does not fail the run. `gapped` names the ids in `gaps`
  * that showed their known outcome (an id in `gaps` that matched exactly is in neither; one that
- * differed some other way fails, in `lines`).
+ * differed some other way fails, in `lines`). `shows` says how a gap is shown: by default a scripted
+ * call's way for the `scenario` diff (its expectation's verdict explained by the pin), a corpus line's
+ * for any other.
  */
 export function diff<T extends object>(
   name: string,
@@ -95,6 +101,7 @@ export function diff<T extends object>(
   actual: Record<string, T>,
   drift: DriftAllowance = new Set(),
   gaps: KnownGaps = new Map(),
+  shows: GapTest = name === 'scenario' ? scenarioShowsGap : showsGap,
 ): { lines: string[]; matching: number; allowed: string[]; gapped: string[] } {
   const lines: string[] = [];
   const allowed: string[] = [];
@@ -102,7 +109,7 @@ export function diff<T extends object>(
   let matching = 0;
   for (const id of new Set([...Object.keys(expected), ...Object.keys(actual)])) {
     const gap = gaps.get(id);
-    const own = diffOne(name, id, expected[id], actual[id], drift.has(id), gap);
+    const own = diffOne(name, id, expected[id], actual[id], drift.has(id), gap, shows);
     if (own.lines.length === 0 && own.allowed.length === 0) matching += 1;
     if (gap !== undefined && own.allowed.length > 0) gapped.push(id);
     lines.push(...own.lines);
@@ -121,6 +128,21 @@ export function differingIds<T extends object>(
   actual: Record<string, T>,
   drift: DriftAllowance = new Set(),
   gaps: KnownGaps = new Map(),
+  shows: GapTest = name === 'scenario' ? scenarioShowsGap : showsGap,
 ): string[] {
-  return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].filter((id) => diffOne(name, id, expected[id], actual[id], drift.has(id), gaps.get(id)).lines.length > 0);
+  return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].filter((id) => diffOne(name, id, expected[id], actual[id], drift.has(id), gaps.get(id), shows).lines.length > 0);
+}
+
+/**
+ * The scripted calls that fail their own expectation, by id: every one that does not pass, but one
+ * whose run shows its known gap against the baseline (scenarioShowsGap), which is reported as allowed
+ * instead. `gaps` is empty on a stub run, so there every call is held to its expectation.
+ */
+export function failingScenarios<T extends object & { pass: boolean }>(expected: Record<string, T>, actual: Record<string, T>, gaps: KnownGaps): string[] {
+  return Object.entries(actual).filter(([id, a]) => {
+    if (a.pass) return false;
+    const gap = gaps.get(id);
+    const e = expected[id];
+    return gap === undefined || e === undefined || !scenarioShowsGap(e, a, gap);
+  }).map(([id]) => id);
 }
