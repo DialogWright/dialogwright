@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "regress": "dialogwright regress",
+    "render:bakeoff": "dialogwright render:bakeoff",
     "policy:matrix": "dialogwright policy:matrix",
     "policy:card": "dialogwright policy:card",
     "app:diagram": "dialogwright app:diagram",

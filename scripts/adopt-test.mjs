@@ -257,6 +257,9 @@ async function exercise(dir) {
   check(existsSync(join(second, '.gitignore')) && secondPkg.dependencies.dialogwright.startsWith('^') && !existsSync(join(dir, 'apps')), `npx dialogwright create-app writes a project of its own (dialogwright ${secondPkg.dependencies.dialogwright})`);
   const help = run('npx', ['dialogwright', 'help'], dir, { quiet: true });
   check(help.includes('regress') && help.includes('configure'), 'npx dialogwright help lists the commands');
+  // render:bakeoff runs from the build: the scaffold's app words no line, so it has nothing to compare, and says so.
+  const bakeoff = run('npx', ['dialogwright', 'render:bakeoff', '--replay', '--models', 'anthropic:claude-haiku-5-5'], dir, { expect: 1, quiet: true });
+  check(bakeoff.includes('generates no line'), 'npx dialogwright render:bakeoff: the scaffold\'s app generates no line, and it says so');
   const internal = run(process.execPath, ['--input-type=module', '-e', "import('dialogwright/core/app/registry').then(() => process.exit(0), (e) => { console.log(e.code); process.exit(3); })"], dir, { expect: 3, quiet: true });
   check(internal.includes('ERR_PACKAGE_PATH_NOT_EXPORTED'), 'the per-file subpaths are not exported');
   const entries = run(process.execPath, ['--input-type=module', '-e', "for (const e of ['dialogwright', 'dialogwright/testing', 'dialogwright/slot-kit', 'dialogwright/policy', 'dialogwright/kb/onnx']) { const m = await import(e); console.log(e, Object.keys(m).length); }"], dir, { quiet: true });

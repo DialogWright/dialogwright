@@ -1413,7 +1413,7 @@ const has = (obj: object, key: string): boolean => Object.hasOwn(obj, key);
  * the working directory (run/fixtures.ts), and an app's commands (its regress, cli and serve
  * scripts) run in its package, so the two are the same folder.
  */
-function packageRootOf(dir: string): string {
+export function packageRootOf(dir: string): string {
   for (let at = resolve(dir); ; at = dirname(at)) {
     if (existsSync(join(at, 'package.json'))) return at;
     if (dirname(at) === at) return process.cwd();
