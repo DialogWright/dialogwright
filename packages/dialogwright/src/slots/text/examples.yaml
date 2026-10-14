@@ -78,12 +78,13 @@
       expect: { kind: absent }
 
 - name: words as the display
-  about: A short phrase that is not sensitive, shown as said and kept in the trace.
+  about: "A short phrase that is not sensitive, shown as said and kept in the trace; the other slots listen on the turn that gives it, so a day said with it is heard (others: listen)."
   slot: reference
   config:
     what: a short reference phrase for the booking
     say: null
     redact: none
+    others: listen
     maxLength: 60
   utterances:
     - text: blue heron on the lake

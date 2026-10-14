@@ -217,7 +217,23 @@ function readSlots(session: Session, answers: AnswerMap, ctx: SlotContext, specs
   // so reading them all up front says exactly what reading them one at a time did.
   const results = specs.map((spec) => ({ spec, outcome: spec.fill(answers, slotCtx(session, ctx, spec.id, opts)) }));
   const dropped = sameDayAsPrompted(session, results);
-  return results.filter(({ spec, outcome }) => outcome.kind !== 'absent' && !dropped.has(spec.id));
+  return dictatedOnly(session, results.filter(({ spec, outcome }) => outcome.kind !== 'absent' && !dropped.has(spec.id)), opts);
+}
+
+/**
+ * A dictation turn belongs to its slot (SlotSpec.quietsOthers, a `text` slot's `others: quiet`; live
+ * findings item 27): where the prompted slot is one that quiets the others and this turn fills it, the
+ * turn is that slot's content, and only its own outcome is kept. The secretary's recipient, filled at
+ * the opening, was replaced at the message prompt by "anyone", read from "could someone send it again"
+ * in the message itself. Every other turn keeps every outcome: a correction (opts.correcting, the
+ * read-back's and the summary's), a turn that prompted another slot or none, and one that does not
+ * fill the prompted slot (the caller gave no text, so the turn is no dictation).
+ */
+function dictatedOnly(session: Session, results: { spec: SlotSpec; outcome: SlotOutcome }[], opts: FillOptions): { spec: SlotSpec; outcome: SlotOutcome }[] {
+  if (opts.correcting === true) return results;
+  const own = results.find((r) => r.spec.id === session.promptedFor);
+  if (own === undefined || own.spec.quietsOthers !== true || own.outcome.kind !== 'filled') return results;
+  return [own];
 }
 
 /**

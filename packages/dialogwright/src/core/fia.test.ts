@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, applyDtmf, slotCtx, valuesGiven } from './fia';
-import { newSession, setForm, type Session } from './session';
+import { emptySlot, newSession, setForm, type Session } from './session';
+import { defineSlot } from '../slots/defineSlot';
 import { DEFAULT_THRESHOLDS, withOverrides } from './thresholds';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { useTestkit } from '../testing/apps';
@@ -451,5 +452,52 @@ describe('fillSlots help', () => {
     expect(r.progress).toBe(false);
     expect(r.events).toEqual([]);
     expect(s.slots.parcelSelect!.helped).toEqual([]);
+  });
+});
+
+describe('a dictation turn belongs to its slot (live findings item 27)', () => {
+  // The secretary's third recording: the recipient filled at the opening, then the message dictated at
+  // "What's the message?"; the recipient choice, listening on every turn, read "anyone" at 0.5 from
+  // "could someone send it again" and replaced Riley.
+  const recipient = defineSlot('recipient', { type: 'choice', fillAt: 'SLOT_CHOICE_CONFIRM', options: { riley: { say: 'Riley Moreno' }, anyone: { say: 'anyone on the team' } } });
+  const MESSAGE = 'the invoice went to the old address, could someone send it again to accounts at example dot com';
+  const message = (others?: 'quiet' | 'listen') => defineSlot('message', { type: 'text', what: 'the message', say: null, redact: 'none', ...(others !== undefined ? { others } : {}) });
+  const answers = { recipient: choice({ anyone: 0.5, riley: 0.3, none: 0.2 }), messageGiven: noul(0.95) };
+  function atMessage(promptedFor: Session['promptedFor'] = 'message'): Session {
+    const s = newSession('s', 0, VOICE_RELAY);
+    s.slots.recipient = { ...emptySlot(), value: 'riley', display: 'Riley Moreno', confirmed: true };
+    s.slots.message = emptySlot();
+    s.promptedFor = promptedFor;
+    return s;
+  }
+
+  it('while the message is asked for, the turn is the message: the recipient is neither filled nor changed', () => {
+    for (const spec of [message(), message('quiet')]) {
+      const r = fillSlots(atMessage(), answers, ctx(MESSAGE), [recipient, spec]);
+      expect(r.session.slots.recipient).toMatchObject({ value: 'riley', display: 'Riley Moreno', confirmed: true });
+      expect(r.session.slots.message!.value).toBe(MESSAGE);
+      expect(r.events.map((e) => e.slot)).toEqual(['message']);
+      expect(valuesGiven(atMessage(), answers, ctx(MESSAGE), [recipient, spec])).toEqual(new Set(['message']));
+    }
+  });
+
+  it('others: listen restores the old behaviour: the recipient listens on that turn too', () => {
+    const r = fillSlots(atMessage(), answers, ctx(MESSAGE), [recipient, message('listen')]);
+    expect(r.session.slots.recipient!.value).toBe('anyone');
+    expect(r.session.slots.message!.value).toBe(MESSAGE);
+  });
+
+  it('a turn that gives no message, another slot asked, or a correction: every slot fills as before', () => {
+    // The caller gives no text at the message prompt ("oh, it's for anyone actually"): no dictation.
+    const none = fillSlots(atMessage(), { ...answers, messageGiven: noul(0.1) }, ctx('oh, it is for anyone actually'), [recipient, message()]);
+    expect(none.session.slots.recipient!.value).toBe('anyone');
+    // A one-breath message at the opening, where nothing is prompted, or another slot asked.
+    for (const prompted of [null, 'intent', 'recipient'] as const) {
+      const r = fillSlots(atMessage(prompted), answers, ctx(MESSAGE), [recipient, message()]);
+      expect(r.session.slots.recipient!.value, String(prompted)).toBe('anyone');
+    }
+    // A correction (the read-back's and the summary's path) changes any slot.
+    const corrected = fillSlots(atMessage(), answers, ctx(MESSAGE), [recipient, message()], { correcting: true });
+    expect(corrected.session.slots.recipient!.value).toBe('anyone');
   });
 });

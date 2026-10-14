@@ -370,6 +370,16 @@ export interface SlotSpec {
    */
   summarized?: true;
   /**
+   * A dictation turn belongs to its slot (a `text` slot's `others: quiet`, its default; live findings
+   * item 27): while this slot is the prompted slot (Session.promptedFor) and a turn fills it, no other
+   * slot fills or changes from that turn, since the turn is the caller's words as this slot's content
+   * (a choice heard in a message, "could someone send it again", is not the caller changing whom it is
+   * for). Intents and priority switches read the turn as ever; a correction at a read-back or a summary
+   * (FillOptions.correcting), a turn where this slot is not the one prompted, and a turn that does not
+   * fill it (the caller gave no text) fill every slot as before. Absent: every slot listens on every turn.
+   */
+  quietsOthers?: true;
+  /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was
    * verified (IDENTITY_VERIFIED, or IDENTITY_UNVERIFIED), never the value itself.

@@ -45,6 +45,8 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       ...(o.redact === 'length-summarized' ? { redact: 'length' as const, statement: false as const, summarized: true as const } : {}),
       // Shown as said while the value is written (written.ts): display(value) cannot give the words back.
       ...(displaysSaid(o) ? { displayFrom: 'said' as const } : {}),
+      // A turn that gives its words while it is asked for is its content alone (others: quiet, the default).
+      ...(o.others === 'quiet' ? { quietsOthers: true as const } : {}),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId],
       prompts: readBackPrompts(id, o.confirm ?? 'summary'),

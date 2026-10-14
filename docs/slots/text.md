@@ -29,6 +29,7 @@ A slot of this type is written under its id in slots.yaml, with `type: text` and
 | `pick.words.<key>.prepositions` | list of string | unset | Words or phrases after which a clause's tail is offered too ("au", "près de"). Replaces the built-in list of the language. |
 | `numbers` | one of `words`, `digits` | `words` | How the value writes the numbers the caller says in words. "words": as said. "digits": code writes each run of number words as digits ("seventy six twenty five oak hollow lane" is "7625 oak hollow lane", "one zero two four six" is "10246", "one oh two" is "102"); ordinals stay words ("fifth avenue", "twenty third street"), and so do digits already said. The value (a tool's param, the gate, the audit, the console) is written; with say: null the display, which a line reads back, stays the words as said, since text-to-speech reads "7625" as a quantity. With pick, the part picked is written. Only in a language with rules: English, also read with no locale; another keeps the words as said. |
 | `case` | one of `as-said`, `title` | `as-said` | How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale. |
+| `others` | one of `quiet`, `listen` | `quiet` | What the other slots do on a turn that gives this slot its words while it is the slot just asked for. "quiet" (the default): the turn is this slot's content, and no other slot fills or changes from it, so a word in a message ("could someone send it again") never replaces a value already given (who the message is for). Intents and priority switches (an urgent request, asking for a person) are read from the turn as ever, a correction at a read-back or the summary changes any slot, and a turn where the caller gives no text, or where another slot was asked, fills every slot as before. "listen": every slot listens on that turn too, as before this option, so a caller who names another value in the same breath as the words changes it. |
 | `confirm` | one of `summary`, `always` | unset | "summary" (the default): the words are neither acknowledged nor read back on their own; the form's final confirm covers them. "always": what the caller said is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, pick, pickNone. |
 | `ids` | map | unset | Question ids in place of the defaults (the slot's id followed by the part: given, pick), to keep the ids an existing slot used. |
@@ -63,6 +64,10 @@ The slot is `detect: true`, has no keypad rung, and says no line beyond its `ask
 ## Words a model summarizes: `redact: length-summarized`
 
 A message whose read-back summarizes it (a framed line's span worded from the slot: the authoring guide, 16.3) needs the words whole in the session, and a slot the records mask is never sent to a model. `redact: length-summarized` is the one named exception. The words are kept in the session for the call (the app's lines say them, the read-back's span is worded from them, a tool is sent them) and sent whole to the render model only for that span, with the decision model's checks of it; no line generated whole from the slot is allowed, and in such an app no other line is sent the caller's words. They are masked by their length in every record: the trace and the console (the slot; the part of our lines that says the words or their summary; and every caller's words, on every turn, since the message may come on any), the frame log (which keeps no caller's words at all, so such a call cannot be replayed from it), the audit, and a handoff (by its length, whatever app.yaml's handoff data says). Use it with `say: null`. `dialogwright check` refuses it on an identity factor and on a slot no framed span summarizes (`length` masks the same way there), and the policy card lists the slot as "sent whole to the render model to summarize; masked in the records".
+
+## A dictation turn is the slot's: `others`
+
+While the slot is the one just asked for and a turn gives it the caller's words, that turn is its content: no other slot fills or changes from it (`others: quiet`, the default). A message dictated at "What's the message?" ("the invoice went to the wrong place, could someone send it again to accounts") never replaces who the message is for, whatever a choice slot reads from "someone" in it. Intents and priority switches are read from the turn as ever (an urgent request in the middle of a message still goes to a person), a correction at a read-back or the summary changes any slot, and a turn where the caller gives no text ("oh, it's for Sam actually"), or where another slot was asked, fills every slot as before. `others: listen` lets every slot listen on that turn too, as before the option: a caller who names another value in the same breath as the words then changes it. It changes no question the model is asked, so a recorded cassette still replays; a baseline whose dictation turn filled another slot changes.
 
 ## The question
 
@@ -246,7 +251,7 @@ issue:
 
 #### words as the display
 
-A short phrase that is not sensitive, shown as said and kept in the trace.
+A short phrase that is not sensitive, shown as said and kept in the trace; the other slots listen on the turn that gives it, so a day said with it is heard (others: listen).
 
 ```yaml
 reference:
@@ -254,6 +259,7 @@ reference:
   what: a short reference phrase for the booking
   say: null
   redact: none
+  others: listen
   maxLength: 60
 ```
 
@@ -339,7 +345,7 @@ place:
 
 ## Notes
 
-- Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note.
+- Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note. The other way round, the turn that gives the words while the slot is asked for fills no other slot (`others: quiet`, above).
 - Without `pick`, the value is the whole turn's words, not the part that is the note. If the caller says "yes, leave it by the gate", the value is that sentence. With `pick`, it is the part the model chooses among those code found.
 - The candidates are cut by words, not by meaning. A joining word inside a value is covered by the joined parts, but only for two clauses side by side with no punctuation between them; a value that spans punctuation ("5 St. James Place", where "St." ends a clause) or three clauses is not offered whole. Then the model chooses none, and the value is the whole words.
 - In another locale the stand-in can be that locale's: `locale/<tag>/slots.yaml` gives `say: <stand-in>` for the slot. The words themselves are the caller's, in whatever language they spoke. A slot whose display is the words (`say: null`) takes none.
