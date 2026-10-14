@@ -183,7 +183,6 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
 
   let report: BakeoffReport;
   try {
-    for (const spec of specs) providerOf(spec, { env, replay });
     // A recording waits for the decision model as long as a recording regression is told to (the create-app skill's 15 s).
     const thresholds = buildThresholds(replay ? [] : ['JEV_TIMEOUT_MS=15000']);
     const jev = resolveJevProvider(env, { needKey: !replay });
@@ -201,14 +200,17 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
     say(`${app.id}: ${corpus.length} corpus lines and ${scenarios.length} scripted calls; the decision model ${jev.model} from ${jev.provider}, its answers replayed from the app's recording (${shown(decisionCassette)}${existsSync(decisionCassette) ? '' : ', not found'})`);
     const models: ModelResult[] = [];
     for (const spec of specs) {
-      const p = providerOf(spec, { env, replay });
-      for (const line of renderLines(p, { replayed: replay })) say(line);
+      try {
+        for (const line of renderLines(providerOf(spec, { env, replay }), { replayed: replay })) say(line);
+      } catch {
+        // A model whose settings are refused is reported in its row; the run goes on.
+      }
       const result = await runModel(spec, {
         app, recordedDir: recorded, decision, replay, env, thresholds, screen, corpus, scenarios, prices,
         ...(io.fetchFn !== undefined ? { fetchFn: io.fetchFn } : {}),
         progress: io.err,
       });
-      models.push({ ...result, cassette: shown(result.cassette), checks: shown(result.checks) });
+      models.push(result.status === 'refused' ? result : { ...result, cassette: shown(result.cassette), checks: shown(result.checks) });
     }
     report = { app: app.id, decisionModel: jev.model, replay, budgetMs: budget, corpus: corpus.length, scenarios: scenarios.length, models };
   } catch (e) {

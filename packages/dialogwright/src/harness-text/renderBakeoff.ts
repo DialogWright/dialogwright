@@ -21,6 +21,7 @@ import {
   RENDER_PROVIDERS,
   RENDER_THINKING_MODES,
   renderCassetteModel,
+  refusedThinking,
   renderSettings,
   resolveRenderProvider,
   thinkingLabel,
@@ -209,10 +210,12 @@ export interface ModelResult {
   cassette: string;
   /** The decision model's answers about its run that the app's recording lacks (checksCassettePath). */
   checks: string;
-  /** `ran`; `not-recorded` (a replay with no cassette for it); `stopped` (every line tried failed as a request, STOP_AFTER_ERRORS). */
-  status: 'ran' | 'not-recorded' | 'stopped';
+  /** `ran`; `not-recorded` (a replay with no cassette for it); `stopped` (every line tried failed as a request, STOP_AFTER_ERRORS); `refused` (its settings refused before any request: a thinking the model refuses). */
+  status: 'ran' | 'not-recorded' | 'stopped' | 'refused';
   /** Why a stopped run stopped: its requests' failure. */
   stopped?: string;
+  /** Why the entry could not be run at all: a thinking the model refuses (render/providers.ts refusedThinking), asked of no model. */
+  refused?: string;
   tried: number;
   generated: number;
   /** Fallbacks by reason. */
@@ -356,9 +359,29 @@ export function providerOf(spec: ModelSpec, run: Pick<BakeoffRun, 'env' | 'repla
   return resolveRenderProvider(envForModel(spec, run.env), { needKey: !run.replay })!;
 }
 
+/** A model's entry that could not be run: its settings refused before any request. */
+function refusedResult(spec: ModelSpec, refused: string): ModelResult {
+  return {
+    entry: spec.entry, label: spec.entry, provider: spec.provider, model: spec.model, cassette: '', checks: '', status: 'refused', refused,
+    tried: 0, generated: 0, fellBack: {}, errors: {}, untried: 0,
+    wording: { measured: 0, p50: null, p95: null, overBudget: 0 },
+    cost: { renderTokens: { input: 0, output: 0 }, renderUsd: null, checkTokens: { input: 0, output: 0 }, checksUsd: 0 },
+    decisionMisses: { turns: 0, checks: 0 },
+    byLine: [],
+  };
+}
+
 /** Runs the app's corpus and scripted calls with one model wording its lines (or its cassette replaying them), and tables what came of it. */
 export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelResult> {
-  const p = providerOf(spec, run);
+  let p: RenderProvider;
+  try {
+    p = providerOf(spec, run);
+  } catch (e) {
+    // A thinking the model refuses (renderThinkingOf, as the server refuses it at start): reported for this model, asked of none.
+    const why = spec.thinking !== undefined ? refusedThinking(spec.model, spec.thinking) : null;
+    const refused = why !== null ? `thinking ${spec.thinking} is refused by ${spec.model}: ${why}; leave it out of the entry for the model's own` : e instanceof Error ? e.message : String(e);
+    return refusedResult(spec, refused);
+  }
   const cassette = renderCassettePath(run.recordedDir, renderCassetteModel(p));
   const checksPath = checksCassettePath(run.recordedDir, renderCassetteModel(p), run.decision.provider.model);
   const label = `${spec.provider}:${spec.model}${p.thinking?.overridden ? ` (${thinkingLabel(p.thinking)})` : ''}`;
@@ -484,7 +507,7 @@ export function reasonsOf(m: Pick<ModelResult, 'fellBack' | 'errors'>): string {
 
 /** A model's row, cell by cell, under TABLE_HEAD. */
 function row(m: ModelResult): string[] {
-  if (m.status === 'not-recorded') return [m.label, '-', '-', '-', 'not recorded', '-', '-', '-', '-'];
+  if (m.status === 'not-recorded' || m.status === 'refused') return [m.label, '-', '-', '-', m.status === 'refused' ? 'refused' : 'not recorded', '-', '-', '-', '-'];
   const fell = sum(m.fellBack);
   const latency = m.wording.p50 === null ? 'not measured' : `${m.wording.p50.toFixed(0)} / ${m.wording.p95!.toFixed(0)}`;
   const over = m.wording.measured === 0 ? '-' : `${m.wording.overBudget} of ${m.wording.measured}`;
@@ -498,10 +521,11 @@ function notes(r: BakeoffReport): string[] {
   const out: string[] = [];
   for (const m of r.models) {
     if (m.status === 'not-recorded') out.push(`${m.label}: not recorded (no ${m.cassette}); run without --replay to record it`);
+    if (m.status === 'refused') out.push(`${m.label}: refused, nothing asked: ${m.refused}`);
     if (m.status === 'stopped') out.push(`${m.label}: stopped after ${m.tried} lines, every one a failed request: ${m.stopped}`);
     if (m.untried > 0) out.push(`${m.label}: ${m.untried} lines said fixed untried (their when, locale or the screen)`);
     if (m.decisionMisses.turns + m.decisionMisses.checks > 0) out.push(`${m.label}: the decision model's recording missed ${m.decisionMisses.turns} turns and ${m.decisionMisses.checks} checks (drift-error); record without --replay`);
-    if (m.status !== 'not-recorded' && m.cost.renderUsd === null && m.cost.renderTokens.input + m.cost.renderTokens.output > 0) out.push(`${m.label}: wording ${m.cost.renderTokens.input} input and ${m.cost.renderTokens.output} output tokens, no price given (--price ${m.model}=<input>,<output>)`);
+    if (m.status !== 'not-recorded' && m.status !== 'refused' && m.cost.renderUsd === null && m.cost.renderTokens.input + m.cost.renderTokens.output > 0) out.push(`${m.label}: wording ${m.cost.renderTokens.input} input and ${m.cost.renderTokens.output} output tokens, no price given (--price ${m.model}=<input>,<output>)`);
   }
   return out;
 }

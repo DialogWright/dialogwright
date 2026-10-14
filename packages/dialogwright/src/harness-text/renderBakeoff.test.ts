@@ -104,13 +104,16 @@ describe('the models named', () => {
 describe('render:bakeoff --replay', () => {
   it('tables the committed recording with no key, and a model with no cassette as not recorded', async () => {
     const r = io();
-    expect(await bakeoffCommand([MESSAGE, '--replay', '--models', 'anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5', '--by-line'], r.io)).toBe(0);
+    expect(await bakeoffCommand([MESSAGE, '--replay', '--models', 'anthropic:claude-sonnet-5-5:disabled,anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5', '--by-line'], r.io)).toBe(0);
     const table = r.out.join('\n');
-    expect(table).toMatch(/^anthropic:claude-haiku-5-5\s+36\s+26 \(72%\)\s+10 \(28%\)\s+drift 10\s+not measured\s+-\s+\$\d/m);
+    expect(table).toMatch(/^anthropic:claude-haiku-5-5\s+36\s+27 \(75%\)\s+9 \(25%\)\s+drift 9\s+not measured\s+-\s+\$\d/m);
     expect(table).toMatch(/^anthropic:claude-sonnet-5-5\s+-\s+-\s+-\s+not recorded/m);
+    // A thinking the model refuses (as the server refuses it at start): that model reported, the run going on.
+    expect(table).toMatch(/^anthropic:claude-sonnet-5-5:disabled\s+-\s+-\s+-\s+refused/m);
+    expect(table).toContain('anthropic:claude-sonnet-5-5:disabled: refused, nothing asked: thinking disabled is refused by claude-sonnet-5-5: it cannot turn thinking off that way (its way is between-tools)');
     expect(table).toContain('anthropic:claude-sonnet-5-5: not recorded (no src/testing/message/fixtures/recorded/render/claude-sonnet-5-5.jsonl)');
     // By line: the line that fell back, with a wording the drift check refused.
-    expect(table).toMatch(/^ {2}ask_caller\s+10 tried, 0 generated, 10 fell back: drift 10 {2}e\.g\. drift: ".+"$/m);
+    expect(table).toMatch(/^ {2}ask_caller\s+10 tried, 1 generated, 9 fell back: drift 9 {2}e\.g\. drift: ".+"$/m);
     expect(table).toMatch(/^ {2}confirm_take_message\.summary\s+8 tried, 8 generated, 0 fell back$/m);
     // Nothing was recorded: the cassettes are as committed.
     expect(existsSync(join(RECORDED, 'render', 'claude-sonnet-5-5.jsonl'))).toBe(false);
@@ -122,7 +125,7 @@ describe('render:bakeoff --replay', () => {
     expect(r.out).toHaveLength(1);
     const report = JSON.parse(r.out[0]!) as BakeoffReport;
     expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 700, chat: 1500 } });
-    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 36, generated: 26, fellBack: { drift: 10 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });
+    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 36, generated: 27, fellBack: { drift: 9 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });
     expect(report.models[0]!.byLine).toBeUndefined();
   });
 });
