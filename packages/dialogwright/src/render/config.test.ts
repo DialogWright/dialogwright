@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FormsYaml, PromptYaml } from '../define/schema/index';
-import { formLineIds, generatedWordingOf, generatedWordingProblems, generatedWordingWarnings, identifierVarsFrom, KB_ANSWER_LINE_VAR } from './config';
+import { formLineIds, generatedWordingOf, generatedWordingProblems, generatedWordingWarnings, identifierVarsFrom, KB_ANSWER_LINE_VAR, summarizedVarsFrom } from './config';
 import { KB_ANSWER_VAR } from '../kb/answer';
 import { messageApp } from '../testing/message/app';
 
@@ -295,10 +295,10 @@ describe('a framed line with a frame for the exact words (exactText; the secreta
 
   it('check refuses it on a line that is not framed, and on a prescribed one', () => {
     expect(problems({ a: line('Bye, {caller}.', { exactText: 'Bye.' }) })).toEqual([
-      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate), so it has no span to say word for word and its "exactText" would never be said',
+      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate), so it has no span that is said word for word, and "exactText" (a framed line\'s frame for its exact words) does not apply to it',
     ]);
     expect(problems({ a: framed({ exactText: EXACT, prescribed: true }) })).toEqual([
-      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate, and it is prescribed), so it has no span to say word for word and its "exactText" would never be said',
+      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate, and it is prescribed), so it has no span that is said word for word, and "exactText" (a framed line\'s frame for its exact words) does not apply to it',
       'prompts.yaml prompts.a.generate: the line "a" is prescribed (prescribed: true), so it is always said word for word and no span of it is generated',
     ]);
   });
@@ -313,10 +313,39 @@ describe('a framed line with a frame for the exact words (exactText; the secreta
       'locale/es/prompts.yaml prompts.confirm_f.exactText: the line "confirm_f"\'s frame for the exact words names {summary}, not the variables of this locale\'s text ({caller}, {summary}), so the two would not say the same values',
     ]);
     expect(problems({ confirm_f: framed() }, { es: { confirm_f: es({ exactText: '{caller} llamó y dijo: {summary}. ¿Lo paso?' }) } })).toEqual([
-      'locale/es/prompts.yaml prompts.confirm_f.exactText: prompts.yaml gives the line "confirm_f" no frame of its own for the exact words (exactText), so this one is never said',
+      'locale/es/prompts.yaml prompts.confirm_f.exactText: prompts.yaml gives the line "confirm_f" no frame of its own for the exact words (exactText), so a locale\'s own does not apply: a locale mirrors prompts.yaml',
     ]);
     expect(problems({ b: line('Bye.') }, { es: { b: line('Adiós.', { exactText: 'Adiós.' }) } })).toEqual([
       'locale/es/prompts.yaml prompts.b.exactText: the line "b" is not framed in prompts.yaml, so a frame for its exact words does nothing',
     ]);
+  });
+});
+
+describe('a slot masked in the records that a model summarizes (redact: length-summarized; live findings, item 20)', () => {
+  const FRAME = '{caller} called and left this message: {summary}. Shall I pass it on?';
+  const forms = { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f' }) };
+  const problems = (prompts: Record<string, PromptYaml>, factors: string[] = []) =>
+    generatedWordingProblems({ prompts, forms, localePrompts: {}, identifierVars: new Set(['message', ...factors]), slots: ['caller', 'message'], summarized: ['message'], factors }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+
+  it('lets a framed span, or a line generated from it, be worded from it; a line naming it as an item stays refused', () => {
+    expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }) })).toEqual([]);
+    expect(problems({ confirm_f: line('Your message: {message}. Shall I pass it on?', { mode: 'generative', goal: 'Read it back.', from: ['message'] }) })).toEqual([]);
+    expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }), other: line('You said {message}.', { mode: 'generative', goal: 'Say it.' }) })).toEqual([
+      'prompts.yaml prompts.other.mode: the line "other" is generated, but it names {message}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier',
+    ]);
+    // A form's switch leaves a line that names it as an item fixed.
+    const g = generatedWordingOf({ prompts: { confirm_f: line('So {caller}, and {message}?') }, forms: { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f', wording: 'generative' }) }, style: null, localePrompts: {}, identifierVars: new Set(['message']), summarized: new Set(['message']) });
+    expect(g).toBeUndefined();
+  });
+
+  it('check refuses it on a slot no generated line summarizes, and on an identity factor', () => {
+    expect(problems({ ask: line('What is the message?') })).toEqual([
+      'slots.yaml message.redact: the slot "message" says "redact: length-summarized", but no generated line summarizes it (no framed span and no line generated from it), so nothing would be sent to a model and the setting only names an exception it does not use',
+    ]);
+    expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }) }, ['message'])).toEqual([
+      'slots.yaml message.redact: the slot "message" is an identity factor, and "redact: length-summarized" would send it whole to a model; an identity factor is never sent to one',
+      'prompts.yaml prompts.confirm_f.generate.summary.from: the span "summary" is worded from {message}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a model is never sent an identifier',
+    ]);
+    expect(summarizedVarsFrom({ message: { summarized: true }, dob: { summarized: true }, note: {} }, ['dob'])).toEqual(new Set(['message']));
   });
 });

@@ -80,6 +80,22 @@ describe('keep', () => {
 });
 
 describe('the options', () => {
+  it('redact: length-summarized masks the words by their length everywhere, the display and the console too, and marks them for a model to summarize', () => {
+    const message = defineSlot('message', { type: 'text', what: 'a message', say: null, redact: 'length-summarized' });
+    expect(message.redact).toBe('length');
+    expect(message.statement).toBe(false);
+    expect(message.summarized).toBe(true);
+    const words = 'the logo files are ready for review';
+    const record = { slots: { message: { value: words, display: words, confirmed: false, attempts: 0, window: null, helped: [] } } } as never;
+    for (const mode of ['length', 'keep'] as const) {
+      expect(JSON.stringify(redactRecordSlots(record, mode, { slots: { message } }))).not.toContain('logo files');
+    }
+    // A plain text slot is as it was: no mark, and a statement.
+    const note = defineSlot('note', { type: 'text', what: 'a note' });
+    expect(note.summarized).toBeUndefined();
+    expect(note.statement).toBeUndefined();
+  });
+
   it('say: null shows the words, and needs redact: none', () => {
     const plain = defineSlot('phrase', { type: 'text', what: 'a phrase', say: null, redact: 'none' });
     expect(plain.redact).toBeUndefined();
@@ -87,7 +103,7 @@ describe('the options', () => {
     const refused = buildSlot('phrase', { type: 'text', what: 'a phrase', say: null });
     expect(refused.ok).toBe(false);
     expect(!refused.ok && refused.problems.map(formatProblem)).toEqual([
-      '(code)  phrase.say  say is null, so the display is the caller\'s words, which redact: length keeps out of the trace  ->  give "say" a stand-in such as "your note", or set redact: none',
+      '(code)  phrase.say  say is null, so the display is the caller\'s words, which redact: length keeps out of the trace  ->  give "say" a stand-in such as "your note", or set redact: none (or redact: length-summarized, for words a model summarizes though the records mask them)',
     ]);
   });
 

@@ -16,7 +16,7 @@ import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isAnonymous, type Party } from '../../gate/types';
 import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
-import { turnScrubber } from '../../trace/redact';
+import { framesMaskWords, turnScrubber } from '../../trace/redact';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
 import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
@@ -335,7 +335,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     for (const r of runs) {
       const app = appOf(r.result.session);
       // Built from the session after the turn and its decision, as the voice frame log's is.
-      const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app);
+      const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, r.record.render);
       for (const m of actionsToChatMessages(r.result.actions, defaultLocaleOf(app))) {
         sendTo(e, m, scrub);
         last = m.type;
@@ -634,7 +634,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     }
     if (m.type === 'text') {
       // A one-time code typed at the code prompt is masked before the frame log sees it, as a spoken one is (adapter.ts maskCodeFrame).
-      const masked = entry.session.promptedFor === 'otp' ? maskSpokenCode(m.text, spokenCodeMinDigits(codeLengthOf(appOf(entry.session)))).text : m.text;
+      // An app with a slot the records mask whose words a model summarizes keeps no typed words in the frame log (trace/redact.ts framesMaskWords).
+      const masked = framesMaskWords(appOf(entry.session)) ? `<${m.text.length} chars>` : entry.session.promptedFor === 'otp' ? maskSpokenCode(m.text, spokenCodeMinDigits(codeLengthOf(appOf(entry.session)))).text : m.text;
       record(entry.frames, 'in', loggedIn(m, masked));
       void enqueue(entry, (s) => turn(s, textEvent(m.text)));
       return;

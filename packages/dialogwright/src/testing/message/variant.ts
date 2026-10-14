@@ -71,3 +71,15 @@ export const EXACT_FRAME: Record<string, (text: string) => string> = {
   'prompts.yaml': replace(FRAMED, `${FRAMED.replace('called and left this message: {summary}', 'called and said, in short, {summary}')}    exactText: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
 `),
 };
+
+/**
+ * The message masked in every record though a model summarizes it (slots.yaml's `redact:
+ * length-summarized` on the message): the read-back's span is still worded from it, and its words are
+ * kept by their length in the trace, the frame log, the console, the audit and a handoff.
+ */
+export const SUMMARIZED: Record<string, (text: string) => string> = {
+  'app.yaml': replace('id: message', 'id: message-summarized'),
+  'slots.yaml': replace('  say: null\n  redact: none\n', '  say: null\n  redact: length-summarized\n'),
+  // The slot's redact setting records the param: policy.yaml's audit declares it no more.
+  'policy.yaml': replace('  message: length\n', ''),
+};

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from './config';
-import { envFileNames, envFilePathsOf, harnessEnvFilePath, harnessEnvFilePaths, joinEnvFiles, loadHarnessEnv, readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
+import { envFileNames, envFilePathsOf, harnessEnvFilePaths, joinEnvFiles, loadHarnessEnv, readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 
 /** The settings file's loader (envFile.ts): quotes are taken as dotenv takes them, so a file can be quoted for a shell too. */
 
@@ -57,7 +57,7 @@ describe('loadHarnessEnv: the settings regress, the cli and the trim read', () =
     const elsewhere = appDir();
     writeFileSync(join(elsewhere, 'other.env'), 'JEV_MODEL=from-elsewhere\n');
     const env: Record<string, string | undefined> = { ENV_FILE: 'other.env', INIT_CWD: elsewhere };
-    expect(harnessEnvFilePath(env, dir)).toBe(join(elsewhere, 'other.env'));
+    expect(harnessEnvFilePaths(env, dir)).toEqual([join(elsewhere, 'other.env')]);
     expect(loadHarnessEnv(env, dir)).toBe(`settings from ${join(elsewhere, 'other.env')} (1 set)`);
     expect(env.JEV_MODEL).toBe('from-elsewhere');
   });
@@ -83,7 +83,10 @@ describe('ENV_FILE naming several files (the secretary demo, live findings, item
     expect(envFileNames(' a.env , ,/abs/b.env,')).toEqual(['a.env', '/abs/b.env']);
     expect(envFilePathsOf([], { ENV_FILE: 'a.env,/abs/b.env', INIT_CWD: '/here' }, '/elsewhere')).toEqual(['/here/a.env', '/abs/b.env']);
     expect(envFilePathsOf(['--env-file', 'c.env,d.env'], { ENV_FILE: 'a.env' }, '/x')).toEqual(['/x/c.env', '/x/d.env']);
-    expect(envFilePathsOf([], { ENV_FILE: ' , ' }, '/x')).toBeNull();
+    // A value with no path in it is refused, never read as unset.
+    expect(() => envFilePathsOf([], { ENV_FILE: ' , ' }, '/x')).toThrow('ENV_FILE names no file: ","');
+    expect(() => resolveEnvFiles(',', '/x')).toThrow('ENV_FILE names no file: ","');
+    expect(envFilePathsOf([], { ENV_FILE: '   ' }, '/x')).toBeNull();
     expect(joinEnvFiles(['/a/x.env', '/b/y.env'])).toBe('/a/x.env,/b/y.env');
     // A shell expands ~ at the start of the value only: one after a comma is the home folder here.
     expect(resolveEnvFiles('a.env,~/keys/render.env', '/here', '/home/someone')).toEqual(['/here/a.env', '/home/someone/keys/render.env']);

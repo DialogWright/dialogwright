@@ -94,7 +94,13 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   let target: { name: string; settings: string[]; serve: { command: string; args: string[]; cwd: string }; diagnose: string };
   // ENV_FILE (or --env-file) may name several files, comma-separated: read in turn, a later one winning.
   const named = flags.envFile ?? (deps.env.ENV_FILE?.trim() || undefined);
-  const namedFiles = named === undefined ? [] : resolveEnvFiles(named, deps.invokedFrom);
+  let namedFiles: string[] = [];
+  try {
+    namedFiles = named === undefined ? [] : resolveEnvFiles(named, deps.invokedFrom);
+  } catch (e) {
+    deps.out(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
   if (hostFile !== null) {
     if (!existsSync(hostFile)) {
       deps.out(`no host file at ${hostFile}`);

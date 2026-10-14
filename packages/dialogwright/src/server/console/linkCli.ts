@@ -1,8 +1,8 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../config';
-import { readEnvFile } from '../envFile';
+import { readEnvFiles, resolveEnvFiles } from '../envFile';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from '../workspace';
 import { CODE_TTL_MS, LINK_KEY_HEADER, LINK_PATH, type LinkFile } from './auth';
 import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
@@ -12,15 +12,15 @@ import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
  * server running with CONSOLE_AUTH=token, printed here, on the machine the server runs on. The link the
  * server made before it stops working.
  *
- * It reads the settings the server reads (the app's `.env`, or the file ENV_FILE or `--env-file` names,
- * a variable in the environment winning), finds the link file the server wrote (CONSOLE_LINK_FILE, by
+ * It reads the settings the server reads (the app's `.env`, or the files ENV_FILE or `--env-file` names,
+ * comma-separated, a later one winning, a variable in the environment winning over them all), finds the link file the server wrote (CONSOLE_LINK_FILE, by
  * default `.console-link/link.json` beside the trace folder), checks that only its owner can read it,
  * and posts the key in it to the server's `/dashboard/link` on 127.0.0.1. Nothing else can make a link:
  * the endpoint answers only a request made on this machine that carries that key, and is not there at
  * all through the tunnel. Exit 0 with a link, 1 without one, 2 for a command line it does not understand.
  */
 
-export const LINK_USAGE = 'usage: [ENV_FILE=<path>] pnpm console:link [--app <name>]   (ENV_FILE names a settings file other than <app>/.env)';
+export const LINK_USAGE = 'usage: [ENV_FILE=<path>[,<path>...]] pnpm console:link [--app <name>]   (ENV_FILE names a settings file other than <app>/.env; several, comma-separated, are read in turn, a later one winning)';
 const ASK_MS = 5_000;
 
 export interface LinkIo {
@@ -44,19 +44,24 @@ function settingsOf(appName: string | undefined, envFileArg: string | undefined,
     if (app === null) return { error: `no app "${appName}" in this workspace`, code: 2 };
   }
   const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
-  let file: string;
-  if (named !== undefined) file = isAbsolute(named) ? named : resolve(io.invokedFrom, named);
-  else {
+  let files: string[];
+  if (named !== undefined) {
+    try {
+      files = resolveEnvFiles(named, io.invokedFrom);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e), code: 2 };
+    }
+  } else {
     if (app === null) {
       const chosen = chooseApp(apps, undefined, io.invokedFrom, 'console:link');
       if ('error' in chosen) return { error: chosen.error, code: 2 };
       app = chosen.app;
     }
-    file = join(app.dir, '.env');
+    files = [join(app.dir, '.env')];
   }
   let fromFile: Record<string, string>;
   try {
-    fromFile = readEnvFile(file);
+    fromFile = readEnvFiles(files);
   } catch (e) {
     return { error: `${e instanceof Error ? e.message : String(e)}: run pnpm configure, or name the file: ENV_FILE=<path> pnpm console:link`, code: 1 };
   }

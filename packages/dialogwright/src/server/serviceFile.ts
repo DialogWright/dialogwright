@@ -213,7 +213,13 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     return 2;
   }
   // Several files, comma-separated, are read in turn by the server, a later one winning: the service names them all.
-  const envFiles = resolveEnvFiles(named, io.invokedFrom);
+  let envFiles: string[];
+  try {
+    envFiles = resolveEnvFiles(named, io.invokedFrom);
+  } catch (e) {
+    io.out(e instanceof Error ? e.message : String(e));
+    return 2;
+  }
   const envFile = joinEnvFiles(envFiles);
   let drainMs: number;
   try {

@@ -13,7 +13,7 @@ import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
-import { generatedWordingOf, identifierVarsFrom } from '../render/config';
+import { generatedWordingOf, identifierVarsFrom, summarizedVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { renderSettings, resolveRenderProvider, thinkingLabel } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
@@ -406,14 +406,15 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   if (loaded === null) return [];
   // The identifiers, as the app is built: its identity factors, and each library slot hidden whole in the
   // records (a slot in code, which this reads no code for, counts as none).
-  const slots: Record<string, { redact?: string }> = {};
+  const slots: Record<string, { redact?: string; summarized?: true }> = {};
   for (const [id, entry] of Object.entries(loaded.slots ?? {})) {
     const built = buildSlot(id, entry);
-    if (built.ok) slots[id] = built.spec.redact !== undefined ? { redact: built.spec.redact } : {};
+    if (built.ok) slots[id] = { ...(built.spec.redact !== undefined ? { redact: built.spec.redact } : {}), ...(built.spec.summarized === true ? { summarized: true as const } : {}) };
   }
   const g = generatedWordingOf({
     prompts: loaded.prompts[loaded.defaultLocale] ?? {}, forms: loaded.forms.forms, style: loaded.style, localePrompts: {},
     identifierVars: identifierVarsFrom(slots, loaded.identity?.levels[1].factors ?? []),
+    summarized: summarizedVarsFrom(slots, loaded.identity?.levels[1].factors ?? []),
   });
   const lines = g === undefined ? 0 : Object.keys(g.lines).length;
   if (lines === 0) return [];
@@ -939,8 +940,14 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
   // ENV_FILE (or --env-file) may name several files, comma-separated: read in turn, a later one winning.
   const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
   let files: string[];
-  if (named !== undefined) files = resolveEnvFiles(named, io.invokedFrom);
-  else {
+  if (named !== undefined) {
+    try {
+      files = resolveEnvFiles(named, io.invokedFrom);
+    } catch (e) {
+      io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'name a settings file: ENV_FILE=<path> pnpm diagnose, or several separated by commas' }));
+      return 1;
+    }
+  } else {
     if (app === null) {
       const chosen = chooseApp(apps, undefined, io.invokedFrom, 'diagnose');
       if ('error' in chosen) {
@@ -986,9 +993,10 @@ async function hostMain(hostFile: string, envFileArg: string | undefined, offlin
     return 1;
   }
   const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
-  const files = named === undefined ? [join(host.dir, '.env')] : resolveEnvFiles(named, io.invokedFrom);
+  let files: string[];
   let fromFile: Record<string, string>;
   try {
+    files = named === undefined ? [join(host.dir, '.env')] : resolveEnvFiles(named, io.invokedFrom);
     fromFile = readEnvFiles(files);
   } catch (e) {
     io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'write the server\'s settings there (what every app shares), or name the file: ENV_FILE=<path> pnpm diagnose --host <file>' }));

@@ -95,6 +95,20 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  // A frame for the exact words (prompts.yaml's exactText) only on a framed line (App.generated's spans):
+  // on any other it would replace the line's text, a generated line's fallback included. Every locale's too.
+  for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { exactText?: string }>>][]) {
+    for (const [id, entry] of Object.entries(lines)) {
+      if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
+    }
+  }
+  // A slot a model may be sent to summarize though the records mask it (SlotSpec.summarized): never an
+  // identity factor, and only a slot recorded by its length as a secret, which masks it in every record.
+  for (const [id, spec] of Object.entries(app.slots)) {
+    if (spec.summarized !== true) continue;
+    if (app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, and summarized would send it whole to a model: an identity factor is never sent to one`);
+    if (spec.redact !== 'length' || spec.statement !== false) fail(`slot "${id}" says summarized, which needs redact: 'length' and statement: false, so the records mask it everywhere`);
+  }
   // What a transfer hands the channel (handoff.data): the same problems `check` finds in app.yaml.
   for (const p of handoffDataProblems(app.handoff?.data, app.slots, app.identity?.factorSlots ?? [])) fail(`handoff data: ${p.message} (handoff.data.${p.path.join('.')}): ${p.fix}`);
   // Where a slot listens (SlotSpec.listen): one of its values, never on an identity factor (which

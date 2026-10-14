@@ -254,6 +254,9 @@ describe('pnpm configure with flags alone', () => {
       '    - when: { reason: urgent }',
       '      to: env.HANDOFF_NUMBER',
       '  default: env.STUDIO_MAIN_LINE',
+      '  send:',
+      '    headers:',
+      '      X-Desk: env.DESK_CODE',
       '',
     ].join('\n'));
     // A laptop: the handoff number by Enter; SALES_LINE not E.164 then by Enter; SALES_DESK a sip: URI; STUDIO_MAIN_LINE from the environment.
@@ -265,7 +268,9 @@ describe('pnpm configure with flags alone', () => {
     expect(settings(file).BRAND_CODE).toBeUndefined();
     const text = readFileSync(file, 'utf8');
     expect(text).toContain('\n# BRAND_CODE=\n');
-    expect(text).toContain("# The other values alpha's YAML names (app.yaml's startParameters.brand): set each; the server will not start without them.");
+    // A value under transfer that is no target (a header sent with it) is not taken for a number.
+    expect(text).toContain('\n# DESK_CODE=\n');
+    expect(text).toContain("# The other values alpha's YAML names (app.yaml's startParameters.brand, app.yaml's transfer.send.headers.X-Desk): set each; the server will not start without them.");
     expect(prompt.asked.map((a) => a.question).slice(2)).toEqual([
       "SALES_LINE, a number callers dial (E.164), as app.yaml's transfer.targets.0.when.called names it (Enter for +15555550100, which goes nowhere):",
       "SALES_LINE, a number callers dial (E.164), as app.yaml's transfer.targets.0.when.called names it (Enter for +15555550100, which goes nowhere):",
@@ -284,6 +289,8 @@ describe('pnpm configure with flags alone', () => {
     const laptop = io(w.root, null);
     expect(await runSetup(['--mode', 'try', '--non-interactive'], laptop)).toBe(0);
     expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550100');
+    // A fresh phone line: no .env to keep a number from.
+    rmSync(join(w.dir('alpha'), '.env'));
     const base = ['--force', '--mode', 'phone', '--carrier', 'twilio', '--model', 'none', '--handoff', '+15555550123', '--non-interactive'];
     const run = async (argv: string[]) => {
       const o = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
@@ -295,6 +302,16 @@ describe('pnpm configure with flags alone', () => {
     expect(await run([...base, '--number', 'OTHER_LINE=+15555550177'])).toEqual({ code: 2, said: expect.stringContaining("--number OTHER_LINE=...: alpha's YAML names no number OTHER_LINE (it names STUDIO_MAIN_LINE)") });
     expect(await run([...base, '--number', 'lower=+1'])).toEqual({ code: 2, said: expect.stringContaining('--number must be <NAME>=<number>') });
     expect((await run([...base, '--number', 'STUDIO_MAIN_LINE=+15555550177'])).code).toBe(0);
+    expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550177');
+    // Run again with --force: the number the .env it replaces holds is kept, so no --number is needed.
+    const again = await run(base);
+    expect(again.code).toBe(0);
+    expect(again.said).toContain('STUDIO_MAIN_LINE kept from the .env it replaces: +15555550177');
+    expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550177');
+    // Asked at a terminal, it is the default Enter takes.
+    const prompt = scripted(['']);
+    expect(await runSetup(base.filter((a) => a !== '--non-interactive'), io(w.root, prompt, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN }))).toBe(0);
+    expect(prompt.asked.map((q) => q.question)).toEqual(["STUDIO_MAIN_LINE, where a call is put through (E.164, or a sip: URI), as app.yaml's transfer.default names it (Enter for +15555550177, from the .env it replaces):"]);
     expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550177');
   });
 

@@ -270,6 +270,11 @@ describe('pnpm start', () => {
     expect(h.out.join('\n')).toContain('the console, on this machine: http://localhost:3100/dashboard');
     h.spawned[0]!.exit(0);
     await done;
+    // A value that names no file is refused, never read as unset (the app's .env).
+    const none = harness(root, { env: { ENV_FILE: ' , ' } });
+    expect(await main(['--app', 'alpha'], none.deps)).toBe(1);
+    expect(none.out.join('\n')).toContain('ENV_FILE names no file: ","');
+    expect(none.spawned).toEqual([]);
     const missing = harness(root, { env: { ENV_FILE: 'line.env,missing.env' } });
     expect(await main(['--app', 'alpha'], missing.deps)).toBe(1);
     expect(missing.out.join('\n')).toContain(`no settings file at ${join(root, 'missing.env')}`);

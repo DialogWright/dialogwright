@@ -261,6 +261,8 @@ describe('pnpm service', () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain(`settings from ${w.envFile}, ${join(w.root, 'render.env')}, 120 s to stop`);
     expect(readFileSync(join(w.home, '.config/systemd/user/com.dialogwright.myline.service'), 'utf8')).toContain(`Environment="ENV_FILE=${w.envFile},${join(w.root, 'render.env')}"`);
+    // A value that names no file is refused, never written as ENV_FILE="".
+    expect(await run(['systemd', '--app', 'myline', '--force'], w, { ENV_FILE: ',' })).toEqual({ code: 2, out: 'ENV_FILE names no file: ","' });
   });
 
   it('warns when the settings file can be read by others, and quotes a path with a space in the commands it prints', async () => {

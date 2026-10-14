@@ -14,6 +14,10 @@ Reach for it for a value no list holds and no code can check. For a number, a da
 
 The slot is `detect: true`, has no keypad rung, and says no line beyond its `ask_<slot>` and `ask_<slot>_retry`, but for `confirm_<slot>` with `confirm: always`. It is read back in the final summary and not on its own (`confirm: summary`, the default), since the stand-in says nothing a caller could correct; with `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. A read-back says the display, so `confirm: always` needs `say: null` (with `redact: none`), the words themselves: with a stand-in the caller would hear "your description?", and `dialogwright check` refuses it.
 
+## Words a model summarizes: `redact: length-summarized`
+
+A message whose read-back summarizes it (a framed line's span worded from the slot: the authoring guide, 16.3) needs the words whole in the session, and a slot the records mask is never sent to a model. `redact: length-summarized` is the one named exception: the words are kept in the session (the app's lines say them, the read-back's span is worded from them, a tool is sent them), masked by their length in every record (the trace and the console, the display and the words of the turn that gave them too, the frame log, which then keeps no caller's words at all, the audit and a handoff), and sent whole to the render model only to summarize them, with the decision model's checks of that summary. Use it with `say: null`. `dialogwright check` refuses it on an identity factor and on a slot no generated line summarizes (`length` masks the same way there), and the policy card lists the slot as "sent whole to the render model to summarize; masked in the records".
+
 ## The question
 
 With `what: a description of the problem` on the slot `problem`, the question is `problemGiven`:

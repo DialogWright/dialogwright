@@ -359,7 +359,9 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     for (const r of refs) {
       if (r.variable === 'HANDOFF_NUMBER') continue;
       const where = `${r.file ?? 'app.yaml'}'s ${r.path}`;
-      const isNumber = r.kind === 'called' || (r.file === 'app.yaml' && r.path.startsWith('transfer.'));
+      // A number: one callers dial (a called condition, a voice.numbers key), or where a call is put
+      // through (transfer.default, a target's `to`); never another value under transfer (a header sent with it).
+      const isNumber = r.kind === 'called' || (r.file === 'app.yaml' && (r.path === 'transfer.default' || /^transfer\.targets\.\d+\.to$/.test(r.path)));
       const known = numbers.find((n) => n.variable === r.variable);
       if (isNumber) {
         if (known !== undefined) known.called ||= r.kind === 'called';
@@ -380,15 +382,22 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
           const problem = targetValueProblem(v);
           return problem === null ? null : `${n.variable} ${problem}, got "${v}"`;
         };
-        const placeholder = fallback ? `+1555555${String(100 + i).padStart(4, '0')}` : undefined;
+        // With --force, the value the .env being replaced holds is the default; else, on a laptop, a 555 number of its own.
+        const old = previous[n.variable]?.trim();
+        const kept = old && check(old) === null ? old : undefined;
+        const placeholder = kept ?? (fallback ? `+1555555${String(100 + i).padStart(4, '0')}` : undefined);
         const fromEnv = io.env[n.variable]?.trim();
         let value: string;
         if (flags.numbers[n.variable] === undefined && fromEnv && check(fromEnv) === null) {
           out(`${n.variable} from the environment: ${fromEnv}`);
           value = fromEnv;
+        } else if (flags.numbers[n.variable] === undefined && !interactive && kept !== undefined) {
+          out(`${n.variable} kept from the .env it replaces: ${kept}`);
+          value = kept;
         } else {
           const what = n.called ? 'a number callers dial (E.164)' : 'where a call is put through (E.164, or a sip: URI)';
-          const question = `${n.variable}, ${what}, as ${n.where} names it${placeholder !== undefined ? ` (Enter for ${placeholder}, which goes nowhere)` : ''}:`;
+          const enter = kept !== undefined ? ` (Enter for ${kept}, from the .env it replaces)` : placeholder !== undefined ? ` (Enter for ${placeholder}, which goes nowhere)` : '';
+          const question = `${n.variable}, ${what}, as ${n.where} names it${enter}:`;
           value = await answer(flags.numbers[n.variable], `--number ${n.variable}=<number>`, what, question, check, placeholder);
         }
         lines.push({ name: n.variable, value });

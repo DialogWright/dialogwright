@@ -26,7 +26,8 @@ import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
 import { maskTarget, parseHandoff, targetNumber, type ServerTransfer } from './transfer';
 import { deliveryFactOf, interruptFact } from './dashboard/delivery';
-import { redactHandoffData, turnScrubber } from '../trace/redact';
+import { framesMaskWords, redactHandoffData, turnScrubber } from '../trace/redact';
+import type { TraceRecord } from '../trace/types';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
@@ -1545,12 +1546,15 @@ function respelled(frame: OutboundFrame, list: PronounceList | undefined): Outbo
 /** A line the carrier runs into the next one, ending with a space (sendFrames). */
 const spaced = (token: string, joined: boolean): string => (joined && !/\s$/.test(token) ? `${token} ` : token);
 
+/** The render record of the turn a decision came from (TraceRecord.render), for the frame log's scrub (sendFrames). */
+const RENDERED = new WeakMap<object, NonNullable<TraceRecord['render']>>();
+
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const sent: OutboundFrame[] = [];
   // Built from the session as it is now (its slots and readback) and the decision the frames say.
-  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session));
+  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session), typeof decision === 'object' && decision !== null ? RENDERED.get(decision) : undefined);
   // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
   const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
   const voice = appOf(entry.session).voice;
@@ -1750,6 +1754,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
     const sentAtMs = Date.now();
+    // What a model gave for a span worded from a slot the records mask (redact: length-summarized) is
+    // masked in the frame log as the words are, here and when the lines are said again.
+    if (run.record.render !== undefined) RENDERED.set(run.result.decision, run.record.render);
     const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
     // A caller may come back in over the reply to a final prompt (a caller who had not finished).
     if (sent.some((f) => f.type === 'text' || f.type === 'play')) noteReply(entry, event, sentAtMs);
@@ -2178,7 +2185,11 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     duringService: entry.session.pendingService !== null,
     ...(event.type === 'user.key' ? { promptedFor: entry.session.promptedFor, epoch: promptEpoch(entry.session) } : {}),
   };
-  const logged: InboundFrame = frame.type === 'dtmf' && arrival.sensitive !== null ? { type: 'dtmf', digit: CODE_DIGIT } : frame;
+  const logged: InboundFrame = frame.type === 'dtmf' && arrival.sensitive !== null
+    ? { type: 'dtmf', digit: CODE_DIGIT }
+    // An app with a slot the records mask whose words a model summarizes (redact: length-summarized): the
+    // frame log keeps no caller's words, only their length (trace/redact.ts framesMaskWords).
+    : frame.type === 'prompt' && framesMaskWords(appOf(entry.session)) ? { ...frame, voicePrompt: `<${frame.voicePrompt.length} chars>` } : frame;
   // A final prompt from a caller who came back in over the last reply continues the one before it;
   // logged ahead of the prompt's own line, where replay reads it. Then this prompt's speech is the one followed.
   // A final prompt that comes while words are held is joined to them (holdWords): it continues nothing else.

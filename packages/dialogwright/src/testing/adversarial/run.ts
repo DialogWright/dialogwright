@@ -401,7 +401,7 @@ export function frameViolations(app: App, turns: readonly Pick<TurnRun, 'record'
         continue;
       }
       const worded = Object.fromEntries(own.filter((l) => l.mode === 'generated').map((l) => [l.span!, l.said ?? '']));
-      const expected = renderTemplate(frameOf(localePromptEntry(app, promptId, t.result.session.locale).entry, worded), framedVars(app, promptId, vars, worded));
+      const expected = renderTemplate(frameOf(app, promptId, localePromptEntry(app, promptId, t.result.session.locale).entry, worded), framedVars(app, promptId, vars, worded));
       const action = t.result.actions[index];
       const actual = action === undefined ? '' : sayText([action]);
       if (actual !== expected) out.push(`frame-kept: on turn ${i + 1}, ${promptId} was said as ${JSON.stringify(actual)}, not its fixed text with its spans (${JSON.stringify(expected)})`);

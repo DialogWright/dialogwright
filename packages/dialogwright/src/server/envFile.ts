@@ -31,7 +31,10 @@ export function envFileNames(value: string): string[] {
  * home folder, since a shell expands `~` only at the start of the value, never after a comma.
  */
 export function resolveEnvFiles(value: string, base: string, home: string = homedir()): string[] {
-  return envFileNames(value).map((n) => (n === '~' || n.startsWith('~/') ? join(home, n.slice(1)) : n)).map((n) => (isAbsolute(n) ? n : resolve(base, n)));
+  const names = envFileNames(value);
+  // A value with no path in it ("," or " , ") is refused by every reader alike, never read as unset.
+  if (names.length === 0) throw new Error(`ENV_FILE names no file: "${value}"`);
+  return names.map((n) => (n === '~' || n.startsWith('~/') ? join(home, n.slice(1)) : n)).map((n) => (isAbsolute(n) ? n : resolve(base, n)));
 }
 
 /** Files as ENV_FILE names them (comma-separated), for a child process or a line to copy. */
@@ -58,8 +61,7 @@ export function envFileArgument(argv: readonly string[]): string | undefined {
 export function envFilePathsOf(argv: readonly string[], env: Env, cwd: string = process.cwd()): string[] | null {
   const named = envFileArgument(argv) ?? (env.ENV_FILE?.trim() || undefined);
   if (named === undefined) return null;
-  const paths = resolveEnvFiles(named, env.INIT_CWD?.trim() || cwd);
-  return paths.length === 0 ? null : paths;
+  return resolveEnvFiles(named, env.INIT_CWD?.trim() || cwd);
 }
 
 /** A settings file's variables. Throws `ENV_FILE does not exist: <path>` for a path that is not a file. */
@@ -118,11 +120,6 @@ export function harnessEnvFilePaths(env: Env, cwd: string = process.cwd()): stri
   } catch {
     return null;
   }
-}
-
-/** The one settings file a harness command reads, or the first of several (harnessEnvFilePaths); null when there is none. */
-export function harnessEnvFilePath(env: Env, cwd: string = process.cwd()): string | null {
-  return harnessEnvFilePaths(env, cwd)?.[0] ?? null;
 }
 
 /**

@@ -52,6 +52,15 @@ describe('pnpm console:link', () => {
     expect((JSON.parse(readFileSync(s.linkFile, 'utf8')) as LinkFile).url).toBe(printed);
   });
 
+  it('reads several settings files in ENV_FILE, comma-separated, a later one winning, and refuses one that names no file', async () => {
+    const s = await setup('');
+    writeFileSync(join(s.dir, 'token.env'), 'CONSOLE_AUTH=token\n', { mode: 0o600 });
+    expect(await s.run([], { ENV_FILE: `${s.envFile},token.env` })).toBe(0);
+    expect(s.out.find((l) => l.startsWith('https://'))).toMatch(/^https:\/\/demo\.example\.net\/dashboard\/login\?code=/);
+    expect(await s.run([], { ENV_FILE: ' , ' })).toBe(2);
+    expect(s.out.join('\n')).toContain('ENV_FILE names no file: ","');
+  });
+
   it('says there is nothing to sign in to with CONSOLE_AUTH=local', async () => {
     const s = await setup('', false);
     expect(await s.run()).toBe(1);

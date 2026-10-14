@@ -32,7 +32,7 @@ import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCal
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData']; readonly transfer?: App['transfer'] }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData']; readonly transfer?: App['transfer']; readonly generated?: App['generated'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -298,12 +298,191 @@ function decisionTexts(decision: unknown, actions: unknown): [string, unknown][]
 
 /** The scrub of what a record's turn said aloud (slotsScrubber over the record's slots, readback and decision), or null. */
 export function recordScrubber(record: TraceRecord, mode: StatementMode, app: Slots = defaultAppOrNull(), options: { readonly cutOff?: boolean } = {}): Scrub | null {
-  return slotsScrubber(record.slots, record.pendingConfirmation ?? null, mode, app, decisionTexts(record.decision, record.actions), options);
+  return slotsScrubber(record.slots, record.pendingConfirmation ?? null, mode, app, [...decisionTexts(record.decision, record.actions), ...summaryTexts(record.render, app)], options);
+}
+
+/**
+ * The slots marked to be summarized though masked in the records (SlotSpec.summarized: a `text`
+ * slot's `redact: length-summarized`). Empty for every other app, whose records are as they were.
+ */
+function summarizedSlots(app: Slots): string[] {
+  return app === null ? [] : Object.keys(app.slots).filter((id) => app.slots[id]!.summarized === true);
+}
+
+/** The slot a framed line's span is worded from (App.generated), or undefined. */
+function spanFrom(app: Slots, promptId: string, span: string | undefined): string | undefined {
+  return span === undefined ? undefined : app?.generated?.lines[promptId]?.spans?.[span]?.from;
+}
+
+/**
+ * The words a model gave for a span worded from a slot marked to be summarized (said, or refused), each
+ * as a text of that slot's: a summary of the words is masked as the words are, in the line said too.
+ */
+function summaryTexts(render: TraceRecord['render'], app: Slots): [string, unknown][] {
+  const marked = summarizedSlots(app);
+  if (render === undefined || marked.length === 0) return [];
+  const out: [string, unknown][] = [];
+  for (const l of render.lines) {
+    const from = spanFrom(app, l.promptId, l.span);
+    if (from === undefined || !marked.includes(from)) continue;
+    if (l.said !== undefined) out.push([from, l.said]);
+    if (l.refused !== undefined) out.push([from, l.refused]);
+  }
+  return out;
+}
+
+/**
+ * Whether the frame log keeps a caller's words by their length alone: in an app with a slot marked to be
+ * summarized though masked in the records (SlotSpec.summarized). The frame log is written as the words
+ * arrive, before any turn has read them, and the words that give such a slot may come on any turn (in
+ * one breath with the request, or as a correction at its read-back), so none is kept. The trace masks
+ * exactly the words the slot was given (maskSummarizedWords), after the turn.
+ */
+export function framesMaskWords(app: Slots): boolean {
+  return summarizedSlots(app).length > 0;
+}
+
+/**
+ * The live console's `asked` event (what the model is asked, before the turn has read the words) in an
+ * app with a slot marked to be summarized (framesMaskWords): as the frame log, it cannot know whether
+ * these words give the slot, so the caller's words (asr.text), the spans of them the model is shown
+ * (candidateSpans, a choice's criteria with no description) and the line just played (scrubbed of the
+ * slots' words, as a say action is) are masked by their length; the turn's own event, after it, masks
+ * exactly. Every other app's event is as it was.
+ */
+export function liveAskedForConsole<Q, T>(questions: Q, turnState: T, session: { readonly slots: TraceRecord['slots']; readonly pendingConfirmation: TraceRecord['pendingConfirmation'] } | null, app: Slots): { questions: Q; turnState: T } {
+  if (!framesMaskWords(app)) return { questions, turnState };
+  let ts: unknown = turnState;
+  if (isObject(ts)) {
+    const scrub = session === null ? null : slotsScrubber(session.slots, session.pendingConfirmation ?? null, 'keep', app);
+    const out: Record<string, unknown> = { ...ts };
+    if (isObject(ts.asr) && typeof ts.asr.text === 'string' && ts.asr.text !== '') out.asr = { ...ts.asr, text: byLength(ts.asr.text) };
+    if (Array.isArray(ts.candidateSpans)) out.candidateSpans = ts.candidateSpans.map((c) => (typeof c === 'string' ? byLength(c) : c));
+    if (scrub !== null && isObject(ts.node) && typeof ts.node.promptJustPlayed === 'string') out.node = { ...ts.node, promptJustPlayed: scrub(ts.node.promptJustPlayed) };
+    ts = out;
+  }
+  let qs: unknown = questions;
+  if (isObject(qs)) {
+    qs = Object.fromEntries(Object.entries(qs).map(([id, q]) => {
+      if (!isObject(q) || !isObject(q.criteria)) return [id, q];
+      const criteria: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(q.criteria)) {
+        let key = v === null ? byLength(k) : k;
+        for (let n = 2; v === null && Object.hasOwn(criteria, key); n++) key = `${byLength(k)} #${n}`;
+        criteria[key] = v;
+      }
+      return [id, { ...q, criteria }];
+    }));
+  }
+  return { questions: qs as Q, turnState: ts as T };
+}
+
+/** A value's masked form, by its length (a statement's, `<n chars>`), unless it is one already. */
+const byLength = (v: string): string => maskStatement(v);
+
+/**
+ * The caller's own words, where a slot marked to be summarized holds them: the record's transcript and
+ * whatever was built from it (the event, the turn state the model saw, the questions and answers, the
+ * screen, retrieval, a follow-up, joined fragments, an error), every string that holds the words (or is
+ * three or more words of them) masked whole by its length. The words are what the slot was given, so
+ * the turn that gave them is masked too; the trace keeps no copy of them, in any mode. Nothing is done
+ * for an app with no such slot, nor for a record whose slots hold no such words.
+ */
+function maskSummarizedWords(record: TraceRecord, out: TraceRecord, app: Slots): TraceRecord {
+  const marked = summarizedSlots(app);
+  if (marked.length === 0) return out;
+  const words = new Set<string>();
+  const add = (v: unknown): void => {
+    if (typeof v === 'string' && v.trim() !== '' && !/^<\d+ chars>$/.test(v)) words.add(v.trim().toLowerCase());
+  };
+  for (const id of marked) {
+    add(record.slots?.[id]?.value);
+    add(record.slots?.[id]?.display);
+    const shown = isObject(record.turnState) && isObject(record.turnState.slots) ? (record.turnState.slots as Record<string, unknown>)[id] : undefined;
+    if (isObject(shown)) add(shown.value);
+    const pc = record.pendingConfirmation;
+    if (pc && pc.target === 'slot' && pc.slot === id) {
+      add(pc.value);
+      add(pc.display);
+    }
+  }
+  if (words.size === 0) return out;
+  const holds = (s: string): boolean => {
+    const t = s.trim().toLowerCase();
+    if (t === '') return false;
+    for (const w of words) if (t.includes(w) || (w.includes(t) && t.split(/\s+/).length >= 3)) return true;
+    return false;
+  };
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return holds(v) ? byLength(v) : v;
+    if (Array.isArray(v)) return v.map(walk);
+    if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  const masked: TraceRecord = { ...out, event: walk(out.event) as TraceRecord['event'], turnState: walk(out.turnState) as TraceRecord['turnState'], questions: walk(out.questions) as TraceRecord['questions'], answers: walk(out.answers) as TraceRecord['answers'], error: walk(out.error) as TraceRecord['error'] };
+  // The turn that gave the words: the model was asked about parts of them (a name or a number among
+  // them, each a span of the words: a choice's criteria with no description, or a pick's candidates),
+  // each masked by its length too, in the question and in its answer alike.
+  const transcript = [isObject(record.event) && typeof (record.event as { text?: unknown }).text === 'string' ? (record.event as { text: string }).text : '', ...(record.joined?.fragments ?? [])].filter((t) => holds(t));
+  if (transcript.length > 0) {
+    const heard = transcript.map((t) => ` ${t.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, ' ').trim()} `);
+    const partOf = (v: string): boolean => {
+      const w = v.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
+      return w !== '' && heard.some((h) => h.includes(` ${w} `));
+    };
+    const questions = isObject(masked.questions) ? { ...(masked.questions as Record<string, unknown>) } : null;
+    const answers = isObject(masked.answers) ? { ...(masked.answers as Record<string, unknown>) } : null;
+    for (const [id, q] of Object.entries(questions ?? {})) {
+      if (!isObject(q) || !isObject(q.criteria)) continue;
+      const renamed = new Map<string, string>();
+      const used = new Set<string>();
+      const criteria: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(q.criteria)) {
+        const span = v === null && partOf(k);
+        let key = k;
+        if (span) {
+          key = byLength(k);
+          for (let n = 2; used.has(key) || Object.hasOwn(q.criteria, key); n++) key = `${byLength(k)} #${n}`;
+          renamed.set(k, key);
+        }
+        used.add(key);
+        criteria[key] = typeof v === 'string' && partOf(v) ? byLength(v) : v;
+      }
+      questions![id] = { ...q, criteria };
+      const a = answers?.[id];
+      if (renamed.size > 0 && isObject(a)) {
+        answers![id] = {
+          ...a,
+          ...(typeof a.choice === 'string' && renamed.has(a.choice) ? { choice: renamed.get(a.choice) } : {}),
+          ...(isObject(a.probabilities) ? { probabilities: Object.fromEntries(Object.entries(a.probabilities).map(([k, p]) => [renamed.get(k) ?? k, p])) } : {}),
+        };
+      }
+    }
+    if (questions !== null) masked.questions = questions as TraceRecord['questions'];
+    if (answers !== null) masked.answers = answers as TraceRecord['answers'];
+    const ts = masked.turnState;
+    if (isObject(ts) && Array.isArray(ts.candidateSpans)) masked.turnState = { ...ts, candidateSpans: ts.candidateSpans.map((c) => (typeof c === 'string' && partOf(c) ? byLength(c) : c)) };
+  }
+  for (const key of ['screen', 'retrieval', 'followUp', 'joined'] as const) {
+    if (out[key] !== undefined) (masked as unknown as Record<string, unknown>)[key] = walk(out[key]);
+  }
+  // A span worded from such a slot: its words (said, or refused) by their length, as the content is.
+  if (masked.render !== undefined) {
+    masked.render = {
+      ...masked.render,
+      lines: masked.render.lines.map((l) => {
+        const from = spanFrom(app, l.promptId, l.span);
+        if (from === undefined || !marked.includes(from)) return l;
+        return { ...l, fixed: byLength(l.fixed), ...(l.said !== undefined ? { said: byLength(l.said) } : {}), ...(l.refused !== undefined ? { refused: byLength(l.refused) } : {}) };
+      }),
+    };
+  }
+  return masked;
 }
 
 /** The scrub of what a turn said aloud, from the session after it and its decision (the frame log's: server/adapter.ts), or null. */
-export function turnScrubber(session: { readonly slots: TraceRecord['slots']; readonly pendingConfirmation: TraceRecord['pendingConfirmation'] }, decision: unknown, mode: StatementMode, app: Slots = defaultAppOrNull()): Scrub | null {
-  return slotsScrubber(session.slots, session.pendingConfirmation ?? null, mode, app, decisionTexts(decision, []));
+export function turnScrubber(session: { readonly slots: TraceRecord['slots']; readonly pendingConfirmation: TraceRecord['pendingConfirmation'] }, decision: unknown, mode: StatementMode, app: Slots = defaultAppOrNull(), render?: TraceRecord['render']): Scrub | null {
+  return slotsScrubber(session.slots, session.pendingConfirmation ?? null, mode, app, [...decisionTexts(decision, []), ...summaryTexts(render, app)]);
 }
 
 /** A decision's variables and its acks' (each text), scrubbed: a variable not named for its slot may still hold its value. */
@@ -429,7 +608,7 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
       })),
     };
   }
-  return out;
+  return maskSummarizedWords(record, out, app);
 }
 
 /**

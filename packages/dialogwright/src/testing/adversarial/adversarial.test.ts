@@ -16,7 +16,7 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
-import { EXACT_FRAME, messageVariants, WHOLE_LINE } from '../message/variant';
+import { EXACT_FRAME, messageVariants, SUMMARIZED, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { frameViolations } from './run';
@@ -360,6 +360,12 @@ describe('generated wording under the suite (the wording family, on the message 
       expect(sayText(last.result.actions), id).toContain(`called and said: ${span.fixed}. Shall I pass it on?`);
       expect(sayText(last.result.actions), id).not.toContain('in short');
     }
+  });
+
+  it('holds with the message masked in the records though a model summarizes it (redact: length-summarized)', async () => {
+    const report = await run(variants.variant(SUMMARIZED), { renderer: fake() });
+    expect(failing(report)).toEqual([]);
+    expect(report.results.filter((r) => r.case.family === 'wording').length).toBeGreaterThan(0);
   });
 
   it('frame-kept holds a framed line said as its frame with its span, and fails one whose fixed words were changed', async () => {

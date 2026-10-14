@@ -357,6 +357,18 @@ export interface SlotSpec {
    */
   statement?: false;
   /**
+   * With `redact: 'length'` and `statement: false` (a `text` slot's `redact: length-summarized`): the
+   * one named exception to "a model is never sent a value the records hide whole". The value is kept
+   * in the session (the app's lines say it, a tool is sent it), masked by its length in every record
+   * (the trace, the frame log, the console, the audit, a handoff), the words of the turn that gave it
+   * among them, and sent whole to the render model only to summarize it: a framed line's span worded
+   * from it, or a line generated from it (`from`), with the decision model's checks of that line (the
+   * content screened again, the drift judge's quoted words). Never a line that names it as an item.
+   * `pnpm check` refuses it on an identity factor and on a slot no generated line summarizes; the
+   * policy card lists it.
+   */
+  summarized?: true;
+  /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was
    * verified (IDENTITY_VERIFIED, or IDENTITY_UNVERIFIED), never the value itself.

@@ -53,7 +53,7 @@ export function promptEntry(app: App, id: string, locale?: string): PromptEntry 
 }
 
 export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string): string {
-  return renderTemplate(frameOf(promptEntry(app, id, locale)), framedVars(app, id, vars));
+  return renderTemplate(frameOf(app, id, promptEntry(app, id, locale)), framedVars(app, id, vars));
 }
 
 /**
@@ -64,8 +64,11 @@ export function promptText(app: App, id: string, vars: Record<string, string>, l
  * read-back word for word, and what the session keeps) is the exact frame. A line with no `exactText`
  * is its `text` either way, as it always was.
  */
-export function frameOf(entry: PromptEntry, worded: Readonly<Record<string, string>> = {}): string {
-  return entry.exactText !== undefined && Object.keys(worded).length === 0 ? entry.exactText : entry.text;
+export function frameOf(app: App, id: string, entry: PromptEntry, worded: Readonly<Record<string, string>> = {}): string {
+  // Only a framed line (App.generated's spans) has a frame for its exact words: on any other line,
+  // exactText (which check and validateApp refuse there) is never said.
+  const framed = app.generated?.lines[id]?.spans !== undefined;
+  return framed && entry.exactText !== undefined && Object.keys(worded).length === 0 ? entry.exactText : entry.text;
 }
 
 /**
@@ -113,7 +116,7 @@ export function promptSay(app: App, promptId: string, vars: Record<string, strin
   const { entry, localized } = localePromptEntry(app, promptId, locale);
   // A framed line: each span its exact content, or its wording where the renderer gives one; said from
   // its exact frame (`exactText`, its own clips) where it has one and no span is worded.
-  const template = frameOf(entry, spans);
+  const template = frameOf(app, promptId, entry, spans);
   const clipId = template === entry.text ? promptId : exactClipId(promptId);
   vars = framedVars(app, promptId, vars, spans);
   const segments = segmentTemplate(clipId, template);

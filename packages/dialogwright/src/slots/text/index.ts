@@ -40,6 +40,9 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       // reads it, and the stand-in says nothing a caller could correct.
       ...readBackOf(o.confirm ?? 'summary'),
       ...(o.redact === 'length' ? { redact: 'length' as const } : {}),
+      // Masked by its length everywhere, its display and the console too (a secret's masking), and the
+      // one value a model may be sent though the records hide it: to summarize it (SlotSpec.summarized).
+      ...(o.redact === 'length-summarized' ? { redact: 'length' as const, statement: false as const, summarized: true as const } : {}),
       // Shown as said while the value is written (written.ts): display(value) cannot give the words back.
       ...(displaysSaid(o) ? { displayFrom: 'said' as const } : {}),
       detect: true,

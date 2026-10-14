@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer } from './config';
+import { blockingIdentifiers, generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
@@ -136,7 +136,8 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
       const content = said.vars[span.from] ?? '';
       const goal = localized ? app.generated!.localeSpanGoals?.[locale]?.[said.promptId]?.[name] : span.goal;
       if (goal === undefined) return { name, content, skipped: 'locale' };
-      if (identifiers.has(span.from)) return { name, content, skipped: 'identifier' };
+      // A slot the records mask is never sent, but one the app marked to be summarized (redact: length-summarized).
+      if (identifiers.has(span.from) && !summarizedVarsFrom(app.slots, identityOf(app).factorSlots).has(span.from)) return { name, content, skipped: 'identifier' };
       if (content.trim() === '') return { name, content, skipped: 'no-content' };
       const act: SpanAct = {
         kind: 'span',
@@ -174,7 +175,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   if (line.situations !== undefined && !line.situations.some((s) => situations.includes(s))) return { skipped: 'when' };
   const template = localePromptEntry(app, said.promptId, locale).entry.text;
   const vars = lineVars(template);
-  if (vars.some((v) => identifiers.has(v))) return { skipped: 'identifier' };
+  if (blockingIdentifiers(template, line.from, identifiers, summarizedVarsFrom(app.slots, identityOf(app).factorSlots)).length > 0) return { skipped: 'identifier' };
   if (saysKbAnswer(template)) return { skipped: 'knowledge' };
   const words = wordsOf(event);
   // A turn with words is generated only once the injection screen has read them and not flagged them.

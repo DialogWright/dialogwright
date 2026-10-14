@@ -101,7 +101,7 @@ place:
   type: text
   what: the street address where the problem is
   say: null                 # the summary reads back the words themselves
-  redact: none              # needed with say: null: the words are in the trace and the audit
+  redact: none              # needed with say: null: the words are in the trace and the audit (or length-summarized, for words a model summarizes: guide 16.3)
   pick: { what: the street address }
   numbers: digits           # the value: number words as digits; ordinals ("fifth avenue") stay words
   case: title               # the value: all-lower-case words capitalized

@@ -52,6 +52,8 @@ export function generatedWordingOf(input: {
   localePrompts: Readonly<Record<string, Readonly<Record<string, PromptYaml>>>>;
   /** The variables that hold an identifier (an identity factor, a slot recorded masked): a form's line that names one stays fixed. */
   identifierVars?: ReadonlySet<string>;
+  /** The slots a model may be sent to summarize though the records mask them (summarizedVarsFrom): one in a line's `from` does not hold it fixed. */
+  summarized?: ReadonlySet<string>;
 }): GeneratedWording | undefined {
   const lines: Record<string, GeneratedLine> = {};
   const ids = Object.keys(input.prompts);
@@ -81,7 +83,7 @@ export function generatedWordingOf(input: {
     for (const id of formLineIds(ids, def.slots, def.summaryPromptId)) {
       const p = input.prompts[id]!;
       // A line that names an identifier is never sent to a model, and a knowledge base's answer is said word for word: its form's switch leaves either fixed.
-      if (Object.hasOwn(lines, id) || p.mode === 'fixed' || p.prescribed === true || identifierVarsOf(p.text, input.identifierVars).length > 0 || saysKbAnswer(p.text)) continue;
+      if (Object.hasOwn(lines, id) || p.mode === 'fixed' || p.prescribed === true || blockingIdentifiers(p.text, p.from, input.identifierVars, input.summarized).length > 0 || saysKbAnswer(p.text)) continue;
       lines[id] = lineOf(p, { form }, def.acknowledge);
     }
   }
@@ -133,6 +135,24 @@ export function identifierVarsOf(text: string, identifierVars: ReadonlySet<strin
 }
 
 /**
+ * The identifiers of `text` that keep a line from being generated: every one, but a slot a model may be
+ * sent to summarize (`summarized`, summarizedVarsFrom) that the line names in its `from`, the content it
+ * summarizes. Such a slot named as an item, to be carried word for word, still keeps the line fixed.
+ */
+export function blockingIdentifiers(text: string, from: readonly string[] | undefined, identifierVars: ReadonlySet<string> | undefined, summarized: ReadonlySet<string> | undefined): string[] {
+  return identifierVarsOf(text, identifierVars).filter((v) => !(summarized?.has(v) === true && (from ?? []).includes(v)));
+}
+
+/**
+ * The slots a model may be sent to summarize though the records mask them (SlotSpec.summarized, a
+ * `text` slot's `redact: length-summarized`), never an identity factor: the one named exception to "a
+ * model is never sent a value the records hide whole", for a framed span or a line generated from it.
+ */
+export function summarizedVarsFrom(slots: Readonly<Record<string, { summarized?: true }>>, factors: readonly string[]): Set<string> {
+  return new Set(Object.entries(slots).filter(([id, s]) => s.summarized === true && !factors.includes(id)).map(([id]) => id));
+}
+
+/**
  * The variables that hold an identifier, which a generated line is never sent: each identity factor
  * slot (an account number, a date of birth: what proves who the caller is), and each slot hidden whole
  * in the records (a slot's `redact: mask`, or `length`). A slot recorded by its last four (a callback
@@ -169,10 +189,26 @@ export function generatedWordingProblems(input: {
   confirmed?: Readonly<Record<string, readonly string[]>>;
   /** The app's slots, by id: a span is worded from one (its `from`). Absent, a span's `from` is not held to them. */
   slots?: readonly string[];
+  /** The slots marked to be summarized though masked in the records (SlotSpec.summarized), each held to a line that summarizes it. */
+  summarized?: readonly string[];
+  /** The identity factors (identity.yaml): a slot marked to be summarized may be none of them. */
+  factors?: readonly string[];
 }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
-  const generated = generatedWordingOf({ ...input, style: null })?.lines ?? {};
+  const summarizedSet = summarizedVarsFrom(Object.fromEntries((input.summarized ?? []).map((id) => [id, { summarized: true as const }])), input.factors ?? []);
+  const generated = generatedWordingOf({ ...input, style: null, summarized: summarizedSet })?.lines ?? {};
+  // A slot marked to be summarized though masked in the records: never an identity factor, and only
+  // where a generated line summarizes it (a span's from, a line's from); else plain redact applies.
+  for (const slot of input.summarized ?? []) {
+    const at = [slot, 'redact'];
+    if ((input.factors ?? []).includes(slot)) {
+      out.push({ file: 'slots.yaml', path: at, message: `the slot "${slot}" is an identity factor, and "redact: length-summarized" would send it whole to a model; an identity factor is never sent to one`, fix: 'set redact: length' });
+      continue;
+    }
+    const summarizing = Object.entries(generated).filter(([, l]) => summarizedFrom(l).includes(slot)).map(([id]) => id);
+    if (summarizing.length === 0) out.push({ file: 'slots.yaml', path: at, message: `the slot "${slot}" says "redact: length-summarized", but no generated line summarizes it (no framed span and no line generated from it), so nothing would be sent to a model and the setting only names an exception it does not use`, fix: 'set redact: length (masked the same way), or word a framed span from it (generate: { <span>: { from: ' + slot + ', goal: ... } })' });
+  }
   for (const [id, p] of Object.entries(input.prompts)) {
     const at = (key: string): (string | number)[] => ['prompts', id, key];
     if (p.prescribed === true && p.mode === 'generative') {
@@ -180,10 +216,10 @@ export function generatedWordingProblems(input: {
       continue;
     }
     if (p.exactText !== undefined && (p.generate === undefined || p.prescribed === true)) {
-      out.push({ file, path: at('exactText'), message: `the line "${id}" is not framed (no generate${p.prescribed === true ? ', and it is prescribed' : ''}), so it has no span to say word for word and its "exactText" would never be said`, fix: p.prescribed === true ? 'delete "exactText": a prescribed line is said as its text, always' : 'delete "exactText", or frame the line (generate) so a span of it is worded by a model', atKey: true });
+      out.push({ file, path: at('exactText'), message: `the line "${id}" is not framed (no generate${p.prescribed === true ? ', and it is prescribed' : ''}), so it has no span that is said word for word, and "exactText" (a framed line's frame for its exact words) does not apply to it`, fix: p.prescribed === true ? 'delete "exactText": a prescribed line is said as its text, always' : 'delete "exactText", or frame the line (generate) so a span of it is worded by a model', atKey: true });
     }
     if (p.generate !== undefined) {
-      out.push(...framedProblems(id, p, input));
+      out.push(...framedProblems(id, p, { ...input, summarized: summarizedSet }));
       continue;
     }
     if (p.mode === 'generative' && p.goal === undefined) {
@@ -194,7 +230,7 @@ export function generatedWordingProblems(input: {
       out.push({ file, path: at('mode'), message: `the line "${id}" says a knowledge base's answer ({answer}), which is an approved passage said word for word, never generated`, fix: 'delete "mode: generative"; generate the lines around the answer instead' });
     }
     if (p.mode === 'generative') {
-      const ids = identifierVarsOf(p.text, input.identifierVars);
+      const ids = blockingIdentifiers(p.text, p.from, input.identifierVars, summarizedSet);
       if (ids.length > 0) out.push({ file, path: at('mode'), message: `the line "${id}" is generated, but it names ${ids.map((v) => `{${v}}`).join(', ')}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier`, fix: 'delete "mode: generative" (the line is said word for word), or say the identifier in a fixed line of its own' });
     }
     if (!isGenerated) {
@@ -260,7 +296,7 @@ export function generatedWordingProblems(input: {
         out.push({ file: dir, path: ['prompts', id], message: `prompts.yaml gives the line "${id}" a frame of its own for the exact words (exactText), and this locale gives none, so its text would be said with the exact words too`, fix: 'add "exactText:" here, this locale\'s frame for the content word for word, with the same variables as its text', atKey: true });
       }
       if (p.exactText !== undefined && (spans === undefined || !exactInDefault)) {
-        out.push({ file: dir, path: ['prompts', id, 'exactText'], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a frame for its exact words does nothing` : `prompts.yaml gives the line "${id}" no frame of its own for the exact words (exactText), so this one is never said`, fix: spans === undefined ? 'delete "exactText" here' : 'add "exactText:" to the line in prompts.yaml too, or delete it here', atKey: true });
+        out.push({ file: dir, path: ['prompts', id, 'exactText'], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a frame for its exact words does nothing` : `prompts.yaml gives the line "${id}" no frame of its own for the exact words (exactText), so a locale's own does not apply: a locale mirrors prompts.yaml`, fix: spans === undefined ? 'delete "exactText" here' : 'add "exactText:" to the line in prompts.yaml too, or delete it here', atKey: true });
       } else if (p.exactText !== undefined) {
         const problem = sameVariables(p.text, p.exactText);
         if (problem !== null) out.push({ file: dir, path: ['prompts', id, 'exactText'], message: `the line "${id}"'s frame for the exact words ${problem} this locale's text (${lineVars(p.text).map((x) => `{${x}}`).join(', ')}), so the two would not say the same values`, fix: 'name exactly the variables this locale\'s text names' });
@@ -298,7 +334,7 @@ export function summarizedFrom(line: GeneratedLine): string[] {
  * a goal or a `from` of the whole line; each span one of its text's variables and none of the app's
  * slots (a span is worded, not collected), worded from a slot (`from`) that is no identifier.
  */
-function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; identifierVars: ReadonlySet<string>; slots?: readonly string[] }): WordingProblem[] {
+function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Record<string, PromptYaml>>; forms: FormsYaml['forms']; identifierVars: ReadonlySet<string>; slots?: readonly string[]; summarized: ReadonlySet<string> }): WordingProblem[] {
   const out: WordingProblem[] = [];
   const file = 'prompts.yaml';
   const at = (...key: (string | number)[]): (string | number)[] => ['prompts', id, ...key];
@@ -326,7 +362,7 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
     }
     if (names.includes(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from {${sp.from}}, another span of the line, which is worded, never collected`, fix: 'name the slot the span summarizes' });
     else if (slots !== undefined && !slots.has(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from "${sp.from}", which is not a slot, so there is no content for it`, fix: `name one of the app's slots${input.slots!.length > 0 ? ` (${input.slots!.slice(0, 8).map((x) => `"${x}"`).join(', ')}${input.slots!.length > 8 ? ', ...' : ''})` : ''}: the content the call collected` });
-    else if (input.identifierVars.has(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from {${sp.from}}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a model is never sent an identifier`, fix: `delete the span and say {${sp.from}} in the fixed text, or word the span from other content` });
+    else if (input.identifierVars.has(sp.from) && !input.summarized.has(sp.from)) out.push({ file, path: at('generate', name, 'from'), message: `the span "${name}" is worded from {${sp.from}}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a model is never sent an identifier`, fix: `delete the span and say {${sp.from}} in the fixed text, or word the span from other content; for a text slot whose words a model may summarize though the records mask them, redact: length-summarized` });
     else {
       // A line of a form is given its form's slots: a span worded from another is worded from nothing.
       const ids = Object.keys(input.prompts);
@@ -354,13 +390,15 @@ export function generatedWordingWarnings(input: {
   localePrompts: Readonly<Record<string, Readonly<Record<string, PromptYaml>>>>;
   /** Each slot the records keep masked, by its redact setting: a span worded from one sends the value whole. */
   redacted?: Readonly<Record<string, string>>;
+  /** The slots marked to be summarized (SlotSpec.summarized): the app said so, so no warning. */
+  summarized?: ReadonlySet<string>;
 }): WordingWarning[] {
   const generated = generatedWordingOf({ ...input, style: null })?.lines ?? {};
   const out: WordingWarning[] = [];
   for (const [id, line] of Object.entries(generated)) {
     for (const [name, span] of Object.entries(line.spans ?? {})) {
       const redact = input.redacted?.[span.from];
-      if (redact === undefined) continue;
+      if (redact === undefined || input.summarized?.has(span.from) === true) continue;
       out.push({
         file: 'prompts.yaml',
         path: ['prompts', id, 'generate', name, 'from'],

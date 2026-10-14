@@ -13,7 +13,7 @@ import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextC
 import { slotOutcomeOf } from '../core/outcome';
 import { outcomeFrom, parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
 import { handoffPromptId } from '../prompts/render';
-import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom } from '../render/config';
+import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom, summarizedVarsFrom } from '../render/config';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -915,6 +915,8 @@ export function crossLink(
     identifierVars: identifierVarsFrom(linked.slots, config.identity?.levels[1].factors ?? []),
     confirmed: confirmedFieldsOf(config.policy),
     slots: Object.keys(linked.slots),
+    summarized: Object.keys(linked.slots).filter((id) => linked.slots[id]!.summarized === true),
+    factors: config.identity?.levels[1].factors ?? [],
   })) yaml(p.file, p.path, p.message, p.fix, p.atKey === true);
 
   // The thresholds a slot's options name (SlotSpec.thresholds): each the engine's or one app.yaml names.
@@ -1057,6 +1059,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     style: config.style,
     localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
     identifierVars: identifierVarsFrom(slots, config.identity?.levels[1].factors ?? []),
+    summarized: summarizedVarsFrom(slots, config.identity?.levels[1].factors ?? []),
   }));
   put(app, 'locales', localesOf(config));
   put(app, 'principals', code.principals);

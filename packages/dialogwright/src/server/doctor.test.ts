@@ -707,6 +707,9 @@ describe('pnpm diagnose', () => {
     expect(out[0]).toBe(`settings from ${first}, ${second}`);
     expect(out).toContain(`ok    ${first} is readable by its owner alone`);
     expect(out).toContain(`warn  ${second} can be read by others (mode 644), and it holds keys  ->  chmod 600 ${second}`);
+    const none: string[] = [];
+    expect(await main([], { out: (l) => none.push(l), env: { ENV_FILE: ',' }, invokedFrom: dir }, deps())).toBe(1);
+    expect(none).toEqual(['fail  ENV_FILE names no file: ","  ->  name a settings file: ENV_FILE=<path> pnpm diagnose, or several separated by commas']);
     // The second file's HANDOFF_NUMBER, not the first's.
     expect(out.join('\n')).toContain('HANDOFF_NUMBER +15555550199 is a 555 number');
     expect(out.join('\n')).not.toContain('+15555550123');

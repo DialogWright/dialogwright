@@ -78,9 +78,12 @@ export const textOptions = z
       .default('first-unless-prompted')
       .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way.'),
     redact: z
-      .enum(['length', 'none'])
+      .enum(['length', 'none', 'length-summarized'])
       .default('length')
-      .describe('"length": the words leave the turn (the trace, a tool call\'s param) as their length only, and the display is kept. "none": as they are.'),
+      .describe(
+        '"length": the words leave the turn (the trace, a tool call\'s param) as their length only, and the display is kept. "none": as they are. ' +
+          '"length-summarized": for words a model summarizes (a framed read-back\'s span worded from them, or a line generated from them): masked by their length in every record (the trace, the frame log, the console, the audit, a handoff; the display and the words of the turn that gave them too), kept in the session so the app\'s lines say them and a tool is sent them, and sent whole to the render model only to summarize them. The one named exception to "a model is never sent a value the records hide whole"; the policy card lists it. Refused on an identity factor and on a slot no generated line summarizes (use length there).',
+      ),
     pick: pickOption.optional(),
     numbers: z
       .enum(['words', 'digits'])
@@ -145,7 +148,7 @@ export const textOptions = z
         code: 'custom',
         path: ['say'],
         message: 'say is null, so the display is the caller\'s words, which redact: length keeps out of the trace',
-        params: { fix: 'give "say" a stand-in such as "your note", or set redact: none' },
+        params: { fix: 'give "say" a stand-in such as "your note", or set redact: none (or redact: length-summarized, for words a model summarizes though the records mask them)' },
       });
     }
   });

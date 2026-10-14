@@ -4,6 +4,7 @@ import { registerTestkit, testkitApp } from '../../testing/testkit';
 import { registerApp, resetAppsForTest } from './registry';
 import type { App } from './types';
 import { validateApp } from './validate';
+import { frameOf } from '../../prompts/render';
 import { formOf, slotSpecOf, toolOf } from './lookup';
 
 useTestkit();
@@ -19,6 +20,22 @@ const copy = (): App => ({
 describe('validateApp', () => {
   it('accepts the testkit', () => {
     expect(() => validateApp(testkitApp)).not.toThrow();
+  });
+
+  it('refuses exactText on a line that is not framed, in code as check does in prompts.yaml, and it is never said there (review fixes, item 20)', () => {
+    const id = Object.keys(testkitApp.prompts.manifest)[0]!;
+    const entry = testkitApp.prompts.manifest[id]!;
+    const app: App = { ...copy(), prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, [id]: { ...entry, exactText: 'Something else.' } } } };
+    expect(() => validateApp(app)).toThrow(`the line "${id}" has exactText, a frame for a framed line's exact words, but it is not framed`);
+    expect(frameOf(app, id, app.prompts.manifest[id]!)).toBe(entry.text);
+  });
+
+  it('refuses summarized on an identity factor, and on a slot the records do not mask everywhere', () => {
+    const factor = testkitApp.identity!.factorSlots[0]!;
+    const spec = testkitApp.slots[factor]!;
+    expect(() => validateApp({ ...copy(), slots: { ...testkitApp.slots, [factor]: { ...spec, redact: 'length', statement: false, summarized: true } } })).toThrow(`slot "${factor}" is an identity factor, and summarized would send it whole to a model`);
+    const other = Object.keys(testkitApp.slots).find((s) => !testkitApp.identity!.factorSlots.includes(s))!;
+    expect(() => validateApp({ ...copy(), slots: { ...testkitApp.slots, [other]: { ...testkitApp.slots[other]!, redact: undefined, summarized: true } } })).toThrow(`slot "${other}" says summarized, which needs redact: 'length' and statement: false`);
   });
 
   it('takes a menu key from the greeting on (fromGreeting) as true or false, and refuses anything else', () => {

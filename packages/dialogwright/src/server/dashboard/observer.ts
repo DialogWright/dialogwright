@@ -6,7 +6,7 @@ import { appOf } from '../../core/app/registry';
 import { spokenText } from '../../prompts/render';
 import { generatedSaid } from '../../render/said';
 import { sayText } from '../../channel/actions';
-import { recordScrubber, redactTurnState } from '../../trace/redact';
+import { liveAskedForConsole, recordScrubber, redactTurnState } from '../../trace/redact';
 
 /**
  * Where the observer finds a live call's session: the voice line's SessionStore, or an app chat's
@@ -33,7 +33,13 @@ export function makeObserver(bus: DashboardBus, store: ObservedCalls, callSid: s
   const askedTurnIndex = () => (store.get(callSid)?.session.turnIndex ?? 0) + 1;
   return {
     // The model is shown the identity slots' displays; the page is shown them masked, as in the record.
-    asked: (questions, turnState, at) => bus.publish({ type: 'asked', callSid, at, turnIndex: askedTurnIndex(), questions, turnState: redactTurnState(turnState, 'keep', appOf(store.get(callSid)?.session ?? {}))! }),
+    asked: (questions, turnState, at) => {
+      const session = store.get(callSid)?.session ?? null;
+      const app = appOf(session ?? {});
+      // An app with a slot masked in the records whose words a model summarizes: the caller's words masked here too (trace/redact.ts liveAskedForConsole).
+      const live = liveAskedForConsole(questions, redactTurnState(turnState, 'keep', app)!, session, app);
+      bus.publish({ type: 'asked', callSid, at, turnIndex: askedTurnIndex(), questions: live.questions, turnState: live.turnState });
+    },
     // The published record is redacted: the dashboard route is unauthenticated, and a setup
     // record carries the caller's whole number. The trace file on disk (written by opts.trace)
     // keeps the caller's number, with the identity slots masked by the writer.
