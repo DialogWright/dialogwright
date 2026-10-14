@@ -86,9 +86,9 @@ export const SUMMARIZED: Record<string, (text: string) => string> = {
 
 /**
  * The read-back speaking to the caller about their own message, as a receptionist reads one back
- * (prompts.yaml's `speaks: to-caller` on the span; live findings, item 22): the summary turns the
- * caller's "I" and "my" to "you" and "your", and may name the recipient (its `names`, never the
- * caller's name) for a "him" where the message makes clear who is meant; the frame speaks to the caller ("gets your message ... In short, {summary}"),
+ * (prompts.yaml's `speaks: to-caller` on the span; live findings, items 22 and 27): the model and the
+ * judge are told the line is spoken to the person who left the message, and given the recipient's name
+ * (its `names`, never the caller's name), as context, never how to word it; the frame speaks to the caller ("gets your message ... In short, {summary}"),
  * never that they "said" it, and the exact words have a frame of their own ("Here it is as you said it").
  */
 export const TO_CALLER: Record<string, (text: string) => string> = {

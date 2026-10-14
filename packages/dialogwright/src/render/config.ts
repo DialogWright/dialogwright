@@ -157,7 +157,7 @@ export function identifierVarsFrom(slots: Readonly<Record<string, { redact?: str
   return new Set([...factors, ...Object.entries(slots).filter(([, s]) => s.redact === 'mask' || s.redact === 'length').map(([id]) => id)]);
 }
 
-/** Whether a span may speak to the caller (`speaks: to-caller`) in this language: English only, for now (the person mapping is English's). */
+/** Whether a span may speak to the caller (`speaks: to-caller`) in this language: English only, for now (its read-backs and their judge are measured in English only: render/judgeCases). */
 export function speaksToCallerIn(language: string | undefined): boolean {
   return language === undefined || /^en(?:-|_|$)/i.test(language);
 }

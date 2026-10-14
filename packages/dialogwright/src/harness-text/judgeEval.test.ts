@@ -130,6 +130,20 @@ describe('the readers', () => {
     expect(got['real-02a']).toEqual({ checks: null, judge: { p: 0.1 } });
   });
 
+  it('the secretary\'s third recording (live findings item 27): each "you" that changes who does what is the judge\'s, beside its faithful twin', async () => {
+    const pairs = [['role-14', 'tc-09'], ['role-15', 'tc-10'], ['role-16', 'tc-11'], ['role-17', 'tc-12'], ['role-18', 'tc-13']] as const;
+    for (const [unfaithful, faithful] of pairs) {
+      const u = byId.get(unfaithful)!;
+      const f = byId.get(faithful)!;
+      expect([u.expected, f.expected], unfaithful).toEqual(['unfaithful', 'faithful']);
+      expect(f.content, faithful).toBe(u.content);
+      for (const c of [u, f]) expect([c.speaks, c.names], c.id).toEqual(['to-caller', { recipient: 'Riley Moreno' }]);
+    }
+    // Every one passes the data checks: whom a "you" or a "your" means, heard by the caller, is meaning, never a rule.
+    const results = await evaluateCases(pairs.flat().map((id) => byId.get(id)!), fakeJudge(new Set()));
+    for (const r of results) expect(r.checks, r.case.id).toBeNull();
+  });
+
   it('a span that is its content\'s own words is said unchanged, as on a call, and counts as said', async () => {
     const same: JudgeCase = { id: 'same', family: REALISTIC, expected: 'faithful', speaks: 'as-caller', content: 'Call me back.', span: 'call me back', note: 'n' };
     const [r] = await evaluateCases([same], fakeJudge(new Set(['call me back'])));

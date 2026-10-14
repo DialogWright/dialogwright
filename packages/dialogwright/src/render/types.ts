@@ -106,8 +106,8 @@ export interface SpanAct {
   readonly speaks?: 'to-caller';
   /**
    * A to-caller span only: the names it lists (`generate.<span>.names`: who the message is for, each a
-   * choice's option as the line says it), each under its variable, that it may put in place of a
-   * pronoun of the content where the content makes clear who is meant. Never the caller's own name.
+   * choice's option as the line says it), each under its variable, which it may use. Never the caller's
+   * own name.
    * Absent where it lists none, and for every other span.
    */
   readonly names?: readonly SpeechItem[];

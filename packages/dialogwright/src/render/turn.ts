@@ -144,7 +144,7 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
       if (content.trim() === '') return { name, content, skipped: 'no-content' };
       // Speaking to the caller is English only for now: in another language the span is worded in the caller's own terms.
       const toCaller = span.speaks === 'to-caller' && speaksToCallerIn(language);
-      // The names it may say for a pronoun, those it lists (who the message is for), as the line says them.
+      // The names it may use, those it lists (who the message is for), as the line says them.
       const names: SpeechItem[] = toCaller
         ? spanNameVars(app.slots as Readonly<Record<string, { type?: unknown; redact?: string }>>, span.names, identityOf(app).factorSlots).map((v) => ({ name: v, value: said.vars[v] ?? '' })).filter((n) => n.value.trim() !== '' && !/\d/.test(n.value))
         : [];

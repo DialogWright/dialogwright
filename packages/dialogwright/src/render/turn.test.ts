@@ -721,7 +721,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(client.askedSpans[0]!.act).not.toHaveProperty('speaks');
     expect(client.askedSpans[0]!.act).not.toHaveProperty('names');
     const card = policyCardText(toCaller, MESSAGE_DIR);
-    expect(card).toContain('Give the caller their message back in one sentence, speaking to them. (spoken to the caller: their "I" and "my" said as "you" and "your"; also sent the names it may say for a pronoun: `{recipient}`)');
+    expect(card).toContain('Give the caller their message back in one sentence, speaking to them. (spoken to the caller, the person who left the message; also sent the names it may use: `{recipient}`)');
     expect(card).toContain('A span that speaks to the caller (`speaks: to-caller`, English only)');
     expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain('speaks: to-caller');
   });

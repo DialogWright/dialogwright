@@ -1608,7 +1608,8 @@ export interface GeneratedSpan {
   readonly words: number;
   /**
    * `to-caller`: the span speaks to the caller about their own message (prompts.yaml's `speaks:
-   * to-caller`): their I and my said as you and your. Absent: in the caller's own terms (`as-caller`), as before.
+   * to-caller`): the model and the drift judge are told the line is spoken to the person who left the
+   * message, as context, never how to word it. Absent: in the caller's own terms (`as-caller`), as before.
    */
   readonly speaks?: 'to-caller';
   /**
