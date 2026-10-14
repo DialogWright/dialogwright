@@ -570,8 +570,13 @@ const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's"
  * and who does what to whom in the content's order); and a name it lists (`act.names`, who the message
  * is for), or its possessive, is no `foreign` capital. Whether a name stands for the one a pronoun means
  * is the drift check's.
+ *
+ * `level` (default `full`, what a call runs): `core` keeps only the checks of values and shape (`empty`,
+ * `format`, `question`, `conflict`, a plain `negation` against the content's own words, `words`, `avoid`
+ * and `foreign`), leaving out `omitted` and `person` (a person's word, its gender, who does what to whom);
+ * `render:judge-eval` (render/judgeEval.ts) tables what that lighter set, with the drift check, would catch.
  */
-export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): RenderFallback | null {
+export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}, level: SpanCheckLevel = 'full'): RenderFallback | null {
   if (text.trim() === '') return 'empty';
   if (text.length > MAX_CHARS || /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text) || /\bhttps?:|www\./i.test(text)) return 'format';
   if (text.includes('?')) return 'question';
@@ -589,18 +594,21 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): R
   // need"), with a third-person pronoun and a name of the line set aside on both sides (a name may stand
   // for a pronoun: whether it rightly does is the drift check's).
   const nameWords = new Set((act.names ?? []).flatMap((n) => words(n.value)));
-  const { spoken, compared } = toCallerSpan ? comparedToCaller(text, content, (act.names ?? []).map((n) => n.value)) : { spoken: text, compared: content };
+  const core = level === 'core';
+  const { spoken, compared } = toCallerSpan && !core ? comparedToCaller(text, content, (act.names ?? []).map((n) => n.value)) : { spoken: text, compared: content };
   if (negationBroken(spoken, compared, compared)) return 'negation';
   // A clause of the content that says "no" or sets a condition, left out of the span (or restated without it).
-  if (leftOut(spoken, compared)) return 'omitted';
+  if (!core && leftOut(spoken, compared)) return 'omitted';
   const said = new Set(content.flatMap(words));
-  if (toCallerSpan) {
+  if (core) {
+    // The core checks hold no person: the drift check reads whose words they are, and who does what.
+  } else if (toCallerSpan) {
     // No first person of its own, "you" only for the caller's own first person, in its form and in the message's order of persons.
     if (personBroken(text, content, (act.names ?? []).map((n) => n.value))) return 'person';
     if (words(text).some((w) => PERSON_WORDS.has(w) && !SECOND_PERSON.has(w) && !FIRST_PERSON.has(w) && !said.has(w))) return 'person';
   } else if (words(text).some((w) => PERSON_WORDS.has(w) && !said.has(w))) return 'person';
   // A he or a she the content does not have: another person than the one it speaks of, whatever its perspective.
-  if (genderBroken(text, content)) return 'person';
+  if (!core && genderBroken(text, content)) return 'person';
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   const allowedDigits = new Set(content.flatMap(digitRuns));
@@ -619,6 +627,9 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): R
   }
   return null;
 }
+
+/** Which of a span's checks run: `full`, every one (what a call runs); `core`, those of values and shape alone (checkSpan). */
+export type SpanCheckLevel = 'full' | 'core';
 
 /** The span drift check's question id, asked of the decision model on its own request. */
 export const SPAN_DRIFT_QUESTION_ID = 'renderSpanDrift';

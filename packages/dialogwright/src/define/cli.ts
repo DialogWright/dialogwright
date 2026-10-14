@@ -31,6 +31,7 @@ import { formatProblem, type Problem } from './problems';
  *   dialogwright kb:approve | kb:status             (../kb/commands.ts, ../kb/approval.ts: approving passages, and their state)
  *   dialogwright regress [dir] [options]            (../harness-text/regressCommand.ts: an app's regression run)
  *   dialogwright render:bakeoff [dir] --models ...  (../harness-text/renderBakeoffCommand.ts: render models compared)
+ *   dialogwright render:judge-eval [--replay] ...   (../harness-text/judgeEvalCommand.ts: the span drift judge measured against the shape checks)
  *   dialogwright configure | start | serve | diagnose | service | fallback | console:link   (../server: running an app, or a host file's apps)
  *   dialogwright audit:verify [dir | postgres://...] (../audit/verifyCli.ts: each audit day file's hash chain, or the audit in Postgres)
  *   dialogwright help
@@ -58,6 +59,7 @@ export const COMMANDS: readonly (readonly [name: string, summary: string])[] = [
   ['create-app', 'a new app from the template (--standalone: a project of its own, outside this repository)'],
   ['regress', "an app's regression run against its fixtures (the stub, or a recording with --client recorded)"],
   ['render:bakeoff', "compare render models on an app's generated lines: each recorded into its own cassette, one table (--replay: from the cassettes)"],
+  ['render:judge-eval', 'measure the span drift judge against the span\'s shape checks on labelled cases: the real judge recorded into a cassette, one report (--replay: from the cassette)'],
   ['policy:matrix', 'write policy.matrix, the reviewed golden of what the gate decides'],
   ['policy:card', 'write POLICY.md, the policy in plain English with its diagrams'],
   ['app:diagram', "write APP-MAP.md, the app's intents, forms, slots, actions and rules as diagrams"],
@@ -119,6 +121,8 @@ export const USAGE = [
   '  the app\'s regression run, as its src/regress.ts runs it (dialogwright regress --help: the options)',
   '       dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh [--replace-app-cassette]] [--by-line] [--price <model>=<input>,<output>]... [--out <file.md>] [--json]',
   '  render models compared on the app\'s generated lines, each recorded into its own render cassette with your keys (refused in CI); --replay tables the cassettes alone (dialogwright render:bakeoff --help)',
+  '       dialogwright render:judge-eval [--replay] [--cases <file>] [--out <file.md>] [--json]',
+  '  the span drift judge against the span\'s shape checks on labelled cases, the judge recorded with the decision model\'s key (refused in CI); --replay tables its cassette alone (dialogwright render:judge-eval --help)',
   '       dialogwright configure | start | serve | diagnose | service | fallback | console:link | audit:verify [options]',
   '  running an app: each prints its own usage; dialogwright help lists every command',
 ].join('\n');
@@ -248,6 +252,10 @@ export async function main(argv: readonly string[], io: Io = stdio()): Promise<n
   if (command === 'render:bakeoff') {
     const { bakeoffCommand } = await import('../harness-text/renderBakeoffCommand');
     return bakeoffCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
+  }
+  if (command === 'render:judge-eval') {
+    const { judgeEvalCommand } = await import('../harness-text/judgeEvalCommand');
+    return judgeEvalCommand(rest, { out: io.out, err: io.err, invokedFrom: io.invokedFrom ?? io.cwd, ...(io.env ? { env: io.env } : {}) });
   }
   if (command === 'policy:convert') return convertCommand(rest, io);
   if (command === 'create-app') return createAppCommand(rest, io);

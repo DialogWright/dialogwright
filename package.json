@@ -36,7 +36,8 @@
     "service": "tsx packages/dialogwright/src/define/cli.ts service",
     "fallback": "tsx packages/dialogwright/src/define/cli.ts fallback",
     "console:link": "tsx packages/dialogwright/src/define/cli.ts console:link",
-    "render:bakeoff": "tsx packages/dialogwright/src/define/cli.ts render:bakeoff"
+    "render:bakeoff": "tsx packages/dialogwright/src/define/cli.ts render:bakeoff",
+    "render:judge-eval": "tsx packages/dialogwright/src/define/cli.ts render:judge-eval"
   },
   "devDependencies": {
     "tsx": "^4.19.0"
