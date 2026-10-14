@@ -15,7 +15,7 @@ import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
-import { renderSettings, resolveRenderProvider, thinkingLabel } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, renderEnvOf, renderSettings, resolveAppRenderProvider, thinkingLabel } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
@@ -415,8 +415,9 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
 
 /**
  * Generated wording (prompts.yaml's mode: generative, a form's wording: generative): which model words
- * the app's generated lines, with its key's variable (never the key), RENDER_SHARE and the budget; that
- * every line is said fixed with RENDER_PROVIDER unset; and a setting the server would refuse. Nothing for
+ * the app's generated lines (the environment's, over the one style.yaml names), with its key's variable
+ * (never the key), RENDER_SHARE and the budget; that every line is said fixed with RENDER_PROVIDER unset
+ * and no model named, or with the named model's key unset; and a setting the server would refuse. Nothing for
  * an app that generates no line, or a folder that cannot be read (pnpm check says why). No model is asked.
  */
 export function wordingChecks(appDir: string, env: Env): CheckResult[] {
@@ -436,11 +437,16 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   const lines = g === undefined ? 0 : Object.keys(g.lines).length;
   if (lines === 0) return [];
   const said = `${lines} generated line${lines === 1 ? '' : 's'}`;
+  // The model the app names (style.yaml's `model`), under the environment's settings.
+  const model = g!.model;
+  const missing = appModelKeyMissing(env, model);
+  if (missing !== null) return [{ id: 'wording', status: 'warn', message: `${said}, worded by ${appModelLabel(model!)}, but ${missing} is unset: every line is said fixed`, fix: `set ${missing} in the settings file to have them generated` }];
   try {
-    const p = resolveRenderProvider(env);
-    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated' }];
+    const p = resolveAppRenderProvider(env, model);
+    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated, or name the model in style.yaml (model: { provider, id })' }];
     const r = renderSettings(env);
-    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}${p.thinking !== undefined ? `; ${thinkingLabel(p.thinking)}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
+    const own = model !== undefined && renderEnvOf(env, model) !== env ? ", style.yaml's model" : '';
+    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (key in ${p.keyVar}${own}${p.thinking !== undefined ? `; ${thinkingLabel(p.thinking)}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }

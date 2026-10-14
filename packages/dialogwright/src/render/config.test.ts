@@ -46,6 +46,15 @@ describe('generatedWordingOf', () => {
     expect(g.localeGoals).toEqual({ es: { thanks: 'Darles las gracias.', ask_a: 'Preguntar a.' } });
   });
 
+  it('the model the app names (style.yaml\'s model, live findings item 27): carried apart from the style, never sent to a model; absent where it names none', () => {
+    const prompts = { thanks: line('Thanks.', { mode: 'generative', goal: 'Thank them.' }) };
+    const g = generatedWordingOf({ prompts, forms: {}, style: { model: { provider: 'openrouter', id: 'google/gemini-3.1-flash-lite-preview' } }, localePrompts: {} })!;
+    expect(g.model).toEqual({ provider: 'openrouter', id: 'google/gemini-3.1-flash-lite-preview' });
+    expect(g.style).not.toHaveProperty('model');
+    expect(generatedWordingOf({ prompts, forms: {}, style: { model: { provider: 'anthropic' } }, localePrompts: {} })!.model).toEqual({ provider: 'anthropic' });
+    expect(generatedWordingOf({ prompts, forms: {}, style: { persona: 'p' }, localePrompts: {} })).not.toHaveProperty('model');
+  });
+
   it('a form\'s lines: its slots\' questions and read-backs with their variants, and its summary', () => {
     expect(formLineIds(['ask_a', 'ask_a_retry2', 'ask_ab', 'confirm_a', 'confirm_a_x', 'sum', 'ask_b'], ['a'], 'sum')).toEqual(['ask_a', 'ask_a_retry2', 'confirm_a', 'confirm_a_x', 'sum']);
   });

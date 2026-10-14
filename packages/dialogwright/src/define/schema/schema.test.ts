@@ -150,6 +150,14 @@ describe('mistakes get a precise error', () => {
     expect(issuesOf('style', 'words: { voice: 2, chat: 4.5 }\navoid: [sorry, sorry]\n').map((i) => i.path)).toEqual(['words.voice', 'words.chat', 'avoid.1']);
   });
 
+  it('style.yaml: the model names a provider the engine reaches, its id optional, and no key (live findings item 27)', () => {
+    expect(issuesOf('style', 'model: { provider: openrouter, id: google/gemini-3.1-flash-lite-preview }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: anthropic }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: azure, id: x }\n').map((i) => i.path)).toEqual(['model.provider']);
+    expect(issuesOf('style', 'model: { id: x }\n').map((i) => i.path)).toEqual(['model.provider']);
+    expect(issuesOf('style', 'model: { provider: openrouter, apiKey: x }\n').map((i) => i.path)).toEqual(['model']);
+  });
+
   it('policy levels, attempts and role access are bounded', () => {
     const fresh = issuesOf('policy', 'actions:\n  a:\n    level: 3\n    rules:\n      - role: { clerk: allowed }\n');
     expect(fresh.map((i) => `${i.path} ${i.code}`)).toEqual(['actions.a.level invalid_value', 'actions.a.rules.0.role.clerk invalid_value']);

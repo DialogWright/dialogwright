@@ -4,7 +4,7 @@ import { callbackApp } from '../testing/callback/app';
 import { messageApp } from '../testing/message/app';
 import { RenderCassette } from './cassette';
 import { FakeRenderClient } from './fake';
-import { emptyRenderTally, formatRenderTally, harnessRenderer, stubRenderer, tallyRender } from './harness';
+import { emptyRenderTally, formatRenderTally, harnessRenderer, replayedRenderCassette, stubRenderer, tallyRender } from './harness';
 import { afterAll } from 'vitest';
 import { runAll } from '../harness-text/runAll';
 import { buildClient } from '../run/client';
@@ -43,6 +43,28 @@ describe('harnessRenderer', () => {
     expect(harnessRenderer('record', messageApp, '/rec', { env: {} })).toEqual({ renderer: null, header: ['generated lines said fixed (RENDER_PROVIDER unset)'] });
     expect(harnessRenderer('stub', messageApp, '/rec', { env, render: 'fixed' })).toEqual({ renderer: null, header: ['generated lines said fixed (--render fixed)'] });
     expect(() => harnessRenderer('stub', messageApp, '/rec', { render: 'fancy' })).toThrow('--render must be fixed');
+  });
+});
+
+describe('the model an app names in style.yaml (live findings item 27)', () => {
+  const named = { ...messageApp, generated: { ...messageApp.generated!, model: { provider: 'openrouter' as const, id: 'google/gemini-3.1-flash-lite-preview' } } };
+
+  it('a recorded run replays its cassette, the environment over it', () => {
+    expect(replayedRenderCassette(named, '/rec', {})).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
+    expect((harnessRenderer('recorded', named, '/rec', { env: {} }).renderer!.client as RenderCassette).path).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
+    expect(replayedRenderCassette(named, '/rec', { RENDER_MODEL: 'vendor/fast' })).toBe('/rec/render/vendor__fast.jsonl');
+    expect(replayedRenderCassette(named, '/rec', { RENDER_PROVIDER: 'anthropic' })).toBe('/rec/render/claude-haiku-5-5.jsonl');
+    // An app that names none: Anthropic's default, as before.
+    expect(replayedRenderCassette(messageApp, '/rec', {})).toBe('/rec/render/claude-haiku-5-5.jsonl');
+  });
+
+  it('record and jev reach it with its key; without the key its lines are said fixed, and the header says why', () => {
+    const env = { OPENROUTER_API_KEY: 'or-test-not-real' };
+    expect(harnessRenderer('jev', named, '/rec', { env }).renderer!.client.model).toBe('google/gemini-3.1-flash-lite-preview');
+    expect((harnessRenderer('record', named, '/rec', { env }).renderer!.client as RenderCassette).path).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
+    for (const kind of ['record', 'jev']) {
+      expect(harnessRenderer(kind, named, '/rec', { env: {} })).toEqual({ renderer: null, header: ["generated lines said fixed (style.yaml's model, openrouter google/gemini-3.1-flash-lite-preview, and OPENROUTER_API_KEY is unset)"] });
+    }
   });
 });
 

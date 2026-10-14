@@ -105,7 +105,15 @@ export function generatedWordingOf(input: {
     }
     if (Object.keys(spanGoals).length > 0) localeSpanGoals[locale] = spanGoals;
   }
-  return { lines, prescribed, style: styleOf(input.style), localeGoals, ...(Object.keys(localeSpanGoals).length > 0 ? { localeSpanGoals } : {}) };
+  return {
+    lines,
+    prescribed,
+    style: styleOf(input.style),
+    localeGoals,
+    ...(Object.keys(localeSpanGoals).length > 0 ? { localeSpanGoals } : {}),
+    // The model the app names (style.yaml's `model`): only where it names one, so every other App is as it was.
+    ...(input.style?.model !== undefined ? { model: { provider: input.style.model.provider, ...(input.style.model.id !== undefined ? { id: input.style.model.id } : {}) } } : {}),
+  };
 }
 
 /** Whether a generated line is framed (prompts.yaml's `generate`): only its spans are generated. */

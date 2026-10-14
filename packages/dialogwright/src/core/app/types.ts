@@ -1632,6 +1632,16 @@ export interface RenderStyle {
   readonly refuseAt?: number;
 }
 
+/**
+ * The model an app names to word its generated lines (style.yaml's `model`): the provider and, if
+ * given, the model id (else the provider's default). The environment overrides it (render/providers.ts
+ * renderEnvOf); the key is read from the environment only.
+ */
+export interface RenderModelChoice {
+  readonly provider: 'openrouter' | 'anthropic';
+  readonly id?: string;
+}
+
 /** An app's generated wording (App.generated). */
 export interface GeneratedWording {
   /** The generated lines, by prompt id. */
@@ -1650,6 +1660,12 @@ export interface GeneratedWording {
    * it is its exact content. Absent for an app with no framed line.
    */
   readonly localeSpanGoals?: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+  /**
+   * The model the app names to word its lines (style.yaml's `model`), the default under the
+   * environment's RENDER_PROVIDER and RENDER_MODEL. Absent: none, as before (the environment alone).
+   * Never sent to a model: it is not part of the style.
+   */
+  readonly model?: RenderModelChoice;
 }
 
 /**

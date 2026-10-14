@@ -833,6 +833,20 @@ describe('pnpm diagnose: generated wording', () => {
     expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_THINKING: 'on' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: RENDER_THINKING must be disabled, between-tools, adaptive, omit, got "on": the server will not start' });
     expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'openrouter' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: missing required environment variable OPENROUTER_API_KEY (RENDER_PROVIDER=openrouter): the server will not start' });
   });
+  it('the model the app names in style.yaml: its key missing is a warning; with it, named as the app\'s; the environment over it (live findings item 27)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wording-named-'));
+    try {
+      for (const f of ['app.yaml', 'intents.yaml', 'forms.yaml', 'prompts.yaml', 'policy.yaml', 'slots.yaml', 'style.yaml']) writeFileSync(join(dir, f), readFileSync(join(MESSAGE, f), 'utf8'));
+      writeFileSync(join(dir, 'style.yaml'), `${readFileSync(join(MESSAGE, 'style.yaml'), 'utf8').trimEnd()}\nmodel:\n  provider: openrouter\n  id: google/gemini-3.1-flash-lite-preview\n`);
+      expect(wordingChecks(dir, {})[0]).toEqual({ id: 'wording', status: 'warn', message: "9 generated lines, worded by style.yaml's model, openrouter google/gemini-3.1-flash-lite-preview, but OPENROUTER_API_KEY is unset: every line is said fixed", fix: 'set OPENROUTER_API_KEY in the settings file to have them generated' });
+      const ok = wordingChecks(dir, { OPENROUTER_API_KEY: 'or-test-not-real' })[0]!;
+      expect(ok).toMatchObject({ status: 'ok', message: "9 generated lines, worded by google/gemini-3.1-flash-lite-preview from openrouter (key in OPENROUTER_API_KEY, style.yaml's model), 100% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms" });
+      expect(JSON.stringify(ok)).not.toContain('or-test-not-real');
+      expect(wordingChecks(dir, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real' })[0]!.message).toContain('worded by claude-haiku-5-5 from anthropic (key in ANTHROPIC_API_KEY; thinking disabled)');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('pnpm diagnose: generated wording counts the lines as the app is built (review fixes)', () => {

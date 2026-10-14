@@ -7,7 +7,7 @@ import { FakeRenderClient } from './fake';
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../jev/cassette';
 import { instructionsOf, RENDER_INSTRUCTIONS, RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
-import { ModelRenderClient, renderCassetteModel, renderLines, renderSettings, resolveRenderProvider } from './providers';
+import { appModelKeyMissing, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderSettings, resolveAppRenderProvider, resolveRenderProvider } from './providers';
 import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
 /** A span's sentence, as a call sends one (SpanAct.sentence): the frame's own words, the span a gap. */
@@ -41,6 +41,38 @@ describe('resolveRenderProvider', () => {
     expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' })).toThrow('missing required environment variable ANTHROPIC_API_KEY (RENDER_PROVIDER=anthropic)');
     expect(resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' }, { needKey: false })!.apiKey).toBeNull();
     expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openai' })).toThrow('RENDER_PROVIDER must be openrouter or anthropic, got "openai"');
+  });
+});
+
+describe('the model an app names (style.yaml\'s model, live findings item 27)', () => {
+  const GEMINI = { provider: 'openrouter' as const, id: 'google/gemini-3.1-flash-lite-preview' };
+
+  it('is the default under the environment: unset, the app\'s; the environment over it', () => {
+    // No model named: the environment alone, as before.
+    const env = { RENDER_PROVIDER: 'anthropic' };
+    expect(renderEnvOf(env, undefined)).toBe(env);
+    expect(resolveAppRenderProvider({}, undefined)).toBeNull();
+    // Named, with nothing set: the app's provider and model, the key from the environment.
+    expect(resolveAppRenderProvider({ OPENROUTER_API_KEY: 'or-test' }, GEMINI)).toMatchObject({ provider: 'openrouter', model: GEMINI.id, keyVar: 'OPENROUTER_API_KEY' });
+    // The provider's default model where the app names none.
+    expect(resolveAppRenderProvider({ ANTHROPIC_API_KEY: 'k' }, { provider: 'anthropic' })).toMatchObject({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+    // RENDER_MODEL names the model; the same RENDER_PROVIDER keeps the app's model.
+    expect(resolveAppRenderProvider({ OPENROUTER_API_KEY: 'k', RENDER_MODEL: 'vendor/other' }, GEMINI)!.model).toBe('vendor/other');
+    expect(resolveAppRenderProvider({ OPENROUTER_API_KEY: 'k', RENDER_PROVIDER: 'openrouter' }, GEMINI)!.model).toBe(GEMINI.id);
+    // RENDER_PROVIDER naming another provider takes it, with its own default model: the app's id is not that provider's.
+    expect(resolveAppRenderProvider({ ANTHROPIC_API_KEY: 'k', RENDER_PROVIDER: 'anthropic' }, GEMINI)).toMatchObject({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+    expect(renderEnvOf({ RENDER_PROVIDER: 'anthropic' }, GEMINI)).toEqual({ RENDER_PROVIDER: 'anthropic' });
+  });
+
+  it('a key only from the environment: missing, it is named with style.yaml, never a RENDER_PROVIDER that was not set', () => {
+    expect(appModelKeyMissing({}, GEMINI)).toBe('OPENROUTER_API_KEY');
+    expect(appModelKeyMissing({ OPENROUTER_API_KEY: 'k' }, GEMINI)).toBeNull();
+    // The environment's own provider is in force: its key is RENDER_PROVIDER's to name (resolveRenderProvider).
+    expect(appModelKeyMissing({ RENDER_PROVIDER: 'anthropic' }, GEMINI)).toBeNull();
+    expect(appModelKeyMissing({}, undefined)).toBeNull();
+    expect(() => resolveAppRenderProvider({}, GEMINI)).toThrow("missing required environment variable OPENROUTER_API_KEY (style.yaml's model, openrouter google/gemini-3.1-flash-lite-preview)");
+    // A replay needs none.
+    expect(resolveAppRenderProvider({}, GEMINI, { needKey: false })).toMatchObject({ model: GEMINI.id, apiKey: null });
   });
 });
 

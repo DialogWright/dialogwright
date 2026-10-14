@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { text, unique } from './common';
 import { DRIFT_FIRE } from '../../render/checks';
+import { RENDER_PROVIDERS } from '../../render/providers';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -39,6 +40,17 @@ export const styleSchema = z
       })
       .optional()
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),
+    model: z
+      .strictObject({
+        provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves) or anthropic.'),
+        id: text()
+          .optional()
+          .describe('The model id, as the provider names it ("google/gemini-3.1-flash-lite-preview" on OpenRouter, "claude-haiku-5-5" on Anthropic). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
+      })
+      .optional()
+      .describe(
+        'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL names the model. The key is read from the environment only (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never from here; with it unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
+      ),
   })
   .describe('style.yaml: how a generated line sounds. Only read when the app generates a line.');
 

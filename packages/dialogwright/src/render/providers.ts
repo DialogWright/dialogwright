@@ -1,3 +1,4 @@
+import type { RenderModelChoice } from '../core/app/types';
 import { actMessage, instructionsOf } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
@@ -6,9 +7,10 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_T
  * OpenRouter (any model it serves) or the Anthropic API, with the author's own key, read from its own
  * variable and never from a flag; never logged, never in a trace. Chosen like the decision model:
  *
- * - RENDER_PROVIDER: `openrouter` or `anthropic`. Unset, no line is generated: every line is its fixed text.
- * - RENDER_MODEL: the model id; default a current Claude Haiku (`claude-haiku-5-5` on Anthropic,
- *   `anthropic/claude-haiku-5.5` on OpenRouter).
+ * - RENDER_PROVIDER: `openrouter` or `anthropic`. Unset, the app's own (style.yaml's `model`,
+ *   renderEnvOf); with neither, no line is generated: every line is its fixed text.
+ * - RENDER_MODEL: the model id; default the app's own where its provider is in force, else a current
+ *   Claude Haiku (`claude-haiku-5-5` on Anthropic, `anthropic/claude-haiku-5.5` on OpenRouter).
  * - the key: OPENROUTER_API_KEY or ANTHROPIC_API_KEY, the provider's own variable.
  * - RENDER_SHARE: the share of calls served generated, 0 to 100; default 100.
  * - RENDER_TIMEOUT_MS: how long a line's wording may take; default 700 on a call and 1500 in a chat
@@ -204,6 +206,52 @@ export function resolveRenderProvider(env: Env = process.env, opts: { needKey?: 
     return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, ...(thinking !== null ? { thinking } : {}) };
   }
   return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: renderThinkingOf(model, env) };
+}
+
+/**
+ * The environment a renderer is resolved from, with the model the app names (style.yaml's `model`,
+ * App.generated.model; live findings item 27) as its default: RENDER_PROVIDER, when unset, is the app's
+ * provider, and RENDER_MODEL, when unset, the app's model id where the provider is the app's. The
+ * environment overrides it: RENDER_PROVIDER naming another provider takes that provider with its own
+ * default model (or RENDER_MODEL), and RENDER_MODEL names the model. `env` itself for an app that names
+ * none, so its renderer is chosen as before. Never a key: keys are read from the environment only.
+ */
+export function renderEnvOf(env: Env, model: RenderModelChoice | undefined): Env {
+  if (model === undefined) return env;
+  const provider = value(env, 'RENDER_PROVIDER');
+  if (provider !== null && provider !== model.provider) return env;
+  const id = value(env, 'RENDER_MODEL') ?? model.id;
+  return { ...env, RENDER_PROVIDER: model.provider, ...(id !== undefined ? { RENDER_MODEL: id } : {}) };
+}
+
+/**
+ * The key's variable when the app's own model is in force (style.yaml's `model`, RENDER_PROVIDER unset
+ * or the same provider) and that key is unset; else null. The server then says every line fixed, with
+ * a warning, and `pnpm diagnose` warns, as it does with RENDER_PROVIDER unset: an app that names its
+ * model still starts on a machine without the key.
+ */
+export function appModelKeyMissing(env: Env, model: RenderModelChoice | undefined): string | null {
+  if (model === undefined) return null;
+  const provider = value(env, 'RENDER_PROVIDER');
+  if (provider !== null && provider !== model.provider) return null;
+  const keyVar = KNOWN[model.provider].keyVar;
+  return value(env, keyVar) === null ? keyVar : null;
+}
+
+/** How a run names the model an app names: `style.yaml's model, openrouter google/gemini-...`. */
+export function appModelLabel(model: RenderModelChoice): string {
+  return `style.yaml's model, ${model.provider}${model.id !== undefined ? ` ${model.id}` : ''}`;
+}
+
+/**
+ * The render provider for an app: resolveRenderProvider over renderEnvOf (the app's own model as the
+ * default, the environment over it). With the key needed (the default) and the app's model in force
+ * without its key, the error names style.yaml rather than a RENDER_PROVIDER that was never set.
+ */
+export function resolveAppRenderProvider(env: Env, model: RenderModelChoice | undefined, opts: { needKey?: boolean } = {}): RenderProvider | null {
+  const missing = (opts.needKey ?? true) ? appModelKeyMissing(env, model) : null;
+  if (missing !== null) throw new Error(`missing required environment variable ${missing} (${appModelLabel(model!)})`);
+  return resolveRenderProvider(renderEnvOf(env, model), opts);
 }
 
 /** A whole number in [min, max] from `name`, or `fallback` when it is unset. */

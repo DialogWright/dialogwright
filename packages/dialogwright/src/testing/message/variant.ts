@@ -108,6 +108,14 @@ export const TO_CALLER: Record<string, (text: string) => string> = {
 };
 
 /**
+ * The app names its render model (style.yaml's `model`, live findings item 27): OpenRouter's
+ * google/gemini-3.1-flash-lite-preview. It changes style.yaml alone; the key is the environment's.
+ */
+export const NAMED_MODEL: Record<string, (text: string) => string> = {
+  'style.yaml': (text) => `${text.trimEnd()}\nmodel:\n  provider: openrouter\n  id: google/gemini-3.1-flash-lite-preview\n`,
+};
+
+/**
  * A more cautious drift judge (style.yaml's `judge.refuseAt: 0.3`, live findings item 25): a wording the
  * judge holds 0.3 likely or more to be unfaithful is refused. It changes style.yaml alone.
  */

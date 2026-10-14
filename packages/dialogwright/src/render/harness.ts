@@ -5,16 +5,18 @@ import type { TraceRecord } from '../trace/types';
 import { generatesLines } from './config';
 import { RenderCassette, renderCassettePath } from './cassette';
 import { FakeRenderClient } from './fake';
-import { ModelRenderClient, renderCassetteModel, renderLines, renderSettings, resolveRenderProvider } from './providers';
+import { appModelKeyMissing, appModelLabel, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderSettings, resolveAppRenderProvider, resolveRenderProvider, type RenderProvider } from './providers';
 import type { RenderFallback, Renderer } from './types';
 
 /**
  * How a regression run words the lines an app generates (generated wording, design section 5), by its
  * client kind: on the stubs, the fake renderer (no model, the same words every time); `recorded`,
- * the render cassette of the model RENDER_PROVIDER and RENDER_MODEL name (default Anthropic's
- * default model), replayed, every check run again on every line; `record` and `jev`, the model itself,
- * `record` appending to the cassette (the maintainer's step, with the author's own key). `--render
- * fixed` says every line fixed. Null for an app that generates no line: the run is exactly as before.
+ * the render cassette of the model RENDER_PROVIDER and RENDER_MODEL name over the app's own
+ * (style.yaml's `model`; with neither, Anthropic's default model), replayed, every check run again on
+ * every line; `record` and `jev`, the model itself, `record` appending to the cassette (the
+ * maintainer's step, with the author's own key; with the app's own model and its key unset, its
+ * lines are said fixed, and the header says why). `--render fixed` says every line fixed. Null for an
+ * app that generates no line: the run is exactly as before.
  */
 export function harnessRenderer(kind: string, app: App, recordedDir: string, opts: { render?: string; env?: Record<string, string | undefined> } = {}): { renderer: Renderer | null; header: string[] } {
   if (!generatesLines(app)) return { renderer: null, header: [] };
@@ -25,17 +27,36 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
   if (kind === 'stub' || kind === 'heuristic') {
     return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
   }
+  // The app's own model (style.yaml's `model`) under the environment's settings.
+  const model = app.generated?.model;
   if (kind === 'recorded') {
-    const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...env }, { needKey: false })!;
+    const p = replayedRenderProvider(app, env);
     const client = new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'replay', model: p.model });
     client.preload();
     return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
   }
-  const p = resolveRenderProvider(env);
+  const missing = appModelKeyMissing(env, model);
+  // A run with the app's own model and no key says its lines fixed, as a server does, and says why.
+  if (missing !== null) return { renderer: null, header: [`generated lines said fixed (${appModelLabel(model!)}, and ${missing} is unset)`] };
+  const p = resolveAppRenderProvider(env, model);
   if (p === null) return { renderer: null, header: renderLines(null) };
   const live = new ModelRenderClient(p);
   const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'record', model: p.model, inner: live }) : live;
   return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p), ...(client instanceof RenderCassette ? [`render cassette ${client.path}`] : [])] };
+}
+
+/**
+ * The render model a recorded regression of `app` replays (`regress --client recorded`): RENDER_PROVIDER
+ * and RENDER_MODEL over the model the app names (style.yaml's `model`), and with neither Anthropic's
+ * default model. No key is needed: a replay sends nothing. Throws on a setting the server would refuse.
+ */
+export function replayedRenderProvider(app: App, env: Record<string, string | undefined> = process.env): RenderProvider {
+  return resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...renderEnvOf(env, app.generated?.model) }, { needKey: false })!;
+}
+
+/** The render cassette a recorded regression of `app` replays (replayedRenderProvider): what `render:bakeoff` keeps as the app's own. */
+export function replayedRenderCassette(app: App, recordedDir: string, env: Record<string, string | undefined> = process.env): string {
+  return renderCassettePath(recordedDir, renderCassetteModel(replayedRenderProvider(app, env)));
 }
 
 /**

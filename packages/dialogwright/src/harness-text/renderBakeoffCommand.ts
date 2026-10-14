@@ -17,7 +17,8 @@ import { defaultCorpusFile, recordedDir, scenariosDir } from '../run/fixtures';
 import { loadHarnessEnv } from '../server/envFile';
 import { DecisionFailed, GENEROUS_BUDGET_MS, bakeoffJson, formatBakeoff, formatBakeoffMarkdown, parseModelSpecs, parsePrices, providerOf, RENDER_KEY_VARS, runModel, type BakeoffReport, type ModelResult } from './renderBakeoff';
 import { generatesLines } from '../render/config';
-import { renderCassetteModel, renderSettings, renderLines, resolveRenderProvider } from '../render/providers';
+import { renderCassetteModel, renderSettings, renderLines } from '../render/providers';
+import { replayedRenderCassette } from '../render/harness';
 import { renderCassettePath } from '../render/cassette';
 import { spawnSync } from 'node:child_process';
 
@@ -222,11 +223,11 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
     const budget = renderSettings(env).timeoutMs;
     say(`${app.id}: ${corpus.length} corpus lines and ${scenarios.length} scripted calls; the decision model ${jev.model} from ${jev.provider}, its answers replayed from the app's recording (${shown(decisionCassette)}${existsSync(decisionCassette) ? '' : ', not found'})`);
     // The app's own cassettes: one git tracks, or the one its regression replays (RENDER_PROVIDER and
-    // RENDER_MODEL, default Anthropic's default model, as `regress --client recorded` reads them).
+    // RENDER_MODEL over the model style.yaml names, default Anthropic's default model, as `regress
+    // --client recorded` reads them).
     let regressCassette: string | null = null;
     try {
-      const own = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...env }, { needKey: false });
-      if (own !== null) regressCassette = renderCassettePath(recorded, renderCassetteModel(own));
+      regressCassette = replayedRenderCassette(app, recorded, env);
     } catch {
       // Settings the server would refuse: no cassette is the regression's.
     }
