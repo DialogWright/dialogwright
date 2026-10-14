@@ -5,10 +5,11 @@ import { newSession, type Session } from '../core/session';
 import { CODE_DIGIT, type Arrival, type RunOptions, type TurnRun } from '../run/turn';
 import type { TraceRecord } from '../trace/types';
 import { frameToEvent } from '../channel/relay/map';
-import { serviceResultEvent, keyEvents, silenceEvent, withCallData, withCallerNumber, type ServiceResult, type SessionEvent } from '../channel/events';
+import { serviceResultEvent, keyEvents, silenceEvent, withCallData, withCalledNumber, withCallerNumber, withCallerWithheld, type ServiceResult, type SessionEvent } from '../channel/events';
+import { recordsOf } from '../channel/maskByName';
 import { callDataFrom, callDataSourceOf, redactionOf } from '../channel/callData';
 import { frameLogKeepsField } from '../server/dashboard/events';
-import { standInCallerNumber } from '../core/callerNumber';
+import { actsOnCallerNumber, standInCallerNumber } from '../core/callerNumber';
 import { SHORT_MASK } from '../gate/principal';
 import { VOICE_RELAY } from '../channel/caps';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
@@ -186,13 +187,24 @@ export function loggedRoutes(lines: readonly ReadFrameLogLine[]): string[] | nul
 
 /**
  * Whether the replay took other routes than the live call (routes.yaml): said, never silently passed
- * over. A start route on the number called (`called`) is the usual cause: the frame log does not keep
- * the number called, so a replayed call has none and takes another branch from there.
+ * over. A start route on the number called (`called`) is the usual cause: a frame log that does not keep
+ * the number called whole (app.yaml's records.businessNumbers: last4) gives a replayed call none, and it
+ * takes another branch from there.
  */
 export function routeDivergence(live: string[] | null, replayed: string[]): string | null {
   if (live === null) return null;
   if (live.length === replayed.length && live.every((r, i) => r === replayed[i])) return null;
-  return `routes: the call took ${live.join(', ') || 'none'}, the replay took ${replayed.join(', ') || 'none'} (a route on the number called takes another branch in a replay: the frame log does not keep the number called); what follows may differ from the call`;
+  return `routes: the call took ${live.join(', ') || 'none'}, the replay took ${replayed.join(', ') || 'none'} (a route on the number called takes another branch in a replay where the frame log does not keep the number called whole, app.yaml's records.businessNumbers: last4, or where the replay's settings name other numbers); what follows may differ from the call`;
+}
+
+/** Whether the adapter logged that the caller withheld their number (its `{ callerNumber, callerWithheld: true }` line). */
+function loggedCallerWithheld(lines: readonly ReadFrameLogLine[]): boolean {
+  return lines.some((line) => line.dir === 'log' && typeof line.msg === 'object' && line.msg !== null && (line.msg as { callerWithheld?: unknown }).callerWithheld === true);
+}
+
+/** A number the frame log kept whole (E.164 or digits), or null for one it masked or none. */
+function wholeNumber(v: string | undefined): string | null {
+  return typeof v === 'string' && /^\+?\d{5,}$/.test(v.trim()) ? v.trim() : null;
 }
 
 function loggedCallerLastFour(lines: readonly ReadFrameLogLine[]): string | 'short' | null {
@@ -495,12 +507,17 @@ export async function replayFrameLines(
       // The live session kept the caller's number: a made-up one ending in the same four digits makes the
       // same offer (core/callerNumber.ts standInCallerNumber), as the log keeps no more of it.
       const last4 = loggedCallerLastFour(lines);
-      if (last4 === 'short') skipped.push(`line ${lineNumber}: the caller's number the call kept had four digits or fewer, which the log keeps only as ${SHORT_MASK}, so the replay makes no offer`);
-      else if (last4 !== null) {
+      if (last4 === 'short' && actsOnCallerNumber(appOf(session))) skipped.push(`line ${lineNumber}: the caller's number the call kept had four digits or fewer, which the log keeps only as ${SHORT_MASK}, so the replay makes no offer`);
+      else if (last4 !== null && last4 !== 'short') {
         const standIn = standInCallerNumber(appOf(session), last4);
         if (standIn !== undefined) event = withCallerNumber(event, standIn);
         else skipped.push(`line ${lineNumber}: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer`);
       }
+      // A caller who withheld their number: the flag the live call carried (the adapter logs it beside the last four).
+      event = withCallerWithheld(event, loggedCallerWithheld(lines));
+      // The number called, where the frame log keeps it whole (the business's own numbers are kept by
+      // default: app.yaml's records.businessNumbers), so a route on it takes the branch the call took.
+      if (event.type === 'session.start') event = withCalledNumber(event, wholeNumber(event.provider.to) ?? wholeNumber(event.provider['param.telnyx_call_to']));
       // The call data the app names, read from the setup as the adapter read it (channel/callData.ts).
       // The frame log writes each custom parameter a key reads as the key's redact says (a `secret` one
       // not at all), and the setup's fields by its own masking by name (forwardedFrom to its last four,
@@ -519,7 +536,7 @@ export async function replayFrameLines(
           const source = callDataSourceOf(spec[key]!.from);
           if (source === null || source.kind === 'chat') return false;
           // A custom parameter (or a webhook field's echo) a key keeps is still masked by its name's floor.
-          return !frameLogKeepsField(source.name) || (source.kind !== 'setup' && redactionOf(spec[key]) !== 'keep');
+          return !frameLogKeepsField(source.name, recordsOf(appOf(session!))) || (source.kind !== 'setup' && redactionOf(spec[key]) !== 'keep');
         });
         if (standIns.length > 0) skipped.push(`line ${lineNumber}: call data ${standIns.join(', ')} recorded masked or not at all, so the replay stands in what the log holds, or has none`);
       }

@@ -2,20 +2,19 @@ import type { App, SlotId } from './app/types';
 import type { SlotCandidate } from './slots/types';
 import type { PendingConfirmation, Session } from './session';
 import { identityOf } from './app/lookup';
-import { appOf } from './app/registry';
 
 /**
- * The number the caller is calling from, as an offer for a slot that holds a phone number (a `digits`
- * slot's `callerNumber`, SlotSpec.callerNumber), and as a hint for the app's own code (app.yaml's
- * `callerNumber: { use: hint }`, App.callerNumber). The carrier's setup gives it
- * (VoiceProvider.setupCallerOf, server/voice), the start event carries it (SessionStart.callerNumber)
- * only for an app with such a slot or such a block, and the session keeps it (Session.callerNumber)
- * only when the app can use it. It is never identity on its own: a caller ID can be forged, so
- * `pnpm check` refuses the option on an identity factor and the engine never offers one; the number
- * fills a slot only after the caller's yes, and app code reads it (callerOf) to look something up or
- * to propose. An app may let a caller-ID match identify an account, with a knowledge factor that
- * verifies it (identity.yaml `callerId`): the match fills the identifier silently, never offered for
- * a yes, and the factor the caller gives verifies it.
+ * The numbers a call came with: the caller's (the ANI) and the one called (the DNIS). They are the
+ * call's data, kept for every app (Session.callerNumber, Session.calledNumber) and read by app code
+ * through callerOf and calledOf, with a SIP or client address that is no number through callerUriOf.
+ * The carrier's setup gives them (VoiceProvider.setupCallerOf, setupCalledOf, server/voice). What acts
+ * on the caller's number is the app's choice: a slot that offers it back (a `digits` slot's
+ * `callerNumber`, SlotSpec.callerNumber), the call-start lookup (app.yaml's `callerNumber.lookup`), the
+ * gate's callerNumber rule, the caller-ID match (identity.yaml `callerId`). It is never identity on its
+ * own: a caller ID can be forged, so `pnpm check` refuses the offer on an identity factor and the
+ * engine never offers one; the number fills a slot only after the caller's yes. A number the caller
+ * withheld is kept and used as any other unless app.yaml's `callerNumber.withheld` says `ignore`
+ * (usableCallerNumber): honouring the caller's privacy is the app's decision.
  */
 
 /**
@@ -24,8 +23,9 @@ import { appOf } from './app/registry';
  * ten-digit phone mask, so a slot's mask alone cannot refuse it. Telnyx sends no placeholder: seen on a
  * live call (2026-10-13, a call made with *67), its answer webhook carried the caller's real number in
  * `From`, with the marks of a withheld one beside it (`CallerId` anonymous, `FromSipUri`
- * anonymous@anonymous.invalid). Its provider reads the marks (server/voice/telnyx.ts), and the number
- * never reaches the engine (CallbackParams.withheld, server/voice/registry.ts setupWithCallerWithheld).
+ * anonymous@anonymous.invalid). Its provider reads the marks (server/voice/telnyx.ts) into a flag
+ * carried with the number (CallbackParams.privacy, SessionStart.callerPrivacy). A placeholder or a
+ * withheld word is no number, and sets the same flag (callerPrivacyOf).
  */
 export const WITHHELD_PLACEHOLDERS: readonly string[] = ['266696687', '7378742833', '86282452253', '2562533'];
 
@@ -76,22 +76,59 @@ export function callerNumberSlots(app: App): SlotId[] {
   return Object.values(app.slots).filter((spec) => spec.callerNumber !== undefined && !factors.includes(spec.id)).map((spec) => spec.id);
 }
 
-/** Whether the app keeps the caller's number for its own code (app.yaml's `callerNumber: { use: hint }`). */
-export function hintsCallerNumber(app: App): boolean {
-  return app.callerNumber?.use === 'hint';
+/**
+ * Whether the engine acts on the caller's number for the app: a slot that offers it (SlotSpec.callerNumber),
+ * or app.yaml's `callerNumber` block (its lookup, its withheld setting). The number is kept for every
+ * app either way; this says only where the trace notes whether it could be used (TraceRecord.callerNumber).
+ */
+export function actsOnCallerNumber(app: App): boolean {
+  return callerNumberSlots(app).length > 0 || app.callerNumber !== undefined;
 }
 
 /**
- * Whether the app has a slot that offers the caller's number, or keeps it for its code
- * (hintsCallerNumber): only then does a start event carry it.
+ * Whether what the carrier sent for the caller is a withheld one: a placeholder (WITHHELD_PLACEHOLDERS)
+ * or a withheld word (anonymous, restricted...). Twilio sends one of those in place of the number.
  */
-export function usesCallerNumber(app: App): boolean {
-  return callerNumberSlots(app).length > 0 || hintsCallerNumber(app);
+export function isWithheldCaller(raw: string | null | undefined): boolean {
+  if (typeof raw !== 'string') return false;
+  const text = raw.trim();
+  if (text === '') return false;
+  if (isWithheldWord(text)) return true;
+  if (!NUMBER_SHAPE.test(text)) return false;
+  const digits = text.replace(/\D/g, '');
+  return digits !== '' && isPlaceholder(digits);
 }
 
-/** Whether the app keeps the number called (app.yaml's `callerNumber: { use: hint, called: true }`): only then does a start event carry it. */
-export function usesCalledNumber(app: App): boolean {
-  return hintsCallerNumber(app) && app.callerNumber?.called === true;
+/**
+ * The privacy a session start carries for its caller (Session.callerPrivacy): `withheld` when the
+ * carrier marked the number withheld (SessionStart.callerPrivacy, Telnyx's marks) or sent a
+ * placeholder or a withheld word in its place (Twilio's); undefined otherwise.
+ */
+export function callerPrivacyOf(raw: string | null | undefined, marked: 'withheld' | undefined): 'withheld' | undefined {
+  return marked === 'withheld' || isWithheldCaller(raw) ? 'withheld' : undefined;
+}
+
+/**
+ * The caller's address when it is no phone number and no withheld word: a SIP address
+ * (`sip:1001@pbx.example.com`, Twilio's From for a SIP caller) or a client name (`client:alice`, a
+ * Twilio Client or WebRTC caller), as sent. Null for a number, a placeholder, a withheld word, and
+ * nothing; a withheld SIP address (`sip:anonymous@anonymous.invalid`) is one too, kept as data.
+ */
+export function callerUriOfRaw(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (text === '' || NUMBER_SHAPE.test(text) || isWithheldWord(text)) return null;
+  return text.length <= 500 ? text : null;
+}
+
+/**
+ * The number the engine's own features may use (the offer, the call-start lookup, the gate's
+ * callerNumber rule, the caller-ID match, the consent to text): the session's number, unless the
+ * caller withheld it and app.yaml's `callerNumber.withheld` says `ignore`, when there is none.
+ */
+export function usableCallerNumber(app: App, s: Pick<Session, 'callerNumber' | 'callerPrivacy'>): string | undefined {
+  if (s.callerNumber === undefined) return undefined;
+  return s.callerPrivacy === 'withheld' && app.callerNumber?.withheld === 'ignore' ? undefined : s.callerNumber;
 }
 
 /**
@@ -107,53 +144,74 @@ export function callerCandidate(app: App, slot: SlotId, number: string | undefin
 
 /**
  * What the session keeps of the number a start event carried (callerNumberOf: its digits, `+` first
- * when it came in international form): for an app that keeps it for its code (hintsCallerNumber),
- * any usable number; otherwise only one a slot of the app can use. Nothing (undefined) when there is
- * none, and for an app with neither such a slot nor the block.
+ * when it came in international form): any usable number, for every app. Nothing (undefined) when
+ * there is none: absent, a placeholder, a withheld word, a SIP or client address (callerUriOfRaw).
  */
-export function keptCallerNumber(app: App, raw: string | undefined): string | undefined {
-  const number = callerNumberOf(raw);
-  if (number === null) return undefined;
-  if (hintsCallerNumber(app)) return number;
-  return callerNumberSlots(app).some((slot) => callerCandidate(app, slot, number) !== null) ? number : undefined;
+export function keptCallerNumber(_app: App, raw: string | undefined): string | undefined {
+  return callerNumberOf(raw) ?? undefined;
 }
 
 /**
  * What the session keeps of the number called (Session.calledNumber): its digits, `+` first when it
- * came in international form, only for an app that keeps it (usesCalledNumber); otherwise nothing.
+ * came in international form, for every app; nothing when there is none.
  */
-export function keptCalledNumber(app: App, raw: string | undefined): string | undefined {
-  if (!usesCalledNumber(app)) return undefined;
+export function keptCalledNumber(_app: App, raw: string | undefined): string | undefined {
   return callerNumberOf(raw) ?? undefined;
 }
 
-/** The caller's number as app code reads it (callerOf): as the session keeps it, and its last four digits. */
+/** The caller's number as app code reads it (callerOf): as the session keeps it, its last four digits, and what the carrier said of it. */
 export interface CallerNumber {
   /** Its digits, `+` first when the carrier wrote it in international form ("+15555550142"). */
   readonly number: string;
   /** Its last four digits, as a line may say them ("0142"). */
   readonly last4: string;
+  /**
+   * The caller asked for their number to be withheld (*67), and the carrier sent it anyway, marked so
+   * (Telnyx). Honouring that is the app's choice: app.yaml's `callerNumber.withheld: ignore` keeps the
+   * engine's own features off it, and the app's code may do as it likes. Absent otherwise.
+   */
+  readonly withheld?: true;
+  /** The STIR/SHAKEN attestation the carrier gave the number, as it wrote it (`A`, `TN-Validation-Passed-A`); absent when it sent none. */
+  readonly attestation?: string;
 }
 
 /**
  * The number the caller is calling from, for the app's code: a hint to look something up by or to
- * propose a value from, never proof of who is calling. Null on a chat, on a call with no usable
- * number, and for an app that does not keep it for its code (app.yaml's `callerNumber: { use: hint }`),
- * so code written against it is safe anywhere.
+ * propose a value from, never proof of who is calling. Null on a chat and on a call with no usable
+ * number (a withheld one Twilio sent as a placeholder among them: callerPrivacyOf says so). A number
+ * the caller withheld comes with `withheld: true`, whatever app.yaml's `callerNumber.withheld` says:
+ * what the app's own code does with it is the app's decision.
  */
 export function callerOf(s: Session): CallerNumber | null {
-  if (s.callerNumber === undefined || !hintsCallerNumber(appOf(s))) return null;
-  return { number: s.callerNumber, last4: lastFour(s.callerNumber) };
+  if (s.callerNumber === undefined) return null;
+  return {
+    number: s.callerNumber,
+    last4: lastFour(s.callerNumber),
+    ...(s.callerPrivacy === 'withheld' ? { withheld: true as const } : {}),
+    ...(s.callerAttestation !== undefined ? { attestation: s.callerAttestation } : {}),
+  };
+}
+
+/** Whether the caller withheld their number (Session.callerPrivacy), whether or not a number came with it. */
+export function callerWithheldOf(s: Session): boolean {
+  return s.callerPrivacy === 'withheld';
+}
+
+/**
+ * The caller's address when it is no phone number: a SIP address (`sip:1001@pbx.example.com`) or a
+ * client name (`client:alice`), as the carrier sent it. Null on a call from a number, a chat, and a call
+ * with no address.
+ */
+export function callerUriOf(s: Session): string | null {
+  return s.callerUri ?? null;
 }
 
 /**
  * The number the caller called (the DNIS), for the app's code: its digits, `+` first when the carrier
- * wrote it in international form. Null on a chat, when the carrier sent none, and for an app that
- * does not keep it (app.yaml's `callerNumber: { use: hint, called: true }`).
+ * wrote it in international form. Null on a chat and when the carrier sent none.
  */
 export function calledOf(s: Session): string | null {
-  if (s.calledNumber === undefined || !usesCalledNumber(appOf(s))) return null;
-  return s.calledNumber;
+  return s.calledNumber ?? null;
 }
 
 /**
@@ -200,24 +258,24 @@ export function yesNoOffer(app: App, pc: PendingConfirmation | null): pc is Offe
 
 /**
  * A number to stand in for the caller's in a replayed call (harness-text/replay.ts). The frame log
- * keeps only the last four digits of a number the live session kept (the adapter's
- * `{ callerNumber: '…0142' }` line), which is all the offer said and all the model was told, so a
- * made-up number (the 555 range) ending in them makes the same offer: the shortest such number a
- * slot of the app takes. An app that keeps the number for its code (app.yaml's callerNumber) is given
- * one in the international form carriers send (Twilio and Telnyx both write E.164), +1 555 555 and
- * the last four, so its code and its call-start lookup see the number in the form the live call's
- * had, and a lookup fixture keyed by the last four answers as the live lookup was answered; for an
- * app with a slot that offers it, only when that slot takes it too, else the slot's number as above.
- * Undefined when the app keeps no number, or `last4` is not four digits.
+ * keeps only the last four digits of the number (the adapter's `{ callerNumber: '…0142' }` line), which
+ * is all the offer said and all the model was told, so a made-up number (the 555 range) ending in them
+ * makes the same offer. The international form carriers send (Twilio and Telnyx both write E.164),
+ * +1 555 555 and the last four, so the app's code and its call-start lookup see the number in the form
+ * the live call's had, and a lookup fixture keyed by the last four answers as the live lookup was
+ * answered, for an app with no slot that offers the number or with app.yaml's callerNumber; for one whose
+ * slot offers it and nothing else reads it, or whose slot does not take that form, the shortest such
+ * number the slot takes. Undefined when `last4` is not four digits, or no slot that offers the number
+ * takes any such number.
  */
 export function standInCallerNumber(app: App, last4: string): string | undefined {
   if (!/^\d{4}$/.test(last4)) return undefined;
   const slots = callerNumberSlots(app);
-  if (hintsCallerNumber(app)) {
-    const international = `+1555555${last4}`;
-    if (slots.length === 0 || slots.some((slot) => callerCandidate(app, slot, international) !== null)) return international;
-  }
-  if (slots.length === 0) return undefined;
+  const international = `+1555555${last4}`;
+  // The international form for an app whose code or lookup reads the number (no slot, or app.yaml's
+  // callerNumber), where its slots take that form too; a slot's own shortest stand-in otherwise.
+  const forCode = slots.length === 0 || app.callerNumber !== undefined;
+  if (forCode && (slots.length === 0 || slots.some((slot) => callerCandidate(app, slot, international) !== null))) return international;
   for (let pad = 0; pad <= 11; pad++) {
     const number = '5'.repeat(pad) + last4;
     if (slots.some((slot) => callerCandidate(app, slot, number) !== null)) return number;

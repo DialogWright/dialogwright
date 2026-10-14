@@ -10,7 +10,7 @@ import { identityToolsOf, type PolicyAction, type PolicySource, type Rule } from
 import { isDefinedRule } from '../gate/defineRule';
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import { NONE_OF_REASON, ONE_OF_REASON } from '../gate/listed';
-import { NO_CALLER_NUMBER, NOT_CALLER_NUMBER } from '../gate/callerNumber';
+import { CALLER_NUMBER_WITHHELD, NO_CALLER_NUMBER, NOT_CALLER_NUMBER } from '../gate/callerNumber';
 import type { Level } from '../gate/types';
 import {
   andList, capitalize, cell, code, configHashOf, expectGeneratedPage, formWords, humanize, levelName, lowerFirst, mermaidLabel, nodeId, paramNoun, slotNoun, writeGeneratedPage,
@@ -177,7 +177,7 @@ function ruleText(app: App, source: PolicySource, action: PolicyAction, rule: Ru
       return listLine(app, rule);
     case 'callerNumber': {
       const who = paramWords(app, rule.field);
-      const missing = 'a missing number is refused';
+      const missing = rule.withheld === 'refuse' ? `a missing number is refused, and so is the caller's own number when they withheld it (${code(CALLER_NUMBER_WITHHELD)})` : 'a missing number is refused';
       return rule.else === 'confirmed'
         ? `${who} must be the number the caller is calling from, or a number the caller heard read back at the summary and said yes to: any other is refused (${code(NOT_CALLER_NUMBER)}, or ${code(NO_CALLER_NUMBER)} on a call with no number), and ${missing}. Caller ID is a hint, never proof of who is calling`
         : `${who} must be the number the caller is calling from: any other is refused (${code(NOT_CALLER_NUMBER)}), as is any number on a call with no caller's number (${code(NO_CALLER_NUMBER)}), and ${missing}. Caller ID is a hint, never proof of who is calling`;

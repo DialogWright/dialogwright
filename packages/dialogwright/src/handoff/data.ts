@@ -1,7 +1,7 @@
 import type { App, HandoffData, HandoffSend, HandoffUnconfirmed, SlotId } from '../core/app/types';
 import type { SlotSpec } from '../core/slots/types';
 import { maskCollectedSlot } from '../trace/redact';
-import { isSecretByLength } from '../core/decision';
+import { isSecretByLength, sendsSecretAsIs } from '../core/decision';
 
 /**
  * What a transfer hands the channel of the collected slots (app.yaml `handoff.data`, HandoffData).
@@ -53,8 +53,9 @@ export function handoffDataSlots(app: HandoffApp, collected: Readonly<Record<str
   for (const [slot, value] of Object.entries(collected)) {
     const send = handoffSendOf(app, slot);
     if (send === 'omit' || omitted?.has(slot) === true) continue;
-    // A secret by its length is never sent as it is, whatever `send` says (core/decision.ts handoff already holds its length).
-    out[slot] = send === 'masked' || isSecretByLength(app.slots[slot]) ? maskCollectedSlot(app, slot, value) : value;
+    // A secret by its length is sent as it is only where the app names it as-is itself (core/decision.ts
+    // sendsSecretAsIs, which also has the handoff decision hold its value); otherwise by its length.
+    out[slot] = send === 'masked' || (isSecretByLength(app.slots[slot]) && !sendsSecretAsIs(app, slot)) ? maskCollectedSlot(app, slot, value) : value;
   }
   return out;
 }
@@ -76,6 +77,8 @@ export interface HandoffDataProblem {
   readonly fix: string;
   /** The slot named that is not one of the app's, so a folder's check can give its own fix. */
   readonly unknownSlot?: string;
+  /** A warning (`pnpm check` says it and goes on), not a refusal. */
+  readonly warning?: true;
 }
 
 /** A slot `masked` can mask: one the app redacts, or one whose own handoff setting is last4 or verified. */
@@ -93,7 +96,7 @@ function maskable(spec: Pick<SlotSpec, 'redact' | 'handoff'> | undefined): boole
  */
 export function handoffDataProblems(
   data: HandoffData | undefined,
-  slots: Readonly<Record<SlotId, Pick<SlotSpec, 'redact' | 'handoff'> | undefined>>,
+  slots: Readonly<Record<SlotId, Pick<SlotSpec, 'redact' | 'handoff' | 'statement'> | undefined>>,
   factors: readonly SlotId[],
 ): HandoffDataProblem[] {
   if (data === undefined) return [];
@@ -106,6 +109,9 @@ export function handoffDataProblems(
   const listed = Array.isArray(which) ? (which as readonly SlotId[]) : null;
   if (which !== undefined && which !== 'all' && which !== 'none' && listed === null) {
     add(['slots'], `${JSON.stringify(which)} is not "all", "none" or a list of slots`, 'write all (the default), none, or a list of slot ids');
+  }
+  if (data.chat !== undefined && data.chat !== 'none' && data.chat !== 'send') {
+    add(['chat'], `${JSON.stringify(data.chat)} is not "none" or "send"`, 'write none (the default) or send');
   }
   if (data.unconfirmed !== undefined && !HANDOFF_UNCONFIRMED_VALUES.includes(data.unconfirmed)) {
     add(['unconfirmed'], `${JSON.stringify(data.unconfirmed)} is not one of ${HANDOFF_UNCONFIRMED_VALUES.map((v) => `"${v}"`).join(', ')}`, 'write send (the default), mark or omit');
@@ -142,6 +148,9 @@ export function handoffDataProblems(
     }
     if (how === 'masked' && !maskable(slots[slot])) {
       add(['send', slot], `the slot "${slot}" has no redact setting (or handoff: last4 or verified), so masked would send it as it is`, `give the slot a redact setting, or write as-is to send it in the clear`);
+    }
+    if (how === 'as-is' && isSecretByLength(slots[slot]) && slots[slot]?.handoff !== 'verified') {
+      problems.push({ path: ['send', slot], message: `the slot "${slot}" is a secret recorded by its length (a PIN), and as-is sends its digits to the carrier and the person taking the call`, fix: `keep it if the person taking the call needs it; otherwise write masked (its length) or omit`, warning: true });
     }
   }
   return problems;

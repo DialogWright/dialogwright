@@ -1005,7 +1005,7 @@
             ]
           },
           "callerNumber": {
-            "description": "Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> (\"Is the number you're calling from, ending in {last4}, the best one to reach you?\") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. A chat, or a call with the number withheld, is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.",
+            "description": "Offer the number the caller is calling from: when the form would ask this slot and the call has a number that fits it (its `countryCode`, `length` and `mask`), the line asks offer_<slot> (\"Is the number you're calling from, ending in {last4}, the best one to reach you?\") in place of ask_<slot>, and a yes fills the slot with that number. A no asks ask_<slot>, with no attempt counted, and a number said instead fills as said. The line may say the whole number too, {callerNumber}. A chat, or a call with no number (a withheld placeholder, or a withheld number the app ignores: app.yaml's callerNumber.withheld), is asked ask_<slot> as always. Never on an identity factor: a caller ID can be forged.",
             "type": "object",
             "properties": {
               "countryCode": {
@@ -1024,7 +1024,7 @@
               },
               "ifNone": {
                 "default": "ask",
-                "description": "What a call with no number to offer does (a chat, a withheld number, one that does not fit, or one the app's callerOffer hook refuses): \"ask\" (default) asks ask_<slot> as always; \"skip\" leaves the slot empty and the form goes on.",
+                "description": "What a call with no number to offer does (a chat, a withheld placeholder or a withheld number the app ignores, one that does not fit, or one the app's callerOffer hook refuses): \"ask\" (default) asks ask_<slot> as always; \"skip\" leaves the slot empty and the form goes on.",
                 "type": "string",
                 "enum": [
                   "ask",

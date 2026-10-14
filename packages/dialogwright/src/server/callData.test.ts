@@ -217,8 +217,9 @@ describe('the floor: a key\'s redact never records less than the frame log and t
   it('writes a setup key\'s own copy in the trace by its redact, and every custom parameter no key reads as redacted', async () => {
     const { traced, d } = await setUp('callback', STRICT_SETUP);
     const provider = (traced.event as { provider: Record<string, string> }).provider;
-    // The trace file keeps what a key keeps (it is PHI-bearing); a secret is left out, a masked field masked.
-    expect(provider).toMatchObject({ callerName: 'Pat Example', forwardedFrom: '+15555550102', accountSid: '•', 'param.tenant': 'redacted', 'param.callReference': 'redacted', 'param.locale': 'en-US', 'param.telnyx_call_from': '...0142' });
+    // A secret is left out, a masked field masked. // Re-pinned (live findings item 26): one records setting decides every record, the
+    // trace file's too, so a number's and a name's own copies take the masking by name (app.yaml's records) as a floor.
+    expect(provider).toMatchObject({ callerName: 'redacted', forwardedFrom: '…0102', 'param.tenant': 'redacted', 'param.callReference': 'redacted', 'param.locale': 'en-US', 'param.telnyx_call_from': '...0142' });
     expect(provider).not.toHaveProperty('parentCallSid');
     expect(provider).not.toHaveProperty('param.pin');
     const file = readFileSync(join(d.dir, 'CA1.jsonl'), 'utf8');

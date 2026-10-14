@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { floorByName, maskAddress, maskCopiesOf } from './maskByName';
+import { DEFAULT_RECORDS, floorByName, maskAddress, maskCallerValue, maskCopiesOf, maskUri, recordsOf } from './maskByName';
 import { redactDeep } from '../server/dashboard/events';
 
 /**
@@ -27,8 +27,13 @@ describe('an address that may hold a number (maskAddress)', () => {
       FromSipUri: '+15555550142@sip.telnyx.com', ToSipUri: '+15555550111@sip.telnyx.com', callerid: '+15555550142',
     };
     const written = JSON.stringify(redactDeep(callback));
-    expect(written).not.toMatch(/5555550142|5555550111/);
-    expect(redactDeep(callback)).toMatchObject({ CallerId: '…0142', FromSipUri: '…0142@sip.telnyx.com', ToSipUri: '…0111@sip.telnyx.com', callerid: '…0142' });
+    expect(written).not.toMatch(/5555550142/);
+    // Re-pinned (live findings item 26): the business's own number (To, ToSipUri) is kept whole by default.
+    expect(redactDeep(callback)).toMatchObject({ CallerId: '…0142', FromSipUri: '…0142@sip.telnyx.com', ToSipUri: '+15555550111@sip.telnyx.com', To: '+15555550111', callerid: '…0142' });
+    const last4 = { callerNumber: 'last4', businessNumbers: 'last4', callerName: 'redact' } as const;
+    expect(redactDeep(callback, last4)).toMatchObject({ ToSipUri: '…0111@sip.telnyx.com', To: '…0111' });
+    const keep = { callerNumber: 'keep', businessNumbers: 'keep', callerName: 'keep' } as const;
+    expect(redactDeep({ ...callback, CallerName: 'Jordan Avery' }, keep)).toMatchObject({ From: '+15555550142', CallerId: '+15555550142', CallerName: 'Jordan Avery' });
     expect(redactDeep({ CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid' })).toEqual({ CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid' });
   });
 
@@ -52,5 +57,33 @@ describe('every copy of the caller\'s number, whatever its name (maskCopiesOf)',
     const fields = { A: '+15555550142' };
     expect(maskCopiesOf(fields, undefined)).toEqual(fields);
     expect(maskCopiesOf(fields, '0142')).toEqual(fields);
+  });
+});
+
+describe('the records setting (app.yaml records, live findings item 26)', () => {
+  it('masks a SIP or client caller by the last four of its user, keeping the scheme and host', () => {
+    expect(maskUri('sip:alice.smith@pbx.example.com')).toBe('sip:…mith@pbx.example.com');
+    expect(maskUri('client:alice')).toBe('client:…lice');
+    expect(maskUri('sip:1001@pbx.example.com')).toBe('sip:…@pbx.example.com');
+    expect(maskUri('sip:+15555550142@carrier.example.com')).toBe('sip:…0142@carrier.example.com');
+    expect(maskUri('sip:anonymous@anonymous.invalid')).toBe('sip:anonymous@anonymous.invalid');
+    expect(maskCallerValue('client:alice')).toBe('client:…lice');
+    expect(maskCallerValue('+15555550142')).toBe('…0142');
+  });
+
+  it('drops only Twilio\'s geographic fields by their exact names, not a field that merely ends the same way', () => {
+    expect(floorByName('FromCity', 'PORTLAND')).toBeNull();
+    expect(floorByName('CalledCountry', 'US')).toBeNull();
+    expect(floorByName('callState', 'ringing')).toBe('ringing');
+    expect(floorByName('queueState', 'open')).toBe('open');
+  });
+
+  it('defaults to the caller\'s number by its last four, the business\'s numbers whole, the name redacted', () => {
+    expect(recordsOf(null)).toEqual(DEFAULT_RECORDS);
+    expect(recordsOf({ records: { callerNumber: 'keep' } })).toEqual({ ...DEFAULT_RECORDS, callerNumber: 'keep' });
+    expect(floorByName('to', '+15555550100')).toBe('+15555550100');
+    expect(floorByName('callerName', 'Jordan Avery')).toBe('redacted');
+    expect(floorByName('callerName', 'Jordan Avery', { ...DEFAULT_RECORDS, callerName: 'keep' })).toBe('Jordan Avery');
+    expect(maskCopiesOf({ X: '+15555550142' }, '+15555550142', { ...DEFAULT_RECORDS, callerNumber: 'keep' })).toEqual({ X: '+15555550142' });
   });
 });

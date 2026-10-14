@@ -14,7 +14,7 @@ import type { App } from './app/types';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { newSession } from './session';
 import { resolve, CALLER_LOOKUP_PURPOSE, type TurnContext, type TurnResult } from './turn';
-import { startEvent, withCalledNumber, withCallerNumber } from '../channel/events';
+import { startEvent, withCalledNumber, withCallerAttestation, withCallerNumber, withCallerWithheld } from '../channel/events';
 import { VOICE_RELAY } from '../channel/caps';
 import { mockCodeVerifier } from './tools';
 import { TOOL_FAILED_SUMMARY } from './lifecycle';
@@ -22,7 +22,7 @@ import { compileGate } from '../gate/compiled';
 import { AuditLog } from '../audit/log';
 import { verifyChain } from '../audit/verify';
 import type { AuditEntry } from '../audit/types';
-import { callerOf, calledOf, hintsCallerNumber, keptCalledNumber, keptCallerNumber, standInCallerNumber, usesCalledNumber, usesCallerNumber } from './callerNumber';
+import { actsOnCallerNumber, callerOf, calledOf, callerUriOf, callerWithheldOf, keptCalledNumber, keptCallerNumber, standInCallerNumber } from './callerNumber';
 import { redactRecordSlots } from '../trace/redact';
 import { redactDeep, redactRecord } from '../server/dashboard/events';
 import { TEXTING_DIR, TextingSystems, textingApp, type TextingFacts } from '../testing/texting/app';
@@ -118,30 +118,31 @@ describe('app.yaml\'s callerNumber, off by default', () => {
     for (const app of [testkitApp, screenedApp, callbackApp]) expect(app.callerNumber, app.id).toBeUndefined();
   });
 
-  it('keeps the number for an app that opts in, whether or not a slot can offer it; no other app keeps it without a slot', () => {
-    expect([hintsCallerNumber(textingApp), usesCallerNumber(textingApp), usesCalledNumber(textingApp)]).toEqual([true, true, true]);
-    for (const app of [testkitApp, screenedApp]) expect([app.id, usesCallerNumber(app), usesCalledNumber(app)]).toEqual([app.id, false, false]);
-    expect([usesCallerNumber(callbackApp), usesCalledNumber(callbackApp)]).toEqual([true, false]);
+  // Re-pinned (live findings item 26): the numbers are the call's data, kept for every app; the opt-in
+  // remains only for what acts on them (an offer, the call-start lookup).
+  it('keeps any usable number for every app, and the number called; never a withheld placeholder nor anything that is no number', () => {
+    expect([actsOnCallerNumber(textingApp), actsOnCallerNumber(callbackApp), actsOnCallerNumber(testkitApp), actsOnCallerNumber(screenedApp)]).toEqual([true, true, false, false]);
     // Any usable number: another country's too, which no slot of the app takes.
     expect(keptCallerNumber(textingApp, '+445555550142')).toBe('+445555550142');
-    expect(keptCallerNumber(callbackApp, '+445555550142')).toBeUndefined();
-    // Never a withheld one, nor anything that is no number.
+    expect(keptCallerNumber(callbackApp, '+445555550142')).toBe('+445555550142');
     for (const raw of ['anonymous', '+7378742833', '', 'sip:caller@example.com', undefined]) expect(keptCallerNumber(textingApp, raw), String(raw)).toBeUndefined();
     expect(keptCalledNumber(textingApp, CALLED)).toBe(CALLED);
-    expect(keptCalledNumber(callbackApp, CALLED)).toBeUndefined();
+    expect(keptCalledNumber(callbackApp, CALLED)).toBe(CALLED);
     expect(keptCalledNumber(textingApp, undefined)).toBeUndefined();
   });
 
-  it('an app with neither the block nor an offer slot keeps nothing of either number its start event carries', () => {
+  it('an app with neither the block nor an offer slot keeps both numbers as data and acts on neither', () => {
     use(screenedApp);
     const tc: TurnContext = { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { ...screenedApp.systems(), codes: mockCodeVerifier } };
     const base = newSession('s', 0, VOICE_RELAY, undefined, 'screened');
     const a = resolve(base, withCalledNumber(withCallerNumber(startEvent(), MOBILE), CALLED), null, tc);
     const b = resolve(base, startEvent(), null, tc);
-    expect(a.session).toEqual(b.session);
+    const { callerNumber, calledNumber, ...rest } = a.session;
+    expect([callerNumber, calledNumber]).toEqual([MOBILE, CALLED]);
+    expect(rest).toEqual(b.session);
     expect(a.audit).toEqual(b.audit);
     expect(a.gateEvents).toEqual([]);
-    expect('callerNumber' in a.session || 'calledNumber' in a.session).toBe(false);
+    expect([callerOf(a.session)?.number, calledOf(a.session)]).toEqual([MOBILE, CALLED]);
   });
 
   it('an app that opts in with use: hint alone sends the model exactly what a call from no number sends', async () => {
@@ -169,20 +170,30 @@ describe('the accessors', () => {
     expect(calledOf(t.session)).toBe(CALLED);
   });
 
-  it('are null on a call with no number, on a chat, and for an app that does not opt in', async () => {
+  it('are null on a call with no number and on a chat; every app reads the numbers its call came with', async () => {
     expect(callerOf(resolve(newSession('s', 0, VOICE_RELAY, undefined, 'texting'), startEvent(), null, tc()).session)).toBeNull();
     const chat = await call({ as: 'web', callerNumber: MOBILE, calledNumber: CALLED }, ...says(OPENER[0]));
     expect([callerOf(last(chat).session), calledOf(last(chat).session)]).toEqual([null, null]);
-    // The callback fixture keeps the number for its offer only: it is no number for the app's code.
+    // Re-pinned (live findings item 26): the callback fixture, which offers the number and has no
+    // callerNumber block, gives its code the number too.
     use(callbackApp);
     const offering = await call({ callerNumber: MOBILE, client: stub([], callbackCorpus) });
     expect(offering.runs[0]!.result.session.callerNumber).toBe(MOBILE);
-    expect(callerOf(offering.runs[0]!.result.session)).toBeNull();
-    // An app that keeps the caller's number but not the one called.
-    const noCalled = variant('texting-no-called', () => ({ callerNumber: { use: 'hint', lookup: 'findCallerByPhone' } }));
+    expect(callerOf(offering.runs[0]!.result.session)).toEqual({ number: MOBILE, last4: '0142' });
+    // And the number called, with no `called: true`.
+    const noCalled = variant('texting-no-called', () => ({ callerNumber: { lookup: 'findCallerByPhone' } }));
     use(noCalled);
     const r = await call({ callerNumber: MOBILE, calledNumber: CALLED });
-    expect([callerOf(r.runs[0]!.result.session)?.last4, calledOf(r.runs[0]!.result.session), 'calledNumber' in r.runs[0]!.result.session]).toEqual(['0142', null, false]);
+    expect([callerOf(r.runs[0]!.result.session)?.last4, calledOf(r.runs[0]!.result.session)]).toEqual(['0142', CALLED]);
+  });
+
+  it('give a SIP or client caller\'s address, a withheld flag and the attestation as data', () => {
+    const sip = resolve(newSession('s', 0, VOICE_RELAY, undefined, 'texting'), withCallerNumber(startEvent(), 'sip:1001@pbx.example.com'), null, tc());
+    expect([callerOf(sip.session), callerUriOf(sip.session)]).toEqual([null, 'sip:1001@pbx.example.com']);
+    const placeholder = resolve(newSession('s', 0, VOICE_RELAY, undefined, 'texting'), withCallerNumber(startEvent(), '+266696687'), null, tc());
+    expect([callerOf(placeholder.session), callerWithheldOf(placeholder.session)]).toEqual([null, true]);
+    const marked = resolve(newSession('s', 0, VOICE_RELAY, undefined, 'texting'), withCallerAttestation(withCallerWithheld(withCallerNumber(startEvent(), MOBILE), true), 'A'), null, tc());
+    expect(callerOf(marked.session)).toEqual({ number: MOBILE, last4: '0142', withheld: true, attestation: 'A' });
   });
 });
 
@@ -462,32 +473,38 @@ describe('the offer audit row', () => {
 });
 
 describe('the trace and the console', () => {
-  it('say on the start record whether the number was kept, and mask both numbers there by their last four', async () => {
+  it('say on the start record whether the number was kept, and mask the caller\'s by its last four, the number called kept whole', async () => {
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default
+    // (app.yaml's records.businessNumbers); the caller's number is masked as before.
     const r = await call({ callerNumber: MOBILE, calledNumber: CALLED }, ...says(...OPENER));
     const record = r.runs[0]!.record;
     expect(record.callerNumber).toBe('kept');
     expect(record.event).toMatchObject({ callerNumber: MOBILE, calledNumber: CALLED });
-    expect(redactRecordSlots(record, 'length').event).toMatchObject({ type: 'session.start', callerNumber: '...0142', calledNumber: '...0100' });
-    expect(redactRecord(record).event).toMatchObject({ callerNumber: '…0142', calledNumber: '…0100' });
+    expect(redactRecordSlots(record, 'length').event).toMatchObject({ type: 'session.start', callerNumber: '...0142', calledNumber: CALLED });
+    expect(redactRecord(record).event).toMatchObject({ callerNumber: '…0142', calledNumber: CALLED });
     for (const run of r.runs) {
-      expect(JSON.stringify(redactRecordSlots(run.record, 'length'))).not.toMatch(/5555550142|5555550100/);
-      expect(JSON.stringify(redactRecord(run.record))).not.toMatch(/5555550142|5555550100/);
+      expect(JSON.stringify(redactRecordSlots(run.record, 'length'))).not.toMatch(/5555550142/);
+      expect(JSON.stringify(redactRecord(run.record))).not.toMatch(/5555550142/);
     }
     // The setup's own copies of both numbers in the start event's provider details (a live call's
-    // Twilio `from` and `to`, Telnyx's custom parameters) are masked the same.
+    // Twilio `from` and `to`, Telnyx's custom parameters) are written the same.
     const live = { ...record, event: { ...record.event, provider: { callSid: 'CA1', from: MOBILE, to: CALLED, 'param.telnyx_call_from': MOBILE, 'param.telnyx_call_to': CALLED } } } as typeof record;
-    expect(JSON.stringify(redactRecordSlots(live, 'length'))).not.toMatch(/5555550142|5555550100/);
-    expect((redactRecordSlots(live, 'length').event as { provider: Record<string, string> }).provider).toEqual({ callSid: 'CA1', from: '...0142', to: '...0100', 'param.telnyx_call_from': '...0142', 'param.telnyx_call_to': '...0100' });
-    expect(JSON.stringify(redactRecord(live))).not.toMatch(/5555550142|5555550100/);
+    expect(JSON.stringify(redactRecordSlots(live, 'length'))).not.toMatch(/5555550142/);
+    expect((redactRecordSlots(live, 'length').event as { provider: Record<string, string> }).provider).toEqual({ callSid: 'CA1', from: '...0142', to: CALLED, 'param.telnyx_call_from': '...0142', 'param.telnyx_call_to': CALLED });
+    expect(JSON.stringify(redactRecord(live))).not.toMatch(/5555550142/);
+    // With records.businessNumbers: last4, the number called by its last four as well.
+    const last4 = variant('texting-records', () => ({ records: { businessNumbers: 'last4' } }));
+    expect(JSON.stringify(redactRecordSlots(live, 'length', last4))).not.toMatch(/5555550142|5555550100/);
     expect((await call({ callerNumber: 'anonymous' })).runs[0]!.record.callerNumber).toBe('none');
-    expect(redactDeep({ calledNumber: CALLED })).toEqual({ calledNumber: '…0100' });
+    expect(redactDeep({ calledNumber: CALLED })).toEqual({ calledNumber: CALLED });
   });
 
-  it('replay stands a number in the international form carriers send in for an app that keeps the number for its code', () => {
+  it('replay stands a number in the international form carriers send in, for every app', () => {
     const hintOnly = variant('texting-hint-replay', (app) => ({ callerNumber: { use: 'hint' }, slots: { ...app.slots, textTo: { ...app.slots.textTo!, callerNumber: undefined } } }));
     expect(standInCallerNumber(hintOnly, '0142')).toBe('+15555550142');
     expect(standInCallerNumber(textingApp, '0142')).toBe('+15555550142');
-    expect(standInCallerNumber(screenedApp, '0142')).toBeUndefined();
+    // Re-pinned (live findings item 26): an app that keeps the number for no feature gets one too, for its code.
+    expect(standInCallerNumber(screenedApp, '0142')).toBe('+15555550142');
   });
 });
 

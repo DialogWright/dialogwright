@@ -49,14 +49,27 @@ describe('the value grammar', () => {
     expect(transferValueOf('callData.')).toEqual({ kind: 'constant', value: 'callData.' });
   });
 
-  it('sends a call data key as its redact records it, floored by its source\'s name, a secret one never', () => {
+  // Re-pinned (live findings item 26): delivery is split from recording. A key is sent as it came by
+  // default (its send: as-is); masked, as its redact records it; the masking by name never applies to
+  // what is sent.
+  it('sends a call data key as it came, or as its redact records it where its send says masked, a secret one then never', () => {
     expect(sentCallData({ from: 'param.queue', redact: 'keep' }, 'priority')).toBe('priority');
-    expect(sentCallData({ from: 'param.accountRef', redact: 'last4' }, 'AC-55501234')).toBe('...1234');
-    expect(sentCallData({ from: 'param.accountRef' }, 'AC-55501234')).toBe('•');
-    expect(sentCallData({ from: 'param.accountRef', redact: 'length' }, 'AC-55501234')).toBe('<11 chars>');
-    expect(sentCallData({ from: 'param.accountRef', redact: 'secret' }, 'AC-55501234')).toBeNull();
-    // Kept whole by its redact, but its source is named for a number: never more than the records keep.
-    expect(sentCallData({ from: 'setup.forwardedFrom', redact: 'keep' }, '+15555550102')).toBe('…0102');
+    expect(sentCallData({ from: 'param.accountRef', redact: 'last4' }, 'AC-55501234')).toBe('AC-55501234');
+    expect(sentCallData({ from: 'param.accountRef' }, 'AC-55501234')).toBe('AC-55501234');
+    expect(sentCallData({ from: 'param.accountRef', redact: 'secret' }, 'AC-55501234')).toBe('AC-55501234');
+    expect(sentCallData({ from: 'setup.forwardedFrom', redact: 'keep' }, '+15555550102')).toBe('+15555550102');
+    expect(sentCallData({ from: 'param.accountRef', redact: 'last4', send: 'masked' }, 'AC-55501234')).toBe('...1234');
+    expect(sentCallData({ from: 'param.accountRef', send: 'masked' }, 'AC-55501234')).toBe('•');
+    expect(sentCallData({ from: 'param.accountRef', redact: 'length', send: 'masked' }, 'AC-55501234')).toBe('<11 chars>');
+    expect(sentCallData({ from: 'param.accountRef', redact: 'secret', send: 'masked' }, 'AC-55501234')).toBeNull();
+  });
+
+  it('reads callerNumber and calledNumber as references, and sends each whole where the call has it', () => {
+    expect(transferValueOf('callerNumber')).toEqual({ kind: 'callerNumber' });
+    expect(transferValueOf('calledNumber')).toEqual({ kind: 'calledNumber' });
+    const facts = { reason: 'live-agent', form: null, callData: {}, slots: {}, callerNumber: '+15555550142', calledNumber: '+15555550100' };
+    expect(resolveSend(callbackApp, { 'X-Caller': 'callerNumber', 'X-Called': 'calledNumber' }, facts)).toEqual({ 'X-Caller': '+15555550142', 'X-Called': '+15555550100' });
+    expect(resolveSend(callbackApp, { 'X-Caller': 'callerNumber' }, { ...facts, callerNumber: undefined })).toEqual({});
   });
 
   it('merges a rule\'s send over the top-level one, its own names winning', () => {
@@ -83,7 +96,7 @@ describe('the choice, in the app\'s order', () => {
     expect(handoff(s, 'max-attempts').transfer).toEqual({
       target: 'PRIORITY_LINE',
       rule: 0,
-      headers: { 'X-Account-Ref': '...1234', 'X-Reason': 'max-attempts', 'X-Form': 'request_callback', 'X-About': 'a bill', 'X-Source': 'ivr', 'X-Queue': 'priority' },
+      headers: { 'X-Account-Ref': 'AC-55501234', 'X-Reason': 'max-attempts', 'X-Form': 'request_callback', 'X-About': 'a bill', 'X-Source': 'ivr', 'X-Queue': 'priority' },
       data: { reason: 'max-attempts' },
     });
   });
@@ -123,13 +136,14 @@ describe('the choice travels by the variable\'s name, never the number', () => {
     const s = withReason(session({ callData: { queue: 'priority', accountRef: 'AC-55501234' } }), 'bill', 'a bill');
     const decision = handoff(s, 'live-agent');
     const actions = decisionToActions(callbackApp, decision);
-    expect(actions.at(-1)).toMatchObject({ type: 'transfer', target: 'PRIORITY_LINE', headers: { 'X-Queue': 'priority', 'X-Account-Ref': '...1234' }, data: { reason: 'live-agent' } });
+    // Re-pinned (live findings item 26): the account reference is delivered as it came (its send defaults to as-is).
+    expect(actions.at(-1)).toMatchObject({ type: 'transfer', target: 'PRIORITY_LINE', headers: { 'X-Queue': 'priority', 'X-Account-Ref': 'AC-55501234' }, data: { reason: 'live-agent' } });
     const end = actionsToFrames(actions).at(-1)!;
     expect(end.type).toBe('end');
     const data = JSON.parse((end as { handoffData: string }).handoffData) as Record<string, unknown>;
     expect(Object.keys(data)).toEqual(['reasonCode', 'slots', 'target', 'headers']);
     expect(data.target).toBe('PRIORITY_LINE');
-    expect(data.headers).toEqual({ 'X-Account-Ref': '...1234', 'X-Reason': 'live-agent', 'X-About': 'a bill', 'X-Source': 'ivr', 'X-Queue': 'priority' });
+    expect(data.headers).toEqual({ 'X-Account-Ref': 'AC-55501234', 'X-Reason': 'live-agent', 'X-About': 'a bill', 'X-Source': 'ivr', 'X-Queue': 'priority' });
   });
 
   it('an app without transfer sends the end frame it always did', () => {

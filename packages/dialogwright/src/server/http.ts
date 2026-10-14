@@ -10,9 +10,9 @@ import type { DashboardBus } from './dashboard/bus';
 import { handleDashboardRequest, type DashboardDeps } from './dashboard/routes';
 import { type AuditCheck, type DayCounters, type HealthNumbers, type HealthSource, type ServerSeen } from './dashboard/health';
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
-import { maskNumber, redactDeep } from './dashboard/events';
-import { maskCopiesOf, withoutCopiesOf } from '../channel/maskByName';
-import { HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept, WITHHELD_PARAMETER } from '../channel/callData';
+import { redactDeep } from './dashboard/events';
+import { maskCallerValue, maskCopiesOf, recordsOf, type NumberRecords } from '../channel/maskByName';
+import { ATTESTATION_PARAMETER, HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept, WITHHELD_PARAMETER } from '../channel/callData';
 import { whenChained, type AuditSink } from '../run/turn';
 import type { S3TraceReader } from '../trace/store';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
@@ -301,16 +301,22 @@ function hostEcho(id: string | null): Record<string, string> {
 }
 
 /**
- * The custom parameter that tells the setup the caller withheld their number (WITHHELD_PARAMETER), for a
- * webhook whose carrier marked it so (CallbackParams.withheld); none otherwise, and the document is as it was.
+ * The custom parameters that carry what the answer webhook said of the caller to the setup: that they
+ * withheld their number (WITHHELD_PARAMETER, CallbackParams.privacy, or `withheld` for a reconnect of a
+ * call whose session knows it), and the STIR/SHAKEN attestation of the number (ATTESTATION_PARAMETER).
+ * None for a call with neither, and the document is as it was.
  */
-function withheldEcho(params: CallbackParams, known = false): Record<string, string> {
-  return params.withheld === true || known ? { [WITHHELD_PARAMETER]: 'true' } : {};
+function callerEcho(params: CallbackParams, withheld = false): Record<string, string> {
+  return {
+    ...(params.privacy === 'withheld' || withheld ? { [WITHHELD_PARAMETER]: 'true' } : {}),
+    ...(params.attestation !== undefined && params.attestation !== '' && params.attestation.length <= 200 ? { [ATTESTATION_PARAMETER]: params.attestation } : {}),
+  };
 }
 
-/** The caller as the server's log names them: the last four of their number, or `withheld`. */
-function callerForLog(params: CallbackParams): string {
-  return params.withheld === true ? 'withheld' : maskNumber(params.from);
+/** The caller as the server's log names them: their number as the app's records write it (its last four by default), and `(withheld)` when they withheld it. */
+function callerForLog(params: CallbackParams, records: NumberRecords): string {
+  const shown = params.from === undefined || params.from === '' ? 'unknown' : maskCallerValue(params.from, records);
+  return params.privacy === 'withheld' ? `${shown} (withheld)` : shown;
 }
 
 /** Where a call put through with no handoff decision goes: the app's transfer default, HANDOFF_NUMBER without one. */
@@ -412,7 +418,9 @@ function languageOptions(deps: HttpDeps, provider: VoiceProvider, token: string,
     ? deps.config.bargeInByCarrier[provider.id as VoiceProviderId]
     : deps.config.bargeIn;
   const bargeIn = mode ? { bargeIn: mode } : {};
-  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: s.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn };
+  // Twilio's relay settings of the app (app.yaml's voice.twilio); none, and the document is as it was.
+  const twilio = provider.id === 'twilio' && s.app?.voice?.twilio !== undefined ? { twilio: s.app.voice.twilio } : {};
+  const base: StartDocumentOptions = { publicHost: deps.config.publicHost, token, hints: s.hints, ...deployment, recognition: deploymentRecognition, ...events, ...bargeIn, ...twilio };
   const app = s.app;
   if (!app?.locales || !namesLanguages(app) || locale === undefined) return base;
   const defaultLocale = app.locales.default;
@@ -596,8 +604,8 @@ export function decideAction(
       // (which loads the call at setup) and not this one, which turns sockets away until it stops listening.
       const handover = deps.closing?.() && deps.store.durable ? (deps.handover?.() ?? null) : null;
       // The webhook is not sent again: the fields the first document echoed are written from what the session kept.
-      // A withheld number stays withheld on the new socket's setup, which carries the number again.
-      const options = connectOptions(deps, provider, token, locale, { ...webhookParametersOfKept(s.app?.callData, entry.session.callData), ...hostEcho(appId), ...withheldEcho(params, entry.callerWithheld === true) }, s);
+      // The session keeps what the first setup said of the caller; the new socket's setup says it again.
+      const options = connectOptions(deps, provider, token, locale, { ...webhookParametersOfKept(s.app?.callData, entry.session.callData), ...hostEcho(appId), ...callerEcho({ callId: callSid, raw: {} }, entry.session.callerPrivacy === 'withheld') }, s);
       const document = start(handover !== null ? { ...options, pauseS: handover.pauseS } : options);
       return { document, note: `reconnect:${entry.reconnects}${handover !== null ? ` after ${handover.pauseS} s` : ''}` };
     }
@@ -760,10 +768,10 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         // On a host, the app the number called reaches (the default for any other number, or none).
         const { id: appId, s } = servedOf(deps, undefined, params.to);
         const inApp = appId === null ? '' : ` (app ${appId})`;
-        // The caller's number is theirs, not the console's: the last four tell calls apart.
+        // The caller's number is theirs: the server's log writes it as the app's records say (its last four by default).
         if (deps.draining?.()) {
           // A server about to stop starts no call it may not finish: the caller is put through to a person.
-          deps.log(`${path} ${params.callId} from ${callerForLog(params)}${inApp}: draining: new call sent to handoff`);
+          deps.log(`${path} ${params.callId} from ${callerForLog(params, recordsOf(s.app))}${inApp}: draining: new call sent to handoff`);
           sh?.counters.count('fallbacks');
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
@@ -777,11 +785,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 200, provider.contentType, provider.dialDocument(fallbackTarget(deps, s)));
           return;
         }
-        deps.log(`${path} ${params.callId} from ${callerForLog(params)}${inApp}`);
+        deps.log(`${path} ${params.callId} from ${callerForLog(params, recordsOf(s.app))}${inApp}`);
         // The fields of this webhook the app's callData names, echoed as custom parameters (dw_<key>) so they
         // come back with the setup; on a host, the app's id too, so the setup starts the call in the same app;
-        // and, for a caller who withheld their number, that they did, so the setup's copies of it are taken out.
-        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to, s.numbers) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...withheldEcho(params) }, s);
+        // and what the webhook said of the caller (a withheld number, the number's attestation), as data.
+        const options = connectOptions(deps, provider, token, s.app ? startLocale(s.app, params.to, s.numbers) : undefined, { ...webhookParameters(s.app?.callData, params.raw), ...hostEcho(appId), ...callerEcho(params) }, s);
         reply(res, 200, provider.contentType, legacy ? connectRelayTwiml(options) : provider.startDocument(options));
         return;
       }
@@ -818,11 +826,11 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // A field the app's callData reads from the webhook (webhook.<field>) as its key's redact says.
       const served = servedOf(deps, callback.callId, callback.to).s;
       // And, whatever its name, any field that holds the caller's number (maskCopiesOf), as a defence beside the
-      // names; for a call whose caller withheld their number (CallEntry.callerWithheld, saved with it) and a
-      // callback that does not mark it, every copy is left out, not masked: no last four of it either.
+      // names: masked as the app's records write the caller's number, a withheld one as any other.
       const holder = deps.store.get(callback.callId);
       const fields = recordedWebhookFields(served.app?.callData, callback.raw);
-      holder?.frames.write('http', redactDeep({ route: path, ...(holder.callerWithheld === true ? withoutCopiesOf(fields, callback.from) : maskCopiesOf(fields, callback.from)) }));
+      const records = recordsOf(served.app);
+      holder?.frames.write('http', redactDeep({ route: path, ...maskCopiesOf(fields, callback.from, records) }, records));
       const start = legacy ? connectRelayTwiml : undefined;
       let { document, note, fallback } = loaded === 'unreadable'
         ? decideUnreadable(deps, provider, callback, start)

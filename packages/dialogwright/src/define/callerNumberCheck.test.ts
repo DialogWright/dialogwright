@@ -63,8 +63,8 @@ describe('the option', () => {
     expect(() => defineSlot('reason', { type: 'choice', options: { a: 'A', b: 'B' }, callerNumber: { countryCode: '1' } })).toThrow(/callerNumber/);
   });
 
-  it('declares its line, offer_<slot> with {last4}', () => {
-    expect(defineSlot('phone', { type: 'digits', noun: 'phone', length: 10, callerNumber: { countryCode: '1' } }).prompts).toContainEqual(expect.objectContaining({ id: 'offer_phone', vars: ['last4'] }));
+  it('declares its line, offer_<slot> with {last4} and the whole number, {callerNumber}', () => {
+    expect(defineSlot('phone', { type: 'digits', noun: 'phone', length: 10, callerNumber: { countryCode: '1' } }).prompts).toContainEqual(expect.objectContaining({ id: 'offer_phone', vars: ['last4', 'callerNumber'] }));
   });
 });
 

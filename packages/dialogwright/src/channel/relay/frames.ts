@@ -24,6 +24,8 @@ export interface SetupFrame {
   callControlId?: string;
   callSessionId?: string;
   callLegId?: string;
+  // Any other string field a carrier sends, passed through by the wire within its bounds (wire.ts passedThrough).
+  [field: string]: string | Record<string, string> | undefined;
 }
 
 export interface PromptFrame {

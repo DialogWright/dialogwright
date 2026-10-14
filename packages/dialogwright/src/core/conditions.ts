@@ -419,8 +419,6 @@ export interface ConditionWorld {
   readonly hours?: { readonly schedules: readonly string[] } | null;
   /** The app's predicates (App.predicates); null or absent: not known (a folder checked without its code), so a name is not checked. */
   readonly predicates?: readonly string[] | null;
-  /** Whether the app keeps the number called (app.yaml's callerNumber `called: true`). */
-  readonly calledKept?: boolean;
   /** The highest identity level the app's callers can reach (0 with no identity, 1, or 2 with a one-time code); absent, not checked. */
   readonly maxLevel?: number;
   /** Whether a handoff for `reason` has its line (handoff_<reason>); absent, not asked. */
@@ -489,7 +487,7 @@ export function conditionRefProblems(c: Condition, world: ConditionWorld): Condi
       else if (c.schedule !== undefined && !world.hours.schedules.includes(c.schedule)) out.push({ key: 'schedule', message: `schedule "${c.schedule}" is not one of app.yaml's hours.schedules`, fix: world.hours.schedules.length > 0 ? `name one of ${world.hours.schedules.join(', ')}` : `add it under hours.schedules in app.yaml, or delete "schedule" for the default hours` });
       break;
     case 'called':
-      if (world.calledKept !== true) out.push({ key: 'called', message: 'the app does not keep the number called, so this condition never holds', fix: 'add callerNumber: { use: hint, called: true } to app.yaml' });
+      // The number called is kept for every app: nothing to check here.
       break;
     case 'named':
       if (world.predicates !== undefined && world.predicates !== null && !world.predicates.includes(c.predicate)) {

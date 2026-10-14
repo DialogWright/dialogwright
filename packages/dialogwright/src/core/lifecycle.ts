@@ -14,7 +14,7 @@ import type { SlotExhausted } from './outcome';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
 import type { ToolRun } from './tools';
-import { callerGateFacts } from './callerNumber';
+import { callerGateFacts, usableCallerNumber } from './callerNumber';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
 export { redactCall };
@@ -265,9 +265,10 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
   const app = appOf(s);
   const attempts = call.tool === identityOf(app).codeTool ? s.identityAttempts.code : s.identityAttempts.factors;
   const facts = { attempts, confirmedHash: s.confirmedHash, todayIso: tc.todayIso };
-  // The caller's number, only for a session that kept one (core/callerNumber.ts): every other
-  // session's facts are as they were.
-  return s.callerNumber === undefined ? facts : { ...facts, ...callerGateFacts(app, s.callerNumber) };
+  // The caller's number, only for a session that kept one the engine may use (core/callerNumber.ts
+  // usableCallerNumber), with whether the caller withheld it: every other session's facts are as they were.
+  const number = usableCallerNumber(app, s);
+  return number === undefined ? facts : { ...facts, ...callerGateFacts(app, number), ...(s.callerPrivacy === 'withheld' ? { callerWithheld: true as const } : {}) };
 }
 
 /**
@@ -582,7 +583,7 @@ export function callerMatchOf(s: Session): Readonly<Record<SlotId, string>> | nu
   const app = appOf(s);
   const callerId = app.identity?.callerId;
   const hook = app.facts?.callerMatch;
-  if (callerId === undefined || hook === undefined || !isAnonymous(s.principal) || s.callerNumber === undefined) return null;
+  if (callerId === undefined || hook === undefined || !isAnonymous(s.principal) || usableCallerNumber(app, s) === undefined) return null;
   if (s.callerMatch !== undefined && s.callerMatch !== 'offered') return null;
   // An identifier the caller said themselves ("my account is ...") is theirs to verify: the match does not replace it.
   if (callerId.identifies.some((id) => s.slots[id]?.value != null && s.slots[id]!.by !== 'caller-id')) return null;

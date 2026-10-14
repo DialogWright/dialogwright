@@ -124,7 +124,6 @@ export function conditionWorldOf(app: App): TransferWorld {
     facts,
     hours: app.hours === undefined ? null : { schedules: scheduleNames(app.hours) },
     predicates: Object.keys(app.predicates ?? {}),
-    calledKept: app.callerNumber?.called === true,
     maxLevel: app.identity === undefined ? 0 : topLevelOf(app.identity),
   };
 }

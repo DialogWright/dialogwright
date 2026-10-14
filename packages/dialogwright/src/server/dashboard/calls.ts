@@ -8,7 +8,8 @@ import { upgradeTraceRecord } from '../../trace/read';
 import type { App } from '../../core/app/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { parseFrameLog, type ReadFrameLogLine } from '../frameLog';
-import { maskNumber, redactFrameLine, redactRecord } from './events';
+import { redactFrameLine, redactRecord } from './events';
+import { maskCallerValue, recordsOf, type NumberRecords } from '../../channel/maskByName';
 import { consoleMetaOf } from './meta';
 import { callRow, replayEvents, settledRow, withMeta, ENDINGS } from './view.js';
 import type { CallRow } from './rows';
@@ -139,8 +140,8 @@ export async function candidatesOf(source: CallsSource, fromMs: number | undefin
     .map((c) => ({ source, sid: c.id, lastMs: c.lastModifiedMs, size: c.sizeBytes, day: c.day }));
 }
 
-/** The caller as a session's start or its setup frame carries it, masked (the replay route's redaction has masked it already). */
-function callerOf(records: readonly TraceRecord[], frames: readonly ReadFrameLogLine[]): string | null {
+/** The caller as a session's start or its setup frame carries it, as the app's records write it (the replay route's redaction has already). */
+function callerOf(records: readonly TraceRecord[], frames: readonly ReadFrameLogLine[], numbers: NumberRecords): string | null {
   const start = records.find((r) => r.event?.type === 'session.start')?.event;
   const provider = start && start.type === 'session.start' ? start.provider : {};
   const setup = frames.find((f) => f.dir === 'in' && (f.msg as { type?: unknown } | null)?.type === 'setup')?.msg as { from?: unknown; customParameters?: Record<string, unknown> } | undefined;
@@ -149,8 +150,8 @@ function callerOf(records: readonly TraceRecord[], frames: readonly ReadFrameLog
     provider.from, provider['param.telnyx_call_from'], provider.telnyx_call_from,
     setup?.from, setup?.customParameters?.telnyx_call_from,
   ];
-  const found = seen.find((v): v is string => typeof v === 'string' && /\d|•/.test(v));
-  return found === undefined ? null : maskNumber(found);
+  const found = seen.find((v): v is string => typeof v === 'string' && (/\d|•/.test(v) || /^(?:sips?|client):/i.test(v)));
+  return found === undefined ? null : maskCallerValue(found, numbers);
 }
 
 /** A call's summary from its records and frame log, as raw on disk: redacted first, then folded as the page folds a replay. */
@@ -159,7 +160,7 @@ export function summaryOfTrace(rawRecords: readonly TraceRecord[], rawFrames: re
   const records = rawRecords.map((r) => ({ ...redactRecord(r, app), spokenText: '' })) as ReplayRecord[];
   const frames = rawFrames.map((l) => ({ ...redactFrameLine(l, app), line: l.line }));
   const meta = consoleMetaOf(app);
-  const from = callerOf(records, frames);
+  const from = callerOf(records, frames, recordsOf(app));
   const events = withMeta(meta, () => replayEvents(records, frames, { from: from ?? 'unknown', thresholds: DEFAULT_THRESHOLDS }));
   const row = callRow(events, { meta });
   // The carrier, as the adapter logs it at the call's setup (a call recorded before it names none).

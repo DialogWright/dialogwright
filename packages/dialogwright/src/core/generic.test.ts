@@ -125,19 +125,28 @@ describe('slot metadata: the handoff and the follow-up for a partial', () => {
     expect(handoff(s, 'identity').slots.birthDate).toBe(IDENTITY_VERIFIED);
   });
 
-  it('hands a digits slot by its length (a PIN, defined as configuration) over by its real length, whatever handoff.data sends', () => {
+  it('hands a digits slot by its length (a PIN, defined as configuration) over by its real length, unless the app names it as-is itself', () => {
     const pinApp = clinic({ id: 'clinic-pin-handoff', slots: { ...SLOTS, pin: defineSlot('pin', { type: 'digits', noun: 'PIN', length: 6, redact: 'length' }) } });
     registerApp(pinApp);
     const s = newSession('c', 0, VOICE_RELAY, undefined, pinApp.id);
     Object.assign(s.slots.pin!, { value: '739512', display: '739512' });
     const collected = handoff(s, 'live-agent').slots;
     expect(collected.pin).toBe('<6 chars>');
-    // masked, as-is or by default: the length, never the digits and never ••••.
-    for (const send of ['masked', 'as-is'] as const) {
-      expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: send } } } } as never, collected).pin, send).toBe('<6 chars>');
-      expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: send } } } } as never, { pin: '739512' }).pin, send).toBe('<6 chars>');
-    }
+    // masked or by default: the length, never the digits and never ••••.
+    expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: 'masked' } } } } as never, collected).pin).toBe('<6 chars>');
+    expect(handoffDataSlots({ ...pinApp, handoff: { data: { send: { pin: 'masked' } } } } as never, { pin: '739512' }).pin).toBe('<6 chars>');
     expect(handoffDataSlots(pinApp, collected).pin).toBe('<6 chars>');
+    // Re-pinned (live findings item 26): `send: as-is`, written by the app for this slot, wins: the
+    // decision holds the digits and the transfer sends them (pnpm check warns); the records keep the length.
+    const asIs = clinic({ id: 'clinic-pin-as-is', slots: pinApp.slots, handoff: { data: { send: { pin: 'as-is' } } } } as never);
+    registerApp(asIs);
+    const t = newSession('c', 0, VOICE_RELAY, undefined, asIs.id);
+    Object.assign(t.slots.pin!, { value: '739512', display: '739512' });
+    const sent = handoff(t, 'live-agent').slots;
+    expect(sent.pin).toBe('739512');
+    expect(handoffDataSlots(asIs, sent).pin).toBe('739512');
+    const recorded = redactRecordSlots({ slots: {}, decision: { kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent', acks: [], completed: [], queued: [], slots: sent }, actions: [] } as unknown as TraceRecord, 'keep', asIs);
+    expect(recorded.decision).toMatchObject({ slots: { pin: '<6 chars>' } });
     // The trace shows the same real length.
     const r = redactRecordSlots({ slots: {}, decision: { kind: 'handoff', reason: 'live-agent', promptId: 'handoff_live_agent', acks: [], completed: [], queued: [], slots: collected }, actions: [] } as unknown as TraceRecord, 'keep', pinApp);
     expect(r.decision).toMatchObject({ slots: { pin: '<6 chars>' } });

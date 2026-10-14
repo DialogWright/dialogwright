@@ -52,13 +52,6 @@ export interface CallEntry extends CallResources {
    */
   heldHandoffData?: string | null;
   /**
-   * The caller withheld their number (a setup of the call carried WITHHELD_PARAMETER): a reconnect's
-   * setup, which carries the number again, has its copies taken out as the first one's were, and a
-   * reconnect's start document says so again (http.ts). Saved with the call (StoredCall.callerWithheld),
-   * so a restarted server, or another sharing the store, knows it too.
-   */
-  callerWithheld?: true;
-  /**
    * When the carrier last reported the call's relay lost (its callback asking to reconnect), on this
    * server's clock: what the silence before the `resumed` line is measured from (RESUMED_AFTER_MS).
    */
@@ -350,7 +343,6 @@ export class SessionStore {
       lastActivityMs: e.lastActivityMs,
       auditTail: [...e.auditEntries],
       ...(e.pending ? { pending: e.pending } : {}),
-      ...(e.callerWithheld === true ? { callerWithheld: true as const } : {}),
       // One machine's: a store many servers share keeps the time with its reconnect count.
       ...(e.droppedAtMs !== undefined && this.lease === null ? { droppedAtMs: e.droppedAtMs } : {}),
       ...extra,
@@ -610,8 +602,6 @@ export class SessionStore {
       provider: c.provider,
       // Only a request the session still waits on: one answered before the save is not sent again.
       pending: c.pending && c.session.pendingService === c.pending.effect.service ? c.pending : null,
-      // A caller who withheld their number stays withheld on the socket this server takes up.
-      ...(c.callerWithheld === true ? { callerWithheld: true as const } : {}),
     };
     // On this server's clock: the store's silence, or the time one machine saved.
     const dropped = silentMs !== undefined && silentMs !== null ? this.now() - silentMs : c.droppedAtMs;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { definePolicy } from '../define/definePolicy';
 import { compiledPolicyOf } from './compiled';
-import { CALLER_NUMBER_ID, callerNumberRule, NO_CALLER_NUMBER, NOT_CALLER_NUMBER } from './callerNumber';
+import { CALLER_NUMBER_ID, CALLER_NUMBER_WITHHELD, callerNumberRule, NO_CALLER_NUMBER, NOT_CALLER_NUMBER } from './callerNumber';
 import { confirmationHash } from './lines';
 import { VALUE_MISSING } from './listed';
 import { ANONYMOUS } from './principal';
@@ -134,5 +134,30 @@ describe('callerNumber in a policy compiled from the file', () => {
     const confirmed = { ...kept, confirmedHash: confirmationHash(other, ['topic', 'textTo']) };
     expect(gate.evaluate({ tool: 'sendUpdates', params: other }, ANONYMOUS, confirmed, lk).verdict).toBe('ALLOW');
     expect(gate.evaluate({ tool: 'sendUpdates', params: other }, ANONYMOUS, kept, lk)).toMatchObject({ verdict: 'BLOCK', reason: NOT_CALLER_NUMBER });
+  });
+});
+
+describe('callerNumber, withheld: refuse (live findings item 26)', () => {
+  const withheld: GateFacts = { ...kept, callerWithheld: true };
+
+  it('passes the caller\'s withheld number by default (withheld: allow), as any of theirs', () => {
+    expect(callerNumberRule({ field: 'textTo' }, null)(ctx({ textTo: '5555550142' }, withheld))).toEqual({ result: OWN });
+  });
+
+  it('refuses the caller\'s own number when they withheld it, caller-number-withheld, and passes it when they did not', () => {
+    const rule = callerNumberRule({ field: 'textTo', withheld: 'refuse' }, null);
+    expect(rule(ctx({ textTo: '5555550142' }, withheld))).toEqual({
+      result: { ...OWN, compared: 'textTo is the caller\'s withheld number', pass: false },
+      fail: { verdict: 'BLOCK', reason: CALLER_NUMBER_WITHHELD },
+    });
+    expect(CALLER_NUMBER_WITHHELD).toBe('caller-number-withheld');
+    expect(rule(ctx({ textTo: '5555550142' }))).toEqual({ result: OWN });
+  });
+
+  it('still passes a number the caller confirmed at the summary, with else: confirmed', () => {
+    const rule = callerNumberRule({ field: 'textTo', else: 'confirmed', withheld: 'refuse' }, ['textTo']);
+    const params = { textTo: '5555550142' };
+    expect(rule(ctx(params, { ...withheld, confirmedHash: confirmationHash(params, ['textTo']) })).result.pass).toBe(true);
+    expect(rule(ctx(params, withheld)).fail).toEqual({ verdict: 'BLOCK', reason: CALLER_NUMBER_WITHHELD });
   });
 });

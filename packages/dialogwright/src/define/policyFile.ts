@@ -93,8 +93,8 @@ export function readRule(entry: RuleEntryYaml): Rule {
     return { rule: which, field, values: Object.freeze([...values]), ...(reason !== undefined ? { reason } : {}), ...(verdict !== undefined ? { verdict } : {}) };
   }
   if ('callerNumber' in entry) {
-    const { field, else: otherwise } = entry.callerNumber;
-    return { rule: 'callerNumber', field, ...(otherwise !== undefined ? { else: otherwise } : {}) };
+    const { field, else: otherwise, withheld } = entry.callerNumber;
+    return { rule: 'callerNumber', field, ...(otherwise !== undefined ? { else: otherwise } : {}), ...(withheld !== undefined ? { withheld } : {}) };
   }
   return { rule: 'custom', id: entry.custom };
 }

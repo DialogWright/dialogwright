@@ -8,8 +8,8 @@ import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
 import { defaultAppOrNull } from '../../core/app/registry';
 import type { CallDataKey } from '../../core/app/types';
-import { callDataSourceOf, recordedCustomParameters, UNNAMED_PARAMETER } from '../../channel/callData';
-import { ADDRESS_KEYS, DROP_KEYS, DROP_SUFFIXES, floorByName, MASK_KEYS, maskAddress, maskNumber, NAME_KEYS } from '../../channel/maskByName';
+import { ATTESTATION_PARAMETER, callDataSourceOf, recordedCustomParameters, UNNAMED_PARAMETER, WITHHELD_PARAMETER } from '../../channel/callData';
+import { DEFAULT_RECORDS, droppedByName, floorByName, MASK_KEYS, maskNumber, recordsOf, type NumberRecords } from '../../channel/maskByName';
 
 // Where the masking by name lives (beside the call data, which the core's audit floors by it too).
 export { floorByName, frameLogKeepsField, maskNumber } from '../../channel/maskByName';
@@ -92,30 +92,35 @@ const MAX_DEPTH = 6;
 
 /**
  * Walks `value` and returns a structurally identical copy with the caller-identity keys masked or
- * dropped at every level. Every other key, and every non-object value, is passed through unchanged.
+ * dropped at every level, as `records` (app.yaml's records: channel/maskByName.ts) says: the caller's
+ * number by its last four and their name redacted by default, the business's own numbers whole. Every
+ * other key, and every non-object value, is passed through unchanged.
  *
  * Exported for the frame log's own write sites (adapter.ts's setup frame, http.ts's `/cr-action`
  * form post): both hold the caller's whole number, and masking there means the number never
  * touches disk at all, rather than only being hidden when the dashboard reads it back.
  */
-export function redactDeep(value: unknown, depth = 0): unknown {
+export function redactDeep(value: unknown, records: NumberRecords = DEFAULT_RECORDS, depth = 0): unknown {
   if (value === null || typeof value !== 'object' || depth >= MAX_DEPTH) return value;
-  if (Array.isArray(value)) return value.map((v) => redactDeep(v, depth + 1));
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v, records, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
     // By the key's last dotted segment: a session start's provider details carry a custom
     // parameter `from` as `param.from` (channel/relay/map.ts frameToEvent).
-    const k = key.toLowerCase().split('.').pop()!;
-    if (DROP_KEYS.has(k) || DROP_SUFFIXES.some((s) => k.endsWith(s))) continue;
+    if (droppedByName(key)) continue;
     // Already redacted (a custom parameter no one named, trace/redact.ts): nothing is left to mask.
     if (v === UNNAMED_PARAMETER) out[key] = v;
-    else if (typeof v === 'string' && NAME_KEYS.has(k)) out[key] = 'redacted';
-    else if (typeof v === 'string' && MASK_KEYS.has(k)) out[key] = maskNumber(v);
-    // An address that may hold a number (a SIP address, a caller ID): each number in it to its last four.
-    else if (typeof v === 'string' && ADDRESS_KEYS.has(k)) out[key] = maskAddress(v);
-    // Every other custom parameter (`param.*`): the core never reads them, so none is worth showing.
-    else if (typeof v === 'string' && key.toLowerCase().startsWith(PARAM_PREFIX)) out[key] = 'redacted';
-    else out[key] = redactDeep(v, depth + 1);
+    else if (typeof v === 'string') {
+      const floored = floorByName(key, v, records);
+      const name = key.toLowerCase().split('.').pop()!;
+      // A name the masking by name changed (a number, a name, an address) is written as it says.
+      if (floored !== v) out[key] = floored;
+      // A number already masked (the trace's `...0142`) in the page's own spelling (`…0142`).
+      else if (MASK_KEYS.has(name) && /^\.\.\.\d{4}$/.test(v)) out[key] = maskNumber(v);
+      // Every other custom parameter (`param.*`): the core never reads them, so none is worth showing.
+      else if (key.toLowerCase().startsWith(PARAM_PREFIX) && !MASK_KEYS.has(key.toLowerCase().split('.').pop()!)) out[key] = 'redacted';
+      else out[key] = v;
+    } else out[key] = redactDeep(v, records, depth + 1);
   }
   return out;
 }
@@ -130,13 +135,17 @@ type CallDataSpec = Readonly<Record<string, CallDataKey>> | undefined;
  * (`telnyx_call_from`, `telnyx_call_to`) to its last four as before, and every other one
  * UNNAMED_PARAMETER. Before callData they were written as sent. Idempotent.
  */
-export function redactSetupFrame(frame: unknown, spec: CallDataSpec): unknown {
-  const out = redactDeep(frame);
+export function redactSetupFrame(frame: unknown, spec: CallDataSpec, records: NumberRecords = DEFAULT_RECORDS): unknown {
+  const out = redactDeep(frame, records);
   const params = typeof frame === 'object' && frame !== null ? (frame as { customParameters?: unknown }).customParameters : undefined;
   if (typeof out !== 'object' || out === null || typeof params !== 'object' || params === null || Array.isArray(params)) return out;
-  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? maskNumber(v) : UNNAMED_PARAMETER), floorByName);
+  const floor = (name: string, v: string): string | null => floorByName(name, v, records);
+  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? floor(name, v) ?? UNNAMED_PARAMETER : ENGINE_RECORDED.has(name) ? v : UNNAMED_PARAMETER), floor);
   return { ...(out as Record<string, unknown>), customParameters };
 }
+
+/** The engine's own custom parameters, written as they came (a flag, an attestation), never a value of the caller's words. */
+const ENGINE_RECORDED: ReadonlySet<string> = new Set([WITHHELD_PARAMETER, ATTESTATION_PARAMETER]);
 
 /**
  * The dashboard route is unauthenticated, and a session start's event carries the raw setup
@@ -148,6 +157,7 @@ export function redactSetupFrame(frame: unknown, spec: CallDataSpec): unknown {
  */
 export function redactRecord(record: TraceRecord, app: App | null = defaultAppOrNull()): TraceRecord {
   const slots = redactRecordSlots(record, 'keep', app);
+  const records = recordsOf(app);
   // Whom a passage answered (the caller's facts) only as policy.yaml's audit: declares each fact.
   const kb = slots.kb ? { kb: consoleKbSource(slots.kb, app) } : {};
   // The call data the app names is already masked by each key's own redact (redactRecordSlots): its
@@ -161,12 +171,12 @@ export function redactRecord(record: TraceRecord, app: App | null = defaultAppOr
     for (const [key, v] of Object.entries(callData)) {
       const def = spec !== undefined && Object.hasOwn(spec, key) ? spec[key] : undefined;
       const source = def === undefined ? null : callDataSourceOf(def.from);
-      const shown = source === null ? v : floorByName(source.name, v);
+      const shown = source === null ? v : floorByName(source.name, v, records);
       if (shown !== null) floored[key] = shown;
     }
-    return { ...slots, ...kb, event: { ...(redactDeep(rest) as typeof rest), callData: floored } };
+    return { ...slots, ...kb, event: { ...(redactDeep(rest, records) as typeof rest), callData: floored } };
   }
-  return { ...slots, ...kb, event: redactDeep(slots.event) as TraceRecord['event'] };
+  return { ...slots, ...kb, event: redactDeep(slots.event, records) as TraceRecord['event'] };
 }
 
 /**
@@ -177,7 +187,8 @@ export function redactRecord(record: TraceRecord, app: App | null = defaultAppOr
 export function redactFrameLine(line: FrameLogLine, app: App | null = defaultAppOrNull()): FrameLogLine {
   // A setup's custom parameters as the frame log writes them now; one written before callData had them as sent.
   const setup = typeof line.msg === 'object' && line.msg !== null && (line.msg as { type?: unknown }).type === 'setup';
-  const msg = setup ? redactSetupFrame(line.msg, app?.callData) : redactDeep(line.msg);
+  const records = recordsOf(app);
+  const msg = setup ? redactSetupFrame(line.msg, app?.callData, records) : redactDeep(line.msg, records);
   // The `end` frame's handoff data carries what the call collected, identity slots included.
   if (typeof msg === 'object' && msg !== null && (msg as { type?: unknown }).type === 'end') {
     const end = msg as { handoffData?: unknown };

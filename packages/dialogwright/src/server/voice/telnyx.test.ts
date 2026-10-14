@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { telnyxProvider } from './telnyx';
 import { twilioProvider } from './twilio';
-import { callerWithheldIn, setupCalledOf, setupCallerOf, setupWithCallerWithheld } from './registry';
+import { callerWithheldIn, setupCalledOf, setupCallerOf } from './registry';
 import { WITHHELD_PARAMETER } from '../../channel/callData';
 
 const START = { publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: 'one,two' };
@@ -208,7 +208,9 @@ describe("Telnyx's playback events in the engine's terms", () => {
 
 describe('a caller who withheld their number on Telnyx (privacy)', () => {
   // The answer webhook of a call dialled with *67 (2026-10-13), its number replaced: the real number in
-  // From, and the marks of a withheld one beside it.
+  // From, and the marks of a withheld one beside it. Re-pinned (live findings item 26): the marks are
+  // read as data, a flag carried with the number (CallbackParams.privacy); the number stays as it came,
+  // and what the app does with it is the app's (app.yaml's callerNumber.withheld).
   const fixtures = JSON.parse(readFileSync(new URL('./__fixtures__/telnyx/webhooks.json', import.meta.url), 'utf8')) as {
     alternatives: { source: string; headers: Record<string, string>; rawBody: string }[];
   };
@@ -217,15 +219,12 @@ describe('a caller who withheld their number on Telnyx (privacy)', () => {
   const parseForm = (rawBody: string) => telnyxProvider.parse({ url: '/voice/telnyx', headers: FORM, rawBody, nowSec: 0 })!;
   const body = (fields: Record<string, string>) => new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, To: '+15555550111', ...fields }).toString();
 
-  it('reads the captured webhook as withheld: no from, and no copy of the number anywhere in what it keeps', () => {
-    expect(captured.rawBody).toContain(encodeURIComponent(NUMBER));
+  it('reads the captured webhook as withheld, the number kept with the flag, every field as it came', () => {
     const p = parseForm(captured.rawBody);
-    expect(p.withheld).toBe(true);
-    expect(p).not.toHaveProperty('from');
+    expect(p.privacy).toBe('withheld');
+    expect(p.from).toBe(NUMBER);
     expect(p.to).toBe('+15555550111');
-    expect(JSON.stringify(p)).not.toContain('5550142');
-    // The marks stay, saying why the number is not there; the call's ids and the number called too.
-    expect(p.raw).toMatchObject({ CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid', To: '+15555550111', CallSessionId: '0b6e1f2a-6f5d-11ef-9692-02420aeffb1f' });
+    expect(p.raw).toMatchObject({ From: NUMBER, CallerId: 'anonymous', FromSipUri: 'anonymous@anonymous.invalid', To: '+15555550111', CallSessionId: '0b6e1f2a-6f5d-11ef-9692-02420aeffb1f' });
   });
 
   it('takes any one mark, in any case: an anonymous caller ID, an anonymous SIP From, a From that is no number, a SIP Privacy header', () => {
@@ -236,75 +235,49 @@ describe('a caller who withheld their number on Telnyx (privacy)', () => {
     ];
     for (const fields of marks) {
       const p = parseForm(body(fields));
-      expect(p.withheld, JSON.stringify(fields)).toBe(true);
-      expect(p, JSON.stringify(fields)).not.toHaveProperty('from');
-      expect(JSON.stringify(p.raw), JSON.stringify(fields)).not.toContain('5550142');
+      expect(p.privacy, JSON.stringify(fields)).toBe('withheld');
+      expect(p.from, JSON.stringify(fields)).toBe(NUMBER);
     }
-    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'anonymous' }).toString()).withheld).toBe(true);
-    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'sip:anonymous@anonymous.invalid' }).toString()).withheld).toBe(true);
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'anonymous' }).toString()).privacy).toBe('withheld');
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'sip:anonymous@anonymous.invalid' }).toString()).privacy).toBe('withheld');
     // A JSON body the same.
     const json = telnyxProvider.parse({ url: '/voice/telnyx', headers: JSON_TYPE, rawBody: JSON.stringify({ CallSid: 'v3:abc', From: NUMBER, CallerId: 'anonymous' }), nowSec: 0 })!;
-    expect(json.withheld).toBe(true);
-    expect(json).not.toHaveProperty('from');
-  });
-
-  it('takes out every field that holds the number, not only From', () => {
-    const p = parseForm(body({ CallerId: 'anonymous', Caller: NUMBER, CallerName: 'Jordan Avery', PAssertedIdentity: `<sip:${NUMBER}@carrier.example.com>` }));
-    expect(p.raw).not.toHaveProperty('Caller');
-    expect(p.raw).not.toHaveProperty('CallerName');
-    expect(p.raw).not.toHaveProperty('PAssertedIdentity');
-    expect(JSON.stringify(p)).not.toContain('5550142');
-    expect(p.raw.To).toBe('+15555550111');
-  });
-
-  it('takes out a copy of a number any number-carrying field holds, not From\'s alone (a From with no number, the number in the caller ID)', () => {
-    const p = parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: 'anonymous', Privacy: 'id', CallerId: NUMBER, Asserted: `tel:${NUMBER}`, To: '+15555550111' }).toString());
-    expect(p.withheld).toBe(true);
-    expect(JSON.stringify(p)).not.toContain('5550142');
-    expect(p.raw).toMatchObject({ Privacy: 'id', To: '+15555550111' });
-    const sip = parseForm(new URLSearchParams({ CallSid: 'v3:abc', CallerId: 'anonymous', FromSipUri: `sip:${NUMBER}@carrier.example.com`, Other: NUMBER.slice(1) }).toString());
-    expect(JSON.stringify(sip)).not.toContain('5550142');
+    expect(json.privacy).toBe('withheld');
+    expect(json.from).toBe(NUMBER);
   });
 
   it('takes a withheld word as the SIP From\'s display name for a mark', () => {
     for (const from of ['"Anonymous" <sip:+15555550142@carrier.example.com>', 'Restricted <sip:+15555550142@carrier.example.com>']) {
-      const p = parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: from }).toString());
-      expect(p.withheld, from).toBe(true);
-      expect(JSON.stringify(p), from).not.toContain('5550142');
+      expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: from }).toString()).privacy, from).toBe('withheld');
     }
     // A display name that is a person's name is no mark.
-    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: `"Jordan Avery" <sip:${NUMBER}@carrier.example.com>` }).toString())).not.toHaveProperty('withheld');
+    expect(parseForm(new URLSearchParams({ CallSid: 'v3:abc', From: NUMBER, FromSipUri: `"Jordan Avery" <sip:${NUMBER}@carrier.example.com>` }).toString())).not.toHaveProperty('privacy');
   });
 
   it('reads a call with its number given as not withheld, as before', () => {
     const given: Record<string, string>[] = [{}, { CallerId: NUMBER, FromSipUri: `${NUMBER}@sip.example.com` }, { Privacy: 'none' }];
     for (const fields of given) {
       const p = parseForm(body(fields));
-      expect(p, JSON.stringify(fields)).not.toHaveProperty('withheld');
+      expect(p, JSON.stringify(fields)).not.toHaveProperty('privacy');
       expect(p.from).toBe(NUMBER);
     }
   });
 
-  it('takes the number out of a withheld call\'s setup (telnyx_call_from, from, callerName), and leaves any other setup as it came', () => {
+  it('reads the flag from a setup the server marked, and the setup keeps the number as it came', () => {
     const setup = {
       type: 'setup' as const, sessionId: 'TX1', callSid: '5e9fcc12-0000-4000-8000-000000000000', callControlId: 'v3:abc', callerName: 'Jordan Avery',
       from: null as unknown as string, to: null as unknown as string,
       customParameters: { telnyx_call_from: NUMBER, telnyx_call_to: '+15555550111', [WITHHELD_PARAMETER]: 'true', locale: 'en-US' },
     };
     expect(callerWithheldIn(setup)).toBe(true);
-    const read = setupWithCallerWithheld('telnyx', setup);
-    expect(JSON.stringify(read)).not.toContain('5550142');
-    expect(read).not.toHaveProperty('callerName');
-    expect(read.customParameters).toEqual({ telnyx_call_to: '+15555550111', [WITHHELD_PARAMETER]: 'true', locale: 'en-US' });
-    expect(setupCallerOf('telnyx', read)).toBeNull();
-    expect(setupCalledOf('telnyx', read)).toBe('+15555550111');
-    // A reconnect's setup of a call known to be withheld, with no parameter of its own: the same.
+    expect(setupCallerOf('telnyx', setup)).toBe(NUMBER);
+    expect(setupCalledOf('telnyx', setup)).toBe('+15555550111');
     const { [WITHHELD_PARAMETER]: _w, ...plain } = setup.customParameters;
-    expect(setupWithCallerWithheld('telnyx', { ...setup, customParameters: plain }, true)).toEqual(read);
-    // Not withheld: as it came, the number with it.
-    expect(setupWithCallerWithheld('telnyx', { ...setup, customParameters: plain })).toEqual({ ...setup, customParameters: plain });
-    // A Twilio setup marked so loses its from as well.
-    const twilio = { type: 'setup' as const, sessionId: 'VX1', callSid: 'CA1', from: NUMBER, to: '+15555550111', customParameters: { [WITHHELD_PARAMETER]: 'true' } };
-    expect(setupCallerOf('twilio', setupWithCallerWithheld('twilio', twilio))).toBeNull();
+    expect(callerWithheldIn({ ...setup, customParameters: plain })).toBe(false);
+  });
+
+  it('reads the STIR/SHAKEN attestation, where the webhook carries one', () => {
+    expect(parseForm(body({ shaken_stir_attestation: 'A' })).attestation).toBe('A');
+    expect(parseForm(body({}))).not.toHaveProperty('attestation');
   });
 });

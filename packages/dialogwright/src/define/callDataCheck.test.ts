@@ -35,6 +35,11 @@ async function problemsOf(change: (text: string) => string): Promise<string[]> {
   return r.problems.map(formatProblem);
 }
 
+async function warningsOf(change: (text: string) => string): Promise<string[]> {
+  const r = await checkAppFully(folder(change), { code: callbackCode, fixturesRoot: PACKAGE_DIR });
+  return (r.warnings ?? []).map(formatProblem);
+}
+
 const replace = (from: string, to: string) => (text: string): string => {
   if (!text.includes(from)) throw new Error(`not in the file: ${from}`);
   return text.replace(from, to);
@@ -75,23 +80,24 @@ describe('app.yaml callData', () => {
     expect(none[0]).toContain('"queue" is not a source of call data');
   });
 
-  it('refuses a setup field the wire does not keep, and the numbers', async () => {
-    const problems = await problemsOf(replace('from: setup.forwardedFrom', 'from: setup.callerZip'));
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('"callerZip" is not a field of the setup frame the wire keeps');
-    const from = await problemsOf(replace('from: setup.forwardedFrom', 'from: setup.from'));
-    expect(from[0]).toContain('app.yaml\'s callerNumber');
+  // Re-pinned (live findings item 26): what call data may read is the app's choice. A setup field no
+  // carrier documents (the wire passes one through) and the numbers' own fields are warnings now.
+  it('warns of a setup field no carrier documents, and reads it: the wire passes it through', async () => {
+    expect(await problemsOf(replace('from: setup.forwardedFrom', 'from: setup.carrierExtra'))).toEqual([]);
+    const warnings = await warningsOf(replace('from: setup.forwardedFrom', 'from: setup.carrierExtra'));
+    expect(warnings.join('\n')).toContain('"carrierExtra" is not a field a carrier documents on the setup frame');
+    const long = await problemsOf(replace('from: setup.forwardedFrom', `from: setup.${'a'.repeat(65)}`));
+    expect(long).toHaveLength(1);
   });
 
-  it('refuses the carrier\'s copies of the numbers, wherever they come from, with app.yaml\'s callerNumber as the fix', async () => {
+  it('warns of the carrier\'s copies of the numbers, wherever they come from: callerOf(s) and calledOf(s) read them already', async () => {
     for (const from of ['setup.from', 'setup.to', 'param.telnyx_call_from', 'param.telnyx_call_to', 'webhook.From', 'webhook.To', 'webhook.Caller', 'webhook.Called']) {
-      const problems = await problemsOf(replace('from: param.queue', `from: ${from}`));
-      expect(problems, from).toHaveLength(1);
-      expect(problems[0]).toContain(`"${from}" is the number the caller is calling from or the number called`);
-      expect(problems[0]).toContain('->  read the numbers with app.yaml\'s callerNumber (callerOf(s), and calledOf(s) with called: true)');
+      expect(await problemsOf(replace('from: param.queue', `from: ${from}`)), from).toEqual([]);
+      const warnings = (await warningsOf(replace('from: param.queue', `from: ${from}`))).join('\n');
+      expect(warnings, from).toContain(`"${from}" is the number the caller is calling from or the number called, which callerOf(s) and calledOf(s) already read`);
+      expect(warnings, from).toContain('->  read the numbers with callerOf(s) and calledOf(s)');
     }
-    // Another number-like field is the app's to read, under its own redact (and the frame log's floor).
-    expect(await problemsOf(replace('from: param.queue', 'from: webhook.ForwardedFrom'))).toEqual([]);
+    expect(await warningsOf(replace('from: param.queue', 'from: webhook.ForwardedFrom'))).toEqual([]);
   });
 
   it('refuses a chat key longer than a context may carry', async () => {
@@ -169,7 +175,6 @@ describe('validateApp (an app written in code)', () => {
       'callData key "bad-key" is not a plain word (letters, digits and underscores, starting with a letter)',
       'callData key "nofrom" has no from',
       'callData key "prefix": "header.x" is not a source of call data: it must be one of param.<name>, setup.<name>, webhook.<name>, chat.<name>',
-      'callData key "field": "setup.to" is the number the caller is calling from or the number called, which call data does not read',
       'callData key "masked" redact "hidden" is not one of last4, mask, length, secret, keep',
       'startParameters "line" is not env.<NAME>',
       'startParameters name "locale" is one the engine writes itself',

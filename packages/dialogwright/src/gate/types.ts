@@ -141,10 +141,16 @@ export interface GateFacts {
   /**
    * The number the caller is calling from, as the session kept it (Session.callerNumber: its digits,
    * `+` first in international form), what the callerNumber rule holds a param to. Absent when the
-   * session kept none (a chat, a withheld number, an app that keeps none). It is a hint, never proof
-   * of who is calling: compare a number the call will send to with it, never a record's owner.
+   * session kept none (a chat, a call with no number, a withheld number the app ignores: app.yaml's
+   * `callerNumber.withheld: ignore`). It is a hint, never proof of who is calling: compare a number the
+   * call will send to with it, never a record's owner.
    */
   readonly callerNumber?: string;
+  /**
+   * The caller withheld the number in callerNumber (Session.callerPrivacy): a callerNumber rule with
+   * `withheld: refuse` refuses it. Absent otherwise.
+   */
+  readonly callerWithheld?: true;
   /**
    * The same number as each slot that offers it holds it (its `callerNumber.take`: e.g. `phone`
    * 5555550142 for +15555550142), by slot id; only the slots it fits. Absent with callerNumber, and

@@ -1,8 +1,7 @@
 import type { App, CallDataKey, FormId, SlotId, TransferConfig, TransferSend } from './app/types';
 import { allHold, alwaysHolds, conditionProblems, conditionRefProblems, CONDITION_SHAPES, type Condition, type ConditionFacts, type ConditionWorld } from './conditions';
 import { envVariableOf } from './app/envReference';
-import { callDataSourceOf, recordedCallData, redactionOf, writableValue } from '../channel/callData';
-import { floorByName } from '../channel/maskByName';
+import { recordedCallData, redactionOf, sendOfKey, writableValue } from '../channel/callData';
 
 /**
  * Transfer targets and the data sent with a transfer (app.yaml's `transfer`, App.transfer): the engine
@@ -10,22 +9,29 @@ import { floorByName } from '../channel/maskByName';
  * all hold is taken (core/conditions.ts), else the default; the choice is the environment variable that
  * holds the number (never the number), which travels on the transfer action and the end frame's handoff
  * data to the server, which dials its value (server/transfer.ts). What goes with it (`send`) is resolved
- * here, from the session, as the records would have it: a call data key by its `redact`, a slot as the
- * handoff data sends it. An app without `transfer` chooses nothing, and every handoff is as before.
+ * here, from the session, as the app says it is delivered, never as it is recorded: a call data key as
+ * it came (its `send`, default `as-is`; `masked` as its `redact` records it), the caller's and the called
+ * number whole, a slot as the handoff data sends it. The records (the trace, the frame log) mask what
+ * was sent as they mask the source (trace/redact.ts). An app without `transfer` chooses nothing, and
+ * every handoff is as before.
  */
 
 /** A value of `send` as written, read: a reference to what the call has, or a constant. */
 export type TransferValue =
   | { readonly kind: 'reason' }
   | { readonly kind: 'form' }
+  | { readonly kind: 'callerNumber' }
+  | { readonly kind: 'calledNumber' }
   | { readonly kind: 'callData'; readonly key: string }
   | { readonly kind: 'slot'; readonly slot: SlotId }
   | { readonly kind: 'constant'; readonly value: string };
 
-/** `reason`, `form`, `callData.<key>` or `slot.<id>` is a reference; anything else is a constant, sent as written. */
+/** `reason`, `form`, `callerNumber`, `calledNumber`, `callData.<key>` or `slot.<id>` is a reference; anything else is a constant, sent as written. */
 export function transferValueOf(raw: string): TransferValue {
   if (raw === 'reason') return { kind: 'reason' };
   if (raw === 'form') return { kind: 'form' };
+  if (raw === 'callerNumber') return { kind: 'callerNumber' };
+  if (raw === 'calledNumber') return { kind: 'calledNumber' };
   if (raw.startsWith('callData.') && raw.length > 'callData.'.length) return { kind: 'callData', key: raw.slice('callData.'.length) };
   if (raw.startsWith('slot.') && raw.length > 'slot.'.length) return { kind: 'slot', slot: raw.slice('slot.'.length) };
   return { kind: 'constant', value: raw };
@@ -85,12 +91,14 @@ export function ruleTaken(transfer: TransferConfig, facts: ConditionFacts): numb
   return i < 0 ? null : i;
 }
 
-/** What a call data key sends: as its `redact` records it, floored by its source's name; null for none (a `secret` key). */
+/**
+ * What a call data key sends (delivery, never recording): the value as it came (its `send`, default
+ * `as-is`), or, where its `send` is `masked`, as its `redact` records it (null for a `secret` key, which
+ * then sends nothing). The masking by name the records take (channel/maskByName.ts) is never applied here.
+ */
 export function sentCallData(def: CallDataKey | undefined, v: string): string | null {
-  const shown = recordedCallData(redactionOf(def), v);
-  if (shown === null) return null;
-  const source = def === undefined ? null : callDataSourceOf(def.from);
-  return source === null ? shown : floorByName(source.name, shown);
+  if (sendOfKey(def) === 'as-is') return v;
+  return recordedCallData(redactionOf(def), v);
 }
 
 /** What the call has that `send` may read. */
@@ -100,6 +108,10 @@ export interface TransferFacts {
   readonly callData: Readonly<Record<string, string>>;
   /** The slots as the handoff data sends them (handoff/data.ts handoffDataSlots). */
   readonly slots: Readonly<Record<SlotId, string>>;
+  /** The number the caller is calling from, as the engine may use it (core/callerNumber.ts usableCallerNumber); absent, none. */
+  readonly callerNumber?: string;
+  /** The number called (Session.calledNumber); absent, none. */
+  readonly calledNumber?: string;
 }
 
 /** A map of `send` resolved: each reference read from the call, each constant as written; one with nothing to send left out. */
@@ -110,6 +122,8 @@ export function resolveSend(app: Pick<App, 'callData'>, values: Readonly<Record<
     let sent: string | null = null;
     if (v.kind === 'reason') sent = facts.reason;
     else if (v.kind === 'form') sent = facts.form;
+    else if (v.kind === 'callerNumber') sent = facts.callerNumber ?? null;
+    else if (v.kind === 'calledNumber') sent = facts.calledNumber ?? null;
     else if (v.kind === 'constant') sent = v.value;
     else if (v.kind === 'slot') sent = Object.hasOwn(facts.slots, v.slot) ? facts.slots[v.slot]! : null;
     else {
@@ -196,7 +210,7 @@ export interface TransferWorld extends Omit<ConditionWorld, 'at' | 'callData'> {
 }
 
 /** A misspelling of a reference that would be sent as a constant. */
-const LOOKS_LIKE_REFERENCE = /^(?:reason|form|calldata\.|callData\.|slot\.|slots\.|data\.)/i;
+const LOOKS_LIKE_REFERENCE = /^(?:reason|form|calldata\.|callData\.|slot\.|slots\.|data\.|caller_?number|called_?number|callernumber\.|callednumber\.)/i;
 
 /**
  * Everything wrong with an app's transfer (`pnpm check` for a folder, with the warnings; validateApp,
@@ -229,23 +243,23 @@ export function transferProblems(transfer: TransferConfig | undefined, world: Tr
         if (part === 'headers' && RESERVED_HEADER.test(name)) add(path, `"${name}" is a header Telnyx reserves for itself (X-Telnyx...)`, 'choose another X- name', { warning: true });
         if (part === 'chat' && !CHAT_DATA_KEY.test(name)) add(path, `"${name}" is not a plain word`, 'name the key with letters, digits and underscores, starting with a letter');
         if (typeof raw !== 'string' || raw === '') {
-          add(path, 'names nothing to send', 'write reason, form, callData.<key>, slot.<id>, or a constant');
+          add(path, 'names nothing to send', 'write reason, form, callerNumber, calledNumber, callData.<key>, slot.<id>, or a constant');
           continue;
         }
         const v = transferValueOf(raw);
         if (v.kind === 'callData') {
           if (!Object.hasOwn(keys, v.key)) add(path, `callData key "${v.key}" is not defined`, `add "${v.key}" under callData in app.yaml, or name one of ${Object.keys(keys).join(', ') || 'its keys'}`);
-          else if (redactionOf(keys[v.key]) === 'secret') add(path, `callData key "${v.key}" is secret, so it is never sent`, 'take it out of send, or give the key another redact (it is sent as that records it)');
-          else if (redactionOf(keys[v.key]) === 'mask' || redactionOf(keys[v.key]) === 'length') {
+          else if (sendOfKey(keys[v.key]) === 'masked') {
             const how = redactionOf(keys[v.key]);
-            add(path, `callData key "${v.key}" is recorded by ${how === 'mask' ? 'mask (the default)' : 'length'}, so this can only ever send ${how === 'mask' ? '•' : 'its length (<9 chars>)'}`, `give the key redact: keep (or last4) if the person taking the call needs the value, or take it out of send`, { warning: true });
+            if (how === 'secret') add(path, `callData key "${v.key}" is sent masked and recorded secret, so it is never sent`, 'take it out of send, or give the key send: as-is (or another redact)');
+            else if (how === 'mask' || how === 'length') add(path, `callData key "${v.key}" is sent masked and recorded by ${how === 'mask' ? 'mask (the default)' : 'length'}, so this can only ever send ${how === 'mask' ? '•' : 'its length (<9 chars>)'}`, `give the key send: as-is (the default) if the person taking the call needs the value, or take it out of send`, { warning: true });
           }
         } else if (v.kind === 'slot') {
           if (!world.slots.includes(v.slot)) add(path, `slot "${v.slot}" is not defined`, 'name one of the app\'s slots', { unknownSlot: v.slot });
         } else if (v.kind === 'constant') {
           if (!writableValue(raw)) add(path, 'has a control character (a tab, a newline, or another a transfer cannot carry)', 'write it on one line, with none');
           else if (raw.length > TRANSFER_CONSTANT_MAX) add(path, `is ${raw.length} characters long, and a value sent is at most ${TRANSFER_CONSTANT_MAX}`, 'shorten it');
-          else if (LOOKS_LIKE_REFERENCE.test(raw)) add(path, `"${raw}" is sent as written, as a constant, though it looks like a reference`, 'write reason, form, callData.<key> or slot.<id> exactly, or keep it if the words are meant', { warning: true });
+          else if (LOOKS_LIKE_REFERENCE.test(raw)) add(path, `"${raw}" is sent as written, as a constant, though it looks like a reference`, 'write reason, form, callerNumber, calledNumber, callData.<key> or slot.<id> exactly, or keep it if the words are meant', { warning: true });
         }
       }
     }

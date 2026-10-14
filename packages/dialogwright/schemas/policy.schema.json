@@ -412,6 +412,14 @@
                             "refuse",
                             "confirmed"
                           ]
+                        },
+                        "withheld": {
+                          "description": "What the caller's own number gets when they withheld it (*67) and the carrier sent it anyway: \"allow\" (default), it passes as any caller's number; \"refuse\", BLOCK \"caller-number-withheld\" (a number confirmed at the summary, with else: confirmed, still passes). Honouring the caller's privacy is the app's decision; app.yaml's callerNumber.withheld: ignore does it for every feature at once.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "refuse"
+                          ]
                         }
                       },
                       "required": [

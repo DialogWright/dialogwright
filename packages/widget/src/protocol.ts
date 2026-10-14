@@ -72,9 +72,10 @@ export type ServerMessage =
   | { type: 'say'; text: string; lang: string }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
-   * transfer.send.chat), for the page's own handover; absent unless the app writes it.
+   * transfer.send.chat), for the page's own handover; absent unless the app writes it. `slots` (with
+   * `unconfirmed`): the collected slots, only where app.yaml's handoff.data.chat says send.
    */
-  | { type: 'transfer'; reason: string; data?: Record<string, string> }
+  | { type: 'transfer'; reason: string; data?: Record<string, string>; slots?: Record<string, string>; unconfirmed?: string[] }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }

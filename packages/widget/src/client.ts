@@ -41,8 +41,11 @@ export type ChatClientEvent =
   /** The chat a resume named had ended: a new one follows, its `ready` next. */
   | { type: 'restarted' }
   | { type: 'say'; text: string; lang: string }
-  /** `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some. */
-  | { type: 'transfer'; reason: string; data?: Record<string, string> }
+  /**
+   * `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some;
+   * `slots`: the collected slots, only where the app's handoff.data.chat says send.
+   */
+  | { type: 'transfer'; reason: string; data?: Record<string, string>; slots?: Record<string, string> }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }
@@ -264,7 +267,8 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
         case 'transfer': {
           // Only string values are handed on: the page's handover reads them as text.
           const data = transferData(m.data);
-          emit(data === undefined ? { type: 'transfer', reason: m.reason } : { type: 'transfer', reason: m.reason, data });
+          const slots = transferData(m.slots);
+          emit({ type: 'transfer', reason: m.reason, ...(data !== undefined ? { data } : {}), ...(slots !== undefined ? { slots } : {}) });
           break;
         }
         case 'signed_in':

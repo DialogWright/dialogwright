@@ -1,12 +1,13 @@
-import { callerWithheldIn, endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, setupWithCallerWithheld, textLastOf } from './voice/registry';
-import { keptCallerNumber, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
+import { callerAttestationIn, callerWithheldIn, endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
+import { isWithheldCaller, keptCallerNumber } from '../core/callerNumber';
+import { maskCallerValue, recordsOf, type NumberRecords } from '../channel/maskByName';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame, SetupFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
 import { DEFAULT_END_PLAYBACK_MAX_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, END_PLAYBACK_LEAD_MS, bargeInOfCarrier, type BargeIn, type EndAfterPlayback } from '../channel/voiceProviders';
 import { parseInbound, serializeOutbound } from '../channel/relay/wire';
 import { actionsToFrames, frameToEvent, isInboundFrameType } from '../channel/relay/map';
-import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
+import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNumber, withCallerAttestation, withCallerNumber, withCallerWithheld, type SessionEvent } from '../channel/events';
 import { callDataFrom, HOST_APP_PARAMETER } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
@@ -1753,7 +1754,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       const chosen = run.result.decision.transfer;
       const transfer = deps.host ? deps.host.transferOf(entry.session.appId) : deps.transfer;
       const handoffNumber = deps.host ? deps.host.handoffOf(entry.session.appId) : deps.handoffNumber;
-      const number = chosen !== undefined && transfer ? maskTarget(targetNumber(transfer, handoffNumber ?? '', chosen.target)) : maskNumber(handoffNumber);
+      const records = recordsOf(appOf(entry.session));
+      const number = chosen !== undefined && transfer ? maskTarget(targetNumber(transfer, handoffNumber ?? '', chosen.target), records) : handoffNumber ? maskTarget(handoffNumber, records) : 'unknown';
       publish(deps, { type: 'handoff', callSid: entry.callSid, at: Date.now(), reason: run.result.decision.reason, number });
       fireHandoffSummary(deps, entry);
     }
@@ -1877,9 +1879,18 @@ export function messageShape(raw: string): string {
   return `{${fields.join(' ')}}`;
 }
 
-/** The caller as the console shows them: the last four of their number, or `withheld` for a caller who withheld it. */
-function callerShown(provider: string | undefined, setup: SetupFrame): string {
-  return callerWithheldIn(setup) ? 'withheld' : maskNumber(setupCallerOf(provider, setup));
+/**
+ * The caller as the console shows them: their number (or SIP address) as the app's records write it (its
+ * last four by default), with `(withheld)` after it for a caller who withheld it, or `withheld` alone when
+ * no number came.
+ */
+function callerShown(provider: string | undefined, setup: SetupFrame, records: NumberRecords, withheld = false): string {
+  const from = setupCallerOf(provider, setup);
+  const hidden = withheld || callerWithheldIn(setup) || isWithheldCaller(from);
+  const usable = from !== null && from !== '' && !isWithheldCaller(from);
+  if (!usable) return hidden ? 'withheld' : 'unknown';
+  const shown = maskCallerValue(from, records);
+  return hidden ? `${shown} (withheld)` : shown;
 }
 
 /** A setup whose token has been checked: refused, or its call taken up (resumed, or begun). */
@@ -1937,15 +1948,9 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   }
   const existing = deps.store.get(callId);
   if (existing) {
-    // A caller who withheld their number, as the call knows it or as this setup's own parameter says: its
-    // copies of the number are taken out, and the call remembers it (saved with it) for the next reconnect.
-    if (existing.callerWithheld === true || callerWithheldIn(parsed)) {
-      parsed = setupWithCallerWithheld(ctx.provider, parsed, true);
-      existing.callerWithheld = true;
-    }
     // Masked at write time, not only when the dashboard reads it back: the setup frame carries
-    // the caller's whole number, and the file on disk must never hold it either.
-    existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData));
+    // the caller's whole number, and the file on disk holds it only as the app's records say.
+    existing.frames.write('in', redactSetupFrame(parsed, appOf(existing.session).callData, recordsOf(appOf(existing.session))));
     if (existing.ended) {
       // Its last turn's lines and `end` reached no socket (it closed as the turn ran): sent on this one,
       // once (one machine's durable store; a shared one hands them over in its claim: 'replay').
@@ -2009,7 +2014,7 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     publish(deps, {
       type: 'reconnect', callSid: callId, at: Date.now(), attempt: entry.reconnects,
       call: {
-        from: callerShown(ctx.provider, parsed), startedAt: entry.session.startedAtMs, todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+        from: callerShown(ctx.provider, parsed, recordsOf(appOf(entry.session)), entry.session.callerPrivacy === 'withheld'), startedAt: entry.session.startedAtMs, todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
         channel: 'voice', provider: ctx.provider, ...(deps.host ? { app: entry.session.appId } : {}),
       },
     });
@@ -2041,8 +2046,6 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)))
     : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
-  // A caller who withheld their number (its copies already taken out of this setup): so is a reconnect's.
-  if (callerWithheldIn(parsed)) entry.callerWithheld = true;
   // The language a call starts in is the start document's (`locale`, from voice.numbers): a setup without
   // it, for an app whose documents name their languages, came without the document's parameters (a carrier
   // that dropped them), so the call starts in the default. Said once, as the call starts; no number in it.
@@ -2051,7 +2054,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     deps.log(`${callId}: the setup carries no locale parameter, so the call starts in ${defaultLocaleOf(named)}: the carrier did not hand back the start document's parameters, where the language (voice.numbers) is chosen`);
   }
   // Its custom parameters too: only those the app's callData keys keep are written as they came.
-  entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData));
+  const records = recordsOf(appOf(entry.session));
+  entry.frames.write('in', redactSetupFrame(parsed, appOf(entry.session).callData, records));
   // The carrier the call came in on, which the trace does not name: the console's Insights price its minutes by it.
   entry.frames.write('log', { provider: ctx.provider });
   const caller = setupCallerOf(ctx.provider, parsed);
@@ -2060,18 +2064,17 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   const within = continueWithinMsOf(appOf(entry.session));
   continuations.set(callId, new Continuation(within));
   if (within > 0) entry.frames.write('log', { continueWithinMs: within });
-  // That the session keeps the caller's number, by its last four only, for replay (harness-text/replay.ts),
-  // which stands a made-up number ending in them in for it and so makes the offer (or the lookup) this
-  // call makes. Only for an app with a slot that offers it or that keeps it for its code
-  // (core/callerNumber.ts), and only for a number it keeps.
-  const offers = usesCallerNumber(appOf(entry.session));
-  if (offers && keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller) });
+  // That the session keeps the caller's number, by its last four only (whatever the records keep: replay
+  // needs no more), for replay (harness-text/replay.ts), which stands a made-up number ending in them in
+  // for it and so makes the offer (or the lookup) this call makes; and that the caller withheld it.
+  const withheld = callerWithheldIn(parsed);
+  if (keptCallerNumber(appOf(entry.session), caller ?? undefined) !== undefined) entry.frames.write('log', { callerNumber: maskNumber(caller), ...(withheld ? { callerWithheld: true } : {}) });
   // Ahead of the greeting turn, and it is what resets the bus's history: the page follows this call now.
   publish(deps, {
     type: 'call_started', callSid: callId, at: Date.now(),
-    // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), masked;
-    // `withheld` for a caller who withheld it.
-    from: callerShown(ctx.provider, parsed), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
+    // The caller's number where this carrier's setup carries it (Telnyx's is in its custom parameters), as
+    // the app's records write it, marked for a caller who withheld it.
+    from: callerShown(ctx.provider, parsed, records), todayIso: entry.opts.todayIso, thresholds: entry.opts.thresholds,
     // Voice only, here, with the carrier it came in on; an app's chat (an AppRoute,
     // src/server/appRoutes.ts) is the other publisher of this event, and there `caller` names who is chatting.
     channel: 'voice', provider: ctx.provider, caller: null,
@@ -2086,10 +2089,9 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   } catch {
     // A client whose warm throws synchronously is no reason to drop the call.
   }
-  // The number the caller is calling from goes to the core only for an app with a slot that offers
-  // it or that keeps it for its code, and the number called only for an app that keeps it
-  // (core/callerNumber.ts); every other app's start event is as it was.
-  const called = usesCalledNumber(appOf(entry.session)) ? setupCalledOf(ctx.provider, parsed) : null;
+  // The numbers the call came with go to the core for every app, as the call's data (core/callerNumber.ts),
+  // with what the answer webhook said of the caller: a withheld number (its flag), and its attestation.
+  const called = setupCalledOf(ctx.provider, parsed);
   // The data the call came with that the app names (app.yaml's callData, channel/callData.ts): its
   // custom parameters, setup fields and the answer webhook's fields echoed as dw_<key>. None for
   // every other app, whose start event is as it was.
@@ -2098,7 +2100,7 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
   // Which keys the call came with, by name only, for replay (harness-text/replay.ts), which then names
   // those the log holds masked or not at all (a secret one, a field the frame log drops).
   if (Object.keys(data).length > 0) entry.frames.write('log', { callData: Object.keys(data) });
-  const start = withCallData(withCalledNumber(withCallerNumber(setup, offers ? caller : null), called), data);
+  const start = withCallData(withCalledNumber(withCallerAttestation(withCallerWithheld(withCallerNumber(setup, caller), withheld), callerAttestationIn(parsed)), called), data);
   await enqueueUnsettled(deps, callId, async (e) => {
     await turn(deps, e, start);
   });
@@ -2146,8 +2148,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   }
 
   if (parsed.type === 'setup') {
-    // A caller who withheld their number: its copies are taken out before anything reads the setup.
-    const setup = setupWithCallerWithheld(ctx.provider, parsed);
+    const setup = parsed;
     const callId = setupCallIdOf(ctx.provider, setup);
     const checked = ctx.token ? deps.tokens.verify(ctx.token, callId, ctx.provider) : false;
     // A store across the network answers with a promise (SESSION_STORE=postgres); the others at once, as always.

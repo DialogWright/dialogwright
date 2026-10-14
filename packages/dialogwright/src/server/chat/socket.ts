@@ -16,7 +16,8 @@ import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isAnonymous, type Party } from '../../gate/types';
 import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
-import { framesMaskWords, summaryTexts, turnScrubber } from '../../trace/redact';
+import { framesMaskWords, redactCollected, redactSent, summaryTexts, turnScrubber } from '../../trace/redact';
+import type { App } from '../../core/app/types';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
 import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
@@ -184,8 +185,12 @@ function loggedIn(m: ClientMessage, text?: string, spec?: Readonly<Record<string
 }
 
 /** A server message as the frame log keeps it: a line scrubbed as voice text frames are (adapter.ts loggedFrame), the resume token left out. */
-function loggedOut(m: ServerMessage, scrub: Scrub | null): Record<string, unknown> {
+function loggedOut(m: ServerMessage, scrub: Scrub | null, app: App | null = null): Record<string, unknown> {
   if (m.type === 'say' && scrub !== null) return { ...m, text: scrub(m.text) };
+  // A transfer delivers what the app sends; the frame log writes it as the trace does (each value masked by where it came from).
+  if (m.type === 'transfer' && app !== null && (m.data !== undefined || m.slots !== undefined)) {
+    return { ...m, ...(m.data !== undefined ? { data: redactSent(app, 'chat', m.data, 'length') } : {}), ...(m.slots !== undefined ? { slots: redactCollected(app, m.slots, 'length') } : {}) };
+  }
   if (m.type === 'ready') return { type: 'ready', session: m.session, locale: m.locale };
   return m;
 }
@@ -232,8 +237,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
   };
 
   /** Send one message on `ws`, and log it to the session's frame log when there is one. */
-  const send = (ws: WebSocket | null, frames: FrameSink | null, m: ServerMessage, scrub: Scrub | null = null): void => {
-    const logged = loggedOut(m, scrub);
+  const send = (ws: WebSocket | null, frames: FrameSink | null, m: ServerMessage, scrub: Scrub | null = null, app: App | null = null): void => {
+    const logged = loggedOut(m, scrub, app);
     if (ws === null || ws.readyState !== WebSocket.OPEN) {
       record(frames, 'log', { dropped: logged });
       return;
@@ -246,7 +251,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     ws.send(serializeServerMessage(m));
     record(frames, 'out', logged);
   };
-  const sendTo = (e: ChatEntry, m: ServerMessage, scrub: Scrub | null = null): void => send(e.socket, e.frames, m, scrub);
+  const sendTo = (e: ChatEntry, m: ServerMessage, scrub: Scrub | null = null): void => send(e.socket, e.frames, m, scrub, appOf(e.session));
 
   /** Run `fn` after everything already queued for the session; an ended session skips it, an error is logged and the queue goes on. */
   const enqueue = (e: ChatEntry, fn: (e: ChatEntry) => Promise<void>): Promise<void> => {
@@ -336,7 +341,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       const app = appOf(r.result.session);
       // Built from the session after the turn and its decision, as the voice frame log's is.
       const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, summaryTexts(r.record.render, app));
-      for (const m of actionsToChatMessages(r.result.actions, defaultLocaleOf(app))) {
+      // The collected slots go with a transfer only where the app's handoff data says (handoff.data.chat: send).
+      for (const m of actionsToChatMessages(r.result.actions, defaultLocaleOf(app), { slots: app.handoff?.data?.chat === 'send' })) {
         sendTo(e, m, scrub);
         last = m.type;
       }

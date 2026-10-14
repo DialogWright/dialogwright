@@ -13,8 +13,8 @@ import { appOf, defaultAppId, getApp } from '../core/app/registry';
 import { formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, Refused, SlotId } from '../core/app/types';
-import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallData, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
-import { keptCallerNumber, lastFour, usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
+import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallData, withCalledNumber, withCallerAttestation, withCallerNumber, withCallerWithheld, type SessionEvent } from '../channel/events';
+import { keptCallerNumber, lastFour } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferPromptId } from '../core/factsOffer';
 import { sayText, type Action } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
@@ -487,14 +487,20 @@ export interface Scenario {
   locale?: string;
   /**
    * The number the call comes from, as a carrier sends it (e.g. "+15555550142"; a withheld one as
-   * the carrier writes it): the start event carries it (SessionStart.callerNumber) when the app has a
-   * slot that offers the caller's number (SlotSpec.callerNumber) or keeps it for its code
-   * (App.callerNumber). Without it, and on a chat, the call has no number, as it always has.
+   * the carrier writes it, or a SIP address): the start event carries it (SessionStart.callerNumber),
+   * the call's data for every app. Without it, and on a chat, the call has no number, as it always has.
    */
   callerNumber?: string;
   /**
+   * The caller withheld their number and the carrier sent it anyway, marked so (Telnyx's marks: the
+   * start event's callerPrivacy `withheld`), with `callerNumber` the number it sent. Default false.
+   */
+  callerWithheld?: boolean;
+  /** The STIR/SHAKEN attestation the carrier gave the number (SessionStart.callerAttestation), as it writes it ("A"). */
+  callerAttestation?: string;
+  /**
    * The number the call is to (e.g. "+15555550100"): the start event carries it
-   * (SessionStart.calledNumber) when the app keeps it (app.yaml's callerNumber `called: true`), and a
+   * (SessionStart.calledNumber), the call's data for every app, and a
    * call to a number app.yaml's voice.numbers lists starts in its locale, as on the phone (unless
    * `locale` names one). Without it, and on a chat, the call has none.
    */
@@ -603,8 +609,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   // app.yaml's voice.numbers lists starts in its locale, as the server's start document asks
   // (server/http.ts startLocale), its env.<NAME> read from the call's env; a scenario's own `locale` wins.
   const locale = scenario.locale ?? (session.caps.speech ? numberLocale(appOf(session), scenario.calledNumber, o.env) : undefined);
-  const calling = withCallerNumber(startEvent({}, locale), session.caps.speech && usesCallerNumber(appOf(session)) ? scenario.callerNumber : undefined);
-  const start = withCallData(withCalledNumber(calling, session.caps.speech && usesCalledNumber(appOf(session)) ? scenario.calledNumber : undefined), scenario.callData);
+  const speech = session.caps.speech;
+  const calling = withCallerAttestation(withCallerWithheld(withCallerNumber(startEvent({}, locale), speech ? scenario.callerNumber : undefined), speech && scenario.callerWithheld === true), speech ? scenario.callerAttestation : undefined);
+  const start = withCallData(withCalledNumber(calling, speech ? scenario.calledNumber : undefined), scenario.callData);
   const setup = await turn(session, start, o);
   runs.push(setup);
   stepOf.push(-1);
@@ -688,6 +695,8 @@ function isValidScenario(s: unknown): s is Scenario {
     typeof (s as Scenario).expect === 'object' && (s as Scenario).expect !== null &&
     ((s as Scenario).locale === undefined || (typeof (s as Scenario).locale === 'string' && (s as Scenario).locale !== '')) &&
     ((s as Scenario).callerNumber === undefined || typeof (s as Scenario).callerNumber === 'string') &&
+    ((s as Scenario).callerWithheld === undefined || typeof (s as Scenario).callerWithheld === 'boolean') &&
+    ((s as Scenario).callerAttestation === undefined || typeof (s as Scenario).callerAttestation === 'string') &&
     ((s as Scenario).calledNumber === undefined || typeof (s as Scenario).calledNumber === 'string') &&
     ((s as Scenario).callData === undefined || isStringMap((s as Scenario).callData)) &&
     ((s as Scenario).now === undefined || (typeof (s as Scenario).now === 'string' && Number.isFinite(Date.parse((s as Scenario).now!)))) &&

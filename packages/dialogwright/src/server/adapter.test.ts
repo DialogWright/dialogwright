@@ -1208,8 +1208,8 @@ describe('dashboard publishing', () => {
     // keeps the raw one, and `/dashboard/traces/<sid>` redacts it the same way on the way back.
     expect(JSON.stringify(events)).not.toContain('+15555550199');
     const setupTurn = events.find((e) => e.type === 'turn');
-    // The number called here is one digit ('+2'): its last four would be all of it, so it is bullets.
-    expect(setupTurn).toMatchObject({ record: { event: { type: 'session.start', provider: { from: '…0199', to: '••••' } } } });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default (app.yaml's records.businessNumbers).
+    expect(setupTurn).toMatchObject({ record: { event: { type: 'session.start', provider: { from: '…0199', to: '+2' } } } });
   });
 
   it('masks the caller number in the raw frame log for the setup line, at write time', async () => {
@@ -1217,7 +1217,8 @@ describe('dashboard publishing', () => {
     const sock = fakeSocket();
     await handleSocketMessage(d, sock, newConnectionContext(d.tokens.mint('CA1'), sock), setupMsg('CA1', 'VX', '+15555550199'));
     const setupLine = frameLines(d.dir).find((l) => l.dir === 'in' && l.msg.type === 'setup');
-    expect(setupLine?.msg).toMatchObject({ from: '…0199', to: '••••' });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default (app.yaml's records.businessNumbers).
+    expect(setupLine?.msg).toMatchObject({ from: '…0199', to: '+2' });
     expect(JSON.stringify(setupLine)).not.toContain('5555550199');
     // A reconnect's setup line (the call already has an entry) is masked the same way.
     const reconnectSock = fakeSocket();
@@ -1236,7 +1237,8 @@ describe('dashboard publishing', () => {
     expect(sock.sent.at(-1)).toMatchObject({ type: 'end', handoffData: '{"reasonCode":"live-agent"}' });
     // No Anthropic key in these deps, so the summary settles at once with a null text.
     expect(types(events).slice(-4)).toEqual(['turn', 'handoff', 'ended', 'handoff_summary']);
-    expect(events.find((e) => e.type === 'handoff')).toMatchObject({ reason: 'live-agent', number: '…0123' });
+    // Re-pinned (live findings item 26): the handoff target is the business's own number, kept whole by default.
+    expect(events.find((e) => e.type === 'handoff')).toMatchObject({ reason: 'live-agent', number: '+15555550123' });
     expect(events.at(-2)).toMatchObject({ type: 'ended', reason: 'handoff' });
     expect(events.at(-1)).toMatchObject({ type: 'handoff_summary', text: null });
     // The socket close after the end frame is Twilio finishing up, not a hangup.

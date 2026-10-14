@@ -13,6 +13,8 @@ import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRu
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
 import type { SlotSpec } from '../core/slots/types';
+import { handoffDataProblems } from '../handoff/data';
+import { callDataSourceProblem } from '../channel/callData';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { CONSENT_PROMPT } from '../core/textConsent';
 import { kbLinkProblems, kbStateProblems } from '../kb/rules';
@@ -207,7 +209,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
   // a proposal, and the open question follows once it is settled, as for a proposal at the greeting.
   if (config.app.textConsent !== undefined) {
     needs.push({ id: greetings?.offer ?? 'greeting_offer', why: 'a call opens on the consent to text for the whole call (app.yaml textConsent), said in place of the greeting before consent_texts' });
-    needs.push({ id: CONSENT_PROMPT, why: 'it asks consent to text for the whole call (app.yaml textConsent), by the last four digits of the number calling', vars: ['last4'] });
+    needs.push({ id: CONSENT_PROMPT, why: 'it asks consent to text for the whole call (app.yaml textConsent), by the last four digits of the number calling', vars: ['last4', 'callerNumber'] });
     needs.push({ id: 'greet_after_offer', why: 'the consent to text for the whole call is settled, and it asks the open question' });
   }
   // A start route that enters a form says the welcome first, the greeting's line before a proposal.
@@ -355,6 +357,14 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  callDataWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
+  handoffDataWarnings(config, code?.slots ?? {}, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   priorityHandoffWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -442,6 +452,31 @@ function transferWarnings(config: LoadedConfig, report: (file: string, path: Dat
     hasReasonLine: (reason: string) => Object.hasOwn(prompts, handoffPromptId(reason)),
   };
   for (const p of transferYamlProblems(transfer, world)) if (p.warning) report('app.yaml', p.path, p.message, p.fix);
+}
+
+/**
+ * The warnings for app.yaml's callData (channel/callData.ts callDataSourceProblem): a key that reads the
+ * caller's or the called number from the carrier's own field (callerOf(s) and calledOf(s) already read
+ * them), and a setup field no carrier documents (the wire passes it through when a carrier sends it).
+ * Warnings, never refusals: each may be meant.
+ */
+function callDataWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  for (const [key, def] of Object.entries(config.app.callData ?? {})) {
+    const problem = callDataSourceProblem(def.from);
+    if (problem?.warning === true) report('app.yaml', ['callData', key, 'from'], problem.message, problem.fix);
+  }
+}
+
+/**
+ * The warnings for app.yaml's handoff.data (handoff/data.ts handoffDataProblems): a secret held by its
+ * length (a PIN) that the app sends as it is (`send: as-is`), which hands the carrier and the person
+ * taking the call its digits. Warnings, never refusals: the app may mean it.
+ */
+function handoffDataWarnings(config: LoadedConfig, slots: Readonly<Record<string, SlotSpec | undefined>>, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const data = config.app.handoff?.data;
+  for (const p of handoffDataProblems(data, slots, config.identity?.levels[1].factors ?? [])) {
+    if (p.warning === true) report('app.yaml', ['handoff', 'data', ...p.path], p.message, p.fix);
+  }
 }
 
 /** The level a form needs before it can go on: its entry's purpose, and the levels of the actions it calls and checks. */
@@ -899,16 +934,14 @@ function callerHintWarnings(config: LoadedConfig, slots: Readonly<Record<string,
   }
   const factors: readonly string[] = config.identity?.levels[1].factors ?? [];
   const offering = Object.entries(slots).filter(([id, spec]) => spec?.callerNumber !== undefined && !factors.includes(id)).map(([id]) => id);
-  const keeps = block?.use === 'hint' || offering.length > 0;
   for (const [tool, action] of Object.entries(policy.actions)) {
     action.rules.forEach((entry, i) => {
       if (typeof entry !== 'object' || entry === null || !('callerNumber' in entry)) return;
       const rule = readRule(entry);
       if (rule.rule !== 'callerNumber') return;
       const path: DataPath = ['actions', tool, 'rules', i, 'callerNumber'];
-      if (!keeps && rule.else !== 'confirmed') report('policy.yaml', path, `the callerNumber rule of "${tool}" holds "${rule.field}" to the number the caller is calling from, but the app keeps no caller's number (no callerNumber in app.yaml, and no slot that offers it), so the rule refuses every call`, 'add "callerNumber: { use: hint }" to app.yaml, or give the slot that takes the number a callerNumber offer');
       // A param named callerNumber is the number as the session keeps it (the lookup's param, callerOf(s).number): compared as it is meant to be.
-      else if (keeps && !offering.includes(rule.field) && rule.field !== 'callerNumber') report('policy.yaml', [...path, 'field'], `"${rule.field}" is no slot that offers the caller's number, so the rule compares it with the number as the carrier sent it, digit for digit (+15555550142 is not 5555550142)`, `name the slot that offers the number (its value is the number as the slot holds it), or pass the number in that form`);
+      if (!offering.includes(rule.field) && rule.field !== 'callerNumber') report('policy.yaml', [...path, 'field'], `"${rule.field}" is no slot that offers the caller's number, so the rule compares it with the number as the carrier sent it, digit for digit (+15555550142 is not 5555550142)`, `name the slot that offers the number (its value is the number as the slot holds it), or pass the number in that form`);
     });
   }
 }

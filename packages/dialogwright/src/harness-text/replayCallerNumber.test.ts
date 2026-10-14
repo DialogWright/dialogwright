@@ -111,13 +111,17 @@ describe('the caller\'s number, live and replayed', () => {
     expect((await call.replay()).records.map(shape)).toEqual(live.map(shape));
   });
 
-  it('writes no line for an app without a slot that offers the number', async () => {
+  // Re-pinned (live findings item 26): every app keeps the number as the call's data, and its code may
+  // read it, so the line is written for an app without a slot that offers it too, by the last four only.
+  it('writes the line, by the last four only, for an app without a slot that offers the number', async () => {
     resetAppsForTest();
     registerTestkit();
     registerApp(callbackApp);
     const call = liveCall('twilio', '+15555550142', 'testkit');
     await call.start();
-    expect(readFileSync(call.framesPath, 'utf8')).not.toContain('callerNumber');
+    const log = readFileSync(call.framesPath, 'utf8');
+    expect(log).toContain('"callerNumber":"…0142"');
+    expect(log).not.toContain('5555550142');
   });
 });
 
@@ -173,7 +177,8 @@ describe('the stand-in', () => {
     expect(standInCallerNumber(callbackApp, '014')).toBeUndefined();
     expect(standInCallerNumber(callbackApp, 'abcd')).toBeUndefined();
     const noOffer: App = { ...callbackApp, id: 'callback-none', slots: { ...callbackApp.slots, phone: { ...callbackApp.slots.phone!, callerNumber: undefined } } } as App;
-    expect(standInCallerNumber(noOffer, '0142')).toBeUndefined();
+    // Re-pinned (live findings item 26): an app with no slot that offers the number keeps it for its code, so it has a stand-in.
+    expect(standInCallerNumber(noOffer, '0142')).toBe('+15555550142');
   });
 
   it('is in international form for an app that keeps the number for its code, where its slot takes that too', () => {

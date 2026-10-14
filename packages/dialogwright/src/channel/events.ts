@@ -11,16 +11,17 @@ export const DEFAULT_LANG = 'en-US';
  * A session began. Provider details (call ids, numbers, custom parameters) are opaque to the core.
  * `locale` is the language the channel asks the session to speak (a language tag, e.g. es-US), when
  * it names one: the session speaks it where the app has it (App.locales), its default otherwise.
- * `callerNumber` is the number the caller is calling from, as the carrier sent it
- * (VoiceProvider.setupCallerOf): only on a call, only for an app with a slot that offers it
- * (SlotSpec.callerNumber, core/callerNumber.ts) or that keeps it for its code (App.callerNumber), and
- * only when the carrier sent one. The session keeps it only when the app can use it; it is never
- * identity. `calledNumber` is the number the caller called (VoiceProvider.setupCalledOf), only for an
- * app that keeps it (App.callerNumber `called`), and only when the carrier sent one. `callData` is
- * the data the call or chat came with that the app names (app.yaml's `callData`, channel/callData.ts
- * callDataFrom), only for an app that names some, and only the keys whose source sent a value.
+ * `callerNumber` is the caller's address as the carrier sent it (VoiceProvider.setupCallerOf): a
+ * number, a placeholder for a withheld one, or a SIP or client address; on every call whose carrier
+ * sent one. `callerPrivacy` says the caller withheld their number (the carrier marked it so); the
+ * number, where one came, is still carried. `callerAttestation` is the STIR/SHAKEN attestation the
+ * carrier gave the number. The session keeps them as data (core/callerNumber.ts); none is ever
+ * identity. `calledNumber` is the number the caller called (VoiceProvider.setupCalledOf), on every
+ * call whose carrier sent one. `callData` is the data the call or chat came with that the app names
+ * (app.yaml's `callData`, channel/callData.ts callDataFrom), only for an app that names some, and
+ * only the keys whose source sent a value.
  */
-export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; calledNumber?: string; callData?: Readonly<Record<string, string>> }
+export interface SessionStart { type: 'session.start'; provider: Readonly<Record<string, string>>; locale?: string; callerNumber?: string; callerPrivacy?: 'withheld'; callerAttestation?: string; calledNumber?: string; callData?: Readonly<Record<string, string>> }
 /** Recognized speech. Only a final transcript is a turn; a partial one holds. */
 export interface UserSpeech { type: 'user.speech'; text: string; final: boolean; lang: string }
 /** Typed text: always final. */
@@ -56,6 +57,16 @@ export function startEvent(provider: Readonly<Record<string, string>> = {}, loca
 export function withCallerNumber(event: SessionEvent, callerNumber: string | null | undefined): SessionEvent {
   if (event.type !== 'session.start' || callerNumber === null || callerNumber === undefined) return event;
   return { ...event, callerNumber };
+}
+/** A session start whose caller withheld their number (SessionStart.callerPrivacy); false leaves it as it is. */
+export function withCallerWithheld(event: SessionEvent, withheld: boolean): SessionEvent {
+  if (event.type !== 'session.start' || !withheld) return event;
+  return { ...event, callerPrivacy: 'withheld' };
+}
+/** A session start with the STIR/SHAKEN attestation the carrier gave the caller's number (SessionStart.callerAttestation); null, absent or empty leaves it as it is. */
+export function withCallerAttestation(event: SessionEvent, attestation: string | null | undefined): SessionEvent {
+  if (event.type !== 'session.start' || attestation === null || attestation === undefined || attestation === '') return event;
+  return { ...event, callerAttestation: attestation };
 }
 /** A session start with the number the caller called (SessionStart.calledNumber); null or absent leaves it as it is. */
 export function withCalledNumber(event: SessionEvent, calledNumber: string | null | undefined): SessionEvent {

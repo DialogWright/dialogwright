@@ -159,8 +159,12 @@ describe('a posted handoff', () => {
   it('a call with no decision goes to the default; the console sees a target masked', () => {
     expect(defaultTarget(transfer(), HANDOFF)).toEqual({ to: ENV.MAIN_LINE });
     expect(defaultTarget(null, HANDOFF)).toEqual({ to: HANDOFF });
-    expect(maskTarget(ENV.SECURITY_DESK)).toBe('sip:…@pbx.example.com');
-    expect(maskTarget('+15555550111')).toBe('…0111');
+    // Re-pinned (live findings item 26): a target is the business's own number, shown whole by default; masked where records.businessNumbers says last4.
+    expect(maskTarget(ENV.SECURITY_DESK)).toBe(ENV.SECURITY_DESK);
+    expect(maskTarget('+15555550111')).toBe('+15555550111');
+    const last4 = { callerNumber: 'last4', businessNumbers: 'last4', callerName: 'redact' } as const;
+    expect(maskTarget(ENV.SECURITY_DESK, last4)).toBe('sip:…@pbx.example.com');
+    expect(maskTarget('+15555550111', last4)).toBe('…0111');
     expect(targetNumber(transfer(), HANDOFF, 'PRIORITY_LINE')).toBe(ENV.PRIORITY_LINE);
     expect(targetNumber(transfer(), HANDOFF, 'NOPE')).toBe(HANDOFF);
   });

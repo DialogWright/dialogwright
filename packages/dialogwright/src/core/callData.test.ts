@@ -83,8 +83,11 @@ describe('callDataFrom: each key from its source', () => {
     expect(Object.values(callDataFrom(SPEC, provider))).not.toContain('x');
   });
 
-  it('never reads a setup field the wire does not keep, nor a webhook field from its own name', () => {
-    expect(callDataFrom({ to: { from: 'setup.to' } }, { to: '+15555550101' })).toEqual({});
+  it('reads the setup\'s numbers and a field passed through, never a webhook field from its own name', () => {
+    // Re-pinned (live findings item 26): call data may read the setup's numbers (pnpm check warns that
+    // calledOf(s) already does) and a field the wire passed through.
+    expect(callDataFrom({ to: { from: 'setup.to' } }, { to: '+15555550101' })).toEqual({ to: '+15555550101' });
+    expect(callDataFrom({ extra: { from: 'setup.carrierExtra' } }, { carrierExtra: 'x' })).toEqual({ extra: 'x' });
     expect(callDataFrom({ referral: { from: 'webhook.SipHeader_X-Referral' } }, { 'param.SipHeader_X-Referral': 'partner-7' })).toEqual({});
   });
 

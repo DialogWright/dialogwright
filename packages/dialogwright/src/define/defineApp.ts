@@ -564,6 +564,7 @@ export function crossLink(
   // of each is something it can do (handoff/data.ts). An unknown slot gets the usual fix.
   const handoffData = app.handoff?.data as HandoffData | undefined;
   for (const p of handoffDataProblems(handoffData, linked.slots, config.identity?.levels[1].factors ?? [])) {
+    if (p.warning === true) continue;
     const path: DataPath = ['handoff', 'data', ...p.path];
     if (p.unknownSlot !== undefined) slotExists('app.yaml', path, p.unknownSlot);
     else yaml('app.yaml', path, p.message, p.fix);
@@ -785,7 +786,7 @@ export function crossLink(
       yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], 'callerId identifies every factor of level 1, so the caller-ID match alone would verify the caller, and a caller ID can be forged', 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
     }
     if (lookup === undefined) {
-      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the call-start lookup, but app.yaml has no callerNumber lookup, so there is never a match', 'add "callerNumber: { use: hint, lookup: <tool> }" to app.yaml, or delete "callerId"');
+      yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the call-start lookup, but app.yaml has no callerNumber lookup, so there is never a match', 'add "callerNumber: { lookup: <tool> }" to app.yaml, or delete "callerId"');
     }
     if (code.facts?.callerMatch === undefined) {
       yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the facts, but the code has no facts.callerMatch, so there is never a match', `add callerMatch(f) to ${inCode('facts')}, returning { ${callerId.identifies.join(', ')} } from what the lookup kept (null for no single match), or delete "callerId"`);
@@ -1037,7 +1038,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);
   put(app, 'callerNumber', a.callerNumber === undefined ? undefined : callerNumberOf(a.callerNumber));
-  put(app, 'callData', a.callData === undefined ? undefined : Object.fromEntries(Object.entries(a.callData).map(([k, v]) => [k, v.redact !== undefined ? { from: v.from, redact: v.redact } : { from: v.from }])));
+  put(app, 'records', a.records === undefined ? undefined : { ...a.records });
+  put(app, 'callData', a.callData === undefined ? undefined : Object.fromEntries(Object.entries(a.callData).map(([k, v]) => [k, { from: v.from, ...(v.redact !== undefined ? { redact: v.redact } : {}), ...(v.send !== undefined ? { send: v.send } : {}) }])));
   put(app, 'startParameters', a.startParameters === undefined ? undefined : { ...a.startParameters });
   put(app, 'transfer', a.transfer === undefined ? undefined : transferOf(a.transfer));
   put(app, 'hours', a.hours === undefined ? undefined : hoursOf(a.hours));
@@ -1139,7 +1141,6 @@ export function routeWorldOf(config: LoadedConfig, slots: readonly string[], pre
     facts: null,
     hours: config.app.hours === undefined ? null : { schedules: Object.keys(config.app.hours.schedules ?? {}) },
     predicates,
-    calledKept: config.app.callerNumber?.called === true,
     maxLevel: config.identity === null ? 0 : config.identity.levels[2] !== undefined ? 2 : 1,
     locales: [config.defaultLocale, ...Object.keys(config.prompts).filter((l) => l !== config.defaultLocale)],
     hasLine: (id) => Object.hasOwn(prompts, id),
@@ -1160,9 +1161,14 @@ function hoursOf(h: NonNullable<AppYaml['hours']>): HoursConfig {
   };
 }
 
-/** app.yaml's callerNumber as App.callerNumber carries it: `called` only when true. */
+/** app.yaml's callerNumber as App.callerNumber carries it: `use` and `called` only as written (they change nothing), `withheld` only when set. */
 function callerNumberOf(c: NonNullable<AppYaml['callerNumber']>): CallerNumberUse {
-  return { use: c.use, ...(c.called === true ? { called: true } : {}), ...(c.lookup !== undefined ? { lookup: c.lookup } : {}) };
+  return {
+    ...(c.use !== undefined ? { use: c.use } : {}),
+    ...(c.called === true ? { called: true } : {}),
+    ...(c.lookup !== undefined ? { lookup: c.lookup } : {}),
+    ...(c.withheld !== undefined ? { withheld: c.withheld } : {}),
+  };
 }
 
 function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
@@ -1237,6 +1243,7 @@ function voiceOf(voice: NonNullable<AppYaml['voice']>): VoiceConfig {
     })));
     return [tag, one];
   })));
+  put(config, 'twilio', voice.twilio === undefined ? undefined : { ...voice.twilio });
   return config;
 }
 

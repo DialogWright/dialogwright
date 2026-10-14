@@ -16,7 +16,7 @@ import { VOICE_RELAY } from '../channel/caps';
 import { mockCodeVerifier } from './tools';
 import { CALLBACK_DIR, callbackApp } from '../testing/callback/app';
 import { SCREENED_DIR, ScreenedSystems, screenedApp } from '../testing/screened/app';
-import { callerCandidate, callerDigits, callerNumberOf, keptCallerNumber, lastFour, usesCallerNumber, WITHHELD_PLACEHOLDERS } from './callerNumber';
+import { callerCandidate, callerDigits, callerNumberOf, keptCallerNumber, lastFour, actsOnCallerNumber, WITHHELD_PLACEHOLDERS } from './callerNumber';
 import { redactRecordSlots } from '../trace/redact';
 import { redactRecord } from '../server/dashboard/events';
 
@@ -106,7 +106,8 @@ describe('the number a carrier sends', () => {
     // mask; in international form they are no number for a slot whose country code is 1.
     expect(callerCandidate(callbackApp, 'phone', '+3545550142')).toBeNull();
     expect(callerCandidate(callbackApp, 'phone', '3545550142')).toEqual({ value: '3545550142', display: '354 555 0142' });
-    expect(keptCallerNumber(callbackApp, '+3545550142')).toBeUndefined();
+    // Re-pinned (live findings item 26): the number is the call's data, kept for every app; only an offer needs a slot that takes it.
+    expect(keptCallerNumber(callbackApp, '+3545550142')).toBe('+3545550142');
     // A +1 number with a digit too many or too few.
     expect(callerCandidate(callbackApp, 'phone', '+155555501420')).toBeNull();
     expect(callerCandidate(callbackApp, 'phone', '+1555555014')).toBeNull();
@@ -120,12 +121,13 @@ describe('the number a carrier sends', () => {
     expect(keptCallerNumber(callbackApp, `+1${WITHHELD_PLACEHOLDERS[1]}`)).toBeUndefined();
   });
 
-  it('is kept only by an app with a slot that offers it, and only when a slot can use it', () => {
-    expect(usesCallerNumber(callbackApp)).toBe(true);
-    expect(usesCallerNumber(screenedApp)).toBe(false);
+  it('is kept by every app, whether or not a slot can use it', () => {
+    // Re-pinned (live findings item 26): the number is the call's data, kept for every app; only an offer needs a slot that takes it.
+    expect(actsOnCallerNumber(callbackApp)).toBe(true);
+    expect(actsOnCallerNumber(screenedApp)).toBe(false);
     expect(keptCallerNumber(callbackApp, CALLING_FROM)).toBe('+15555550142');
-    expect(keptCallerNumber(screenedApp, CALLING_FROM)).toBeUndefined();
-    expect(keptCallerNumber(callbackApp, '+445555550142')).toBeUndefined();
+    expect(keptCallerNumber(screenedApp, CALLING_FROM)).toBe('+15555550142');
+    expect(keptCallerNumber(callbackApp, '+445555550142')).toBe('+445555550142');
     expect(keptCallerNumber(callbackApp, undefined)).toBeUndefined();
     expect(lastFour('555 555 0142')).toBe('0142');
   });
@@ -254,7 +256,9 @@ describe('no offer', () => {
     for (const from of ['+7378742833', '+266696687', 'anonymous', 'Restricted', '+', '', '+445555550142', '+3545550142', 'sip:caller@example.com']) {
       const t = last(await call(from, ...OPENER));
       expect(heard(t), from).toBe(ASK_PHONE);
-      expect(t.session.callerNumber, from).toBeUndefined();
+      // Re-pinned (live findings item 26): the number is the call's data, kept for every app; only an offer needs a slot that takes it.
+      if (from === '+445555550142' || from === '+3545550142') expect(t.session.callerNumber, from).toBe(from);
+      else expect(t.session.callerNumber, from).toBeUndefined();
     }
   });
 
@@ -267,7 +271,7 @@ describe('no offer', () => {
 
   it('on an identity factor, even when its spec says it offers one', () => {
     const factorApp: App = { ...callbackApp, id: 'callback-factor', identity: { ...callbackApp.identity!, factorSlots: ['phone'] } } as App;
-    expect(usesCallerNumber(factorApp)).toBe(false);
+    expect(actsOnCallerNumber(factorApp)).toBe(false);
     expect(callerCandidate(factorApp, 'phone', '15555550142')).toBeNull();
   });
 });
@@ -297,7 +301,10 @@ describe('an app without the option', () => {
   const screenedCorpus = join(SCREENED_DIR, 'fixtures', 'corpus.jsonl');
   const stamp = (r: ScenarioRun) => r.runs.map((x) => ({ ...x.record, ts: '', timing: null }));
 
-  it('runs a call from a number exactly as one from none: the same requests, the same records', async () => {
+  // Re-pinned (live findings item 26): an app with no slot that offers the number keeps it as the call's
+  // data, and acts on it nowhere: the model is sent the same, and every record but the start event's
+  // (which writes the number by its last four) is the same.
+  it('runs a call from a number as one from none: the same requests, the same records but the start event\'s number', async () => {
     use(screenedApp);
     const steps = ["there's water in my basement", 'yes, I own it', 'Cedar Falls'].map((say) => ({ say }));
     const askedWith: JevRequest[] = [];
@@ -306,18 +313,22 @@ describe('an app without the option', () => {
     const withNumber = await runScenario({ id: 'call', callerNumber: CALLING_FROM, steps, expect: { decision: 'any' } }, opts(askedWith));
     const without = await runScenario({ id: 'call', steps, expect: { decision: 'any' } }, opts(askedWithout));
     expect(JSON.stringify(askedWith)).toBe(JSON.stringify(askedWithout));
-    expect(JSON.stringify(stamp(withNumber))).toBe(JSON.stringify(stamp(without)));
-    expect(JSON.stringify(withNumber.runs[0]!.record)).not.toContain('callerNumber');
+    expect(JSON.stringify(stamp(withNumber).slice(1))).toBe(JSON.stringify(stamp(without).slice(1)));
+    expect(withNumber.runs[0]!.record.event).toMatchObject({ type: 'session.start', callerNumber: CALLING_FROM });
+    expect(JSON.stringify(redactRecordSlots(withNumber.runs[0]!.record, 'length'))).not.toContain('5555550142');
+    expect(withNumber.runs[0]!.record).not.toHaveProperty('callerNumber');
   });
 
-  it('keeps nothing of a number its start event carries anyway', () => {
+  it('keeps the number its start event carries as data, and nothing else changes', () => {
     use(screenedApp);
     const tc: TurnContext = { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools: { sys: new ScreenedSystems(), lookups: { ownerOf: () => null, scopeOf: () => [] }, codes: mockCodeVerifier } };
     const base = newSession('s', 0, VOICE_RELAY, undefined, 'screened');
     const a = resolve(base, withCallerNumber(startEvent(), CALLING_FROM), null, tc);
     const b = resolve(base, startEvent(), null, tc);
-    expect(a.session).toEqual(b.session);
-    expect('callerNumber' in a.session).toBe(false);
+    const { callerNumber, ...rest } = a.session;
+    expect(callerNumber).toBe('+15555550142');
+    expect(rest).toEqual(b.session);
+    expect(a.audit).toEqual(b.audit);
   });
 });
 

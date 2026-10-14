@@ -9,7 +9,7 @@ import type { BargeIn } from '../../channel/voiceProviders';
  * (src/testing/voiceConformance.ts); nothing in the core changes.
  */
 
-import type { Recognition } from '../../core/app/types';
+import type { Recognition, TwilioRelaySettings } from '../../core/app/types';
 import type { DialTarget } from './dial';
 
 export type { DialTarget } from './dial';
@@ -27,17 +27,25 @@ export interface WebhookRequest {
 export interface CallbackParams {
   /** The carrier's id for the call (Twilio's CallSid; Telnyx's CallSid on TeXML, or call_control_id). */
   readonly callId: string;
-  /** The number the caller is calling from; absent when the carrier sent none, or when the caller withheld it (`withheld`). */
+  /** The number the caller is calling from (or their SIP or client address), as the carrier sent it; absent when it sent none. */
   readonly from?: string;
   /**
-   * The caller withheld their number: the carrier marked it so (Telnyx's caller ID `anonymous`, an
-   * anonymous SIP From), whatever number it sent beside the marks. The provider leaves `from` out, and
-   * every copy of the number out of `raw`; the server's start document says so (WITHHELD_PARAMETER), and
-   * the setup that comes back has its copies taken out too, so the number is never kept, offered or
-   * looked up, exactly as a call with no number. Absent: not withheld, or the carrier marks nothing
-   * (Twilio sends a placeholder in place of the number, which core/callerNumber.ts refuses).
+   * `withheld`: the caller asked for their number to be withheld, and the carrier marked it so
+   * (Telnyx's caller ID `anonymous`, an anonymous SIP From, a SIP Privacy header), whatever number it
+   * sent beside the marks, which stays in `from` and `raw` as it came. Data: the server's start document
+   * carries it (WITHHELD_PARAMETER) to the setup, the session keeps it (Session.callerPrivacy), and the
+   * app decides what to do with it (app.yaml's `callerNumber.withheld`). Absent: not withheld, or the
+   * carrier marks nothing (Twilio sends a placeholder in place of the number, which the core reads as
+   * withheld: core/callerNumber.ts callerPrivacyOf).
    */
-  readonly withheld?: true;
+  readonly privacy?: 'withheld';
+  /**
+   * The STIR/SHAKEN attestation the carrier gave the caller's number, as it wrote it (Twilio's
+   * `StirVerstat`, `TN-Validation-Passed-A`; Telnyx's `shaken_stir_attestation`, `A`). The start document
+   * carries it (ATTESTATION_PARAMETER) to the setup, and the session keeps it (Session.callerAttestation).
+   * Absent when the carrier sent none.
+   */
+  readonly attestation?: string;
   readonly to?: string;
   /** The call's status in the carrier's words, as it sent it (for the frame log and the notes). */
   readonly callStatus?: string;
@@ -93,6 +101,8 @@ export interface StartDocumentOptions {
   readonly languages?: readonly RelayLanguage[];
   /** Custom parameters the relay hands back on its setup frame; `locale` is the one the engine reads (SessionStart.locale). */
   readonly parameters?: Readonly<Record<string, string>>;
+  /** Twilio's relay settings of the app (app.yaml's `voice.twilio`); absent, the document's own. Another carrier ignores them. */
+  readonly twilio?: TwilioRelaySettings;
   /**
    * Seconds of silence before the document connects (a `<Pause>` ahead of `<Connect>`): a planned
    * restart's handover (RESTART_PAUSE_S, server/index.ts drain), so the carrier's socket reaches the
@@ -161,21 +171,15 @@ export interface VoiceProvider {
   setupCallId?(setup: SetupFrame): string;
   /**
    * The number the caller is calling from, as the setup frame carries it, or null when it carries
-   * none: what the console's call_started shows masked, and what a slot that offers the caller's
-   * number reads (SessionStart.callerNumber, core/callerNumber.ts, which refuses a withheld one).
+   * none: what the console's call_started shows (as app.yaml's records say), and what the session keeps
+   * as the call's data (SessionStart.callerNumber, core/callerNumber.ts).
    * Absent: the setup's `from`. Telnyx's setup has `from` null and the number in its custom
    * parameters, as `telnyx_call_from`.
    */
   setupCallerOf?(setup: SetupFrame): string | null;
   /**
-   * The custom parameters of a setup frame that carry the caller's number, beside its `from` (Telnyx's
-   * `telnyx_call_from`): taken out, with `from` and `callerName`, from the setup of a call whose caller
-   * withheld their number (WITHHELD_PARAMETER, registry.ts setupWithCallerWithheld). Absent: none.
-   */
-  readonly callerParameters?: readonly string[];
-  /**
    * The number the caller called (the DNIS), as the setup frame carries it, or null when it carries
-   * none: what an app that keeps it reads (SessionStart.calledNumber, App.callerNumber `called`).
+   * none: the call's data, kept for every app (SessionStart.calledNumber, calledOf).
    * Absent: the setup's `to`. Telnyx's setup has `to` null and the number in its custom parameters,
    * as `telnyx_call_to`.
    */

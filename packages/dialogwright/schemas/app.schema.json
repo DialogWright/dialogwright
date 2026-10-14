@@ -574,6 +574,40 @@
             "additionalProperties": false,
             "description": "How the phone speaks and hears one locale."
           }
+        },
+        "twilio": {
+          "description": "Twilio's ConversationRelay settings for the app's calls, each written on its start document; a setting left out keeps the value the document always had.",
+          "type": "object",
+          "properties": {
+            "interruptSensitivity": {
+              "description": "How readily the caller's speech interrupts a line (ConversationRelay interruptSensitivity): low needs confident, longer speech, so room noise on a speakerphone does not cut a line off. Default \"low\".",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "ignoreBackchannel": {
+              "description": "Whether a backchannel (\"uh-huh\", \"okay\") is kept from interrupting a line (ConversationRelay ignoreBackchannel). Default true.",
+              "type": "boolean"
+            },
+            "reportInputDuringAgentSpeech": {
+              "description": "What the caller says or keys while a line plays that Twilio reports (ConversationRelay reportInputDuringAgentSpeech). Default \"any\".",
+              "type": "string",
+              "enum": [
+                "none",
+                "dtmf",
+                "speech",
+                "any"
+              ]
+            },
+            "deepgramSmartFormat": {
+              "description": "Whether Deepgram formats what it hears (numbers as digits, punctuation) before the engine reads it (ConversationRelay deepgramSmartFormat). Default false: the engine reads digits from the words.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,
@@ -682,7 +716,7 @@
           "additionalProperties": false
         },
         "data": {
-          "description": "What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback. A chat's transfer sends none. Default: no identity factor, a redacted slot masked, any other slot as it is.",
+          "description": "What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback; on a web chat, nothing unless chat says send. Default: no identity factor, a redacted slot masked, any other slot as it is.",
           "type": "object",
           "properties": {
             "slots": {
@@ -721,12 +755,20 @@
               }
             },
             "unconfirmed": {
-              "description": "What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): \"send\" (the default, sent as any other), \"mark\" (sent, and the data names it: the end frame's unconfirmed list, the console's \"(not confirmed)\", the audit's handoff row) or \"omit\" (left out). An identity factor is never counted. A chat's transfer sends no slots whatever this says.",
+              "description": "What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): \"send\" (the default, sent as any other), \"mark\" (sent, and the data names it: the end frame's unconfirmed list, the console's \"(not confirmed)\", the audit's handoff row) or \"omit\" (left out). An identity factor is never counted.",
               "type": "string",
               "enum": [
                 "send",
                 "mark",
                 "omit"
+              ]
+            },
+            "chat": {
+              "description": "What a web chat's transfer message carries of the collected slots: \"none\" (the default, the reason and transfer.send.chat only, as before) or \"send\", the same slots a call's transfer sends (as slots, chosen and masked by slots, send and unconfirmed above), for the page's own handover.",
+              "type": "string",
+              "enum": [
+                "none",
+                "send"
               ]
             }
           },
@@ -902,25 +944,61 @@
       "type": "object",
       "properties": {
         "use": {
+          "description": "\"hint\", as written before the numbers were kept for every app: accepted, and changes nothing. The number the caller is calling from is the call's data, read by the app's code with callerOf(s), whatever this block says.",
           "type": "string",
-          "const": "hint",
-          "description": "\"hint\": keep the number the caller is calling from for the app's code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml's callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it)."
+          "const": "hint"
         },
         "called": {
-          "description": "Keep the number the caller called (the DNIS) too, for the app's code (calledOf(s)). Default false.",
+          "description": "As written before the number called was kept for every app: accepted, and changes nothing. The number called is read with calledOf(s).",
           "type": "boolean"
         },
         "lookup": {
           "description": "A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app's call. Default: none.",
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "withheld": {
+          "description": "What the engine's own features do with a number the caller withheld (*67) that the carrier sent anyway, marked so (Telnyx), or a placeholder Twilio sent in its place: \"use\" (the default) treats it as any number: offered back by a slot, looked up, held by the gate's callerNumber rule, matched by identity.yaml's callerId; \"ignore\" treats the call as one with no number for all of them, honouring the caller's choice. The app's code reads the number either way (callerOf(s), with withheld: true).",
+          "type": "string",
+          "enum": [
+            "use",
+            "ignore"
+          ]
         }
       },
-      "required": [
-        "use"
-      ],
       "additionalProperties": false,
-      "description": "The number the caller is calling from, kept for the app's code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot's callerNumber)."
+      "description": "What the engine does with the number the caller is calling from: the call-start lookup, and whether its features use a number the caller withheld. The number itself, and the number called, are the call's data, kept for every app and read with callerOf(s) and calledOf(s); a number is a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId)."
+    },
+    "records": {
+      "type": "object",
+      "properties": {
+        "callerNumber": {
+          "description": "How the trace, the frame log, the console and the server's log write the caller's number (and their SIP or client address, and a copy the carrier sends under another name): \"last4\" (the default) by its last four digits, or \"keep\" whole. \"keep\" needs the console behind sign-in (CONSOLE_AUTH=token): the server refuses to start with it otherwise. What a transfer sends and what app code reads are never changed by it.",
+          "type": "string",
+          "enum": [
+            "last4",
+            "keep"
+          ]
+        },
+        "businessNumbers": {
+          "description": "How the records write the business's own numbers (the number called, transfer and handoff targets): \"keep\" (the default) whole, or \"last4\" by their last four.",
+          "type": "string",
+          "enum": [
+            "keep",
+            "last4"
+          ]
+        },
+        "callerName": {
+          "description": "How the records write the caller's name a carrier sends (CNAM: Twilio's CallerName): \"redact\" (the default), or \"keep\", which needs CONSOLE_AUTH=token as callerNumber's keep does.",
+          "type": "string",
+          "enum": [
+            "redact",
+            "keep"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "How the records (the trace, the frame log, the console, the server's log) write the numbers and the caller's name a call came with. Default: the caller's number by its last four, the business's numbers whole, the caller's name redacted."
     },
     "textConsent": {
       "type": "object",
@@ -954,10 +1032,10 @@
           "from": {
             "type": "string",
             "minLength": 1,
-            "description": "Where the value comes from: param.<name>, a custom parameter of the call's setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame the wire keeps (forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId); webhook.<field>, a field of the carrier's answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message's context."
+            "description": "Where the value comes from: param.<name>, a custom parameter of the call's setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame (from, to, forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId, or a string field a carrier adds, which the wire passes through); webhook.<field>, a field of the carrier's answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message's context."
           },
           "redact": {
-            "description": "How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask.",
+            "description": "How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask. It changes what is written down, never what a transfer sends (send).",
             "type": "string",
             "enum": [
               "last4",
@@ -965,6 +1043,14 @@
               "length",
               "secret",
               "keep"
+            ]
+          },
+          "send": {
+            "description": "What a transfer sends of the value (callData.<key> in transfer.send): \"as-is\" (the default), the value as it came; \"masked\", as redact records it (a secret key then sends nothing).",
+            "type": "string",
+            "enum": [
+              "as-is",
+              "masked"
             ]
           }
         },
@@ -1078,7 +1164,7 @@
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
                       "called": {
-                        "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                        "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                         "anyOf": [
                           {
                             "type": "string",
@@ -1221,7 +1307,7 @@
                           "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                         },
                         "called": {
-                          "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                          "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                           "anyOf": [
                             {
                               "type": "string",
@@ -1295,7 +1381,7 @@
                 "type": "object",
                 "properties": {
                   "headers": {
-                    "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
+                    "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as it came, or as its redact records it where the key says send: masked), callerNumber and calledNumber (the number the caller is calling from and the number called, whole), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -1307,7 +1393,7 @@
                     }
                   },
                   "chat": {
-                    "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
+                    "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as it came, or as its redact records it where the key says send: masked), callerNumber and calledNumber (the number the caller is calling from and the number called, whole), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -1338,7 +1424,7 @@
           "type": "object",
           "properties": {
             "headers": {
-              "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
+              "description": "SIP headers on a transfer to a sip: target, by name, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as it came, or as its redact records it where the key says send: masked), callerNumber and calledNumber (the number the caller is calling from and the number called, whole), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. A phone number carries no headers: they are left out, and the frame log says which. At most 1024 characters in all once encoded; what would go over is left out.",
               "type": "object",
               "propertyNames": {
                 "type": "string",
@@ -1350,7 +1436,7 @@
               }
             },
             "chat": {
-              "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
+              "description": "What a web chat's transfer message carries (its data, handed to the page's onTransfer), by key, each value reason (the handoff's reason), form (the form the transfer was chosen on), callData.<key> (sent as it came, or as its redact records it where the key says send: masked), callerNumber and calledNumber (the number the caller is calling from and the number called, whole), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written. Absent: the message carries only the reason, as before.",
               "type": "object",
               "propertyNames": {
                 "type": "string",

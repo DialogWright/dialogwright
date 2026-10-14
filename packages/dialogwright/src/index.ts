@@ -142,9 +142,11 @@ export type { CompiledPolicy } from './gate/compiled';
 
 // A few engine types an app's launcher and tests name.
 export type { Session, SessionFacts } from './core/session';
-// The numbers a call came with, for an app that keeps them (app.yaml's callerNumber): a hint, never identity on its own.
-export { callerOf, calledOf } from './core/callerNumber';
+// The numbers a call came with, the call's data for every app: a hint, never identity on its own. A
+// withheld number comes marked (callerOf(s).withheld); a SIP or client caller's address is callerUriOf(s).
+export { callerOf, calledOf, callerUriOf, callerWithheldOf } from './core/callerNumber';
 export type { CallerNumber } from './core/callerNumber';
+export type { CallerNumberUse, CallerWithheldUse, RecordsConfig, TwilioRelaySettings, CallDataSend } from './core/app/types';
 // The data a call or chat came with that the app names (app.yaml's callData), for the app's code.
 export { callDataOf } from './core/callData';
 export type { CallDataKey } from './core/app/types';

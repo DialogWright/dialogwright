@@ -77,10 +77,13 @@ describe('app.yaml transfer: refusals', () => {
     expect(slot.problems[0]).toContain('slot "topic" is not defined');
   });
 
-  it('refuses a secret call data key sent: it would be sent as nothing the records keep', async () => {
-    const r = await resultOf(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: secret }'));
+  it('refuses a call data key sent masked and recorded secret: nothing would be sent; a secret key sent as-is is the app\'s to send', async () => {
+    // Re-pinned (live findings item 26): recording and delivery are separate, so a key recorded secret is sent as it came by default.
+    const asIs = await resultOf(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: secret }'));
+    expect(asIs.problems).toEqual([]);
+    const r = await resultOf(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: secret, send: masked }'));
     expect(r.problems).toHaveLength(1);
-    expect(r.problems[0]).toContain('callData key "accountRef" is secret, so it is never sent');
+    expect(r.problems[0]).toContain('callData key "accountRef" is sent masked and recorded secret, so it is never sent');
   });
 
   it('refuses a target that is not env.<NAME>, a header that is not an X- name or User-to-User, and a missing default', async () => {
@@ -131,14 +134,18 @@ describe('app.yaml transfer: warnings, never refusals', () => {
     expect(r.warnings[0]).toContain('is never taken: rule 3 before it always holds');
   });
 
-  it('warns of a header or a chat value naming a call data key recorded by mask or length: it can only ever send the mask', async () => {
-    const masked = await resultOf(replace('X-Source: ivr', 'X-Referral: callData.referral'));
+  it('warns of a header or a chat value naming a call data key sent masked and recorded by mask or length: it can only ever send the mask', async () => {
+    // Re-pinned (live findings item 26): a key is sent as it came by default; only one whose send says masked sends as it is recorded.
+    const plain = await resultOf(replace('X-Source: ivr', 'X-Referral: callData.referral'));
+    expect(plain.problems).toEqual([]);
+    expect(plain.warnings).toEqual([]);
+    const masked = await resultOf((t) => replace('X-Source: ivr', 'X-Referral: callData.referral')(replace('referral: { from: webhook.SipHeader_X-Referral }', 'referral: { from: webhook.SipHeader_X-Referral, send: masked }')(t)));
     expect(masked.problems).toEqual([]);
     expect(masked.warnings).toHaveLength(1);
-    expect(masked.warnings[0]).toContain('callData key "referral" is recorded by mask (the default), so this can only ever send •');
-    const length = await resultOf((t) => replace('chat: { reason: reason, page: callData.page }', 'chat: { reason: reason, ref: callData.accountRef }')(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: length }')(t)));
+    expect(masked.warnings[0]).toContain('callData key "referral" is sent masked and recorded by mask (the default), so this can only ever send •');
+    const length = await resultOf((t) => replace('chat: { reason: reason, page: callData.page }', 'chat: { reason: reason, ref: callData.accountRef }')(replace('accountRef: { from: param.accountRef, redact: last4 }', 'accountRef: { from: param.accountRef, redact: length, send: masked }')(t)));
     expect(length.problems).toEqual([]);
-    expect(length.warnings.join('\n')).toContain('callData key "accountRef" is recorded by length, so this can only ever send its length');
+    expect(length.warnings.join('\n')).toContain('callData key "accountRef" is sent masked and recorded by length, so this can only ever send its length');
   });
 
   it('warns of a constant that looks like a misspelled reference, and of a header Telnyx reserves', async () => {
@@ -194,10 +201,11 @@ describe('the conditions routes add, on a transfer target (design 2026-10-09-rou
   it('takes a fact, a slot and a level', async () => {
     expect((await resultOf(target('[{ fact: tier, is: gold }, { slot: phone, present: true }, { level: 1 }]'))).problems).toEqual([]);
   });
-  it('refuses hours the app does not have, a predicate the code does not write, the number called where it is not kept', async () => {
+  it('refuses hours the app does not have and a predicate the code does not write; the number called is kept for every app', async () => {
     const { problems } = await resultOf(target('[{ hours: closed }, { named: vip }, { called: env.SALES_LINE }]'));
     expect(problems.join('\n')).toContain('transfer.targets[2].when[0].hours  app.yaml has no hours, so this condition never holds');
     expect(problems.join('\n')).toContain('transfer.targets[2].when[1].named  the code has no predicate "vip"');
-    expect(problems.join('\n')).toContain('transfer.targets[2].when[2].called  the app does not keep the number called');
+    // Re-pinned (live findings item 26): a called condition needs no opt-in.
+    expect(problems.join('\n')).not.toContain('transfer.targets[2].when[2].called');
   });
 });

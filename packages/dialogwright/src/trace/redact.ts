@@ -7,7 +7,9 @@ import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
 import { transferSources } from '../core/transfer';
-import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
+import { callDataSourceOf, OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, redactionOf, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
+import { floorByName, maskBusinessValue, maskCallerValue, recordsOf } from '../channel/maskByName';
+import { callerNumberOf } from '../core/callerNumber';
 
 /**
  * The redacted slots as a trace record may carry them, by each slot's SlotSpec.redact
@@ -32,7 +34,7 @@ import { OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCal
 export type StatementMode = 'length' | 'keep';
 
 /** The app whose slots (and, for a side effect's params, policy.yaml's `audit:`) say what is masked. */
-type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData']; readonly transfer?: App['transfer']; readonly generated?: App['generated'] }) | null;
+type Slots = (Pick<App, 'slots'> & { readonly policy?: Pick<App['policy'], 'audit'>; readonly callerNumber?: App['callerNumber']; readonly callData?: App['callData']; readonly transfer?: App['transfer']; readonly generated?: App['generated']; readonly records?: App['records'] }) | null;
 
 function ruleOf(app: Slots, slot: string): SlotSpec['redact'] {
   return app !== null && Object.hasOwn(app.slots, slot) ? app.slots[slot]!.redact : undefined;
@@ -130,7 +132,7 @@ export function redactTurnState(ts: TraceRecord['turnState'], mode: StatementMod
  * A handoff's collected slots ("what the call collected, as the caller heard it"), masked. These
  * are displays, and a statement's display is its stand-in, "your description", so it stays.
  */
-function redactCollected(app: Slots, slots: Record<string, string>, mode: StatementMode): Record<string, string> {
+export function redactCollected(app: Slots, slots: Record<string, string>, mode: StatementMode): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [id, v] of Object.entries(slots)) {
     // A handoff hands a `verified` slot (a date of birth) over only as whether identity was verified; that stays.
@@ -151,21 +153,42 @@ export function maskCollectedSlot(app: Slots, slot: string, v: string): string {
 
 /**
  * What a transfer sends (its SIP headers, or a chat's data, app.yaml's transfer.send), as a record keeps
- * it: a value sent from a slot is masked as the record masks that slot (redactCollected), whichever rule
- * sent it. A name the app sends from more than one slot is written `•`; one sent from a slot in one rule
- * and a constant in another is masked as the slot is, so a record is never less strict than the slot.
- * Every other value (the reason, the form, a constant, a call data key already sent as its redact
- * records it) is as sent.
+ * it. A transfer delivers each value as the app says (a call data key as it came, unless its `send` is
+ * `masked`; the caller's and the called number whole), and the record masks it by where it came from:
+ * a slot as the record masks that slot (redactCollected); a call data key as its `redact` records it,
+ * never less than the masking by its source's name; the caller's number and the called number as
+ * app.yaml's `records` writes them. A name the app sends from two such sources that mask differently is
+ * written `•`; one sent from one of them in one rule and a constant in another is masked as that source
+ * is, so a record is never less strict than its source. Every other value (the reason, the form, a
+ * constant) is as sent.
  */
 export function redactSent(app: Slots, part: 'headers' | 'chat', values: unknown, mode: StatementMode): unknown {
   if (!isObject(values) || app === null || app.transfer === undefined) return values;
   const sources = transferSources(app.transfer, part);
+  const records = recordsOf(app);
   const out: Record<string, unknown> = {};
   for (const [name, v] of Object.entries(values)) {
-    const slots = [...new Set((sources.get(part === 'headers' ? name.toLowerCase() : name) ?? []).flatMap((s) => (s.kind === 'slot' ? [s.slot] : [])))];
-    if (typeof v !== 'string' || slots.length === 0) out[name] = v;
-    else if (slots.length === 1) out[name] = redactCollected(app, { [slots[0]!]: v }, mode)[slots[0]!];
-    else out[name] = '•';
+    const from = sources.get(part === 'headers' ? name.toLowerCase() : name) ?? [];
+    // Each source that masks, by a key of its own, so two rules that send the same slot count once.
+    const masking = new Map<string, (x: string) => string | null>();
+    for (const src of from) {
+      if (src.kind === 'slot') masking.set(`slot:${src.slot}`, (x) => redactCollected(app, { [src.slot]: x }, mode)[src.slot] ?? x);
+      else if (src.kind === 'callerNumber') masking.set('callerNumber', (x) => maskCallerValue(x, records));
+      else if (src.kind === 'calledNumber') masking.set('calledNumber', (x) => maskBusinessValue(x, records));
+      else if (src.kind === 'callData') {
+        const def = app.callData !== undefined && Object.hasOwn(app.callData, src.key) ? app.callData[src.key] : undefined;
+        masking.set(`callData:${src.key}`, (x) => {
+          const shown = recordedCallData(redactionOf(def), x);
+          const source = def === undefined ? null : callDataSourceOf(def.from);
+          return shown === null || source === null ? shown : floorByName(source.name, shown, records);
+        });
+      }
+    }
+    if (typeof v !== 'string' || masking.size === 0) out[name] = v;
+    else if (masking.size === 1) {
+      const shown = [...masking.values()][0]!(v);
+      if (shown !== null) out[name] = shown;
+    } else out[name] = '•';
   }
   return out;
 }
@@ -176,9 +199,20 @@ function redactTransferParts<T extends Record<string, unknown>>(app: Slots, o: T
   return { ...o, ...('headers' in o ? { headers: redactSent(app, 'headers', o.headers, mode) } : {}), ...('data' in o ? { data: redactSent(app, 'chat', o.data, mode) } : {}) };
 }
 
-/** A prompt's variables by slot name: a summary is handed every slot's display, spoken or not. */
+/**
+ * A prompt's variables by slot name: a summary is handed every slot's display, spoken or not. The offer
+ * of the caller's number hands the whole number as `callerNumber` (no slot's name): masked as the slot
+ * that offers it masks its value, else as app.yaml's records write the caller's number.
+ */
 function redactVars(app: Slots, vars: unknown, mode: StatementMode): unknown {
-  return isObject(vars) ? redactCollected(app, vars as Record<string, string>, mode) : vars;
+  if (!isObject(vars)) return vars;
+  const out = redactCollected(app, vars as Record<string, string>, mode);
+  if (typeof out.callerNumber === 'string' && (app === null || !Object.hasOwn(app.slots, 'callerNumber'))) {
+    const offering = callerNumberRule(app);
+    const records = recordsOf(app);
+    out.callerNumber = records.callerNumber === 'keep' ? out.callerNumber : offering !== null ? maskValue(app, offering, out.callerNumber, mode) ?? maskCallerValue(out.callerNumber, records) : maskCallerValue(out.callerNumber, records);
+  }
+  return out;
 }
 
 /** The decision's own copies: its variables, its acks' variables, and a handoff's collected slots. */
@@ -538,27 +572,35 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   // What an interruption heard of our line was cut off as it was said: a value's first digits are masked too.
   const cut = isObject(record.event) && record.event.type === 'user.interrupt' && typeof record.event.heard === 'string' ? recordScrubber(record, mode, app, { cutOff: true }) : null;
   if (cut !== null && record.event.type === 'user.interrupt') out.event = { ...record.event, heard: cut(record.event.heard) };
-  // The number the caller is calling from, on the session start (SessionStart.callerNumber): masked as
-  // the slot that offers it masks its value. A number the session kept is the slot's value to be, so
-  // the setup's own copies of it in the event's provider details (Twilio's `from`, Telnyx's
-  // `param.telnyx_call_from`) are masked the same. One not kept (withheld, or not one the slot can
-  // use) is no value of the slot's, and the provider details keep it as sent, as on every app. An
-  // app that keeps the number for its code (app.yaml's callerNumber: { use: hint }) and has no such
-  // slot masks it, and the number called (SessionStart.calledNumber), to the last four digits, with
-  // the setup's own copies of the number called (Twilio's `to`, Telnyx's `param.telnyx_call_to`).
-  const offering = callerNumberRule(app);
-  const hinted = app?.callerNumber?.use === 'hint';
-  if (isObject(record.event) && record.event.type === 'session.start' && (offering !== null || hinted)) {
+  // The numbers of a session start, for every app, as app.yaml's records write them (channel/maskByName.ts):
+  // the caller's (SessionStart.callerNumber, a SIP address among them) by its last four by default, or as
+  // the slot that offers it masks its value where one does; the number called (SessionStart.calledNumber)
+  // whole by default, the business's own. The setup's own copies of them in the event's provider details
+  // (Twilio's `from` and `to`, Telnyx's `param.telnyx_call_from` and `param.telnyx_call_to`) the same, and
+  // every other setup field by its name as the frame log and the console write it (a forwarded-from
+  // number, the caller's name, the account id left out): one setting decides every record.
+  if (isObject(record.event) && record.event.type === 'session.start') {
     const start = record.event;
+    const records = recordsOf(app);
+    const offering = callerNumberRule(app);
     const raw = typeof start.callerNumber === 'string' ? start.callerNumber : null;
     const called = typeof start.calledNumber === 'string' ? start.calledNumber : null;
-    const mask = (v: string): string => (offering !== null ? maskValue(app, offering, v, mode) ?? v : maskLast4(v));
-    const kept = raw !== null && record.callerNumber === 'kept';
-    const provider = (kept || called !== null) && isObject(start.provider)
-      ? Object.fromEntries(Object.entries(start.provider).map(([k, v]) => [k, kept && v === raw ? mask(v) : called !== null && v === called ? maskLast4(v) : v]))
+    const caller = (v: string): string => {
+      if (records.callerNumber === 'keep') return v;
+      return offering !== null && callerNumberOf(v) !== null ? maskValue(app, offering, v, mode) ?? maskCallerValue(v, records) : maskCallerValue(v, records);
+    };
+    const business = (v: string): string => maskBusinessValue(v, records);
+    const provider = isObject(start.provider)
+      ? Object.fromEntries(Object.entries(start.provider as Readonly<Record<string, unknown>>).flatMap(([k, v]): [string, string][] => {
+        if (typeof v !== 'string') return [];
+        if (k === 'param.telnyx_call_from' || (raw !== null && v === raw && !k.startsWith('param.'))) return [[k, caller(v)]];
+        if (k === 'param.telnyx_call_to' || (called !== null && v === called && !k.startsWith('param.'))) return [[k, business(v)]];
+        if (k.startsWith('param.')) return [[k, v]];
+        const floored = floorByName(k, v, records);
+        return floored === null ? [] : [[k, floored]];
+      }))
       : start.provider;
-    const masked = { ...start, provider, ...(raw !== null ? { callerNumber: mask(raw) } : {}), ...(typeof start.calledNumber === 'string' ? { calledNumber: maskLast4(start.calledNumber) } : {}) };
-    if (raw !== null || typeof start.calledNumber === 'string') out.event = masked;
+    out.event = { ...start, provider, ...(raw !== null ? { callerNumber: caller(raw) } : {}), ...(called !== null ? { calledNumber: business(called) } : {}) };
   }
   // The custom parameters and the call data of a session start, in the trace file and on the console
   // alike. The call data the app names (SessionStart.callData), each key as its redact says, and the

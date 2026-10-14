@@ -10,6 +10,8 @@ import type { DashboardEvent } from '../dashboard/events';
 import type { TraceRecord } from '../../trace/types';
 import { registerApp, resetAppsForTest } from '../../core/app/registry';
 import { textingApp } from '../../testing/texting/app';
+import type { App } from '../../core/app/types';
+import { callerOf } from '../../core/callerNumber';
 import { testkitApp } from '../../testing/testkit';
 import { useTestkit } from '../../testing/apps';
 import { WITHHELD_PARAMETER } from '../../channel/callData';
@@ -19,11 +21,13 @@ import { WITHHELD_PARAMETER } from '../../channel/callData';
  * document, the relay's setup and the call it starts. Seen on a live call (2026-10-13, dialled with *67):
  * Telnyx's answer webhook carried the caller's real number in `From`, with the marks of a withheld one
  * beside it (`CallerId` anonymous, `FromSipUri` anonymous@anonymous.invalid), and its setup carried the
- * number again as `telnyx_call_from`; the engine kept it and offered it back. Here the app is the texting
- * fixture, which keeps the number for a call-start lookup and offers it for texts: with the number
- * withheld, nothing is kept, looked up, offered, logged or shown, on a reconnect too, and on one a
- * restarted server takes up (SESSION_STORE=file) from a callback with no marks of its own. The number
- * is fictional.
+ * number again as `telnyx_call_from`. Re-pinned (live findings item 26, the maintainer's decision: the
+ * framework provides the call's data, limits are the app's): the marks are a flag carried with the
+ * number, which reaches the session and the app (callerOf(s).withheld), used as any number by default
+ * (app.yaml's callerNumber.withheld: use), and treated as no number with `withheld: ignore`. The records
+ * write it by its last four as any caller's number, never whole, on a reconnect too and on one a
+ * restarted server takes up (SESSION_STORE=file). Here the app is the texting fixture, which keeps the
+ * number for a call-start lookup and offers it for texts. The number is fictional.
  */
 
 const NUMBER = '+15555550142';
@@ -35,6 +39,7 @@ const servers: RunningServer[] = [];
 let running: RunningServer | null = null;
 const dirs: string[] = [];
 afterEach(async () => {
+  serve(textingApp);
   for (const s of servers.splice(0)) await s.close().catch(() => {});
   running = null;
   await new Promise((r) => setTimeout(r, 20));
@@ -42,11 +47,15 @@ afterEach(async () => {
 });
 
 let client: JevClient | null = null;
-beforeAll(async () => {
-  // The texting app is the server's one app (its default), the testkit beside it.
+/** The server's one app (its default), the testkit beside it. */
+function serve(app: App): void {
   resetAppsForTest();
-  registerApp(textingApp);
+  registerApp(app);
   registerApp(testkitApp);
+}
+
+beforeAll(async () => {
+  serve(textingApp);
   const { HeuristicStubClient } = await import('../../jev/heuristicStub');
   client = new HeuristicStubClient();
 }, 60_000);
@@ -110,17 +119,13 @@ function written(dir: string): string {
 }
 
 /**
- * No copy of the number anywhere: not whole, and not by its last four as the masks write them (`…0142`,
- * `...0142`). The four digits alone are not looked for: a timestamp or a hash may hold them.
+ * No whole copy of the number anywhere the server writes, publishes or logs: the records write a caller's
+ * number by its last four (app.yaml's records, its default), a withheld one as any other.
  */
-function expectNoCopy(s: Started, dir: string): void {
-  const files = written(dir);
-  const events = JSON.stringify(s.events);
-  const lines = s.lines.join('\n');
-  for (const copy of [DIGITS, '…0142', '...0142', 'Jordan Avery']) {
-    expect(files, copy).not.toContain(copy);
-    expect(events, copy).not.toContain(copy);
-    expect(lines, copy).not.toContain(copy);
+function expectNoWholeCopy(s: Started, dir: string): void {
+  for (const where of [written(dir), JSON.stringify(s.events), s.lines.join('\n')]) {
+    expect(where).not.toContain(DIGITS);
+    expect(where).not.toContain('Jordan Avery');
   }
 }
 
@@ -133,7 +138,7 @@ function records(traceDir: string): TraceRecord[] {
 /** A withheld call answered and started on `s`: its relay, after the greeting. */
 async function withheldCall(s: Started): Promise<FakeRelay> {
   const document = await post(s.base, '/voice/telnyx', WITHHELD_WEBHOOK);
-  // The start document says the number was withheld, so the setup's copies of it are taken out.
+  // The start document carries the flag to the setup, beside the number the setup carries.
   expect(document).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
   expect(document).not.toContain(DIGITS);
   const token = /token=([0-9a-f]{32})/.exec(document)![1]!;
@@ -155,61 +160,82 @@ async function reconnect(s: Started, document: string, withParameters: boolean):
 }
 
 describe('a caller who withheld their number on Telnyx', () => {
-  it('is a call with no number: nothing kept, looked up, offered, logged or shown, from the webhook to the call and its reconnect', async () => {
+  it('reaches the session and the app marked withheld, is used as any number by default, and is masked in every record', async () => {
     const dir = folder();
     const s = await start(dir);
     const relay = await withheldCall(s);
 
-    // No number on the session: nothing kept for the app's code, and nothing to offer.
-    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
-    // The start event carries none, and the call-start lookup by the caller's number never ran.
+    // The number is the call's data, with the flag: the app's code reads it marked withheld.
+    const session = running!.store.get(CALL_ID)!.session;
+    expect(session).toMatchObject({ callerNumber: NUMBER, callerPrivacy: 'withheld' });
+    expect(callerOf(session)).toEqual({ number: NUMBER, last4: '0142', withheld: true });
+    // withheld: use (the default): the call-start lookup by the number ran, as for any number.
     const startRecord = records(s.traceDir).find((r) => r.event?.type === 'session.start')!;
-    expect(startRecord.event).not.toHaveProperty('callerNumber');
-    expect(startRecord.gateEvents ?? []).toEqual([]);
-    // Nothing offered: no line names the number's last four.
-    expect(relay.texts().join(' ')).not.toContain('0142');
-    // The console shows the caller as withheld, never by their last four.
-    expect(s.events.find((e) => e.type === 'call_started')).toMatchObject({ from: 'withheld' });
-    expect(s.lines.some((l) => l.includes(`${CALL_ID} from withheld`))).toBe(true);
-    expectNoCopy(s, dir);
+    expect(startRecord.callerNumber).toBe('kept');
+    expect(startRecord.event).toMatchObject({ callerNumber: '...0142', callerPrivacy: 'withheld' });
+    expect(startRecord.gateEvents?.map((e) => e.decision.call.tool)).toEqual(['findCallerByPhone']);
+    // The console and the log show the caller by their last four, marked withheld.
+    expect(s.events.find((e) => e.type === 'call_started')).toMatchObject({ from: '…0142 (withheld)' });
+    expect(s.lines.some((l) => l.includes(`${CALL_ID} from …0142 (withheld)`))).toBe(true);
+    expectNoWholeCopy(s, dir);
 
-    // A dropped relay's reconnect, its callback as Telnyx sends it (the number in From, the marks beside it):
-    // the new document says so again, and the new setup (which carries the number again) has it taken out.
+    // A dropped relay's reconnect: the new document carries the flag again (the session knows it).
     relay.close();
     await new Promise((r) => setTimeout(r, 50));
     const again = await post(s.base, '/cr-action/telnyx', FAILED_MARKED);
     expect(again).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
     const relay2 = await reconnect(s, again, true);
-    expect(s.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: 'withheld' }) })]);
-    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
-    // The callback's marks stay readable in the frame log; the number is not there.
+    expect(s.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: '…0142 (withheld)' }) })]);
+    expect(running!.store.get(CALL_ID)!.session).toMatchObject({ callerNumber: NUMBER, callerPrivacy: 'withheld' });
+    // The callback's marks stay readable in the frame log; the number by its last four, as any caller's.
     expect(written(dir)).toContain('anonymous@anonymous.invalid');
-    expectNoCopy(s, dir);
+    expectNoWholeCopy(s, dir);
     relay2.close();
   });
 
-  it('stays withheld on a reconnect a restarted server takes up (SESSION_STORE=file), from a callback with no marks and a setup with no parameter', async () => {
+  it('with app.yaml callerNumber.withheld: ignore, is a call with no number for every feature, and still the app\'s data', async () => {
+    serve({ ...textingApp, callerNumber: { ...textingApp.callerNumber!, withheld: 'ignore' } });
+    const dir = folder();
+    const s = await start(dir);
+    const relay = await withheldCall(s);
+    const session = running!.store.get(CALL_ID)!.session;
+    expect(session).toMatchObject({ callerNumber: NUMBER, callerPrivacy: 'withheld' });
+    const startRecord = records(s.traceDir).find((r) => r.event?.type === 'session.start')!;
+    // Nothing looked up, and the record says why.
+    expect(startRecord.callerNumber).toBe('ignored');
+    expect(startRecord.gateEvents ?? []).toEqual([]);
+    // Nothing offered: no line names the number's last four.
+    expect(relay.texts().join(' ')).not.toContain('0142');
+    expectNoWholeCopy(s, dir);
+    relay.close();
+  });
+
+  it('stays marked withheld on a reconnect a restarted server takes up (SESSION_STORE=file), from a callback with no marks', async () => {
     const dir = folder();
     const store = { SESSION_STORE: `file:${join(dir, 'sessions')}`, RESUMED_AFTER_MS: '0' };
     const first = await start(dir, store);
     await withheldCall(first);
     await running!.store.settled();
-    // The call is saved withheld.
-    expect(written(join(dir, 'sessions'))).toContain('"callerWithheld":true');
+    // The session is saved with the flag beside the number.
+    expect(written(join(dir, 'sessions'))).toContain('"callerPrivacy":"withheld"');
     await running!.close();
 
     const second = await start(dir, store);
-    // The callback says nothing of the number being withheld: the saved call does.
+    // The callback says nothing of the number being withheld: the saved session does.
     const again = await post(second.base, '/cr-action/telnyx', FAILED_UNMARKED);
     expect(again).toContain(`<Parameter name="${WITHHELD_PARAMETER}" value="true"/>`);
-    // And a setup that does not carry the parameter back still has its copies of the number taken out.
     const relay = await reconnect(second, again, false);
-    expect(second.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: 'withheld' }) })]);
-    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerNumber');
-    expectNoCopy(first, dir);
-    expectNoCopy(second, dir);
+    expect(second.events.filter((e) => e.type === 'reconnect')).toEqual([expect.objectContaining({ call: expect.objectContaining({ from: '…0142 (withheld)' }) })]);
+    expect(running!.store.get(CALL_ID)!.session).toMatchObject({ callerNumber: NUMBER, callerPrivacy: 'withheld' });
+    expect(written(join(dir, 'traces'))).not.toContain(DIGITS);
+    expect(JSON.stringify([...first.events, ...second.events])).not.toContain(DIGITS);
     relay.close();
   }, 20_000);
+
+  it('a server refuses to start with records that keep the caller\'s number whole and no console sign-in', async () => {
+    serve({ ...textingApp, records: { callerNumber: 'keep' } });
+    await expect(start(folder())).rejects.toThrow(/records keeps the caller's number whole.*CONSOLE_AUTH=token/);
+  });
 
   it('a call with its number given is as before: kept, looked up, and shown by its last four', async () => {
     const dir = folder();
@@ -223,11 +249,11 @@ describe('a caller who withheld their number on Telnyx', () => {
     await relay.waitForTexts(1);
     await running!.store.get(CALL_ID)?.tail;
     expect(running!.store.get(CALL_ID)!.session.callerNumber).toBe(NUMBER);
+    expect(running!.store.get(CALL_ID)!.session).not.toHaveProperty('callerPrivacy');
     expect(s.events.find((e) => e.type === 'call_started')).toMatchObject({ from: '…0142' });
-    // The call-start lookup by the number ran, as it does for every call that gives one.
     expect(records(s.traceDir).find((r) => r.event?.type === 'session.start')!.gateEvents?.map((e) => e.decision.call.tool)).toEqual(['findCallerByPhone']);
     // Its action callback, carrying the number in CallerId and both SIP addresses as Telnyx's do: the
-    // frame log masks each to its last four, and never writes it whole.
+    // frame log masks the caller's to its last four, and keeps the business's own number whole.
     relay.close();
     await new Promise((r) => setTimeout(r, 50));
     await post(s.base, '/cr-action/telnyx', {
@@ -238,10 +264,8 @@ describe('a caller who withheld their number on Telnyx', () => {
     const http = frames.split('\n').filter((l) => l.includes('"dir":"http"')).at(-1)!;
     expect(http).toContain('"CallerId":"…0142"');
     expect(http).toContain('"FromSipUri":"…0142@sip.telnyx.com"');
-    expect(http).toContain('"ToSipUri":"…0111@sip.telnyx.com"');
+    expect(http).toContain('"ToSipUri":"+15555550111@sip.telnyx.com"');
     expect(http).toContain('"Asserted":"<sip:…0142@carrier.example.com>"');
-    // Kept, and still never written whole.
     expect(written(dir)).not.toContain(DIGITS);
-    expect(written(dir)).not.toContain('5550111');
   });
 });

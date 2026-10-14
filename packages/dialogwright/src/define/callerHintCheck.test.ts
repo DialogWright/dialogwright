@@ -117,15 +117,14 @@ describe('the warnings', () => {
     expect(warnings).toEqual([expect.stringContaining('the call-start lookup\'s param, the number the caller is calling from, is recorded as it is (keep)')]);
   });
 
-  it('a callerNumber rule in an app that keeps no caller\'s number, which refuses every call', async () => {
+  it('no warning for a callerNumber rule in an app with no callerNumber block: every app keeps the caller\'s number now', async () => {
+    // Re-pinned (live findings item 26): the number is the call's data for every app, so the rule no longer refuses every call there.
     const dir = folder({
       'app.yaml': replace('callerNumber:\n  use: hint\n  called: true\n  lookup: findCallerByPhone\n', ''),
       'slots.yaml': replace("  callerNumber:\n    countryCode: '1'\n    onNo: skip\n    ifNone: skip\n", ''),
     });
     const { warnings } = await checked(dir, { ...textingCode, callerOffer: undefined });
-    const always = warnings.filter((w) => w.includes('the app keeps no caller\'s number'));
-    // The two lookups' rules refuse every call; the text's passes a confirmed number, so it is not one.
-    expect(always.map((w) => /callerNumber rule of "(\w+)"/.exec(w)![1])).toEqual(['findCallerByPhone', 'lineType']);
+    expect(warnings.filter((w) => w.includes('the app keeps no caller\'s number'))).toEqual([]);
   });
 
   it('a callerNumber rule on a param that is no slot offering the number, compared digit for digit', async () => {

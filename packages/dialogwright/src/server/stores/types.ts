@@ -82,14 +82,6 @@ export interface StoredCall {
    * outside the session, like the two above.
    */
   readonly stopped?: true;
-  /**
-   * The caller withheld their number (CallEntry.callerWithheld): saved with the call, so a reconnect that
-   * a restarted server or another server takes up still has the number taken out of its setup and its
-   * start document marked, whether or not the carrier's callback carries the marks. Outside the session,
-   * optional: a call saved before it reads as not withheld, as every call did then (its setup's own
-   * parameter still says it), so SESSION_SCHEMA is unchanged.
-   */
-  readonly callerWithheld?: true;
 }
 
 /** A web chat's server-side state, as stored (server/chat/socket.ts). */

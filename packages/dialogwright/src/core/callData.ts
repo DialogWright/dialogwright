@@ -2,7 +2,7 @@ import type { App } from './app/types';
 import type { Session } from './session';
 import type { AuditDraft } from '../audit/types';
 import { callDataSourceOf, recordedCallDataMap, usableCallDataValue } from '../channel/callData';
-import { floorByName } from '../channel/maskByName';
+import { floorByName, recordsOf } from '../channel/maskByName';
 
 /**
  * The data a call or chat came with that the app names (app.yaml's `callData`, App.callData): the
@@ -49,11 +49,11 @@ export function callDataAuditDetail(app: App, s: Session): AuditDraft['detail'] 
   const spec = app.callData;
   if (spec === undefined || s.callData === undefined) return {};
   const shown = recordedCallDataMap(spec, s.callData);
-  // The audit holds no number or name whole, whatever a key's redact: the masking by the name its
-  // source has (a number by its last four, a name redacted) is a floor, as in the frame log.
+  // The audit holds no caller's number or name whole, whatever a key's redact, unless app.yaml's records
+  // keep them: the masking by the name its source has is a floor, as in the frame log.
   return Object.fromEntries(Object.entries(shown).flatMap(([k, v]) => {
     const source = Object.hasOwn(spec, k) ? callDataSourceOf(spec[k]!.from) : null;
-    const floored = source === null ? v : floorByName(source.name, v);
+    const floored = source === null ? v : floorByName(source.name, v, recordsOf(app));
     return floored === null ? [] : [[`callData.${k}`, floored]];
   }));
 }

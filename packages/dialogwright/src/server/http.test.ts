@@ -125,7 +125,8 @@ describe('http routes', () => {
       From: '+15555550199', To: '+15555550100', Caller: '+15555550199', Called: '+15555550100',
     });
     const line = readFileSync(join(d.dir, 'CA1.frames.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> }).find((l) => l.dir === 'http');
-    expect(line?.msg).toMatchObject({ route: '/cr-action', From: '…0199', To: '…0100', Caller: '…0199', Called: '…0100' });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default.
+    expect(line?.msg).toMatchObject({ route: '/cr-action', From: '…0199', To: '+15555550100', Caller: '…0199', Called: '+15555550100' });
     expect(JSON.stringify(line)).not.toContain('5555550199');
   });
 

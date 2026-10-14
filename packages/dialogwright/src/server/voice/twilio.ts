@@ -4,6 +4,7 @@ import { dialVerb } from './dial';
 import { attr, escapeXml, formFields, placeLanguages, recognitionAttrs, pauseVerb, relayElement, xmlResponse } from './xml';
 import type { Recognition } from '../../core/app/types';
 import { DEFAULT_RECOGNITION } from '../../channel/voiceProviders';
+import { isWithheldCaller } from '../../core/callerNumber';
 
 /**
  * Twilio request signature: HMAC-SHA1 over the full URL followed by every POST
@@ -67,10 +68,11 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
     // On speakerphone, room noise was interrupting prompt playback and leaving the caller in
     // silence until the no-input timer fired: low needs confident, longer speech to interrupt, and backchannels ("uh-huh") never do.
     `interruptible="${o.bargeIn ?? 'any'}"`,
-    'interruptSensitivity="low"',
-    'ignoreBackchannel="true"',
-    'reportInputDuringAgentSpeech="any"',
-    'deepgramSmartFormat="false"',
+    // Each the app may set (app.yaml's voice.twilio); left out, the value the document always had.
+    attr('interruptSensitivity', o.twilio?.interruptSensitivity ?? 'low'),
+    attr('ignoreBackchannel', String(o.twilio?.ignoreBackchannel ?? true)),
+    attr('reportInputDuringAgentSpeech', o.twilio?.reportInputDuringAgentSpeech ?? 'any'),
+    attr('deepgramSmartFormat', String(o.twilio?.deepgramSmartFormat ?? false)),
     `hints="${escapeXml(o.hints)}"`,
   ];
   if (o.language) {
@@ -92,10 +94,16 @@ export function twilioConnectDocument(o: StartDocumentOptions, paths: RelayPaths
  * action callback still answers such a request (with a hangup), so it is read rather than refused.
  */
 export function twilioCallbackParams(raw: Record<string, string>): CallbackParams {
+  const attestation = raw.StirVerstat?.trim();
   return {
     callId: (raw.CallSid ?? '').trim(),
     raw,
     ...(raw.From !== undefined ? { from: raw.From } : {}),
+    // Twilio sends a placeholder (or a withheld word) in place of a withheld number: no number, and the
+    // same flag Telnyx's marks give (core/callerNumber.ts isWithheldCaller).
+    ...(isWithheldCaller(raw.From) ? { privacy: 'withheld' as const } : {}),
+    // The STIR/SHAKEN verification of the number, on an inbound call that carried it (TN-Validation-Passed-A...).
+    ...(attestation !== undefined && attestation !== '' ? { attestation } : {}),
     ...(raw.To !== undefined ? { to: raw.To } : {}),
     ...(raw.CallStatus !== undefined ? { callStatus: raw.CallStatus } : {}),
     // Twilio always says: a call is live only while it is in-progress, and a callback without the
@@ -122,7 +130,8 @@ function parse(req: WebhookRequest): CallbackParams | null {
 export const twilioProvider: VoiceProvider = {
   id: 'twilio',
   // The setup frame's `from`, in E.164; a withheld caller ID comes as one of Twilio's placeholders
-  // (core/callerNumber.ts WITHHELD_PLACEHOLDERS), which the engine refuses.
+  // (core/callerNumber.ts WITHHELD_PLACEHOLDERS), which is no number and marks the call withheld; a SIP or
+  // client caller's address (sip:..., client:...) comes as it is.
   setupCallerOf: (setup) => (typeof setup.from === 'string' && setup.from !== '' ? setup.from : null),
   // The setup frame's `to`, the number called, in E.164.
   setupCalledOf: (setup) => (typeof setup.to === 'string' && setup.to !== '' ? setup.to : null),

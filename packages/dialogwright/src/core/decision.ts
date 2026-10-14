@@ -1,7 +1,8 @@
 import type { SlotPartial, SlotSpec } from './slots/types';
 import { handoffUnconfirmedOf, identityOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { FormId, SlotId } from './app/types';
+import type { App, FormId, SlotId } from './app/types';
+import { usableCallerNumber } from './callerNumber';
 import { handoffPromptId } from '../prompts/render';
 import { maskId } from '../gate/principal';
 import { isAnonymous } from '../gate/types';
@@ -120,6 +121,16 @@ export function isSecretByLength(spec: Pick<SlotSpec, 'redact' | 'statement'> | 
   return spec?.redact === 'length' && spec.statement === false;
 }
 
+/**
+ * Whether the app names a secret slot's handoff `as-is` itself (app.yaml's `handoff.data.send: { <slot>:
+ * as-is }`): only then does a transfer send its value, the app's decision (`pnpm check` warns of it). The
+ * records still hold it by its length.
+ */
+export function sendsSecretAsIs(app: Pick<App, 'handoff'>, slot: SlotId): boolean {
+  const send = app.handoff?.data?.send;
+  return send !== undefined && Object.hasOwn(send, slot) && send[slot] === 'as-is';
+}
+
 export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDecision {
   // Whatever the caller added and the call never got to is the agent's problem now,
   // so it rides along in the handoff data -- together with what the call did collect,
@@ -133,8 +144,9 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
     // not from the caller, so the person taking the call is not handed it as if the caller had said it.
     if (slot.by === 'caller-id' && isAnonymous(s.principal)) continue;
     // A secret by its length (a PIN, SlotSpec.statement false) goes by its real length unless it is
-    // handed over only as verified: never its digits, nor a last four that may be most of it.
-    if (spec.handoff !== 'verified' && isSecretByLength(spec)) slots[id] = `<${slot.value.length} chars>`;
+    // handed over only as verified: never its digits, nor a last four that may be most of it; unless the
+    // app says, by the slot's name, that its handoff data sends it as it is (handoff.data.send: as-is).
+    if (spec.handoff !== 'verified' && isSecretByLength(spec)) slots[id] = sendsSecretAsIs(app, id) ? slot.value : `<${slot.value.length} chars>`;
     else if (spec.handoff === 'last4') slots[id] = maskId(slot.value.replace(/\D/g, ''));
     else if (spec.handoff === 'verified') slots[id] = s.principal.kind === identityOf(app).subjectKind ? IDENTITY_VERIFIED : IDENTITY_UNVERIFIED;
     else if (spec.displayFrom === 'said') slots[id] = slot.value;
@@ -153,6 +165,7 @@ export function handoff(s: Session, reason: string, acks: Ack[] = []): HandoffDe
       form: taskOf(s),
       callData: callDataOf(s),
       slots: handoffDataSlots(app, slots, decision.unconfirmed),
+      ...numbersOf(app, s),
     }, sessionConditionFacts(app, s, null));
   }
   return decision;
@@ -177,7 +190,14 @@ export function withTurnTransfer(s: Session, decision: HandoffDecision, clock: C
     form: taskOf(s),
     callData: callDataOf(s),
     slots: handoffDataSlots(app, decision.slots, decision.unconfirmed),
+    ...numbersOf(app, s),
   }, sessionConditionFacts(app, s, clock, decision.reason));
+}
+
+/** The numbers a transfer may send (`callerNumber`, `calledNumber`): the caller's as the engine may use it, and the number called. */
+function numbersOf(app: App, s: Session): { callerNumber?: string; calledNumber?: string } {
+  const caller = usableCallerNumber(app, s);
+  return { ...(caller !== undefined ? { callerNumber: caller } : {}), ...(s.calledNumber !== undefined ? { calledNumber: s.calledNumber } : {}) };
 }
 
 /**

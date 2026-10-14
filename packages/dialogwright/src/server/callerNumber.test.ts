@@ -32,7 +32,7 @@ import type { SetupFrame } from '../channel/relay/frames';
 /**
  * The number the caller is calling from, read off each carrier's setup frame (VoiceProvider.setupCallerOf):
  * the console's call_started shows it masked on every carrier, and the core is given it
- * (SessionStart.callerNumber) only for an app with a slot that offers it (core/callerNumber.ts).
+ * (SessionStart.callerNumber) for every app, as the call's data (core/callerNumber.ts).
  */
 
 /** The registry with `first` as the default app (the one the trace file masks by), and the other beside it. */
@@ -85,7 +85,8 @@ describe('the caller\'s number on a setup frame', () => {
     expect(setupCalledOf('telnyx', telnyxSetup())).toBe('+15555550111');
     expect(setupCalledOf('acme', TWILIO_SETUP)).toBe('+15555550100');
     expect(setupCalledOf(undefined, { ...TWILIO_SETUP, to: '' })).toBeNull();
-    expect(redactDeep({ type: 'session.start', provider: {}, calledNumber: '+15555550100' })).toEqual({ type: 'session.start', provider: {}, calledNumber: '…0100' });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default.
+    expect(redactDeep({ type: 'session.start', provider: {}, calledNumber: '+15555550100' })).toEqual({ type: 'session.start', provider: {}, calledNumber: '+15555550100' });
   });
 
   it('is masked by key on the console and in the frame log, as a start event carries it', () => {
@@ -140,9 +141,9 @@ describe('the console\'s call_started', () => {
     const { d, callId } = await setUp('testkit', 'telnyx', telnyxSetup('+15555550110'));
     const log = readFileSync(join(d.dir, `${callId}.frames.jsonl`), 'utf8');
     expect(log).toContain('"telnyx_call_from":"…0110"');
-    expect(log).toContain('"telnyx_call_to":"…0111"');
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default.
+    expect(log).toContain('"telnyx_call_to":"+15555550111"');
     expect(log).not.toContain('5555550110');
-    expect(log).not.toContain('5555550111');
   });
 
   it('shows "unknown" for a Telnyx call with no number, and a Twilio caller as before', async () => {
@@ -152,12 +153,15 @@ describe('the console\'s call_started', () => {
 });
 
 describe('the start event', () => {
-  it('carries no number for an app without a slot that offers it, on either carrier', async () => {
+  it('carries the number for every app, on either carrier, kept on the session and masked in the trace file', async () => {
+    // Re-pinned (live findings item 26): the number is the call's data for every app; an app that acts on it nowhere has no note of it on the record.
     for (const [provider, setup] of [['twilio', TWILIO_SETUP], ['telnyx', telnyxSetup('+15555550110')]] as const) {
       const { traced, d, callId } = await setUp('testkit', provider, setup);
-      expect(traced.event).not.toHaveProperty('callerNumber');
+      const number = provider === 'twilio' ? '+15555550199' : '+15555550110';
+      expect(d.store.get(callId)!.session.callerNumber).toBe(number);
+      expect(traced.event).toMatchObject({ callerNumber: `…${number.slice(-4)}` });
       expect(traced).not.toHaveProperty('callerNumber');
-      expect(d.store.get(callId)!.session).not.toHaveProperty('callerNumber');
+      expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain(number.slice(1));
     }
   });
 
@@ -191,27 +195,31 @@ describe('the start event', () => {
       const { traced, d, callId, events } = await setUp('texting', provider, setup);
       expect(d.store.get(callId)!.session).toMatchObject({ callerNumber: '+15555550142', calledNumber: '+15555550100' });
       expect(traced.callerNumber).toBe('kept');
-      expect(traced.event).toMatchObject({ type: 'session.start', callerNumber: '...0142', calledNumber: '...0100' });
+      // Re-pinned (live findings item 26): the number called is kept whole by default.
+      expect(traced.event).toMatchObject({ type: 'session.start', callerNumber: '...0142', calledNumber: '+15555550100' });
       // The call-start lookup's gate event, its param masked as policy.yaml's audit: says.
       expect(traced.gateEvents?.map((e) => e.decision.call)).toEqual([{ tool: 'findCallerByPhone', params: { callerNumber: '...0142' }, purpose: 'caller-lookup' }]);
       expect(readFileSync(join(d.dir, `${callId}.jsonl`), 'utf8')).not.toContain('5555550142');
-      expect(readFileSync(join(d.dir, `${callId}.frames.jsonl`), 'utf8')).not.toMatch(/5555550142|5555550100/);
-      expect(JSON.stringify(events)).not.toMatch(/5555550142|5555550100/);
+      expect(readFileSync(join(d.dir, `${callId}.frames.jsonl`), 'utf8')).not.toMatch(/5555550142/);
+      expect(JSON.stringify(events)).not.toMatch(/5555550142/);
     }
   });
 
-  it('carries no number called for an app that does not keep it', async () => {
+  it('carries the number called for every app', async () => {
+    // Re-pinned (live findings item 26): the number called is the call's data for every app.
     useApps('callback');
-    const { traced } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+15555550142' });
-    expect(traced.event).not.toHaveProperty('calledNumber');
+    const { traced, d, callId } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+15555550142' });
+    expect(traced.event).toMatchObject({ calledNumber: '+15555550100' });
+    expect(d.store.get(callId)!.session.calledNumber).toBe('+15555550100');
   });
 
-  it('a withheld number is no number: nothing kept, and the trace says so', async () => {
+  it('a withheld placeholder is no number: nothing kept but the flag, and the trace says so', async () => {
     useApps('callback');
     const { traced, d, callId } = await setUp('callback', 'twilio', { ...TWILIO_SETUP, from: '+7378742833' });
     expect(d.store.get(callId)!.session).not.toHaveProperty('callerNumber');
+    expect(d.store.get(callId)!.session.callerPrivacy).toBe('withheld');
     expect(traced.callerNumber).toBe('none');
-    // No value of the slot's: the setup's details keep what the carrier sent, for a builder to read (docs/live-checks.md).
-    expect(traced.event).toMatchObject({ provider: { from: '+7378742833' } });
+    // Re-pinned (live findings item 26): the placeholder is masked by its last four as any caller's number is (one records setting decides).
+    expect(traced.event).toMatchObject({ provider: { from: '…2833' } });
   });
 });

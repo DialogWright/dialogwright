@@ -14,8 +14,10 @@ import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX, CHAT_CONTEXT_MAX_BYTES, CONTEX
  * Server to client: `ready` (session, resume, locale), `say` (text, lang), `transfer` (reason), `end`,
  * `signed_in` (level), `error` (code, message), `pong`.
  *
- * The server never sends what the core keeps for a person taking over (a transfer's collected slots,
- * what was completed and queued): a site learns only that the session was handed over, and why.
+ * The server sends what the core keeps for a person taking over (a transfer's collected slots) only
+ * where the app says so (app.yaml's handoff.data.chat: send), and never what was completed and queued:
+ * by default a site learns only that the session was handed over, and why, with the data the app's
+ * transfer.send.chat names.
  */
 export const CHAT_PROTOCOL_VERSION = 1;
 /** The longest message a person may type in one turn (as an app's own chat takes: server/chatHttp.ts). */
@@ -61,10 +63,12 @@ export type ServerMessage =
   | { type: 'say'; text: string; lang: string }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
-   * `transfer.send.chat`), for the page's own handover; absent unless the app writes it, so a client
-   * that reads only `reason` is unchanged (the wire stays version 1).
+   * `transfer.send.chat`), for the page's own handover; `slots` (with `unconfirmed`, the values the
+   * caller never confirmed, where the app marks them): the collected slots, only where app.yaml's
+   * `handoff.data.chat` says `send`. Each absent unless the app writes it, so a client that reads only
+   * `reason` is unchanged (the wire stays version 1).
    */
-  | { type: 'transfer'; reason: string; data?: Record<string, string> }
+  | { type: 'transfer'; reason: string; data?: Record<string, string>; slots?: Record<string, string>; unconfirmed?: string[] }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }
@@ -113,15 +117,18 @@ export function serializeServerMessage(m: ServerMessage): string {
  * line that names none (every line of an app without locales): the app's default locale.
  * set_language and send_digits are a phone's and show nothing.
  */
-export function actionsToChatMessages(actions: readonly Action[], defaultLang: string): ServerMessage[] {
+export function actionsToChatMessages(actions: readonly Action[], defaultLang: string, options: { readonly slots?: boolean } = {}): ServerMessage[] {
   return actions.flatMap((a): ServerMessage[] => {
     switch (a.type) {
       case 'say': {
         const text = a.parts.flatMap((p) => ('text' in p ? [p.text] : [])).join(' ').trim();
         return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang }];
       }
-      case 'transfer':
-        return [a.data !== undefined ? { type: 'transfer', reason: a.reason, data: { ...a.data } } : { type: 'transfer', reason: a.reason }];
+      case 'transfer': {
+        // The collected slots only where the app's handoff data says a chat's transfer sends them (`chat: send`).
+        const slots = options.slots === true && Object.keys(a.slots).length > 0 ? { slots: { ...a.slots }, ...(a.unconfirmed !== undefined && a.unconfirmed.length > 0 ? { unconfirmed: [...a.unconfirmed] } : {}) } : {};
+        return [{ type: 'transfer', reason: a.reason, ...(a.data !== undefined ? { data: { ...a.data } } : {}), ...slots }];
+      }
       case 'end':
         return [{ type: 'end' }];
       case 'set_language':

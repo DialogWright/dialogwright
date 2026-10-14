@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { contextBytes } from '../callData';
 import { parseClientMessage, serializeServerMessage, actionsToChatMessages, CHAT_CONTEXT_BYTES, CHAT_CONTEXT_KEYS, CHAT_CONTEXT_VALUE_MAX, CHAT_TEXT_MAX } from './protocol';
+import { transferAction } from '../actions';
 
 describe('the chat wire', () => {
   it('reads each client message', () => {
@@ -100,3 +101,14 @@ describe('a start\'s context (the page\'s data, which an app\'s callData reads a
     }
   });
 });
+
+describe('a chat\'s transfer and the collected slots (app.yaml handoff.data.chat, live findings item 26)', () => {
+  const transfer = transferAction('live-agent', [], [], { caller: 'Jordan Avery' }, ['caller']);
+  it('sends none by default, as before', () => {
+    expect(actionsToChatMessages([transfer], 'en-US')).toEqual([{ type: 'transfer', reason: 'live-agent' }]);
+  });
+  it('sends them, with what was never confirmed, where the app says send', () => {
+    expect(actionsToChatMessages([transfer], 'en-US', { slots: true })).toEqual([{ type: 'transfer', reason: 'live-agent', slots: { caller: 'Jordan Avery' }, unconfirmed: ['caller'] }]);
+  });
+});
+

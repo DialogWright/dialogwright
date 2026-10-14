@@ -8,6 +8,7 @@ import { emptySlot } from '../../core/session';
 import { setupFrame } from '../../testing/relayFrames';
 import { speechEvent } from '../../channel/events';
 import { frameToEvent } from '../../channel/relay/map';
+import { testkitApp } from '../../testing/testkit';
 import type { TraceRecord } from '../../trace/types';
 import type { FrameLogLine } from '../frameLog';
 import { useTestkit } from '../../testing/apps';
@@ -43,10 +44,13 @@ const CALL_SID = 'CAf6e5d4c3b2a1f6e5d4c3b2a1f6e5d4';
 const WHOLE_NUMBER = /\+?1?\d{10}/;
 
 describe('redactRecord', () => {
-  it('masks from/to on a setup event', () => {
+  it('masks from on a setup event, and keeps to (the business\'s own number) unless the records say last4', () => {
+    // Re-pinned (live findings item 26): the business's own number (the number called) is kept whole by default (app.yaml's records.businessNumbers); the caller's is masked as before.
     const record = baseRecord(frameToEvent(setupFrame('s')));
     const redacted = redactRecord(record);
-    expect(redacted.event).toMatchObject({ type: 'session.start', provider: { from: '…0001', to: '…0002' } });
+    expect(redacted.event).toMatchObject({ type: 'session.start', provider: { from: '…0001', to: '+15550000002' } });
+    const last4 = { ...testkitApp, records: { businessNumbers: 'last4' as const } };
+    expect(redactRecord(record, last4).event).toMatchObject({ type: 'session.start', provider: { from: '…0001', to: '…0002' } });
   });
 
   it('masks the optional identity fields of a setup event and drops the geo lookup', () => {
@@ -64,7 +68,7 @@ describe('redactRecord', () => {
       type: 'session.start',
       provider: {
         from: '…0001',
-        to: '…0002',
+        to: '+15550000002',
         forwardedFrom: '…1111',
         callerName: 'redacted',
         callSid: CALL_SID,
@@ -75,7 +79,7 @@ describe('redactRecord', () => {
       },
     });
     expect(event.provider).not.toHaveProperty('accountSid');
-    expect(JSON.stringify(event)).not.toMatch(WHOLE_NUMBER);
+    expect(JSON.stringify(event)).not.toMatch(/5550001111|5555550199|0000001/);
     expect(JSON.stringify(event)).not.toContain(ACCOUNT_SID);
   });
 
@@ -122,7 +126,8 @@ describe('redactFrameLine', () => {
 
   it('masks from/to on a setup frame line and leaves other lines unchanged', () => {
     const setupLine: FrameLogLine = { ts: '2026-09-21T00:00:00.000Z', dir: 'in', msg: setupFrame('s') };
-    expect(redactFrameLine(setupLine).msg).toMatchObject({ type: 'setup', from: '…0001', to: '…0002' });
+    // Re-pinned (live findings item 26): the business's own number (the number called) is kept whole by default (app.yaml's records.businessNumbers); the caller's is masked as before.
+    expect(redactFrameLine(setupLine).msg).toMatchObject({ type: 'setup', from: '…0001', to: '+15550000002' });
 
     const otherLine: FrameLogLine = { ts: '2026-09-21T00:00:00.000Z', dir: 'in', msg: { type: 'dtmf', digit: '1' } };
     expect(redactFrameLine(otherLine)).toEqual(otherLine);
@@ -168,8 +173,9 @@ describe('redactFrameLine', () => {
 
     const redacted = [setupLine, actionLine, logLine].map((l) => redactFrameLine(l));
     const json = JSON.stringify(redacted);
-    // Nothing anywhere in the payload is still a whole number or an account id.
-    expect(json).not.toMatch(WHOLE_NUMBER);
+    // Nothing anywhere in the payload is still the caller's whole number or an account id; the business's
+    // own number (the number called) is kept whole by default (live findings item 26).
+    expect(json).not.toMatch(/5555550199|5550001111/);
     expect(json).not.toMatch(/AC[0-9a-f]{32}/);
     expect(json).not.toContain('Jane Roe');
     expect(json).not.toContain('PORTLAND');
@@ -178,7 +184,7 @@ describe('redactFrameLine', () => {
     expect(redacted[0]!.msg).toMatchObject({
       type: 'setup',
       from: '…0199',
-      to: '…0002',
+      to: '+15550000002',
       forwardedFrom: '…1111',
       callerName: 'redacted',
       customParameters: { from: '…0199' },
@@ -189,9 +195,9 @@ describe('redactFrameLine', () => {
     expect(redacted[1]!.msg).toMatchObject({
       route: '/cr-action',
       From: '…0199',
-      To: '…0002',
+      To: '+15550000002',
       Caller: '…0199',
-      Called: '…0002',
+      Called: '+15550000002',
       CallSid: CALL_SID,
       CallStatus: 'completed',
       SessionStatus: 'ended',

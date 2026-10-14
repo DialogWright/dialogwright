@@ -27,6 +27,12 @@ import type { RuleContext, RuleOutcome, ToolCall } from './types';
  * (GateFacts.confirmedHash). An action with no confirmed rule confirms nothing, and `else: confirmed`
  * then passes only the caller's own number.
  *
+ * A number the caller withheld (GateFacts.callerWithheld) is the caller's number as any other, by
+ * default (`withheld: allow`); `withheld: refuse` refuses the caller's own number when they withheld it,
+ * BLOCK `caller-number-withheld` (a number confirmed at the summary, with `else: confirmed`, still
+ * passes). Whether to honour the caller's privacy is the app's decision (app.yaml's
+ * `callerNumber.withheld: ignore` does it for every feature at once: no number is kept for the gate).
+ *
  * What the lines show: the field's name and whether it is the caller's number or one confirmed, never
  * a number: not the call's value, and not the caller's.
  */
@@ -37,6 +43,8 @@ export interface CallerNumberParams {
   readonly field: string;
   /** What a number that is not the caller's gets: `refuse` (the default), or `confirmed` (it passes when the caller confirmed it at the summary). */
   readonly else?: 'refuse' | 'confirmed';
+  /** What the caller's own number gets when they withheld it: `allow` (the default), or `refuse`. */
+  readonly withheld?: 'allow' | 'refuse';
 }
 
 /** The id it records itself under: its name. */
@@ -47,6 +55,9 @@ export const NOT_CALLER_NUMBER = 'not-caller-number';
 
 /** The reason a call fails for when the session kept no caller's number. */
 export const NO_CALLER_NUMBER = 'no-caller-number';
+
+/** The reason the caller's own number fails for when they withheld it and the rule says `withheld: refuse`. */
+export const CALLER_NUMBER_WITHHELD = 'caller-number-withheld';
 
 /** A param of the call, own properties only. */
 function paramOf(call: ToolCall, param: string): string | undefined {
@@ -74,16 +85,17 @@ export function callerNumberRule(params: CallerNumberParams, confirmedFields: re
     const as = c.facts.callerNumberAs;
     const own = kept !== undefined && kept !== ''
       && (as !== undefined && Object.hasOwn(as, field) ? as[field] === value : digitsOf(value) !== '' && digitsOf(value) === digitsOf(kept));
-    if (own) return { result: { id, description, compared: `${field} is the caller's number`, pass: true } };
+    const refusedWithheld = own && params.withheld === 'refuse' && c.facts.callerWithheld === true;
+    if (own && !refusedWithheld) return { result: { id, description, compared: `${field} is the caller's number`, pass: true } };
     const noNumber = kept === undefined || kept === '';
     if (orConfirmed) {
       const held = c.facts.confirmedHash;
       const confirmed = confirmedFields !== null && confirmedFields.includes(field) && held !== null && held === confirmationHash(c.call.params, confirmedFields);
       if (confirmed) return { result: { id, description, compared: `${field} is ${noNumber ? 'a number' : 'not the caller\'s number, but a number'} the caller confirmed`, pass: true } };
-      const compared = `${field} ${noNumber ? 'with no caller\'s number' : 'is not the caller\'s number'}, and not confirmed`;
-      return { result: { id, description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: noNumber ? NO_CALLER_NUMBER : NOT_CALLER_NUMBER } };
+      const compared = `${field} ${refusedWithheld ? 'is the caller\'s withheld number' : noNumber ? 'with no caller\'s number' : 'is not the caller\'s number'}, and not confirmed`;
+      return { result: { id, description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: refusedWithheld ? CALLER_NUMBER_WITHHELD : noNumber ? NO_CALLER_NUMBER : NOT_CALLER_NUMBER } };
     }
-    const compared = noNumber ? `${field} with no caller's number` : `${field} is not the caller's number`;
-    return { result: { id, description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: noNumber ? NO_CALLER_NUMBER : NOT_CALLER_NUMBER } };
+    const compared = refusedWithheld ? `${field} is the caller's withheld number` : noNumber ? `${field} with no caller's number` : `${field} is not the caller's number`;
+    return { result: { id, description, compared, pass: false }, fail: { verdict: 'BLOCK', reason: refusedWithheld ? CALLER_NUMBER_WITHHELD : noNumber ? NO_CALLER_NUMBER : NOT_CALLER_NUMBER } };
   };
 }

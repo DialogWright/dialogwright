@@ -48,7 +48,7 @@ export const conditionSchema = z
     called: z
       .union([envRef(), z.array(envRef()).min(1, { error: 'lists nothing' })])
       .optional()
-      .describe('Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml\'s callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.'),
+      .describe('Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.'),
     named: identifier()
       .optional()
       .describe('Holds when the app\'s predicate of this name (code.predicates) returns true, given the session, read-only: for anything the other conditions cannot say.'),

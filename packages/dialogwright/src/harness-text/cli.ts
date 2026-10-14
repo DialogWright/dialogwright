@@ -1,7 +1,6 @@
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { keyEvents, silenceEvent, startEvent, withCalledNumber, withCallerNumber, type SessionEvent } from '../channel/events';
-import { usesCalledNumber, usesCallerNumber } from '../core/callerNumber';
 import { appOf } from '../core/app/registry';
 import { demoTools } from '../core/tools';
 import { newSession, type Session } from '../core/session';
@@ -36,9 +35,9 @@ function parseCliArgs() {
       'corpus-file': { type: 'string' },
       // Where the injection screen is asked: inline (default) or separate (core/screen.ts ScreenMode).
       screen: { type: 'string' },
-      // The number the REPL's call comes from (SessionStart.callerNumber), for an app with a slot that offers it or that keeps it.
+      // The number the REPL's call comes from (SessionStart.callerNumber).
       'caller-number': { type: 'string' },
-      // The number the REPL's call is to (SessionStart.calledNumber), for an app that keeps it (app.yaml callerNumber.called).
+      // The number the REPL's call is to (SessionStart.calledNumber).
       'called-number': { type: 'string' },
     },
   }).values;
@@ -101,9 +100,8 @@ async function repl(opts: RunOptions, quiet: boolean, callerNumber?: string, cal
       if (show(r)) printRun(r, quiet);
     }
   };
-  // The call's number, for an app with a slot that offers it or that keeps it (--caller-number), and the
-  // number called, for an app that keeps it (--called-number); every other app's start is as it was.
-  const start = () => turn(withCalledNumber(withCallerNumber(startEvent(), usesCallerNumber(appOf(session)) ? callerNumber : undefined), usesCalledNumber(appOf(session)) ? calledNumber : undefined));
+  // The call's number (--caller-number) and the number called (--called-number), the call's data for every app.
+  const start = () => turn(withCalledNumber(withCallerNumber(startEvent(), callerNumber), calledNumber));
   await start();
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: 'caller> ' });
   rl.prompt();

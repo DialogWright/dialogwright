@@ -275,6 +275,10 @@ const callerNumberRule = z
       .enum(['refuse', 'confirmed'])
       .optional()
       .describe('What a number that is not the caller\'s gets: "refuse" (default), BLOCK "not-caller-number" (or "no-caller-number" when the call kept none), or "confirmed": it passes when the caller heard the call\'s values read back at the summary and said yes, which needs the field in the action\'s confirmed rule.'),
+    withheld: z
+      .enum(['allow', 'refuse'])
+      .optional()
+      .describe('What the caller\'s own number gets when they withheld it (*67) and the carrier sent it anyway: "allow" (default), it passes as any caller\'s number; "refuse", BLOCK "caller-number-withheld" (a number confirmed at the summary, with else: confirmed, still passes). Honouring the caller\'s privacy is the app\'s decision; app.yaml\'s callerNumber.withheld: ignore does it for every feature at once.'),
   })
   .describe('callerNumber: the action\'s param is the number the caller is calling from, or with else: confirmed one they confirmed at the summary. Caller ID is a hint, never identity: the rule says where a call may send something, never whose record it reads.');
 
@@ -327,6 +331,7 @@ export interface ListYaml {
 export interface CallerNumberYaml {
   field: string;
   else?: 'refuse' | 'confirmed';
+  withheld?: 'allow' | 'refuse';
 }
 
 /** One entry of an action's rules, as written: a bare rule's name, or a map of one rule's name to its parameters. */

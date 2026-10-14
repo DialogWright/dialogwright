@@ -90,7 +90,7 @@
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                   },
                   "called": {
-                    "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                    "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                     "anyOf": [
                       {
                         "type": "string",
@@ -233,7 +233,7 @@
                       "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                     },
                     "called": {
-                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -482,7 +482,7 @@
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                   },
                   "called": {
-                    "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                    "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                     "anyOf": [
                       {
                         "type": "string",
@@ -625,7 +625,7 @@
                       "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                     },
                     "called": {
-                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -880,7 +880,7 @@
                       "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                     },
                     "called": {
-                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                      "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -1023,7 +1023,7 @@
                         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                       },
                       "called": {
-                        "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. It needs app.yaml's callerNumber with called: true, so the number called is kept. The numbers stay in the environment, never in YAML.",
+                        "description": "Holds when the number called is the value of this environment variable (env.<NAME>), or of one of this list. The number called is kept for every call that has one. The numbers stay in the environment, never in YAML.",
                         "anyOf": [
                           {
                             "type": "string",

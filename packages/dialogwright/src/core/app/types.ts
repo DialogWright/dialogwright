@@ -804,16 +804,47 @@ export interface FactsConfig {
 }
 
 /**
- * app.yaml's `callerNumber` (App.callerNumber): what the app keeps of the numbers a call came with,
- * and the lookup made with the caller's at call start.
+ * app.yaml's `callerNumber` (App.callerNumber): what the engine's own features do with the numbers a
+ * call came with, and the lookup made with the caller's at call start. The numbers themselves are the
+ * call's data, kept for every app (callerOf, calledOf): this block chooses only what acts on them.
  */
 export interface CallerNumberUse {
-  /** `hint`: the number is kept for the app's code, never as identity on its own (a caller-ID match may identify an account that a knowledge factor verifies: identity.yaml `callerId`). */
-  readonly use: 'hint';
-  /** Keep the number called (Session.calledNumber) too. Default false. */
+  /** `hint`, as written before the numbers were kept for every app: accepted, and changes nothing. */
+  readonly use?: 'hint';
+  /** As written before the number called was kept for every app: accepted, and changes nothing. */
   readonly called?: boolean;
   /** A tool called once at call start, through the gate, with `{ callerNumber }` as its params. Absent: none. */
   readonly lookup?: ToolName;
+  /**
+   * What the engine's own features do with a number the caller withheld (Session.callerPrivacy): `use`
+   * (the default) treats it as any other number (offered back, looked up, held by the gate's
+   * callerNumber rule, matched by identity.yaml's callerId); `ignore` treats the call as one with no
+   * number for all of them, honouring the caller's choice. App code reads the number either way
+   * (callerOf(s), with `withheld: true`): what it does with it is the app's.
+   */
+  readonly withheld?: CallerWithheldUse;
+}
+
+/** What the engine's features do with a withheld number (CallerNumberUse.withheld), in the order the docs list them. */
+export const CALLER_WITHHELD_USES = ['use', 'ignore'] as const;
+export type CallerWithheldUse = (typeof CALLER_WITHHELD_USES)[number];
+
+/**
+ * How the records (the trace, the frame log, the console, the server's log) write the numbers and the
+ * caller's name a call came with (app.yaml's `records`). What a transfer sends and what app code reads
+ * are never changed by it: it is about what is written down.
+ */
+export interface RecordsConfig {
+  /**
+   * The caller's number (and their SIP or client address, and a copy the carrier sends under another
+   * name): `last4` (the default) by its last four digits, `keep` whole. `keep` needs a console behind
+   * sign-in (CONSOLE_AUTH=token): the server refuses to start with it otherwise.
+   */
+  readonly callerNumber?: 'last4' | 'keep';
+  /** The business's own numbers (the number called, transfer and handoff targets): `keep` (the default) whole, `last4` by their last four. */
+  readonly businessNumbers?: 'keep' | 'last4';
+  /** The caller's name a carrier sends (CNAM: Twilio's CallerName): `redact` (the default), or `keep`, which needs CONSOLE_AUTH=token as callerNumber's does. */
+  readonly callerName?: 'redact' | 'keep';
 }
 
 /**
@@ -826,19 +857,33 @@ export interface CallerNumberUse {
  * - `chat.<key>`: a key of the web chat `start` message's `context`.
  * `redact` is how the value is recorded in the trace, the console, the frame log and the audit, as a
  * policy.yaml `audit:` param is (AuditMask); default `mask`, so a key nobody thought about is never
- * written whole.
+ * written whole. `send` is what a transfer sends of it (default `as-is`): recording and delivery are
+ * separate decisions.
  */
 export interface CallDataKey {
   readonly from: string;
   readonly redact?: AuditMask;
+  /**
+   * What a transfer sends of the value (`callData.<key>` in `transfer.send`): `as-is` (the default), the
+   * value as it came; `masked`, as `redact` records it (a `secret` key then sends nothing). Recording
+   * and delivery are separate: `redact` never changes what is sent unless this says `masked`.
+   */
+  readonly send?: CallDataSend;
 }
+
+/** What a transfer sends of a call data key (CallDataKey.send), in the order the docs list them. */
+export const CALL_DATA_SENDS = ['as-is', 'masked'] as const;
+export type CallDataSend = (typeof CALL_DATA_SENDS)[number];
 
 /**
  * What goes with a transfer (app.yaml's `transfer.send`, a rule's own `send`): each value a reference
  * or a constant, as written:
  * - `reason`: the handoff's reason; `form`: the form the transfer was chosen on (TransferChoice);
- * - `callData.<key>`: a key of App.callData, sent as its `redact` records it (masked unless `keep`, and
- *   never less than the masking by its source's name), a `secret` key never;
+ * - `callData.<key>`: a key of App.callData, sent as it came (its `send`, default `as-is`), or as its
+ *   `redact` records it where its `send` is `masked` (a `secret` key then never);
+ * - `callerNumber`, `calledNumber`: the number the caller is calling from and the number called, whole,
+ *   as the session kept them (nothing where the call had none, or where the caller withheld theirs and
+ *   app.yaml's `callerNumber.withheld` is `ignore`);
  * - `slot.<id>`: a slot, sent as the handoff data sends it (HandoffData: omitted, masked or as is);
  * - anything else: a constant, sent as written.
  * A reference with nothing to send on a call (no form, a key the call came without, a slot left out)
@@ -1044,6 +1089,20 @@ export interface VoiceConfig {
    * the turn runs on the words joined. 0 turns it off; 0 to 2000. Absent: 300.
    */
   readonly continueWithinMs?: number;
+  /** Twilio's ConversationRelay settings for the app's calls (TwilioRelaySettings); each left out keeps the value the start document always had. */
+  readonly twilio?: TwilioRelaySettings;
+}
+
+/**
+ * Twilio's ConversationRelay attributes an app may set (app.yaml's `voice.twilio`), written on its start
+ * document (server/voice/twilio.ts). Each left out keeps the document's value: `interruptSensitivity`
+ * low, `ignoreBackchannel` true, `reportInputDuringAgentSpeech` any, `deepgramSmartFormat` false.
+ */
+export interface TwilioRelaySettings {
+  readonly interruptSensitivity?: 'low' | 'medium' | 'high';
+  readonly ignoreBackchannel?: boolean;
+  readonly reportInputDuringAgentSpeech?: 'none' | 'dtmf' | 'speech' | 'any';
+  readonly deepgramSmartFormat?: boolean;
 }
 
 /** How the phone speaks and hears one of the app's locales (VoiceConfig.locales). Each field is optional. */
@@ -1139,7 +1198,7 @@ export type HandoffSend = 'omit' | 'masked' | 'as-is';
  * keeps verification factors off the carrier: an identity factor slot is omitted, a slot the app
  * redacts (SlotSpec.redact) goes masked, and any other slot goes as it is. An app that needs a value
  * in the clear for its human desk names it in `send`. A chat's transfer sends no collected values
- * whatever this says (channel/chat/protocol.ts).
+ * unless `chat` says `send` (channel/chat/protocol.ts).
  */
 export interface HandoffData {
   /** Which collected slots go: `all` (the default), `none`, or the slot ids listed. */
@@ -1148,6 +1207,12 @@ export interface HandoffData {
   readonly send?: Readonly<Record<SlotId, HandoffSend>>;
   /** What goes of a value the caller never confirmed (HandoffUnconfirmed). Default `send`. */
   readonly unconfirmed?: HandoffUnconfirmed;
+  /**
+   * What a web chat's transfer message carries of the collected slots: `none` (the default: its reason
+   * and `transfer.send.chat` only, as before) or `send`, the slots a call's transfer would send (chosen
+   * and masked by `slots`, `send` and `unconfirmed`), as the message's `slots`.
+   */
+  readonly chat?: 'none' | 'send';
 }
 
 /**
@@ -1280,17 +1345,24 @@ export interface App {
    */
   callerState?(s: Session): Readonly<Record<string, string | number | boolean>>;
   /**
-   * The number the caller is calling from, kept for the app's own code (app.yaml's `callerNumber`):
+   * What the engine's own features do with the numbers a call came with (app.yaml's `callerNumber`).
+   * The numbers are the call's data, kept for every app: app code reads them through `callerOf(s)`
+   * (the caller's number, with `withheld` where the caller withheld it) and `calledOf(s)`. A number is
    * a hint, never identity on its own (an app may let a caller-ID match identify an account, with a
-   * knowledge factor that verifies it: identity.yaml `callerId`). With it, the session keeps any usable number the call came with, whether
-   * or not a slot can offer it, and the number called too when `called` is true; app code reads them
-   * through `callerOf(s)` and `calledOf(s)`. `lookup` names a tool the engine calls once at call
-   * start, before the greeting, through the gate as the anonymous caller, with the number as its one
-   * param (`callerNumber`); a refusal, or a tool that throws, is silent, and an allowed result goes to the facts
-   * (FactsConfig.fromCallerLookup). Without it, the number is kept only for a slot that offers it,
-   * as before (SlotSpec.callerNumber), and nothing is looked up.
+   * knowledge factor that verifies it: identity.yaml `callerId`). `lookup` names a tool the engine
+   * calls once at call start, before the greeting, through the gate as the anonymous caller, with the
+   * number as its one param (`callerNumber`); a refusal, or a tool that throws, is silent, and an
+   * allowed result goes to the facts (FactsConfig.fromCallerLookup). `withheld` says whether the
+   * engine's features use a number the caller withheld (default `use`). Without it, nothing is looked
+   * up, and a withheld number is used as any other.
    */
   callerNumber?: CallerNumberUse;
+  /**
+   * How the records write the numbers and the caller's name a call came with (app.yaml's `records`,
+   * RecordsConfig): the caller's number by its last four, the business's own numbers whole, the
+   * caller's name redacted, unless it says otherwise. Without it, those defaults.
+   */
+  records?: RecordsConfig;
   /**
    * The data a call or chat came with that the app may read (app.yaml's `callData`), by key: a
    * carrier's custom parameter, a field of the setup or of the answer webhook, or the web chat's page

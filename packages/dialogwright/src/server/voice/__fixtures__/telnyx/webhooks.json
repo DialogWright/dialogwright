@@ -67,7 +67,7 @@
       }
     },
     {
-      "source": "captured 2026-10-13 (a call dialled with *67; field names and the privacy marks as the TeXML answer webhook carried them, the caller's number replaced with a fictional +1555 one, ids made up): the caller's real number in From beside the marks of a withheld one, CallerId anonymous and FromSipUri anonymous@anonymous.invalid; read as withheld, with no from",
+      "source": "captured 2026-10-13 (a call dialled with *67; field names and the privacy marks as the TeXML answer webhook carried them, the caller's number replaced with a fictional +1555 one, ids made up): the caller's real number in From beside the marks of a withheld one, CallerId anonymous and FromSipUri anonymous@anonymous.invalid; read as withheld (privacy), the number kept in from as it came",
       "headers": {
         "content-type": "application/x-www-form-urlencoded"
       },
@@ -77,7 +77,8 @@
         "to": "+15555550111",
         "callStatus": "ringing",
         "live": false,
-        "withheld": true
+        "from": "+15555550142",
+        "privacy": "withheld"
       }
     }
   ],

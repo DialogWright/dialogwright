@@ -136,7 +136,8 @@ afterForm:
     expect(problems.join('\n')).toContain('start[0].say  prompt "no_such_line" is not in prompts.yaml');
     expect(problems.join('\n')).toContain('start[0].form  form "no_such_form" is not defined');
     expect(problems.join('\n')).toContain('start[1].when.hours  app.yaml has no hours, so this condition never holds');
-    expect(problems.join('\n')).toContain('start[2].when.called  the app does not keep the number called, so this condition never holds  ->  add callerNumber: { use: hint, called: true } to app.yaml');
+    // Re-pinned (live findings item 26): the number called is kept for every app, so a called condition needs no opt-in.
+    expect(problems.join('\n')).not.toContain('start[2].when.called');
     expect(problems.join('\n')).toContain('start[2].locale  "es" is not a locale of this app');
     expect(problems.join('\n')).toContain('start[3].when.named  the code has no predicate "vip"');
     expect(problems.join('\n')).toContain('afterForm.request_callback[0].when.slot  slot "severity" is not defined');

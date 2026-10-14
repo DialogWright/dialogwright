@@ -11,6 +11,7 @@ import { principalProblems } from './principals';
 import { SPAN_GAP } from '../../render/types';
 import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextCycles, slotOutcomesOf } from './next';
 import type { App, ConfigHashes } from './types';
+import { CALL_DATA_SENDS, CALLER_WITHHELD_USES } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
 import { AUDIT_MASKS } from '../recording';
 import { OUTCOME_THEN, SLOT_ATTEMPTS_MAX, SLOT_ATTEMPTS_MIN, SLOT_LISTEN_VALUES } from '../slots/types';
@@ -21,7 +22,7 @@ import { handoffDataProblems } from '../../handoff/data';
 import { transferProblems } from '../transfer';
 import { hoursProblems } from '../hours';
 import { conditionWorldOf, formsEnteredByRoutes, routeProblems } from '../routes';
-import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
+import { callDataSourceProblem, ENGINE_PARAMETERS, WEBHOOK_PARAMETER_PREFIX } from '../../channel/callData';
 import { envVariableOf } from './envReference';
 import { E164 } from '../numberLocales';
 
@@ -130,7 +131,7 @@ export function validateApp(app: App): void {
     }
   }
   // What a transfer hands the channel (handoff.data): the same problems `check` finds in app.yaml.
-  for (const p of handoffDataProblems(app.handoff?.data, app.slots, app.identity?.factorSlots ?? [])) fail(`handoff data: ${p.message} (handoff.data.${p.path.join('.')}): ${p.fix}`);
+  for (const p of handoffDataProblems(app.handoff?.data, app.slots, app.identity?.factorSlots ?? []).filter((p) => p.warning !== true)) fail(`handoff data: ${p.message} (handoff.data.${p.path.join('.')}): ${p.fix}`);
   // Where a slot listens (SlotSpec.listen): one of its values, never on an identity factor (which
   // listens as identity says), and only `call` on a slot carrySlots names (its shorthand).
   for (const [id, spec] of Object.entries(app.slots)) {
@@ -450,12 +451,19 @@ export function validateApp(app: App): void {
       for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
       if (identity.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of level 1, so the caller-ID match alone would verify; leave at least one factor to be asked');
       if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
-      if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { use: hint, lookup })');
+      if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { lookup })');
       if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');
     }
   }
   for (const tool of Object.keys(toolLevel)) if (!Object.hasOwn(rulesFor, tool)) fail(`policy has a level for tool "${tool}", which has no rules`);
   for (const problem of callDataProblems(app)) fail(problem);
+  // app.yaml's callerNumber.withheld and records, as the schema holds them, for an app written in code.
+  const withheld = app.callerNumber?.withheld;
+  if (withheld !== undefined && !(CALLER_WITHHELD_USES as readonly string[]).includes(withheld)) fail(`callerNumber.withheld "${String(withheld)}" is not one of ${CALLER_WITHHELD_USES.join(', ')}`);
+  const records = app.records;
+  if (records?.callerNumber !== undefined && records.callerNumber !== 'last4' && records.callerNumber !== 'keep') fail(`records.callerNumber "${String(records.callerNumber)}" is not last4 or keep`);
+  if (records?.businessNumbers !== undefined && records.businessNumbers !== 'keep' && records.businessNumbers !== 'last4') fail(`records.businessNumbers "${String(records.businessNumbers)}" is not keep or last4`);
+  if (records?.callerName !== undefined && records.callerName !== 'redact' && records.callerName !== 'keep') fail(`records.callerName "${String(records.callerName)}" is not redact or keep`);
   // Where a handoff goes (transfer, core/transfer.ts): the same refusals `check` makes of app.yaml's.
   for (const p of transferProblems(app.transfer, conditionWorldOf(app))) {
     if (!p.warning) fail(`transfer: ${p.message} (transfer.${p.path.join('.')}): ${p.fix}`);
@@ -537,12 +545,13 @@ export function callDataProblems(app: Pick<App, 'callData' | 'startParameters'>)
       continue;
     }
     const problem = callDataSourceProblem(def.from);
-    if (problem !== null) out.push(`callData key "${key}": ${problem.message}`);
+    if (problem !== null && problem.warning !== true) out.push(`callData key "${key}": ${problem.message}`);
     if (def.redact !== undefined && !(AUDIT_MASKS as readonly string[]).includes(def.redact)) out.push(`callData key "${key}" redact "${String(def.redact)}" is not one of ${AUDIT_MASKS.join(', ')}`);
+    if (def.send !== undefined && !(CALL_DATA_SENDS as readonly string[]).includes(def.send)) out.push(`callData key "${key}" send "${String(def.send)}" is not one of ${CALL_DATA_SENDS.join(', ')}`);
   }
   for (const [name, value] of Object.entries(app.startParameters ?? {})) {
     if (!CALL_DATA_NAME.test(name)) out.push(`startParameters name "${name}" is not a plain word (letters, digits and underscores, starting with a letter)`);
-    if (name === 'locale' || name === HOST_APP_PARAMETER || name === WITHHELD_PARAMETER || name.startsWith(WEBHOOK_PARAMETER_PREFIX)) out.push(`startParameters name "${name}" is one the engine writes itself`);
+    if (ENGINE_PARAMETERS.includes(name) || name.startsWith(WEBHOOK_PARAMETER_PREFIX)) out.push(`startParameters name "${name}" is one the engine writes itself`);
     if (envVariableOf(value) === null) out.push(`startParameters "${name}" is not env.<NAME>`);
   }
   return out;

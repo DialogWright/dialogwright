@@ -9,6 +9,7 @@ import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } 
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, CheckOutcome, Completion, FormCheck, FormId, Intent, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
+import { maskCallerValue, recordsOf } from '../channel/maskByName';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
@@ -20,7 +21,7 @@ import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type Complet
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
-import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
+import { callerCandidate, callerNumberSlots, callerPrivacyOf, callerUriOfRaw, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, usableCallerNumber, yesNoOffer, type OfferPending } from './callerNumber';
 import { keptCallData } from './callData';
 import { routeRecord, routeTaken, rulesAt, sessionConditionFacts, ROUTE_HANDOFF_REASON, type ConditionClock } from './routes';
 import { factsCandidate, factsOfferSlots, greetingOfferPromptId, greetingOfferSlots } from './factsOffer';
@@ -1125,7 +1126,8 @@ function offerFromFacts(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Prom
  */
 function offerCallerNumber(s: Session, slot: SlotId, acks: Ack[], io: TurnIO): Decision | null | typeof DECLINED | typeof CONSENTED {
   if (!callerNumberSlots(io.app).includes(slot) || s.callerOffered?.includes(slot) || s.slots[slot]!.attempts > 0) return null;
-  let c = s.callerNumber === undefined ? null : callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
+  const number = usableCallerNumber(io.app, s);
+  let c = number === undefined ? null : callerCandidate(io.app, slot, number, slotLocaleOf(s));
   if (c !== null) {
     // Asked once per slot per form, whatever it says: the slot is not offered again.
     s.callerOffered = [...(s.callerOffered ?? []), slot];
@@ -1198,7 +1200,17 @@ function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, {
     return;
   }
   const last4 = lastFour(pc.value);
-  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4 }, s.locale), answer, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
+  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale), answer, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
+}
+
+/**
+ * The whole number an offer of the caller's number said (`{callerNumber}`), as a record (the audit's offer
+ * and consent rows) writes it: as the slot offering it records its value where it has a redact setting,
+ * else as app.yaml's records write the caller's number (its last four by default).
+ */
+function recordedCallerNumber(app: App, pc: Extract<PendingConfirmation, { target: 'slot' }>): string {
+  if (app.slots[pc.slot]?.redact !== undefined) return recordedValue(recordingOf(app, pc.slot), pc.display) ?? '•';
+  return maskCallerValue(pc.display, recordsOf(app));
 }
 
 /**
@@ -1209,7 +1221,7 @@ function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, {
  */
 function consentSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, granted: boolean | null, keyed = false): void {
   const last4 = lastFour(pc.value);
-  const said = promptText(io.app, CONSENT_PROMPT, { last4 }, s.locale);
+  const said = promptText(io.app, CONSENT_PROMPT, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale);
   const locale = s.locale ?? defaultLocaleOf(io.app);
   s.textConsent = { answer: granted === true ? 'granted' : granted === false ? 'declined' : 'unknown', said, locale };
   io.out.consent = { scope: 'call', granted, promptId: CONSENT_PROMPT, said, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
@@ -1224,15 +1236,17 @@ function declineOnNo(s: Session, io: TurnIO, slot: SlotId): void {
 }
 
 /**
- * The offer's line: `offer_<slot>`, with the last four digits of the number offered, or, for a value
+ * The offer's line: `offer_<slot>`, with the last four digits of the number offered (and the whole
+ * number as `{callerNumber}`, for a line that says it), or, for a value
  * proposed from the facts, its display as `{<slot>}`. A proposal at the greeting asks for no slot (no
  * form is open, and no slot reads the answer as its own prompted one): it stands in for the intent
  * question.
  */
 function offerPrompt(pc: Extract<PendingConfirmation, { target: 'slot' }>, acks: Ack[]): PromptDecision {
   // The consent to text for the whole call (app.yaml's textConsent): its own line, by the last four.
-  if (pc.consent === true) return prompt(CONSENT_PROMPT, 'intent', { last4: lastFour(pc.value) }, acks, ['yes', 'no']);
-  const vars = pc.from === 'facts' ? { [pc.slot]: pc.display } : { last4: lastFour(pc.value) };
+  // `{callerNumber}` is the whole number as the slot displays it, beside `{last4}`: which to say is the app's line.
+  if (pc.consent === true) return prompt(CONSENT_PROMPT, 'intent', { last4: lastFour(pc.value), callerNumber: pc.display }, acks, ['yes', 'no']);
+  const vars = pc.from === 'facts' ? { [pc.slot]: pc.display } : { last4: lastFour(pc.value), callerNumber: pc.display };
   return prompt(`offer_${pc.slot}`, pc.at === 'greeting' ? 'intent' : pc.slot, vars, acks, ['yes', 'no']);
 }
 
@@ -2065,7 +2079,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // whether or not its number was offered before (offered once per form, callerOffered), and
       // whether or not there was a number to offer (one that skips with none, `ifNone: skip`, is asked).
       // So is one that proposes a value from the facts (`offer: facts`): the caller said it is wrong.
-      const offering = ((s.callerNumber !== undefined || skipsIfNone(io.app, verdict.slot)) && callerNumberSlots(io.app).includes(verdict.slot)) || factsOfferSlots(io.app).includes(verdict.slot);
+      const offering = ((usableCallerNumber(io.app, s) !== undefined || skipsIfNone(io.app, verdict.slot)) && callerNumberSlots(io.app).includes(verdict.slot)) || factsOfferSlots(io.app).includes(verdict.slot);
       if (offering && !(s.callerOffered ?? []).includes(verdict.slot)) s.callerOffered = [...(s.callerOffered ?? []), verdict.slot];
       const said = [...acks, ...(fill?.acks ?? [])];
       // What else the breath changed ("the town's wrong, and I rent it", where the naming decides)
@@ -2361,8 +2375,9 @@ export const CALLER_LOOKUP_PURPOSE = 'caller-lookup';
  */
 function callerLookup(s: Session, io: TurnIO): void {
   const tool = io.app.callerNumber?.lookup;
-  if (tool === undefined || !hintsCallerNumber(io.app) || s.callerNumber === undefined || !isAnonymous(s.principal)) return;
-  const { decision, value } = callTool(s, { tool, params: { callerNumber: s.callerNumber }, purpose: CALLER_LOOKUP_PURPOSE }, io.tc, io.out, undefined, { failSoft: true });
+  const number = usableCallerNumber(io.app, s);
+  if (tool === undefined || number === undefined || !isAnonymous(s.principal)) return;
+  const { decision, value } = callTool(s, { tool, params: { callerNumber: number }, purpose: CALLER_LOOKUP_PURPOSE }, io.tc, io.out, undefined, { failSoft: true });
   const facts = io.app.facts;
   if (decision.verdict !== 'ALLOW' || value === null || value === undefined || facts?.fromCallerLookup === undefined) return;
   const before = facts.clone(s.facts);
@@ -2388,9 +2403,10 @@ const GREET_AFTER_OFFER = 'greet_after_offer';
  */
 function textConsentAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
   const covers = consentCovers(io.app);
-  if (!s.caps.speech || covers.length === 0 || s.textConsent !== undefined || s.callerNumber === undefined) return null;
+  const number = usableCallerNumber(io.app, s);
+  if (!s.caps.speech || covers.length === 0 || s.textConsent !== undefined || number === undefined) return null;
   for (const slot of covers) {
-    const c = callerCandidate(io.app, slot, s.callerNumber, slotLocaleOf(s));
+    const c = callerCandidate(io.app, slot, number, slotLocaleOf(s));
     if (c === null || !callerOfferAllowed(s, slot, io)) continue;
     const pc: Extract<PendingConfirmation, { target: 'slot' }> = { target: 'slot', slot, value: c.value, display: c.display, offered: true, at: 'greeting', consent: true };
     s.pendingConfirmation = pc;
@@ -2852,10 +2868,16 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The locale the channel asks for, where the app speaks it; any other request leaves the
       // session in the app's default. An app without locales has no locale to set.
       if (event.locale !== undefined && io.app.locales) s.locale = matchLocale(io.app, event.locale) ?? io.app.locales.default;
-      // The number the caller is calling from, kept only where a slot can offer it or the app keeps it
-      // for its code, and the number called only where the app keeps it (core/callerNumber.ts).
+      // The numbers the call came with, kept as the call's data for every app (core/callerNumber.ts):
+      // the caller's, with its privacy (a number the caller withheld is kept, marked so), its SIP or
+      // client address where it is no number, its attestation, and the number called.
       const caller = keptCallerNumber(io.app, event.callerNumber);
       if (caller !== undefined) s.callerNumber = caller;
+      const privacy = callerPrivacyOf(event.callerNumber, event.callerPrivacy);
+      if (privacy !== undefined) s.callerPrivacy = privacy;
+      const uri = callerUriOfRaw(event.callerNumber);
+      if (uri !== null) s.callerUri = uri;
+      if (typeof event.callerAttestation === 'string' && event.callerAttestation !== '') s.callerAttestation = event.callerAttestation;
       const called = keptCalledNumber(io.app, event.calledNumber);
       if (called !== undefined) s.calledNumber = called;
       // The data the call or chat came with, only the keys the app names (core/callData.ts).
@@ -2864,7 +2886,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // The app's start hook, once, for every call, before the call-start lookup (App.onStart).
       startHook(s, io);
       // The app's lookup by that number, once, before the greeting, through the gate.
-      if (caller !== undefined) callerLookup(s, io);
+      callerLookup(s, io);
       // The routes at start (routes.yaml start), before the greeting: a line before it, a language
       // switch, or the call ended, handed off or put into a form in its place.
       const started = startRoute(s, io);

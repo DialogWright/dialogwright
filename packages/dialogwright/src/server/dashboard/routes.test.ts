@@ -108,7 +108,8 @@ describe('dashboard routes', () => {
     // The route is unauthenticated, so neither the setup record nor the raw setup frame may carry
     // the caller's whole number, and the page never has to render a decision itself.
     // A v1 record (its event the setup frame) is upgraded to the session start it was, then redacted.
-    expect(one.records[0]!.event).toMatchObject({ type: 'session.start', provider: { from: '…0199', to: '…0002' } });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default.
+    expect(one.records[0]!.event).toMatchObject({ type: 'session.start', provider: { from: '…0199', to: '+15550000002' } });
     expect(one.frames[0]!.msg).toMatchObject({ from: '…0199' });
     expect(one.records[0]!.spokenText).toMatch(/\S/);
     expect((await fetch(`${s.base}/dashboard/traces/..%2Fetc`)).status).toBe(404);

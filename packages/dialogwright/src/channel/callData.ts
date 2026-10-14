@@ -37,8 +37,16 @@ export const SETUP_EXTRAS = [
   'callControlId', 'callSessionId', 'callLegId',
 ] as const;
 
-/** The setup fields a key may read (`setup.<field>`): the call ids, and the optional fields the wire keeps (SETUP_EXTRAS). */
-export const SETUP_FIELDS: readonly string[] = ['callSid', 'sessionId', ...SETUP_EXTRAS];
+/** The setup fields a carrier documents (`setup.<field>`): the call ids, the numbers, and the optional fields the wire keeps (SETUP_EXTRAS). */
+export const SETUP_FIELDS: readonly string[] = ['callSid', 'sessionId', 'from', 'to', ...SETUP_EXTRAS];
+
+/**
+ * The most string fields of a setup the wire passes through beyond the documented ones (SETUP_FIELDS),
+ * each a source name of at most 64 characters with a value of at most CALL_DATA_VALUE_MAX: a carrier that
+ * adds a field is read without a change to the engine (`setup.<field>`), and a setup cannot grow without
+ * bound.
+ */
+export const SETUP_PASSTHROUGH_MAX = 20;
 
 /** The prefix of the custom parameter the server echoes a webhook field as: `dw_<key>`. */
 export const WEBHOOK_PARAMETER_PREFIX = 'dw_';
@@ -52,12 +60,21 @@ export const HOST_APP_PARAMETER = 'dialogwright_app';
 
 /**
  * The custom parameter a start document carries when the answer webhook said the caller withheld their
- * number (CallbackParams.withheld): the setup that comes back with it has every copy of the caller's
- * number taken out before anything reads it (server/voice/registry.ts setupWithCallerWithheld), so the
- * number is never kept, offered, looked up, logged or shown. Its one value is `true`; a call whose
- * number was not withheld carries none, and its start document is as it was.
+ * number (CallbackParams.privacy): the flag rides to the setup beside the number, and the session keeps
+ * it (Session.callerPrivacy) as the call's data. Its one value is `true`; a call whose number was not
+ * withheld carries none, and its start document is as it was.
  */
 export const WITHHELD_PARAMETER = 'dialogwright_withheld';
+
+/**
+ * The custom parameter a start document carries with the STIR/SHAKEN attestation the answer webhook gave
+ * the caller's number (CallbackParams.attestation), so the setup brings it to the session
+ * (Session.callerAttestation). None when the webhook carried none.
+ */
+export const ATTESTATION_PARAMETER = 'dialogwright_attestation';
+
+/** The custom parameters the engine writes into a start document itself, which an app's startParameters may not name. */
+export const ENGINE_PARAMETERS: readonly string[] = ['locale', HOST_APP_PARAMETER, WITHHELD_PARAMETER, ATTESTATION_PARAMETER];
 
 /** The most custom parameters a setup keeps, and the longest value (the wire's limits, channel/relay/wire.ts); a chat's context is held to the same. */
 export const CALL_DATA_MAX_KEYS = 50;
@@ -86,15 +103,16 @@ export function contextBytes(context: Readonly<Record<string, unknown>>): number
 }
 
 /**
- * The carrier's copies of the numbers, as sources: the caller's and the called number are app.yaml's
- * `callerNumber` (callerOf, calledOf), kept and masked by its own rules, so call data never reads them.
+ * The carrier's copies of the numbers, as sources: call data may read them as it reads any field (the
+ * value as it came, recorded by the key's `redact`), though callerOf(s) and calledOf(s) already read the
+ * numbers for every app, and the records mask them as app.yaml's `records` says. `pnpm check` says so.
  */
 const NUMBER_SOURCES: Readonly<Record<string, readonly string[]>> = {
   setup: ['from', 'to'],
   param: ['telnyx_call_from', 'telnyx_call_to'],
   webhook: ['From', 'To', 'Caller', 'Called'],
 };
-const NUMBER_FIX = 'read the numbers with app.yaml\'s callerNumber (callerOf(s), and calledOf(s) with called: true)';
+const NUMBER_FIX = 'read the numbers with callerOf(s) and calledOf(s), kept for every app; or keep this key, recorded as its redact says';
 
 /**
  * Characters a value may not have: the C0 controls (tab and newline included: an XML attribute turns
@@ -123,8 +141,12 @@ export function callDataSourceOf(from: string): CallDataSource | null {
   return { kind: kind as CallDataSourceKind, name };
 }
 
-/** What is wrong with a key's `from`, with its fix; null when it names a source the engine reads. Shared by the schema and validateApp. */
-export function callDataSourceProblem(from: string): { message: string; fix: string } | null {
+/**
+ * What is wrong with a key's `from`, with its fix; null when it names a source the engine reads. Shared
+ * by the schema and validateApp, which refuse what has no `warning`; a `warning` is `pnpm check`'s to say
+ * (a number's own source, a setup field no carrier documents), never a refusal.
+ */
+export function callDataSourceProblem(from: string): { message: string; fix: string; warning?: true } | null {
   const source = callDataSourceOf(from);
   const sources = CALL_DATA_SOURCES.map((k) => `${k}.<name>`).join(', ');
   if (source === null) {
@@ -137,13 +159,14 @@ export function callDataSourceProblem(from: string): { message: string; fix: str
     return { message: `"${source.name}" is not a name a ${source.kind} source has: it must use only letters, digits, underscores, hyphens and dots`, fix: 'write the name as the carrier (or the chat client) sends it' };
   }
   if (NUMBER_SOURCES[source.kind]?.includes(source.name)) {
-    return { message: `"${from}" is the number the caller is calling from or the number called, which call data does not read`, fix: NUMBER_FIX };
+    return { message: `"${from}" is the number the caller is calling from or the number called, which callerOf(s) and calledOf(s) already read`, fix: NUMBER_FIX, warning: true };
   }
   if (source.kind === 'chat' && !CONTEXT_KEY.test(source.name)) {
     return { message: `"${source.name}" is longer than a web chat context's key may be (64 characters), so it could never arrive`, fix: 'name a shorter key, as the page sends it' };
   }
   if (source.kind === 'setup' && !SETUP_FIELDS.includes(source.name)) {
-    return { message: `"${source.name}" is not a field of the setup frame the wire keeps (${SETUP_FIELDS.join(', ')})`, fix: 'name one of those, or read a custom parameter as param.<name>' };
+    if (source.name.length > 64) return { message: `"${source.name}" is longer than a setup field the wire passes through may be (64 characters), so it could never arrive`, fix: 'name a shorter field, as the carrier sends it' };
+    return { message: `"${source.name}" is not a field a carrier documents on the setup frame (${SETUP_FIELDS.join(', ')}); the wire passes it through when the carrier sends it as a string`, fix: 'keep it if your carrier sends it, or read a custom parameter as param.<name>', warning: true };
   }
   if (source.kind === 'param' && source.name.startsWith(WEBHOOK_PARAMETER_PREFIX)) {
     return { message: `custom parameters named "${WEBHOOK_PARAMETER_PREFIX}..." are the server's echoes of webhook fields`, fix: 'read the webhook field as webhook.<field> instead' };
@@ -154,6 +177,11 @@ export function callDataSourceProblem(from: string): { message: string; fix: str
 /** How a key is recorded: its `redact`, else `mask`. */
 export function redactionOf(key: CallDataKey | undefined): AuditMask {
   return key?.redact ?? 'mask';
+}
+
+/** What a transfer sends of a key: its `send`, else `as-is` (the value as it came; recording is `redact`'s alone). */
+export function sendOfKey(key: CallDataKey | undefined): 'as-is' | 'masked' {
+  return key?.send ?? 'as-is';
 }
 
 /**
@@ -185,7 +213,7 @@ export function callDataFrom(
     if (source === null) continue;
     const at = (o: Readonly<Record<string, string>> | undefined, k: string): string | undefined => (o !== undefined && Object.hasOwn(o, k) ? o[k] : undefined);
     const v = source.kind === 'param' ? at(provider, `param.${source.name}`)
-      : source.kind === 'setup' ? (SETUP_FIELDS.includes(source.name) ? at(provider, source.name) : undefined)
+      : source.kind === 'setup' ? (source.name.startsWith('param.') ? undefined : at(provider, source.name))
       : source.kind === 'webhook' ? at(provider, `param.${webhookParameterName(key)}`)
       : at(context, source.name);
     if (usable(v)) out[key] = v;
@@ -275,7 +303,7 @@ export function setupRedactions(spec: Readonly<Record<string, CallDataKey>> | un
 /**
  * The custom parameters a record keeps by rules of their own, whatever the app reads: `locale` (a
  * language tag, the engine's), and the carrier's copies of the numbers (`telnyx_call_from`,
- * `telnyx_call_to`), which the caller's-number rules mask where the app keeps the number.
+ * `telnyx_call_to`), which the records write as app.yaml's `records` says (trace/redact.ts).
  */
 export const OWN_RULE_PARAMETERS: readonly string[] = ['locale', 'telnyx_call_from', 'telnyx_call_to'];
 

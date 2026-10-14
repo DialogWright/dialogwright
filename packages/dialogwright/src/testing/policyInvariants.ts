@@ -229,9 +229,10 @@ export function checkPolicyInvariants(app: App, options: PolicyInvariantOptions 
           const confirmedRule = action.rules.find((r): r is Extract<Rule, { rule: 'confirmed' }> => r.rule === 'confirmed');
           const confirmed = rule.else === 'confirmed' && confirmedRule !== undefined && confirmedRule.fields.includes(rule.field)
             && c.facts.confirmedHash !== null && c.facts.confirmedHash === confirmationHash(c.call.params, confirmedRule.fields);
-          if (value !== '' && (own || confirmed)) break;
+          const refusedWithheld = own && rule.withheld === 'refuse' && c.facts.callerWithheld === true;
+          if (value !== '' && ((own && !refusedWithheld) || confirmed)) break;
           applied['one-of'] += 1;
-          if (allowed) broke('one-of', ruleLabel(rule), `ALLOW, but ${rule.field} is ${value === '' ? 'missing or empty' : kept === '' ? 'a number on a call with no caller\'s number' : 'not the caller\'s number'}${rule.else === 'confirmed' ? ', and not confirmed' : ''}`);
+          if (allowed) broke('one-of', ruleLabel(rule), `ALLOW, but ${rule.field} is ${value === '' ? 'missing or empty' : kept === '' ? 'a number on a call with no caller\'s number' : refusedWithheld ? 'the caller\'s withheld number' : 'not the caller\'s number'}${rule.else === 'confirmed' ? ', and not confirmed' : ''}`);
           break;
         }
         case 'attempts': {

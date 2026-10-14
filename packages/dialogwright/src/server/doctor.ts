@@ -7,7 +7,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { gb as gbOf, loadConfig, recognitionFor, type Env, type ServerConfig } from './config';
+import { gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, type Env, type ServerConfig } from './config';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
@@ -68,7 +68,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'languages';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'languages' | 'records';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -310,6 +310,7 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
   // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
+  if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config.consoleAuth));
   // The app's languages as the carriers listed are sent them: a tag with no region, a recognizer that hears English only.
   if (o.appDir !== undefined) results.push(...languageChecks(o.appDir, config));
 
@@ -395,6 +396,23 @@ const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp',
  * than a custom parameter may be, or has a control character, so each of those fails here too. None
  * for an app.yaml that names none, so every other app's diagnosis is as it was.
  */
+/**
+ * app.yaml's records (what the records keep of the numbers): a setting that keeps the caller's number or
+ * name whole, with the console behind sign-in (CONSOLE_AUTH=token), as the server says at start; one with
+ * the console not behind sign-in fails, as the server refuses to start with it. Nothing for an app that
+ * keeps the defaults, or a folder that cannot be read (pnpm check says why).
+ */
+export function recordsChecks(appDir: string, consoleAuth: unknown): CheckResult[] {
+  const loaded = loadAppFolder(appDir).config;
+  if (loaded === null || loaded.app.records === undefined) return [];
+  try {
+    const line = recordsSettingFor({ records: loaded.app.records }, consoleAuth);
+    return line === null ? [] : [{ id: 'records', status: 'ok', message: line }];
+  } catch (e) {
+    return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token in the settings file, or let app.yaml\'s records keep the defaults' }];
+  }
+}
+
 /**
  * Generated wording (prompts.yaml's mode: generative, a form's wording: generative): which model words
  * the app's generated lines, with its key's variable (never the key), RENDER_SHARE and the budget; that

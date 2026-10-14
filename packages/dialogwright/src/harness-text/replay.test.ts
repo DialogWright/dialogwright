@@ -285,13 +285,17 @@ describe('the caller\'s number the live call kept', () => {
   };
   const opts = () => ({ client: new HeuristicStubClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-09-18', now: () => 0, trace: null });
 
-  it('says a number of four digits or fewer, logged as bullets, has no last four to stand in for, so no offer is made', async () => {
+  // Re-pinned (live findings item 26): every app keeps the caller's number now, so an app that does not
+  // act on it (the testkit: no slot offers it, no lookup) is given a stand-in too, for its code, and a
+  // number too short to stand in for is not worth a line where nothing would be offered with it.
+  it('says nothing of a number of four digits or fewer for an app that does not act on the number', async () => {
     const replay = await replayFrameLog(logged('••••'), opts(), undefined, { todayIsoOverride: '2026-09-18' });
-    expect(replay.skipped).toEqual(["line 1: the caller's number the call kept had four digits or fewer, which the log keeps only as ••••, so the replay makes no offer"]);
+    expect(replay.skipped).toEqual([]);
   });
 
-  it('and one whose last four this app\'s slots take no stand-in for, as before', async () => {
+  it('stands a number in the international form carriers send in for an app with no slot that offers it', async () => {
     const replay = await replayFrameLog(logged('…0142'), opts(), undefined, { todayIsoOverride: '2026-09-18' });
-    expect(replay.skipped).toEqual(["line 1: the caller's number the call kept has no stand-in this app's slot takes, so the replay makes no offer"]);
+    expect(replay.skipped).toEqual([]);
+    expect(replay.records[0]!.event).toMatchObject({ type: 'session.start', callerNumber: '+15555550142' });
   });
 });

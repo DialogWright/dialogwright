@@ -10,7 +10,7 @@ import {
   BARGE_IN_CARRIER_VARS, BARGE_IN_MODES, bargeInRefusal, DEFAULT_END_PLAYBACK_FACTOR, DEFAULT_END_PLAYBACK_MARGIN_MS, DEFAULT_END_PLAYBACK_MAX_MS, END_PLAYBACK_FACTOR_RANGE, MAX_END_PLAYBACK_MARGIN_MS, DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_KEY_WAIT_MS, MIN_KEY_WAIT_MS, DEFAULT_NO_INPUT_AFTER_SPEECH_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, DEFAULT_RESUME_AFTER_PAUSE_MS, DEFAULT_RESUME_INTO_REPLY_MS, END_AFTER_PLAYBACK_MODES, RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS as TTS_PROVIDERS,
   TWILIO_DEFAULT_RECOGNIZER, VOICE_PROVIDER_IDS, type BargeIn, type EndAfterPlayback, type VoiceProviderId,
 } from '../channel/voiceProviders';
-import type { Recognition } from '../core/app/types';
+import type { Recognition, RecordsConfig } from '../core/app/types';
 import { describeOrigins, parseAllowedOrigins, type AllowedOrigins } from './chat/origins';
 import { checkJwksUrl } from './chat/jwks';
 import { isLoopbackHost } from './localOnly';
@@ -18,6 +18,7 @@ import { DEFAULT_SQL_TIMEOUT_MS, maskConnectionString } from './stores/sql';
 import { describeTraceStore, traceStoreSettingOf, type S3TraceSetting } from '../trace/store';
 import { logFileSettingOf, type LogFileSetting } from './logFile';
 import { consoleAuthOf, describeConsoleAuth, type ConsoleAuthSettings } from './console/settings';
+import { recordsOf } from '../channel/maskByName';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -559,6 +560,22 @@ export interface WidgetSettings {
 export const DEFAULT_WIDGET_FILE = 'node_modules/@dialogwright/widget/dist/dialogwright-widget.js';
 
 export type Env = Record<string, string | undefined>;
+
+/**
+ * app.yaml's `records` against the console's sign-in: a setting that writes the caller's number or name
+ * whole (`callerNumber: keep`, `callerName: keep`) is honoured only with the console behind sign-in
+ * (CONSOLE_AUTH=token), where only its owner sees the calls. Throws, with the fix, otherwise; returns the
+ * line the server's log says of a setting that keeps anything whole (null for the defaults).
+ */
+export function recordsSettingFor(app: { readonly records?: RecordsConfig } | undefined, consoleAuth: unknown): string | null {
+  const records = recordsOf(app);
+  const kept = [records.callerNumber === 'keep' ? "the caller's number" : null, records.callerName === 'keep' ? "the caller's name" : null].filter((w): w is string => w !== null);
+  if (kept.length > 0 && consoleAuth === undefined) {
+    throw new Error(`app.yaml's records keeps ${kept.join(' and ')} whole, which the server honours only with the console behind sign-in: set CONSOLE_AUTH=token, or write records: { ${records.callerNumber === 'keep' ? 'callerNumber: last4' : ''}${kept.length === 2 ? ', ' : ''}${records.callerName === 'keep' ? 'callerName: redact' : ''} } (the defaults)`);
+  }
+  const lines = [...kept.map((w) => `${w} kept whole`), ...(records.businessNumbers === 'last4' ? ["the business's numbers by their last four"] : [])];
+  return lines.length > 0 ? `records: ${lines.join(', ')}` : null;
+}
 
 /**
  * The custom parameters the server writes into every start document (app.yaml's `startParameters`,

@@ -4,7 +4,7 @@ import { envVariableOf } from '../core/app/envReference';
 import { calledVariables } from '../core/routes';
 import { clashingNumbers, E164, numberLocalesOf, type NumberLocale } from '../core/numberLocales';
 import { writableValue } from '../channel/callData';
-import { maskNumber } from '../channel/maskByName';
+import { DEFAULT_RECORDS, maskNumber, type NumberRecords } from '../channel/maskByName';
 import { fitHeaders, isSipTarget, SIP_URI_MAX, type DialTarget } from './voice/dial';
 import type { Env } from './config';
 
@@ -253,8 +253,13 @@ export function targetNumber(transfer: ServerTransfer | null, handoffNumber: str
   return transfer !== null && variable !== undefined && transfer.numbers.has(variable) ? transfer.numbers.get(variable)! : handoffNumber;
 }
 
-/** A target as the console shows it: a number by its last four, a SIP URI by its host alone (`sip:…@pbx.example.com`). */
-export function maskTarget(to: string): string {
+/**
+ * A target as the console shows it: one of the business's own numbers, whole by default (app.yaml's
+ * `records.businessNumbers: keep`); with `last4`, a number by its last four, a SIP URI by its host alone
+ * (`sip:…@pbx.example.com`).
+ */
+export function maskTarget(to: string, records: NumberRecords = DEFAULT_RECORDS): string {
+  if (records.businessNumbers === 'keep') return to;
   if (!isSipTarget(to)) return maskNumber(to);
   const host = to.slice(4).split(/[?;]/)[0]!.split('@');
   return host.length > 1 ? `sip:…@${host.at(-1)}` : 'sip:…';

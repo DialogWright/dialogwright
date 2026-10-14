@@ -386,7 +386,8 @@ describe('server end to end', () => {
     expect(asked[0]!.questions).toHaveProperty('intent');
     // The dashboard route is unauthenticated, so the raw record is never enough: the setup turn's
     // event must already carry a masked caller number, not the whole one FakeRelay.setup sent.
-    expect(turns[0]!.record.event).toMatchObject({ type: 'session.start', provider: { from: maskNumber('+15550000001'), to: maskNumber('+15550000002') } });
+    // Re-pinned (live findings item 26): the number called is the business's own, kept whole by default.
+    expect(turns[0]!.record.event).toMatchObject({ type: 'session.start', provider: { from: maskNumber('+15550000001'), to: '+15550000002' } });
   });
 
   it('publishes ended with reason error when a live call is evicted', async () => {

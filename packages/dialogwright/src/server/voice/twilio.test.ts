@@ -181,3 +181,28 @@ describe('the Twilio voice provider', () => {
     expect(twilioProvider.startDocument({ ...START, pauseS: 0 })).toBe(twilioProvider.startDocument(START));
   });
 });
+
+describe('the call data Twilio gives (live findings item 26)', () => {
+  const parse = (fields: Record<string, string>) => twilioProvider.parse({ url: '/voice/twilio', headers: {}, rawBody: new URLSearchParams({ CallSid: 'CA1', ...fields }).toString(), nowSec: 0 })!;
+
+  it('reads a placeholder for a withheld number as withheld, with the From as it came', () => {
+    for (const from of ['+266696687', '+7378742833', 'anonymous']) {
+      const p = parse({ From: from });
+      expect(p.privacy, from).toBe('withheld');
+      expect(p.from).toBe(from);
+    }
+    expect(parse({ From: '+15555550142' })).not.toHaveProperty('privacy');
+  });
+
+  it('reads the STIR/SHAKEN verification of the number, StirVerstat', () => {
+    expect(parse({ From: '+15555550142', StirVerstat: 'TN-Validation-Passed-A' }).attestation).toBe('TN-Validation-Passed-A');
+    expect(parse({ From: '+15555550142' })).not.toHaveProperty('attestation');
+  });
+
+  it('writes the app\'s relay settings (app.yaml voice.twilio) on its start document, the document\'s own otherwise', () => {
+    const doc = twilioProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '', twilio: { interruptSensitivity: 'high', ignoreBackchannel: false, reportInputDuringAgentSpeech: 'none', deepgramSmartFormat: true } });
+    expect(doc).toContain('interruptSensitivity="high" ignoreBackchannel="false" reportInputDuringAgentSpeech="none" deepgramSmartFormat="true"');
+    const partial = twilioProvider.startDocument({ publicHost: 'voice.example.com', token: 'b'.repeat(32), hints: '', twilio: { interruptSensitivity: 'medium' } });
+    expect(partial).toContain('interruptSensitivity="medium" ignoreBackchannel="true" reportInputDuringAgentSpeech="any" deepgramSmartFormat="false"');
+  });
+});

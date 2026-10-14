@@ -9,7 +9,7 @@ import type { Session } from '../core/session';
 import { appOf } from '../core/app/registry';
 import type { App } from '../core/app/types';
 import { recordedEffect } from '../core/recording';
-import { usesCallerNumber } from '../core/callerNumber';
+import { actsOnCallerNumber, usableCallerNumber } from '../core/callerNumber';
 import type { RenderRecord } from '../render/types';
 
 /** Where a call's trace records go: the file (TraceWriter), or a trace store's segments (trace/store.ts). */
@@ -116,8 +116,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...configHashOf(result.session),
     // Only on the session start, from a client that asks a model; every other record is as it was.
     ...(input.answeredBy ? { answeredBy: { ...input.answeredBy } } : {}),
-    // Only on the session start of an app with a slot that offers the caller's number; every other record is as it was.
-    ...(event.type === 'session.start' && usesCallerNumber(appOf(result.session)) ? { callerNumber: result.session.callerNumber !== undefined ? 'kept' as const : 'none' as const } : {}),
+    // Only on the session start of an app that acts on the caller's number; every other record is as it was.
+    ...(event.type === 'session.start' && actsOnCallerNumber(appOf(result.session)) ? { callerNumber: callerNumberNote(appOf(result.session), result.session) } : {}),
     screen: result.screen ? { ...result.screen } : null,
     quarantined: result.quarantined,
     // Added for the dashboard's stages, gate and source-of-truth cards: every gate
@@ -154,4 +154,10 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
       costUsd: (inputTokens * pricePerMtok) / 1_000_000,
     },
   };
+}
+
+/** What the session start's record notes of the caller's number (TraceRecord.callerNumber). */
+function callerNumberNote(app: App, session: Session): 'kept' | 'ignored' | 'none' {
+  if (session.callerNumber === undefined) return 'none';
+  return usableCallerNumber(app, session) === undefined ? 'ignored' : 'kept';
 }

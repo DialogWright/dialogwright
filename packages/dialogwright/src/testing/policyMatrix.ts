@@ -130,7 +130,7 @@ function ruleText(rule: Rule, source: PolicySource): string {
     case 'limit': return `limit(${rule.field})`;
     case 'oneOf': return `oneOf(${rule.field}: ${rule.values.join(', ')})`;
     case 'noneOf': return `noneOf(${rule.field}: ${rule.values.join(', ')})`;
-    case 'callerNumber': return `callerNumber(${rule.field}${rule.else === 'confirmed' ? ', else confirmed' : ''})`;
+    case 'callerNumber': return `callerNumber(${rule.field}${rule.else === 'confirmed' ? ', else confirmed' : ''}${rule.withheld === 'refuse' ? ', withheld refused' : ''})`;
     case 'custom': return `custom ${rule.id}`;
   }
 }

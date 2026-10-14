@@ -3,7 +3,8 @@ import { checkAlways, identifier, localeTag, matching, name, text, textMap, uniq
 import { RECOGNIZER_NAME, TWILIO_TTS_PROVIDERS } from '../../channel/voiceProviders';
 import { PRONOUNCE_MAX_SAY, PRONOUNCE_MAX_WORD, pronounceProblems } from '../../channel/pronounce';
 import { DEFAULT_CONTINUE_WITHIN_MS, MAX_CONTINUE_WITHIN_MS } from '../../run/continuation';
-import { callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
+import { ATTESTATION_PARAMETER, callDataSourceProblem, HOST_APP_PARAMETER, WEBHOOK_PARAMETER_PREFIX, WITHHELD_PARAMETER } from '../../channel/callData';
+import { CALL_DATA_SENDS, CALLER_WITHHELD_USES } from '../../core/app/types';
 import { ENV_REFERENCE } from '../../core/app/envReference';
 import { E164 } from '../../core/numberLocales';
 import { whenSchema } from './condition';
@@ -263,6 +264,27 @@ const voice = z
       .record(localeTag(), voiceLocale)
       .optional()
       .describe('Per-locale speech settings for the phone, keyed by the app\'s locale tags: the languages the voice speaks and hears, a voice per carrier, recognition hints. A locale not listed speaks and hears its own tag with the carrier\'s default voice.'),
+    twilio: z
+      .strictObject({
+        interruptSensitivity: z
+          .enum(['low', 'medium', 'high'])
+          .optional()
+          .describe('How readily the caller\'s speech interrupts a line (ConversationRelay interruptSensitivity): low needs confident, longer speech, so room noise on a speakerphone does not cut a line off. Default "low".'),
+        ignoreBackchannel: z
+          .boolean()
+          .optional()
+          .describe('Whether a backchannel ("uh-huh", "okay") is kept from interrupting a line (ConversationRelay ignoreBackchannel). Default true.'),
+        reportInputDuringAgentSpeech: z
+          .enum(['none', 'dtmf', 'speech', 'any'])
+          .optional()
+          .describe('What the caller says or keys while a line plays that Twilio reports (ConversationRelay reportInputDuringAgentSpeech). Default "any".'),
+        deepgramSmartFormat: z
+          .boolean()
+          .optional()
+          .describe('Whether Deepgram formats what it hears (numbers as digits, punctuation) before the engine reads it (ConversationRelay deepgramSmartFormat). Default false: the engine reads digits from the words.'),
+      })
+      .optional()
+      .describe('Twilio\'s ConversationRelay settings for the app\'s calls, each written on its start document; a setting left out keeps the value the document always had.'),
   })
   .describe("The phone line's speech settings for the app.");
 
@@ -306,11 +328,15 @@ const handoff = z
           .optional()
           .describe(
             'What goes of a value the caller never confirmed (not confirmed on its own, and not the value they said yes to at a summary since): "send" (the default, sent as any other), ' +
-              '"mark" (sent, and the data names it: the end frame\'s unconfirmed list, the console\'s "(not confirmed)", the audit\'s handoff row) or "omit" (left out). An identity factor is never counted. A chat\'s transfer sends no slots whatever this says.',
+              '"mark" (sent, and the data names it: the end frame\'s unconfirmed list, the console\'s "(not confirmed)", the audit\'s handoff row) or "omit" (left out). An identity factor is never counted.',
           ),
+        chat: z
+          .enum(['none', 'send'])
+          .optional()
+          .describe('What a web chat\'s transfer message carries of the collected slots: "none" (the default, the reason and transfer.send.chat only, as before) or "send", the same slots a call\'s transfer sends (as slots, chosen and masked by slots, send and unconfirmed above), for the page\'s own handover.'),
       })
       .optional()
-      .describe("What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback. A chat's transfer sends none. Default: no identity factor, a redacted slot masked, any other slot as it is."),
+      .describe("What a transfer hands the channel of the collected slots: on a phone call, the relay's end frame, which the carrier holds and posts back on its action callback; on a web chat, nothing unless chat says send. Default: no identity factor, a redacted slot masked, any other slot as it is."),
   })
   .describe("The handoff: the note's words about the app's domain, and what a transfer hands the channel (data). Each field is optional; without one the engine's own neutral words and the safe default are used.");
 
@@ -372,13 +398,35 @@ const callerNumber = z
   .strictObject({
     use: z
       .literal('hint')
-      .describe('"hint": keep the number the caller is calling from for the app\'s code (callerOf(s)), whether or not a slot offers it. It is a hint to look something up by or to propose from, never proof of who is calling on its own (identity.yaml\'s callerId lets a caller-ID match identify an account, with a knowledge factor that verifies it).'),
-    called: z.boolean().optional().describe('Keep the number the caller called (the DNIS) too, for the app\'s code (calledOf(s)). Default false.'),
+      .optional()
+      .describe('"hint", as written before the numbers were kept for every app: accepted, and changes nothing. The number the caller is calling from is the call\'s data, read by the app\'s code with callerOf(s), whatever this block says.'),
+    called: z.boolean().optional().describe('As written before the number called was kept for every app: accepted, and changes nothing. The number called is read with calledOf(s).'),
     lookup: identifier()
       .optional()
       .describe('A tool called once at call start, before the greeting, through the gate as the caller not yet proven, with the number as its one param, callerNumber. A refusal or a failure is silent; an allowed result goes to the facts (FactsConfig.fromCallerLookup). Its action in policy.yaml decides whether it runs. Nothing is withheld from a caller not yet proven, so what the tool returns reaches the app whole: what to return, and what the lines say of it before identity, is the app\'s call. Default: none.'),
+    withheld: z
+      .enum(CALLER_WITHHELD_USES)
+      .optional()
+      .describe('What the engine\'s own features do with a number the caller withheld (*67) that the carrier sent anyway, marked so (Telnyx), or a placeholder Twilio sent in its place: "use" (the default) treats it as any number: offered back by a slot, looked up, held by the gate\'s callerNumber rule, matched by identity.yaml\'s callerId; "ignore" treats the call as one with no number for all of them, honouring the caller\'s choice. The app\'s code reads the number either way (callerOf(s), with withheld: true).'),
   })
-  .describe('The number the caller is calling from, kept for the app\'s code: a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId). Without it, the number is kept only for a slot that offers it (a digits slot\'s callerNumber).');
+  .describe('What the engine does with the number the caller is calling from: the call-start lookup, and whether its features use a number the caller withheld. The number itself, and the number called, are the call\'s data, kept for every app and read with callerOf(s) and calledOf(s); a number is a hint, never identity on its own (an app may let a caller-ID match identify an account, with a knowledge factor that verifies it: identity.yaml callerId).');
+
+const records = z
+  .strictObject({
+    callerNumber: z
+      .enum(['last4', 'keep'])
+      .optional()
+      .describe('How the trace, the frame log, the console and the server\'s log write the caller\'s number (and their SIP or client address, and a copy the carrier sends under another name): "last4" (the default) by its last four digits, or "keep" whole. "keep" needs the console behind sign-in (CONSOLE_AUTH=token): the server refuses to start with it otherwise. What a transfer sends and what app code reads are never changed by it.'),
+    businessNumbers: z
+      .enum(['keep', 'last4'])
+      .optional()
+      .describe('How the records write the business\'s own numbers (the number called, transfer and handoff targets): "keep" (the default) whole, or "last4" by their last four.'),
+    callerName: z
+      .enum(['redact', 'keep'])
+      .optional()
+      .describe('How the records write the caller\'s name a carrier sends (CNAM: Twilio\'s CallerName): "redact" (the default), or "keep", which needs CONSOLE_AUTH=token as callerNumber\'s keep does.'),
+  })
+  .describe('How the records (the trace, the frame log, the console, the server\'s log) write the numbers and the caller\'s name a call came with. Default: the caller\'s number by its last four, the business\'s numbers whole, the caller\'s name redacted.');
 
 const textConsent = z
   .strictObject({
@@ -395,13 +443,18 @@ const callDataKey = z
       .check(checkAlways((value, ctx) => {
         if (typeof value !== 'string' || value === '') return;
         const problem = callDataSourceProblem(value);
-        if (problem !== null) ctx.addIssue({ code: 'custom', message: problem.message, params: { fix: problem.fix } });
+        // A warning (a number's own field, a setup field no carrier documents) is pnpm check's to say, never the schema's.
+        if (problem !== null && problem.warning !== true) ctx.addIssue({ code: 'custom', message: problem.message, params: { fix: problem.fix } });
       }))
-      .describe('Where the value comes from: param.<name>, a custom parameter of the call\'s setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame the wire keeps (forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId); webhook.<field>, a field of the carrier\'s answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message\'s context.'),
+      .describe('Where the value comes from: param.<name>, a custom parameter of the call\'s setup (Twilio <Parameter>, Telnyx custom parameter); setup.<field>, a field of the setup frame (from, to, forwardedFrom, callerName, callType, direction, callStatus, parentCallSid, accountSid, callSid, sessionId, callControlId, callSessionId, callLegId, or a string field a carrier adds, which the wire passes through); webhook.<field>, a field of the carrier\'s answer webhook (for example ForwardedFrom, or SipHeader_<name> on Twilio), which the server echoes into the start document as the custom parameter dw_<key>; chat.<key>, a key of the web chat start message\'s context.'),
     redact: z
       .enum(['last4', 'mask', 'length', 'secret', 'keep'])
       .optional()
-      .describe('How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask.'),
+      .describe('How the value is recorded in the trace, the console, the frame log and the audit: last4 by its last four characters, mask hidden, length by its length, secret never, keep as it is. Default mask. It changes what is written down, never what a transfer sends (send).'),
+    send: z
+      .enum(CALL_DATA_SENDS)
+      .optional()
+      .describe('What a transfer sends of the value (callData.<key> in transfer.send): "as-is" (the default), the value as it came; "masked", as redact records it (a secret key then sends nothing).'),
   })
   .describe('One piece of data the call or chat came with, kept for the app\'s code (callDataOf(s)). A key whose source sent nothing is absent.');
 
@@ -410,7 +463,7 @@ const callDataKey = z
 const envTarget = () =>
   matching(ENV_REFERENCE, 'is not an environment variable: it must be env.<NAME>, the name in capitals, digits and underscores', 'write env.<NAME> and set the variable to an E.164 number or a sip: URI in the server\'s environment (.env); a number is never written in YAML');
 
-const SEND_VALUE = 'reason (the handoff\'s reason), form (the form the transfer was chosen on), callData.<key> (sent as its redact records it, masked unless keep; never a secret one), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written';
+const SEND_VALUE = 'reason (the handoff\'s reason), form (the form the transfer was chosen on), callData.<key> (sent as it came, or as its redact records it where the key says send: masked), callerNumber and calledNumber (the number the caller is calling from and the number called, whole), slot.<id> (sent as handoff.data sends it), or anything else, a constant sent as written';
 
 /** What goes with a transfer. */
 const transferSend = z
@@ -521,6 +574,7 @@ export const appSchema = z
           'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
     callerNumber: callerNumber.optional(),
+    records: records.optional(),
     textConsent: textConsent.optional(),
     callData: z
       .record(identifier(), callDataKey)
@@ -534,6 +588,7 @@ export const appSchema = z
           if (name === 'locale') ctx.addIssue({ code: 'custom', path: [name], message: 'the custom parameter "locale" is the engine\'s own (the language a call starts in)', params: { fix: 'rename the parameter' } });
           else if (name === HOST_APP_PARAMETER) ctx.addIssue({ code: 'custom', path: [name], message: `the custom parameter "${HOST_APP_PARAMETER}" is the engine's own (the app a call to a host's number reached)`, params: { fix: 'rename the parameter' } });
           else if (name === WITHHELD_PARAMETER) ctx.addIssue({ code: 'custom', path: [name], message: `the custom parameter "${WITHHELD_PARAMETER}" is the engine's own (a call whose caller withheld their number)`, params: { fix: 'rename the parameter' } });
+          else if (name === ATTESTATION_PARAMETER) ctx.addIssue({ code: 'custom', path: [name], message: `the custom parameter "${ATTESTATION_PARAMETER}" is the engine's own (the STIR/SHAKEN attestation of the caller's number)`, params: { fix: 'rename the parameter' } });
           else if (name.startsWith(WEBHOOK_PARAMETER_PREFIX)) ctx.addIssue({ code: 'custom', path: [name], message: `custom parameters named "${WEBHOOK_PARAMETER_PREFIX}..." are the server's echoes of webhook fields (callData's webhook.<field>)`, params: { fix: 'rename the parameter' } });
         }
       }))

@@ -188,45 +188,34 @@ function withheldMarked(raw: Record<string, string>): boolean {
   return privacy !== undefined && privacy.toLowerCase().split(/[\s;,]+/).some((t) => t === 'id' || t === 'user' || t === 'header');
 }
 
-/** The fields that name the number called or the call, never taken out of a withheld call's webhook. */
-const KEPT_FIELDS: ReadonlySet<string> = new Set(['To', 'to', 'Called', 'CallSid', 'CallSidLegacy', 'call_control_id', 'CallControlId', 'CallSessionId', 'ConnectionId', 'AccountSid']);
-
-/** The fields that may carry the caller's number (a withheld call's sends it in some, the marks in others). */
-const NUMBER_FIELDS: readonly string[] = ['From', 'from', 'Caller', 'caller', 'CallerId', 'CallerID', 'caller_id', 'callerId', 'FromSipUri', 'from_sip_uri', 'fromSipUri'];
-
 /**
- * A withheld call's fields with every copy of the caller's number taken out: `From`, `Caller` and the
- * caller's name by name, and any other field whose digits hold the last seven of a number one of the
- * number-carrying fields holds (NUMBER_FIELDS: `From`, `Caller`, a caller ID, a SIP From with a number
- * in it). The marks themselves (an anonymous caller ID or SIP From) stay, for the frame log to show
- * why the number is not there.
+ * The STIR/SHAKEN attestation of the caller's number, where the webhook carries one: Telnyx's Call
+ * Control names it `shaken_stir_attestation` (A, B or C). A TeXML webhook has not yet been seen with it on
+ * a live call; it is read under that name and its TeXML-style spelling, should it come.
  */
-function withoutCaller(raw: Record<string, string>): Record<string, string> {
-  const tails = NUMBER_FIELDS.flatMap((name) => {
-    const digits = (raw[name] ?? '').replace(/\D/g, '');
-    return digits.length >= 7 ? [digits.slice(-7)] : [];
-  });
-  const named = new Set(['From', 'from', 'Caller', 'caller', 'CallerName', 'CallerIdName', 'caller_id_name']);
-  const holds = (v: string): boolean => tails.some((t) => v.replace(/\D/g, '').includes(t));
-  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => KEPT_FIELDS.has(k) || (!named.has(k) && !holds(v))));
+function attestationOf(raw: Record<string, string>): string | undefined {
+  const v = first(raw, 'shaken_stir_attestation', 'ShakenStirAttestation', 'StirVerstat');
+  return v !== undefined && v.trim() !== '' ? v.trim() : undefined;
 }
 
 function parse(req: WebhookRequest): CallbackParams | null {
-  const all = fields(req);
-  const callId = (first(all, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
+  const raw = fields(req);
+  const callId = (first(raw, 'CallSid', 'call_control_id', 'CallControlId') ?? '').trim();
   if (!callId) return null;
-  // A number the caller withheld is no number: left out here, and out of what the frame log writes.
-  const withheld = withheldMarked(all);
-  const raw = withheld ? withoutCaller(all) : all;
-  const from = withheld ? undefined : first(raw, 'From', 'from');
+  // A number the caller withheld is the call's data as any other, marked so (CallbackParams.privacy):
+  // the marks are read here, and the number stays where the carrier put it.
+  const withheld = withheldMarked(raw);
+  const from = first(raw, 'From', 'from');
   const to = first(raw, 'To', 'to');
   const callStatus = first(raw, 'CallStatus', 'callStatus');
   const sessionStatus = first(raw, 'SessionStatus');
   const handoffData = first(raw, 'HandoffData', 'handoffData');
+  const attestation = attestationOf(raw);
   return {
     callId,
     raw,
-    ...(withheld ? { withheld: true as const } : {}),
+    ...(withheld ? { privacy: 'withheld' as const } : {}),
+    ...(attestation !== undefined ? { attestation } : {}),
     ...(from !== undefined ? { from } : {}),
     ...(to !== undefined ? { to } : {}),
     ...(callStatus !== undefined ? { callStatus, live: LIVE_STATUSES.has(callStatus.trim().toLowerCase()) } : {}),
@@ -303,13 +292,12 @@ export const telnyxProvider: VoiceProvider = {
   setupCallId: (setup) => setup.callControlId ?? setup.callSid,
   // Seen on a live call (2026-10-05): the setup's `from` is null, and the caller's number comes in
   // customParameters as telnyx_call_from. For a withheld number Telnyx sends the real one there and in the
-  // answer webhook's From (seen 2026-10-13); the webhook's marks say so (withheldMarked, above), and the
-  // setup of such a call has telnyx_call_from taken out before it is read (callerParameters, below).
+  // answer webhook's From (seen 2026-10-13); the webhook's marks say so (withheldMarked, above), carried
+  // to the setup as a flag beside the number (WITHHELD_PARAMETER).
   setupCallerOf: (setup) => {
     const from = setup.customParameters?.telnyx_call_from;
     return typeof from === 'string' && from !== '' ? from : null;
   },
-  callerParameters: ['telnyx_call_from'],
   // As the caller's: the setup's `to` is null, and the number called comes in customParameters as
   // telnyx_call_to (seen on a live call's setup, 2026-10-05; its use for an app is in docs/live-checks.md).
   setupCalledOf: (setup) => {

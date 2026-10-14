@@ -8,7 +8,7 @@ import { checkJwksUrl, jwksKeys } from './chat/jwks';
 import { calledVariablesFrom, describeVoiceNumbers, transferTargetsFrom, voiceNumbersFrom, type ServerTransfer } from './transfer';
 import type { NumberLocale } from '../core/numberLocales';
 import { defaultLocaleOf } from '../core/locale';
-import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
+import { type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
 import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
@@ -688,6 +688,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // here, with the fix.
   const httpApps = new Map<string, HttpApp & { readonly app: App; readonly hints: string; readonly startParameters: Readonly<Record<string, string>>; readonly transfer: ServerTransfer | null; readonly numbers: readonly NumberLocale[] }>();
   for (const a of appsRun) {
+    // app.yaml's records: a caller's number or name kept whole needs the console behind sign-in, or the server stops here.
+    const recordsLine = forApp(a.id, () => recordsSettingFor(a.app, config.consoleAuth));
+    if (recordsLine !== null) log(`${tag(a.id)}${recordsLine}`);
     const startParameters = forApp(a.id, () => startParametersFrom(a.app, a.env));
     if (Object.keys(startParameters).length > 0) log(`${tag(a.id)}start parameters: ${Object.keys(startParameters).join(', ')}`);
     const transfer = forApp(a.id, () => transferTargetsFrom(a.app, a.env, handoffOf(a.id)));

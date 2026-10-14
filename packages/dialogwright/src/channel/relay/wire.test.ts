@@ -11,14 +11,27 @@ describe('parseInbound', () => {
     expect(f).toMatchObject({ type: 'setup', sessionId: 'VX1', callSid: 'CA1', accountSid: 'AC1', direction: 'inbound' });
   });
 
-  it('keeps the call ids Telnyx adds to a setup, and still drops fields nobody documents', () => {
+  it('keeps the call ids Telnyx adds to a setup, passes an undocumented string field through, and drops anything else', () => {
+    // Re-pinned (live findings item 26): a string field a carrier adds is passed through, bounded, so
+    // call data can read it (setup.<field>); a field that is no string is still dropped.
     const f = parseInbound(JSON.stringify({
       type: 'setup', sessionId: 'S1', callSid: 'v2:abc', callControlId: 'v2:abc', callSessionId: 'cs-1', callLegId: 'cl-1',
       from: '+15555550100', to: '+15555550101', customParameters: {}, unknownField: 'x', callLegNumber: 7,
     }));
-    expect(f).toMatchObject({ type: 'setup', callSid: 'v2:abc', callControlId: 'v2:abc', callSessionId: 'cs-1', callLegId: 'cl-1' });
-    expect(f).not.toHaveProperty('unknownField');
+    expect(f).toMatchObject({ type: 'setup', callSid: 'v2:abc', callControlId: 'v2:abc', callSessionId: 'cs-1', callLegId: 'cl-1', unknownField: 'x' });
     expect(f).not.toHaveProperty('callLegNumber');
+  });
+
+  it('passes through at most twenty undocumented string fields, each a plain name and a value a start document could carry', () => {
+    const extra = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`field${i}`, `v${i}`]));
+    const f = parseInbound(JSON.stringify({
+      type: 'setup', sessionId: 'S1', callSid: 'c', from: '', to: '', customParameters: {}, ...extra,
+      'bad name': 'x', 'param.x': 'y', long: 'z'.repeat(501), tabbed: 'a\tb', ['n'.repeat(65)]: 'x',
+    })) as Record<string, unknown>;
+    expect(Object.keys(f).filter((k) => k.startsWith('field'))).toHaveLength(20);
+    for (const k of ['bad name', 'param.x', 'long', 'tabbed', 'n'.repeat(65)]) expect(f).not.toHaveProperty(k);
+    // A documented field is never replaced by one passed through.
+    expect(parseInbound(JSON.stringify({ type: 'setup', sessionId: 'S1', callSid: 'c', customParameters: {}, __proto__: { x: 1 } }))).toMatchObject({ callSid: 'c' });
   });
 
   it('takes null numbers in a setup as absent, as Telnyx sends them', () => {

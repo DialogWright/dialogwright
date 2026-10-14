@@ -24,7 +24,7 @@ function promptsOf(id: string, o: DigitsOptions): SlotPrompt[] {
   }
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: `it acknowledges ${thing} it is less sure of`, vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: `it asks for ${thing} on the keypad after spoken answers missed` });
-  if (o.callerNumber !== undefined) prompts.push({ id: `offer_${id}`, why: `it offers the number the caller is calling from for ${thing}, as a yes or no (callerNumber)`, vars: ['last4'] });
+  if (o.callerNumber !== undefined) prompts.push({ id: `offer_${id}`, why: `it offers the number the caller is calling from for ${thing}, as a yes or no (callerNumber)`, vars: ['last4', 'callerNumber'] });
   prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }

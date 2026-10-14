@@ -1,6 +1,6 @@
 import { DEFAULT_LANG } from '../events';
 import type { InboundFrame, OutboundFrame, SetupFrame } from './frames';
-import { SETUP_EXTRAS } from '../callData';
+import { CALL_DATA_VALUE_MAX, SETUP_EXTRAS, SETUP_PASSTHROUGH_MAX, SOURCE_NAME, writableValue } from '../callData';
 
 type Obj = Record<string, unknown>;
 
@@ -16,6 +16,31 @@ function str(v: unknown): v is string {
   return typeof v === 'string' && v.length <= MAX_TEXT_LENGTH;
 }
 
+
+/** The setup's own fields, which a field passed through never takes the place of. */
+const SETUP_OWN: ReadonlySet<string> = new Set(['type', 'sessionId', 'callSid', 'from', 'to', 'customParameters', ...SETUP_EXTRAS]);
+/** Names no field passed through may take: they would reach an object's prototype. */
+const UNSAFE_NAMES: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * A setup's string fields beyond the documented ones (SETUP_FIELDS), passed through so call data can read
+ * one a carrier adds (`setup.<field>`) without a change to the engine: at most SETUP_PASSTHROUGH_MAX, each
+ * named as a source name of at most 64 characters (never `param.<name>`, the custom parameters' prefix),
+ * with a value a start document could carry and no longer than a custom parameter's. Anything else is
+ * dropped, as every unknown field was before.
+ */
+function passedThrough(m: Obj): Record<string, string> {
+  const out: Record<string, string> = {};
+  let count = 0;
+  for (const [k, v] of Object.entries(m)) {
+    if (count >= SETUP_PASSTHROUGH_MAX) break;
+    if (SETUP_OWN.has(k) || UNSAFE_NAMES.has(k) || k.length > 64 || !SOURCE_NAME.test(k) || k.toLowerCase().startsWith('param.')) continue;
+    if (typeof v !== 'string' || v === '' || v.length > CALL_DATA_VALUE_MAX || !writableValue(v)) continue;
+    out[k] = v;
+    count += 1;
+  }
+  return out;
+}
 
 /** Parse one ConversationRelay message. Returns null for anything not in the documented set. */
 export function parseInbound(raw: string): InboundFrame | null {
@@ -49,6 +74,7 @@ export function parseInbound(raw: string): InboundFrame | null {
       }
       const customParameters: Record<string, string> = { ...customRaw };
       return {
+        ...passedThrough(m),
         type: 'setup',
         sessionId: m.sessionId,
         callSid: m.callSid,
