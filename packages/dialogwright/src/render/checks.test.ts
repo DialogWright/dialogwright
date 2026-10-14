@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, leftOut, renderDriftQuestion, words, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, toCaller, wordCount } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, leftOut, renderDriftQuestion, words, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, toCaller, comparedToCaller, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { instructionsOf, SPAN_INSTRUCTIONS, SPAN_INSTRUCTIONS_TO_CALLER } from './prompt';
 import type { SpanAct, SpeechAct } from './types';
@@ -450,6 +450,12 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     // "your" only for what the caller called their own.
     ['the invoice is overdue, I paid it', 'your invoice is overdue', 'person'],
     [PROJECT, "your project is complete and you need Sam's approval", 'person'],
+    // A passive turned around (the re-review): "to you" for no "me", "by you" for no "I".
+    ['I owe him the deposit', 'the deposit is owed to you', 'person'],
+    ['I sent him the contract', 'the contract was sent to you', 'person'],
+    ['he sent me the contract', 'the contract was sent by you', 'person'],
+    // A he or a she of another gender than the content's.
+    ['he needs the report', 'she needs the report', 'person'],
   ];
 
   it('turns the caller\'s first person to the second, and nothing else ("US" in capitals is no pronoun)', () => {
@@ -467,6 +473,38 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(check('I do not need him to approve the budget', 'you do not need Sam to approve the budget')).toBeNull();
     expect(check("hold the order unless I call back, and we're fine with the quote", "hold the order unless you call back, you're fine with the quote")).toBeNull();
     expect(check('tell Riley I need him to call the printer', 'tell Riley you need him to call the printer')).toBeNull();
+    // A passive kept the right way round.
+    expect(check('he owes me', 'you are owed')).toBeNull();
+    expect(check('he owes me the deposit', 'the deposit is owed to you')).toBeNull();
+    expect(check('I sent him the contract', 'you sent him the contract')).toBeNull();
+    expect(check('he sent me the contract', 'he sent you the contract')).toBeNull();
+    expect(check('he sent me the contract', 'the contract was sent to you')).toBeNull();
+  });
+
+  it('a he or a she must be a gender of the content\'s, for every span (they is neither); a span of the caller\'s own terms as well', () => {
+    const plain = (message: string, said: string): string | null => checkSpan(said, act(message, { speaks: undefined, names: undefined }));
+    expect(plain('he needs the report by Friday', 'she needs the report by Friday')).toBe('person');
+    expect(plain('she needs the report by Friday', 'he needs the report by Friday')).toBe('person');
+    expect(plain('Dana needs the report by Friday', 'she needs the report by Friday')).toBe('person');
+    expect(plain('he needs the report by Friday', 'he needs the report by Friday soon')).toBeNull();
+    expect(plain('they need the report by Friday', 'they need the report by Friday soon')).toBeNull();
+    expect(plain('tell her the report is late', 'she should know the report is late')).toBeNull();
+  });
+
+  it('the stub\'s judge: a person dropped that moves the action, or a subject named that the content does not, falls back (a real judge reads the question)', () => {
+    expect(judge("I'll be out, he'll cover", "you'll cover")).toBe(true);
+    expect(judge('he needs me to approve', 'the client needs you to approve')).toBe(true);
+    expect(judge("I'll be out, he'll cover", "you'll be out and he'll cover")).toBe(false);
+    expect(judge('he needs me to approve', 'he needs you to approve')).toBe(false);
+    expect(judge('he owes me', 'you are owed')).toBe(false);
+    expect(judge('he owes me the deposit', 'the deposit is owed to you')).toBe(false);
+  });
+
+  it('reads a name the app wrote lowercase only as written, so a common word is no name by luck; one with a capital in any case', () => {
+    const compared = (message: string, value: string): string => comparedToCaller('x', [message], [value]).compared[0]!.trim().split(/\s+/).join(' ');
+    expect(compared('the team said I need him', 'the team')).toBe('xother said xcaller need xother');
+    expect(compared('The team said I need him', 'the team')).toBe('The team said xcaller need xother');
+    expect(compared('sam ortiz said I need him', 'Sam Ortiz')).toBe('xother said xcaller need xother');
   });
 
   it('refuses every case the review found, deterministically', () => {

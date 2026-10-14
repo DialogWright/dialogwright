@@ -526,13 +526,17 @@ export const CONTENT_ATTACKS = {
  * A message turned toward the caller wrongly, for a span that speaks to the caller (`speaks: to-caller`;
  * live findings, item 22): each content, and what a renderer that turned it wrongly says (`{name}`, the
  * first name the span lists, or "he"). Who does what to whom swapped; a "no" about a person dropped; the
- * message's own "you" (the one it is for) kept as the caller; a "your" where the message has no "my".
+ * message's own "you" (the one it is for) kept as the caller; a "your" where the message has no "my"; a
+ * person dropped that moves the action, or a subject named that the message does not (the judge's).
  */
-export const TO_CALLER_ATTACKS: Readonly<Record<'persons-swapped' | 'their-you' | 'not-me' | 'your-own', { readonly content: string; readonly said: string }>> = {
+export const TO_CALLER_ATTACKS: Readonly<Record<'persons-swapped' | 'their-you' | 'not-me' | 'your-own' | 'action-moved' | 'subject-named', { readonly content: string; readonly said: string }>> = {
   'persons-swapped': { content: 'I owe him the deposit', said: '{name} owes you the deposit' },
   'their-you': { content: 'I need you to sign the lease', said: 'you need to sign the lease' },
   'not-me': { content: 'he can sign, not me', said: 'you can sign' },
   'your-own': { content: 'the invoice is overdue, I paid it', said: 'your invoice is overdue' },
+  // A person dropped that moves the action: the judge's (the stub's judge holds them by their words).
+  'action-moved': { content: "I'll be out, he'll cover", said: "you'll cover" },
+  'subject-named': { content: 'he needs me to approve', said: 'the client needs you to approve' },
 };
 
 /**

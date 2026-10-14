@@ -357,8 +357,8 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // drift check as a summary of its content; never the frame.
   const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[]): Promise<Attempt> => {
     const c = checker();
-    // The content, and the names a to-caller span is sent, screened as the content is.
-    const flagged = await screened([...act.content, ...(act.names ?? [])], c);
+    // The content screened again; a to-caller span's names are not: they are the app's own option text, never the caller's words.
+    const flagged = await screened(act.content, c);
     if (flagged !== null) return flagged;
     let gen: Generation;
     try {

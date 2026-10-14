@@ -24,6 +24,7 @@ import { spanKey } from './prompt';
 import { RenderClientError, type Renderer, type SpeechAct } from './types';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
+import { screenState } from '../core/screen';
 import { policyCardText } from '../testing/policyCard';
 
 /**
@@ -591,7 +592,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
   const spanOf = (r: ScenarioRun) => r.runs.at(-1)!.record.render?.lines.find((l) => l.promptId === 'confirm_take_message');
   const saying = (say: string): Renderer => ({ client: new FakeRenderClient({ spans: { confirm_take_message: say } }) });
 
-  it('is sent its own instructions, the content and the names it lists (the recipient: never the caller\'s name, never the number), each screened; its drift check is told it speaks to the caller, with the names', async () => {
+  it('is sent its own instructions, the content (screened again) and the names it lists (the recipient: never the caller\'s name, never the number; the app\'s own text, not screened); its drift check is told it speaks to the caller, with the names', async () => {
     const client = new FakeRenderClient();
     const asked: JevRequest[] = [];
     const r = await call(steps(PROJECT), { client }, asked);
@@ -607,9 +608,11 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
       names: [{ name: 'recipient', value: 'Dana Reyes' }],
     });
     for (const frame of ['Morgan', '0142', 'Okay, thanks', 'pass it on', 'In short']) expect(JSON.stringify(act)).not.toContain(frame);
-    // The names are screened as the content is, before the span is worded.
+    // The content is screened again; the names are not: they are the app's own option text, never the caller's words.
     const screenedWords = asked.filter((q) => q.questions.manipulation !== undefined && q.questions.renderSpanDrift === undefined).map((q) => JSON.stringify(q.state));
-    expect(screenedWords.some((st) => st.includes('Dana Reyes') && !st.includes(PROJECT))).toBe(true);
+    expect(screenedWords.some((st) => st.includes(PROJECT))).toBe(true);
+    expect(screenedWords).not.toContain(JSON.stringify(screenState('Dana Reyes')));
+    expect(screenedWords).toContain(JSON.stringify(screenState(PROJECT)));
     // Its recording key is its own: the act and the to-caller instructions.
     expect(spanKey('confirm_take_message', 'summary', act)).not.toBe(spanKey('confirm_take_message', 'summary', { ...act, speaks: undefined, names: undefined }));
     // The fake words it as a well-behaved model would: the first clause, turned toward the caller.

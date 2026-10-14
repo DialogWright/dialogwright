@@ -124,7 +124,7 @@
                   ]
                 },
                 "names": {
-                  "description": "A to-caller span only (`speaks: to-caller`): the line's variables whose value the span may say in place of a pronoun of the message, where the message makes clear who is meant: each a `choice` slot of the line (who the message is for, as said, such as [recipient]). They are screened as the content is, sent to the model and to the drift check, and the only names the checks let the span say beside the content's. Never a `name` slot (the caller's own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.",
+                  "description": "A to-caller span only (`speaks: to-caller`): the line's variables whose value the span may say in place of a pronoun of the message, where the message makes clear who is meant: each a `choice` slot of the line (who the message is for, as said, such as [recipient]). They are the app's own option text, not the caller's words, so they are not screened; they are sent to the model and to the drift check, and the only names the checks let the span say beside the content's. Never a `name` slot (the caller's own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.",
                   "minItems": 1,
                   "type": "array",
                   "items": {

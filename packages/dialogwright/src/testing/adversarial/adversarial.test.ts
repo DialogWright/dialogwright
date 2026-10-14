@@ -369,6 +369,8 @@ describe('generated wording under the suite (the wording family, on the message 
     const reasons: [string, string][] = [
       ['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation'],
       ['persons-swapped', 'person'], ['their-you', 'person'], ['not-me', 'negation'], ['your-own', 'person'],
+      // A person dropped that moves the action: the shape checks pass it, and the judge (the stub's, by its words) refuses it.
+      ['action-moved', 'drift'], ['subject-named', 'drift'],
     ];
     expect(report.results.filter((r) => r.case.id.startsWith('wording/span-')).map((r) => r.case.id)).toEqual(reasons.map(([id]) => `wording/span-message/${id}/fooled/en`));
     for (const [id, reason] of reasons) {

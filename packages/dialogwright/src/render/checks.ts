@@ -388,6 +388,11 @@ const FIRST_PERSON: ReadonlySet<string> = new Set(Object.keys(TO_CALLER_WORDS));
 /** The second person: what a to-caller span says for the caller's own first person, and what a message says to the one it is for. */
 const SECOND_POSSESSIVE: ReadonlySet<string> = new Set(['your', 'yours']);
 const SECOND_PERSON: ReadonlySet<string> = new Set(['you', "you're", "you'll", "you've", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'youre', 'youll', 'youve', 'youd']);
+/** The caller's first person as acted on (me, us), and as acting (I, we): what a span's "to you" and "by you" stand for. */
+const FIRST_OBJECT: ReadonlySet<string> = new Set(['me', 'us', 'myself', 'ourselves']);
+const FIRST_SUBJECT: ReadonlySet<string> = new Set(['i', 'we', "i'm", "i've", "i'll", "i'd", "we're", "we've", "we'll", "we'd"]);
+/** The words before a "you" that make it the one acted on: "to you", "for you", "from you", "with you". */
+const PREPOSITIONS: ReadonlySet<string> = new Set(['to', 'for', 'from', 'with']);
 /** Third-person pronouns as a subject (he, she, they), and as an object or a possessive (him, his, her, them, their). */
 const THIRD_SUBJECT: ReadonlySet<string> = new Set(['he', 'she', 'they', "he's", "she's", "they're", "they've", "they'll", "they'd", "he'll", "she'll", "he'd", "she'd"]);
 const THIRD_OTHER: ReadonlySet<string> = new Set(['him', 'his', 'himself', 'her', 'hers', 'herself', 'them', 'their', 'theirs', 'themselves']);
@@ -401,11 +406,17 @@ export function toCaller(text: string): string {
 /** What a name of the line is read as where a to-caller span is compared with its content. */
 const NAME_MARK = 'xname';
 const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** A text with each name of the line (its whole value, then each capitalized word of it, a possessive "'s" with it) read as NAME_MARK. */
+/**
+ * A text with each name the span lists (its whole value, then each capitalized word of it, a possessive
+ * "'s" with it) read as NAME_MARK: a value with a capital in any case, a value the app wrote lowercase
+ * ("the team") only as written.
+ */
 function markNames(text: string, names: readonly string[]): string {
   let t = straight(text);
-  const edge = (re: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}'])${re}(?:'s)?(?![\\p{L}\\p{N}'])`, 'giu');
-  for (const n of names.map((x) => straight(x).trim()).filter((x) => x !== '')) t = t.replace(edge(n.split(/\s+/).map(escaped).join('\\s+')), ` ${NAME_MARK} `);
+  const edge = (re: string, anyCase: boolean): RegExp => new RegExp(`(?<![\\p{L}\\p{N}'])${re}(?:'s)?(?![\\p{L}\\p{N}'])`, anyCase ? 'giu' : 'gu');
+  // A name the app wrote with a capital is read whatever its case; one it wrote lowercase ("the team",
+  // "anyone") only as written, so a common word is not taken for the name throughout a message.
+  for (const n of names.map((x) => straight(x).trim()).filter((x) => x !== '')) t = t.replace(edge(n.split(/\s+/).map(escaped).join('\\s+'), /\p{Lu}/u.test(n)), ` ${NAME_MARK} `);
   for (const w of names.flatMap((n) => straight(n).split(/\s+/)).filter((w) => w.length >= 2 && /^\p{Lu}/u.test(w))) {
     t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}'])${escaped(w)}(?:'s)?(?![\\p{L}\\p{N}'])`, 'gu'), ` ${NAME_MARK} `);
   }
@@ -460,7 +471,9 @@ export function comparedToCaller(span: string, content: readonly string[], names
  * the line, read in order, must be found in that order among the message's (a name standing only for a
  * him, his, them or a "you" of the message, never a he, she or they), so "I owe him the deposit" said
  * "Sam owes you the deposit", or "he needs me to call the printer" said "Sam needs you to call the
- * printer", is refused.
+ * printer", is refused; and a "you" after to, for, from or with only for a "me" or "us" of the message,
+ * "by you" only for an "I" or "we" (a passive turned around: "the deposit is owed to you" for "I owe him
+ * the deposit"; "the deposit is owed to you" for "he owes me the deposit" passes).
  */
 export function personBroken(span: string, content: readonly string[], names: readonly string[]): boolean {
   const said = personsIn(span, names, 'span');
@@ -469,6 +482,14 @@ export function personBroken(span: string, content: readonly string[], names: re
   const you = said.filter((p) => p.person === 'Y');
   if (you.length > 0 && content.some((c) => words(c).some((w) => SECOND_PERSON.has(w)))) return true;
   const callers = given.filter((p) => p.person === 'Y');
+  // "you" after to, for, from or with stands for the caller as acted on (a "me" or "us" of the message), and
+  // "by you" for the caller acting (an "I" or "we"): a passive turned around ("the deposit is owed to you"
+  // for "I owe him the deposit", "the contract was sent by you" for "he sent me the contract") is refused.
+  const spanWords = words(span);
+  const givenWords = content.flatMap(words);
+  const objectYou = spanWords.filter((w, i) => (w === 'you' || w === 'yourself' || w === 'yourselves') && PREPOSITIONS.has(spanWords[i - 1] ?? '')).length;
+  const agentYou = spanWords.filter((w, i) => w === 'you' && spanWords[i - 1] === 'by').length;
+  if (objectYou > givenWords.filter((w) => FIRST_OBJECT.has(w)).length || agentYou > givenWords.filter((w) => FIRST_SUBJECT.has(w)).length) return true;
   if (you.filter((p) => p.possessive !== true).length > callers.filter((p) => p.possessive !== true).length) return true;
   if (you.filter((p) => p.possessive === true).length > callers.filter((p) => p.possessive === true).length) return true;
   const fits = (s: PersonWord, g: PersonWord): boolean => (s.person === 'Y' ? g.person === 'Y' : s.person === 'P' ? g.person === 'S' || g.person === 'N' : g.person === 'N');
@@ -477,6 +498,47 @@ export function personBroken(span: string, content: readonly string[], names: re
     while (at < given.length && !fits(s, given[at]!)) at++;
     if (at === given.length) return true;
     at++;
+  }
+  return false;
+}
+
+/** Masculine and feminine third-person pronouns: a span's he or she must be the gender of one of its content's ("they" is neither). */
+const MASCULINE: ReadonlySet<string> = new Set(['he', 'him', 'his', 'himself', "he's", "he'll", "he'd"]);
+const FEMININE: ReadonlySet<string> = new Set(['she', 'her', 'hers', 'herself', "she's", "she'll", "she'd"]);
+
+/**
+ * Whether a span says "he" or "she" (and their forms) where its content has no pronoun of that gender:
+ * "he needs the report" summarized "she needs the report". Every span's (`person`), whether it speaks
+ * to the caller or not.
+ */
+export function genderBroken(span: string, content: readonly string[]): boolean {
+  const given = new Set(content.flatMap(words));
+  const has = (set: ReadonlySet<string>): boolean => [...given].some((w) => set.has(w));
+  const said = words(span);
+  return (said.some((w) => MASCULINE.has(w)) && !has(MASCULINE)) || (said.some((w) => FEMININE.has(w)) && !has(FEMININE));
+}
+
+/**
+ * Whether a to-caller span gives what a he, she or they of its content does to someone else: the word
+ * after the content's third-person subject (its verb) said in the span after the caller's "you" ("I'll be
+ * out, he'll cover" summarized "you'll cover"), or after a word the content does not have, no pronoun and
+ * no listed name ("he needs me to approve" summarized "the client needs you to approve"). The stub's
+ * judge's (a real judge reads the question); a person dropped that moves the action.
+ */
+export function subjectMoved(span: string, content: readonly string[], names: readonly string[]): boolean {
+  const said = markNames(span, names).toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+  const known = new Set(content.flatMap(words));
+  for (const c of content) {
+    const given = words(c);
+    for (const [i, w] of given.entries()) {
+      const verb = given[i + 1];
+      if (!THIRD_SUBJECT.has(w) || verb === undefined) continue;
+      for (const [j, x] of said.entries()) {
+        const before = said[j - 1];
+        if (j === 0 || stem(x) !== stem(verb) || before === undefined) continue;
+        if (SECOND_PERSON.has(before) || (!THIRD_PERSON.has(before) && before !== NAME_MARK && !known.has(before))) return true;
+      }
+    }
   }
   return false;
 }
@@ -537,6 +599,8 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): R
     if (personBroken(text, content, (act.names ?? []).map((n) => n.value))) return 'person';
     if (words(text).some((w) => PERSON_WORDS.has(w) && !SECOND_PERSON.has(w) && !FIRST_PERSON.has(w) && !said.has(w))) return 'person';
   } else if (words(text).some((w) => PERSON_WORDS.has(w) && !said.has(w))) return 'person';
+  // A he or a she the content does not have: another person than the one it speaks of, whatever its perspective.
+  if (genderBroken(text, content)) return 'person';
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   const allowedDigits = new Set(content.flatMap(digitRuns));

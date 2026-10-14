@@ -1,4 +1,4 @@
-import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, straight, toCaller } from '../render/checks';
+import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, genderBroken, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, straight, subjectMoved, toCaller } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -118,6 +118,10 @@ export function stubSpanDrift(state: unknown): boolean {
   if (quotedWords.some((q) => mustKeep(q).some((w) => !kept.has(w)))) return true;
   // Who does what to whom, and whose words they are: the checks' own reading (render/checks.ts personBroken).
   if (toCallerSpan && personBroken(said, quotedWords, frame.map((f) => f.value))) return true;
+  // A person dropped that moves the action ("he'll cover" said "you'll cover"), or a subject named that the quoted words do not.
+  if (toCallerSpan && subjectMoved(said, quotedWords, frame.map((f) => f.value))) return true;
+  // A he or a she of another gender than the quoted words' (the checks' own, for a to-caller span).
+  if (toCallerSpan && genderBroken(said, quotedWords)) return true;
   // A to-caller span may say a name the line lists (who the message is for) for a pronoun, conservatively:
   // only where the quoted words have a third-person pronoun or a "you" and name no one of their own.
   const bare = (w: string): string => w.replace(/'s$/, '');
