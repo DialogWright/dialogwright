@@ -25,6 +25,7 @@ import { testkitApp } from '../testing/testkit';
 import { openFileStores } from '../server/stores/file';
 import { contractCall } from '../testing/storeContract';
 import { sessionRoundTrip } from '../testing/sessionRoundTrip';
+import { defineSlot } from '../slots/defineSlot';
 
 /**
  * A priority switch's correction (IntentDef.priority `correctsForm`) and the values a handoff names
@@ -255,6 +256,31 @@ describe('a priority switch mid-form, before the read-back', () => {
     expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', acks: [{ promptId: 'ack_intent' }] });
     expect(t.session.slots.problem).toMatchObject({ value: 'leak', display: 'a leak' });
     expect(t.session.slots.town!.value).toBeNull();
+  });
+});
+
+describe('a priority switch at a dictation (live findings item 27, review fixes)', () => {
+  // The booking with a free-text slot of its own, asked last: a dictation turn there quiets the other
+  // slots (others: quiet, the default), but a priority switch's correction is a switch of task, not a
+  // dictation, and corrects the form as it does anywhere else.
+  const details = defineSlot('details', { type: 'text', what: 'the details of the problem', say: null, redact: 'none' });
+  const withDetails: App = {
+    ...screenedApp,
+    id: 'screened-details',
+    slots: { ...screenedApp.slots, details },
+    forms: { ...screenedApp.forms, book_visit: { ...screenedApp.forms.book_visit!, slots: [...screenedApp.forms.book_visit!.slots, 'details'] } },
+  };
+
+  it('"water is coming through the wall right now, it\'s urgent" at the details\' question: the urgency corrected, the handoff carries it', () => {
+    use(withDetails);
+    const s = inBooking(withDetails, { problem: ['leak', 'a leak'], ownership: ['own', 'you own it'], town: ['ashford', 'Ashford'], howUrgent: ['soon', 'this week'] });
+    s.promptedFor = 'details';
+    s.lastPromptId = 'ask_details';
+    const words = "water is coming through the wall right now, it's urgent";
+    const t = resolve(s, speechEvent(words, true), { ...URGENT, howUrgent: choice({ urgent: 0.92, soon: 0.05, none: 0.03 }), detailsGiven: noul(0.9) }, turnContext());
+    expect(t.rows.find((g) => g.decided)).toMatchObject({ gate: 'priorityIntent', outcome: 'act:urgent:over:intent' });
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'urgent', slots: { howUrgent: 'right away' } });
+    expect(t.session.slots.howUrgent!.value).toBe('urgent');
   });
 });
 

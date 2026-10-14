@@ -151,5 +151,26 @@
     "gate": null,
     "pass": true,
     "mismatches": []
+  },
+  "message-names-someone-else": {
+    "id": "message-names-someone-else",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "morgan lee",
+      "phone": "5555550142",
+      "message": "the invoice went to the old address, could Lee or someone send it again to accounts at example dot com"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }

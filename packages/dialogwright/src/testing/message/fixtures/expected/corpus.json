@@ -155,6 +155,25 @@
     "principalLevel": 0,
     "gate": null
   },
+  "ms-03": {
+    "id": "ms-03",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "dana",
+      "caller": "Morgan Lee",
+      "phone": "5555550142",
+      "message": "the invoice went to the old address, could Lee or someone send it again to accounts at example dot com"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "sm-01": {
     "id": "sm-01",
     "decision": "complete",

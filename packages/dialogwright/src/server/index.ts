@@ -62,7 +62,7 @@ import { diskUsageCache, sweepRetention, type RetentionSettings } from './retent
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
-import { appModelKeyMissing, appModelLabel, ModelRenderClient, renderSettings, resolveAppRenderProvider } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, ModelRenderClient, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import type { Renderer } from '../render/types';
 
 export interface RunningServer {
@@ -441,7 +441,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     const settings = forApp(a.id, () => renderSettings(a.env));
     renderers.set(a.id, { client: new ModelRenderClient(provider), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price });
-    log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider}, ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its checks ${settings.checkTimeoutMs.voice} and ${settings.checkTimeoutMs.chat} ms`);
+    log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider} (${renderModelSourceLabel(renderModelSource(a.env, model))}), ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its checks ${settings.checkTimeoutMs.voice} and ${settings.checkTimeoutMs.chat} ms`);
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
 

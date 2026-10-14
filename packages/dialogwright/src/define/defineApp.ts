@@ -633,6 +633,24 @@ export function crossLink(
     if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'callerNumber'], message, `delete "callerNumber" here, or use a slot of its own for a callback number`);
     else inTs(['slots', id, 'callerNumber'], message, `delete callerNumber from ${inCode('slots', id)}, or use a slot of its own for a callback number`);
   }
+  // The slots a quiet text slot still lets listen at its dictation (SlotSpec.listensWhileQuiet, a text
+  // slot's `others: { listen }`): each a slot of a form that holds it, else it listens nowhere it could.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const listed = spec?.listensWhileQuiet;
+    if (listed === undefined) continue;
+    const holding = Object.entries(forms).filter(([, f]) => f.slots.includes(id));
+    const beside = new Set(holding.flatMap(([, f]) => f.slots).filter((other) => other !== id));
+    listed.forEach((other, i) => {
+      if (beside.has(other)) return;
+      const message = holding.length === 0
+        ? `the slot "${id}" lets "${other}" listen while it takes the caller's words (others: listen), but no form holds "${id}"`
+        : `the slot "${id}" lets "${other}" listen while it takes the caller's words (others: listen), but "${other}" is ${other === id ? 'the slot itself' : `not a slot of a form that holds "${id}" (${holding.map(([f]) => f).join(', ')})`}`;
+      const choices = [...beside];
+      const fix = choices.length > 0 ? `name one of ${choices.map((c) => `"${c}"`).join(', ')}, or take "${other}" out of the list` : `take "${other}" out of the list, or add "${id}" to a form's slots in forms.yaml`;
+      if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'others', 'listen', i], message, fix);
+      else inTs(['slots', id, 'listensWhileQuiet'], message, fix);
+    });
+  }
   // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
   // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
   // the code that proposes (code.facts.offers). What feeds the facts is the app's: the call-start

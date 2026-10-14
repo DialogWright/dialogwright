@@ -76,7 +76,8 @@ const TURNS_A_CLAUSE = /\b(?:no|not|never|unless|until|except|only if)\b|n['\u20
  * keeps it (then said unchanged, or over its budget falling back to the exact words). A content of one
  * clause is given back whole: the span is then said unchanged (RenderLine.unchanged). A span that speaks
  * to the caller (`speaks: to-caller`) says it turned toward them, their "I" and "my" as "you" and "your"
- * (a content with a first person is then a summary, not said unchanged).
+ * (a content with a first person is then a summary, not said unchanged). That turning is this test
+ * double's own, standing in for what a model might word: no model is told it (live findings item 27).
  */
 export function fakeSpanWording(act: SpanAct): string {
   const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');

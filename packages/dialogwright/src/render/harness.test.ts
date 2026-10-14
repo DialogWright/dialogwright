@@ -4,7 +4,7 @@ import { callbackApp } from '../testing/callback/app';
 import { messageApp } from '../testing/message/app';
 import { RenderCassette } from './cassette';
 import { FakeRenderClient } from './fake';
-import { emptyRenderTally, formatRenderTally, harnessRenderer, replayedRenderCassette, stubRenderer, tallyRender } from './harness';
+import { emptyRenderTally, formatRenderTally, harnessRenderer, replayedRenderCassette, replayedRenderProvider, stubRenderer, tallyRender } from './harness';
 import { afterAll } from 'vitest';
 import { runAll } from '../harness-text/runAll';
 import { buildClient } from '../run/client';
@@ -52,8 +52,12 @@ describe('the model an app names in style.yaml (live findings item 27)', () => {
   it('a recorded run replays its cassette, the environment over it', () => {
     expect(replayedRenderCassette(named, '/rec', {})).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
     expect((harnessRenderer('recorded', named, '/rec', { env: {} }).renderer!.client as RenderCassette).path).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
-    expect(replayedRenderCassette(named, '/rec', { RENDER_MODEL: 'vendor/fast' })).toBe('/rec/render/vendor__fast.jsonl');
+    expect(replayedRenderCassette(named, '/rec', { RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'vendor/fast' })).toBe('/rec/render/vendor__fast.jsonl');
+    // A stray RENDER_MODEL without RENDER_PROVIDER is not read over the app's model.
+    expect(replayedRenderCassette(named, '/rec', { RENDER_MODEL: 'claude-sonnet-5-5' })).toBe('/rec/render/google__gemini-3.1-flash-lite-preview.jsonl');
+    // RENDER_PROVIDER naming another provider replaces the app's: its default model, or RENDER_MODEL with it.
     expect(replayedRenderCassette(named, '/rec', { RENDER_PROVIDER: 'anthropic' })).toBe('/rec/render/claude-haiku-5-5.jsonl');
+    expect(replayedRenderProvider(named, { RENDER_PROVIDER: 'anthropic', RENDER_MODEL: 'claude-sonnet-5-5' })).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5' });
     // An app that names none: Anthropic's default, as before.
     expect(replayedRenderCassette(messageApp, '/rec', {})).toBe('/rec/render/claude-haiku-5-5.jsonl');
   });

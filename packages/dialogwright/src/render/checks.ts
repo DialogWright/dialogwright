@@ -331,9 +331,7 @@ export function renderSpanDriftQuestion(speaks?: SpanAct['speaks']): QuestionMap
  * The drift check of a span that speaks to the caller about their own message (`speaks: to-caller`):
  * the same question, given the context of such a line (spoken to the person who left the message, who
  * hears the summary in it; the names of whom it is for, `frame`), and nothing on how a summary should
- * word it (live findings item 27: the judge decides whether the span is faithful as heard; an earlier
- * version told it how the caller's "I" and "my" become "you" and "your", and whom a he or a she most
- * likely means).
+ * word it: the judge decides whether the span is faithful as heard (live findings item 27).
  */
 function renderSpanDriftQuestionToCaller(): QuestionMap {
   const q: NoulQuestion = {
@@ -354,7 +352,7 @@ function renderSpanDriftQuestionToCaller(): QuestionMap {
  * names it lists), and the content apart, as quoted. Nothing else of the call; but, for a span that
  * speaks to the caller, that it does (`span.speaks`), and the names it lists (`frame`: who the message
  * is for, each under its variable, as the line says it; never the caller's name nor a value the records
- * hide), so the judge can tell whether a name the span says is the one the message means.
+ * hide), as context for the judge.
  */
 export function renderSpanDriftState(act: SpanAct, said: string): { span: { goal: string; said: string; sentence: string; speaks?: 'to-caller' }; quoted: QuotedWords[]; frame?: SpeechItemOut[] } {
   const quoted = act.content.map((c) => ({ name: c.name, words: c.value }));

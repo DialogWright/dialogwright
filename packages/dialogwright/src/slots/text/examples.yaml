@@ -78,7 +78,7 @@
       expect: { kind: absent }
 
 - name: words as the display
-  about: "A short phrase that is not sensitive, shown as said and kept in the trace; the other slots listen on the turn that gives it, so a day said with it is heard (others: listen)."
+  about: "A short phrase that is not sensitive, shown as said and kept in the trace. It takes the whole answer, so by default the turn that gives it is its own (others: quiet); this app lets the other slots listen there too, so a day said with it is heard (others: listen)."
   slot: reference
   config:
     what: a short reference phrase for the booking
@@ -92,8 +92,23 @@
         referenceGiven: { noul: 0.95 }
       expect: { kind: filled, value: blue heron on the lake, display: blue heron on the lake, displays: { es: "blue heron on the lake" } }
 
+- name: a message that may say it's urgent
+  about: "A message taken down whole, its turn its own (quiet, the default without pick), but for the slot the app lists: how urgent it is (howUrgent, a choice slot of the same form) is still read from the message itself, so \"call me back today, it's urgent\" gives both, and nothing else said in the message (who it is for) changes (others: { listen: [howUrgent] }; pnpm check holds each listed slot to a form that holds this one)."
+  slot: message
+  config:
+    what: the message the caller wants to leave
+    say: null
+    redact: none
+    maxLength: 400
+    others: { listen: [howUrgent] }
+  utterances:
+    - text: please call me back today about the invoice, it's urgent
+      answers:
+        messageGiven: { noul: 0.93 }
+      expect: { kind: filled, value: "please call me back today about the invoice, it's urgent", display: "please call me back today about the invoice, it's urgent", displays: { es: "please call me back today about the invoice, it's urgent" } }
+
 - name: picking the value out of the words
-  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole; then each clause's tails from each word, so an address after any lead-in (\"yeah my address is\") can be picked, and one past the eighth clause too. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words."
+  about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole; then each clause's tails from each word, so an address after any lead-in (\"yeah my address is\") can be picked, and one past the eighth clause too. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words. A slot that picks part of a longer answer lets the other slots listen on that turn by default (others: listen), so what else the caller said with the address is heard."
   slot: place
   config:
     what: where the problem is

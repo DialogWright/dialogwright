@@ -20,7 +20,15 @@ A message whose read-back summarizes it (a framed line's span worded from the sl
 
 ## A dictation turn is the slot's: `others`
 
-While the slot is the one just asked for and a turn gives it the caller's words, that turn is its content: no other slot fills or changes from it (`others: quiet`, the default). A message dictated at "What's the message?" ("the invoice went to the wrong place, could someone send it again to accounts") never replaces who the message is for, whatever a choice slot reads from "someone" in it. Intents and priority switches are read from the turn as ever (an urgent request in the middle of a message still goes to a person), a correction at a read-back or the summary changes any slot, and a turn where the caller gives no text ("oh, it's for Sam actually"), or where another slot was asked, fills every slot as before. `others: listen` lets every slot listen on that turn too, as before the option: a caller who names another value in the same breath as the words then changes it. It changes no question the model is asked, so a recorded cassette still replays; a baseline whose dictation turn filled another slot changes.
+`others` says what the other slots do on a turn that gives this slot its words while it is the one just asked for. The app decides, by its business:
+
+- `others: quiet`: the turn is the slot's content, and no other slot fills or changes from it. A message dictated at "What's the message?" ("the invoice went to the wrong place, could someone send it again to accounts") never replaces who the message is for, whatever a choice slot reads from "someone" in it.
+- `others: listen`: every slot listens on that turn too, so a caller who names another value in the same breath as the words gives it.
+- `others: { listen: [howUrgent] }`: quiet, but for the slots listed, which still fill or change from that turn: what the app wants heard even in a message, such as how urgent it is ("call me back today, it's urgent"). Each must be a slot of a form that holds this one; `dialogwright check` refuses any other, and the slot itself.
+
+The default follows what the slot is for. A slot that takes the whole answer as its content (no `pick`: a message, a note, a description) is `quiet`. A slot that picks part of a longer answer (`pick`: an address out of "14 Birch Lane, and there's a line down") is `listen`, so what else the caller said with it is heard; consider `{ listen: [...] }` there when only some of the other answers belong with it. An explicit setting always wins: `listen` on a description that often says when something was due as well, `quiet` on a picked value whose answers are dictated.
+
+It applies only on a turn that fills the slot: a turn where the caller gives no text ("oh, it's for Sam actually"), or where another slot was asked, fills every slot. Whatever it says, intents, priority switches and the injection screen read the turn as ever: an urgent request in the middle of a message still goes to a person and corrects the form with what it said, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot. It changes no question the model is asked, so a recorded cassette still replays; a baseline whose dictation turn filled another slot changes.
 
 ## The question
 
@@ -32,7 +40,7 @@ With `instructions`, its words follow, after a space.
 
 ## Picking the value out of the words
 
-A caller rarely says only the value. Asked where the outage is, they say "the power is out at 22 Alder Street and nothing works", and without `pick` that whole sentence is the value. With `pick: { what: the street address }` on the slot `place`, code splits the words into candidate parts, each copied as said:
+A caller rarely says only the value. Asked where the outage is, they say "the power is out at 22 Alder Street and nothing works", and without `pick` that whole sentence is the value. With `pick: { what: the street address }` on the slot `place`, code splits the words into candidate parts, each copied as said: The rest of the words are often another slot's answer ("and nothing works"), so a slot with `pick` lets the other slots listen on that turn by default (`others: listen`, above); set `others: quiet` only where that turn is the value alone.
 
 - **Clauses.** The words are split at punctuation (a mark that ends a clause in any script, such as `.` `!` `?` `;` `:` `,` or `…`, before a space or the end, so "1,200" and "10:30" stay whole; and `¿` `¡` and the full-width marks anywhere) and at a joining word, which is dropped: in English "and", "but", "so", "because". A word with an apostrophe or a hyphen inside it is one word ("O'Neil", "rock-and-roll").
 - **Tails.** After each clause comes its tail after each preposition in it: in English "at", "on", "in", "near", "by", "for" ("an outage for 22 Alder Street").
@@ -113,7 +121,7 @@ place:
 
 ## Examples
 
-The starter examples, listed below, are six configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said, an address picked out of the words (`pick`), and an address written as digits (`numbers`, `case`). In an app's `slots.yaml`:
+The starter examples, listed below, are seven configurations with starter utterances: the defaults, a courier note with its own stand-in and length, a slot keeping its recorded wording and id (`text.given`, `ids.given`), a phrase shown as said (`others: listen`), a message whose urgency is still read from it (`others: { listen: [howUrgent] }`), an address picked out of the words (`pick`), and an address written as digits (`numbers`, `case`). In an app's `slots.yaml`:
 
 ```yaml
 courierNote:
@@ -127,7 +135,7 @@ courierNote:
 
 ## Notes
 
-- Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note. The other way round, the turn that gives the words while the slot is asked for fills no other slot (`others: quiet`, above).
+- Every slot listens on every turn, so the question is asked even while the form is on another slot. That is why `keep` defaults to `first-unless-prompted`: "and ring the bell" said later must not replace the note. The other way round, with `others: quiet` (the default without `pick`) the turn that gives the words while the slot is asked for fills no other slot (above).
 - Without `pick`, the value is the whole turn's words, not the part that is the note. If the caller says "yes, leave it by the gate", the value is that sentence. With `pick`, it is the part the model chooses among those code found.
 - The candidates are cut by words, not by meaning. A joining word inside a value is covered by the joined parts, but only for two clauses side by side with no punctuation between them; a value that spans punctuation ("5 St. James Place", where "St." ends a clause) or three clauses is not offered whole. Then the model chooses none, and the value is the whole words.
 - In another locale the stand-in can be that locale's: `locale/<tag>/slots.yaml` gives `say: <stand-in>` for the slot. The words themselves are the caller's, in whatever language they spoke. A slot whose display is the words (`say: null`) takes none.

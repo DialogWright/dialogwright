@@ -1676,6 +1676,50 @@ export const TOOLS: Record<string, ToolDef> = {
 - `prescribed: true` forbids it; a framed line takes no `mode`, `goal` or `from` of its own. The stub regression words the span with the fake renderer and runs every check, with a simple stand-in for the judge; the adversarial suite tries an injected message, a dropped negation, another recipient, a renderer writing into the frame and one writing the sentence it is shown back whole, rewritten, on it.
 - A known limit: a `text` slot's value is the whole turn's words. A caller who gives the message in one breath with the other details ("it's Alex Rivera for Riley, the logo files are ready, call me on ...") gets all of it as the message, the name and number included: the exact words read back repeat them, and the summary usually leaves them out. `pick` could cut a real message short, so it is no fix for a message; say it in the worksheet's gaps, and script the call so the baseline shows it.
 
+## What still listens while the caller dictates: `others`
+
+**When:** a `text` slot takes the caller's words at its question (a message, a description, a note), and the paragraph says whether anything else the caller says there counts. The app decides, by its business:
+
+- `others: quiet` (the default for a text slot without `pick`): the turn that gives the words is theirs alone, so a word in the message ("could someone send it again") never replaces who it is for.
+- `others: listen` (the default with `pick`): every slot listens there too, as on any other turn ("14 Birch Lane, and there's a line down" gives the symptom with the address).
+- `others: { listen: [<slot>, ...] }`: quiet, but the slots listed still fill or change from that turn. Each must be a slot of a form that holds the text slot (`pnpm check` refuses any other).
+
+It applies only to a turn that gives the words: a turn at that question with no text in it ("oh, it's for Sam actually") fills every slot. Intents, priority switches and the screen read the turn as ever, so an emergency said in the middle of a message still goes to a person, with what it said of the form.
+
+**A message that may say it's urgent.** The paragraph: "take a message for one of the partners; if the caller says it's urgent, flag it". Who the message is for is asked first and must not change while the caller dictates; how urgent it is may be said only in the message itself.
+
+```yaml
+# slots.yaml
+recipient:
+  type: choice
+  options:
+    dana: { say: Dana Reyes }
+    lee: { say: Lee Park }
+howUrgent:          # not "urgency": the engine keeps that id for its own question
+  type: choice
+  options:
+    urgent: { say: urgent, means: The caller says it is urgent or needs an answer today }
+    routine: { say: not urgent, means: The caller says there is no hurry }
+message:
+  type: text
+  what: the message the caller wants to leave
+  say: null
+  redact: none
+  others: { listen: [howUrgent] }   # quiet but for the urgency: "call me back today, it's urgent" flags it
+```
+
+```yaml
+# forms.yaml
+forms:
+  take_message:
+    slots: [recipient, caller, phone, message, howUrgent]
+    summaryPromptId: confirm_take_message
+    hooks: [complete]
+    calls: [leaveMessage]
+```
+
+"Please call me back today about the invoice, it's urgent" at "What's the message?" then fills the message and `howUrgent`, and leaves the recipient as it was, whatever "someone" or a name in the message would make a choice read. `howUrgent` comes last in the form, so it is asked ("Is it urgent?", its `ask_howUrgent`) only when the message did not say. In the corpus, label the message line with both (`"slots": {"message": true, "howUrgent": "urgent"}`), and add a scripted call where the message names someone else and the recipient stays.
+
 ## Values with no slot type
 
 | Value | Do this | And log |
@@ -1684,7 +1728,7 @@ export const TOOLS: Record<string, ToolDef> = {
 | A choice among a few amounts or counts | `choice`, keys that start with a letter (`two`, `three`), `say` for how each is spoken. | nothing |
 | An amount the caller names freely, in whole units ("between 10 and 100 dollars") | No money type yet. A `digits` slot with `mask: '\d{1,3}'` and no `length`, `redact: none` and a `noun` ("dollar amount"), held to its bounds by `limit`. It reads "twenty five" and "one hundred fifty", but not "a hundred and fifty" (it parses numbers as identifiers), has no keypad (that needs `length`) and no cents. | a gap |
 | An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code ([authoring guide, "When no type fits"](../../../docs/guide/05-writing-a-slot.md#when-no-type-fits-a-slot-in-code)). | a gap |
-| A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). `pick` keeps only the part that is the address; `numbers: digits` and `case: title` have code write the value a tool gets ("7625 Oak Hollow Lane") while the read-back keeps the words as said. | a gap |
+| A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). `pick` keeps only the part that is the address; `numbers: digits` and `case: title` have code write the value a tool gets ("7625 Oak Hollow Lane") while the read-back keeps the words as said. With `pick` the other slots listen on the turn that gives the address (`others: listen`, the default with `pick`), so "14 Birch Lane, and there's a line down" gives the symptom too; set `others: quiet` only where that answer is the address alone. | a gap |
 | A code with letters | A slot in code. | a gap |
 
 The address in `slots.yaml`:

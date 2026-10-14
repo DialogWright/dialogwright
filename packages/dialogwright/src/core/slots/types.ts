@@ -380,6 +380,12 @@ export interface SlotSpec {
    */
   quietsOthers?: true;
   /**
+   * With quietsOthers (a `text` slot's `others: { listen: [...] }`): the slots that still fill or change
+   * from the dictation turn, as on any other turn (an urgency read from the content of a message). Each
+   * a slot of a form that holds this one (pnpm check). Absent: none.
+   */
+  listensWhileQuiet?: readonly SlotId[];
+  /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was
    * verified (IDENTITY_VERIFIED, or IDENTITY_UNVERIFIED), never the value itself.

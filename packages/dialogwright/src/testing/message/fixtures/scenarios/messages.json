@@ -195,5 +195,38 @@
       "decision": "prompt",
       "form": "take_message"
     }
+  },
+  {
+    "id": "message-names-someone-else",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Dana"
+      },
+      {
+        "say": "it's Morgan Lee"
+      },
+      {
+        "say": "five five five five five five zero one four two"
+      },
+      {
+        "say": "the invoice went to the old address, could Lee or someone send it again to accounts at example dot com"
+      },
+      {
+        "say": "yes, pass it on"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "form": "take_message",
+      "slots": {
+        "recipient": "dana",
+        "caller": "morgan lee",
+        "phone": "5555550142",
+        "message": "the invoice went to the old address, could Lee or someone send it again to accounts at example dot com"
+      },
+      "gate": "leaveMessage:ALLOW"
+    }
   }
 ]

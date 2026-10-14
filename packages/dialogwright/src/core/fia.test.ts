@@ -461,7 +461,7 @@ describe('a dictation turn belongs to its slot (live findings item 27)', () => {
   // "could someone send it again" and replaced Riley.
   const recipient = defineSlot('recipient', { type: 'choice', fillAt: 'SLOT_CHOICE_CONFIRM', options: { riley: { say: 'Riley Moreno' }, anyone: { say: 'anyone on the team' } } });
   const MESSAGE = 'the invoice went to the old address, could someone send it again to accounts at example dot com';
-  const message = (others?: 'quiet' | 'listen') => defineSlot('message', { type: 'text', what: 'the message', say: null, redact: 'none', ...(others !== undefined ? { others } : {}) });
+  const message = (others?: 'quiet' | 'listen' | { listen: string[] }) => defineSlot('message', { type: 'text', what: 'the message', say: null, redact: 'none', ...(others !== undefined ? { others } : {}) });
   const answers = { recipient: choice({ anyone: 0.5, riley: 0.3, none: 0.2 }), messageGiven: noul(0.95) };
   function atMessage(promptedFor: Session['promptedFor'] = 'message'): Session {
     const s = newSession('s', 0, VOICE_RELAY);
@@ -499,5 +499,38 @@ describe('a dictation turn belongs to its slot (live findings item 27)', () => {
     // A correction (the read-back's and the summary's path) changes any slot.
     const corrected = fillSlots(atMessage(), answers, ctx(MESSAGE), [recipient, message()], { correcting: true });
     expect(corrected.session.slots.recipient!.value).toBe('anyone');
+  });
+
+  it('a switch of task (a priority switch\'s correction, the form a turn enters) is no dictation: every slot fills, and the value on file is still the slot\'s to keep', () => {
+    const switched = fillSlots(atMessage(), answers, ctx(MESSAGE), [recipient, message()], { switching: true });
+    expect(switched.session.slots.recipient!.value).toBe('anyone');
+    expect(switched.session.slots.message!.value).toBe(MESSAGE);
+    // Unlike a correction, the slot still sees what it holds: a text slot's keep holds against an unprompted turn.
+    const held = atMessage('recipient');
+    held.slots.message = { ...emptySlot(), value: 'the first message', display: 'the first message' };
+    expect(fillSlots(held, answers, ctx(MESSAGE), [recipient, message()], { switching: true }).session.slots.message!.value).toBe('the first message');
+  });
+
+  it('others: { listen }: the slots the app lists still fill and change from the dictation turn; the others stay quiet', () => {
+    const howUrgent = defineSlot('howUrgent', { type: 'choice', options: { urgent: { say: 'urgent' }, routine: { say: 'routine' } } });
+    const heard = { ...answers, howUrgent: choice({ urgent: 0.9, routine: 0.05, none: 0.05 }) };
+    const specs = [recipient, howUrgent, message({ listen: ['howUrgent'] })];
+    const at = (): Session => {
+      const s = atMessage();
+      s.slots.howUrgent = emptySlot();
+      return s;
+    };
+    // A listed slot fills from the dictation; an unlisted one (the recipient) neither fills nor changes.
+    const r = fillSlots(at(), heard, ctx(MESSAGE), specs);
+    expect(r.session.slots.howUrgent!.value).toBe('urgent');
+    expect(r.session.slots.recipient!.value).toBe('riley');
+    expect(r.events.map((e) => e.slot).sort()).toEqual(['howUrgent', 'message']);
+    expect(valuesGiven(at(), heard, ctx(MESSAGE), specs)).toEqual(new Set(['howUrgent', 'message']));
+    // A listed slot changes a value it already held.
+    const held = at();
+    held.slots.howUrgent = { ...emptySlot(), value: 'routine', display: 'routine', confirmed: true };
+    expect(fillSlots(held, heard, ctx(MESSAGE), specs).session.slots.howUrgent!.value).toBe('urgent');
+    // Listing the recipient lets it change too.
+    expect(fillSlots(at(), heard, ctx(MESSAGE), [recipient, howUrgent, message({ listen: ['recipient'] })]).session.slots.recipient!.value).toBe('anyone');
   });
 });

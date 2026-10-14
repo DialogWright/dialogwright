@@ -49,14 +49,20 @@ describe('a text slot built from the defaults', () => {
 
   it('carries its type and its parsed options, defaults applied', () => {
     expect(note.type).toBe('text');
-    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length', others: 'quiet', numbers: 'words', case: 'as-said' });
+    expect(note.config).toEqual({ what: 'a note for the courier', maxLength: 500, say: 'your description', keep: 'first-unless-prompted', redact: 'length', numbers: 'words', case: 'as-said' });
     expect(Object.isFrozen(note.config)).toBe(true);
   });
 
-  it('quiets the other slots on the turn that gives its words while it is asked for, unless others: listen (live findings item 27)', () => {
+  it('the other slots on the turn that gives its words while it is asked for (others, live findings item 27): the app decides; quiet by default for the whole answer, listen with pick', () => {
+    // Takes the whole answer as its content: quiet by default, listen when the app says so.
     expect(note.quietsOthers).toBe(true);
     expect(defineSlot('note', { type: 'text', what: 'a note for the courier', others: 'quiet' }).quietsOthers).toBe(true);
     expect(defineSlot('note', { type: 'text', what: 'a note for the courier', others: 'listen' })).not.toHaveProperty('quietsOthers');
+    // Picks part of a longer answer: listen by default, quiet when the app says so.
+    const place = { type: 'text', what: 'the place', pick: { what: 'the street address' } } as const;
+    expect(defineSlot('place', place)).not.toHaveProperty('quietsOthers');
+    expect(defineSlot('place', { ...place, others: 'listen' })).not.toHaveProperty('quietsOthers');
+    expect(defineSlot('place', { ...place, others: 'quiet' }).quietsOthers).toBe(true);
     const bad = buildSlot('note', { type: 'text', what: 'a note for the courier', others: 'sometimes' });
     expect(bad.ok).toBe(false);
   });

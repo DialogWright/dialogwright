@@ -14,6 +14,22 @@ export type { WrittenCase, WrittenNumbers, WrittenRules } from './written';
 export { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS, PICK_LABELS, PICK_WORDS, pickCandidates, pickWordsFor } from './pick';
 export type { PickWords, PickWordsByLocale } from './pick';
 
+/**
+ * What the other slots do on a turn that gives the slot its words while it is asked for (`others`):
+ * the app's setting, else `quiet` for a slot that takes the whole answer as its content and `listen`
+ * for one that picks part of a longer answer (`pick`).
+ */
+export function othersOf(o: Pick<TextOptions, 'others' | 'pick'>): NonNullable<TextOptions['others']> {
+  return o.others ?? (o.pick !== undefined ? 'listen' : 'quiet');
+}
+
+/** What `others` makes of the slot (SlotSpec.quietsOthers, SlotSpec.listensWhileQuiet). */
+function quietOf(others: NonNullable<TextOptions['others']>): { quietsOthers?: true; listensWhileQuiet?: readonly string[] } {
+  if (others === 'listen') return {};
+  if (others === 'quiet') return { quietsOthers: true };
+  return { quietsOthers: true, listensWhileQuiet: [...others.listen] };
+}
+
 /** Whether a fill's display is the words as said while its value is written from them (SlotSpec.displayFrom). */
 const displaysSaid = (o: TextOptions): boolean => o.say === null && (o.numbers === 'digits' || o.case === 'title');
 
@@ -45,8 +61,10 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       ...(o.redact === 'length-summarized' ? { redact: 'length' as const, statement: false as const, summarized: true as const } : {}),
       // Shown as said while the value is written (written.ts): display(value) cannot give the words back.
       ...(displaysSaid(o) ? { displayFrom: 'said' as const } : {}),
-      // A turn that gives its words while it is asked for is its content alone (others: quiet, the default).
-      ...(o.others === 'quiet' ? { quietsOthers: true as const } : {}),
+      // A turn that gives its words while it is asked for is its content alone (others: quiet), but for
+      // the slots the app lists (others: { listen }): the default for a slot that takes the whole
+      // answer; one that picks part of it (pick) listens.
+      ...quietOf(othersOf(o)),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId],
       prompts: readBackPrompts(id, o.confirm ?? 'summary'),

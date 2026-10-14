@@ -51,6 +51,13 @@ export interface FillOptions {
    * ("next week" alongside an answer already given) cannot unfill it.
    */
   correcting?: boolean;
+  /**
+   * The turn switches task: a priority switch's correction of the form it leaves (`correctsForm`), or
+   * the fill of the form a turn enters. Such a turn is no dictation, so a slot that quiets the others
+   * (SlotSpec.quietsOthers) does not: every slot fills from it. Unlike `correcting`, the value on file
+   * is not hidden from the slot (a text slot's `keep` still holds).
+   */
+  switching?: boolean;
 }
 
 /**
@@ -223,17 +230,21 @@ function readSlots(session: Session, answers: AnswerMap, ctx: SlotContext, specs
 /**
  * A dictation turn belongs to its slot (SlotSpec.quietsOthers, a `text` slot's `others: quiet`; live
  * findings item 27): where the prompted slot is one that quiets the others and this turn fills it, the
- * turn is that slot's content, and only its own outcome is kept. The secretary's recipient, filled at
- * the opening, was replaced at the message prompt by "anyone", read from "could someone send it again"
- * in the message itself. Every other turn keeps every outcome: a correction (opts.correcting, the
- * read-back's and the summary's), a turn that prompted another slot or none, and one that does not
- * fill the prompted slot (the caller gave no text, so the turn is no dictation).
+ * turn is that slot's content, and only its own outcome is kept, with those of the slots the app lists
+ * to listen there all the same (SlotSpec.listensWhileQuiet, `others: { listen }`). A recipient filled earlier is then
+ * never replaced by "anyone", read from "could someone send it again" in the message itself. Every
+ * other turn keeps every outcome: a correction (opts.correcting, the read-back's and the summary's), a
+ * switch of task (opts.switching: a priority switch's correction, the form a turn enters), a turn that
+ * prompted another slot or none, and one that does not fill the prompted slot (the caller gave no text,
+ * so the turn is no dictation).
  */
 function dictatedOnly(session: Session, results: { spec: SlotSpec; outcome: SlotOutcome }[], opts: FillOptions): { spec: SlotSpec; outcome: SlotOutcome }[] {
-  if (opts.correcting === true) return results;
+  if (opts.correcting === true || opts.switching === true) return results;
   const own = results.find((r) => r.spec.id === session.promptedFor);
   if (own === undefined || own.spec.quietsOthers !== true || own.outcome.kind !== 'filled') return results;
-  return [own];
+  // The slots the app lets listen at the dictation (others: { listen }) keep their outcomes.
+  const still = new Set(own.spec.listensWhileQuiet ?? []);
+  return results.filter((r) => r === own || still.has(r.spec.id));
 }
 
 /**

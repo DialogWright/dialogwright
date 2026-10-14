@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { localeTag } from '../../define/schema/common';
+import { identifier, localeTag, unique } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
 import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS } from './pick';
 import { alwaysConfirmText } from '../parts/readBack';
@@ -98,10 +98,17 @@ export const textOptions = z
         'How the value writes the case of the words. "as-said": as the recognizer or the caller wrote them. "title": words written with no capital at all (a recognizer that writes none) have each word capitalized, but for minor words after the first ("7625 oak hollow lane" is "7625 Oak Hollow Lane"); words with any capital stay as they are. The value only: with say: null the display stays the words as said. Only in a language with rules: English, also read with no locale.',
       ),
     others: z
-      .enum(['quiet', 'listen'])
-      .default('quiet')
+      .union([
+        z.enum(['quiet', 'listen']),
+        z.strictObject({
+          listen: unique(identifier(), 'slot')
+            .min(1, { error: 'must name at least one slot' })
+            .describe('The slots that still fill or change from the turn that gives this slot its words: each a slot of a form that holds this one (an urgency read from the content of a message). pnpm check refuses any other.'),
+        }),
+      ])
+      .optional()
       .describe(
-        'What the other slots do on a turn that gives this slot its words while it is the slot just asked for. "quiet" (the default): the turn is this slot\'s content, and no other slot fills or changes from it, so a word in a message ("could someone send it again") never replaces a value already given (who the message is for). Intents and priority switches (an urgent request, asking for a person) are read from the turn as ever, a correction at a read-back or the summary changes any slot, and a turn where the caller gives no text, or where another slot was asked, fills every slot as before. "listen": every slot listens on that turn too, as before this option, so a caller who names another value in the same breath as the words changes it.',
+        'What the other slots do on a turn that gives this slot its words while it is the slot just asked for: the app decides, by its business. "quiet": the turn is this slot\'s content, and no other slot fills or changes from it, so a word in a message ("could someone send it again") never replaces a value already given (who the message is for). "listen": every slot listens on that turn too, so a caller who names another value in the same breath as the words gives it ("14 Birch Lane, and there\'s a line down"). { listen: [<slot>, ...] }: quiet, but for the slots listed, which still fill or change from that turn (an urgency slot read from the content of a message). Default: "quiet" for a slot that takes the whole answer as its content (no `pick`), "listen" for one that picks part of a longer answer (`pick`). It applies only on a turn that gives this slot its words: a turn where the caller gives no text, or where another slot was asked, fills every slot. Either way, intents, priority switches (an urgent request, asking for a person, with what they say of the form) and the injection screen read the turn as ever, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot.',
       ),
     confirm: z
       .enum(['summary', 'always'])

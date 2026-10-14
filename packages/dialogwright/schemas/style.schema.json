@@ -48,7 +48,7 @@
       "additionalProperties": false
     },
     "model": {
-      "description": "The model that words the app's generated lines, the author's choice (measured with render:bakeoff): what the server words with and the regression's recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL names the model. The key is read from the environment only (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never from here; with it unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic's claude-haiku-5-5).",
+      "description": "The model that words the app's generated lines, the author's choice (measured with render:bakeoff): what the server words with and the regression's recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic's claude-haiku-5-5).",
       "type": "object",
       "properties": {
         "provider": {

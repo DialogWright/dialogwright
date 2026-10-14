@@ -1722,7 +1722,7 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
     // where it stood, and what else the words said for it fills, as an informational answer's breath does.
     if (form === s.parked.form) {
       unparkTask(s);
-      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s), { switching: true });
       return { decision: resume(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
     }
     // Another task asked for in its place: the task set aside is given up, as a replaced one is.
@@ -1750,7 +1750,9 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
       : [ackIntent(s, form)];
   // A yes to the greeting's proposal with the request in the same breath: the slot holds what the yes was to.
   const specs = (fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s)).filter((spec) => spec.id !== io.kept);
-  const fill = fillSlots(s, answers, ctx, specs);
+  // The form entered hears the turn whole: a switch of task is no dictation (the prompted slot of the
+  // form left may still be set, setForm keeps promptedFor), so no slot quiets the others here.
+  const fill = fillSlots(s, answers, ctx, specs, { switching: true });
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
 }
 
@@ -1798,11 +1800,12 @@ function takeAside(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
  * fill's events, which join the turn's.
  */
 function correctOnSwitch(s: Session, answers: AnswerMap, ctx: SlotContext): FillEvent[] {
-  if (s.form === null) return fillSlots(s, answers, ctx, slotsToFill(s)).events;
+  // A switch of task, never a dictation: a slot that quiets the others (others: quiet) does not here.
+  if (s.form === null) return fillSlots(s, answers, ctx, slotsToFill(s), { switching: true }).events;
   const app = appOf(s);
   const listening = new Set(activeSlots(s).map((spec) => spec.id));
   const specs = formOf(app, s.form).slots.filter((id) => listening.has(id)).map((id) => slotSpecOf(app, id));
-  return fillSlots(s, answers, ctx, specs).events;
+  return fillSlots(s, answers, ctx, specs, { switching: true }).events;
 }
 
 function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): { decision: Decision; events: FillEvent[] } {

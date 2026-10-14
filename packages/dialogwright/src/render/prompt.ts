@@ -78,10 +78,8 @@ export const SPAN_INSTRUCTIONS = [
  * What a render model is told to word a span that speaks to the caller about their own message
  * (prompts.yaml's `speaks: to-caller`), as a receptionist reads a message back: the goal and the full
  * context (the line is spoken to the person who left the message; the sentence with its gap; the
- * caller's words; the names it may use, `names`: whom the message is for), never a procedure for the
- * words (live findings item 27: "Don't tell the model how to do its job"; an earlier version told it to
- * say the caller's "I" and "my" as "you" and "your", and the read-backs it gave changed who does what).
- * Only such a span is sent these.
+ * caller's words; the names it may use, `names`: whom the message is for), and nothing on how to word
+ * it (live findings item 27). Only such a span is sent these.
  */
 export const SPAN_INSTRUCTIONS_TO_CALLER = [
   'You word one short span that an automated agent says inside a fixed line, on a phone call (channel "voice") or in a web chat (channel "chat"). The line is spoken to the caller, the person who left the message, and gives them their own message back before it is passed on to whom it is for.',
