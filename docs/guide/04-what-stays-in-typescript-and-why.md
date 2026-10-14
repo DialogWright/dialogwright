@@ -54,6 +54,8 @@ A custom rule is written with `defineRule`, with the examples that say what it a
 
 ### Settings: `ctx.env`, never `process.env`
 
+The app's code reads the call's data with no setting: the numbers a call came with (`callerOf(s)`, with `withheld` and `attestation` where the carrier gave them; `calledOf(s)`; `callerUriOf(s)` for a SIP or client caller), and the call data app.yaml names (`callDataOf(s)`). What it does with them, a withheld number's among them, is the app's ([The number the caller is calling from](02-the-files-one-by-one.md#the-number-the-caller-is-calling-from-callernumber)).
+
 The app's code reads its own settings (a desk's number, a list of numbers, a switch) by name with `ctx.env(name)`, as the call needs it: every hook's context has it (a form's hooks, `complete`, the start hook, `callerOffer`, `onServiceResult`), and so do a tool's (`run(call, sys, ctx)`) and a predicate's (`{ s, nowMs, todayIso, env }`). It returns the setting, or `undefined` where it is not set. It reads the same settings an `env.<NAME>` in the app's YAML does:
 
 - on a server of one app, the server's environment (its `.env`, or the file `ENV_FILE` names);

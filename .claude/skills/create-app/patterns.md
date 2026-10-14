@@ -154,7 +154,7 @@ levels:
 
 ```yaml
 # app.yaml: the lookup that finds the match
-callerNumber: { use: hint, lookup: findAccountByPhone }
+callerNumber: { lookup: findAccountByPhone }
 ```
 
 ```yaml
@@ -1262,7 +1262,7 @@ phone:
 - **Give the form a summary that reads `{phone}` back.** The offer says only the last four, so the summary is where the caller hears the whole number; `pnpm check` warns when a form with the slot has none.
 - **Never on an identity factor.** A caller ID can be forged, and a yes to an offer verifies nothing, so `pnpm check` refuses `callerNumber` on a factor. To let the number identify an account, use [caller ID as the identifier](#verified-by-caller-id-callerid), which a knowledge factor verifies.
 - The number is masked as the slot is (`redact: last4`, the default), so the tool param named `phone` is recorded by its last four and needs no `audit` line.
-- **Test:** a scripted call from a number, `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`: not a phone number but RESTRICTED spelt on a keypad, which is how Twilio sends a withheld caller ID; the engine knows it, and the other spellings, as no number, so the scripted call is a withheld call): one with a yes, one with a no and a number said, a no and then nothing said (the slot's ladder ends at a person: the offer is required), one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
+- **Test:** a scripted call from a number, `"callerNumber": "+15555550142"` beside `steps` (a withheld one as `"+7378742833"`: not a phone number but RESTRICTED spelt on a keypad, which is how Twilio sends a withheld caller ID; the engine knows it, and the other spellings, as no number, so the scripted call is a withheld call with no number; Telnyx sends the number anyway, marked: `"callerNumber": "+15555550142", "callerWithheld": true`, offered by default unless app.yaml says `callerNumber: { withheld: ignore }`): one with a yes, one with a no and a number said, a no and then nothing said (the slot's ladder ends at a person: the offer is required), one withheld, and the chat. A corpus line at the offer: `{"id":"of-01","text":"yes, that's fine","intent":"none","context":"request_callback","prompted":"phone","confirm":"yes"}`.
 
 ## Texting the caller: `onNo`, `ifNone` and the `callerNumber` rule
 
@@ -1409,11 +1409,11 @@ textConsent:
 
 ## Looking the caller up by number
 
-**When:** "if we know the number, start from their account": the line uses what it can find by the number calling (a line type before a text, an address to propose, an account for [caller ID](#verified-by-caller-id-callerid)). app.yaml's `callerNumber` keeps the number for the app's code, and may look the caller up once at call start; `called: true` keeps the number called too, for a line with several numbers (`calledOf(s)`).
+**When:** "if we know the number, start from their account": the line uses what it can find by the number calling (a line type before a text, an address to propose, an account for [caller ID](#verified-by-caller-id-callerid)). The numbers a call came with are the call's data for every app (`callerOf(s)`, `calledOf(s)`); app.yaml's `callerNumber` may look the caller up once at call start, and says whether the engine's features use a number the caller withheld (`withheld: use`, the default, or `ignore`).
 
 ```yaml
 # app.yaml
-callerNumber: { use: hint, lookup: findAccountByPhone }
+callerNumber: { lookup: findAccountByPhone }   # add withheld: ignore to honour a caller who withheld their number
 ```
 
 ```yaml
@@ -1430,7 +1430,7 @@ audit:
 ```
 
 - The tool lists one param, `callerNumber`, and returns the least that works (a line type, an address to propose), never a balance, a claim or a name: whatever it returns may be said to someone who has proven nothing, since a caller ID can be forged. Its result goes to the facts through `facts.fromCallerLookup` in the app's code; a refusal is silent.
-- App code reads the numbers with `callerOf(s)` and `calledOf(s)` (`called: true` keeps the number called). Both are null on a chat and with no number.
+- App code reads the numbers with `callerOf(s)` (with `withheld: true` for a number the caller withheld, which the carrier sent anyway) and `calledOf(s)`, kept for every app. Both are null on a chat and with no number. Whether to use a withheld number is the owner's decision: ask it (worksheet), and write `callerNumber: { withheld: ignore }` where the owner wants the caller's choice honoured.
 - **A match is no verification.** It changes neither who the caller is nor their level, and a form that needs identity still asks for the factors, unless identity.yaml's `callerId` lets the match stand in for the account number ([Verified by caller ID](#verified-by-caller-id-callerid)).
 
 **Proposing what the lookup found.** "If we know their address, ask whether it's that one": the slot proposes it as a yes or no, at the slot, inside the form (or at the greeting, with `offerAt: greeting`, below).

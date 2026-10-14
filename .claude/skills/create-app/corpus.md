@@ -156,8 +156,8 @@ A scripted call answers a read-back with lines the corpus already has: the yes a
 ]
 ```
 
-- `callerNumber`: the number a phone call comes from, as a carrier sends it (`"+15555550142"`), for an app with a slot that offers it or that keeps it for its code ([patterns.md](patterns.md#a-callback-number-callernumber)); absent, the call has no number. A chat never has one.
-- `calledNumber`: the number the call is to (`"+15555550100"`), for an app that keeps it (app.yaml's `callerNumber: { called: true }`).
+- `callerNumber`: the number a phone call comes from, as a carrier sends it (`"+15555550142"`), kept for every app ([patterns.md](patterns.md#a-callback-number-callernumber)); absent, the call has no number. A chat never has one. `callerWithheld: true` beside it is a number the caller withheld that the carrier sent anyway, marked (Telnyx).
+- `calledNumber`: the number the call is to (`"+15555550100"`), kept for every app.
 - `as`: absent for a phone call from an anonymous caller; a delegate id for a delegate's signed-in chat; `"web"` for a subject's chat, anonymous until a `{ "signIn": "<subject id>" }` step.
 - Steps: `{ "say": "..." }` (its words must be a corpus line's text: the stub regression refuses to run a step whose words no line has, and lists every one, since the stub would answer it with nothing; a run against a model, live or replayed, does not), `{ "dtmf": "..." }` (keys; the one-time code passes when its last digit is even), `{ "silence": true }`, `{ "signIn": "<id>" }`.
 - `expect` is checked on the last turn: `decision` (`prompt`, `handoff`, `complete`, ...), and any of `promptId`, `reason` (a handoff's: `live-agent`, `identity`, `role-person`, `needs-human`, ...), `form`, `slots` (values by slot id), `principalLevel`, `gate` (the last gate decision, `"<tool>:<VERDICT>"`), `text` (words the last turn's lines contain).
