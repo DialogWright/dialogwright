@@ -75,7 +75,8 @@
       "transfer": {
         "target": "STUDIO_MAIN_LINE"
       }
-    }
+    },
+    "cosmeticDrift": true
   },
   {
     "id": "person-at-the-start",

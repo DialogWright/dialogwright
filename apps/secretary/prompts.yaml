@@ -186,7 +186,7 @@ prompts:
       summary:
         from: message
         goal: Summarize the caller's message briefly, as a receptionist reading it back to them.
-        words: 20
+        words: 30
         speaks: to-caller
         names: [recipient]
     summarizesConfirmed: true

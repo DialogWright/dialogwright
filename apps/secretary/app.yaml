@@ -34,6 +34,14 @@ voice:
   hints: [message, Riley, Moreno, Sam, Okafor, Jordan, Lee, urgent, hours, address, person]
   continueWithinMs: 900
 
+# How sure the model must be that a caller said it is urgent before the call goes to the main line,
+# wherever the call is (intents.yaml's urgent, a priority intent). The engine's bar for a priority
+# intent is 0.8; urgent's is lower, since missing an urgent caller costs more than putting a caller
+# through who did not need it (they reach the studio's main line either way). Chosen on recording 2:
+# "wait, it's for Sam, and it's urgent" at the read-back read urgent 0.43 (take_message 0.50).
+thresholds:
+  URGENT_SURE: 0.4
+
 # The engine's own model questions need to know whom the caller is addressing.
 wording:
   addressee: the Example Front Desk line

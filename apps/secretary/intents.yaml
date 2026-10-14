@@ -5,7 +5,7 @@
 intents:
   # The one task: a message for one of the three people, or for anyone (forms.yaml).
   take_message:
-    criteria: Wants to leave a message for Riley Moreno, Sam Okafor, Jordan Lee or anyone at the studio, or wants someone to call them back, or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on, or says yes right after the line offers to take a message. A caller who says who it is for and what to pass on is leaving a message, however many details they add in the same breath, such as their name or their number. A message that only mentions a deadline, or asks for a call back soon, is still a message; a caller who says the matter itself is urgent is urgent's
+    criteria: Wants to leave a message for Riley Moreno, Sam Okafor, Jordan Lee or anyone at the studio, or wants someone to call them back, or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on, or agrees (yes, sure, okay, please) right after the line offers to take a message. A caller who says who it is for and what to pass on is leaving a message, however many details they add in the same breath, such as their name or their number. A message that only mentions a deadline, or asks for a call back soon, is still a message; a caller who says the matter itself is urgent is urgent's
     label: leave a message
     kind: form
 
@@ -17,7 +17,7 @@ intents:
     criteria: Says their call or their matter is urgent, an emergency, or cannot wait for a call back, and wants to reach someone at the studio now. Said at any point in the call it is urgent's, even in the same breath as a correction or another detail of a message, as in wait, it's for Sam, and it's urgent
     label: reach the studio's main line
     kind: form
-    priority: { correctsForm: true }
+    priority: { correctsForm: true, threshold: URGENT_SURE }
 
   # Fixed answers, said word for word (prompts.yaml); "How can I help you today?" follows each.
   studio_hours:

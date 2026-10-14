@@ -305,7 +305,7 @@
         "say": "message for anyone, I don't mind who"
       },
       {
-        "say": "my name is Casey Brooks"
+        "say": "it's Alex Rivera"
       },
       {
         "say": "that's the one"
@@ -727,7 +727,10 @@
     "expect": {
       "decision": "prompt",
       "promptId": "ask_recipient",
-      "form": "take_message"
+      "form": "take_message",
+      "slots": {
+        "message": "call me back as soon as possible"
+      }
     }
   },
   {

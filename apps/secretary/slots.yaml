@@ -51,7 +51,7 @@ phone:
 message:
   type: text
   what: the message the caller wants to leave
-  instructions: Count the message itself, even when it comes with other words. A request to be called back about something is a message too.
+  instructions: Count the message itself, even when it comes with other words. A request to be called back about something is a message too, and so is one that starts by saying how urgent it is, as in it's not urgent, but the invoice needs a look.
   say: null
   redact: length-summarized
   maxLength: 500
