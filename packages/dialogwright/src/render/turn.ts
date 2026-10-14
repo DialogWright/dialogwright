@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { blockingIdentifiers, generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, summarizedVarsFrom } from './config';
+import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
@@ -175,7 +175,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
   if (line.situations !== undefined && !line.situations.some((s) => situations.includes(s))) return { skipped: 'when' };
   const template = localePromptEntry(app, said.promptId, locale).entry.text;
   const vars = lineVars(template);
-  if (blockingIdentifiers(template, line.from, identifiers, summarizedVarsFrom(app.slots, identityOf(app).factorSlots)).length > 0) return { skipped: 'identifier' };
+  if (vars.some((v) => identifiers.has(v))) return { skipped: 'identifier' };
   if (saysKbAnswer(template)) return { skipped: 'knowledge' };
   const words = wordsOf(event);
   // A turn with words is generated only once the injection screen has read them and not flagged them.
@@ -197,7 +197,9 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     items: vars.filter((v) => !from.has(v)).map(value),
     ...(content.length > 0 ? { content } : {}),
     // A line that adds no acknowledgement is not sent the caller's words: it has nothing to say back of them.
-    ...(words !== null && !sensitivePrompt(app, before.promptedFor) && !quiet ? { heard: words } : {}),
+    // In an app with a slot the records mask whose words a model summarizes (redact: length-summarized), no
+    // line is sent the caller's words: they reach the render model only in the span that summarizes them.
+    ...(words !== null && !sensitivePrompt(app, before.promptedFor) && !quiet && summarizedVarsFrom(app.slots, identityOf(app).factorSlots).size === 0 ? { heard: words } : {}),
     ...(quiet ? { acknowledge: false as const } : {}),
     frustration: frustrationOf(after),
     situations,

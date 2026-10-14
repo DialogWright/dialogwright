@@ -108,6 +108,10 @@ export function validateApp(app: App): void {
     if (spec.summarized !== true) continue;
     if (app.identity?.factorSlots.includes(id)) fail(`slot "${id}" is an identity factor, and summarized would send it whole to a model: an identity factor is never sent to one`);
     if (spec.redact !== 'length' || spec.statement !== false) fail(`slot "${id}" says summarized, which needs redact: 'length' and statement: false, so the records mask it everywhere`);
+    // Only a framed line's span may summarize it: a line generated whole from it would be what a model wrote of it, said and recorded as the line.
+    for (const [line, g] of Object.entries(app.generated?.lines ?? {})) {
+      if (g.spans === undefined && (g.from ?? []).includes(id)) fail(`the line "${line}" is generated whole from slot "${id}" (summarized), which only a framed line's span may summarize`);
+    }
   }
   // What a transfer hands the channel (handoff.data): the same problems `check` finds in app.yaml.
   for (const p of handoffDataProblems(app.handoff?.data, app.slots, app.identity?.factorSlots ?? [])) fail(`handoff data: ${p.message} (handoff.data.${p.path.join('.')}): ${p.fix}`);

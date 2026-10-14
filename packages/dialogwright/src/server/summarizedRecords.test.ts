@@ -23,6 +23,7 @@ import { messageVariants, SUMMARIZED } from '../testing/message/variant';
 import { FakeRenderClient, type FakeRenderOptions } from '../render/fake';
 import { policyCardText } from '../testing/policyCard';
 import type { App } from '../core/app/types';
+import type { JevClient } from '../jev/types';
 
 /**
  * A slot masked in every record though a model summarizes it (a text slot's `redact: length-summarized`,
@@ -40,6 +41,8 @@ const MESSAGE = 'please call me about the March invoice before Friday, I think w
 const SUMMARY = 'please call me about the March invoice before';
 /** Distinctive pieces of the message and of its summary: none may be in any record. */
 const PIECES = ['charged twice', 'March invoice', 'same delivery', 'call me about'];
+/** Short messages, given at the message's question. */
+const SHORT = ['call me', 'yes'];
 
 beforeEach(() => {
   resetAppsForTest();
@@ -64,7 +67,16 @@ function harness(render: FakeRenderOptions) {
       return { ...dr, seq: appended.length, at: 'x', callId, channel, prevHash: '0', hash: String(appended.length) } as never;
     },
   };
-  const client = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY, app }), app });
+  const inner = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY, app }), app });
+  // A short message the corpus has no line for, given at the message's question: the model says it is the message.
+  const client: JevClient = {
+    ask: async (req) => {
+      const r = await inner.ask(req);
+      const heard = (req.state as { asr?: { text?: string }; node?: { id?: string } } | null);
+      if (req.questions.messageGiven !== undefined && heard?.node?.id === 'ask_message' && SHORT.includes(heard.asr?.text ?? '')) return { ...r, answers: { ...r.answers, messageGiven: { type: 'noul', noul: 0.95 } } };
+      return r;
+    },
+  };
   const store: SessionStore = new SessionStore((callSid) => ({
     session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, app.id),
     opts: {
@@ -77,30 +89,45 @@ function harness(render: FakeRenderOptions) {
     trace: new TraceWriter(join(dir, `${callSid}.jsonl`)),
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`), () => 0),
   }), 60_000, () => 0);
-  const d: AdapterDeps & { dir: string } = { store, tokens: new CallTokens(60_000, () => 0), log: () => {}, dir, bus, handoffNumber: '+15555550123' };
-  return { d, events, appended, dir };
+  const logged: string[] = [];
+  const d: AdapterDeps & { dir: string } = { store, tokens: new CallTokens(60_000, () => 0), log: (l) => logged.push(l), dir, bus, handoffNumber: '+15555550123' };
+  return { d, events, appended, dir, logged };
 }
 
 const setup = JSON.stringify({ type: 'setup', sessionId: 'VX1', callSid: 'CA1', from: '+1', to: '+2', customParameters: {} });
 const prompt = (t: string) => JSON.stringify({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true });
 const said = (s: Fake): string => s.sent.filter((m) => (m as { type: string }).type === 'text').map((m) => (m as { token: string }).token).join(' ');
 
-async function call(render: FakeRenderOptions, steps: string[]) {
+/** A step: words said, or an interruption of the line being said, with what the carrier heard of it. */
+type Step = string | { interrupt: string };
+
+async function call(render: FakeRenderOptions, steps: Step[]) {
   const h = harness(render);
   const sock = fakeSocket();
   const ctx = newConnectionContext(h.d.tokens.mint('CA1'), sock);
   await handleSocketMessage(h.d, sock, ctx, setup);
-  for (const step of steps) await handleSocketMessage(h.d, sock, ctx, prompt(step));
+  for (const step of steps) {
+    await handleSocketMessage(h.d, sock, ctx, typeof step === 'string' ? prompt(step) : JSON.stringify({ type: 'interrupt', utteranceUntilInterrupt: step.interrupt, durationUntilInterruptMs: 2400 }));
+  }
   const records = {
     trace: readFileSync(join(h.dir, 'CA1.jsonl'), 'utf8'),
     frames: readFileSync(join(h.dir, 'CA1.frames.jsonl'), 'utf8'),
     console: JSON.stringify(h.events),
     audit: JSON.stringify(h.appended),
+    log: h.logged.join('\n'),
   };
   return { said: said(sock), records, session: h.d.store.get('CA1')!.session };
 }
 
 const TO_YES = ['can I leave a message for Dana', "it's Morgan Lee", 'five five five five five five zero one four two', MESSAGE, 'yes, pass it on'];
+const TO_READ_BACK = TO_YES.slice(0, 4);
+
+/** No piece of `words` in any record. */
+function nowhere(records: Record<string, string>, pieces: readonly string[]): void {
+  for (const [where, text] of Object.entries(records)) {
+    for (const piece of pieces) expect(text.toLowerCase(), `${where}: ${piece}`).not.toContain(piece.toLowerCase());
+  }
+}
 
 describe('redact: length-summarized (live findings, item 20)', () => {
   it('words the read-back\'s span from the message, and keeps neither the message nor its summary in any record', async () => {
@@ -108,9 +135,7 @@ describe('redact: length-summarized (live findings, item 20)', () => {
     // The caller heard the summary, and the message was passed on.
     expect(r.said).toContain(`called and left this message: ${SUMMARY}. Shall I pass it on?`);
     expect(r.said).toContain('has been passed on');
-    for (const [where, text] of Object.entries(r.records)) {
-      for (const piece of PIECES) expect(text, `${where}: ${piece}`).not.toContain(piece);
-    }
+    nowhere(r.records, PIECES);
     // Masked by length, where the trace and the console hold the slot.
     expect(r.records.trace).toContain(`<${MESSAGE.length} chars>`);
     expect(r.records.console).toContain(`<${MESSAGE.length} chars>`);
@@ -119,18 +144,51 @@ describe('redact: length-summarized (live findings, item 20)', () => {
   });
 
   it('says the message word for word when the span falls back, still in no record', async () => {
-    const r = await call({ spans: { confirm_take_message: new Error('HTTP 500') } }, TO_YES.slice(0, 4));
+    const r = await call({ spans: { confirm_take_message: new Error('HTTP 500') } }, TO_READ_BACK);
     expect(r.said).toContain(`called and left this message: ${MESSAGE}. Shall I pass it on?`);
     expect(r.session.slots.message!.value).toBe(MESSAGE);
-    for (const [where, text] of Object.entries(r.records)) {
-      for (const piece of PIECES) expect(text, `${where}: ${piece}`).not.toContain(piece);
+    nowhere(r.records, PIECES);
+  });
+
+  it('an interruption during the read-back: what was heard of our line is kept by its length', async () => {
+    const r = await call({}, [...TO_READ_BACK, { interrupt: "Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: please call me about the March" }]);
+    nowhere(r.records, PIECES);
+  });
+
+  it('"read that back word for word": the exact words are said again, and recorded by their length', async () => {
+    const r = await call({}, [...TO_READ_BACK, 'can you read that back word for word']);
+    expect(r.said).toContain(`called and left this message: ${MESSAGE}. Shall I pass it on?`);
+    nowhere(r.records, PIECES);
+  });
+
+  it('the message on a retry, at the name question, and with the request: every caller\'s words by their length', async () => {
+    for (const steps of [
+      ['can I leave a message for Dana', "it's Morgan Lee", 'five five five five five five zero one four two', 'um', MESSAGE],
+      ['can I leave a message for Dana', `it's Morgan Lee, ${MESSAGE}`],
+      [`can I leave a message for Dana, ${MESSAGE}`],
+    ]) {
+      const r = await call({}, steps);
+      nowhere(r.records, PIECES);
     }
+  });
+
+  it('a short message ("call me") is masked in our lines too; a message "yes" does not corrupt the questions, options or answers', async () => {
+    const short = await call({}, [...TO_READ_BACK.slice(0, 3), 'call me']);
+    expect(short.session.slots.message!.value).toBe('call me');
+    expect(short.said).toContain('left this message: call me');
+    nowhere(short.records, ['call me']);
+    const yes = await call({}, [...TO_READ_BACK.slice(0, 3), 'yes']);
+    expect(yes.session.slots.message!.value).toBe('yes');
+    // The questions and the options are the app's words, kept whole: the intent's options among them.
+    expect(yes.records.trace).toContain('"dana":"The message is for Dana Reyes');
+    expect(yes.records.trace).toContain('"intent":{"type":"choice"');
   });
 
   it('is listed on the policy card as sent whole to the render model to summarize, masked in the records', () => {
     const card = policyCardText(app, MESSAGE_DIR);
     expect(card).toContain('Sent whole to the render model to summarize; masked in the records');
     expect(card).toContain('| `message` | `confirm_take_message` | by its length, in every record');
-    expect(card).toContain('the drift check, which is given the words as quoted');
+    expect(card).toContain('the drift check, which is given the words as quoted. No other line is sent the caller\'s words.');
+    expect(card).toContain('a handoff (by its length, whatever app.yaml\'s handoff.data says)');
   });
 });

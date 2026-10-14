@@ -361,10 +361,11 @@ export interface SlotSpec {
    * one named exception to "a model is never sent a value the records hide whole". The value is kept
    * in the session (the app's lines say it, a tool is sent it), masked by its length in every record
    * (the trace, the frame log, the console, the audit, a handoff), the words of the turn that gave it
-   * among them, and sent whole to the render model only to summarize it: a framed line's span worded
-   * from it, or a line generated from it (`from`), with the decision model's checks of that line (the
-   * content screened again, the drift judge's quoted words). Never a line that names it as an item.
-   * `pnpm check` refuses it on an identity factor and on a slot no generated line summarizes; the
+   * among them (in such an app every caller's words are), and sent whole to the render model only for
+   * a framed line's span worded from it, with the decision model's checks of that span (the content
+   * screened again, the drift judge's quoted words). Never a line generated whole from it, nor one
+   * that names it as an item, and no other line is sent the caller's words. `pnpm check` and
+   * validateApp refuse it on an identity factor; check, on a slot no framed span summarizes; the
    * policy card lists it.
    */
   summarized?: true;

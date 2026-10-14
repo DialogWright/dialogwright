@@ -555,10 +555,13 @@ function wordingSection(app: App): string[] {
   if (summarized.length > 0) {
     out.push('', 'Sent whole to the render model to summarize; masked in the records (a `text` slot\'s `redact: length-summarized`, the one exception to "never a value the records hide whole"):', '', '| Slot | Summarized by | Recorded as |', '| --- | --- | --- |');
     for (const slot of summarized) {
-      const by = Object.entries(g.lines).filter(([, l]) => (l.spans !== undefined ? Object.values(l.spans).map((sp) => sp.from) : (l.from ?? [])).includes(slot)).map(([id]) => code(id));
-      out.push(`| ${code(slot)} | ${by.length === 0 ? 'nothing' : by.join(', ')} | by its length, in every record: the trace (the words of the turn that gave it, and a summary of it, too), the frame log (which keeps no caller's words at all), the console, the audit and a handoff |`);
+      const by = Object.entries(g.lines).filter(([, l]) => l.spans !== undefined && Object.values(l.spans).some((sp) => sp.from === slot)).map(([id]) => code(id));
+      out.push(`| ${code(slot)} | ${by.length === 0 ? 'nothing' : by.join(', ')} | by its length, in every record: the trace and the console (the slot, our lines that say it or its summary, with that part by its length), the audit, and a handoff (by its length, whatever app.yaml\'s handoff.data says) |`);
     }
-    out.push('', 'Its words go whole to the render model only for a line that summarizes them (never a line that names them as an item), and to the decision model\'s checks of that line: the content screened again for an injection, and the drift check, which is given the words as quoted. The app\'s own lines say them, and a tool is sent them.');
+    out.push(
+      '',
+      'Its words go whole to the render model only for the span that summarizes them (a framed line\'s span worded from the slot; never a line generated whole from it, nor one that names it), and to the decision model\'s checks of that span: the content screened again for an injection, and the drift check, which is given the words as quoted. No other line is sent the caller\'s words. The app\'s own lines say them, and a tool is sent them. In such an app every caller\'s words are kept by their length: in the trace and on the console (the words of every turn, and the parts of them the model was asked about), and in the frame log, written before any turn has read them, which keeps none (a call of such an app cannot be replayed from it). The session store holds the words while the call is open, as it holds every slot\'s value.',
+    );
   }
   out.push('');
   if (g.prescribed.length === 0) out.push('No line is marked prescribed (`prescribed: true`).');

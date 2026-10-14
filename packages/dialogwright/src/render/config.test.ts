@@ -327,20 +327,22 @@ describe('a slot masked in the records that a model summarizes (redact: length-s
   const problems = (prompts: Record<string, PromptYaml>, factors: string[] = []) =>
     generatedWordingProblems({ prompts, forms, localePrompts: {}, identifierVars: new Set(['message', ...factors]), slots: ['caller', 'message'], summarized: ['message'], factors }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
 
-  it('lets a framed span, or a line generated from it, be worded from it; a line naming it as an item stays refused', () => {
+  it('lets a framed span be worded from it; a line generated whole from it, or naming it as an item, stays refused', () => {
     expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }) })).toEqual([]);
-    expect(problems({ confirm_f: line('Your message: {message}. Shall I pass it on?', { mode: 'generative', goal: 'Read it back.', from: ['message'] }) })).toEqual([]);
+    expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }), whole: line('Your message: {message}. Shall I pass it on?', { mode: 'generative', goal: 'Read it back.', from: ['message'] }) })).toEqual([
+      'prompts.yaml prompts.whole.from: the line "whole" is generated whole from {message} (redact: length-summarized), which only a framed line\'s span may summarize: a line generated whole from it would carry what a model wrote of it in the line itself, said, sent and recorded as the line',
+    ]);
     expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }), other: line('You said {message}.', { mode: 'generative', goal: 'Say it.' }) })).toEqual([
       'prompts.yaml prompts.other.mode: the line "other" is generated, but it names {message}, which holds an identifier (an identity factor, or a slot hidden whole in the records); a generated line is never sent an identifier',
     ]);
     // A form's switch leaves a line that names it as an item fixed.
-    const g = generatedWordingOf({ prompts: { confirm_f: line('So {caller}, and {message}?') }, forms: { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f', wording: 'generative' }) }, style: null, localePrompts: {}, identifierVars: new Set(['message']), summarized: new Set(['message']) });
+    const g = generatedWordingOf({ prompts: { confirm_f: line('So {caller}, and {message}?') }, forms: { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f', wording: 'generative' }) }, style: null, localePrompts: {}, identifierVars: new Set(['message']) });
     expect(g).toBeUndefined();
   });
 
-  it('check refuses it on a slot no generated line summarizes, and on an identity factor', () => {
+  it('check refuses it on a slot no framed span summarizes, and on an identity factor', () => {
     expect(problems({ ask: line('What is the message?') })).toEqual([
-      'slots.yaml message.redact: the slot "message" says "redact: length-summarized", but no generated line summarizes it (no framed span and no line generated from it), so nothing would be sent to a model and the setting only names an exception it does not use',
+      'slots.yaml message.redact: the slot "message" says "redact: length-summarized", but no framed line\'s span summarizes it, so nothing would be sent to a model and the setting only names an exception it does not use',
     ]);
     expect(problems({ confirm_f: line(FRAME, { generate: { summary: { from: 'message', goal: 'Sum it up.' } } }) }, ['message'])).toEqual([
       'slots.yaml message.redact: the slot "message" is an identity factor, and "redact: length-summarized" would send it whole to a model; an identity factor is never sent to one',

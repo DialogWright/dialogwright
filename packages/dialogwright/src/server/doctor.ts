@@ -13,7 +13,7 @@ import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
-import { generatedWordingOf, identifierVarsFrom, summarizedVarsFrom } from '../render/config';
+import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { renderSettings, resolveRenderProvider, thinkingLabel } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
@@ -414,7 +414,6 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   const g = generatedWordingOf({
     prompts: loaded.prompts[loaded.defaultLocale] ?? {}, forms: loaded.forms.forms, style: loaded.style, localePrompts: {},
     identifierVars: identifierVarsFrom(slots, loaded.identity?.levels[1].factors ?? []),
-    summarized: summarizedVarsFrom(slots, loaded.identity?.levels[1].factors ?? []),
   });
   const lines = g === undefined ? 0 : Object.keys(g.lines).length;
   if (lines === 0) return [];

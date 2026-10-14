@@ -380,6 +380,10 @@ export async function replayFrameLines(
   onRun?: (run: TurnRun) => void,
   options?: { todayIsoOverride?: string },
 ): Promise<ReplayResult> {
+  // A frame log of an app with a slot masked in the records whose words a model summarizes (redact:
+  // length-summarized) keeps no caller's words, only their length: there is nothing to replay.
+  const masked = lines.find((l) => l.dir === 'in' && isMaskedWords(l.msg));
+  if (masked !== undefined) throw new Error(`frame log line ${masked.line}: the caller's words are kept by their length only (an app with a slot whose redact is length-summarized keeps no caller's words in its frame log), so this call cannot be replayed; its trace shows each turn as it ran`);
   const skipped: string[] = [...skippedReading];
   const runs: TurnRun[] = [];
   let session: Session | null = null;
@@ -596,4 +600,12 @@ export async function replayFrameLines(
   const diverged = routeDivergence(loggedRoutes(lines), runs.flatMap((r) => (r.result.routes ?? []).map(routeKey)));
   if (diverged !== null) skipped.push(diverged);
   return { runs, records: runs.map((r) => r.record), skipped };
+}
+
+/** An inbound line whose caller's words are kept by their length only (a prompt's or a typed text's `<n chars>`). */
+function isMaskedWords(msg: unknown): boolean {
+  if (typeof msg !== 'object' || msg === null) return false;
+  const m = msg as { type?: unknown; voicePrompt?: unknown; text?: unknown };
+  const words = m.type === 'prompt' ? m.voicePrompt : m.type === 'text' ? m.text : undefined;
+  return typeof words === 'string' && /^<\d+ chars>$/.test(words);
 }

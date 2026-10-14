@@ -13,7 +13,7 @@ import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextC
 import { slotOutcomeOf } from '../core/outcome';
 import { outcomeFrom, parseOnMaxAttempts, slotAttemptsSchema } from './schema/outcome';
 import { handoffPromptId } from '../prompts/render';
-import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom, summarizedVarsFrom } from '../render/config';
+import { generatedWordingOf, generatedWordingProblems, identifierVarsFrom } from '../render/config';
 import { VAR } from '../prompts/segments';
 import type { SlotSource } from '../slots/defineSlot';
 import { mergeSlotTypes, resolveSlots, type ResolvedSlots } from '../slots/resolveSlots';
@@ -1059,7 +1059,6 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     style: config.style,
     localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)),
     identifierVars: identifierVarsFrom(slots, config.identity?.levels[1].factors ?? []),
-    summarized: summarizedVarsFrom(slots, config.identity?.levels[1].factors ?? []),
   }));
   put(app, 'locales', localesOf(config));
   put(app, 'principals', code.principals);

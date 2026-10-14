@@ -10,6 +10,8 @@ import { HeuristicStubClient } from '../jev/heuristicStub';
 import { FakeRenderClient } from '../render/fake';
 import { messageApp } from '../testing/message/app';
 import type { Renderer } from '../render/types';
+import type { App } from '../core/app/types';
+import { messageVariants, SUMMARIZED } from '../testing/message/variant';
 
 /**
  * Generated wording on the phone line: an app that generates lines gets its renderer from its own
@@ -26,18 +28,32 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-async function start(env: Record<string, string>, renderer?: Renderer) {
+async function start(env: Record<string, string>, renderer?: Renderer, app: App = messageApp) {
   resetAppsForTest();
-  registerApp(messageApp);
+  registerApp(app);
   const dir = mkdtempSync(join(tmpdir(), 'wording-'));
   dirs.push(dir);
   const config = loadConfig({ PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', SIGNATURE_CHECK: 'off', TODAY_OVERRIDE: '2026-10-13', TRACE_DIR: dir, AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir });
   const logs: string[] = [];
-  running = await startServer(config, { host: '127.0.0.1', client: new HeuristicStubClient({ todayIso: '2026-10-13', app: messageApp }), log: (l) => logs.push(l), env, ...(renderer ? { renderer } : {}) });
+  running = await startServer(config, { host: '127.0.0.1', client: new HeuristicStubClient({ todayIso: '2026-10-13', app }), log: (l) => logs.push(l), env, ...(renderer ? { renderer } : {}) });
   return { logs, ws: `ws://127.0.0.1:${running.port}` };
 }
 
 describe('generated wording on the phone line', () => {
+  it('says at start that an app with a slot masked in the records whose words a model summarizes keeps no caller words', async () => {
+    const variants = messageVariants();
+    try {
+      const { logs } = await start({}, undefined, variants.variant(SUMMARIZED));
+      expect(logs).toContain('frame log and trace keep no caller words (slot message: length-summarized)');
+    } finally {
+      await running?.close();
+      running = null;
+      variants.remove();
+    }
+    const plain = await start({});
+    expect(plain.logs.some((l) => l.includes('keep no caller words'))).toBe(false);
+  });
+
   it('with RENDER_PROVIDER unset, every line is said fixed, and the server says so', async () => {
     const { logs } = await start({});
     expect(logs).toContain('generated wording: 9 lines generated, RENDER_PROVIDER unset: every line said fixed');

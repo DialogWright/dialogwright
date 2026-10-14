@@ -16,7 +16,7 @@ import { tokenHash, type ChatStateStore, type StoredChat } from '../stores/types
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isAnonymous, type Party } from '../../gate/types';
 import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
-import { framesMaskWords, turnScrubber } from '../../trace/redact';
+import { framesMaskWords, summaryTexts, turnScrubber } from '../../trace/redact';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
 import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
@@ -335,7 +335,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     for (const r of runs) {
       const app = appOf(r.result.session);
       // Built from the session after the turn and its decision, as the voice frame log's is.
-      const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, r.record.render);
+      const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, summaryTexts(r.record.render, app));
       for (const m of actionsToChatMessages(r.result.actions, defaultLocaleOf(app))) {
         sendTo(e, m, scrub);
         last = m.type;

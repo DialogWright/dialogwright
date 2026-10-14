@@ -82,7 +82,7 @@ export const textOptions = z
       .default('length')
       .describe(
         '"length": the words leave the turn (the trace, a tool call\'s param) as their length only, and the display is kept. "none": as they are. ' +
-          '"length-summarized": for words a model summarizes (a framed read-back\'s span worded from them, or a line generated from them): masked by their length in every record (the trace, the frame log, the console, the audit, a handoff; the display and the words of the turn that gave them too), kept in the session so the app\'s lines say them and a tool is sent them, and sent whole to the render model only to summarize them. The one named exception to "a model is never sent a value the records hide whole"; the policy card lists it. Refused on an identity factor and on a slot no generated line summarizes (use length there).',
+          '"length-summarized": for words a model summarizes in a framed read-back (a span worded from them; never a line generated whole from them): kept in the session so the app\'s lines say them and a tool is sent them, sent whole to the render model only for that span, and masked by their length in every record (the trace, the frame log, the console, the audit, a handoff, the display too); in such an app every caller\'s words are kept by their length in those records, and no other line is sent them. The one named exception to "a model is never sent a value the records hide whole"; the policy card lists it. Refused on an identity factor and on a slot no framed span summarizes (use length there).',
       ),
     pick: pickOption.optional(),
     numbers: z

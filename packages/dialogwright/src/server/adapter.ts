@@ -26,8 +26,7 @@ import type { DashboardBus } from './dashboard/bus';
 import { maskNumber, redactSetupFrame, type DashboardEvent } from './dashboard/events';
 import { maskTarget, parseHandoff, targetNumber, type ServerTransfer } from './transfer';
 import { deliveryFactOf, interruptFact } from './dashboard/delivery';
-import { framesMaskWords, redactHandoffData, turnScrubber } from '../trace/redact';
-import type { TraceRecord } from '../trace/types';
+import { framesMaskWords, redactHandoffData, slotsScrubber, summaryTexts, turnScrubber } from '../trace/redact';
 import { resolveService, type ServiceUrls } from './services';
 import { codeLengthOf } from '../core/app/lookup';
 import { appOf } from '../core/app/registry';
@@ -1546,15 +1545,32 @@ function respelled(frame: OutboundFrame, list: PronounceList | undefined): Outbo
 /** A line the carrier runs into the next one, ending with a space (sendFrames). */
 const spaced = (token: string, joined: boolean): string => (joined && !/\s$/.test(token) ? `${token} ` : token);
 
-/** The render record of the turn a decision came from (TraceRecord.render), for the frame log's scrub (sendFrames). */
-const RENDERED = new WeakMap<object, NonNullable<TraceRecord['render']>>();
+/**
+ * The words a model gave this call for a span worded from a slot the records mask (redact:
+ * length-summarized), each as its slot's text (trace/redact.ts summaryTexts): the frame log's scrub of
+ * every line sent masks them, a line said again or on a new socket among them (sendFrames).
+ */
+const SUMMARIES = new WeakMap<CallEntry, [string, unknown][]>();
+
+/**
+ * What an interruption heard of our line, as the frame log (`length`) and the live console (`keep`) keep
+ * it: scrubbed of each redacted slot's value as the trace scrubs the turn's `heard` (cut off as said, so
+ * a value's start is masked too), and in an app with a slot masked in the records whose words a model
+ * summarizes, by its length alone (the line may carry the message, or its summary).
+ */
+function interruptHeard(entry: CallEntry, text: string, mode: 'length' | 'keep'): string {
+  const app = appOf(entry.session);
+  if (framesMaskWords(app)) return text === '' ? text : `<${text.length} chars>`;
+  const scrub = slotsScrubber(entry.session.slots, entry.session.pendingConfirmation ?? null, mode, app, SUMMARIES.get(entry) ?? [], { cutOff: true });
+  return scrub === null ? text : scrub(text);
+}
 
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const sent: OutboundFrame[] = [];
   // Built from the session as it is now (its slots and readback) and the decision the frames say.
-  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session), typeof decision === 'object' && decision !== null ? RENDERED.get(decision) : undefined);
+  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session), SUMMARIES.get(entry) ?? []);
   // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
   const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
   const voice = appOf(entry.session).voice;
@@ -1756,7 +1772,8 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     const sentAtMs = Date.now();
     // What a model gave for a span worded from a slot the records mask (redact: length-summarized) is
     // masked in the frame log as the words are, here and when the lines are said again.
-    if (run.record.render !== undefined) RENDERED.set(run.result.decision, run.record.render);
+    const summaries = summaryTexts(run.record.render, appOf(entry.session));
+    if (summaries.length > 0) SUMMARIES.set(entry, [...(SUMMARIES.get(entry) ?? []), ...summaries]);
     const sent = await sendFrames(deps, entry, at >= 0 ? frames.slice(0, at) : frames, run.result.decision);
     // A caller may come back in over the reply to a final prompt (a caller who had not finished).
     if (sent.some((f) => f.type === 'text' || f.type === 'play')) noteReply(entry, event, sentAtMs);
@@ -2189,7 +2206,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     ? { type: 'dtmf', digit: CODE_DIGIT }
     // An app with a slot the records mask whose words a model summarizes (redact: length-summarized): the
     // frame log keeps no caller's words, only their length (trace/redact.ts framesMaskWords).
-    : frame.type === 'prompt' && framesMaskWords(appOf(entry.session)) ? { ...frame, voicePrompt: `<${frame.voicePrompt.length} chars>` } : frame;
+    : frame.type === 'prompt' && framesMaskWords(appOf(entry.session)) ? { ...frame, voicePrompt: `<${frame.voicePrompt.length} chars>` }
+    // What an interruption heard of our line, scrubbed as the trace scrubs it (a redacted value, cut off as said).
+    : frame.type === 'interrupt' ? { ...frame, utteranceUntilInterrupt: interruptHeard(entry, frame.utteranceUntilInterrupt, 'length') }
+    : frame;
   // A final prompt from a caller who came back in over the last reply continues the one before it;
   // logged ahead of the prompt's own line, where replay reads it. Then this prompt's speech is the one followed.
   // A final prompt that comes while words are held is joined to them (holdWords): it continues nothing else.
@@ -2223,7 +2243,7 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   if (frame.type === 'interrupt') {
     // Our line as written, as the turn will record it (run/turn.ts): the carrier echoes the respellings it was sent.
     const heard = unpronounce(frame.utteranceUntilInterrupt, pronounceFor(appOf(entry.session).voice, localeOf(entry.session)));
-    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: heard });
+    publish(deps, { type: 'interrupt', callSid: ctx.callSid, at: Date.now(), utteranceUntilInterrupt: interruptHeard(entry, heard, 'keep') });
     // Whether it was the caller's is decided below (a spurious interrupt), and is a fact of its own.
     publish(deps, { type: 'delivery', callSid: ctx.callSid, at: Date.now(), fact: interruptFact(frame.durationUntilInterruptMs) });
   }

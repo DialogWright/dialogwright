@@ -417,6 +417,9 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // from its own settings; an app that generates none has none, and every line of it is as it was.
   const renderers = new Map<string, Renderer>();
   for (const a of appsRun) {
+    // A slot the records mask whose words a model summarizes (redact: length-summarized): no caller's words are kept.
+    const masked = Object.keys(a.app.slots).filter((id) => a.app.slots[id]!.summarized === true);
+    if (masked.length > 0) log(`${tag(a.id)}frame log and trace keep no caller words (${masked.map((id) => `slot ${id}`).join(', ')}: length-summarized)`);
     if (!generatesLines(a.app)) continue;
     const lines = Object.keys(a.app.generated!.lines).length;
     if (overrides.renderer) {

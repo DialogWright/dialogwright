@@ -36,6 +36,9 @@ describe('validateApp', () => {
     expect(() => validateApp({ ...copy(), slots: { ...testkitApp.slots, [factor]: { ...spec, redact: 'length', statement: false, summarized: true } } })).toThrow(`slot "${factor}" is an identity factor, and summarized would send it whole to a model`);
     const other = Object.keys(testkitApp.slots).find((s) => !testkitApp.identity!.factorSlots.includes(s))!;
     expect(() => validateApp({ ...copy(), slots: { ...testkitApp.slots, [other]: { ...testkitApp.slots[other]!, redact: undefined, summarized: true } } })).toThrow(`slot "${other}" says summarized, which needs redact: 'length' and statement: false`);
+    const marked = { ...testkitApp.slots, [other]: { ...testkitApp.slots[other]!, redact: 'length' as const, statement: false as const, summarized: true as const } };
+    const whole = { lines: { readBack: { goal: 'Read it back.', by: 'prompt' as const, from: [other] } }, prescribed: [], style: { persona: 'p', words: { voice: 25, chat: 40 }, avoid: [] }, localeGoals: {} };
+    expect(() => validateApp({ ...copy(), slots: marked, generated: whole })).toThrow(`the line "readBack" is generated whole from slot "${other}" (summarized), which only a framed line's span may summarize`);
   });
 
   it('takes a menu key from the greeting on (fromGreeting) as true or false, and refuses anything else', () => {
