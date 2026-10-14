@@ -120,6 +120,28 @@ describe('ModelRenderClient', () => {
     expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'summary', { ...span, goal: 'Sum it up.' }));
   });
 
+  it('a line is told what an acknowledgement may do: show the caller was heard, never what the agent will do, never a name the caller gave as someone else\'s', async () => {
+    // The first recording with a real model (live findings, item 18): every fallback was an
+    // acknowledgement that promised ("I can take a message for ...") or called the caller by the name
+    // they had given as the recipient's. The sentence is sent with every whole line, both providers.
+    const sentence = 'An acknowledgement only shows the caller was heard: it never says what the agent can or will do ("I can...", "I\'ll...", "happy to help with..."), and it calls the caller by a name only when "heard" gives that name as their own: a name the caller mentions (who something is for, say) is not theirs.';
+    expect(RENDER_INSTRUCTIONS).toContain(sentence);
+    // Right after the line's permission to acknowledge, which it bounds.
+    expect(RENDER_INSTRUCTIONS).toContain(`be warmer or plainer when they are frustrated ("frustration"). ${sentence} Say every value in "items"`);
+    sent.length = 0;
+    for (const [provider, keyVar, answer] of [['anthropic', 'ANTHROPIC_API_KEY', { content: [{ type: 'text', text: 'And who is the message from?' }], stop_reason: 'end_turn' }], ['openrouter', 'OPENROUTER_API_KEY', { choices: [{ message: { content: 'And who is the message from?' } }] }]] as const) {
+      const p = resolveRenderProvider({ RENDER_PROVIDER: provider, [keyVar]: KEY })!;
+      await new ModelRenderClient(p, answering(200, answer)).generate(req, signal);
+    }
+    const [a, o] = sent.map((x) => JSON.parse(String(x.init.body)));
+    expect(a.system).toContain(sentence);
+    expect(o.messages[0].content).toContain(sentence);
+    // A span acknowledges nothing: its instructions are unchanged, so a recorded span is replayed by the same key.
+    expect(SPAN_INSTRUCTIONS).not.toContain('An acknowledgement');
+    const span: SpanAct = { kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
+    expect(spanKey('confirm_take_message', 'summary', span)).toBe('82c11e6f76db15de0a40c19507714b0aa9346faff1aab7def851d47d4f53198b');
+  });
+
   it('says which model, from where, never the key', () => {
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY })!;
     expect(renderLines(p)).toEqual(['generated lines worded by claude-haiku-5-5 from anthropic']);

@@ -8,7 +8,7 @@
 {"id":"ms-02","text":"tell her the boiler inspection moved to next Tuesday morning","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
 {"id":"sm-01","text":"yes, pass it on","intent":"none","context":"confirm_take_message","confirm":"yes"}
 {"id":"sm-02","text":"no, that's not quite what I said","intent":"none","context":"confirm_take_message","confirm":"no"}
-{"id":"sm-03","text":"read it back","intent":"none","context":"confirm_take_message","confirm":"no"}
+{"id":"sm-03","text":"read it back","intent":"none","context":"confirm_take_message","confirm":"no","knownGap":{"reason":"'read it back' at the read-back: the model reads a request to hear it again (intent repeat_prompt 0.99, confirmsNo 0.15), so the line is replayed rather than read back on a no: the caller hears the read-back again with the message word for word all the same (a repeat says the line's fixed text, its frame with the exact message), only without 'Here it is exactly as I took it down.' first; a bare no after it then reads it back once more before asking what to change","outcome":{"decision":"replay","promptId":null,"acks":[],"decidedGate":"intent","verdict":"replay"}}}
 {"id":"rp-01","text":"can you read that back word for word","intent":"repeat_prompt","context":"confirm_take_message"}
 {"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}
 {"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}

@@ -120,9 +120,17 @@ describe('a generated line', () => {
       expect(again.runs.at(-1)!.result.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message', exact: true });
       expect(lastSaid(again)).toContain(`Your message: ${MESSAGE}.`);
     }
-    const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], fake());
-    expect(repeat.runs.at(-1)!.result.decision.kind).toBe('replay');
-    expect(lastSaid(repeat)).toContain(`Your message: ${MESSAGE}.`);
+    // A repeat of the summary the caller has just heard generated says its fixed text, the message word
+    // for word, on a call and in a chat: the session keeps the fixed line, and a replay is never worded.
+    for (const as of [undefined, 'web']) {
+      const client = new FakeRenderClient();
+      const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], { client }, [], as);
+      expect(repeat.runs.at(-2)!.record.render!.lines.find((l) => l.promptId === 'confirm_take_message')).toMatchObject({ mode: 'generated' });
+      expect(repeat.runs.at(-1)!.result.decision.kind).toBe('replay');
+      expect(lastSaid(repeat)).toBe(`For Dana Reyes, from Morgan Lee, call back on 555 555 0142. Your message: ${MESSAGE}. Shall I pass it on?`);
+      expect(repeat.runs.at(-1)!.record.render?.lines ?? []).toEqual([]);
+      expect(client.asked.filter((a) => a.promptId === 'confirm_take_message')).toHaveLength(1);
+    }
   });
 });
 
@@ -396,8 +404,17 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     const no = await call([...TO_SUMMARY, { say: "no, that's not quite what I said" }], fake());
     expect(spanOf(no)).toMatchObject({ span: 'summary', mode: 'fixed', skipped: 'exact' });
     expect(lastSaid(no)).toBe(`Here it is exactly as I took it down. ${EXACT}`);
-    const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], fake());
-    expect(lastSaid(repeat)).toBe(EXACT);
+    // A repeat of the read-back the caller has just heard with its span generated: the frame with the
+    // message word for word, on a call and in a chat, asking nothing of the renderer.
+    for (const as of [undefined, 'web']) {
+      const client = new FakeRenderClient();
+      const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], { client }, [], as);
+      expect(repeat.runs.at(-2)!.record.render!.lines.find((l) => l.promptId === 'confirm_take_message')).toMatchObject({ span: 'summary', mode: 'generated' });
+      expect(repeat.runs.at(-1)!.result.decision.kind).toBe('replay');
+      expect(lastSaid(repeat)).toBe(EXACT);
+      expect(repeat.runs.at(-1)!.record.render?.lines ?? []).toEqual([]);
+      expect(client.askedSpans.filter((a) => a.promptId === 'confirm_take_message')).toHaveLength(1);
+    }
     // Read again after a change: not its first reading, so its fixed text.
     const changed = await call([...TO_SUMMARY, { say: "no, that's not quite what I said" }, { say: "no, that's not quite what I said" }, { say: 'it is for Lee' }], fake());
     const last = changed.runs.at(-1)!;
