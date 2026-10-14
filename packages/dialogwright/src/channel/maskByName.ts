@@ -145,6 +145,28 @@ export function maskCopiesOf(fields: Readonly<Record<string, string>>, number: s
   }));
 }
 
+/** What may stand between two digits of a number a line says or a carrier echoes: spaces, a comma, a dot, a hyphen, a slash or a bracket, a few at most. */
+const SPOKEN_DIGIT_GAP = '[\\s,.\\-/()]{0,3}';
+
+/**
+ * Free text (our own line as the frame log records it, a carrier's report of the line it played) with
+ * every copy of the caller's `number` masked as `records` write it (maskCallerValue: by its last four,
+ * "…0142"), however it is spaced or grouped: whole or from its last seven digits on (the national or the
+ * local number), its digits run together, in groups ("555 555 0142", "(555) 555-0142"), or one by one as
+ * the voice says them ("5 5 5, 5 5 5, 0 1 4 2"), never inside a longer run of digits. Null, nothing to
+ * mask, for a number of fewer than seven digits, none, and records that keep the caller's number. For
+ * the records only: never what is delivered.
+ */
+export function callerNumberScrub(number: string | undefined | null, records: NumberRecords = DEFAULT_RECORDS): ((text: string) => string) | null {
+  const digits = (number ?? '').replace(/\D/g, '');
+  if (digits.length < 7 || records.callerNumber === 'keep') return null;
+  const shown = maskCallerValue(number!, records);
+  const forms: string[] = [];
+  for (let n = digits.length; n >= 7; n--) forms.push([...digits.slice(-n)].join(SPOKEN_DIGIT_GAP));
+  const pattern = new RegExp(`(?<!\\p{N})\\+?\\(?(?:${forms.join('|')})(?!\\p{N})`, 'gu');
+  return (text) => text.replace(pattern, shown);
+}
+
 /** The caller's name a carrier sends (CNAM: Twilio's `CallerName`, Telnyx's caller ID name), written `redacted` unless `records.callerName` is `keep`. */
 export const NAME_KEYS = new Set(['callername', 'calleridname', 'caller_id_name']);
 /** Dropped outright; the account id identifies the carrier's account, not the call. */

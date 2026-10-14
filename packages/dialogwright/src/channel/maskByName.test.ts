@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RECORDS, floorByName, maskAddress, maskCallerValue, maskCopiesOf, maskUri, recordsOf } from './maskByName';
+import { callerNumberScrub, DEFAULT_RECORDS, floorByName, maskAddress, maskCallerValue, maskCopiesOf, maskUri, recordsOf } from './maskByName';
 import { redactDeep } from '../server/dashboard/events';
 
 /**
@@ -85,5 +85,21 @@ describe('the records setting (app.yaml records, live findings item 26)', () => 
     expect(floorByName('callerName', 'Jordan Avery')).toBe('redacted');
     expect(floorByName('callerName', 'Jordan Avery', { ...DEFAULT_RECORDS, callerName: 'keep' })).toBe('Jordan Avery');
     expect(maskCopiesOf({ X: '+15555550142' }, '+15555550142', { ...DEFAULT_RECORDS, callerNumber: 'keep' })).toEqual({ X: '+15555550142' });
+  });
+});
+
+describe('every copy of the caller\'s number in free text, however spaced (callerNumberScrub, live findings item 28)', () => {
+  const scrub = callerNumberScrub('+15555550142')!;
+  it('masks it whole, national, local, grouped, or digit by digit as the voice says it, by its last four', () => {
+    expect(scrub('We will call you on 5 5 5, 5 5 5, 0 1 4 2. Is that right?')).toBe('We will call you on …0142. Is that right?');
+    expect(scrub('on +1 555 555 0142, or (555) 555-0142, or 5555550142, or 555-0142')).toBe('on …0142, or …0142, or …0142, or …0142');
+  });
+  it('leaves other numbers, a longer run, and the last four alone', () => {
+    expect(scrub('ending in 0142, order 25555550142 and 555 555 0199')).toBe('ending in 0142, order 25555550142 and 555 555 0199');
+  });
+  it('is nothing to do with records that keep the caller\'s number, or with no number of seven digits', () => {
+    expect(callerNumberScrub('+15555550142', { ...DEFAULT_RECORDS, callerNumber: 'keep' })).toBeNull();
+    expect(callerNumberScrub(undefined)).toBeNull();
+    expect(callerNumberScrub('0142')).toBeNull();
   });
 });

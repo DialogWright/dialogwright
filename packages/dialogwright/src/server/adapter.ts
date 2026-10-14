@@ -1,6 +1,6 @@
 import { callerAttestationIn, callerWithheldIn, endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
 import { isWithheldCaller, keptCallerNumber } from '../core/callerNumber';
-import { maskCallerValue, recordsOf, type NumberRecords } from '../channel/maskByName';
+import { callerNumberScrub, maskCallerValue, recordsOf, type NumberRecords } from '../channel/maskByName';
 import type { PlaybackEvent } from './voice/provider';
 import type { InboundFrame, OutboundFrame, SetupFrame } from '../channel/relay/frames';
 import { bargeInFrame, serviceResultFrame, endFrame, silenceFrame, textFrame } from '../channel/relay/frames';
@@ -36,7 +36,7 @@ import type { App, HandoffWording, SpokenDigitRule } from '../core/app/types';
 import type { Effect } from '../core/lifecycle';
 import { summarizeHandoff as summarizeHandoffDefault, type SummaryOptions } from '../handoff/summary';
 import type { AuditEntry } from '../audit/types';
-import { carryScrub, registerScrub, scrubberOf, scrubFromParts, scrubParts, type Scrub, type ScrubPart } from '../core/recording';
+import { bothScrubs, carryScrub, registerScrub, scrubberOf, scrubFromParts, scrubParts, type Scrub, type ScrubPart } from '../core/recording';
 import { serviceIdempotencyKey } from '../core/idempotency';
 import type { PendingEffect } from './stores/types';
 
@@ -1556,22 +1556,83 @@ const SUMMARIES = new WeakMap<CallEntry, [string, unknown][]>();
 /**
  * What an interruption heard of our line, as the frame log (`length`) and the live console (`keep`) keep
  * it: scrubbed of each redacted slot's value as the trace scrubs the turn's `heard` (cut off as said, so
- * a value's start is masked too), and in an app with a slot masked in the records whose words a model
- * summarizes, by its length alone (the line may carry the message, or its summary).
+ * a value's start is masked too) and of every copy of the caller's number as app.yaml's records write it,
+ * and in an app with a slot masked in the records whose words a model summarizes, by its length alone
+ * (the line may carry the message, or its summary).
  */
 function interruptHeard(entry: CallEntry, text: string, mode: 'length' | 'keep'): string {
   const app = appOf(entry.session);
   if (framesMaskWords(app)) return text === '' ? text : `<${text.length} chars>`;
-  const scrub = slotsScrubber(entry.session.slots, entry.session.pendingConfirmation ?? null, mode, app, SUMMARIES.get(entry) ?? [], { cutOff: true });
+  // And every copy of the caller's number, as the line sent is recorded (lineScrub).
+  const scrub = lineScrub(entry, slotsScrubber(entry.session.slots, entry.session.pendingConfirmation ?? null, mode, app, SUMMARIES.get(entry) ?? [], { cutOff: true }));
   return scrub === null ? text : scrub(text);
+}
+
+/**
+ * How many of a call's latest sends' scrubs are kept (LINE_SCRUBS): a carrier reports a line played a
+ * moment after it went out, by when the next turn may have sent its own.
+ */
+const LINE_SCRUBS_KEPT = 4;
+
+/**
+ * The scrubs of the redacted slot values this call's latest lines said (sendFrames: turnScrubber, before
+ * the caller's number), the latest last: a carrier's report of the line it played is masked with them
+ * (recordedCarrierEvent), so it is recorded as the line it echoes was, whatever the turn has changed since.
+ */
+const LINE_SCRUBS = new WeakMap<CallEntry, Scrub[]>();
+
+/**
+ * The scrub of our own line as the frame log records it: `scrub` (each redacted slot's value, display
+ * and digits however spaced, trace/redact.ts turnScrubber), then every copy of the number the caller is
+ * calling from, however the line spaces or groups it (digit by digit, "5 5 5, 5 5 5, 0 1 4 2", as the voice
+ * says it), masked as app.yaml's records write the caller's number (channel/maskByName.ts
+ * callerNumberScrub; whole with `records.callerNumber: keep`). For the records only: never what is sent.
+ */
+function lineScrub(entry: CallEntry, scrub: Scrub | null): Scrub | null {
+  return bothScrubs(scrub, callerNumberScrub(entry.session.callerNumber, recordsOf(appOf(entry.session))));
+}
+
+/**
+ * A carrier's own event (`{ carrierEvent }`) as the frame log records it: each string in it masked as the
+ * line it may echo was (Telnyx's tokensPlayed says the line it played, as it was sent; live findings item
+ * 28), with the scrubs of the call's latest lines (LINE_SCRUBS) and one built from the session as it is
+ * now, for a call whose lines this server did not send (one taken over). A respelling the line was sent
+ * with is read back to its word first, as the scrub finds a value as written; a string with nothing
+ * masked is kept exactly as it came. What the server reads of the event (a held end, a line cut short)
+ * reads the event as it came.
+ */
+function recordedCarrierEvent(entry: CallEntry, message: unknown): unknown {
+  const app = appOf(entry.session);
+  // The latest line's first, each slot's own masking before the caller's number's (lineScrub), as the
+  // line itself was masked: a number a redacted slot holds is recorded as that slot records it.
+  let slots: Scrub | null = null;
+  for (const s of [...(LINE_SCRUBS.get(entry) ?? [])].reverse()) slots = bothScrubs(slots, s);
+  const scrub = lineScrub(entry, bothScrubs(slots, turnScrubber(entry.session, null, 'length', app, SUMMARIES.get(entry) ?? [])));
+  if (scrub === null) return message;
+  const respell = pronounceFor(app.voice, localeOf(entry.session));
+  const mask = (text: string): string => {
+    const plain = unpronounce(text, respell);
+    const masked = scrub(plain);
+    return masked === plain ? text : pronounce(masked, respell);
+  };
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return mask(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (typeof v === 'object' && v !== null) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(message);
 }
 
 async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundFrame[], decision: unknown = null): Promise<OutboundFrame[]> {
   const log = deps.log;
   const timeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const sent: OutboundFrame[] = [];
-  // Built from the session as it is now (its slots and readback) and the decision the frames say.
-  const scrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session), SUMMARIES.get(entry) ?? []);
+  // Built from the session as it is now (its slots and readback) and the decision the frames say, with
+  // every copy of the caller's number (lineScrub); kept for the carrier's report of the lines played.
+  const slotScrub = turnScrubber(entry.session, decision, 'length', appOf(entry.session), SUMMARIES.get(entry) ?? []);
+  if (slotScrub !== null) LINE_SCRUBS.set(entry, [...(LINE_SCRUBS.get(entry) ?? []), slotScrub].slice(-LINE_SCRUBS_KEPT));
+  const scrub = lineScrub(entry, slotScrub);
   // A carrier that ends the reply at the first last: true gets it on the turn's final text frame only.
   const lastText = textLastOf(entry.provider) === 'final' ? frames.map((f) => f.type).lastIndexOf('text') : -1;
   const voice = appOf(entry.session).voice;
@@ -2121,7 +2182,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       return;
     }
     const message = JSON.parse(raw) as unknown;
-    entry.frames.write('in', { carrierEvent: message });
+    // Recorded as the line it may echo was: a report of the line played says it as it was sent.
+    entry.frames.write('in', { carrierEvent: recordedCarrierEvent(entry, message) });
     // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     const ev = playbackEventOf(ctx.provider, message);
     if (ev) {
