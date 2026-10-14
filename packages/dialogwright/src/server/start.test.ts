@@ -257,6 +257,24 @@ describe('pnpm start', () => {
     }
   });
 
+  it('takes several settings files in ENV_FILE, comma-separated, a later one winning, and hands the server the same list', async () => {
+    const { root } = workspace();
+    writeFileSync(join(root, 'line.env'), `${PHONE}PUBLIC_HOST=ivr.example.com\n`);
+    writeFileSync(join(root, 'laptop.env'), 'PUBLIC_HOST=localhost\n');
+    const h = harness(root, { env: { ENV_FILE: 'line.env,laptop.env' } });
+    const done = main(['--app', 'alpha'], h.deps);
+    await until(() => h.spawned.length === 1);
+    expect(h.spawned[0]!.options.env!.ENV_FILE).toBe(`${join(root, 'line.env')},${join(root, 'laptop.env')}`);
+    // The later file's PUBLIC_HOST: a laptop, so no tunnel and no webhook.
+    expect(h.out.join('\n')).toContain(`settings from ${join(root, 'line.env')}, ${join(root, 'laptop.env')}`);
+    expect(h.out.join('\n')).toContain('the console, on this machine: http://localhost:3100/dashboard');
+    h.spawned[0]!.exit(0);
+    await done;
+    const missing = harness(root, { env: { ENV_FILE: 'line.env,missing.env' } });
+    expect(await main(['--app', 'alpha'], missing.deps)).toBe(1);
+    expect(missing.out.join('\n')).toContain(`no settings file at ${join(root, 'missing.env')}`);
+  });
+
   it('is pnpm start at the repository root, and pnpm configure beside it, each run by tsx itself through the one command line', () => {
     // Not through a second pnpm (pnpm --filter): pnpm turns a terminal's Ctrl-C, reaching it twice, into
     // a SIGTERM for the command, and returns the prompt while the server is still draining.

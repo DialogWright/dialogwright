@@ -60,3 +60,14 @@ export const WHOLE_LINE: Record<string, (text: string) => string> = {
     from: [message]
 `),
 };
+
+/**
+ * The read-back with a frame of its own for the exact words (prompts.yaml's `exactText`): "in short"
+ * before the summary, said only with a generated span; the exact frame, without it, whenever the span is
+ * the message word for word (no renderer, a fallback, a read-back after a no, a repeat).
+ */
+export const EXACT_FRAME: Record<string, (text: string) => string> = {
+  'app.yaml': replace('id: message', 'id: message-exact'),
+  'prompts.yaml': replace(FRAMED, `${FRAMED.replace('called and left this message: {summary}', 'called and said, in short, {summary}')}    exactText: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+`),
+};

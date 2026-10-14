@@ -126,6 +126,7 @@ Drafts awaiting approval, and who has been asked (the commands are `pnpm kb:revi
 | The caller asks, at any time | `live-agent` | `handoff_live_agent` |
 | Verification fails <n> times | `identity` | `handoff_identity` |
 | <a role, a bound, a rule> | `<reason>` | `handoff_<reason>` |
+| A tool's reply fails its check (`check`) | `result-unchecked` | `handoff_result_unchecked`, else `handoff_needs_human` |
 
 ## Choices the paragraph left open
 

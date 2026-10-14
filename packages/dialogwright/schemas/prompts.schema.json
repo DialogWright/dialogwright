@@ -122,6 +122,11 @@
               "additionalProperties": false,
               "description": "One generated span of a fixed line."
             }
+          },
+          "exactText": {
+            "description": "A framed line only (`generate`): the frame said when every span is its exact content, word for word (no model set up, a check that fails, a slow model, a read-back after a no, a repeat, a reading `when` leaves fixed); `text` is then the frame said with a generated span. For a frame whose words are true of a summary only (\"called and said, in short, {summary}\"), the exact words get a frame of their own (\"called and said: {summary}\"). It names the same variables as `text`. Absent: `text` is said either way. In a locale's prompts.yaml: that locale's own, needed there where prompts.yaml gives one.",
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [

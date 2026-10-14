@@ -53,7 +53,7 @@ flowchart LR
   passed[/"Said once every check has passed<br/>visit_qualifies"/]
   c_checkOwner -.->|"passes"| passed
   c_checkArea -.->|"passes"| passed
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
   next[["Then, at once<br/>book_visit: Book a visit"]]
   done -->|"completes"| next
@@ -104,7 +104,7 @@ flowchart LR
     none["no slots"]
   end
   intent --> slots
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
 ```
 
@@ -121,7 +121,7 @@ flowchart LR
   end
   x_callTime>"When it runs out, after 2 attempts<br/>say call_time_any, skip"]
   s_callTime -.->|"runs out"| x_callTime
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
 ```
 

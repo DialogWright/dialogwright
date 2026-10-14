@@ -241,6 +241,63 @@ describe('pnpm configure with flags alone', () => {
     expect(said).not.toContain(MODEL_KEY);
   });
 
+  it('asks for the numbers app.yaml names (its transfer targets, a number callers dial), each checked, Enter a 555 number on a laptop', async () => {
+    const w = workspace();
+    writeFileSync(join(w.dir('alpha'), 'app.yaml'), [
+      'id: alpha',
+      'startParameters:',
+      '  brand: env.BRAND_CODE',
+      'transfer:',
+      '  targets:',
+      '    - when: { called: env.SALES_LINE }',
+      '      to: env.SALES_DESK',
+      '    - when: { reason: urgent }',
+      '      to: env.HANDOFF_NUMBER',
+      '  default: env.STUDIO_MAIN_LINE',
+      '',
+    ].join('\n'));
+    // A laptop: the handoff number by Enter; SALES_LINE not E.164 then by Enter; SALES_DESK a sip: URI; STUDIO_MAIN_LINE from the environment.
+    const prompt = scripted(['1', '', '555-0100', '', 'sip:desk@pbx.example.com']);
+    const o = io(w.root, prompt, { STUDIO_MAIN_LINE: '+15555550177' });
+    expect(await runSetup([], o)).toBe(0);
+    const file = join(w.dir('alpha'), '.env');
+    expect(settings(file)).toMatchObject({ HANDOFF_NUMBER: '+15555550123', SALES_LINE: '+15555550100', SALES_DESK: 'sip:desk@pbx.example.com', STUDIO_MAIN_LINE: '+15555550177' });
+    expect(settings(file).BRAND_CODE).toBeUndefined();
+    const text = readFileSync(file, 'utf8');
+    expect(text).toContain('\n# BRAND_CODE=\n');
+    expect(text).toContain("# The other values alpha's YAML names (app.yaml's startParameters.brand): set each; the server will not start without them.");
+    expect(prompt.asked.map((a) => a.question).slice(2)).toEqual([
+      "SALES_LINE, a number callers dial (E.164), as app.yaml's transfer.targets.0.when.called names it (Enter for +15555550100, which goes nowhere):",
+      "SALES_LINE, a number callers dial (E.164), as app.yaml's transfer.targets.0.when.called names it (Enter for +15555550100, which goes nowhere):",
+      "SALES_DESK, where a call is put through (E.164, or a sip: URI), as app.yaml's transfer.targets.0.to names it (Enter for +15555550101, which goes nowhere):",
+    ]);
+    expect(prompt.asked.every((a) => !a.secret)).toBe(true);
+    const said = o.lines.join('\n');
+    expect(said).toContain('SALES_LINE must be an E.164 number like +15551234567');
+    expect(said).toContain('STUDIO_MAIN_LINE from the environment: +15555550177');
+    expect(said).toContain('  STUDIO_MAIN_LINE=+15555550177');
+  });
+
+  it('takes the numbers from --number with --non-interactive: on a laptop each left out is a 555 number, on a phone line each is needed', async () => {
+    const w = workspace();
+    writeFileSync(join(w.dir('alpha'), 'app.yaml'), 'id: alpha\ntransfer:\n  default: env.STUDIO_MAIN_LINE\n');
+    const laptop = io(w.root, null);
+    expect(await runSetup(['--mode', 'try', '--non-interactive'], laptop)).toBe(0);
+    expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550100');
+    const base = ['--force', '--mode', 'phone', '--carrier', 'twilio', '--model', 'none', '--handoff', '+15555550123', '--non-interactive'];
+    const run = async (argv: string[]) => {
+      const o = io(w.root, null, { TWILIO_AUTH_TOKEN: TWILIO_TOKEN });
+      const code = await runSetup(argv, o);
+      return { code, said: o.lines.join('\n') };
+    };
+    expect(await run(base)).toEqual({ code: 2, said: expect.stringContaining('--number STUDIO_MAIN_LINE=<number> is needed with --non-interactive') });
+    expect(await run([...base, '--number', 'STUDIO_MAIN_LINE=555'])).toEqual({ code: 2, said: expect.stringContaining('STUDIO_MAIN_LINE is neither an E.164 number') });
+    expect(await run([...base, '--number', 'OTHER_LINE=+15555550177'])).toEqual({ code: 2, said: expect.stringContaining("--number OTHER_LINE=...: alpha's YAML names no number OTHER_LINE (it names STUDIO_MAIN_LINE)") });
+    expect(await run([...base, '--number', 'lower=+1'])).toEqual({ code: 2, said: expect.stringContaining('--number must be <NAME>=<number>') });
+    expect((await run([...base, '--number', 'STUDIO_MAIN_LINE=+15555550177'])).code).toBe(0);
+    expect(settings(join(w.dir('alpha'), '.env')).STUDIO_MAIN_LINE).toBe('+15555550177');
+  });
+
   it('names the flag or the variable that is missing', async () => {
     const w = workspace();
     const base = ['--app', 'alpha', '--mode', 'phone', '--non-interactive'];

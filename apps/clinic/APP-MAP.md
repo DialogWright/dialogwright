@@ -158,7 +158,7 @@ flowchart LR
     s_memberId["memberId<br/>type: digits"]
   end
   intent --> slots
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
 ```
 

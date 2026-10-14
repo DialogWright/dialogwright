@@ -277,3 +277,46 @@ describe('acknowledge: false (live findings, item 18)', () => {
     expect(warn({ ask_a: line('What is a?'), ask_a_retry: line('Sorry, a?', { acknowledge: true }) })).toEqual([]);
   });
 });
+
+describe('a framed line with a frame for the exact words (exactText; the secretary demo, live findings, item 20)', () => {
+  const SHORT = '{caller} called and said, in short, {summary}. Shall I pass it on?';
+  const EXACT = '{caller} called and said: {summary}. Shall I pass it on?';
+  const framed = (more: Partial<PromptYaml> = {}): PromptYaml => line(SHORT, { generate: { summary: { from: 'message', goal: 'Summarize it.' } }, ...more });
+  const forms = { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f' }) };
+  const problems = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}) =>
+    generatedWordingProblems({ prompts, forms, localePrompts, identifierVars: new Set(), slots: ['caller', 'message'] }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+
+  it('check holds it: on a framed line, naming the same variables as its text', () => {
+    expect(problems({ confirm_f: framed({ exactText: EXACT }) })).toEqual([]);
+    expect(problems({ confirm_f: framed({ exactText: '{caller} called and said: {message}. Shall I pass it on?' }) })).toEqual([
+      'prompts.yaml prompts.confirm_f.exactText: the line "confirm_f"\'s frame for the exact words (exactText) names {caller}, {message}, not the variables of its text ({caller}, {summary}), so the two would not say the same values',
+    ]);
+  });
+
+  it('check refuses it on a line that is not framed, and on a prescribed one', () => {
+    expect(problems({ a: line('Bye, {caller}.', { exactText: 'Bye.' }) })).toEqual([
+      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate), so it has no span to say word for word and its "exactText" would never be said',
+    ]);
+    expect(problems({ a: framed({ exactText: EXACT, prescribed: true }) })).toEqual([
+      'prompts.yaml prompts.a.exactText: the line "a" is not framed (no generate, and it is prescribed), so it has no span to say word for word and its "exactText" would never be said',
+      'prompts.yaml prompts.a.generate: the line "a" is prescribed (prescribed: true), so it is always said word for word and no span of it is generated',
+    ]);
+  });
+
+  it('a locale mirrors it: its own where prompts.yaml has one, with its text\'s variables, and none where prompts.yaml has none', () => {
+    const es = (more: Partial<PromptYaml> = {}): PromptYaml => line('{caller} llamó y dijo, en resumen, {summary}. ¿Lo paso?', more);
+    expect(problems({ confirm_f: framed({ exactText: EXACT }) }, { es: { confirm_f: es({ exactText: '{caller} llamó y dijo: {summary}. ¿Lo paso?' }) } })).toEqual([]);
+    expect(problems({ confirm_f: framed({ exactText: EXACT }) }, { es: { confirm_f: es() } })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f: prompts.yaml gives the line "confirm_f" a frame of its own for the exact words (exactText), and this locale gives none, so its text would be said with the exact words too',
+    ]);
+    expect(problems({ confirm_f: framed({ exactText: EXACT }) }, { es: { confirm_f: es({ exactText: 'Llamó y dijo: {summary}.' }) } })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f.exactText: the line "confirm_f"\'s frame for the exact words names {summary}, not the variables of this locale\'s text ({caller}, {summary}), so the two would not say the same values',
+    ]);
+    expect(problems({ confirm_f: framed() }, { es: { confirm_f: es({ exactText: '{caller} llamó y dijo: {summary}. ¿Lo paso?' }) } })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f.exactText: prompts.yaml gives the line "confirm_f" no frame of its own for the exact words (exactText), so this one is never said',
+    ]);
+    expect(problems({ b: line('Bye.') }, { es: { b: line('Adiós.', { exactText: 'Adiós.' }) } })).toEqual([
+      'locale/es/prompts.yaml prompts.b.exactText: the line "b" is not framed in prompts.yaml, so a frame for its exact words does nothing',
+    ]);
+  });
+});

@@ -1,10 +1,10 @@
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { carrierSteps } from './carrierSteps';
 import { integer, type Env } from './config';
-import { readEnvFile } from './envFile';
+import { joinEnvFiles, readEnvFiles, resolveEnvFiles } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { isLoopbackHost } from './localOnly';
 import { CLOUDFLARED_INSTALL, findOnPath, QUICK_TUNNEL_TIMEOUT_MS, QUICK_TUNNEL_TROUBLE, waitForQuickTunnel, type TunnelProcess } from './tunnel';
@@ -63,7 +63,7 @@ export interface StartDeps {
   self?: { command: string; args: readonly string[] };
 }
 
-export const START_USAGE = 'usage: [ENV_FILE=<path>] pnpm start [--app <name> | --host <file>] [--tunnel quick|named|none]   (ENV_FILE names a settings file other than <app>/.env, or for a host file the .env beside it)';
+export const START_USAGE = 'usage: [ENV_FILE=<path>[,<path>...]] pnpm start [--app <name> | --host <file>] [--tunnel quick|named|none]   (ENV_FILE names a settings file other than <app>/.env, or for a host file the .env beside it; several, comma-separated, are read in turn, a later one winning)';
 const TUNNELS = ['quick', 'named', 'none'] as const;
 type Tunnel = (typeof TUNNELS)[number];
 
@@ -91,9 +91,10 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
   // A host file (host.yaml: several apps on one server): --host, else HOST_FILE, else host.yaml beside the
   // apps; --app runs one app, as it always did.
   const hostFile = flags.app === undefined ? hostFileOf(flags.host, deps.env, deps.invokedFrom, root) : null;
-  let target: { name: string; settings: string; serve: { command: string; args: string[]; cwd: string }; diagnose: string };
+  let target: { name: string; settings: string[]; serve: { command: string; args: string[]; cwd: string }; diagnose: string };
+  // ENV_FILE (or --env-file) may name several files, comma-separated: read in turn, a later one winning.
   const named = flags.envFile ?? (deps.env.ENV_FILE?.trim() || undefined);
-  const namedFile = named === undefined ? undefined : isAbsolute(named) ? named : resolve(deps.invokedFrom, named);
+  const namedFiles = named === undefined ? [] : resolveEnvFiles(named, deps.invokedFrom);
   if (hostFile !== null) {
     if (!existsSync(hostFile)) {
       deps.out(`no host file at ${hostFile}`);
@@ -108,7 +109,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     const self = deps.self ?? { command: process.execPath, args: [ENGINE_BIN] };
     target = {
       name: `the apps of ${hostFile} (${host.apps.map((a) => a.id).join(', ')}; default ${host.defaultApp})`,
-      settings: namedFile ?? join(host.dir, '.env'),
+      settings: namedFiles.length > 0 ? namedFiles : [join(host.dir, '.env')],
       serve: { command: self.command, args: [...self.args, 'serve', '--host', hostFile], cwd: host.dir },
       diagnose: `${runCommand(root)} diagnose --host ${hostFile}`,
     };
@@ -119,16 +120,17 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
       return 2;
     }
     const app = chosen.app;
-    target = { name: app.name, settings: namedFile ?? join(app.dir, '.env'), serve: serveCommand(app, root), diagnose: commandHints(app, root).command('diagnose') };
+    target = { name: app.name, settings: namedFiles.length > 0 ? namedFiles : [join(app.dir, '.env')], serve: serveCommand(app, root), diagnose: commandHints(app, root).command('diagnose') };
   }
-  const file = target.settings;
+  const files = target.settings;
+  const file = files.find((f) => !existsSync(f)) ?? files[0]!;
   if (!existsSync(file)) {
     deps.out(hostFile !== null
       ? `no settings file at ${file}: write the server's settings there (what every app shares: the carrier, the model, PUBLIC_HOST, the numbers host.yaml names), or name one: ENV_FILE=<path> ${runCommand(root)} start --host ${hostFile}`
       : `no settings file at ${file}: run ${runCommand(root)} configure first (or name one: ENV_FILE=<path> ${runCommand(root)} start)`);
     return 1;
   }
-  const settings: Env = { ...readEnvFile(file) };
+  const settings: Env = { ...readEnvFiles(files) };
   for (const [k, v] of Object.entries(deps.env)) if (v !== undefined) settings[k] = v;
   const host = settings.PUBLIC_HOST?.trim() ?? '';
   const noHost = host === '' || host === 'quick';
@@ -149,7 +151,7 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     return 1;
   }
   const carriers = (settings.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  say(`${target.name}, settings from ${file}`);
+  say(`${target.name}, settings from ${files.join(', ')}`);
 
   // The stop handler goes in before anything is started: a Ctrl-C while the tunnel opens stops cloudflared
   // too (it runs in a process group of its own, which a terminal's Ctrl-C does not reach). A hangup (the
@@ -211,14 +213,14 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     deps.out(`It changes every time ${runCommand(root)} start runs, so paste the new one each time. For a hostname that stays, use a named`);
     deps.out('tunnel on your own domain and set PUBLIC_HOST (https://dialogwright.com/guides/home-server.html#tunnel).');
     deps.out('To check it end to end through the tunnel, in another terminal while this runs:');
-    deps.out(`  ${named === undefined ? '' : `ENV_FILE=${file} `}PUBLIC_HOST=${publicHost} ${target.diagnose}`);
+    deps.out(`  ${named === undefined ? '' : `ENV_FILE=${joinEnvFiles(files)} `}PUBLIC_HOST=${publicHost} ${target.diagnose}`);
     deps.out('');
   } else if (tunnel === 'named') {
     say(`the named tunnel for ${publicHost} runs on its own (cloudflared tunnel run <name>, or its service)`);
   }
   if (laptop || tunnel === 'quick') say(`the console, on this machine: http://localhost:${port}/dashboard`);
 
-  const env: NodeJS.ProcessEnv = { ...deps.env, ENV_FILE: file, ...(tunnel === 'quick' ? { PUBLIC_HOST: publicHost } : {}) };
+  const env: NodeJS.ProcessEnv = { ...deps.env, ENV_FILE: joinEnvFiles(files), ...(tunnel === 'quick' ? { PUBLIC_HOST: publicHost } : {}) };
   const serve = target.serve;
   const server = deps.spawn(serve.command, serve.args, { cwd: serve.cwd, env, detached: true, stdio: 'inherit' });
 

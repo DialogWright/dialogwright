@@ -254,6 +254,15 @@ describe('pnpm service', () => {
     expect(readFileSync(join(w.home, '.config/systemd/user/com.dialogwright.myline.service'), 'utf8')).toContain(`Environment="ENV_FILE=${w.envFile}"`);
   });
 
+  it('names several settings files, comma-separated, as ENV_FILE does, each resolved here, a later one\'s DRAIN_MS winning', async () => {
+    const w = workspace();
+    writeFileSync(join(w.root, 'render.env'), 'DRAIN_MS=110000\n', { mode: 0o600 });
+    const r = await run(['systemd', '--app', 'myline'], w, { ENV_FILE: 'myline.env,render.env' });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`settings from ${w.envFile}, ${join(w.root, 'render.env')}, 120 s to stop`);
+    expect(readFileSync(join(w.home, '.config/systemd/user/com.dialogwright.myline.service'), 'utf8')).toContain(`Environment="ENV_FILE=${w.envFile},${join(w.root, 'render.env')}"`);
+  });
+
   it('warns when the settings file can be read by others, and quotes a path with a space in the commands it prints', async () => {
     const w = workspace();
     chmodSync(w.envFile, 0o644);

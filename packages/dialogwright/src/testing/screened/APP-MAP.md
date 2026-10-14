@@ -80,7 +80,7 @@ flowchart LR
     none["no slots"]
   end
   intent --> slots
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
 ```
 
@@ -97,7 +97,7 @@ flowchart LR
   end
   x_callTime>"When it runs out, after 2 attempts<br/>say call_time_any, skip"]
   s_callTime -.->|"runs out"| x_callTime
-  done["Completes without calling an action"]
+  done["Completes without calling an action<br/>its complete hook decides what follows, in code: a line, the end or a handoff"]
   slots --> done
 ```
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { gb as gbOf, loadConfig, recognitionFor, type Env, type ServerConfig } from './config';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
-import { readEnvFile } from './envFile';
+import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
 import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
@@ -803,7 +803,7 @@ export interface DoctorIo {
   root?: string;
 }
 
-export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>] pnpm diagnose [--app <name> | --host <file>] [--offline]   (ENV_FILE names a settings file other than <app>/.env, or for a host file the .env beside it)';
+export const DOCTOR_USAGE = 'usage: [ENV_FILE=<path>[,<path>...]] pnpm diagnose [--app <name> | --host <file>] [--offline]   (ENV_FILE names a settings file other than <app>/.env, or for a host file the .env beside it; several, comma-separated, are read in turn, a later one winning)';
 
 /**
  * The checks of a host file's apps (host.yaml: several apps on one server), after the server's own: the
@@ -936,9 +936,10 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
       return 2;
     }
   }
+  // ENV_FILE (or --env-file) may name several files, comma-separated: read in turn, a later one winning.
   const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
-  let file: string;
-  if (named !== undefined) file = isAbsolute(named) ? named : resolve(io.invokedFrom, named);
+  let files: string[];
+  if (named !== undefined) files = resolveEnvFiles(named, io.invokedFrom);
   else {
     if (app === null) {
       const chosen = chooseApp(apps, undefined, io.invokedFrom, 'diagnose');
@@ -948,11 +949,11 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
       }
       app = chosen.app;
     }
-    file = join(app.dir, '.env');
+    files = [join(app.dir, '.env')];
   }
   let fromFile: Record<string, string>;
   try {
-    fromFile = readEnvFile(file);
+    fromFile = readEnvFiles(files);
   } catch (e) {
     io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'run pnpm configure, or name the file: ENV_FILE=<path> pnpm diagnose' }));
     return 1;
@@ -964,8 +965,8 @@ export async function main(argv: readonly string[], io: DoctorIo, deps: DoctorDe
     const here = apps.find((a) => io.invokedFrom === a.dir || io.invokedFrom.startsWith(a.dir + sep));
     app = here ?? (apps.length === 1 ? apps[0]! : null);
   }
-  io.out(`${app ? `${app.name}: ` : ''}settings from ${file}${offline ? ' (offline)' : ''}`);
-  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline, ...(app ? { appDir: app.dir } : {}) }, deps))];
+  io.out(`${app ? `${app.name}: ` : ''}settings from ${files.join(', ')}${offline ? ' (offline)' : ''}`);
+  const results = [...files.map((f) => settingsFileCheck(f)), ...(await runDoctor({ env, cwd: app?.dir ?? io.invokedFrom, offline, ...(app ? { appDir: app.dir } : {}) }, deps))];
   for (const r of results) io.out(formatResult(r));
   const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
   const skipped = count('skip');
@@ -985,18 +986,18 @@ async function hostMain(hostFile: string, envFileArg: string | undefined, offlin
     return 1;
   }
   const named = envFileArg ?? (io.env.ENV_FILE?.trim() || undefined);
-  const file = named === undefined ? join(host.dir, '.env') : isAbsolute(named) ? named : resolve(io.invokedFrom, named);
+  const files = named === undefined ? [join(host.dir, '.env')] : resolveEnvFiles(named, io.invokedFrom);
   let fromFile: Record<string, string>;
   try {
-    fromFile = readEnvFile(file);
+    fromFile = readEnvFiles(files);
   } catch (e) {
     io.out(formatResult({ status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'write the server\'s settings there (what every app shares), or name the file: ENV_FILE=<path> pnpm diagnose --host <file>' }));
     return 1;
   }
   const env: Env = { ...fromFile };
   for (const [k, v] of Object.entries(io.env)) if (v !== undefined) env[k] = v;
-  io.out(`the apps of ${hostFile} (${host.apps.map((a) => a.id).join(', ')}): settings from ${file}${offline ? ' (offline)' : ''}`);
-  const results = [settingsFileCheck(file), ...(await runDoctor({ env, cwd: host.dir, offline }, deps)), ...hostChecks(host, env)];
+  io.out(`the apps of ${hostFile} (${host.apps.map((a) => a.id).join(', ')}): settings from ${files.join(', ')}${offline ? ' (offline)' : ''}`);
+  const results = [...files.map((f) => settingsFileCheck(f)), ...(await runDoctor({ env, cwd: host.dir, offline }, deps)), ...hostChecks(host, env)];
   for (const r of results) io.out(formatResult(r));
   const count = (s: CheckStatus) => results.filter((r) => r.status === s).length;
   const skipped = count('skip');

@@ -16,7 +16,7 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
-import { messageVariants, WHOLE_LINE } from '../message/variant';
+import { EXACT_FRAME, messageVariants, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { frameViolations } from './run';
@@ -345,6 +345,20 @@ describe('generated wording under the suite (the wording family, on the message 
       const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
       expect(spans.length, id).toBeGreaterThan(0);
       expect(spans.every((l) => l.mode === 'fixed' && (l.fallback === 'person' || l.fallback === 'foreign')), id).toBe(true);
+    }
+  });
+
+  it('holds with a frame of its own for the exact words (exactText): every span that falls back is said in the exact frame, and frame-kept holds both frames', async () => {
+    const exact = variants.variant(EXACT_FRAME);
+    const report = await run(exact, { renderer: fake() });
+    expect(failing(report)).toEqual([]);
+    for (const id of ['refund', 'negation-dropped', 'recipient']) {
+      const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
+      const last = r.calls[0]!.turns.at(-1)!;
+      const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
+      expect(span, id).toMatchObject({ mode: 'fixed' });
+      expect(sayText(last.result.actions), id).toContain(`called and said: ${span.fixed}. Shall I pass it on?`);
+      expect(sayText(last.result.actions), id).not.toContain('in short');
     }
   });
 

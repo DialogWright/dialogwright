@@ -1,7 +1,7 @@
 import type { App } from '../core/app/types';
 import type { Decision } from '../core/decision';
 import { endAction, sayAction, transferAction, type Action, type Say, type SayPart } from '../channel/actions';
-import { isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
+import { exactClipId, isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
@@ -9,6 +9,8 @@ import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
 export interface PromptEntry {
   text: string;
   interruptible: boolean;
+  /** A framed line's frame for its exact content (prompts.yaml's `exactText`; frameOf). */
+  exactText?: string;
 }
 
 export interface RenderContext {
@@ -51,7 +53,19 @@ export function promptEntry(app: App, id: string, locale?: string): PromptEntry 
 }
 
 export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string): string {
-  return renderTemplate(promptEntry(app, id, locale).text, framedVars(app, id, vars));
+  return renderTemplate(frameOf(promptEntry(app, id, locale)), framedVars(app, id, vars));
+}
+
+/**
+ * The template a line is said from: its `text`, unless it is a framed line with a frame of its own for
+ * its exact content (prompts.yaml's `exactText`) and no span of it is worded on this saying, when it is
+ * that frame. `worded`: the spans a renderer gave words for (the turn's, once every check passed); none
+ * by default, so a line's fixed text (what is said with no renderer, on a fallback, a repeat or a
+ * read-back word for word, and what the session keeps) is the exact frame. A line with no `exactText`
+ * is its `text` either way, as it always was.
+ */
+export function frameOf(entry: PromptEntry, worded: Readonly<Record<string, string>> = {}): string {
+  return entry.exactText !== undefined && Object.keys(worded).length === 0 ? entry.exactText : entry.text;
 }
 
 /**
@@ -97,12 +111,15 @@ export function lineLang(app: App, locale?: string): string | undefined {
  */
 export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
-  // A framed line: each span its exact content, or its wording where the renderer gives one.
+  // A framed line: each span its exact content, or its wording where the renderer gives one; said from
+  // its exact frame (`exactText`, its own clips) where it has one and no span is worded.
+  const template = frameOf(entry, spans);
+  const clipId = template === entry.text ? promptId : exactClipId(promptId);
   vars = framedVars(app, promptId, vars, spans);
-  const segments = segmentTemplate(promptId, entry.text);
+  const segments = segmentTemplate(clipId, template);
   // A line that carries data is spoken whole by TTS, even when clips are on.
   const lang = lineLang(app, locale);
-  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(entry.text, vars) }], interruptible, lang);
+  if (!ctx || localized || ttsOnly(app, segments)) return sayAction([{ text: renderTemplate(template, vars) }], interruptible, lang);
   const parts: SayPart[] = [];
   let pieces: string[] = [];
   const flush = (): void => {

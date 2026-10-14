@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { applyEnvFile, envFilePathOf } from './envFile';
+import { applyEnvFile, envFilePathsOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -1300,13 +1300,13 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
   process.on('uncaughtException', crash('uncaught exception'));
   process.on('unhandledRejection', crash('unhandled rejection'));
   try {
-    const envFile = envFilePathOf(process.argv.slice(2), process.env);
-    if (envFile !== null) applyEnvFile(envFile, process.env);
+    const envFiles = envFilePathsOf(process.argv.slice(2), process.env);
+    if (envFiles !== null) applyEnvFile(envFiles, process.env);
     // LOG_FILE: from here on, what the process prints also goes to a file the server rolls itself.
     const logFile = logFileSettingOf(process.env);
     if (logFile !== null) teeProcessOutput(new RollingLog(logFile));
     const config = loadConfig(process.env);
-    if (envFile !== null) console.log(`[server] settings from ${envFile} (a variable already in the environment wins over the file)`);
+    if (envFiles !== null) console.log(`[server] settings from ${envFiles.join(', ')} (${envFiles.length > 1 ? 'a later file wins over an earlier one, and ' : ''}a variable already in the environment wins over the file${envFiles.length > 1 ? 's' : ''})`);
     console.log(`[server] ${describeConfig(config)}`);
     if (!config.signatureCheck) console.log('[server] WARNING: webhook signature validation is OFF');
     const sidecars = start ? await start(config) : {};

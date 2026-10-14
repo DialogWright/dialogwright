@@ -128,7 +128,10 @@ function formDiagram(app: App, id: FormId): string[] {
   if (calls === undefined) {
     out.push(`  note[${mermaidLabel('The form does not say which actions it calls')}]`, `  ${last} -.-> note`);
   } else if (calls.length === 0) {
-    out.push(`  done[${mermaidLabel('Completes without calling an action')}]`, `  ${last} --> done`);
+    // A complete hook is code: what it does (a line, the end, a handoff) cannot be read from the
+    // configuration, so the map says it decides rather than draw a form that hands off as one that ends.
+    const hook = typeof (form as { complete?: unknown }).complete === 'function';
+    out.push(`  done[${mermaidLabel('Completes without calling an action', ...(hook ? ['its complete hook decides what follows, in code: a line, the end or a handoff'] : []))}]`, `  ${last} --> done`);
   }
   for (const tool of calls ?? []) {
     const action = actions[tool];

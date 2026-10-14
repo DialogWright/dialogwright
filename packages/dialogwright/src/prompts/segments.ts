@@ -36,9 +36,21 @@ export function segmentTemplate(promptId: string, template: string): Segment[] {
   return out;
 }
 
+/** The clip id prefix of a framed line's exact frame (prompts.yaml's `exactText`): its own segments, beside its `text`'s. */
+export function exactClipId(promptId: string): string {
+  return `${promptId}.exact`;
+}
+
+/**
+ * Each line's segments, by prompt id; a framed line with a frame of its own for its exact content
+ * (prompts.yaml's `exactText`) has that frame's too, under `<id>.exact` (its clips' ids begin so).
+ */
 export function segmentsOf<M extends Record<string, PromptEntry>>(manifest: M): Record<keyof M, Segment[]> {
   return Object.fromEntries(
-    Object.entries(manifest).map(([id, entry]) => [id, segmentTemplate(id, entry.text)]),
+    Object.entries(manifest).flatMap(([id, entry]) => [
+      [id, segmentTemplate(id, entry.text)],
+      ...(entry.exactText !== undefined ? [[exactClipId(id), segmentTemplate(exactClipId(id), entry.exactText)]] : []),
+    ]),
   ) as Record<keyof M, Segment[]>;
 }
 

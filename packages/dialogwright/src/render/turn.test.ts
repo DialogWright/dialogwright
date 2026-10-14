@@ -12,8 +12,9 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
+import { recordableClips } from '../prompts/clips';
 import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
-import { messageVariants, replace, WHOLE_LINE } from '../testing/message/variant';
+import { EXACT_FRAME, messageVariants, replace, WHOLE_LINE } from '../testing/message/variant';
 import type { App } from '../core/app/types';
 import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
@@ -475,6 +476,59 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a framed line with a frame of its own for the exact words (exactText; live findings, item 20)', () => {
+  const exact = variants.variant(EXACT_FRAME);
+  beforeEach(() => {
+    resetAppsForTest();
+    current = exact;
+    registerApp(exact);
+  });
+  const OPEN = "Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and said";
+  const EXACT_LINE = `${OPEN}: ${MESSAGE}. Shall I pass it on?`;
+  const spanOf = (r: ScenarioRun) => r.runs.at(-1)!.record.render?.lines.find((l) => l.promptId === 'confirm_take_message');
+
+  it('says its text with a generated span, and its exact frame whenever the span is the content word for word; the session keeps the exact frame', async () => {
+    const worded = await call(TO_SUMMARY, fake());
+    expect(lastSaid(worded)).toBe(`${OPEN}, in short, please call me about the March invoice before. Shall I pass it on?`);
+    expect(worded.runs.at(-1)!.result.session.lastPromptText).toBe(EXACT_LINE);
+    expect(spokenText(exact, worded.runs.at(-1)!.result.decision)).toBe(EXACT_LINE);
+    // No renderer, a check that fails, a slow model: the exact frame.
+    expect(lastSaid(await call(TO_SUMMARY, null))).toBe(EXACT_LINE);
+    const failed = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: 'please call me about the April invoice' } }) });
+    expect(spanOf(failed)).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+    expect(lastSaid(failed)).toBe(EXACT_LINE);
+    expect(lastSaid(await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: new Error('HTTP 500') } }) }))).toBe(EXACT_LINE);
+    expect(lastSaid(await call(TO_SUMMARY, { client: new FakeRenderClient(), share: 0 }))).toBe(EXACT_LINE);
+  });
+
+  it('a no reads it back with the exact frame, a repeat says the exact frame, on a call and in a chat', async () => {
+    for (const as of [undefined, 'web']) {
+      const no = await call([...TO_SUMMARY, { say: "no, that's not quite what I said" }], fake(), [], as);
+      expect(lastSaid(no)).toBe(`Here it is exactly as I took it down. ${EXACT_LINE}`);
+      const repeat = await call([...TO_SUMMARY, { say: 'can you read that back word for word' }], fake(), [], as);
+      expect(repeat.runs.at(-1)!.result.decision.kind).toBe('replay');
+      expect(lastSaid(repeat)).toBe(EXACT_LINE);
+    }
+  });
+
+  it('keeps each frame\'s recorded clips, the exact frame\'s under <id>.exact, and the policy card lists both frames', async () => {
+    expect(recordableClips(exact).map((c) => c.id).filter((id) => id.startsWith('confirm_take_message'))).toEqual(['confirm_take_message.0', 'confirm_take_message.1', 'confirm_take_message.2', 'confirm_take_message.3', 'confirm_take_message.4', 'confirm_take_message.exact.0', 'confirm_take_message.exact.1', 'confirm_take_message.exact.2', 'confirm_take_message.exact.3', 'confirm_take_message.exact.4']);
+    const render = { clips: new Map([['confirm_take_message.0', 'summary-open.wav'], ['confirm_take_message.exact.0', 'exact-open.wav']]), audioBase: 'https://h/audio/' };
+    const run = async (renderer: Renderer | null) => {
+      const scenario: Scenario = { id: 'call-1', steps: TO_SUMMARY, expect: { decision: 'any' } };
+      const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, render, ...(renderer ? { renderer } : {}) });
+      return r.runs.at(-1)!.result.actions.find((a) => a.type === 'say') as { parts: ({ audio: string } | { text: string })[] };
+    };
+    expect((await run(fake())).parts[0]).toEqual({ audio: 'https://h/audio/summary-open.wav' });
+    expect((await run(null)).parts[0]).toEqual({ audio: 'https://h/audio/exact-open.wav' });
+    const card = policyCardText(exact, MESSAGE_DIR);
+    expect(card).toContain('called and said, in short, {summary}. Shall I pass it on? (said with a generated span; with every span its content word for word: Okay, thanks! I\'ll make sure {recipient} hears that {caller}, on {phone}, called and said: {summary}. Shall I pass it on?)');
+    expect(card).toContain('A line with a frame of its own for the exact words (`exactText`) is said with that frame');
+    // The fixture's own card, with no exactText, is as it was.
+    expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain("exactText");
   });
 });
 

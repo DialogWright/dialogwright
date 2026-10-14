@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_DRAIN_MS, integer, type Env } from './config';
-import { readEnvFile } from './envFile';
+import { joinEnvFiles, readEnvFiles, resolveEnvFiles } from './envFile';
 import { findOnPath } from './tunnel';
 import { ENGINE_BIN, findApp, projectRoot, workspaceApps } from './workspace';
 import { hostFileOf, resolveHostFile, type ResolvedHost } from '../define/host';
@@ -212,12 +212,14 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
     io.out(`no app "${flags.app}" in this workspace`);
     return 2;
   }
-  const envFile = isAbsolute(named) ? named : resolve(io.invokedFrom, named);
+  // Several files, comma-separated, are read in turn by the server, a later one winning: the service names them all.
+  const envFiles = resolveEnvFiles(named, io.invokedFrom);
+  const envFile = joinEnvFiles(envFiles);
   let drainMs: number;
   try {
     // Read for DRAIN_MS and DRAIN_UNREADY_MS alone (a stop is the unready time, then the drain); nothing
     // from it goes into the service file but its path.
-    const settings = readEnvFile(envFile);
+    const settings = readEnvFiles(envFiles);
     drainMs = integer(settings, 'DRAIN_MS', DEFAULT_DRAIN_MS) + integer(settings, 'DRAIN_UNREADY_MS', 0);
   } catch (e) {
     io.out(e instanceof Error ? e.message : String(e));
@@ -252,9 +254,9 @@ export async function main(argv: readonly string[], io: ServiceIo): Promise<numb
   mkdirSync(dirname(file), { recursive: true });
   // It names the settings file and holds no secret, so it is an ordinary file.
   writeFileSync(file, text, { mode: 0o644 });
-  io.out(`wrote ${file}: ${app.name} from ${host !== null ? host.dir : root}, settings from ${envFile}, ${Math.ceil(drainMs / 1000) + 10} s to stop`);
-  if (platform !== 'win32' && statSync(envFile).mode & 0o077) {
-    io.out(`WARNING: ${envFile} can be read by others, and it holds keys: chmod 600 ${shellWord(envFile)}`);
+  io.out(`wrote ${file}: ${app.name} from ${host !== null ? host.dir : root}, settings from ${envFiles.join(', ')}, ${Math.ceil(drainMs / 1000) + 10} s to stop`);
+  for (const f of envFiles) {
+    if (platform !== 'win32' && statSync(f).mode & 0o077) io.out(`WARNING: ${f} can be read by others, and it holds keys: chmod 600 ${shellWord(f)}`);
   }
   if (kind === 'systemd') for (const line of LINGER_NOTE) io.out(line);
   io.out('Install it (pnpm service runs none of these):');

@@ -102,6 +102,12 @@ const prompt = z
         'A fixed line with generated spans (the framed form): each key is one of the line\'s {variables}, worded by a model from the content its `from` names; every other word of the line is the app\'s fixed text, never sent to a model and never changed. The frame says whose words the span gives ("{caller} called and left this message: {summary}"), so attribution is by design. ' +
           'A span that is not generated, or fails a check, is the exact content, word for word. Not with `mode` or a line\'s own `goal` or `from`.',
       ),
+    exactText: text()
+      .optional()
+      .describe(
+        'A framed line only (`generate`): the frame said when every span is its exact content, word for word (no model set up, a check that fails, a slow model, a read-back after a no, a repeat, a reading `when` leaves fixed); `text` is then the frame said with a generated span. ' +
+          'For a frame whose words are true of a summary only ("called and said, in short, {summary}"), the exact words get a frame of their own ("called and said: {summary}"). It names the same variables as `text`. Absent: `text` is said either way. In a locale\'s prompts.yaml: that locale\'s own, needed there where prompts.yaml gives one.',
+      ),
   })
   .describe('One line the agent says.');
 

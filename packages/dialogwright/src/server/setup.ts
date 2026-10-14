@@ -8,6 +8,8 @@ import { carrierSteps } from './carrierSteps';
 import { DEFAULT_WIDGET_FILE, type Env } from './config';
 import { main as diagnose } from './doctor';
 import { checkSecretOf } from './voice/registry';
+import { targetValueProblem } from './transfer';
+import { appYamlEnvReferences } from '../define/envReferences';
 import { resolveJevProvider } from '../jev/provider';
 import { commandHints, findApp, runCommand, projectRoot, workspaceApps, appList, type WorkspaceApp } from './workspace';
 
@@ -104,6 +106,8 @@ interface Flags {
   baseUrl?: string;
   modelId?: string;
   handoff?: string;
+  /** `--number <NAME>=<value>`: a number app.yaml names by its variable (a transfer target, a number callers dial). */
+  numbers: Record<string, string>;
   publicHost?: string;
   port?: string;
   force: boolean;
@@ -113,7 +117,8 @@ interface Flags {
 export const SETUP_USAGE = [
   'usage: pnpm configure [--app <name>] [--mode try|model|phone] [--carrier telnyx|twilio]',
   '         [--model typesafe|openrouter|vercel|custom|none] [--base-url <url> --model-id <id>]',
-  '         [--handoff <E.164>] [--public-host <host>] [--port <n>] [--force] [--non-interactive]',
+  '         [--handoff <E.164>] [--number <NAME>=<E.164>]... [--public-host <host>] [--port <n>] [--force] [--non-interactive]',
+  '  --number: a number app.yaml names by its variable (env.<NAME>: a transfer target, a number callers dial), asked for otherwise',
   '  --mode try: this computer, no keys; model: this computer with a decision model\'s key (to record the app), no phone line; phone: a phone line',
   '  a key is never a flag: it is read from the environment variable of its name, or asked for with the echo off;',
   '  with --force, a model\'s key the replaced .env holds is kept when the same provider is chosen',
@@ -135,8 +140,8 @@ function oneOf<T extends string>(flag: string, value: string, allowed: readonly 
 }
 
 function parseFlags(argv: readonly string[]): Flags {
-  const f: Flags = { force: false, nonInteractive: false };
-  const valued = new Set(['--app', '--mode', '--carrier', '--model', '--base-url', '--model-id', '--handoff', '--public-host', '--port']);
+  const f: Flags = { force: false, nonInteractive: false, numbers: {} };
+  const valued = new Set(['--app', '--mode', '--carrier', '--model', '--base-url', '--model-id', '--handoff', '--number', '--public-host', '--port']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--force') f.force = true;
@@ -150,6 +155,11 @@ function parseFlags(argv: readonly string[]): Flags {
       else if (a === '--base-url') f.baseUrl = v;
       else if (a === '--model-id') f.modelId = v;
       else if (a === '--handoff') f.handoff = v;
+      else if (a === '--number') {
+        const m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(v);
+        if (m === null) throw new UsageError(`--number must be <NAME>=<number>, the variable as app.yaml names it (env.<NAME>), got "${v}"`);
+        f.numbers[m[1]!] = m[2]!;
+      }
       else if (a === '--public-host') f.publicHost = v.replace(/^https?:\/\//, '').replace(/\/+$/, '');
       else f.port = v;
     } else throw new UsageError(SETUP_USAGE);
@@ -333,6 +343,67 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     throw new Error(`no ${what} that will do`);
   };
 
+  /**
+   * The numbers the app's YAML names by their variables (env.<NAME>): each transfer target app.yaml's
+   * `transfer` names (where a call is put through: an E.164 number or a sip: URI) and each number callers
+   * dial that app.yaml's voice.numbers or a `called` condition names (E.164), but HANDOFF_NUMBER, asked
+   * already. Each from `--number <NAME>=<value>`, else the environment variable of its name, else asked
+   * for; on a laptop (`fallback`), Enter (or --non-interactive) takes a 555 number of its own, which goes
+   * nowhere. None of them is a key: each is echoed, and written as given. The other variables the YAML
+   * names (startParameters) are not numbers: they are written commented out, to be set by hand.
+   */
+  const askNumbers = async (fallback: boolean): Promise<Section[]> => {
+    const refs = appYamlEnvReferences(app.dir) ?? [];
+    const numbers: { variable: string; called: boolean; where: string }[] = [];
+    const others: { variable: string; where: string }[] = [];
+    for (const r of refs) {
+      if (r.variable === 'HANDOFF_NUMBER') continue;
+      const where = `${r.file ?? 'app.yaml'}'s ${r.path}`;
+      const isNumber = r.kind === 'called' || (r.file === 'app.yaml' && r.path.startsWith('transfer.'));
+      const known = numbers.find((n) => n.variable === r.variable);
+      if (isNumber) {
+        if (known !== undefined) known.called ||= r.kind === 'called';
+        else numbers.push({ variable: r.variable, called: r.kind === 'called', where });
+      } else if (known === undefined && !others.some((o) => o.variable === r.variable)) others.push({ variable: r.variable, where });
+    }
+    for (const name of Object.keys(flags.numbers)) {
+      if (!numbers.some((n) => n.variable === name)) throw new UsageError(`--number ${name}=...: ${short}'s YAML names no number ${name}${numbers.length > 0 ? ` (it names ${numbers.map((n) => n.variable).join(', ')})` : ''}`);
+    }
+    const rest = others.filter((o) => !numbers.some((n) => n.variable === o.variable));
+    const sections: Section[] = [];
+    if (numbers.length > 0) {
+      const lines: Section['lines'] = [];
+      for (const [i, n] of numbers.entries()) {
+        // A number callers dial is held to E.164; a transfer target may be a sip: URI too (server/transfer.ts).
+        const check = (v: string): string | null => {
+          if (n.called) return E164.test(v) ? null : `${n.variable} must be an E.164 number like +15551234567 (${n.where}: a number callers dial), got "${v}"`;
+          const problem = targetValueProblem(v);
+          return problem === null ? null : `${n.variable} ${problem}, got "${v}"`;
+        };
+        const placeholder = fallback ? `+1555555${String(100 + i).padStart(4, '0')}` : undefined;
+        const fromEnv = io.env[n.variable]?.trim();
+        let value: string;
+        if (flags.numbers[n.variable] === undefined && fromEnv && check(fromEnv) === null) {
+          out(`${n.variable} from the environment: ${fromEnv}`);
+          value = fromEnv;
+        } else {
+          const what = n.called ? 'a number callers dial (E.164)' : 'where a call is put through (E.164, or a sip: URI)';
+          const question = `${n.variable}, ${what}, as ${n.where} names it${placeholder !== undefined ? ` (Enter for ${placeholder}, which goes nowhere)` : ''}:`;
+          value = await answer(flags.numbers[n.variable], `--number ${n.variable}=<number>`, what, question, check, placeholder);
+        }
+        lines.push({ name: n.variable, value });
+      }
+      sections.push({ comment: ['The numbers app.yaml names by their variables (env.<NAME>): where a call is put through, and the numbers callers dial.'], lines });
+    }
+    if (rest.length > 0) {
+      sections.push({
+        comment: [`The other values ${short}'s YAML names (${rest.map((o) => o.where).join(', ')}): set each; the server will not start without them.`],
+        lines: rest.map((o) => ({ name: o.variable, value: '', commented: true })),
+      });
+    }
+    return sections;
+  };
+
   /** The decision model and its key, as settings lines; `allowNone` offers none (the app's examples). */
   const askModel = async (allowNone: boolean): Promise<Section['lines']> => {
     const model: Model = flags.model ?? (!interactive ? (() => { throw need('--model', (allowNone ? MODELS : MODELS.filter((m) => m !== 'none')).join(', ')); })() : await choose('Which decision model understands the callers?', [
@@ -417,6 +488,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     // With a model (to record the app against it): its key, and the model understands the chat and the console too.
     const modelLines: Section['lines'] = mode === 'model' ? await askModel(false) : [{ name: 'JEV_CLIENT', value: 'heuristic' }];
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', `The number a call goes to for a person (E.164; Enter for ${TRY_HANDOFF}, which goes nowhere):`, checkHandoff, TRY_HANDOFF);
+    const numberSections = await askNumbers(true);
     // This repository's widget build, or, in a project of its own, the installed package's.
     const widget = existsSync(join(root, 'packages', 'widget')) ? join(root, 'packages', 'widget', 'dist', 'dialogwright-widget.js') : join(app.dir, DEFAULT_WIDGET_FILE);
     const signIn = (() => {
@@ -438,6 +510,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
         ],
       },
       { comment: ['Where a call goes when the caller wants a person (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
+      ...numberSections,
       mode === 'model'
         ? { comment: ['The decision model, which reads what callers say. The regression records the app against it (regress --client record).'], lines: modelLines }
         : { comment: ['No model: the app understands by its own labelled examples and keywords. Enough to walk every path.'], lines: modelLines },
@@ -464,6 +537,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     const carrierSecret = await secret(c.variable, c.question, c.check);
     const modelLines = await askModel(true);
     const handoff = await answer(flags.handoff, '--handoff', 'an E.164 number', 'The number a call goes to when the caller wants a person (E.164, like +15551234567):', checkHandoff);
+    const numberSections = await askNumbers(false);
     sections.push(
       {
         comment: [`The carrier: ${c.label} answers on /voice/${carrier}. ${c.variable} checks that each webhook is ${c.label}'s.`],
@@ -477,6 +551,7 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
         lines: [flags.publicHost ? { name: 'PUBLIC_HOST', value: flags.publicHost } : { name: 'PUBLIC_HOST', value: 'ivr.example.com', commented: true }, { name: 'PORT', value: port }],
       },
       { comment: ['Where a call goes when the caller wants a person, or the line cannot help (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
+      ...numberSections,
       { comment: ['The decision model, which reads what callers say.'], lines: modelLines },
       RETENTION_SECTION,
     );

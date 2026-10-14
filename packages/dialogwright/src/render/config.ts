@@ -179,6 +179,9 @@ export function generatedWordingProblems(input: {
       out.push({ file, path: at('mode'), message: `the line "${id}" is prescribed (prescribed: true), so it is always said word for word and never generated`, fix: 'delete "mode: generative", or delete "prescribed: true" if a model may word this line' });
       continue;
     }
+    if (p.exactText !== undefined && (p.generate === undefined || p.prescribed === true)) {
+      out.push({ file, path: at('exactText'), message: `the line "${id}" is not framed (no generate${p.prescribed === true ? ', and it is prescribed' : ''}), so it has no span to say word for word and its "exactText" would never be said`, fix: p.prescribed === true ? 'delete "exactText": a prescribed line is said as its text, always' : 'delete "exactText", or frame the line (generate) so a span of it is worded by a model', atKey: true });
+    }
     if (p.generate !== undefined) {
       out.push(...framedProblems(id, p, input));
       continue;
@@ -251,6 +254,17 @@ export function generatedWordingProblems(input: {
           if (!vars.includes(name)) out.push({ file: dir, path: ['prompts', id, 'text'], message: `the line "${id}" is framed in prompts.yaml with a generated span {${name}}, which this locale's text does not say, so the content it gives would never be heard in this locale`, fix: `say {${name}} in this locale's text, where the content belongs` });
         }
       }
+      // A frame for the exact words (exactText): a locale mirrors prompts.yaml, each with its own.
+      const exactInDefault = input.prompts[id]?.exactText !== undefined;
+      if (spans !== undefined && exactInDefault && p.exactText === undefined) {
+        out.push({ file: dir, path: ['prompts', id], message: `prompts.yaml gives the line "${id}" a frame of its own for the exact words (exactText), and this locale gives none, so its text would be said with the exact words too`, fix: 'add "exactText:" here, this locale\'s frame for the content word for word, with the same variables as its text', atKey: true });
+      }
+      if (p.exactText !== undefined && (spans === undefined || !exactInDefault)) {
+        out.push({ file: dir, path: ['prompts', id, 'exactText'], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a frame for its exact words does nothing` : `prompts.yaml gives the line "${id}" no frame of its own for the exact words (exactText), so this one is never said`, fix: spans === undefined ? 'delete "exactText" here' : 'add "exactText:" to the line in prompts.yaml too, or delete it here', atKey: true });
+      } else if (p.exactText !== undefined) {
+        const problem = sameVariables(p.text, p.exactText);
+        if (problem !== null) out.push({ file: dir, path: ['prompts', id, 'exactText'], message: `the line "${id}"'s frame for the exact words ${problem} this locale's text (${lineVars(p.text).map((x) => `{${x}}`).join(', ')}), so the two would not say the same values`, fix: 'name exactly the variables this locale\'s text names' });
+      }
       for (const [name, sp] of Object.entries(p.generate ?? {})) {
         if (spans === undefined || !Object.hasOwn(spans, name)) {
           out.push({ file: dir, path: ['prompts', id, 'generate', name], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a span here does nothing` : `prompts.yaml frames no span {${name}} in the line "${id}" (it frames ${Object.keys(spans).map((v) => `{${v}}`).join(', ')}), so this one does nothing`, fix: spans === undefined ? 'frame the line in prompts.yaml (generate), or delete it here' : `rename it to one of the spans prompts.yaml frames, or delete it here`, atKey: true });
@@ -263,6 +277,15 @@ export function generatedWordingProblems(input: {
     }
   }
   return out;
+}
+
+/** Whether a frame for the exact words names other variables than its line's text: the two lists in words, or null when they name the same. */
+function sameVariables(text: string, exactText: string): string | null {
+  const a = lineVars(text);
+  const b = lineVars(exactText);
+  if (a.length === b.length && a.every((v) => b.includes(v))) return null;
+  const list = (xs: string[]): string => (xs.length === 0 ? 'none' : xs.map((v) => `{${v}}`).join(', '));
+  return `names ${list(b)}, not the variables of`;
 }
 
 /** The content a generated line may summarize: its own `from`, or its spans' `from`. */
@@ -288,6 +311,10 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
   if (p.from !== undefined) out.push({ file, path: at('from'), message: `the line "${id}" is framed (generate): each span names the content it is worded from in its own "from"`, fix: 'delete "from" here, and name the content in the span\'s "from"', atKey: true });
   if (p.acknowledge !== undefined) out.push({ file, path: at('acknowledge'), message: `the line "${id}" is framed (generate): only its spans are generated, and a span never acknowledges the caller, so "acknowledge" does nothing`, fix: 'delete "acknowledge"; the frame\'s fixed words are said as written', atKey: true });
   const vars = lineVars(p.text);
+  if (p.exactText !== undefined) {
+    const problem = sameVariables(p.text, p.exactText);
+    if (problem !== null) out.push({ file, path: at('exactText'), message: `the line "${id}"'s frame for the exact words (exactText) ${problem} its text (${vars.map((x) => `{${x}}`).join(', ')}), so the two would not say the same values`, fix: 'name exactly the variables the text names, each span among them' });
+  }
   const slots = input.slots === undefined ? undefined : new Set(input.slots);
   const names = Object.keys(p.generate ?? {});
   for (const [name, sp] of Object.entries(p.generate ?? {})) {

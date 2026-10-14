@@ -9,7 +9,7 @@ import type { Decision } from '../../core/decision';
 import { isAnonymous, type GateLookups, type Principal, type ToolCall } from '../../gate/types';
 import { keyEvents } from '../../channel/events';
 import { sayText } from '../../channel/actions';
-import { framedVars, localePromptEntry, promptText, renderTemplate } from '../../prompts/render';
+import { frameOf, framedVars, localePromptEntry, promptText, renderTemplate } from '../../prompts/render';
 import { FixtureStubClient } from '../../jev/fixtureStub';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
 import { isCassetteMiss } from '../../jev/cassette';
@@ -401,7 +401,7 @@ export function frameViolations(app: App, turns: readonly Pick<TurnRun, 'record'
         continue;
       }
       const worded = Object.fromEntries(own.filter((l) => l.mode === 'generated').map((l) => [l.span!, l.said ?? '']));
-      const expected = renderTemplate(localePromptEntry(app, promptId, t.result.session.locale).entry.text, framedVars(app, promptId, vars, worded));
+      const expected = renderTemplate(frameOf(localePromptEntry(app, promptId, t.result.session.locale).entry, worded), framedVars(app, promptId, vars, worded));
       const action = t.result.actions[index];
       const actual = action === undefined ? '' : sayText([action]);
       if (actual !== expected) out.push(`frame-kept: on turn ${i + 1}, ${promptId} was said as ${JSON.stringify(actual)}, not its fixed text with its spans (${JSON.stringify(expected)})`);

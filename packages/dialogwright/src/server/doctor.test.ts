@@ -696,6 +696,22 @@ describe('pnpm diagnose', () => {
     expect(out).toContain(`fail  ENV_FILE does not exist: ${join(dir, 'missing.env')}  ->  run pnpm configure, or name the file: ENV_FILE=<path> pnpm diagnose`);
   });
 
+  it('reads several settings files in ENV_FILE, comma-separated, a later one winning, and checks each is its owner\'s alone', async () => {
+    const dir = tempDir();
+    const first = join(dir, 'line.env');
+    const second = join(dir, 'render.env');
+    writeFileSync(first, Object.entries({ ...goodEnv(dir), HANDOFF_NUMBER: '+15555550123' }).map(([k, v]) => `${k}=${v}`).join('\n'), { mode: 0o600 });
+    writeFileSync(second, 'HANDOFF_NUMBER=+15555550199\n', { mode: 0o644 });
+    const out: string[] = [];
+    await main([], { out: (l) => out.push(l), env: { ENV_FILE: 'line.env,render.env' }, invokedFrom: dir }, deps());
+    expect(out[0]).toBe(`settings from ${first}, ${second}`);
+    expect(out).toContain(`ok    ${first} is readable by its owner alone`);
+    expect(out).toContain(`warn  ${second} can be read by others (mode 644), and it holds keys  ->  chmod 600 ${second}`);
+    // The second file's HANDOFF_NUMBER, not the first's.
+    expect(out.join('\n')).toContain('HANDOFF_NUMBER +15555550199 is a 555 number');
+    expect(out.join('\n')).not.toContain('+15555550123');
+  });
+
   it('warns when the settings file can be read by others, since it holds keys', async () => {
     const dir = tempDir();
     const file = join(dir, 'line.env');
