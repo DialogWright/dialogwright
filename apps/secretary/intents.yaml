@@ -14,7 +14,7 @@ intents:
   # says it is urgent at the read-back, with a correction in the same breath, hands over the corrected
   # value.
   urgent:
-    criteria: Says their call or their matter is urgent, an emergency, or cannot wait for a call back, and wants to reach someone at the studio now
+    criteria: Says their call or their matter is urgent, an emergency, or cannot wait for a call back, and wants to reach someone at the studio now. Said at any point in the call it is urgent's, even in the same breath as a correction or another detail of a message, as in wait, it's for Sam, and it's urgent
     label: reach the studio's main line
     kind: form
     priority: { correctsForm: true }
@@ -43,7 +43,7 @@ intents:
     label: speak with someone
     kind: control
   repeat_prompt:
-    criteria: Asks the system to repeat what it just said, or to read it back exactly or word for word
+    criteria: Asks the system to repeat what it just said, or to read it back exactly or word for word. A caller who wants to say their message again themselves, as in let me say it again, is not asking for a repeat
     label: hear that again
     kind: control
   # The caller is finished: the call ends with the goodbye. Said after an answer ("How can I help you

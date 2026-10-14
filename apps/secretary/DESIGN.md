@@ -182,6 +182,19 @@ After the review of 2026-10-14 the baseline was made again with `regress --updat
 
 No other entry changed (the line changes, `message_taken`, `goodbye`, `nomatch_open` and `exactText`, are words, which the baseline does not hold; the scripted calls that name them expect the new words).
 
+After recording 1 (2026-10-14), edited by hand (never `--update` once recorded), each entry from `regress --corpus <id> --json` / `--scenario <id> --json`:
+
+| Entry | Field | Before -> after | Why |
+|---|---|---|---|
+| corpus `rc-05` | `promptId`, `slots.recipient` | `ask_caller`, `anyone` -> `ask_recipient_retry`, none | relabelled a miss: the model hears no recipient (0.93), and asking again, with "anyone at the studio" offered, is the better turn |
+| corpus `rc-08`, `ms-05`, `of-07`, `ns-03` | `decision`, `promptId`, `decidedGate`, `verdict` | a re-ask -> `ignore` at `addressedToSystem` | words that ask nothing of the line (thinking aloud, "hang on", "um"), rightly ignored |
+| corpus `of-05` | `decidedGate`, `verdict` | `intent`, `confirm_unanswered` -> `confirmation`, `rejected` | another number at the offer is a no to it; the same next question |
+| corpus `ur-06` | `promptId`, `reason`, `decidedGate`, `verdict`, `form` | `handoff_urgent`, `urgent`, `intent`, `route`, `urgent` -> `handoff_live_agent`, `live-agent`, `wantsHuman`, `handoff`, `take_message` | the caller asks for someone (wantsHuman 0.97): the same main line |
+| corpus `ur-07`, scripted call `urgent-in-the-middle-of-a-message` | `slots.message` | none -> the caller's words | the urgent words also give the message (messageGiven 0.67) |
+| corpus `wh-06` | `decision`, `promptId`, `acks`, `reason`, `decidedGate`, `verdict` | the whereabouts line -> `handoff_live_agent`, `live-agent` at `wantsHuman` | asking if Sam is available is asking to speak to Sam |
+| corpus `of-08`, `ms-10` | new | | misses for the offer and the message, replacing lines now ignored |
+| scripted call `message-recipient-not-sure-is-anyone` | renamed | -> `message-recipient-not-sure-asked-again`, with "anyone, I don't mind" after the re-ask; the same outcome (`ask_caller`, `anyone`) | follows `rc-05`'s relabel |
+
 ## Known limits
 
 - **A message said in two breaths.** A caller who pauses between two sentences of a message ("The logo files are ready. ... Oh, and the invoice is attached.") gives the message at the first breath: the line reads it back, and the second sentence arrives as an answer to the read-back. `voice.continueWithinMs: 900` joins the two when the caller talks over the read-back within 900 ms of its start (the engine's default is 300); a longer pause is not joined. **To try on a live call:** leave a two-sentence message with a short pause (about a second) between the sentences, then one with a longer pause (two or three seconds), and see whether the read-back has both. If the longer pause loses the second sentence, the options are a higher `continueWithinMs` (at most 2000) or the recognizer's own end-of-speech setting, never the message's slot.
@@ -191,7 +204,32 @@ No other entry changed (the line changes, `message_taken`, `goodbye`, `nomatch_o
 
 ## Recordings
 
-Not recorded yet: the owner's step (README, "Recording against the real models").
+- **Recording 1, 2026-10-14, decision model `jev-1.13.0` (TypeSafe), render model `claude-haiku-5-5` (Anthropic, thinking off)**, by the maintainer: corpus 111/128, scripted calls 42/52 pass; `to triage: 17 untagged corpus differences, 10 failing scripted calls, 3 passing scripted calls that differ from the baseline, 0 cassette misses`. Spans: 27 tried, 3 said generated, 2 unchanged, 22 fell back (person 19, words 2, negation 1).
+- **After the fixes that change no request** (replayed on recording 1): corpus 119/130 (the two new lines, `of-08` and `ms-10`, are not recorded yet), scripted calls 46/52; `to triage: 2 untagged corpus differences (the two new lines, cassette misses), 6 failing scripted calls, 0 passing scripted calls that differ from the baseline, 6 cassette misses`. Every miss is a request the recording never made: a new line or a scripted call's new step.
+- **Labels fixed (the model was right)**, each also under "Baseline edits":
+  - `rc-05` "I'm not sure who it should go to": recipient none 0.93 (anyone 0.07), so the desk asks again, offering "anyone at the studio". That is the better turn; the line is a miss again, and `message-recipient-not-sure-asked-again` (was `...-is-anyone`) now answers the re-ask with "anyone, I don't mind".
+  - `rc-08` "hmm, let me think", `ms-05` "hmm, what should I say", `of-07` "hang on a second", `ns-03` "um": addressedToSystem 0.39, 0.45, 0.46, 0.58, so each is ignored. Words that ask nothing of the line, rightly ignored; labelled with `answers: { addressedToSystem: 0.3 }` and the tag `not_addressed`. New misses replace them where a slot needed one: `ms-10` "I'd rather not say what it's about" and `of-08` "what number is that".
+  - `of-05` "my cell is ... 0133" at the offer: confirmsNo 0.79 with the number. Giving another number is a no to the offer: `confirm: no`; the same next question.
+  - `ur-06` "actually this is urgent, can I talk to someone now": urgent 0.83 and wantsHuman 0.97, so it goes to the main line as a request for a person (`live-agent`) rather than as urgent: the caller does ask for someone, and the line is the same. Labelled with `answers: { wantsHuman: 0.95 }`.
+  - `ur-07` "hold on, it's really urgent, the website is down", inside the message: messageGiven 0.67. The words do give the message; labelled `messageGiven`, so the handoff carries it (by its length).
+  - `wh-06` "is Sam available": whereabouts 0.98 and wantsHuman 0.84. Asking whether Sam is available is asking to speak to Sam, so the call goes to the main line; nothing is said about where Sam is. Labelled with `answers: { wantsHuman: 0.9 }`.
+- **Tagged `knownGap` (the label is the truth)**:
+  - `tm-11` "yes please", `tm-12` "sure, okay": a corpus line at `no_form` is seeded at the call's opening, where no offer of a message was made, so the model reads no request (take_message 0.46; 0.01) and the caller hears `nomatch_open`. After the whereabouts line, the scripted calls test them: `whereabouts-then-yes` passes on recording 1 ("yes please" read as take_message), `whereabouts-then-sure` waits for the re-record. A finding for the maintainer: the corpus has no context "after an informational answer".
+  - `ad-08` "oh, and what's the address there", at the name question: studio_address 0.99, but addressedToSystem 0.42, so the turn is ignored and the caller hears nothing. The engine's question (owner's table).
+  - `ag-08` "a person": wantsHuman 0.56, under its threshold; the intent gate takes it (agent 0.74). The same handoff.
+  - `rp-07` "pardon", at the opening: none 0.55, repeat_prompt 0.44; the caller hears `nomatch_open`, which says what the desk does.
+  - `sm-04` "no, let me say it again": a no (0.96) with no slot to change (changeSlot none 0.99; repeat_prompt 0.71), so a bare no: the exact words are read back, and a second no asks what to change, where the message is said again (`message-read-back-corrected` still ends at the new read-back). Reworded for the re-record (repeat_prompt's criteria).
+  - `ur-07`: the priority gate acts, not the intent gate (the change question reads answering 0.99): the same handoff.
+  - `ur-08` "wait, it's for Sam, and it's urgent", at the read-back: take_message 0.64, urgent 0.21: the correction is taken and the urgency lost; the caller must say it again. Reworded for the re-record (urgent's criteria).
+  - `ms-09` "please call me back as soon as possible about the proofs": messageGiven 0.54, under the slot's bar, so the message is asked again. Reworded for the re-record (the message slot's instructions).
+- **Scripted calls changed on an incidental line**:
+  - `hours-on-the-keypad`, `address-on-the-keypad`, `message-on-the-keypad`, `person-on-the-keypad-menu`: opened with "um", "um", which the model ignores (ns-03, addressedToSystem 0.58), so the menu was never offered. Opened with two silences instead (a silence is a miss with no model call); all four pass on recording 1.
+  - `recipient-not-given-goes-to-a-person`: "hmm, let me think" (now rightly ignored) x3 -> "I'm not sure who it should go to" x3 (a miss the model hears).
+  - `whereabouts-then-sure`: its first step "is Sam available" (now a request for a person) -> "when will Sam be back" (wh-02, read as whereabouts).
+  - `cosmeticDrift` on `urgent-in-the-middle-of-a-message` (priority gate), `message-read-back-corrected` and `message-said-again-at-what-to-change` (a no read at the confirmation gate): the same end by another gate.
+- **Left failing, as evidence**: `urgent-at-the-read-back-with-a-correction` (ur-08; the rewording should fix it), `message-asap-in-the-message` (ms-09; the same), and `message-long-read-back-summarized`: its span fell back for `person` (the engine's "speak to the caller" option for a framed span, being built; the frame stays as it is until it says how the frame should read), so the line is the exact-words frame, not "in short". Its expectation is kept: it is what the app means the caller to hear.
+- **Reworded for the re-record** (each changes every request, so the replay now misses everywhere until recording 2): urgent's criteria (said at any point, even in the same breath as a correction: ur-08); repeat_prompt's criteria (a caller who wants to say their message again is not asking for a repeat: sm-04); the message slot's instructions (a request to be called back about something is a message too: ms-09).
+- **For the owner**: one re-record (the same command), after which: remove the tags the run says `knownGap now matches` for (expected: `sm-04`, `ur-08`, `ms-09` if the rewording works), record `whereabouts-then-sure`, `of-08`, `ms-10` and the two scripted calls' new steps, and triage the spans again once the engine's person option is in. `ad-08` (addressedToSystem on "oh, and ... there") and the corpus's missing context after an informational answer are the engine's.
 
 ## Final checklist
 

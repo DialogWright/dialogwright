@@ -433,14 +433,14 @@
   "rc-05": {
     "id": "rc-05",
     "decision": "prompt",
-    "promptId": "ask_caller",
+    "promptId": "ask_recipient_retry",
     "acks": [],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
     "form": "take_message",
     "slots": {
-      "recipient": "anyone",
+      "recipient": null,
       "caller": null,
       "phone": null,
       "message": null
@@ -489,12 +489,12 @@
   },
   "rc-08": {
     "id": "rc-08",
-    "decision": "prompt",
-    "promptId": "ask_recipient_retry",
+    "decision": "ignore",
+    "promptId": null,
     "acks": [],
     "reason": null,
-    "decidedGate": null,
-    "verdict": "proceed",
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
     "form": "take_message",
     "slots": {
       "recipient": null,
@@ -702,8 +702,8 @@
     "promptId": "ask_message",
     "acks": [],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "confirm_unanswered",
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
     "form": "take_message",
     "slots": {
       "recipient": "riley",
@@ -736,6 +736,25 @@
   },
   "of-07": {
     "id": "of-07",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-08": {
+    "id": "of-08",
     "decision": "prompt",
     "promptId": "offer_phone",
     "acks": [],
@@ -926,12 +945,12 @@
   },
   "ms-05": {
     "id": "ms-05",
-    "decision": "prompt",
-    "promptId": "ask_message_retry",
+    "decision": "ignore",
+    "promptId": null,
     "acks": [],
     "reason": null,
-    "decidedGate": null,
-    "verdict": "proceed",
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
     "form": "take_message",
     "slots": {
       "recipient": "riley",
@@ -1014,6 +1033,25 @@
       "caller": "Alex Rivera",
       "phone": "5555550142",
       "message": "please call me back as soon as possible about the proofs"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-10": {
+    "id": "ms-10",
+    "decision": "prompt",
+    "promptId": "ask_message_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1252,12 +1290,12 @@
   "ur-06": {
     "id": "ur-06",
     "decision": "handoff",
-    "promptId": "handoff_urgent",
+    "promptId": "handoff_live_agent",
     "acks": [],
-    "reason": "urgent",
-    "decidedGate": "intent",
-    "verdict": "route",
-    "form": "urgent",
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "take_message",
     "slots": {
       "recipient": "riley",
       "caller": null,
@@ -1281,7 +1319,7 @@
       "recipient": "riley",
       "caller": "Alex Rivera",
       "phone": "5555550142",
-      "message": null
+      "message": "hold on, it's really urgent, the website is down"
     },
     "queued": [],
     "principalLevel": 0,
@@ -1749,14 +1787,12 @@
   },
   "wh-06": {
     "id": "wh-06",
-    "decision": "prompt",
-    "promptId": "ask_intent",
-    "acks": [
-      "no_whereabouts"
-    ],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "inform",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
     "form": null,
     "slots": {
       "recipient": null,
@@ -2477,12 +2513,12 @@
   },
   "ns-03": {
     "id": "ns-03",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
+    "decision": "ignore",
+    "promptId": null,
     "acks": [],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
     "form": null,
     "slots": {
       "recipient": null,

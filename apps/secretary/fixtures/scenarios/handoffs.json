@@ -2,100 +2,164 @@
   {
     "id": "urgent-at-the-start",
     "steps": [
-      { "say": "it's urgent" }
+      {
+        "say": "it's urgent"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "urgent",
       "form": "urgent",
       "text": "I'll put you straight through to the studio's main line.",
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   },
   {
     "id": "urgent-in-the-middle-of-a-message",
     "callerNumber": "+15555550142",
     "steps": [
-      { "say": "can I leave a message for Riley" },
-      { "say": "it's Alex Rivera" },
-      { "say": "yes, that's fine" },
-      { "say": "hold on, it's really urgent, the website is down" }
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "hold on, it's really urgent, the website is down"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "urgent",
-      "slots": { "recipient": "riley", "phone": "5555550142" },
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
-    }
+      "slots": {
+        "recipient": "riley",
+        "phone": "5555550142"
+      },
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
+    },
+    "cosmeticDrift": true
   },
   {
     "id": "urgent-at-the-read-back-with-a-correction",
     "callerNumber": "+15555550142",
     "steps": [
-      { "say": "can I leave a message for Riley" },
-      { "say": "it's Alex Rivera" },
-      { "say": "yes, that's fine" },
-      { "say": "the logo files are ready for review" },
-      { "say": "wait, it's for Sam, and it's urgent" }
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "wait, it's for Sam, and it's urgent"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "urgent",
-      "slots": { "recipient": "sam" },
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "slots": {
+        "recipient": "sam"
+      },
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   },
   {
     "id": "person-at-the-start",
     "steps": [
-      { "say": "can I talk to a person" }
+      {
+        "say": "can I talk to a person"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "live-agent",
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   },
   {
     "id": "person-in-the-middle-of-a-message",
     "steps": [
-      { "say": "can I leave a message for Riley" },
-      { "say": "can I just talk to a real person" }
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "can I just talk to a real person"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "live-agent",
-      "slots": { "recipient": "riley" },
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "slots": {
+        "recipient": "riley"
+      },
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   },
   {
     "id": "person-at-the-read-back",
     "callerNumber": "+15555550142",
     "steps": [
-      { "say": "can I leave a message for Riley" },
-      { "say": "it's Alex Rivera" },
-      { "say": "yes, that's fine" },
-      { "say": "the logo files are ready for review" },
-      { "say": "actually, can I speak to someone" }
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "actually, can I speak to someone"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "live-agent",
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   },
   {
     "id": "person-on-the-keypad-menu",
     "steps": [
-      { "say": "um" },
-      { "say": "um" },
-      { "dtmf": "0" }
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "dtmf": "0"
+      }
     ],
     "expect": {
       "decision": "handoff",
       "reason": "live-agent",
-      "transfer": { "target": "STUDIO_MAIN_LINE" }
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
     }
   }
 ]

@@ -16,10 +16,10 @@
     "id": "hours-on-the-keypad",
     "steps": [
       {
-        "say": "um"
+        "silence": true
       },
       {
-        "say": "um"
+        "silence": true
       },
       {
         "dtmf": "2"
@@ -48,10 +48,10 @@
     "id": "address-on-the-keypad",
     "steps": [
       {
-        "say": "um"
+        "silence": true
       },
       {
-        "say": "um"
+        "silence": true
       },
       {
         "dtmf": "3"
@@ -67,10 +67,10 @@
     "id": "message-on-the-keypad",
     "steps": [
       {
-        "say": "um"
+        "silence": true
       },
       {
-        "say": "um"
+        "silence": true
       },
       {
         "dtmf": "1"
@@ -184,7 +184,7 @@
     "id": "whereabouts-then-sure",
     "steps": [
       {
-        "say": "is Sam available"
+        "say": "when will Sam be back"
       },
       {
         "say": "sure, okay"
