@@ -1,0 +1,2295 @@
+{
+  "tm-01": {
+    "id": "tm-01",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-02": {
+    "id": "tm-02",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-03": {
+    "id": "tm-03",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-04": {
+    "id": "tm-04",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-05": {
+    "id": "tm-05",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": "alex rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-06": {
+    "id": "tm-06",
+    "decision": "prompt",
+    "promptId": "confirm_intent_explicit",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-07": {
+    "id": "tm-07",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": "tell Riley the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-08": {
+    "id": "tm-08",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on five five five five five five zero one four two"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-09": {
+    "id": "tm-09",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-10": {
+    "id": "tm-10",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-01": {
+    "id": "rc-01",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-02": {
+    "id": "rc-02",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-03": {
+    "id": "rc-03",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-04": {
+    "id": "rc-04",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-05": {
+    "id": "rc-05",
+    "decision": "prompt",
+    "promptId": "ask_recipient_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-06": {
+    "id": "rc-06",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-07": {
+    "id": "rc-07",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-01": {
+    "id": "nm-01",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-02": {
+    "id": "nm-02",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-03": {
+    "id": "nm-03",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "casey brooks",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-04": {
+    "id": "nm-04",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "morgan ellis",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-05": {
+    "id": "nm-05",
+    "decision": "prompt",
+    "promptId": "ask_caller_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "nm-06": {
+    "id": "nm-06",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-01": {
+    "id": "of-01",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-02": {
+    "id": "of-02",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-03": {
+    "id": "of-03",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-04": {
+    "id": "of-04",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550199",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-05": {
+    "id": "of-05",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550133",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-06": {
+    "id": "of-06",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "of-07": {
+    "id": "of-07",
+    "decision": "prompt",
+    "promptId": "offer_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "confirm_unanswered",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-01": {
+    "id": "ph-01",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-02": {
+    "id": "ph-02",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550177",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-03": {
+    "id": "ph-03",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550166",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-04": {
+    "id": "ph-04",
+    "decision": "prompt",
+    "promptId": "ask_phone_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ph-05": {
+    "id": "ph-05",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550188",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-01": {
+    "id": "ms-01",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-02": {
+    "id": "ms-02",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the brochure proofs are back from the printer and look great, no changes needed"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-03": {
+    "id": "ms-03",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "just say Alex called"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-04": {
+    "id": "ms-04",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-05": {
+    "id": "ms-05",
+    "decision": "prompt",
+    "promptId": "ask_message_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-06": {
+    "id": "ms-06",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "please don't send the final files until we've signed off on the colours"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-07": {
+    "id": "ms-07",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready, but the colours are still not quite right"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-01": {
+    "id": "sm-01",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "sm-02": {
+    "id": "sm-02",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "sm-03": {
+    "id": "sm-03",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [
+      "read_back_exact"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-04": {
+    "id": "sm-04",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-05": {
+    "id": "sm-05",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-06": {
+    "id": "sm-06",
+    "decision": "prompt",
+    "promptId": "ask_phone",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "changeSlot",
+    "verdict": "change_slot",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": null,
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "sm-07": {
+    "id": "sm-07",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "ur-01": {
+    "id": "ur-01",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-02": {
+    "id": "ur-02",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-03": {
+    "id": "ur-03",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-04": {
+    "id": "ur-04",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-05": {
+    "id": "ur-05",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-06": {
+    "id": "ur-06",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-07": {
+    "id": "ur-07",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ur-08": {
+    "id": "ur-08",
+    "decision": "handoff",
+    "promptId": "handoff_urgent",
+    "acks": [],
+    "reason": "urgent",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "urgent",
+    "slots": {
+      "recipient": "sam",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-01": {
+    "id": "hr-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-02": {
+    "id": "hr-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-03": {
+    "id": "hr-03",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-04": {
+    "id": "hr-04",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-05": {
+    "id": "hr-05",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-06": {
+    "id": "hr-06",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-07": {
+    "id": "hr-07",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "hr-08": {
+    "id": "hr-08",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-01": {
+    "id": "ad-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-02": {
+    "id": "ad-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-03": {
+    "id": "ad-03",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-04": {
+    "id": "ad-04",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-05": {
+    "id": "ad-05",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-06": {
+    "id": "ad-06",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-07": {
+    "id": "ad-07",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ad-08": {
+    "id": "ad-08",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "studio_address"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-01": {
+    "id": "wh-01",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-02": {
+    "id": "wh-02",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-03": {
+    "id": "wh-03",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-04": {
+    "id": "wh-04",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-05": {
+    "id": "wh-05",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-06": {
+    "id": "wh-06",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-07": {
+    "id": "wh-07",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "wh-08": {
+    "id": "wh-08",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "no_whereabouts"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-01": {
+    "id": "ag-01",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-02": {
+    "id": "ag-02",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-03": {
+    "id": "ag-03",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-04": {
+    "id": "ag-04",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-05": {
+    "id": "ag-05",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-06": {
+    "id": "ag-06",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-07": {
+    "id": "ag-07",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ag-08": {
+    "id": "ag-08",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-01": {
+    "id": "rp-01",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-02": {
+    "id": "rp-02",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-03": {
+    "id": "rp-03",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-04": {
+    "id": "rp-04",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-05": {
+    "id": "rp-05",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-06": {
+    "id": "rp-06",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-07": {
+    "id": "rp-07",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rp-08": {
+    "id": "rp-08",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-01": {
+    "id": "dn-01",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-02": {
+    "id": "dn-02",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-03": {
+    "id": "dn-03",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-04": {
+    "id": "dn-04",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-05": {
+    "id": "dn-05",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-06": {
+    "id": "dn-06",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-07": {
+    "id": "dn-07",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "dn-08": {
+    "id": "dn-08",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-01": {
+    "id": "ot-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-02": {
+    "id": "ot-02",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-03": {
+    "id": "ot-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-04": {
+    "id": "ot-04",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-05": {
+    "id": "ot-05",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-06": {
+    "id": "ot-06",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-07": {
+    "id": "ot-07",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-08": {
+    "id": "ot-08",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-01": {
+    "id": "ns-01",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-02": {
+    "id": "ns-02",
+    "decision": "ignore",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "addressedToSystem",
+    "verdict": "ignore",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ns-03": {
+    "id": "ns-03",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "in-01": {
+    "id": "in-01",
+    "decision": "prompt",
+    "promptId": "ask_message",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  }
+}

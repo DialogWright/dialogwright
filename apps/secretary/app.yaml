@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Example Front Desk: the phone answered for a small, fictional design studio when no one can pick
+# up. It takes a message for one of three people (or for anyone), with a name and a callback number,
+# and reads the message back the way a receptionist would: the line fixed, and only a short summary of
+# the caller's own words generated (prompts.yaml's confirm_take_message). Every other line is said word
+# for word. The dialog is in intents.yaml, forms.yaml, prompts.yaml and policy.yaml, and what runs is
+# in src/app.ts. All names, numbers and the address are made up (the 555 range). See README.md.
+id: secretary
+locale: en-US
+
+# The app as the operator console names it.
+brand:
+  name: Example Front Desk
+  mark: EF
+  key: secretary
+
+# What the operator console shows: each form and slot in words.
+console:
+  formLabels:
+    take_message: Take a message
+    urgent: Urgent, to the main line
+  slotLabels:
+    recipient: Recipient
+    caller: Caller
+    phone: Callback number
+    message: Message
+
+# The phone line's speech settings: words a caller says first, which the recognizer should expect.
+voice:
+  hints: [message, Riley, Moreno, Sam, Okafor, Jordan, Lee, urgent, hours, address, person]
+
+# The engine's own model questions need to know whom the caller is addressing.
+wording:
+  addressee: the Example Front Desk line
+
+# What a transfer hands the person who takes the call: every slot the call holds (the callback number
+# by its last four, as the records keep it), and the values the caller never confirmed named as such,
+# so a call put through mid-message says which details are still unconfirmed.
+handoff:
+  data:
+    unconfirmed: mark
+
+# Every handoff goes to the studio's main line: a caller who says it is urgent, one who asks for a
+# person, and one the line could not help. The number is a setting (STUDIO_MAIN_LINE in .env), never
+# in this file.
+transfer:
+  default: env.STUDIO_MAIN_LINE
+
+# The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.
+fixtures:
+  dir: fixtures
+
+# The adversarial suite (dialogwright/testing adversarialSuite) runs with the regression: announced
+# injections, relationships claimed and not proven, off-scope requests, codes said aloud or never
+# sent, hostile replies from every tool, and, since this app generates a span, the wording family
+# (an injected message, a dropped negation, the message summarized as for someone else, a renderer
+# writing into the frame), each held to properties over its run, never to lines. A case that fails is
+# a finding: fix the app (a tool's reply check, the policy) or the engine; never loosen it.
+testing:
+  adversarial: on

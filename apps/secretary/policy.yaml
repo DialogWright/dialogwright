@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/policy.schema.json
+# What the agent may do, action by action: the whole of it. Policy is data here and never lives in
+# a tool; the gate decides, before every call, from this file. Every tool in src/app.ts needs an
+# action here, and every action not listed is refused. Compliance owns this file.
+#
+# The one action: a message delivered to the studio's inbox. Nobody verifies who they are (level 0),
+# and the message goes only with exactly what the read-back said and the caller said yes to: the
+# person, the name, the number and the message word for word (the `confirmed` rule).
+actions:
+  leaveMessage:
+    say: deliver a message to the studio's inbox
+    level: 0
+    rules:
+      - identity
+      - confirmed: [recipient, caller, phone, message]
+
+# How each value the action is sent is recorded (the gate event, the trace, the console and the
+# audit). The callback number is a digits slot, recorded by its last four as the slot says. The
+# person is a choice from a short list, kept as it is. The caller's name and the message are their own
+# words: only their length is recorded. The inbox gets the message whole; the records do not.
+audit:
+  recipient: keep
+  caller: length
+  message: length

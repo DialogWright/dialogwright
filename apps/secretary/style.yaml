@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/style.schema.json
+# How the one generated span (the summary inside confirm_take_message) sounds: told to the model, and
+# the phrases to avoid checked on every wording before anyone hears it. The span's own word budget is
+# in prompts.yaml (words: 20).
+persona: a warm, brief receptionist at a small design studio
+avoid:
+  - unfortunately
+  - I apologize for the inconvenience

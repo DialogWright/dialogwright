@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+# Every slot the app has, in the order the engine works through them. Each is a library type
+# configured here (docs/slots/README.md lists the types and their options).
+
+# Who the message is for: one of the three people, or anyone at the studio. The model picks a key from
+# this list; `say` is how the line names it.
+recipient:
+  type: choice
+  options:
+    riley:
+      say: Riley Moreno
+      means: The message is for Riley Moreno, or Riley
+    sam:
+      say: Sam Okafor
+      means: The message is for Sam Okafor, or Sam
+    jordan:
+      say: Jordan Lee
+      means: The message is for Jordan Lee, or Jordan
+    anyone:
+      say: the team
+      means: The caller does not mind who gets the message, as in anyone, whoever is around, the team or the studio
+  text:
+    instructions: Read asr.text. Who does the caller say the message is for?
+
+# The caller's own name, as said.
+caller:
+  type: name
+
+# A number to call back: on a phone call the line offers the number the caller is calling from, as a
+# yes or no ("Is the number you're calling from, ending in 0142, the best one to reach you?"); a no
+# asks for another. Recorded by its last four (the digits type's default, redact: last4).
+phone:
+  type: digits
+  noun: phone
+  length: 10
+  mask: '[2-9]\d{9}'
+  keypad: true
+  group: [3, 3, 4]
+  callerNumber:
+    countryCode: '1'
+
+# The message, exactly as the caller said it: the slot keeps the words (say: null, redact: none), the
+# message is delivered word for word, and these words fill the read-back's summary whenever it is not
+# generated (a no, a repeat, a check that fails, a slow model). The records keep only its length
+# (policy.yaml's audit).
+message:
+  type: text
+  what: the message the caller wants to leave
+  instructions: Count the message itself, even when it comes with other words.
+  say: null
+  redact: none
+  maxLength: 400

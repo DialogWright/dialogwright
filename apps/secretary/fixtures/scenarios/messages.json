@@ -1,0 +1,554 @@
+[
+  {
+    "id": "message-read-back-summarized",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley",
+        "phone": "5555550142",
+        "message": "the logo files are ready for review"
+      },
+      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said:"
+    }
+  },
+  {
+    "id": "message-long-read-back-summarized",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
+      },
+      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said:"
+    }
+  },
+  {
+    "id": "message-read-back-accepted",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "yes, pass it on"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "text": "Your message is on its way to Riley Moreno. Thanks for calling Example Front Desk.",
+      "gate": "leaveMessage:ALLOW"
+    }
+  },
+  {
+    "id": "message-read-back-no-hears-exact-words",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the brochure proofs are back from the printer and look great, no changes needed"
+      },
+      {
+        "say": "no, that's not right"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "text": "Here it is exactly as I took it down. Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said: the brochure proofs are back from the printer and look great, no changes needed. Shall I pass it on?"
+    }
+  },
+  {
+    "id": "message-read-back-corrected",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "no, that's not right"
+      },
+      {
+        "say": "no, let me say it again"
+      },
+      {
+        "say": "the logo files are ready, but the colours are still not quite right"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "message": "the logo files are ready, but the colours are still not quite right"
+      },
+      "text": "called and said: the logo files are ready, but the colours are still not quite right. Shall I pass it on?"
+    }
+  },
+  {
+    "id": "message-read-back-corrected-then-delivered",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "no, that's not right"
+      },
+      {
+        "say": "no, let me say it again"
+      },
+      {
+        "say": "the logo files are ready, but the colours are still not quite right"
+      },
+      {
+        "say": "yep, that's it"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "gate": "leaveMessage:ALLOW"
+    }
+  },
+  {
+    "id": "message-read-back-repeated-word-for-word",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "can you read that back word for word"
+      }
+    ],
+    "expect": {
+      "decision": "replay",
+      "form": "take_message",
+      "text": "called and said: the logo files are ready for review. Shall I pass it on?"
+    }
+  },
+  {
+    "id": "message-recipient-corrected-at-read-back",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "no, it's for Sam"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "sam"
+      },
+      "text": "Thanks, I'll make sure Sam Okafor gets your message"
+    }
+  },
+  {
+    "id": "message-number-corrected-at-read-back",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "no, the number's wrong"
+      },
+      {
+        "say": "555 555 0177"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "phone": "5555550177"
+      }
+    }
+  },
+  {
+    "id": "message-for-anyone",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "message for anyone, I don't mind who"
+      },
+      {
+        "say": "my name is Casey Brooks"
+      },
+      {
+        "say": "that's the one"
+      },
+      {
+        "say": "just say Alex called"
+      },
+      {
+        "say": "that's right, thanks"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "text": "Your message is on its way to the team.",
+      "gate": "leaveMessage:ALLOW"
+    }
+  },
+  {
+    "id": "message-anyone-asked",
+    "steps": [
+      {
+        "say": "I'd like to leave a message"
+      },
+      {
+        "say": "whoever's around"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "anyone"
+      }
+    }
+  },
+  {
+    "id": "message-all-in-one-breath",
+    "steps": [
+      {
+        "say": "hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on five five five five five five zero one four two"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley",
+        "phone": "5555550142"
+      }
+    }
+  },
+  {
+    "id": "message-name-in-the-opener",
+    "steps": [
+      {
+        "say": "this is Alex Rivera, can you take a message for Jordan"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_phone",
+      "form": "take_message",
+      "slots": {
+        "recipient": "jordan"
+      }
+    }
+  },
+  {
+    "id": "message-said-with-the-request",
+    "steps": [
+      {
+        "say": "tell Riley the logo files are ready for review"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "five five five five five five zero one four two"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley",
+        "message": "tell Riley the logo files are ready for review"
+      }
+    }
+  },
+  {
+    "id": "message-tentative-request-checked",
+    "steps": [
+      {
+        "say": "I guess I could leave a message"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_intent_explicit"
+    }
+  },
+  {
+    "id": "callback-offer-declined",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "it's five five five, five five five, zero one six six"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_message",
+      "form": "take_message",
+      "slots": {
+        "phone": "5555550166"
+      }
+    }
+  },
+  {
+    "id": "callback-offer-another-number",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "no, use my cell, five five five five five five zero one nine nine"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_message",
+      "form": "take_message",
+      "slots": {
+        "phone": "5555550199"
+      }
+    }
+  },
+  {
+    "id": "callback-offer-declined-then-nothing",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "no"
+      },
+      {
+        "say": "I don't have a number handy"
+      },
+      {
+        "say": "I don't have a number handy"
+      },
+      {
+        "say": "I don't have a number handy"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
+    }
+  },
+  {
+    "id": "callback-withheld-number-asked",
+    "callerNumber": "+7378742833",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_phone",
+      "form": "take_message"
+    }
+  },
+  {
+    "id": "callback-keyed",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "dtmf": "5555550123"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_message",
+      "form": "take_message",
+      "slots": {
+        "phone": "5555550123"
+      }
+    }
+  },
+  {
+    "id": "message-by-chat",
+    "as": "web",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "555 555 0177"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "yes, pass it on"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "gate": "leaveMessage:ALLOW"
+    }
+  },
+  {
+    "id": "recipient-not-given-goes-to-a-person",
+    "steps": [
+      {
+        "say": "I'd like to leave a message"
+      },
+      {
+        "say": "I'm not sure who it should go to"
+      },
+      {
+        "say": "I'm not sure who it should go to"
+      },
+      {
+        "say": "I'm not sure who it should go to"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
+    }
+  }
+]

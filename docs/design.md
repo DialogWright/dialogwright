@@ -87,6 +87,7 @@ Today the engine ships as one package, `dialogwright`. As the framework grows it
 | `a2a` | A strict client for downstream services that speak the agent-to-agent protocol (optional) |
 | `apps/clinic` | Example: appointment scheduling with name and date of birth, as an app folder |
 | `apps/utility` | Example: identity, policy, writes, delegates, knowledge base |
+| `apps/secretary` | Example: generated wording, a framed read-back of the caller's message |
 
 ### An app is a folder
 

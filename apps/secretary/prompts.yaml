@@ -1,0 +1,189 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/prompts.schema.json
+# Every line a caller can hear. Braces are filled in by the engine ({intentLabel}) or by the code
+# ({recipient}); `interruptible` says whether a caller may talk over it. `pnpm check` lists any line the
+# engine needs that is missing here.
+#
+# Every line is said word for word but one part of one line: the read-back of the message,
+# confirm_take_message, is a framed line. Its words are fixed and say whose words follow, and only
+# {summary} inside it is generated, from the message alone, the first time it is said. Whenever the
+# summary is not generated (a no, a repeat, a check that fails, a slow model, no model set up), it is
+# the caller's message word for word. The lines that say what was done with the message and the
+# handoff lines are prescribed: always said exactly as written.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Thanks for calling Example Front Desk. No one can pick up right now, but I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. How can I help?
+    interruptible: true
+  greeting_chat:
+    text: Hi, this is Example Front Desk. I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What can I help with?
+    interruptible: true
+  ask_intent:
+    text: How can I help you today?
+    interruptible: true
+  nomatch_open:
+    text: Sorry, I didn't catch that. You can leave a message, or ask for our hours or our address.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Let's try the keypad. To leave a message press 1. For our hours press 2. For our address press 3. To reach the studio's main line press 0.
+    interruptible: true
+  no_input:
+    text: I didn't hear anything.
+    interruptible: false
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Just to check, do you want to {intentLabel}? Yes or no.
+    interruptible: false
+  disambiguate_intent:
+    text: Do you want to {a}, or {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Sure, I can help you {a}, and then {b}.
+    interruptible: false
+  ack_queued:
+    text: Sure, we'll {intentLabel} after this.
+    interruptible: false
+  bridge_next:
+    text: Now, let's {intentLabel}.
+    interruptible: false
+  ack_frustration:
+    text: I understand, let's get this sorted.
+    interruptible: false
+  offer_transfer:
+    text: Would you like me to put you through to the studio's main line, or keep going?
+    interruptible: true
+  ack_declined:
+    text: Okay, let's keep going.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Sorry for the delay. You can also use your keypad.
+    interruptible: true
+  system_slow_chat:
+    text: Sorry, I'm having trouble on my end. Please send that again.
+    interruptible: true
+  confirm_dtmf:
+    text: Press 1 to pass it on, or 2 to change something.
+    interruptible: false
+  anything_else:
+    text: Is there anything else I can help with?
+    interruptible: true
+  goodbye:
+    text: Goodbye.
+    interruptible: false
+  goodbye_chat:
+    text: Thanks for getting in touch with Example Front Desk. Goodbye.
+    interruptible: false
+  screen_reprompt:
+    text: I can take a message, or tell you our hours or our address.
+    interruptible: true
+  screen_reprompt_form:
+    text: Let's keep going.
+    interruptible: true
+
+  # Every handoff goes to the studio's main line (app.yaml's transfer). Prescribed: always said exactly
+  # as written.
+  handoff_live_agent:
+    text: One moment while I put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
+  handoff_urgent:
+    text: I'll put you straight through to the studio's main line.
+    interruptible: false
+    prescribed: true
+  handoff_frustrated:
+    text: Let me put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
+  handoff_max_attempts:
+    text: Let me put you through to the studio's main line to help with that.
+    interruptible: false
+    prescribed: true
+  handoff_system_failure:
+    text: I'm having trouble right now. Let me put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
+  handoff_needs_human:
+    text: This one needs a person. Let me put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
+  handoff_security:
+    text: Let me put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
+
+  # The fixed answers (intents.yaml's informational intents). The street is invented.
+  studio_hours:
+    text: The studio is open weekdays, nine to five.
+    interruptible: false
+  studio_address:
+    text: The studio is at 418 Juniper Lane, Suite 2, in Example City.
+    interruptible: false
+  no_whereabouts:
+    text: I'm not able to say where anyone is or when they're in, but I'm happy to take a message for them.
+    interruptible: false
+
+  # The message: who it is for, who it is from, the number to call back, and the message itself.
+  ask_recipient:
+    text: Who's the message for, Riley Moreno, Sam Okafor, Jordan Lee, or anyone at the studio?
+    interruptible: true
+  ask_recipient_retry:
+    text: Sorry, is it for Riley, Sam, Jordan, or anyone at the studio?
+    interruptible: true
+  ask_caller:
+    text: And who's calling, please?
+    interruptible: true
+  ask_caller_retry:
+    text: Sorry, what name should I give?
+    interruptible: true
+  ask_phone:
+    text: What's the best number to call you back on?
+    interruptible: true
+  ask_phone_retry:
+    text: Sorry, what's the ten-digit number to call you back on?
+    interruptible: true
+  ask_phone_dtmf:
+    text: Please key in the ten-digit number on your keypad.
+    interruptible: true
+  offer_phone:
+    text: Is the number you're calling from, ending in {last4}, the best one to call you back on?
+    interruptible: true
+  ask_message:
+    text: Go ahead with your message.
+    interruptible: true
+  ask_message_retry:
+    text: Sorry, what message should I pass on?
+    interruptible: true
+
+  # The read-back, a framed line. Every word of it is fixed but {summary}, which the first time it is
+  # said is a short summary of the message, generated from the message alone (the model is given only
+  # the goal below and the caller's words, never the rest of the line); after that, and whenever a
+  # check fails, the message word for word. The frame says whose words follow ("called and said:"),
+  # so it reads true either way. A caller who says no hears it again word for word
+  # (forms.yaml's summary.onNo: read-back, after read_back_exact), and so does one who asks to hear it
+  # again (repeat_prompt). The caller says yes to the message kept word for word after hearing its
+  # summary: summarizesConfirmed says the app accepts that.
+  confirm_take_message:
+    text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+    interruptible: true
+    generate:
+      summary:
+        from: message
+        goal: Summarize the caller's message briefly, in their own terms, as a receptionist reading it back.
+        words: 20
+    summarizesConfirmed: true
+    when:
+      situations: [first-ask]
+  read_back_exact:
+    text: Here it is exactly as I took it down.
+    interruptible: false
+  ask_change:
+    text: What should I change? You can give me the message again, or ask me to read it back.
+    interruptible: true
+
+  # Said when the message is delivered; the call then ends with the goodbye. Prescribed: always word
+  # for word.
+  message_taken:
+    text: Your message is on its way to {recipient}. Thanks for calling Example Front Desk.
+    interruptible: false
+    prescribed: true

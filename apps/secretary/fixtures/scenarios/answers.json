@@ -1,0 +1,167 @@
+[
+  {
+    "id": "hours",
+    "steps": [
+      {
+        "say": "what are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "The studio is open weekdays, nine to five."
+    }
+  },
+  {
+    "id": "hours-on-the-keypad",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "um"
+      },
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "text": "The studio is open weekdays, nine to five."
+    }
+  },
+  {
+    "id": "address",
+    "steps": [
+      {
+        "say": "where are you located"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "The studio is at 418 Juniper Lane, Suite 2, in Example City."
+    }
+  },
+  {
+    "id": "address-on-the-keypad",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "um"
+      },
+      {
+        "dtmf": "3"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "text": "The studio is at 418 Juniper Lane, Suite 2, in Example City."
+    }
+  },
+  {
+    "id": "message-on-the-keypad",
+    "steps": [
+      {
+        "say": "um"
+      },
+      {
+        "say": "um"
+      },
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_recipient",
+      "form": "take_message"
+    }
+  },
+  {
+    "id": "whereabouts-never-said",
+    "steps": [
+      {
+        "say": "is Riley in today"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "I'm not able to say where anyone is or when they're in, but I'm happy to take a message for them."
+    }
+  },
+  {
+    "id": "whereabouts-then-a-message",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "a message for Sam please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "sam"
+      }
+    }
+  },
+  {
+    "id": "hours-in-the-middle-of-a-message",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "sorry, what time are you open until"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley"
+      },
+      "text": "The studio is open weekdays, nine to five. And who's calling, please?"
+    }
+  },
+  {
+    "id": "done-after-the-hours",
+    "steps": [
+      {
+        "say": "what are your hours"
+      },
+      {
+        "say": "that's all I needed, thanks"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  },
+  {
+    "id": "done-after-a-request-it-cannot-handle",
+    "steps": [
+      {
+        "say": "do you sell gift cards"
+      },
+      {
+        "say": "that's it, bye"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  }
+]
