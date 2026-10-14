@@ -156,7 +156,15 @@ export type RenderFallback =
   /** The line names another value of an item's own slot (the wrong recipient, day or kind) that its fixed line does not. */
   | 'conflict'
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
-  | 'content-flagged';
+  | 'content-flagged'
+  /** A span leaves out a clause of its content that says "no" or sets a condition (unless, until, except, only if), or restates one without its condition. */
+  | 'omitted'
+  /**
+   * A span's wording is its content word for word (letter case, punctuation and spacing aside): the
+   * span is said as the exact content, and the line in its frame for the exact words (`exactText`), so
+   * a frame written for a summary ("in short") never comes before the caller's own words.
+   */
+  | 'verbatim';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =

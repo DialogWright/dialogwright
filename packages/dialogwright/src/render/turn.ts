@@ -10,7 +10,7 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
@@ -359,6 +359,8 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       return requestFailed(e);
     }
     const text = cleanSpan(gen.text);
+    // The content back word for word: said as the exact words, in the frame for them, with nothing more asked.
+    if (sameWords(text, act.content.map((c) => c.value).join(' '))) return { fallback: 'verbatim', gen };
     const failed = checkSpan(text, act, { conflicts });
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {

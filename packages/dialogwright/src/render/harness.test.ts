@@ -4,7 +4,15 @@ import { callbackApp } from '../testing/callback/app';
 import { messageApp } from '../testing/message/app';
 import { RenderCassette } from './cassette';
 import { FakeRenderClient } from './fake';
-import { emptyRenderTally, formatRenderTally, harnessRenderer, tallyRender } from './harness';
+import { emptyRenderTally, formatRenderTally, harnessRenderer, stubRenderer, tallyRender } from './harness';
+import { afterAll } from 'vitest';
+import { runAll } from '../harness-text/runAll';
+import { buildClient } from '../run/client';
+import { registerApp, resetAppsForTest } from '../core/app/registry';
+import { DEFAULT_THRESHOLDS } from '../core/thresholds';
+import { MESSAGE_DIR } from '../testing/message/app';
+import { EXACT_FRAME, messageVariants } from '../testing/message/variant';
+import type { Scenario } from '../harness-text/runner';
 import { ModelRenderClient } from './providers';
 import type { TraceRecord } from '../trace/types';
 
@@ -63,5 +71,37 @@ describe('the run\'s line about its generated lines', () => {
     expect(rec.header).toEqual(['generated lines worded by claude-haiku-5-5 from anthropic (thinking adaptive, effort low)', `render cassette ${join('/rec', 'render', 'claude-haiku-5-5.thinking-adaptive.effort-low.jsonl')}`]);
     expect((harnessRenderer('recorded', messageApp, '/rec', { env }).renderer!.client as RenderCassette).path).toBe(join('/rec', 'render', 'claude-haiku-5-5.thinking-adaptive.effort-low.jsonl'));
     expect((harnessRenderer('recorded', messageApp, '/rec', { env: {} }).renderer!.client as RenderCassette).path).toBe(join('/rec', 'render', 'claude-haiku-5-5.jsonl'));
+  });
+});
+
+describe('stubRenderer: the renderer an app\'s own test runs its scripted calls with (the secretary\'s review, live findings item 21)', () => {
+  const variants = messageVariants();
+  afterAll(() => {
+    variants.remove();
+    resetAppsForTest();
+  });
+
+  it('is the stub regression\'s: the fake renderer with RENDER_SHARE and the budgets from the environment; none for an app that generates nothing', () => {
+    const r = stubRenderer(messageApp, { RENDER_SHARE: '40', RENDER_TIMEOUT_MS: '900' })!;
+    const regress = harnessRenderer('stub', messageApp, '/x', { env: { RENDER_SHARE: '40', RENDER_TIMEOUT_MS: '900' } }).renderer!;
+    expect(r.client).toBeInstanceOf(FakeRenderClient);
+    expect({ ...r, client: null }).toEqual({ ...regress, client: null });
+    expect(r.share).toBe(40);
+    expect(stubRenderer(callbackApp, {})).toBeNull();
+  });
+
+  it('says a framed line in a scripted call as regress does: a call that expects its summary frame passes with it, and would fail without one', async () => {
+    const app = variants.variant(EXACT_FRAME);
+    resetAppsForTest();
+    registerApp(app);
+    const corpusFile = join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl');
+    const scenario: Scenario = {
+      id: 'summary-frame',
+      steps: [{ say: 'can I leave a message for Dana' }, { say: "it's Morgan Lee" }, { say: 'five five five five five five zero one four two' }, { say: 'please call me about the March invoice before Friday, I think we were charged twice for the same delivery' }],
+      expect: { decision: 'prompt', promptId: 'confirm_take_message', text: 'called and said, in short, please call me about the March invoice before. Shall I pass it on?' },
+    };
+    const run = async (renderer: ReturnType<typeof stubRenderer>) => (await runAll([], [scenario], { client: buildClient('stub', corpusFile, { ...DEFAULT_THRESHOLDS }, '2026-10-14'), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-14', now: () => 0, renderer })).scenarios['summary-frame']!;
+    expect((await run(stubRenderer(app, {}))).mismatches).toEqual([]);
+    expect((await run(null)).mismatches).toEqual([expect.stringContaining('called and said: please call me about the March invoice before Friday')]);
   });
 });

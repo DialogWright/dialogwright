@@ -1,4 +1,4 @@
-import { isFigureWord } from '../render/checks';
+import { isFigureWord, leftOut } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -68,14 +68,18 @@ const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', '
  * The stub's span drift judge (render/checks.ts renderSpanDriftQuestion), deterministic, holding a
  * framed line's span to the question's criteria by its words: a span is a faithful summary of the
  * quoted words when every word of it of its own (not filler, not in its goal) is in them, it speaks in
- * no person they do not, states no figure or name they do not, and carries no words of an injection.
+ * no person they do not, states no figure or name they do not, leaves out none of their clauses that
+ * says "no" or sets a condition (leftOut), and carries no words of an injection.
  * A real model is asked the question itself.
  */
 export function stubSpanDrift(state: unknown): boolean {
   const s = state as { span?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[] } | null;
   const said = typeof s?.span?.said === 'string' ? s.span.said : '';
   const goal = new Set(tokens(typeof s?.span?.goal === 'string' ? s.span.goal : ''));
-  const quoted = new Set((s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? tokens(q.words) : [])));
+  const quotedWords = (s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? [q.words] : []));
+  const quoted = new Set(quotedWords.flatMap(tokens));
+  // A negated statement or a condition of the quoted words left out (the criteria's; render/checks.ts leftOut).
+  if (leftOut(said, quotedWords)) return true;
   const own = tokens(said).filter((w) => !quoted.has(w));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some((w) => PERSON.has(w) || isFigureWord(w))) return true;

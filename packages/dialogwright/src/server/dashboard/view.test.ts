@@ -1341,7 +1341,7 @@ describe('generated wording on the call detail', () => {
   });
 
   it('every reason a line falls back or is not tried has words', () => {
-    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged', 'person'];
+    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged', 'person', 'omitted', 'verbatim'];
     for (const fallback of reasons) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', fallback }] })[0]!.why).not.toBe(`fell back: ${fallback}`);
     for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier', 'knowledge', 'exact', 'no-content']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
   });

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineApp } from '../define/defineApp';
 import { runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
-import { loadCorpus } from '../jev/corpus';
+import { loadCorpus, type CorpusEntry } from '../jev/corpus';
 import { FixtureStubClient } from '../jev/fixtureStub';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient, JevRequest } from '../jev/types';
@@ -38,7 +38,12 @@ const variants = messageVariants();
 afterAll(() => variants.remove());
 /** The read-back generated whole from the message: the tests below up to the framed ones run on it. */
 const whole = variants.variant(WHOLE_LINE);
-const corpus = loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp);
+/** A message with a negated clause after its first eight words (the fake's summary leaves it out), beside the fixture's corpus. */
+const PROOFS = 'the brochure proofs are back from the printer and they look great, no changes needed';
+const corpus = [
+  ...loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp),
+  { id: 'ms-proofs', text: PROOFS, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
+];
 let current: App = whole;
 const stub = (asked: JevRequest[] = []): JevClient => {
   const app = current;
@@ -502,6 +507,32 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
     expect(lastSaid(failed)).toBe(EXACT_LINE);
     expect(lastSaid(await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: new Error('HTTP 500') } }) }))).toBe(EXACT_LINE);
     expect(lastSaid(await call(TO_SUMMARY, { client: new FakeRenderClient(), share: 0 }))).toBe(EXACT_LINE);
+  });
+
+  it('says the exact frame when the span\'s wording is the content word for word (letter case, punctuation and spacing aside), with no drift check asked (live findings, item 21)', async () => {
+    for (const verbatim of [MESSAGE, `  ${MESSAGE.toUpperCase()}!`, MESSAGE.replace(', I think', ' I think')]) {
+      const asked: JevRequest[] = [];
+      const r = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: verbatim } }) }, asked);
+      expect(lastSaid(r), verbatim).toBe(EXACT_LINE);
+      expect(lastSaid(r), verbatim).not.toContain('in short');
+      expect(spanOf(r), verbatim).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, fallback: 'verbatim', source: 'fake' });
+      expect(spanOf(r)!.said).toBeUndefined();
+      expect(r.runs.at(-1)!.record.audit).toContainEqual({ type: 'render_fallback', detail: { prompt: 'confirm_take_message', span: 'summary', reason: 'verbatim' } });
+      expect(asked.filter((q) => q.questions.renderSpanDrift !== undefined)).toEqual([]);
+    }
+    // A wording that differs by a word is a summary, checked as one.
+    const shorter = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: MESSAGE.replace(' the same', '') } }) });
+    expect(spanOf(shorter)).toMatchObject({ mode: 'generated' });
+    expect(lastSaid(shorter)).toContain('in short');
+  });
+
+  it('a span that leaves out a "no" of the message falls back (`omitted`) and says the exact frame (live findings, item 21)', async () => {
+    const proofs = PROOFS;
+    const steps = [...TO_SUMMARY.slice(0, 3), { say: proofs }];
+    // The fake's own wording, the message's first eight words, leaves the "no changes needed" out.
+    const r = await call(steps, fake());
+    expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: 'omitted', refused: 'the brochure proofs are back from the printer' });
+    expect(lastSaid(r)).toBe(`${OPEN}: ${proofs}. Shall I pass it on?`);
   });
 
   it('a no reads it back with the exact frame, a repeat says the exact frame, on a call and in a chat', async () => {

@@ -31,7 +31,7 @@ No one is verified, so the app has no subjects and no one acts for them.
 
 ## What is recorded
 
-What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
+What the record of a call keeps of each value the action is sent, where the action's call is recorded: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
 
 | Action | Value | Recorded |
 | --- | --- | --- |
@@ -39,6 +39,10 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 | Pass a message on (`leaveMessage`) | from (`caller`) | by its length only |
 | Pass a message on (`leaveMessage`) | phone (`phone`) | by its last four characters |
 | Pass a message on (`leaveMessage`) | message (`message`) | by its length only |
+
+The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call's slots are: the trace's slots, the variables of the lines that say them (a read-back among them), a handoff's data and the console. Where that is not what the table says:
+
+- Kept whole there, since the slot has no redact setting (policy.yaml's `audit` masks the value in the action's call alone): from (`caller`) and message (`message`). A redact setting on the slot masks it there too.
 
 ## Lines a model words
 
@@ -55,7 +59,7 @@ These lines are worded by a model for the moment (generated wording). Each is ch
 | `ask_message` | What's the message? | Ask the caller for their message; you may acknowledge their name. | every situation (its form `take_message`) | nothing | nothing | nothing |
 | `ask_message_retry` | Sorry, what message should I pass on? | Say what the fixed line says, in words that fit this moment. | every situation (its form `take_message`) | nothing | nothing | nothing |
 
-These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation and drops none from its content; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole, the transcript, or anything a tool returned. Every other line is said word for word.
+These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation, and drops none from a clause of its content it restates; it leaves out no clause of its content that says "no" or sets a condition (unless, until, except, only if), where the clause has two content words or more; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary (nothing added or turned around, and no negated statement, refusal or condition left out). A span worded as its content word for word is said as the exact content. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole, the transcript, or anything a tool returned. Every other line is said word for word.
 
 | Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |
 | --- | --- | --- | --- | --- | --- | --- | --- |

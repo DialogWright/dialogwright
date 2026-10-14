@@ -425,7 +425,7 @@ function recordingSection(app: App, source: PolicySource): string[] {
   const listed = (tool: string): readonly string[] | undefined => (source.actions[tool]?.check === true ? checked(tool) : Object.hasOwn(app.tools, tool) ? app.tools[tool]!.params : undefined);
   if (app.policy.audit === undefined && !tools.some((tool) => listed(tool) !== undefined)) return [];
   const out = ['## What is recorded', ''];
-  out.push('What the record of a call keeps of each value the action is sent: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary, its own audit rows, the side effects it queues (as recorded) or a downstream service\'s row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.');
+  out.push('What the record of a call keeps of each value the action is sent, where the action\'s call is recorded: the gate\'s decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml\'s `audit` declares, and `check` refuses one that neither covers. Where a rule\'s line, the action\'s summary, its own audit rows, the side effects it queues (as recorded) or a downstream service\'s row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.');
   out.push('', '| Action | Value | Recorded |', '| --- | --- | --- |');
   for (const tool of tools) {
     const action = source.actions[tool]?.say;
@@ -435,6 +435,26 @@ function recordingSection(app: App, source: PolicySource): string[] {
     else if (params.length === 0) out.push(`| ${named} | nothing | |`);
     else for (const param of params) out.push(`| ${named} | ${cell(paramNoun(app, param))} (${code(param)}) | ${RECORDED[recordingOf(app, param)]} |`);
   }
+  out.push(...slotsRecorded(app, [...new Set(tools.flatMap((tool) => listed(tool) ?? []))]));
+  return out;
+}
+
+/**
+ * Where a slot a value comes from is recorded otherwise than the table says of the value: the slot is
+ * recorded by its own redact setting (trace/redact.ts) wherever the call's slots are, and policy.yaml's
+ * `audit` reaches only the action's call. Nothing for an app where every such slot is as its row says.
+ */
+function slotsRecorded(app: App, params: readonly string[]): string[] {
+  const named = (ids: readonly string[]): string => andList(ids.map((id) => `${paramNoun(app, id)} (${code(id)})`));
+  const slots = params.filter((p) => Object.hasOwn(app.slots, p));
+  const whole = slots.filter((p) => app.slots[p]!.redact === undefined && recordingOf(app, p) !== 'keep');
+  const year = slots.filter((p) => app.slots[p]!.redact === 'mask');
+  const words = slots.filter((p) => app.slots[p]!.redact === 'length' && app.slots[p]!.statement !== false);
+  if (whole.length + year.length + words.length === 0) return [];
+  const out = ['', 'The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call\'s slots are: the trace\'s slots, the variables of the lines that say them (a read-back among them), a handoff\'s data and the console. Where that is not what the table says:', ''];
+  if (whole.length > 0) out.push(`- Kept whole there, since the slot has no redact setting (policy.yaml's \`audit\` masks the value in the action's call alone): ${named(whole)}. A redact setting on the slot masks it there too.`);
+  if (year.length > 0) out.push(`- Hidden there but for the year in it at most (\`••/••/1985\`), in a side effect's request too: ${named(year)}.`);
+  if (words.length > 0) out.push(`- By its length there, but in words on the live console while the call is in progress, in a side effect's request too (the caller's own words); its lines and a handoff's data say its stand-in: ${named(words)}.`);
   return out;
 }
 
@@ -538,7 +558,7 @@ function wordingSection(app: App): string[] {
   }
   if (framed.length > 0) {
     if (ids.length > 0) out.push('');
-    out.push(`These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation and drops none from its content; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole${exception}, the transcript, or anything a tool returned.${framed.some((id) => app.prompts.manifest[id]?.exactText !== undefined) ? ' A line with a frame of its own for the exact words (`exactText`) is said with that frame whenever every span is its content word for word (no model, a fallback, a read-back after a no, a repeat), and with its text only when a span is generated.' : ''} Every other line is said word for word.`);
+    out.push(`These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation, and drops none from a clause of its content it restates; it leaves out no clause of its content that says "no" or sets a condition (unless, until, except, only if), where the clause has two content words or more; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary (nothing added or turned around, and no negated statement, refusal or condition left out). A span worded as its content word for word is said as the exact content. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole${exception}, the transcript, or anything a tool returned.${framed.some((id) => app.prompts.manifest[id]?.exactText !== undefined) ? ' A line with a frame of its own for the exact words (`exactText`) is said with that frame whenever every span is its content word for word (no model, a fallback, a read-back after a no, a repeat), and with its text only when a span is generated.' : ''} Every other line is said word for word.`);
     out.push('', '| Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
     for (const id of framed) {
       const line = g.lines[id]!;

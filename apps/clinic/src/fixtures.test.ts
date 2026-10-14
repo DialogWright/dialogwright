@@ -3,6 +3,7 @@ import {
   buildClient, buildThresholds, defaultCorpusFile, loadCorpus, loadScenarios, normalizeText, readBaseline,
   REGRESS_TODAY, runAll, scenariosDir,
 } from 'dialogwright';
+import { stubRenderer } from 'dialogwright/testing';
 import { clinicApp } from './index';
 import type { ClinicCorpusSlots } from './domain/testing';
 
@@ -36,6 +37,8 @@ describe('the clinic fixtures', () => {
       thresholds,
       todayIso: REGRESS_TODAY,
       now: () => 0,
+      // The renderer `regress` uses on the stub, so a line it generates is said here as there.
+      renderer: stubRenderer(),
     });
     expect(Object.keys(actual.corpus)).toHaveLength(corpus.length);
     expect(Object.keys(actual.scenarios)).toHaveLength(scenarios.length);

@@ -42,7 +42,7 @@ flowchart LR
 
 ## What is recorded
 
-What the record of a call keeps of each value the action is sent: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
+What the record of a call keeps of each value the action is sent, where the action's call is recorded: the gate's decision, the trace, the console and the audit. A value is recorded as its slot says or as policy.yaml's `audit` declares, and `check` refuses one that neither covers. Where a rule's line, the action's summary, its own audit rows, the side effects it queues (as recorded) or a downstream service's row for the answer repeat a value that is hidden, shortened or never recorded, it is masked there too.
 
 | Action | Value | Recorded |
 | --- | --- | --- |
@@ -51,6 +51,10 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 | Look up the account (`findAccount`) | account (`accountId`) | by its last four characters |
 | Book a service (`bookService`) | account (`accountId`) | by its last four characters |
 | Book a service (`bookService`) | service (`service`) | as it is |
+
+The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call's slots are: the trace's slots, the variables of the lines that say them (a read-back among them), a handoff's data and the console. Where that is not what the table says:
+
+- Hidden there but for the year in it at most (`••/••/1985`), in a side effect's request too: dob (`dob`).
 
 ## Actions
 

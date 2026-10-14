@@ -84,7 +84,7 @@ const WORDING_WHY = {
   empty: 'the model said nothing', format: 'markup or a link', words: 'over its word budget', question: 'not one question', avoid: 'a phrase to avoid',
   items: 'a value left out', foreign: 'a number, date or name it was not given', drift: 'did more than its goal', timeout: 'too slow',
   error: 'the model failed', 'cassette-miss': 'not recorded', 'drift-error': 'the drift check failed', negation: 'a negation added or dropped', conflict: 'named another value in its place', 'content-flagged': 'the collected content was flagged or unread',
-  person: 'spoke as the agent or to the listener',
+  person: 'spoke as the agent or to the listener', omitted: 'left out a "no" or a condition', verbatim: 'gave back the exact words',
   exact: 'asked for word for word', share: 'this call is in the fixed group', when: 'not generated in this situation', locale: 'no goal in this language', screen: 'the words were flagged or unread', identifier: 'names an identifier', knowledge: 'a knowledge base answer, word for word',
   'no-content': 'nothing to summarize',
 };

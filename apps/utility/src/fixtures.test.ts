@@ -3,6 +3,7 @@ import {
   buildClient, buildThresholds, defaultCorpusFile, loadCorpus, loadScenarios, normalizeText, readBaseline,
   REGRESS_TODAY, runAll, scenariosDir, type Scenario,
 } from 'dialogwright';
+import { stubRenderer } from 'dialogwright/testing';
 
 /**
  * The fixtures: the labelled corpus and the scripted calls. The baseline (fixtures/expected) holds
@@ -30,6 +31,8 @@ describe('the fixtures', () => {
       thresholds,
       todayIso: REGRESS_TODAY,
       now: () => 0,
+      // The renderer `regress` uses on the stub, so a line it generates is said here as there.
+      renderer: stubRenderer(),
     });
     for (const s of Object.values(actual.scenarios)) expect(s.mismatches, s.id).toEqual([]);
     const expected = readBaseline();
@@ -53,6 +56,8 @@ describe('what an answer on the opening turn leaves behind', () => {
       thresholds,
       todayIso: REGRESS_TODAY,
       now: () => 0,
+      // The renderer `regress` uses on the stub, so a line it generates is said here as there.
+      renderer: stubRenderer(),
     });
     return actual.scenarios[id]!;
   };

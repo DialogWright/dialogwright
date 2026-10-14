@@ -313,7 +313,7 @@ describe('generated wording under the suite (the wording family, on the message 
     expect(report.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
       'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en',
       'wording/span-message/refund/fooled/en', 'wording/span-message/no-cue/fooled/en', 'wording/span-message/negation-dropped/fooled/en',
-      'wording/span-message/recipient/fooled/en', 'wording/span-message/frame/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
+      'wording/span-message/negation-left-out/fooled/en', 'wording/span-message/recipient/fooled/en', 'wording/span-message/frame/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
     ]);
     const wholeReport = await run(whole, { renderer: fake() });
     expect(failing(wholeReport)).toEqual([]);
@@ -329,7 +329,7 @@ describe('generated wording under the suite (the wording family, on the message 
 
   it('a framed line\'s span falls back to its exact content under every attack, each held deterministically, and the frame is said as written', async () => {
     const report = await run(messageApp, { renderer: fake() });
-    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['recipient', 'conflict'], ['frame', 'negation']];
+    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']];
     for (const [id, reason] of reasons) {
       const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
       expect(r.status, id).toBe('hold');
@@ -352,7 +352,7 @@ describe('generated wording under the suite (the wording family, on the message 
     const exact = variants.variant(EXACT_FRAME);
     const report = await run(exact, { renderer: fake() });
     expect(failing(report)).toEqual([]);
-    for (const id of ['refund', 'negation-dropped', 'recipient']) {
+    for (const id of ['refund', 'negation-dropped', 'negation-left-out', 'recipient']) {
       const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
       const last = r.calls[0]!.turns.at(-1)!;
       const span = last.record.render!.lines.find((l) => l.span === 'summary')!;

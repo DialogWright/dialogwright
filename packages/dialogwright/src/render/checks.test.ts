@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, wordCount } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, leftOut, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { SPAN_INSTRUCTIONS } from './prompt';
 import type { SpanAct, SpeechAct } from './types';
@@ -217,5 +217,66 @@ describe('a span begins mid-sentence after its frame (review fixes)', () => {
   });
   it('the model is told to begin in lowercase unless the first word is a name', () => {
     expect(SPAN_INSTRUCTIONS).toContain('Begin in lowercase unless the first word is a name');
+  });
+});
+
+describe('a span that leaves out a "no" or a condition of its content (the secretary\'s review, live findings item 21)', () => {
+  const spanOf = (message: string, words = 25): SpanAct => ({ kind: 'span', goal: 'Summarize the message in one sentence.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words, avoid: [] } });
+  const PROOFS = 'the brochure proofs are back from the printer and they look great, no changes needed';
+
+  it('falls back (`omitted`) when a negated clause is left out entirely, where the old check saw nothing to compare', () => {
+    expect(checkSpan('the brochure proofs are back from the printer', spanOf(PROOFS))).toBe('omitted');
+    expect(checkSpan('the brochure proofs look great', spanOf(PROOFS))).toBe('omitted');
+    // Restated with its "no", in other forms of its words: kept.
+    expect(checkSpan('the brochure proofs are back and look great, no changes needed', spanOf(PROOFS))).toBeNull();
+    expect(checkSpan('the brochure proofs look great and no changes are needed', spanOf(PROOFS))).toBeNull();
+    // By stem ("need", "change"), the left-out check finds it kept; the negation check, by its exact words, is stricter still.
+    expect(leftOut('the brochure proofs look great and need no changes', [PROOFS])).toBe(false);
+    expect(checkSpan('the brochure proofs look great and need no changes', spanOf(PROOFS))).toBe('negation');
+    // Restated without its "no": the negation check's, as before.
+    expect(checkSpan('the brochure proofs look great, changes needed', spanOf(PROOFS))).toBe('negation');
+  });
+
+  it('holds a condition the same way: unless, until, except, only if', () => {
+    const cases: [string, string, string][] = [
+      ['please send the invoice copies to accounting unless the courier already picked them up', 'please send the invoice copies to accounting', 'send the invoice copies to accounting unless the courier picked them up'],
+      ['hold the delivery order until the warehouse confirms the count', 'hold the delivery order', 'hold the delivery order until the warehouse confirms the count'],
+      ['ship every carton tomorrow except the damaged pallet cartons', 'ship every carton tomorrow', 'ship every carton tomorrow, except the damaged pallet cartons'],
+      ['approve the printing order only if the paper stock arrives', 'approve the printing order', 'approve the printing order only if the paper stock arrives'],
+    ];
+    for (const [message, dropped, kept] of cases) {
+      expect(checkSpan(dropped, spanOf(message)), message).toBe('omitted');
+      expect(checkSpan(kept, spanOf(message)), message).toBeNull();
+    }
+    // A condition restated without its word ("unless" read as "and") is left out all the same.
+    expect(checkSpan('hold the delivery order, the warehouse confirms the count', spanOf('hold the delivery order until the warehouse confirms the count'))).toBe('omitted');
+  });
+
+  it('is conservative only where it can be: a clause of one content word, or one with neither a "no" nor a condition, is the drift check\'s', () => {
+    expect(leftOut('call about the March invoice', ['please call me about the March invoice, not today'])).toBe(false);
+    expect(leftOut('call about the March invoice', ['please call me about the March invoice, I think we were charged twice'])).toBe(false);
+    // A hedge of the caller's own ("I'm not sure") has no content of its own: it may be left out.
+    expect(leftOut('call about the March invoice', ["I'm not sure, but please call me about the March invoice"])).toBe(false);
+    expect(leftOut('the proofs are back', [PROOFS])).toBe(true);
+  });
+
+  it('the span drift question names what may not be left out, and its two sides agree', () => {
+    const q = renderSpanDriftQuestion().renderSpanDrift as { criteria: { true: string; false: string } };
+    expect(q.criteria.true).toContain('leaves out a negated statement, a refusal or a condition the quoted words set (with no, not, don\'t or never; unless, until, except or only if)');
+    expect(q.criteria.false).toContain('every negated statement, refusal and condition they set kept');
+    expect(q.criteria.false).not.toContain('nothing dropped that changes the meaning');
+    // The stub's judge holds the same criterion.
+    const judge = (said: string): boolean => stubSpanDrift(renderSpanDriftState(spanOf(PROOFS), said));
+    expect(judge('the brochure proofs are back from the printer')).toBe(true);
+    expect(judge('the brochure proofs are back and look great, no changes needed')).toBe(false);
+  });
+});
+
+describe('a span that is its content word for word (sameWords; said as the exact words, live findings item 21)', () => {
+  it('compares words alone: letter case, punctuation and spacing aside', () => {
+    expect(sameWords('Please call me about the invoice', 'please call me about the invoice.')).toBe(true);
+    expect(sameWords('please call me, about the invoice', 'please  call me about the invoice!')).toBe(true);
+    expect(sameWords('please call me about the invoice', 'please call me about the March invoice')).toBe(false);
+    expect(sameWords('', '')).toBe(false);
   });
 });

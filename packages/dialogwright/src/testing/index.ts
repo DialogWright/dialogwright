@@ -89,6 +89,8 @@ export type {
 // Generated wording in an app's tests: a renderer that asks no model, its own wording or the test's.
 export { FakeRenderClient, fakeWording, FAKE_RENDER_MODEL } from '../render/fake';
 export type { FakeRenderOptions } from '../render/fake';
+// The renderer `regress` runs the stub with, for an app's own test of its scripted calls (fixtures.test.ts).
+export { stubRenderer } from '../render/harness';
 // Whether a saved session resumes exactly: the corpus and scenarios run with the session put through
 // JSON before every turn, against the same run as it is (sessionRoundTrip.ts).
 export { sessionRoundTrip, jsonTrip } from './sessionRoundTrip';

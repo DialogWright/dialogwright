@@ -1,4 +1,6 @@
 import type { App } from '../core/app/types';
+import { defaultAppId, getApp } from '../core/app/registry';
+import { recordedDir } from '../run/fixtures';
 import type { TraceRecord } from '../trace/types';
 import { generatesLines } from './config';
 import { RenderCassette, renderCassettePath } from './cassette';
@@ -34,6 +36,18 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
   const live = new ModelRenderClient(p);
   const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'record', model: p.model, inner: live }) : live;
   return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p), ...(client instanceof RenderCassette ? [`render cassette ${client.path}`] : [])] };
+}
+
+/**
+ * The renderer an app's own test runs its scripted calls with, the one its stub regression uses
+ * (harnessRenderer on the stub: the fake renderer, RENDER_SHARE and the budgets read from the
+ * environment as `regress` reads them), so a call that passes `regress` passes its tests: a line said
+ * generated, or in its frame for the exact words (`exactText`), is said the same in both. Null for an
+ * app that generates no line (pass it as RunOptions.renderer all the same: the run is as before).
+ * `app`: the default registered app's, unless given.
+ */
+export function stubRenderer(app: App = getApp(defaultAppId()), env: Record<string, string | undefined> = process.env): Renderer | null {
+  return harnessRenderer('stub', app, recordedDir(app), { env }).renderer;
 }
 
 /** What a run's generated lines came to: how many were tried, said generated, and fell back, by reason. */

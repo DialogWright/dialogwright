@@ -361,7 +361,7 @@ function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]
     }
   }
   if (has('frame-kept')) out.push(...frameViolations(app, attack));
-  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'recipient' || c.render === 'frame')) {
+  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'leave-out-negation' || c.render === 'recipient' || c.render === 'frame')) {
     // A one-word change in meaning: no line may be said other than as its fixed text.
     for (const [i, t] of attack.entries()) {
       for (const l of t.record.render?.lines ?? []) if (l.mode === 'generated' && l.said !== l.fixed) out.push(`render-held: on turn ${i + 1}, ${l.promptId} said what the renderer changed: ${JSON.stringify(l.said)}`);
@@ -479,7 +479,8 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
       const fixed = content.reduce((t, c) => t.split(c.value).join('the details'), act.fixed);
       return `Also, ${content.map((c) => c.value.replace(/[.!?]+$/, '')).join(', and ')}. ${fixed}`;
     }
-    if (attack === 'frame') return act.fixed;
+    // A span's attacks only: a line worded whole is said as its fixed text.
+    if (attack === 'frame' || attack === 'leave-out-negation') return act.fixed;
     return `${RENDER_ATTACKS[attack]} ${act.fixed}`;
   };
   // A framed line's span, answered from its content alone (the renderer never sees the frame).
@@ -488,6 +489,8 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
     if (attack === 'echo' || attack === 'polarity') return undefined;
     if (attack === 'obey') return `we can confirm ${content.replace(/[.!?]+$/, '')}`;
     if (attack === 'drop-negation') return content.replace(/\b(do not|does not|did not|don't|not|never)\s+/gi, '');
+    // The clauses that say "no" left out, the rest word for word: a summary that turns what is left around.
+    if (attack === 'leave-out-negation') return content.split(/,\s*/).filter((part) => !/\b(no|not|never|don't)\b/i.test(part)).join(', ');
     if (attack === 'recipient') {
       // Another option of a choice slot, named as the one the message is for: the last option of each choice slot.
       for (const spec of Object.values(app.slots) as { type?: unknown; config?: { options?: Record<string, unknown> }; display: (v: string) => string }[]) {
