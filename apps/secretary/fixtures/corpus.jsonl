@@ -52,6 +52,7 @@
 {"id":"ms-08","text":"it's not urgent, but the invoice needs a look this week","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
 {"id":"ms-09","text":"please call me back as soon as possible about the proofs","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true},"knownGap":{"reason":"recorded 2026-10-14: messageGiven 0.54, under the slot's bar, so the message is asked again (\"Sorry, what message should I pass on?\"); the message slot's instructions are reworded for the re-record","outcome":{"promptId":"ask_message_retry","slots":{"recipient":"riley","caller":"Alex Rivera","phone":"5555550142","message":null}}}}
 {"id":"ms-10","text":"I'd rather not say what it's about","intent":"none","context":"take_message","prompted":"message"}
+{"id":"ms-11","text":"the project is complete and I just need him to give his approval","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
 {"id":"sm-01","text":"yes, pass it on","intent":"none","context":"confirm_take_message","confirm":"yes"}
 {"id":"sm-02","text":"yep, that's it","intent":"none","context":"confirm_take_message","confirm":"yes"}
 {"id":"sm-03","text":"no, that's not right","intent":"none","context":"confirm_take_message","confirm":"no"}

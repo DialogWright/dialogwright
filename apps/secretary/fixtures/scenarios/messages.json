@@ -25,7 +25,7 @@
         "phone": "5555550142",
         "message": "the logo files are ready for review"
       },
-      "text": "I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said: the logo files are ready for review. Shall I pass it on?"
+      "text": "I'll make sure Riley Moreno gets your message, as you said it: the logo files are ready for review. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     }
   },
   {
@@ -52,7 +52,35 @@
       "slots": {
         "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
       },
-      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said, in short,"
+      "text": "Thanks! I'll make sure Riley Moreno gets your message, in short:"
+    }
+  },
+  {
+    "id": "message-read-back-to-the-caller",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "a message for Sam please"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the project is complete and I just need him to give his approval"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "sam",
+        "message": "the project is complete and I just need him to give his approval"
+      },
+      "text": "Thanks! I'll make sure Sam Okafor gets your message, in short:"
     }
   },
   {
@@ -106,7 +134,7 @@
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "Here it is exactly as I took it down. I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said: the brochure proofs are back from the printer and look great, no changes needed. Shall I pass it on?"
+      "text": "Sorry, let me read it back word for word. I'll make sure Riley Moreno gets your message, as you said it: the brochure proofs are back from the printer and look great, no changes needed. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     }
   },
   {
@@ -142,7 +170,7 @@
       "slots": {
         "message": "the logo files are ready, but the colours are still not quite right"
       },
-      "text": "called and said: the logo files are ready, but the colours are still not quite right. Shall I pass it on?"
+      "text": "as you said it: the logo files are ready, but the colours are still not quite right. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     },
     "cosmeticDrift": true
   },
@@ -204,7 +232,7 @@
     "expect": {
       "decision": "replay",
       "form": "take_message",
-      "text": "called and said: the logo files are ready for review. Shall I pass it on?"
+      "text": "as you said it: the logo files are ready for review. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     }
   },
   {
@@ -636,7 +664,7 @@
       "slots": {
         "message": "the logo files are ready, but the colours are still not quite right"
       },
-      "text": "called and said: the logo files are ready, but the colours are still not quite right. Shall I pass it on?"
+      "text": "as you said it: the logo files are ready, but the colours are still not quite right. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     },
     "cosmeticDrift": true
   },
@@ -670,7 +698,7 @@
       "decision": "prompt",
       "promptId": "confirm_take_message",
       "form": "take_message",
-      "text": "I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said: the logo files are ready for review. Shall I pass it on?"
+      "text": "I'll make sure Riley Moreno gets your message, as you said it: the logo files are ready for review. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"
     }
   },
   {

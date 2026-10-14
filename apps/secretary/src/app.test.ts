@@ -63,7 +63,8 @@ describe('the read-back and the inbox', () => {
     const lines = app.generated?.lines ?? {};
     expect(Object.keys(lines)).toEqual(['confirm_take_message']);
     expect(lines.confirm_take_message!.spans).toEqual({
-      summary: { from: 'message', goal: "Summarize the caller's message briefly, in their own terms, as a receptionist reading it back.", words: 20 },
+      // Spoken to the caller: their "I" said as "you", the recipient's name allowed for a pronoun that means them.
+      summary: { from: 'message', goal: "Summarize the caller's message briefly, as a receptionist reading it back to them.", words: 20, speaks: 'to-caller', names: ['recipient'] },
     });
     expect(app.generated?.prescribed).toContain('message_taken');
   });

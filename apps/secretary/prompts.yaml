@@ -162,31 +162,38 @@ prompts:
     text: Sorry, what message should I pass on?
     interruptible: true
 
-  # The read-back, a framed line. Every word of it is fixed but {summary}, which the first time it is
-  # said is a short summary of the message, generated from the message alone (the model is given only
-  # the goal below and the caller's words, never the rest of the line). The frame says whose words
-  # follow. It has two frames: `text`, said only with a generated summary ("called and said, in short,
-  # ..."), and `exactText`, said whenever the span is the message word for word ("called and said:
-  # ..."): after a no, on a repeat, on a later reading, and whenever a check fails, the model is slow
-  # or none is set up. exactText has no "Thanks,": it is often said right after "Here it is exactly as
-  # I took it down." A caller who says no hears it again word for word (forms.yaml's summary.onNo:
-  # read-back, after read_back_exact), and so does one who asks to hear it again (repeat_prompt). The
-  # caller says yes to the message kept word for word after hearing its summary: summarizesConfirmed
-  # says the app accepts that.
+  # The read-back, a framed line, spoken to the caller as a receptionist would. Every word of it is
+  # fixed but {summary}, which the first time it is said is a short summary of the message, generated
+  # from the message alone (the model is given only the goal below, the caller's words and who the
+  # message is for, never the rest of the line). The span speaks to the caller (speaks: to-caller):
+  # the caller's "I" and "my" become "you" and "your", and a "him" or "her" may become the recipient's
+  # name where the drift check agrees ("I just need him to approve it", for Sam, read back as "you
+  # need Sam's approval"). The frame speaks to them too ("gets your message, in short:"), and never
+  # puts the summary after "{caller} called and said", which would read wrong in the second person.
+  # It has two frames: `text`, said only with a generated summary ("..., in short: ..."), and
+  # `exactText`, said whenever the span is the message word for word, in the caller's own first
+  # person ("..., as you said it: ..."): after a no, on a repeat, on a later reading, and whenever a
+  # check fails, the model is slow or none is set up. The name and the number are read back in a
+  # sentence of their own. A caller who says no hears it again word for word (forms.yaml's
+  # summary.onNo: read-back, after read_back_exact), and so does one who asks to hear it again
+  # (repeat_prompt). The caller says yes to the message kept word for word after hearing its
+  # summary: summarizesConfirmed says the app accepts that.
   confirm_take_message:
-    text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?"
-    exactText: "I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+    text: "Thanks! I'll make sure {recipient} gets your message, in short: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
+    exactText: "I'll make sure {recipient} gets your message, as you said it: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
     interruptible: true
     generate:
       summary:
         from: message
-        goal: Summarize the caller's message briefly, in their own terms, as a receptionist reading it back.
+        goal: Summarize the caller's message briefly, as a receptionist reading it back to them.
         words: 20
+        speaks: to-caller
+        names: [recipient]
     summarizesConfirmed: true
     when:
       situations: [first-ask]
   read_back_exact:
-    text: Here it is exactly as I took it down.
+    text: Sorry, let me read it back word for word.
     interruptible: false
   ask_change:
     text: What should I change? You can give me the message again, or ask me to read it back.

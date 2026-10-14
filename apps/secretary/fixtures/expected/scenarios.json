@@ -527,6 +527,27 @@
     "pass": true,
     "mismatches": []
   },
+  "message-read-back-to-the-caller": {
+    "id": "message-read-back-to-the-caller",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the project is complete and I just need him to give his approval"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
   "message-read-back-accepted": {
     "id": "message-read-back-accepted",
     "decision": "complete",

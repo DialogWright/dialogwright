@@ -1057,6 +1057,25 @@
     "principalLevel": 0,
     "gate": null
   },
+  "ms-11": {
+    "id": "ms-11",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the project is complete and I just need him to give his approval"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "sm-01": {
     "id": "sm-01",
     "decision": "complete",

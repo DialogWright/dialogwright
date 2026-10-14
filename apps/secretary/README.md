@@ -4,7 +4,7 @@ A fictional phone line that answers for a small design studio when no one can pi
 
 A caller can:
 
-- **leave a message** for Riley Moreno, Sam Okafor or Jordan Lee, or for anyone at the studio: their name, a number to call back (on a phone call the line offers the number they are calling from), and the message in their own words. The desk reads it back briefly ("Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said, in short, the logo files are ready for review. Shall I pass it on?"), and a yes delivers it to the studio's inbox (a stub) and ends the call;
+- **leave a message** for Riley Moreno, Sam Okafor or Jordan Lee, or for anyone at the studio: their name, a number to call back (on a phone call the line offers the number they are calling from), and the message in their own words. The desk reads it back briefly, to the caller, as a receptionist would ("Thanks! I'll make sure Sam Okafor gets your message, in short: the project is complete and you need Sam's approval. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"), and a yes delivers it to the studio's inbox (a stub) and ends the call;
 - **say it's urgent, or ask for a person**, at any point, even in the middle of a message, and be put through to the studio's main line;
 - **ask for the hours** (weekdays, nine to five) **or the address** (an invented street), by voice or on the keypad;
 - **ask whether someone is in**: the desk never says where anyone is or when they are in, and offers to take a message instead.
@@ -17,23 +17,26 @@ The read-back is a **framed line** ([guide, 16.3](../../docs/guide/16-generated-
 
 ```yaml
 confirm_take_message:
-  text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?"
-  exactText: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+  text: "Thanks! I'll make sure {recipient} gets your message, in short: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
+  exactText: "I'll make sure {recipient} gets your message, as you said it: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
   generate:
     summary:
       from: message
-      goal: Summarize the caller's message briefly, in their own terms, as a receptionist reading it back.
+      goal: Summarize the caller's message briefly, as a receptionist reading it back to them.
       words: 20
+      speaks: to-caller
+      names: [recipient]
   summarizesConfirmed: true
   when:
     situations: [first-ask]
 ```
 
-- **Only `{summary}` is generated.** Every other word is the app's: who the message is for, who called, the number, "called and said, in short," and the question. The model never sees them. It is sent only the span's goal, the caller's message (quoted, as data), the word budget and the style ([style.yaml](style.yaml)). The frame says whose words follow, so whatever the model writes is heard as what the caller said, never as something the studio promises.
+- **Only `{summary}` is generated.** Every other word is the app's: who the message is for, "gets your message, in short:", the caller's name and number, and the question. The model never sees them. It is sent only the span's goal, the caller's message (quoted, as data), who the message is for, the word budget and the style ([style.yaml](style.yaml)). The frame says whose message follows, so whatever the model writes is heard as the caller's message given back to them, never as something the studio promises.
+- **Spoken to the caller** (`speaks: to-caller`, [guide, 16.3](../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line)): the summary gives the caller their own message back, their "I" and "my" said as "you" and "your", and, because the span lists `names: [recipient]`, a "him" or "her" that clearly means the person it is for may be said by name. So "the project is complete and I just need him to give his approval", for Sam, can be read back as "the project is complete and you need Sam's approval". The checks hold every "you" to the caller's own "I", refuse a first person of the model's own, and the drift check refuses a name a pronoun does not clearly mean ("tell Riley I need him to call the printer" is never "you need Sam to call the printer"). The frame speaks to the caller too: never "{caller} called and said ..." before a summary in the second person (`pnpm check` warns of that).
 - **It is checked before anyone hears it**: against the caller's words alone, by shape (no question, no figure, date or name the message does not have, its word budget, and the rest the [policy card](POLICY.md) lists under "Lines a model words", in the engine's own words) and by the decision model's judgement that it is a faithful summary ([guide, 16.6](../../docs/guide/16-generated-wording.md#166-the-checks-and-the-fallback)). The message is screened for an injection again first. Any failure, a slow model or an error, and the span is the caller's message, word for word.
-- **Two frames, each true of what it frames.** `text`, with "in short", is said only when the summary was generated. Whenever the span is the caller's message word for word (no model set up, a check that fails, a slow model, a read-back after a no, a repeat, a later reading), the line is `exactText`, "called and said:", so "in short" is never said before the caller's exact words. `exactText` has no "Thanks,": it often follows "Here it is exactly as I took it down."
+- **Two frames, each true of what it frames.** `text`, with "in short", is said only when the summary was generated. Whenever the span is the caller's message word for word (no model set up, a check that fails, a slow model, a read-back after a no, a repeat, a later reading), the line is `exactText`, "as you said it:", since the exact words are the caller's own, in their own first person. `exactText` has no "Thanks!": it often follows "Sorry, let me read it back word for word."
 - **The message itself is never changed.** The `message` slot keeps the words as said, the caller's yes covers exactly what the slots hold, and the inbox gets the message word for word, whatever the summary said.
-- **"That's not right" reads back the exact words.** A no to the read-back says "Here it is exactly as I took it down." and the line again with the message whole (forms.yaml's `summary: { onNo: read-back }`). The caller can then say yes, or "no, let me say it again" to give the message again; a read-back after the first is always word for word (`when: first-ask`), and so is asking to hear it again.
+- **"That's not right" reads back the exact words.** A no to the read-back says "Sorry, let me read it back word for word." and the line again with the message whole (forms.yaml's `summary: { onNo: read-back }`). The caller can then say yes, or "no, let me say it again" to give the message again; a read-back after the first is always word for word (`when: first-ask`), and so is asking to hear it again.
 - **Every other line is said word for word.** The lines that say what was done and the handoff lines are also marked `prescribed: true`, so they can never be generated. [POLICY.md](POLICY.md), the policy card, lists the generated span and every prescribed line for a reviewer.
 
 ## An app that keeps no caller words: `redact: length-summarized`
