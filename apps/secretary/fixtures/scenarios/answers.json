@@ -163,5 +163,80 @@
       "decision": "complete",
       "promptId": "goodbye"
     }
+  },
+  {
+    "id": "whereabouts-then-yes",
+    "steps": [
+      {
+        "say": "is Riley in today"
+      },
+      {
+        "say": "yes please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_recipient",
+      "form": "take_message"
+    }
+  },
+  {
+    "id": "whereabouts-then-sure",
+    "steps": [
+      {
+        "say": "is Sam available"
+      },
+      {
+        "say": "sure, okay"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_recipient",
+      "form": "take_message"
+    }
+  },
+  {
+    "id": "quote-becomes-a-message",
+    "steps": [
+      {
+        "say": "can I get a quote for a website"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_recipient",
+      "form": "take_message",
+      "text": "Sure, I can help you leave a message."
+    }
+  },
+  {
+    "id": "meeting-becomes-a-message",
+    "steps": [
+      {
+        "say": "can you book me a meeting with Riley"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley"
+      }
+    }
+  },
+  {
+    "id": "off-scope-hears-what-the-desk-does",
+    "steps": [
+      {
+        "say": "do you sell gift cards"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_open",
+      "text": "I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What would you like?"
+    }
   }
 ]

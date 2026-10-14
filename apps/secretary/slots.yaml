@@ -54,4 +54,4 @@ message:
   instructions: Count the message itself, even when it comes with other words.
   say: null
   redact: length-summarized
-  maxLength: 400
+  maxLength: 500

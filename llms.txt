@@ -22,8 +22,8 @@ Pre-release; APIs will change, and nothing is published to npm yet. In this repo
 - [Design](docs/design.md): the idea, the roles, how policy and identity work, testing, channels (§10), the numbered roadmap.
 - [Contributing](CONTRIBUTING.md): rules, pull requests, "Adding a slot type", "Adding a built-in policy rule", "Adding a retriever or an embedder", "Adding an extraction format", "Adding a voice provider" (implement `VoiceProvider`, fixtures from the carrier's docs, `runVoiceProviderConformance`, an end-to-end test, the registry) and "Adding a session store" (implement `server/stores/types.ts`, pass `runStoreContract`, register it for `SESSION_STORE`).
 - [apps/clinic](apps/clinic/README.md): the example app to learn from (a fictional clinic's appointment line; no keys needed).
-- [apps/secretary](apps/secretary/README.md): the third example app, a fictional design studio's message line built by an AI coding assistant from one paragraph: a framed read-back (only the summary of the caller's message generated, inside a fixed line), a callback number offered from the number calling, urgent calls to a transfer target (no keys needed)
 - [apps/utility](apps/utility/README.md): the second example app, a fictional electric utility's line built by an AI coding assistant from one paragraph: identity, a one-time code, delegates, confirmed writes, range rules, a policy card and a knowledge base (no keys needed; its recorded cassette replays offline).
+- [apps/secretary](apps/secretary/README.md): the third example app, a fictional design studio's message line built by an AI coding assistant from one paragraph: a framed read-back (only the summary of the caller's message generated, inside a fixed line), a callback number offered from the number calling, urgent calls to a transfer target (no keys needed).
 
 ## Slot types
 

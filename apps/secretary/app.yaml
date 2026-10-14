@@ -26,8 +26,13 @@ console:
     message: Message
 
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
+# continueWithinMs: a caller who pauses between two sentences of a message and talks over the line's
+# reply within 900 ms (the default is 300) is taken as still talking, and the two parts are joined into
+# one message. A longer pause than that still ends the message at the first breath: a known limit
+# (DESIGN.md), to be tried on a live call.
 voice:
   hints: [message, Riley, Moreno, Sam, Okafor, Jordan, Lee, urgent, hours, address, person]
+  continueWithinMs: 900
 
 # The engine's own model questions need to know whom the caller is addressing.
 wording:

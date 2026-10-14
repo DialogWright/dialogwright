@@ -207,6 +207,153 @@
     "principalLevel": 0,
     "gate": null
   },
+  "tm-11": {
+    "id": "tm-11",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-12": {
+    "id": "tm-12",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-13": {
+    "id": "tm-13",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": "it's not urgent, but could Sam call me back about the brochure"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-14": {
+    "id": "tm-14",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-15": {
+    "id": "tm-15",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-16": {
+    "id": "tm-16",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "tm-17": {
+    "id": "tm-17",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "rc-01": {
     "id": "rc-01",
     "decision": "prompt",
@@ -286,14 +433,14 @@
   "rc-05": {
     "id": "rc-05",
     "decision": "prompt",
-    "promptId": "ask_recipient_retry",
+    "promptId": "ask_caller",
     "acks": [],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
     "form": "take_message",
     "slots": {
-      "recipient": null,
+      "recipient": "anyone",
       "caller": null,
       "phone": null,
       "message": null
@@ -332,6 +479,25 @@
     "form": "take_message",
     "slots": {
       "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "rc-08": {
+    "id": "rc-08",
+    "decision": "prompt",
+    "promptId": "ask_recipient_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
       "caller": null,
       "phone": null,
       "message": null
@@ -810,6 +976,44 @@
       "caller": "Alex Rivera",
       "phone": "5555550142",
       "message": "the logo files are ready, but the colours are still not quite right"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-08": {
+    "id": "ms-08",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "it's not urgent, but the invoice needs a look this week"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ms-09": {
+    "id": "ms-09",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "please call me back as soon as possible about the proofs"
     },
     "queued": [],
     "principalLevel": 0,
@@ -1910,6 +2114,25 @@
     "principalLevel": 0,
     "gate": null
   },
+  "rp-09": {
+    "id": "rp-09",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
   "dn-01": {
     "id": "dn-01",
     "decision": "complete",
@@ -2081,25 +2304,6 @@
     "principalLevel": 0,
     "gate": null
   },
-  "ot-02": {
-    "id": "ot-02",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "recipient": null,
-      "caller": null,
-      "phone": null,
-      "message": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
   "ot-03": {
     "id": "ot-03",
     "decision": "prompt",
@@ -2157,25 +2361,6 @@
     "principalLevel": 0,
     "gate": null
   },
-  "ot-06": {
-    "id": "ot-06",
-    "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
-    "reason": null,
-    "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
-    "slots": {
-      "recipient": null,
-      "caller": null,
-      "phone": null,
-      "message": null
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null
-  },
   "ot-07": {
     "id": "ot-07",
     "decision": "prompt",
@@ -2195,8 +2380,46 @@
     "principalLevel": 0,
     "gate": null
   },
-  "ot-08": {
-    "id": "ot-08",
+  "ot-09": {
+    "id": "ot-09",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-10": {
+    "id": "ot-10",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "ot-11": {
+    "id": "ot-11",
     "decision": "prompt",
     "promptId": "nomatch_open",
     "acks": [],

@@ -20,8 +20,10 @@ prompts:
   ask_intent:
     text: How can I help you today?
     interruptible: true
+  # Said both when the words were not understood and when they were a request the desk does not
+  # handle, so it says what the desk can do rather than "I didn't catch that".
   nomatch_open:
-    text: Sorry, I didn't catch that. You can leave a message, or ask for our hours or our address.
+    text: I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What would you like?
     interruptible: true
   nomatch_dtmf_menu:
     text: Let's try the keypad. To leave a message press 1. For our hours press 2. For our address press 3. To reach the studio's main line press 0.
@@ -69,7 +71,7 @@ prompts:
     text: Is there anything else I can help with?
     interruptible: true
   goodbye:
-    text: Goodbye.
+    text: Thanks for calling Example Front Desk. Goodbye.
     interruptible: false
   goodbye_chat:
     text: Thanks for getting in touch with Example Front Desk. Goodbye.
@@ -166,13 +168,14 @@ prompts:
   # follow. It has two frames: `text`, said only with a generated summary ("called and said, in short,
   # ..."), and `exactText`, said whenever the span is the message word for word ("called and said:
   # ..."): after a no, on a repeat, on a later reading, and whenever a check fails, the model is slow
-  # or none is set up. A caller who says no hears it again word for word (forms.yaml's summary.onNo:
+  # or none is set up. exactText has no "Thanks,": it is often said right after "Here it is exactly as
+  # I took it down." A caller who says no hears it again word for word (forms.yaml's summary.onNo:
   # read-back, after read_back_exact), and so does one who asks to hear it again (repeat_prompt). The
   # caller says yes to the message kept word for word after hearing its summary: summarizesConfirmed
   # says the app accepts that.
   confirm_take_message:
     text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?"
-    exactText: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+    exactText: "I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
     interruptible: true
     generate:
       summary:
@@ -189,9 +192,9 @@ prompts:
     text: What should I change? You can give me the message again, or ask me to read it back.
     interruptible: true
 
-  # Said when the message is delivered; the call then ends with the goodbye. Prescribed: always word
-  # for word.
+  # Said when the message is delivered; the call then ends with the goodbye ("Thanks for calling ...
+  # Goodbye." on a call, goodbye_chat in a chat). Prescribed: always word for word.
   message_taken:
-    text: Your message is on its way to {recipient}. Thanks for calling Example Front Desk.
+    text: Your message is on its way to {recipient}.
     interruptible: false
     prescribed: true

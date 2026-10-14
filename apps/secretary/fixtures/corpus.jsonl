@@ -8,13 +8,21 @@
 {"id":"tm-08","text":"hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on five five five five five five zero one four two","intent":"take_message","context":"no_form","labels":{"recipient":"riley","callerGiven":true,"callerSpan":"alex rivera","phoneGiven":true,"phoneSpan":"five five five five five five zero one four two","phoneComplete":true,"messageGiven":true}}
 {"id":"tm-09","text":"message for anyone, I don't mind who","intent":"take_message","context":"no_form","labels":{"recipient":"anyone"}}
 {"id":"tm-10","text":"leave word with Jordan","intent":"take_message","context":"no_form","labels":{"recipient":"jordan"}}
+{"id":"tm-11","text":"yes please","intent":"take_message","context":"no_form"}
+{"id":"tm-12","text":"sure, okay","intent":"take_message","context":"no_form"}
+{"id":"tm-13","text":"it's not urgent, but could Sam call me back about the brochure","intent":"take_message","context":"no_form","labels":{"recipient":"sam","messageGiven":true}}
+{"id":"tm-14","text":"call me back as soon as possible","intent":"take_message","context":"no_form"}
+{"id":"tm-15","text":"can I get a quote for a website","intent":"take_message","context":"no_form"}
+{"id":"tm-16","text":"can you book me a meeting with Riley","intent":"take_message","context":"no_form","labels":{"recipient":"riley"}}
+{"id":"tm-17","text":"how much do you charge for a logo","intent":"take_message","context":"no_form"}
 {"id":"rc-01","text":"Riley","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"riley"}}
 {"id":"rc-02","text":"for Sam Okafor please","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"sam"}}
 {"id":"rc-03","text":"Jordan Lee","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"jordan"}}
 {"id":"rc-04","text":"anyone, I don't mind","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"anyone"}}
-{"id":"rc-05","text":"I'm not sure who it should go to","intent":"none","context":"take_message","prompted":"recipient"}
+{"id":"rc-05","text":"I'm not sure who it should go to","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"anyone"}}
 {"id":"rc-06","text":"no wait, make it Jordan","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"jordan"}}
 {"id":"rc-07","text":"whoever's around","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"anyone"}}
+{"id":"rc-08","text":"hmm, let me think","intent":"none","context":"take_message","prompted":"recipient"}
 {"id":"nm-01","text":"it's Alex Rivera","intent":"none","context":"take_message","prompted":"caller","labels":{"callerGiven":true,"callerSpan":"alex rivera"}}
 {"id":"nm-02","text":"Alex","intent":"none","context":"take_message","prompted":"caller","labels":{"callerGiven":true,"callerSpan":"alex"}}
 {"id":"nm-03","text":"my name is Casey Brooks","intent":"none","context":"take_message","prompted":"caller","labels":{"callerGiven":true,"callerSpan":"casey brooks"}}
@@ -40,6 +48,8 @@
 {"id":"ms-05","text":"hmm, what should I say","intent":"none","context":"take_message","prompted":"message"}
 {"id":"ms-06","text":"please don't send the final files until we've signed off on the colours","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
 {"id":"ms-07","text":"the logo files are ready, but the colours are still not quite right","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
+{"id":"ms-08","text":"it's not urgent, but the invoice needs a look this week","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
+{"id":"ms-09","text":"please call me back as soon as possible about the proofs","intent":"none","context":"take_message","prompted":"message","labels":{"messageGiven":true}}
 {"id":"sm-01","text":"yes, pass it on","intent":"none","context":"confirm_take_message","confirm":"yes"}
 {"id":"sm-02","text":"yep, that's it","intent":"none","context":"confirm_take_message","confirm":"yes"}
 {"id":"sm-03","text":"no, that's not right","intent":"none","context":"confirm_take_message","confirm":"no"}
@@ -95,6 +105,7 @@
 {"id":"rp-06","text":"read me the whole message","intent":"repeat_prompt","context":"confirm_take_message"}
 {"id":"rp-07","text":"pardon","intent":"repeat_prompt","context":"no_form"}
 {"id":"rp-08","text":"one more time please","intent":"repeat_prompt","context":"confirm_take_message"}
+{"id":"rp-09","text":"read it back","intent":"repeat_prompt","context":"confirm_take_message"}
 {"id":"dn-01","text":"no, that's all","intent":"done","context":"anything_else"}
 {"id":"dn-02","text":"no thanks","intent":"done","context":"anything_else"}
 {"id":"dn-03","text":"I'm all set","intent":"done","context":"anything_else"}
@@ -104,13 +115,13 @@
 {"id":"dn-07","text":"no, I'm good","intent":"done","context":"no_form"}
 {"id":"dn-08","text":"goodbye","intent":"done","context":"no_form"}
 {"id":"ot-01","text":"do you sell gift cards","intent":"other","context":"no_form"}
-{"id":"ot-02","text":"can I get a quote for a website","intent":"other","context":"no_form"}
 {"id":"ot-03","text":"are you hiring","intent":"other","context":"no_form"}
 {"id":"ot-04","text":"I want to cancel my subscription","intent":"other","context":"no_form"}
 {"id":"ot-05","text":"what's the weather like","intent":"other","context":"no_form"}
-{"id":"ot-06","text":"can you book me a meeting with Riley","intent":"other","context":"no_form"}
 {"id":"ot-07","text":"do you do wedding invitations","intent":"other","context":"no_form"}
-{"id":"ot-08","text":"how much do you charge for a logo","intent":"other","context":"no_form"}
+{"id":"ot-09","text":"do you repair laptops","intent":"other","context":"no_form"}
+{"id":"ot-10","text":"can you recommend a good printer","intent":"other","context":"no_form"}
+{"id":"ot-11","text":"I'm calling to sell you advertising space","intent":"other","context":"no_form"}
 {"id":"ns-01","text":"hello","intent":"none","context":"no_form"}
 {"id":"ns-02","text":"Honey, where did you put the keys","intent":"none","context":"no_form","answers":{"addressedToSystem":{"noul":0.15}},"tags":["side_speech"]}
 {"id":"ns-03","text":"um","intent":"none","context":"no_form"}

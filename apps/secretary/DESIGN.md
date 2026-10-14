@@ -10,7 +10,7 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 
 | Intent id | Kind (form, informational, control) | What the caller wants | Example phrasings (five or more, terse ones included) |
 |---|---|---|---|
-| `take_message` | form | leave a message for Riley, Sam, Jordan or anyone | "I'd like to leave a message", "message", "can I leave a message for Riley", "a message for Sam please", "leave word with Jordan", "message for anyone, I don't mind who", "tell Riley the logo files are ready for review" |
+| `take_message` | form | leave a message for Riley, Sam, Jordan or anyone | "I'd like to leave a message", "message", "can I leave a message for Riley", "a message for Sam please", "leave word with Jordan", "message for anyone, I don't mind who", "tell Riley the logo files are ready for review"; a quote, a meeting or a price, which only the studio's people can give ("can I get a quote for a website", "can you book me a meeting with Riley"); "yes please" right after the line offers to take a message |
 | `urgent` | form (priority, no slots: straight to a person) | reach the studio now | "it's urgent", "urgent", "this is an emergency, I need to reach someone now", "it can't wait, I need someone right now", "the print shop needs sign-off within the hour, it's urgent" |
 | `studio_hours` | informational | the hours | "what are your hours", "hours", "when are you open", "what time do you close", "which days do you work" |
 | `studio_address` | informational | the address | "what's your address", "address", "where are you located", "how do I find the studio", "what street are you on" |
@@ -18,16 +18,16 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | `agent` | control | a person, at any time | "can I talk to a person", "operator", "representative", "a person", "put me through to someone please" |
 | `repeat_prompt` | control | hear it again (word for word) | "can you repeat that", "pardon", "say that again", "can you read that back word for word", "read me the whole message" |
 | `done` | control | finished | "that's all I needed, thanks", "goodbye", "no, I'm good", "that's it, bye", "no thanks" |
-| `other`, `none` | control | anything else; no request | "do you sell gift cards", "how much do you charge for a logo"; "hello", "um" |
+| `other`, `none` | control | anything else; no request | "do you sell gift cards", "do you repair laptops", "I'm calling to sell you advertising space"; "hello", "um" |
 
 ## Information each form needs
 
 | Form | Information | Slot id | Slot type and key options | Keypad? | Sensitive? |
 |---|---|---|---|---|---|
 | `take_message` | who the message is for | `recipient` | `choice`: riley, sam, jordan, anyone ("the team") | no (keypad on the menu only) | no |
-| `take_message` | the caller's name | `caller` | `name` | no | recorded by length (audit) |
+| `take_message` | the caller's name | `caller` | `name` | no | kept as given in the trace's slot state, on the console, in the read-back and in the handoff data; the action's param recorded by its length in the audit |
 | `take_message` | a number to call back | `phone` | `digits`: length 10, `callerNumber` (offers the number calling) | yes | by its last four (the type's default) |
-| `take_message` | the message, in the caller's words | `message` | `text`: `say: null`, `redact: length-summarized`, maxLength 400 | no | by its length in every record; sent whole to the render model only for the read-back's span (see "What is recorded") |
+| `take_message` | the message, in the caller's words | `message` | `text`: `say: null`, `redact: length-summarized`, maxLength 500 | no | by its length in every record; sent whole to the render model only for the read-back's span (see "What is recorded") |
 | `urgent` | nothing | | | | |
 
 ## Decisions
@@ -49,6 +49,7 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | 11 | Something that must never wait? | Yes: "A caller who says it's urgent ... is transferred". `urgent`, a form with no slots, `priority: { correctsForm: true }`, its `complete` hook handing off with the reason `urgent` (`handoff_urgent`) ([Something that must never wait](../../.claude/skills/create-app/patterns.md#something-that-must-never-wait)). |
 | 12 | What should the person taking a transfer see? | `handoff.data.unconfirmed: mark` (the default for a new app), every slot (the default `slots: all`; the callback number by its last four, as recorded; the message by its length, as `length-summarized` hands it over whatever `handoff.data` says). |
 | 13 | Half-understood callers, corrections at the read-back, silence after "anything else?" | The paragraph is silent: the defaults. |
+| 13e | A message said in two breaths, with a pause | The paragraph is silent; a message is the long answer on this line. `voice.continueWithinMs: 900` (default 300): a caller who talks over the read-back within 900 ms is taken as still talking, and the two parts are joined. `maxLength: 500` (the text type's default). A known limit: see "Known limits". |
 | 13b | Nice-to-have details; a caller who cannot answer | Every detail is needed for the message: the engine's ladder (three tries, then the main line). |
 | 13c | Anything before the request, after identity or after a form? | No routes. The paragraph names the studio's hours as an answer, not as a rule for the line ("when no one can pick up" is any time the line rings). |
 | 13d | More than one language? | No. |
@@ -74,6 +75,8 @@ Its reply is `{ ref }`, checked with `replyShape.object({ ref: replyShape.code()
 | `caller` | `caller`: a name, no redact | `length` | a person's name, in their own words |
 | `phone` | `phone`: digits, `last4` | the slot's | an identifier |
 | `message` | `message`: text, `length-summarized` | the slot's (by its length; no `audit` line, which `pnpm check` would refuse as a duplicate) | the caller's own words: the inbox gets them, the records do not |
+
+In short, the records keep every turn's words and the message by their length; the caller's name as given (the `caller` slot has no redact: it is whole in the trace's slot state, on the console, in the read-back's values and in the handoff data; only the action's param is by its length, in the audit), the number by its last four.
 
 What `length-summarized` costs, accepted: no caller's words are in the trace, the console or the frame log, on any turn (the message may come on any), so a call cannot be replayed from its frame log and `kb:gaps` finds no caller questions; the person on the main line gets the message by its length from a transfer. The words go whole to the render model (and to the decision model's checks of the span) only to summarize them; the policy card says so.
 
@@ -133,6 +136,12 @@ All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
 - **The address**: "418 Juniper Lane, Suite 2, in Example City", invented.
 - **The keypad menu**: 1 a message, 2 the hours, 3 the address, 0 the main line (`fromGreeting` not set: the menu is offered after two misses, the default).
 - **The adversarial suite** is on, as the scaffold sets it.
+- **"Yes please" after the whereabouts line** ("... happy to take a message for them. How can I help you today?") is a request for a message: `take_message`'s criteria say so ("or says yes right after the line offers to take a message"). The caller is then asked who it is for, though they named someone in the question: the question was about whereabouts, and nothing of it is kept.
+- **A quote, a meeting or a price** ("can I get a quote for a website", "can you book me a meeting with Riley", "how much do you charge for a logo") is something only the studio's people can do, so the desk takes it as a message (`take_message`'s criteria: "or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on"). A request nobody at the studio handles ("do you sell gift cards", "do you repair laptops") stays `other`.
+- **`nomatch_open`** says what the desk can do, with no "Sorry, I didn't catch that": it is said both for words not understood and for a request understood and not handled (`other`), and must be true of both.
+- **"I'm not sure who it should go to"** is labelled `anyone` (the team): a caller who does not know who should get it does not mind who does. The line that misses the recipient question is "hmm, let me think".
+- **The ending** is "Your message is on its way to {recipient}." and then the goodbye: "Thanks for calling Example Front Desk. Goodbye." on a call, the chat's own `goodbye_chat` in a chat, so neither says thanks twice and a chat is never thanked for "calling".
+- **`exactText` has no "Thanks,"**: it is often said right after "Here it is exactly as I took it down.", where "Thanks, I'll make sure ..." read oddly; with a generated summary (`text`) the line is said on its own, and keeps the paragraph's "Thanks,".
 
 ## Gaps
 
@@ -143,7 +152,7 @@ What the paragraph asks that the framework did not do, or did differently, when 
 | The paragraph's frame says "in short" before the summary | One frame, said with the summary and with the exact words alike | Dropped "in short" ("called and said:") | **Closed.** A framed line's `exactText` is the frame for the exact words ([guide 16.3](../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line)): `text` keeps the paragraph's "in short", `exactText` says "called and said:" |
 | `pnpm configure` and a transfer target | `configure` wrote `HANDOFF_NUMBER` but not `STUDIO_MAIN_LINE`, which the server needs to start | `.env.example` and the README said to add it by hand | **Closed.** `configure` asks for each number app.yaml names (`--number STUDIO_MAIN_LINE=...`) |
 | Recording with two keys in two files | `regress` read one settings file | Told the owner to copy one key next to the other | **Closed.** `ENV_FILE` names several files, separated by commas (`ENV_FILE=apps/secretary/.env,<your render.env>`); the README's recording command uses it |
-| The message in the trace | A `text` slot with `say: null` had to be `redact: none`, so the message as said was in the trace and on the console | Recorded the param by length (`audit: length`), wrote the trade-off down | **Closed.** `redact: length-summarized`: the message is kept by its length in every record, and sent whole to the render model only for the span. The app now keeps no caller words in its records at all (see "What is recorded") |
+| The message in the trace | A `text` slot with `say: null` had to be `redact: none`, so the message as said was in the trace and on the console | Recorded the param by length (`audit: length`), wrote the trade-off down | **Closed.** `redact: length-summarized`: the message is kept by its length in every record, and sent whole to the render model only for the span. The records now keep every turn's words and the message by their length; the caller's name as given, the number by its last four (see "What is recorded") |
 | `handoff_result_unchecked` | The skill did not mention the line | Left it to `handoff_needs_human` | **Closed.** The skill names it; the app has its own line (prescribed) |
 | A message said in one breath with the other details | The `text` slot's value is the whole turn's words (`pick` could cut a real message short) | Kept the whole turn as the message, name and number included; scripted (`message-all-in-one-breath`), so the baseline shows it | **A known limit**, documented in [guide 16.3](../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line): the exact-words reading repeats the name and number; the summary usually leaves them out |
 | The app map drew `urgent` as "Completes without calling an action" | A form whose `complete` hook hands off was not drawn as a handoff | Nothing; the handoff is in "Where a handoff goes" and in the scripted calls | **Eased.** The map now says the hook decides in code what follows (a line, the end or a handoff) |
@@ -159,11 +168,25 @@ No `FAIL adversarial` case and no `screened` finding on the stub: the suite hold
 
 ## Baseline edits
 
-The baseline was made once with `regress --update` on 2026-10-13 (117 corpus outcomes, 39 scripted calls) and read entry by entry against this worksheet; no entry was edited by hand since. The 2026-10-14 revision (`exactText`, `length-summarized`, `handoff_result_unchecked`) changed no entry: the baseline holds each turn's decision, prompt id, acknowledgements, gate and slots, none of which moved. Two scripted calls' own expectations (`message-read-back-summarized`, `message-long-read-back-summarized`) now expect "called and said, in short,", the frame said with a generated summary; the calls that hear the exact words still expect "called and said:".
+The baseline was first made with `regress --update` on 2026-10-13 (117 corpus outcomes, 39 scripted calls) and read entry by entry against this worksheet. The 2026-10-14 revision (`exactText`, `length-summarized`, `handoff_result_unchecked`) changed no entry. Two scripted calls' own expectations (`message-read-back-summarized`, `message-long-read-back-summarized`) expect "called and said, in short,", the frame said with a generated summary; the calls that hear the exact words expect "called and said:" (since the review, without "Thanks,").
+
+After the review of 2026-10-14 the baseline was made again with `regress --update` (the app had never been recorded or reviewed by the maintainer, and the maintainer allowed it), now 128 corpus outcomes and 52 scripted calls. Compared with the one before, entry by entry:
 
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
-| | | | |
+| corpus `rc-05` ("I'm not sure who it should go to") | `promptId`, `slots.recipient` | `ask_recipient_retry`, none -> `ask_caller`, `anyone` | relabelled `anyone`: a caller who does not know who should get the message does not mind who does |
+| corpus `ot-02`, `ot-06`, `ot-08` | removed | -> `tm-15`, `tm-16`, `tm-17` | a quote, a meeting with Riley and a price are now messages (`take_message`), renamed with the form's prefix; each opens the form (`ask_recipient`, or `ask_caller` with Riley for the meeting) |
+| corpus `tm-11` to `tm-14`, `rc-08`, `ms-08`, `ms-09`, `rp-09`, `ot-09` to `ot-11` | new | | "yes please" and "sure, okay" after the offer of a message; "it's not urgent, but ..." and "call me back as soon as possible", opening and inside the message (all messages, none urgent); a recipient missed ("hmm, let me think"); "read it back" at "What should I change?"; three requests nobody at the studio handles |
+| 13 scripted calls | new | | `whereabouts-then-yes`, `whereabouts-then-sure`, `quote-becomes-a-message`, `meeting-becomes-a-message`, `off-scope-hears-what-the-desk-does`, `message-recipient-not-sure-is-anyone`, `message-read-back-no-twice-asks-what-to-change`, `message-said-again-at-what-to-change`, `message-read-back-asked-for-at-what-to-change`, `message-not-urgent-but`, `message-call-me-back-soon`, `message-not-urgent-in-the-message`, `message-asap-in-the-message`; each read turn by turn |
+| scripted call `recipient-not-given-goes-to-a-person` | steps | "I'm not sure who it should go to" x3 -> "hmm, let me think" x3 | the old line now answers `anyone`; same outcome (`max-attempts` to the main line) |
+
+No other entry changed (the line changes, `message_taken`, `goodbye`, `nomatch_open` and `exactText`, are words, which the baseline does not hold; the scripted calls that name them expect the new words).
+
+## Known limits
+
+- **A message said in two breaths.** A caller who pauses between two sentences of a message ("The logo files are ready. ... Oh, and the invoice is attached.") gives the message at the first breath: the line reads it back, and the second sentence arrives as an answer to the read-back. `voice.continueWithinMs: 900` joins the two when the caller talks over the read-back within 900 ms of its start (the engine's default is 300); a longer pause is not joined. **To try on a live call:** leave a two-sentence message with a short pause (about a second) between the sentences, then one with a longer pause (two or three seconds), and see whether the read-back has both. If the longer pause loses the second sentence, the options are a higher `continueWithinMs` (at most 2000) or the recognizer's own end-of-speech setting, never the message's slot.
+- **A message said in one breath with the other details** keeps the whole turn as the message (Gaps).
+- **The lines the first recording should watch** (each is a reading the stub takes from its label, and only the real model shows): the urgent and message boundary (`ur-*`, `tm-13`, `tm-14`, `ms-08`, `ms-09`: "it's not urgent, but ...", "call me back as soon as possible"); "yes please" and "sure, okay" after the whereabouts line (`tm-11`, `tm-12`); a quote, a meeting and a price as messages, and the truly off-scope requests as `other` (`tm-15` to `tm-17`, `ot-*`); "I'm not sure who it should go to" as `anyone` (`rc-05`); "read it back" at "What should I change?" (`rp-09`); the whole one-breath message (`tm-08`); and every span the render model words and the drift check judges, above all a message with a negation ("no changes needed", "please don't send ...", "it's not urgent, but ...": `ms-02`, `ms-06`, `ms-08`).
 
 ## Recordings
 
@@ -179,7 +202,7 @@ Not recorded yet: the owner's step (README, "Recording against the real models")
 - [x] Scripted calls cover the form, the anonymous caller (the only principal), each handoff (a person on request at the start, inside the form, at the read-back and on the keypad menu; urgent; max attempts), keypad entry (the number, and the menu's keys) and each informational answer (spoken, and the hours and the address by key). No identity, so no step-up, verification or delegate calls.
 - [x] No `identity.yaml`: the paragraph says nobody verifies.
 - [x] The policy read back (`policy.matrix`, `POLICY.md`, `APP-MAP.md`) matches "Who may do what", and the card matches the paragraph: one action at level 0, confirmed; the span listed as the only generated part, with its goal, its content and its budget; the prescribed lines.
-- [x] Every tool lists its `params`, every param has a row under "What is recorded", and the card's table says the same; the message kept in the trace is written down as a trade-off.
+- [x] Every tool lists its `params`, every param has a row under "What is recorded", and the card's table says the same; what `length-summarized` costs is written down, and the caller's name, kept as given, is said so.
 - [x] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
 - [x] Every tool whose reply a call is made from or the audit records checks it (`check`); app.yaml says `testing: { adversarial: on }`, and the regression prints `adversarial 26/26 cases hold` with no `FAIL adversarial`.
 - [x] No knowledge base.

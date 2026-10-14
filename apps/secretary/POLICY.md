@@ -46,7 +46,7 @@ These lines are fixed, but for the spans named (the framed form): a model words 
 
 | Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `confirm_take_message` | Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on? (said with a generated span; with every span its content word for word: Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?) | `{summary}` | Summarize the caller's message briefly, in their own terms, as a receptionist reading it back. | the first time it is said | `{message}`, a value the caller confirms | `{message}` | 20 |
+| `confirm_take_message` | Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on? (said with a generated span; with every span its content word for word: I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?) | `{summary}` | Summarize the caller's message briefly, in their own terms, as a receptionist reading it back. | the first time it is said | `{message}`, a value the caller confirms | `{message}` | 20 |
 
 Sent whole to the render model to summarize; masked in the records (a `text` slot's `redact: length-summarized`, the one exception to "never a value the records hide whole"):
 
@@ -68,7 +68,7 @@ Prescribed lines (`prescribed: true`): always said word for word, never generate
 | `handoff_security` | Let me put you through to the studio's main line. |
 | `handoff_system_failure` | I'm having trouble right now. Let me put you through to the studio's main line. |
 | `handoff_urgent` | I'll put you straight through to the studio's main line. |
-| `message_taken` | Your message is on its way to {recipient}. Thanks for calling Example Front Desk. |
+| `message_taken` | Your message is on its way to {recipient}. |
 
 ## Actions
 

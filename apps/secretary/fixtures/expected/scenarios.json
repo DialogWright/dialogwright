@@ -225,6 +225,119 @@
     "pass": true,
     "mismatches": []
   },
+  "whereabouts-then-yes": {
+    "id": "whereabouts-then-yes",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "whereabouts-then-sure": {
+    "id": "whereabouts-then-sure",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "quote-becomes-a-message": {
+    "id": "quote-becomes-a-message",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "meeting-becomes-a-message": {
+    "id": "meeting-becomes-a-message",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "off-scope-hears-what-the-desk-does": {
+    "id": "off-scope-hears-what-the-desk-does",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
   "urgent-at-the-start": {
     "id": "urgent-at-the-start",
     "decision": "handoff",
@@ -833,6 +946,178 @@
       "caller": null,
       "phone": null,
       "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-recipient-not-sure-is-anyone": {
+    "id": "message-recipient-not-sure-is-anyone",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-read-back-no-twice-asks-what-to-change": {
+    "id": "message-read-back-no-twice-asks-what-to-change",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-said-again-at-what-to-change": {
+    "id": "message-said-again-at-what-to-change",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirm_unanswered",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready, but the colours are still not quite right"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-read-back-asked-for-at-what-to-change": {
+    "id": "message-read-back-asked-for-at-what-to-change",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-not-urgent-but": {
+    "id": "message-not-urgent-but",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": "it's not urgent, but could Sam call me back about the brochure"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-call-me-back-soon": {
+    "id": "message-call-me-back-soon",
+    "decision": "prompt",
+    "promptId": "ask_recipient",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "take_message",
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-not-urgent-in-the-message": {
+    "id": "message-not-urgent-in-the-message",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "it's not urgent, but the invoice needs a look this week"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-asap-in-the-message": {
+    "id": "message-asap-in-the-message",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "please call me back as soon as possible about the proofs"
     },
     "queued": [],
     "principalLevel": 0,
