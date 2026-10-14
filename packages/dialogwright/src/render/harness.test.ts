@@ -98,7 +98,7 @@ describe('stubRenderer: the renderer an app\'s own test runs its scripted calls 
     const scenario: Scenario = {
       id: 'summary-frame',
       steps: [{ say: 'can I leave a message for Dana' }, { say: "it's Morgan Lee" }, { say: 'five five five five five five zero one four two' }, { say: 'please call me about the March invoice before Friday, I think we were charged twice for the same delivery' }],
-      expect: { decision: 'prompt', promptId: 'confirm_take_message', text: 'called and said, in short, please call me about the March invoice before. Shall I pass it on?' },
+      expect: { decision: 'prompt', promptId: 'confirm_take_message', text: 'called and said, in short, please call me about the March invoice before Friday. Shall I pass it on?' },
     };
     const run = async (renderer: ReturnType<typeof stubRenderer>) => (await runAll([], [scenario], { client: buildClient('stub', corpusFile, { ...DEFAULT_THRESHOLDS }, '2026-10-14'), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-14', now: () => 0, renderer })).scenarios['summary-frame']!;
     expect((await run(stubRenderer(app, {}))).mismatches).toEqual([]);

@@ -70,7 +70,7 @@ export interface WordingLine {
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; exactly?: true }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';

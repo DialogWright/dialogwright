@@ -41,7 +41,7 @@ What the record of a call keeps of each value the action is sent, where the acti
 
 The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call's slots are: the trace's slots, the variables of the lines that say them (a read-back among them), a handoff's data and the console. Where that is not what the table says:
 
-- Kept whole there, since the slot has no redact setting (policy.yaml's `audit` masks the value in the action's call alone): name (`caller`). A redact setting on the slot masks it there too.
+- Kept whole there, since the slot has no redact setting (policy.yaml's `audit` masks the value only in the action's call and the side effects it queues): name (`caller`). A redact setting on the slot masks it there too.
 
 ## Actions
 

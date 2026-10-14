@@ -8,7 +8,7 @@ import { wordCount } from './checks';
  * default it does what a well-behaved model would: a short acknowledgement before the fixed line where
  * the moment calls for one (the caller frustrated, a question asked again, words just heard), and for a
  * line generated from collected content, the fixed line with each content value cut to its first few
- * words, so the line summarizes rather than repeats. Within the act's word budget, or the fixed line.
+ * words, so the line summarizes rather than repeats; and a framed line's span, its content's first clause. Within the act's word budget, or the fixed line.
  *
  * `say` replaces the wording for the lines it answers (a string, a function of the act, or an Error,
  * which the line's generation then rejects with), so a test can make a renderer that adds a number,
@@ -56,14 +56,17 @@ export function fakeWording(act: SpeechAct): string {
 }
 
 /**
- * The fake's own wording of a span, deterministic: its content cut to its first few words, with no
- * question mark and no closing punctuation (the frame has its own), as a short summary would be.
+ * The fake's own wording of a span, deterministic: its content's first clause (to its first comma or
+ * stop), within the span's budget, with no question mark and no closing punctuation (the frame has its
+ * own), as a short summary of its main point would be. A content of one clause is given back whole: the
+ * span is then said exactly (RenderLine.exactly). A clause after the first is left out, so a "no" or a
+ * condition there falls back (`omitted`), as it should.
  */
 export function fakeSpanWording(act: SpanAct): string {
   const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');
-  const words = text.split(/\s+/).filter((w) => w !== '');
-  const kept = words.slice(0, Math.min(SUMMARY_WORDS, act.style.words)).join(' ');
-  return kept.replace(/[,.;:!]+$/, '');
+  const first = text.split(/[,.;:!]/)[0] ?? '';
+  const words = first.split(/\s+/).filter((w) => w !== '');
+  return words.slice(0, act.style.words).join(' ');
 }
 
 export class FakeRenderClient implements RenderClient {

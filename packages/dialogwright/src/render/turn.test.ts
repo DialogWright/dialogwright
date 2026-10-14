@@ -318,13 +318,13 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     const plain = await call(TO_SUMMARY, null);
     const worded = await call(TO_SUMMARY, fake());
     expect(lastSaid(plain)).toBe(EXACT);
-    expect(lastSaid(worded)).toBe(`${FRAME_START}please call me about the March invoice before${FRAME_END}`);
+    expect(lastSaid(worded)).toBe(`${FRAME_START}please call me about the March invoice before Friday${FRAME_END}`);
     const run = worded.runs.at(-1)!;
     expect(run.result.decision).toEqual(plain.runs.at(-1)!.result.decision);
     expect(run.result.session.lastPromptText).toBe(EXACT);
     expect(run.result.session.slots.message!.value).toBe(MESSAGE);
     expect(run.record.render!.lines.filter((l) => l.promptId === 'confirm_take_message')).toEqual([
-      expect.objectContaining({ span: 'summary', mode: 'generated', fixed: MESSAGE, said: 'please call me about the March invoice before', act: 'ask', situations: ['first-ask'], source: 'fake' }),
+      expect.objectContaining({ span: 'summary', mode: 'generated', fixed: MESSAGE, said: 'please call me about the March invoice before Friday', act: 'ask', situations: ['first-ask'], source: 'fake' }),
     ]);
   });
 
@@ -347,7 +347,7 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     for (const frame of ['Dana', 'Morgan', '0142', 'Okay, thanks', 'pass it on']) expect(JSON.stringify(act)).not.toContain(frame);
     // Its drift check is asked of the span and its content alone.
     const judged = asked.find((r) => r.questions.renderSpanDrift !== undefined)!;
-    expect(judged.state).toEqual({ span: { goal: act.goal, said: 'please call me about the March invoice before' }, quoted: [{ name: 'message', words: MESSAGE }] });
+    expect(judged.state).toEqual({ span: { goal: act.goal, said: 'please call me about the March invoice before Friday' }, quoted: [{ name: 'message', words: MESSAGE }] });
     expect(JSON.stringify(judged.state)).not.toContain('Dana');
   });
 
@@ -434,7 +434,7 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     const r = await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, render, renderer: fake() });
     const say = r.runs.at(-1)!.result.actions.find((a) => a.type === 'say') as { parts: ({ audio: string } | { text: string })[] };
     expect(say.parts[0]).toEqual({ audio: 'https://h/audio/frame-open.wav' });
-    expect(sayText([r.runs.at(-1)!.result.actions.find((a) => a.type === 'say')!])).toContain('called and left this message: please call me about the March invoice before. Shall I pass it on?');
+    expect(sayText([r.runs.at(-1)!.result.actions.find((a) => a.type === 'say')!])).toContain('called and left this message: please call me about the March invoice before Friday. Shall I pass it on?');
     expect(spanOf(r)).toMatchObject({ mode: 'generated' });
   });
 
@@ -471,7 +471,7 @@ describe('a framed line: a fixed line with a generated span (the message fixture
         expect(said.startsWith('Muy bien. Le diré a Dana Reyes que Morgan Lee, al 555 555 0142, llamó y dejó este mensaje: ')).toBe(true);
         if (goal) {
           expect(client.askedSpans[0]!.act).toMatchObject({ goal: 'Resumir el mensaje en una frase, en sus propias palabras.', language: 'es' });
-          expect(said).toContain('dejó este mensaje: please call me about the March invoice before. ¿Se lo paso?');
+          expect(said).toContain('dejó este mensaje: please call me about the March invoice before Friday. ¿Se lo paso?');
         } else {
           expect(client.askedSpans).toEqual([]);
           expect(r.runs.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')).toMatchObject({ skipped: 'locale' });
@@ -497,7 +497,7 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
 
   it('says its text with a generated span, and its exact frame whenever the span is the content word for word; the session keeps the exact frame', async () => {
     const worded = await call(TO_SUMMARY, fake());
-    expect(lastSaid(worded)).toBe(`${OPEN}, in short, please call me about the March invoice before. Shall I pass it on?`);
+    expect(lastSaid(worded)).toBe(`${OPEN}, in short, please call me about the March invoice before Friday. Shall I pass it on?`);
     expect(worded.runs.at(-1)!.result.session.lastPromptText).toBe(EXACT_LINE);
     expect(spokenText(exact, worded.runs.at(-1)!.result.decision)).toBe(EXACT_LINE);
     // No renderer, a check that fails, a slow model: the exact frame.
@@ -515,9 +515,11 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
       const r = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: verbatim } }) }, asked);
       expect(lastSaid(r), verbatim).toBe(EXACT_LINE);
       expect(lastSaid(r), verbatim).not.toContain('in short');
-      expect(spanOf(r), verbatim).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, fallback: 'verbatim', source: 'fake' });
+      expect(spanOf(r), verbatim).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, exactly: true, source: 'fake' });
       expect(spanOf(r)!.said).toBeUndefined();
-      expect(r.runs.at(-1)!.record.audit).toContainEqual({ type: 'render_fallback', detail: { prompt: 'confirm_take_message', span: 'summary', reason: 'verbatim' } });
+      expect(spanOf(r)!.fallback).toBeUndefined();
+      // Said exactly is no fallback: no audit row.
+      expect(r.runs.at(-1)!.record.audit?.filter((a) => a.type === 'render_fallback')).toEqual([]);
       expect(asked.filter((q) => q.questions.renderSpanDrift !== undefined)).toEqual([]);
     }
     // A wording that differs by a word is a summary, checked as one.
@@ -529,9 +531,9 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
   it('a span that leaves out a "no" of the message falls back (`omitted`) and says the exact frame (live findings, item 21)', async () => {
     const proofs = PROOFS;
     const steps = [...TO_SUMMARY.slice(0, 3), { say: proofs }];
-    // The fake's own wording, the message's first eight words, leaves the "no changes needed" out.
+    // The fake's own wording, the message's first clause, leaves the "no changes needed" out.
     const r = await call(steps, fake());
-    expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: 'omitted', refused: 'the brochure proofs are back from the printer' });
+    expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: 'omitted', refused: 'the brochure proofs are back from the printer and they look great' });
     expect(lastSaid(r)).toBe(`${OPEN}: ${proofs}. Shall I pass it on?`);
   });
 

@@ -1,4 +1,4 @@
-import { isFigureWord, leftOut } from '../render/checks';
+import { AMOUNT_WORDS, DATE_WORDS, isFigureWord, leftOut, straight } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -31,7 +31,17 @@ const FILLER: ReadonlySet<string> = new Set([
 /** A sentence that says the caller's words are the caller's: "your message says", "you said". */
 const ATTRIBUTED = /\b(your message|your note|you said|you mentioned|you told|you asked|you'd like|you want|you say|says|said)\b/i;
 
-const tokens = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+const tokens = (text: string): string[] => straight(text).toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+
+/**
+ * What a summary must not leave out of the quoted words (the span drift question's criteria): a time or
+ * an amount (a date word, an amount word, a digit) and who is to act (a name: a capitalized word that
+ * does not begin the words, "I" aside), lower-cased.
+ */
+function mustKeep(quoted: string): string[] {
+  const named = (straight(quoted).match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => w.toLowerCase()).filter((w) => w !== 'i' && !w.startsWith("i'"));
+  return [...new Set([...tokens(quoted).filter((w) => DATE_WORDS.has(w) || AMOUNT_WORDS.has(w) || /\d/.test(w)), ...named])];
+}
 
 /**
  * The stub's drift judge (render/checks.ts renderDriftQuestion), deterministic, holding a line to the
@@ -69,7 +79,8 @@ const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', '
  * framed line's span to the question's criteria by its words: a span is a faithful summary of the
  * quoted words when every word of it of its own (not filler, not in its goal) is in them, it speaks in
  * no person they do not, states no figure or name they do not, leaves out none of their clauses that
- * says "no" or sets a condition (leftOut), and carries no words of an injection.
+ * says "no" or sets a condition (leftOut) and none of their times, amounts and names (mustKeep), and
+ * carries no words of an injection.
  * A real model is asked the question itself.
  */
 export function stubSpanDrift(state: unknown): boolean {
@@ -80,6 +91,9 @@ export function stubSpanDrift(state: unknown): boolean {
   const quoted = new Set(quotedWords.flatMap(tokens));
   // A negated statement or a condition of the quoted words left out (the criteria's; render/checks.ts leftOut).
   if (leftOut(said, quotedWords)) return true;
+  // A time, an amount or who is to act left out.
+  const kept = new Set(tokens(said));
+  if (quotedWords.some((q) => mustKeep(q).some((w) => !kept.has(w)))) return true;
   const own = tokens(said).filter((w) => !quoted.has(w));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some((w) => PERSON.has(w) || isFigureWord(w))) return true;

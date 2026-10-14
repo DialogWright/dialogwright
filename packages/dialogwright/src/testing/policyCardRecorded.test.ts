@@ -37,13 +37,13 @@ describe('the policy card says where a slot is kept otherwise than the value its
     expect(line.turnState.slots.caller!.value).toBe('Morgan Lee');
     const card = policyCardText(messageApp, MESSAGE_DIR);
     expect(card).toContain('| Pass a message on (`leaveMessage`) | message (`message`) | by its length only |');
-    expect(card).toContain("- Kept whole there, since the slot has no redact setting (policy.yaml's `audit` masks the value in the action's call alone): from (`caller`) and message (`message`).");
+    expect(card).toContain("- Kept whole there, since the slot has no redact setting (policy.yaml's `audit` masks the value only in the action's call and the side effects it queues): from (`caller`) and message (`message`).");
   });
 
   it('a slot hidden but for its year, and a statement the live console shows in words, are named; an app where every slot is as its row says has no such paragraph', () => {
     const card = policyCardText(testkitApp, join(MESSAGE_DIR, '..', 'testkit'));
     expect(card).toContain('- Hidden there but for the year in it at most (`••/••/1985`), in a side effect\'s request too: date of birth (`dob`).');
-    expect(card).toContain('- By its length there, but in words on the live console while the call is in progress, in a side effect\'s request too (the caller\'s own words); its lines and a handoff\'s data say its stand-in: description (`missingNote`).');
+    expect(card).toContain('- By its length there, and by its stand-in in its lines and a handoff\'s data; but, the caller\'s own words, shown as said on the live console while the call is in progress, a side effect\'s request there among them: description (`missingNote`).');
     expect(card).not.toContain('Kept whole there');
     expect(policyCardText(libraryApp, LIBRARY_DIR)).not.toContain('The slots these values come from');
   });

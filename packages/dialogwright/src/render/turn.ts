@@ -84,7 +84,7 @@ export interface RenderInput {
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
-type Attempt = { said: string; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']> };
+type Attempt = { said: string; gen: Generation } | { exactly: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']> };
 
 /** A failed request as the trace records it (RenderLine.error): the client's own account, never the request. */
 function requestFailed(e: unknown): Attempt {
@@ -360,7 +360,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     }
     const text = cleanSpan(gen.text);
     // The content back word for word: said as the exact words, in the frame for them, with nothing more asked.
-    if (sameWords(text, act.content.map((c) => c.value).join(' '))) return { fallback: 'verbatim', gen };
+    if (sameWords(text, act.content.map((c) => c.value).join(' '))) return { exactly: true, gen };
     const failed = checkSpan(text, act, { conflicts });
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {
@@ -420,6 +420,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       lines.push({ ...base, mode: 'generated', said: got.said, ...meta });
       return;
     }
+    // (A line worded whole is never said exactly: only a span is compared with its content.)
+    if ('exactly' in got) {
+      lines.push({ ...base, mode: 'fixed', exactly: true, ...meta });
+      return;
+    }
     lines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
     audit.push({ type: 'render_fallback', detail: { prompt: p.said.promptId, reason: got.fallback } });
   });
@@ -456,6 +461,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       if ('said' in got) {
         worded[sp.name] = got.said;
         spanLines.push({ ...base, mode: 'generated', said: got.said, ...meta });
+        return;
+      }
+      // Its content word for word: said exactly, no fallback (no check failed), so no audit row.
+      if ('exactly' in got) {
+        spanLines.push({ ...base, mode: 'fixed', exactly: true, ...meta });
         return;
       }
       spanLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });

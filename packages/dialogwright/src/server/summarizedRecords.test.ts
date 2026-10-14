@@ -40,7 +40,7 @@ const app: App = variants.variant(SUMMARIZED);
 const corpus = loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), app);
 const TODAY = '2026-10-13';
 const MESSAGE = 'please call me about the March invoice before Friday, I think we were charged twice for the same delivery';
-const SUMMARY = 'please call me about the March invoice before';
+const SUMMARY = 'please call me about the March invoice before Friday';
 /** Distinctive pieces of the message and of its summary: none may be in any record. */
 const PIECES = ['charged twice', 'March invoice', 'same delivery', 'call me about'];
 /** Short messages, given at the message's question. */

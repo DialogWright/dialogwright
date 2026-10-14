@@ -158,13 +158,7 @@ export type RenderFallback =
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
   | 'content-flagged'
   /** A span leaves out a clause of its content that says "no" or sets a condition (unless, until, except, only if), or restates one without its condition. */
-  | 'omitted'
-  /**
-   * A span's wording is its content word for word (letter case, punctuation and spacing aside): the
-   * span is said as the exact content, and the line in its frame for the exact words (`exactText`), so
-   * a frame written for a summary ("in short") never comes before the caller's own words.
-   */
-  | 'verbatim';
+  | 'omitted';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =
@@ -208,6 +202,13 @@ export interface RenderLine {
   skipped?: RenderSkip;
   /** Why the generation was not said: the check that failed, or how it failed. */
   fallback?: RenderFallback;
+  /**
+   * A framed line's span whose wording was its content word for word (letter case, punctuation and
+   * spacing aside): said exactly, as the content (`mode: fixed`), and the line in its frame for the
+   * exact words (`exactText`), so a frame written for a summary ("in short") never comes before the
+   * caller's own words. Not a fallback: no check failed, and no drift check was asked.
+   */
+  exactly?: true;
   /** The wording a check refused, for whoever reads the trace; never said. */
   refused?: string;
   /**

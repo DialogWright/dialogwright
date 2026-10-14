@@ -1341,9 +1341,13 @@ describe('generated wording on the call detail', () => {
   });
 
   it('every reason a line falls back or is not tried has words', () => {
-    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged', 'person', 'omitted', 'verbatim'];
+    const reasons = ['empty', 'format', 'words', 'question', 'avoid', 'items', 'foreign', 'drift', 'timeout', 'error', 'cassette-miss', 'drift-error', 'negation', 'conflict', 'content-flagged', 'person', 'omitted'];
     for (const fallback of reasons) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', fallback }] })[0]!.why).not.toBe(`fell back: ${fallback}`);
     for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier', 'knowledge', 'exact', 'no-content']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
+  });
+
+  it('a span said exactly (its wording was its content word for word) is not a fallback', () => {
+    expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', exactly: true }] })[0]!.why).toBe('said exactly: the wording was the words themselves');
   });
 
   it('a framed line\'s span is named, with its exact content beside it', () => {

@@ -94,7 +94,7 @@ What the record of a call keeps of each value the action is sent, where the acti
 The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call's slots are: the trace's slots, the variables of the lines that say them (a read-back among them), a handoff's data and the console. Where that is not what the table says:
 
 - Hidden there but for the year in it at most (`••/••/1985`), in a side effect's request too: date of birth (`dob`).
-- By its length there, but in words on the live console while the call is in progress, in a side effect's request too (the caller's own words); its lines and a handoff's data say its stand-in: description (`missingNote`).
+- By its length there, and by its stand-in in its lines and a handoff's data; but, the caller's own words, shown as said on the live console while the call is in progress, a side effect's request there among them: description (`missingNote`).
 
 ## Actions
 
