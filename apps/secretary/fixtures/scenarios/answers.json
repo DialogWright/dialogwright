@@ -194,6 +194,10 @@
       "decision": "prompt",
       "promptId": "ask_recipient",
       "form": "take_message"
+    },
+    "knownGap": {
+      "reason": "recordings 3 and 4 (2026-10-14): \"sure, okay\" after the offer of a message reads take_message 0.59, then 0.55 (none 0.41, 0.45), so the caller is asked \"do you want to leave a message? Yes or no.\" first: one more yes, and safe. The maintainer accepted the check as the expected turn under a real model",
+      "outcome": { "promptId": "confirm_intent_explicit", "acks": [], "form": null }
     }
   },
   {
