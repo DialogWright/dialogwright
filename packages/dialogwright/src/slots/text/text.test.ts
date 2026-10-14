@@ -649,9 +649,17 @@ describe('at a form\'s summary: a yes with new or changed words (the `changed` q
     expect(plain.questions(atSummary('yes')).noteChanged?.instructions).toContain('add to or change the words they gave?');
   });
 
-  it('at SUMMARY_WORDS_CHANGED or more the turn\'s words replace the words on file; under it they are kept', () => {
+  it('at SUMMARY_WORDS_CHANGED or more the turn\'s words are added after the words on file, exactly as said; under it they are kept', () => {
     const said = "yes but tell her it's moved to Thursday";
-    expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ kind: 'filled', value: said });
+    expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ kind: 'filled', value: `${MESSAGE}. ${said}` });
+    // Words on file that already end a sentence are followed by a space alone.
+    expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said, { current: `${MESSAGE}.` }))).toMatchObject({ value: `${MESSAGE}. ${said}` });
+    // Cut to maxLength as any of the slot's values is: the accepted words first, then as much of the addition as fits.
+    const short = defineSlot('note', { type: 'text', what: 'a note for the courier', maxLength: 50 });
+    expect(short.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ value: `${MESSAGE}. ${said}`.slice(0, 50) });
+    // The display of a slot shown as said is the same words.
+    const shown = defineSlot('note', { type: 'text', what: 'a note for the courier', say: null, redact: 'none' });
+    expect(shown.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ value: `${MESSAGE}. ${said}`, display: `${MESSAGE}. ${said}` });
     expect(note.fill({ noteGiven: noul(0.6), noteChanged: noul(0.1) }, atSummary('yes'))).toEqual({ kind: 'absent' });
     // The words must still be given: a change with no words for the slot fills nothing.
     expect(note.fill({ noteGiven: noul(0.1), noteChanged: noul(0.9) }, atSummary(said))).toEqual({ kind: 'absent' });

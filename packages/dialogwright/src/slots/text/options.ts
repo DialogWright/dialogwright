@@ -85,7 +85,7 @@ export const textOptions = z
     keep: z
       .enum(['first', 'first-unless-prompted'])
       .default('first-unless-prompted')
-      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way. A yes to the summary keeps it, unless the yes names the slot to change or (without `pick`) gives new or changed words for it (the `changed` question, at SUMMARY_WORDS_CHANGED or more), when the slot takes the words (read again where the action\'s confirmed rule holds the write to what the summary said).'),
+      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way. A yes to the summary keeps it, unless the yes names the slot to change or (without `pick`) gives new or changed words for it (the `changed` question, at SUMMARY_WORDS_CHANGED or more), when the turn\'s words are added after them, exactly as said (read again where the action\'s confirmed rule holds the write to what the summary said).'),
     redact: z
       .enum(['length', 'none', 'length-summarized'])
       .default('length')

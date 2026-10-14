@@ -334,7 +334,7 @@ describe('at the read-back, a text slot\'s changed question is read by the yes\'
     const t = resolve(atReadBack(), speechEvent('yes, and the water is coming through the wall now', true), yes, turnContext());
     // (Whether the summary is then read again is the app's confirmed rule, as for any value a yes changes:
     // this fixture's booking has none; the message fixture's has, core/summaryYes.test.ts.)
-    expect(t.session.slots.details!.value).toBe('yes, and the water is coming through the wall now');
+    expect(t.session.slots.details!.value).toBe(`${DETAILS}. yes, and the water is coming through the wall now`);
   });
 });
 

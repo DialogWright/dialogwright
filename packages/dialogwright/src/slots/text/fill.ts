@@ -31,8 +31,19 @@ function pickedPart(o: TextOptions, pickId: string, answers: AnswerMap, ctx: Slo
  * display of a slot shown as said (`say: null`) is the words as said, which a line reads back. A
  * value already on file is kept as `keep` says (a later aside must not overwrite a description; the
  * engine hides `current` during a correction, so one can still replace it), but at a form's summary
- * where the caller gives new or changed words for it (the `changed` question; without `pick`).
+ * where the caller gives new or changed words for it (the `changed` question; without `pick`): those
+ * are added after the words on file (appended), and the summary reads both back.
  */
+/**
+ * Words added at a form's summary after the words the caller accepted (the maintainer's decision,
+ * 2026-10-14): the accepted words, then the turn's exactly as said, joined by ". ", or by a space where the
+ * accepted words already end a sentence. Nothing is dropped or reworded.
+ */
+export function appended(accepted: string, added: string): string {
+  const head = accepted.trimEnd();
+  return /[.!?]$/.test(head) ? `${head} ${added}` : `${head}. ${added}`;
+}
+
 export function textFill(
   o: TextOptions,
   ids: { given: string; pick: string; changed: string },
@@ -42,12 +53,18 @@ export function textFill(
     const p = noulValue(answers, ids.given);
     if (!meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
     // At a form's summary, a yes that gives new or changed words for the slot (its `changed` question at
-    // SUMMARY_WORDS_CHANGED or more) replaces the words on file; the summary is then read again.
+    // SUMMARY_WORDS_CHANGED or more) adds them after the words on file; the summary is then read again.
     const changed = changeableAtSummary(o, ctx) && meetsThreshold(ctx.thresholds, 'SUMMARY_WORDS_CHANGED', noulValue(answers, ids.changed));
     if (keepsCurrent(o, ctx) && !changed) return { kind: 'absent' };
-    const words = pickedPart(o, ids.pick, answers, ctx) ?? ctx.text;
-    const said = words.trim().slice(0, o.maxLength);
-    if (!said) return { kind: 'absent' };
+    const words = (pickedPart(o, ids.pick, answers, ctx) ?? ctx.text).trim();
+    if (!words) return { kind: 'absent' };
+    if (changed && ctx.current !== null) {
+      // The accepted words, then the turn's exactly as said, cut to maxLength as any of the slot's values is.
+      const value = appended(ctx.current, writtenForm(words, o, ctx.locale)).slice(0, o.maxLength);
+      const said = appended(ctx.current, words).slice(0, o.maxLength);
+      return { kind: 'filled', value, display: o.say === null ? said : display(value, ctx.locale), confidence: p, confirm: 'none' };
+    }
+    const said = words.slice(0, o.maxLength);
     const value = writtenForm(said, o, ctx.locale);
     return { kind: 'filled', value, display: o.say === null ? said : display(value, ctx.locale), confidence: p, confirm: 'none' };
   };

@@ -570,6 +570,15 @@ describe('a yes to the summary that names no detail accepts it (FillOptions.acce
     expect(r.progress).toBe(true);
   });
 
+  it('a yes that adds to the message (its changed question over SUMMARY_WORDS_CHANGED): the words are added after it, exactly as said', () => {
+    const said = "yes and also say I'll be late";
+    const r = fillSlots(atSummary(), { messageGiven: noul(0.9), messageChanged: noul(0.9) }, ctx(said), specs, { correcting: true, accepted: { except: null } });
+    expect(r.session.slots.message!.value).toBe(`${MESSAGE}. ${said}`);
+    expect(r.progress).toBe(true);
+    // Under the bar the yes accepts the message as it is.
+    expect(fillSlots(atSummary(), { messageGiven: noul(0.9), messageChanged: noul(0.3) }, ctx(said), specs, { correcting: true, accepted: { except: null } }).session.slots.message!.value).toBe(MESSAGE);
+  });
+
   it('the detail the yes names to change (changeSlot) is corrected, and it alone: every other slot keeps what was accepted', () => {
     const named = fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes, but change the message to call me tomorrow'), specs, { correcting: true, accepted: { except: 'message' } });
     expect(named.session.slots.message!.value).toBe('yes, but change the message to call me tomorrow');

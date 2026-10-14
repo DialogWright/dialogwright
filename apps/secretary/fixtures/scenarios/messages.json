@@ -169,7 +169,7 @@
       "text": "Your message is on its way to Riley Moreno.",
       "gate": "leaveMessage:ALLOW",
       "slots": {
-        "message": "yes but tell her it's moved to Thursday"
+        "message": "the logo files are ready for review. yes but tell her it's moved to Thursday"
       }
     }
   },

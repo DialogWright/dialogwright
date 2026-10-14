@@ -136,16 +136,16 @@ describe('a yes with new words for the message (the text type\'s changed questio
     expect(Object.keys(plan(r.runs.at(-1)!.result.session, speechEvent(MOVED, true), turnContext(tools)).questions!)).not.toContain('messageChanged');
   });
 
-  it('"yes but tell her it\'s moved to Thursday", the question at 0.9: the message takes the new words, and the summary is read again before anything is passed on', async () => {
+  it('"yes but tell her it\'s moved to Thursday", the question at 0.9: the words are added after the message, read again, then passed on with both', async () => {
     const { session, tools } = await atReadBack();
     const t = say(session, tools, MOVED, { ...LIVE_YES, messageGiven: noul(0.9), messageChanged: noul(0.9) });
-    expect(t.session.slots.message!.value).toBe(MOVED);
+    expect(t.session.slots.message!.value).toBe(`${MESSAGE}. ${MOVED}`);
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message' });
     expect(delivered(tools)).toEqual([]);
     // The yes to the read-back with the new words passes them on.
     const yes = say(t.session, tools, 'yes', LIVE_YES);
     expect(yes.decision).toMatchObject({ kind: 'complete', promptId: 'message_taken' });
-    expect(delivered(tools)).toEqual([expect.objectContaining({ message: MOVED })]);
+    expect(delivered(tools)).toEqual([expect.objectContaining({ message: `${MESSAGE}. ${MOVED}` })]);
   });
 
   it('the live "yes", the question at 0.1 and messageGiven 0.6: the message is kept and passed on', async () => {
