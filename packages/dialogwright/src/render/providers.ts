@@ -17,8 +17,9 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_T
  *   collected content screened again, the drift check); default 500 on a call and 1000 in a chat.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
  *   million tokens, for the cost in the trace and Insights; default the default model's.
- * - RENDER_THINKING and RENDER_EFFORT, Anthropic only: how the model thinks (renderThinkingOf); default
- *   the model's own way of thinking least (THINKING_BY_MODEL).
+ * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
+ *   (renderThinkingOf), default the model's own way of thinking least (THINKING_BY_MODEL); on OpenRouter
+ *   (openRouterThinkingOf), default reasoning off (`reasoning: { enabled: false }`), one vocabulary for both.
  */
 export const RENDER_PROVIDERS = ['openrouter', 'anthropic'] as const;
 export type RenderProviderName = (typeof RENDER_PROVIDERS)[number];
@@ -32,7 +33,8 @@ export type RenderProviderName = (typeof RENDER_PROVIDERS)[number];
  *   judges it needs (the thinking is never read: only the line's text block is, and its tokens are
  *   counted in the usage and the cost);
  * - `omit`: no `thinking` field, the model's default (Claude Opus 5.5 and Claude Fable think always, and
- *   refuse `disabled`).
+ *   refuse `disabled`). *
+ * On OpenRouter the same words are sent as its `reasoning` setting (openRouterThinkingOf).
  */
 export const RENDER_THINKING_MODES = ['disabled', 'between-tools', 'adaptive', 'omit'] as const;
 export type RenderThinkingMode = (typeof RENDER_THINKING_MODES)[number];
@@ -97,6 +99,43 @@ export function refusedThinking(model: string, mode: RenderThinkingMode): string
   return null;
 }
 
+/**
+ * How an OpenRouter model reasons while it words a line, in the same vocabulary (RENDER_THINKING,
+ * RENDER_EFFORT), sent as OpenRouter's `reasoning` object (openRouterReasoningBody); null when neither is
+ * set, and the request is as it always was (`reasoning: { enabled: false }`). Its default is reasoning
+ * off, `disabled`; an effort given alone turns reasoning on at that effort (`adaptive`); `between-tools`
+ * is Claude Sonnet 5.5's on Anthropic, refused here; and `disabled` with an effort is refused (an effort
+ * is for reasoning). Which model honours which setting is OpenRouter's and the model's: a model that
+ * cannot turn reasoning off (one that always reasons) answers `disabled` with an error, and needs an
+ * effort or `omit`.
+ */
+export function openRouterThinkingOf(env: Env): RenderThinking | null {
+  const mode = value(env, 'RENDER_THINKING');
+  const effort = value(env, 'RENDER_EFFORT');
+  if (mode === null && effort === null) return null;
+  if (mode !== null && !(RENDER_THINKING_MODES as readonly string[]).includes(mode)) throw new Error(`RENDER_THINKING must be ${RENDER_THINKING_MODES.join(', ')}, got "${mode}"`);
+  if (effort !== null && !(RENDER_EFFORTS as readonly string[]).includes(effort)) throw new Error(`RENDER_EFFORT must be ${RENDER_EFFORTS.join(', ')}, got "${effort}"`);
+  if (mode === 'between-tools') throw new Error('RENDER_THINKING=between-tools is Claude Sonnet 5.5\'s on RENDER_PROVIDER=anthropic; on OpenRouter use disabled, adaptive or omit');
+  if (mode === 'disabled' && effort !== null) throw new Error('RENDER_EFFORT asks for reasoning, which RENDER_THINKING=disabled turns off: unset one');
+  const out: RenderThinking = { mode: (mode ?? 'adaptive') as RenderThinkingMode, ...(effort !== null ? { effort: effort as RenderEffort } : {}), overridden: false };
+  out.overridden = out.mode !== 'disabled' || out.effort !== undefined;
+  return out;
+}
+
+/**
+ * The `reasoning` object an OpenRouter request carries for `t` (OpenRouter's unified reasoning setting,
+ * as its documentation describes it; what each model does with it is unconfirmed): `disabled`
+ * `{ enabled: false }`; with an effort `{ effort, exclude: true }`; `adaptive` alone `{ enabled: true,
+ * exclude: true }`; `omit` alone no field (the model's own default). `exclude: true` asks that the
+ * reasoning not be returned: only the line (`message.content`) is ever read, and a reasoning text that
+ * comes back anyway (`message.reasoning`) is never read or kept.
+ */
+export function openRouterReasoningBody(t: RenderThinking | undefined): Record<string, unknown> {
+  if (t === undefined || t.mode === 'disabled') return { reasoning: { enabled: false } };
+  if (t.effort !== undefined) return { reasoning: { effort: t.effort, exclude: true } };
+  return t.mode === 'omit' ? {} : { reasoning: { enabled: true, exclude: true } };
+}
+
 /** The `thinking` and `output_config` an Anthropic request carries for `t`. */
 export function anthropicThinkingBody(t: RenderThinking): Record<string, unknown> {
   const thinking = t.mode === 'disabled' ? { type: 'disabled' } : t.mode === 'between-tools' ? { type: 'between_tools' } : t.mode === 'adaptive' ? { type: 'adaptive', display: 'omitted' } : undefined;
@@ -121,7 +160,7 @@ export interface RenderProvider {
   /** The variable the key is read from, for messages; never the key itself. */
   keyVar: string;
   url: string;
-  /** How an Anthropic model thinks (RENDER_THINKING, RENDER_EFFORT); absent for OpenRouter. */
+  /** How the model thinks (RENDER_THINKING, RENDER_EFFORT): always on Anthropic; on OpenRouter only where one is set (openRouterThinkingOf). */
   thinking?: RenderThinking;
 }
 
@@ -158,8 +197,8 @@ export function resolveRenderProvider(env: Env = process.env, opts: { needKey?: 
   if ((opts.needKey ?? true) && apiKey === null) throw new Error(`missing required environment variable ${known.keyVar} (RENDER_PROVIDER=${provider})`);
   const model = value(env, 'RENDER_MODEL') ?? known.model;
   if (provider !== 'anthropic') {
-    for (const name of ['RENDER_THINKING', 'RENDER_EFFORT']) if (value(env, name) !== null) throw new Error(`${name} applies to RENDER_PROVIDER=anthropic only (OpenRouter is asked to turn reasoning off); unset it`);
-    return { provider, model, apiKey, keyVar: known.keyVar, url: known.url };
+    const thinking = openRouterThinkingOf(env);
+    return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, ...(thinking !== null ? { thinking } : {}) };
   }
   return { provider, model, apiKey, keyVar: known.keyVar, url: known.url, thinking: renderThinkingOf(model, env) };
 }
@@ -207,12 +246,20 @@ const THINKING_MAX_TOKENS = 4000;
 function apiError(json: unknown, key: string): { type?: string; message?: string } {
   const e = (json as { error?: unknown } | null)?.error;
   if (e === null || typeof e !== 'object') return {};
-  const o = e as { type?: unknown; code?: unknown; message?: unknown };
+  const o = e as { type?: unknown; code?: unknown; message?: unknown; metadata?: unknown };
   // Anthropic's error has a type; OpenRouter's a code, which may be the HTTP status again (a number:
   // then nothing is added to the status), or a name. OpenRouter's shape is to be confirmed on a live call.
   const type = typeof o.type === 'string' ? o.type : typeof o.code === 'string' ? o.code : undefined;
   const clean = (t: string): string => t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
-  return { ...(type !== undefined && /^[A-Za-z0-9_.-]{1,64}$/.test(type) ? { type } : {}), ...(typeof o.message === 'string' && o.message.trim() !== '' ? { message: clean(o.message) } : {}) };
+  // OpenRouter passes on the upstream provider's own error in `metadata` (`provider_name`, and `raw`, its
+  // body as text): where it is there, it is what says why (OpenRouter's message is often only "Provider
+  // returned error"). Made safe the same way: one line, short, no key.
+  const meta = o.metadata !== null && typeof o.metadata === 'object' ? (o.metadata as { raw?: unknown; provider_name?: unknown }) : {};
+  const raw = typeof meta.raw === 'string' && meta.raw.trim() !== '' ? meta.raw : null;
+  const from = typeof meta.provider_name === 'string' && /^[A-Za-z0-9 _.-]{1,40}$/.test(meta.provider_name) ? `${meta.provider_name}: ` : '';
+  const own = typeof o.message === 'string' && o.message.trim() !== '' ? o.message : null;
+  const message = own !== null && raw !== null ? `${own} (${from}${raw})` : own ?? (raw !== null ? `${from}${raw}` : null);
+  return { ...(type !== undefined && /^[A-Za-z0-9_.-]{1,64}$/.test(type) ? { type } : {}), ...(message !== null ? { message: clean(message) } : {}) };
 }
 
 /** Words a line through OpenRouter's OpenAI-compatible chat completions, or the Anthropic Messages API. */
@@ -231,11 +278,12 @@ export class ModelRenderClient implements RenderClient {
     // A line's instructions, or a framed line's span's.
     const system = instructionsOf(req.act);
     const anthropic = this.p.provider === 'anthropic';
-    const thinking = this.p.thinking ?? { mode: 'disabled', overridden: false };
+    const thinking: RenderThinking = this.p.thinking ?? { mode: 'disabled', overridden: false };
     const body = anthropic
       ? { model: this.p.model, max_tokens: mayThink(thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, system, messages: [{ role: 'user', content }], ...anthropicThinkingBody(thinking) }
-      // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed per model).
-      : { model: this.p.model, max_tokens: MAX_TOKENS, reasoning: { enabled: false }, messages: [{ role: 'system', content: system }, { role: 'user', content }] };
+      // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed
+      // per model), unless RENDER_THINKING or RENDER_EFFORT asks for it (openRouterReasoningBody).
+      : { model: this.p.model, max_tokens: mayThink(this.p.thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, ...openRouterReasoningBody(this.p.thinking), messages: [{ role: 'system', content: system }, { role: 'user', content }] };
     const headers: Record<string, string> = anthropic
       ? { 'x-api-key': this.p.apiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
       : { authorization: `Bearer ${this.p.apiKey!}`, 'content-type': 'application/json' };

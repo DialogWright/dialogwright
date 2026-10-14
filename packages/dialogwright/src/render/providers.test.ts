@@ -118,6 +118,12 @@ describe('ModelRenderClient', () => {
     expect([o.message, o.detail]).toEqual(['openrouter: HTTP 429', 'Slow down']);
     const named = await new ModelRenderClient(or, answering(400, { error: { code: 'bad_request', message: 'No' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect(named.message).toBe('openrouter: HTTP 400 bad_request');
+    // The upstream provider's own error, which OpenRouter passes on in metadata: what says why, made safe the same way.
+    const upstream = await new ModelRenderClient(or, answering(400, { error: { code: 400, message: 'Provider returned error', metadata: { provider_name: 'Example', raw: `{"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled.","key":"${KEY}"}}` } } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(upstream.message).toBe('openrouter: HTTP 400');
+    expect(upstream.detail).toBe('Provider returned error (Example: {"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled.","key":"•"}})');
+    const rawOnly = await new ModelRenderClient(or, answering(400, { error: { code: 400, metadata: { raw: 'model not found' } } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(rawOnly.detail).toBe('model not found');
     // A body that is not JSON: the status alone.
     const bare = await new ModelRenderClient(p, (async () => new Response('Bad gateway', { status: 502 })) as typeof fetch).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect([bare.message, bare.detail]).toEqual(['anthropic: HTTP 502', undefined]);
@@ -219,11 +225,45 @@ describe('how an Anthropic model thinks while it words a line', () => {
     for (const model of ['claude-haiku-5-5', 'claude-sonnet-4-6', 'claude-opus-4-8', 'claude-sonnet-5-5', 'some-new-model']) expect(at({ RENDER_MODEL: model, RENDER_THINKING: 'adaptive' })(), model).toMatchObject({ thinking: { mode: 'adaptive' } });
   });
 
-  it('each setting checked; neither for OpenRouter, which is asked to turn reasoning off', () => {
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_THINKING: 'enabled' })).toThrow('RENDER_THINKING must be disabled, between-tools, adaptive, omit, got "enabled"');
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: KEY, RENDER_EFFORT: 'max' })).toThrow('RENDER_EFFORT must be low, medium, high, got "max"');
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_THINKING: 'adaptive' })).toThrow('RENDER_THINKING applies to RENDER_PROVIDER=anthropic only');
+  it('each setting checked, on either provider', () => {
+    for (const [provider, keyVar] of [['anthropic', 'ANTHROPIC_API_KEY'], ['openrouter', 'OPENROUTER_API_KEY']] as const) {
+      expect(() => resolveRenderProvider({ RENDER_PROVIDER: provider, [keyVar]: KEY, RENDER_THINKING: 'enabled' })).toThrow('RENDER_THINKING must be disabled, between-tools, adaptive, omit, got "enabled"');
+      expect(() => resolveRenderProvider({ RENDER_PROVIDER: provider, [keyVar]: KEY, RENDER_EFFORT: 'max' })).toThrow('RENDER_EFFORT must be low, medium, high, got "max"');
+    }
+    // OpenRouter with neither: reasoning off, as always, and nothing in the run's header.
     expect(resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY })!.thinking).toBeUndefined();
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_THINKING: 'between-tools' })).toThrow('RENDER_THINKING=between-tools is Claude Sonnet 5.5\'s on RENDER_PROVIDER=anthropic');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_THINKING: 'disabled', RENDER_EFFORT: 'low' })).toThrow('RENDER_EFFORT asks for reasoning, which RENDER_THINKING=disabled turns off');
+  });
+
+  const openRouterBody = async (env: Record<string, string>): Promise<Record<string, unknown>> => {
+    const bodies: Record<string, unknown>[] = [];
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_MODEL: 'vendor/reasoner', ...env })!;
+    // A reasoning text that comes back anyway is never read: the line is the content alone.
+    const answer = { choices: [{ message: { content: 'Who is it from?', reasoning: 'the caller wants' } }], usage: { prompt_tokens: 300, completion_tokens: 80 } };
+    const f = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init!.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify(answer), { status: 200 });
+    }) as typeof fetch;
+    const g = await new ModelRenderClient(p, f).generate(req, signal);
+    expect(g.text).toBe('Who is it from?');
+    expect(JSON.stringify(g)).not.toContain('the caller wants');
+    const { messages: _m, ...rest } = bodies[0]!;
+    return rest;
+  };
+
+  it('OpenRouter reasons as RENDER_THINKING and RENDER_EFFORT say, in its reasoning setting, with room for it; off by default', async () => {
+    expect(await openRouterBody({})).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { enabled: false } });
+    expect(await openRouterBody({ RENDER_THINKING: 'disabled' })).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { enabled: false } });
+    // An effort alone turns reasoning on at that effort, its text not returned.
+    expect(await openRouterBody({ RENDER_EFFORT: 'low' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { effort: 'low', exclude: true } });
+    expect(await openRouterBody({ RENDER_THINKING: 'adaptive' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { enabled: true, exclude: true } });
+    expect(await openRouterBody({ RENDER_THINKING: 'omit' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000 });
+    expect(await openRouterBody({ RENDER_THINKING: 'omit', RENDER_EFFORT: 'high' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { effort: 'high', exclude: true } });
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_MODEL: 'openai/gpt-oss-120b', RENDER_EFFORT: 'low' })!;
+    expect(renderCassetteModel(p)).toBe('openai/gpt-oss-120b.thinking-adaptive.effort-low');
+    expect(renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_MODEL: 'openai/gpt-oss-120b', RENDER_THINKING: 'disabled' })!)).toBe('openai/gpt-oss-120b');
+    expect(renderLines(p)).toEqual(['generated lines worded by openai/gpt-oss-120b from openrouter (thinking adaptive, effort low)']);
   });
 
   it('a run that changes how a model thinks is recorded in a cassette of its own, beside the default one', () => {

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -52,12 +52,13 @@ function recordedCopy(): string {
  * carries), Anthropic's and OpenRouter's answers in their own shapes. A model named `claude-missing`
  * answers 404, as a wrong id does, with the key in its message (which must never reach the output).
  */
-function fakeProviders(opts: { delayMs?: number } = {}) {
-  const sent: { url: string; model: string; headers: Record<string, string> }[] = [];
+function fakeProviders(opts: { delayMs?: number; failing?: Set<string> } = {}) {
+  const sent: { url: string; model: string; headers: Record<string, string>; reasoning?: unknown }[] = [];
   const fake = new FakeRenderClient();
   const fetchFn = (async (url: string | URL, init?: RequestInit) => {
-    const body = JSON.parse(String(init!.body)) as { model: string; system?: string; messages: { role: string; content: string }[] };
-    sent.push({ url: String(url), model: body.model, headers: init!.headers as Record<string, string> });
+    const body = JSON.parse(String(init!.body)) as { model: string; system?: string; reasoning?: unknown; messages: { role: string; content: string }[] };
+    sent.push({ url: String(url), model: body.model, headers: init!.headers as Record<string, string>, ...(body.reasoning !== undefined ? { reasoning: body.reasoning } : {}) });
+    if (opts.failing?.has(body.model)) return new Response(JSON.stringify({ error: { code: 400, message: 'Provider returned error', metadata: { provider_name: 'Example', raw: 'Reasoning is mandatory for this endpoint and cannot be disabled.' } } }), { status: 400 });
     if (body.model === 'claude-missing') return new Response(JSON.stringify({ type: 'error', error: { type: 'not_found_error', message: `model: claude-missing (key ${KEY})` } }), { status: 404 });
     const act = JSON.parse(body.messages.at(-1)!.content) as RenderAct;
     const g = await fake.generate({ promptId: 'line', act, key: '' }, new AbortController().signal);
@@ -75,15 +76,18 @@ const stubDecision = (): HeuristicStubClient => new HeuristicStubClient({ todayI
 
 describe('the models named', () => {
   it('reads anthropic and openrouter entries, an Anthropic one with its thinking and effort', () => {
-    expect(parseModelSpecs(['anthropic:claude-haiku-5-5,openrouter:vendor/small:free', 'anthropic:claude-haiku-5-5:adaptive:low'])).toEqual([
+    expect(parseModelSpecs(['anthropic:claude-haiku-5-5,openrouter:vendor/small:free', 'anthropic:claude-haiku-5-5:adaptive:low', 'openrouter:openai/gpt-oss-120b:low,openrouter:vendor/small:free:omit,anthropic:claude-opus-5-5:medium'])).toEqual([
       { entry: 'anthropic:claude-haiku-5-5', provider: 'anthropic', model: 'claude-haiku-5-5' },
       { entry: 'openrouter:vendor/small:free', provider: 'openrouter', model: 'vendor/small:free' },
       { entry: 'anthropic:claude-haiku-5-5:adaptive:low', provider: 'anthropic', model: 'claude-haiku-5-5', thinking: 'adaptive', effort: 'low' },
+      { entry: 'openrouter:openai/gpt-oss-120b:low', provider: 'openrouter', model: 'openai/gpt-oss-120b', effort: 'low' },
+      { entry: 'openrouter:vendor/small:free:omit', provider: 'openrouter', model: 'vendor/small:free', thinking: 'omit' },
+      { entry: 'anthropic:claude-opus-5-5:medium', provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium' },
     ]);
     expect(() => parseModelSpecs([])).toThrow(/names no model/);
     expect(() => parseModelSpecs(['claude-haiku-5-5'])).toThrow(/start it with its provider/);
-    expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:thinking'])).toThrow(/its thinking must be/);
-    expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:adaptive:max'])).toThrow(/its effort must be/);
+    expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:thinking'])).toThrow('"anthropic:claude-haiku-5-5:thinking": after the model give its thinking (disabled, between-tools, adaptive, omit) and its effort (low, medium, high), either or both, got "thinking"');
+    expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:adaptive:max'])).toThrow(/got "adaptive:max"/);
     expect(() => parseModelSpecs(['anthropic:a', 'anthropic:a'])).toThrow(/named twice/);
   });
 
@@ -147,7 +151,9 @@ describe('render:bakeoff, recording (fake providers)', () => {
     expect(table).toMatch(/^openrouter:vendor\/small\s+36\s+/m);
     // A wrong model id: stopped early, with why.
     expect(table).toMatch(/^anthropic:claude-missing\s+5\s+0 \(0%\)\s+5 \(100%\)\s+error 5 \(anthropic: HTTP 404 not_found_error\)/m);
-    expect(table).toContain('anthropic:claude-missing: stopped after 5 lines, every one a failed request: anthropic: HTTP 404 not_found_error');
+    // With the API's own words (scrubbed: the key it echoed is masked), in the notes and by line.
+    expect(table).toContain('anthropic:claude-missing: stopped after 5 lines, every one a failed request: anthropic: HTTP 404 not_found_error (model: claude-missing (key •))');
+    expect(table).toMatch(/^ {2}ask_caller\s+3 tried, 0 generated, 3 fell back: error 3 {2}e\.g\. error: "anthropic: HTTP 404 not_found_error: model: claude-missing \(key •\)"$/m);
     expect(sent.filter((s) => s.model === 'claude-missing')).toHaveLength(5);
     // The price given is used; a model with none says so.
     expect(table).toContain('openrouter:vendor/small: wording ');
@@ -199,6 +205,61 @@ describe('render:bakeoff, recording (fake providers)', () => {
     expect(m.wording.measured).toBe(12);
     expect(m.wording.overBudget).toBe(12);
     expect(m.wording.p50!).toBeGreaterThanOrEqual(50);
+  }, 60_000);
+});
+
+describe('render:bakeoff, an OpenRouter model\'s reasoning and --fresh', () => {
+  it('sends an OpenRouter entry\'s reasoning, records it apart, and says why a model refuses a setting in the API\'s own words', async () => {
+    const dir = recordedCopy();
+    const { fetchFn, sent } = fakeProviders({ failing: new Set(['vendor/always-reasons']) });
+    const r = io({ env: { OPENROUTER_API_KEY: OR_KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: stubDecision() });
+    expect(await bakeoffCommand([MESSAGE, '--models', 'openrouter:vendor/think:low,openrouter:vendor/always-reasons'], r.io), r.all()).toBe(0);
+    expect(sent.filter((s) => s.model === 'vendor/think').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ effort: 'low', exclude: true }))).toBe(true);
+    expect(sent.filter((s) => s.model === 'vendor/always-reasons').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ enabled: false }))).toBe(true);
+    expect(existsSync(join(dir, 'render', 'vendor__think.thinking-adaptive.effort-low.jsonl'))).toBe(true);
+    const table = r.out.join('\n');
+    expect(table).toMatch(/^openrouter:vendor\/think \(thinking adaptive, effort low\)\s+36\s+/m);
+    expect(table).toContain('openrouter:vendor/always-reasons: stopped after 5 lines, every one a failed request: openrouter: HTTP 400 (Provider returned error (Example: Reasoning is mandatory for this endpoint and cannot be disabled.))');
+  }, 60_000);
+
+  it('--fresh asks every line again, the cassette replaced when the run completes and put back when it is stopped', async () => {
+    const dir = recordedCopy();
+    const failing = new Set<string>();
+    const { fetchFn, sent } = fakeProviders({ failing });
+    const env = { ANTHROPIC_API_KEY: KEY, TYPESAFE_API_KEY: JEV_KEY };
+    const cassette = join(dir, 'render', 'claude-test-5-5.jsonl');
+    const run = async (...args: string[]) => {
+      const r = io({ env, fetchFn, recordedDir: dir, decisionModel: stubDecision() });
+      const code = await bakeoffCommand([MESSAGE, '--models', 'anthropic:claude-test-5-5', ...args], r.io);
+      return { code, r };
+    };
+    expect((await run()).code).toBe(0);
+    const asked = sent.length;
+    // Again without --fresh: every line replays, nothing is asked.
+    expect((await run()).code).toBe(0);
+    expect(sent.length).toBe(asked);
+    // --fresh: every line asked again, the cassette replaced (its 12 lines, not 24), nothing left aside.
+    const first = readFileSync(cassette, 'utf8');
+    expect((await run('--fresh')).code).toBe(0);
+    expect(sent.length).toBe(asked * 2);
+    expect(loadRenderCassette(cassette).size).toBe(12);
+    expect(readFileSync(cassette, 'utf8').trim().split('\n')).toHaveLength(12);
+    expect(existsSync(`${cassette}.before-fresh`)).toBe(false);
+    // A fresh run that is stopped (every request refused) puts the earlier cassette back as it was.
+    const kept = readFileSync(cassette, 'utf8');
+    expect(kept).not.toBe(first);
+    failing.add('claude-test-5-5');
+    const stopped = await run('--fresh');
+    expect(stopped.code).toBe(0);
+    expect(stopped.r.out.join('\n')).toContain('anthropic:claude-test-5-5: stopped after 5 lines');
+    expect(readFileSync(cassette, 'utf8')).toBe(kept);
+    expect(existsSync(`${cassette}.before-fresh`)).toBe(false);
+    // A cassette an interrupted fresh run left aside: the model is not run until a person decides.
+    writeFileSync(`${cassette}.before-fresh`, kept);
+    const left = await run();
+    expect(left.r.out.join('\n')).toContain(`anthropic:claude-test-5-5: refused, nothing asked: an interrupted --fresh run left ${cassette}.before-fresh`);
+    // --fresh with --replay is not understood.
+    expect((await run('--fresh', '--replay')).code).toBe(2);
   }, 60_000);
 });
 

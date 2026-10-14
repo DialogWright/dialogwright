@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { App } from '../core/app/types';
 import type { Thresholds } from '../core/thresholds';
@@ -54,39 +54,42 @@ import type { RenderChannel } from '../core/app/types';
  * machine; the command refuses in CI, and no test records (tests use fakes).
  */
 
-/** A model to compare, as `--models` names it: `anthropic:<model>[:<thinking>[:<effort>]]` or `openrouter:<vendor/model>`. */
+/** A model to compare, as `--models` names it: `<provider>:<model>[:<thinking>][:<effort>]` (`anthropic:claude-haiku-5-5`, `openrouter:openai/gpt-oss-120b:low`). */
 export interface ModelSpec {
   /** As given. */
   readonly entry: string;
   readonly provider: RenderProviderName;
   readonly model: string;
-  /** Anthropic only: RENDER_THINKING for this model; absent, the model's own default (THINKING_BY_MODEL). */
+  /** RENDER_THINKING for this model; absent, the model's own default (THINKING_BY_MODEL on Anthropic; reasoning off on OpenRouter, unless an effort is given). */
   readonly thinking?: RenderThinkingMode;
-  /** Anthropic only: RENDER_EFFORT for this model. */
+  /** RENDER_EFFORT for this model. */
   readonly effort?: RenderEffort;
 }
 
-/** Reads `--models`: comma-separated entries, each `<provider>:<model>`, an Anthropic model with its thinking and effort after it. Throws, saying which entry is wrong. */
+/**
+ * Reads `--models`: comma-separated entries, each `<provider>:<model>`, with the model's thinking and its
+ * effort after it, either or both, in RENDER_THINKING's and RENDER_EFFORT's words (`:adaptive:low`,
+ * `:low`). An OpenRouter id may itself hold a colon (`vendor/model:free`): only trailing words of that
+ * vocabulary are read as the thinking and the effort. Throws, saying which entry is wrong.
+ */
 export function parseModelSpecs(list: readonly string[]): ModelSpec[] {
   const entries = list.flatMap((l) => l.split(',')).map((e) => e.trim()).filter((e) => e !== '');
   if (entries.length === 0) throw new Error('--models names no model: give one or more, comma-separated, as anthropic:<model> or openrouter:<vendor/model>');
   const out: ModelSpec[] = [];
+  const vocabulary = `its thinking (${RENDER_THINKING_MODES.join(', ')}) and its effort (${RENDER_EFFORTS.join(', ')})`;
   for (const entry of entries) {
     const at = entry.indexOf(':');
     const provider = at === -1 ? '' : entry.slice(0, at);
     const rest = at === -1 ? '' : entry.slice(at + 1);
     if (!(RENDER_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${RENDER_PROVIDERS.map((p) => `${p}:`).join(' or ')} (anthropic:claude-haiku-5-5, openrouter:<vendor/model>)`);
-    if (provider === 'openrouter') {
-      if (rest.trim() === '') throw new Error(`"${entry}": name the model after openrouter:`);
-      out.push({ entry, provider, model: rest });
-      continue;
-    }
-    const [model, thinking, effort, ...more] = rest.split(':');
-    if (model === undefined || model === '') throw new Error(`"${entry}": name the model after anthropic:`);
-    if (more.length > 0) throw new Error(`"${entry}": an Anthropic entry is anthropic:<model>[:<thinking>[:<effort>]]`);
-    if (thinking !== undefined && !(RENDER_THINKING_MODES as readonly string[]).includes(thinking)) throw new Error(`"${entry}": its thinking must be ${RENDER_THINKING_MODES.join(', ')}, got "${thinking}"`);
-    if (effort !== undefined && !(RENDER_EFFORTS as readonly string[]).includes(effort)) throw new Error(`"${entry}": its effort must be ${RENDER_EFFORTS.join(', ')}, got "${effort}"`);
-    out.push({ entry, provider: 'anthropic', model, ...(thinking !== undefined ? { thinking: thinking as RenderThinkingMode } : {}), ...(effort !== undefined ? { effort: effort as RenderEffort } : {}) });
+    const parts = rest.split(':');
+    const effort = parts.length > 1 && (RENDER_EFFORTS as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderEffort) : undefined;
+    const thinking = parts.length > 1 && (RENDER_THINKING_MODES as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderThinkingMode) : undefined;
+    const model = parts.join(':');
+    if (model.trim() === '') throw new Error(`"${entry}": name the model after ${provider}:`);
+    // An Anthropic id has no colon: anything after the model is its thinking and its effort, or a slip.
+    if (provider === 'anthropic' && model.includes(':')) throw new Error(`"${entry}": after the model give ${vocabulary}, either or both, got "${model.slice(model.indexOf(':') + 1)}"`);
+    out.push({ entry, provider: provider as RenderProviderName, model, ...(thinking !== undefined ? { thinking } : {}), ...(effort !== undefined ? { effort } : {}) });
   }
   const seen = new Set<string>();
   for (const s of out) {
@@ -134,6 +137,9 @@ export function parsePrices(values: readonly string[]): Map<string, RenderPrice>
  * have dropped is counted against the app's own budget instead (ModelResult.wording.overBudget).
  */
 export const GENEROUS_BUDGET_MS = { voice: 30_000, chat: 30_000 } as const;
+
+/** What `--fresh` adds to a model's cassette's name while it is moved aside for the run. */
+export const FRESH_ASIDE = '.before-fresh';
 
 /** Stop a model's run once this many lines were tried and every one failed as a request (`error`): a wrong id, a key it refuses. */
 export const STOP_AFTER_ERRORS = 5;
@@ -222,6 +228,8 @@ export interface ModelResult {
   fellBack: Record<string, number>;
   /** The `error` fallbacks by why the request failed. */
   errors: Record<string, number>;
+  /** For each of those reasons, the API's own words the first time (the trace's `error.message`, scrubbed as the trace is), where it gave any. */
+  errorMessages: Record<string, string>;
   /** Lines the app generates said fixed without being tried (`when`, a locale, the screen...). */
   untried: number;
   wording: {
@@ -317,7 +325,7 @@ export function lineBreakdown(records: readonly TraceRecord[], app: App): LineBr
       if (line.mode === 'generated') b.generated += 1;
       else if (line.fallback !== undefined) {
         b.fellBack[line.fallback] = (b.fellBack[line.fallback] ?? 0) + 1;
-        const text = line.refused ?? line.error?.reason;
+        const text = line.refused ?? (line.error !== undefined ? `${line.error.reason}${line.error.message !== undefined ? `: ${line.error.message}` : ''}` : undefined);
         if (text !== undefined && b.examples[line.fallback] === undefined) b.examples[line.fallback] = text;
       }
     }
@@ -331,6 +339,18 @@ export function lineBreakdown(records: readonly TraceRecord[], app: App): LineBr
     .sort((a, b) => fell(b) - fell(a) || a.promptId.localeCompare(b.promptId) || (a.span ?? '').localeCompare(b.span ?? ''));
 }
 
+/** The API's own words for each reason a request failed, the first time it gave any, from the records scrubbed as the trace scrubs them. */
+export function errorMessagesOf(records: readonly TraceRecord[], app: App): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of records) {
+    if (!(raw.render?.lines ?? []).some((l) => l.error?.message !== undefined)) continue;
+    for (const line of redactRecordSlots(raw, 'length', app).render?.lines ?? []) {
+      if (line.error?.message !== undefined && out[line.error.reason] === undefined) out[line.error.reason] = line.error.message;
+    }
+  }
+  return out;
+}
+
 /** What a model's run needs besides the model: the app, its fixtures, the decision model, and how. */
 export interface BakeoffRun {
   /** The app, registered as the default (the harness reads it so). */
@@ -341,6 +361,11 @@ export interface BakeoffRun {
   decision: DecisionModel;
   /** True: table from the cassettes alone, asking no model. */
   replay: boolean;
+  /**
+   * Recording only: ask every line again, the model's cassette moved aside (FRESH_ASIDE) for the run.
+   * A run that completes replaces it; one stopped or failed puts it back.
+   */
+  fresh?: boolean;
   /** The settings (the keys among them, never printed); RENDER_TIMEOUT_MS is the call's budget the latency is held to. */
   env: Env;
   thresholds: Thresholds;
@@ -363,7 +388,7 @@ export function providerOf(spec: ModelSpec, run: Pick<BakeoffRun, 'env' | 'repla
 function refusedResult(spec: ModelSpec, refused: string): ModelResult {
   return {
     entry: spec.entry, label: spec.entry, provider: spec.provider, model: spec.model, cassette: '', checks: '', status: 'refused', refused,
-    tried: 0, generated: 0, fellBack: {}, errors: {}, untried: 0,
+    tried: 0, generated: 0, fellBack: {}, errors: {}, errorMessages: {}, untried: 0,
     wording: { measured: 0, p50: null, p95: null, overBudget: 0 },
     cost: { renderTokens: { input: 0, output: 0 }, renderUsd: null, checkTokens: { input: 0, output: 0 }, checksUsd: 0 },
     decisionMisses: { turns: 0, checks: 0 },
@@ -378,7 +403,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
     p = providerOf(spec, run);
   } catch (e) {
     // A thinking the model refuses (renderThinkingOf, as the server refuses it at start): reported for this model, asked of none.
-    const why = spec.thinking !== undefined ? refusedThinking(spec.model, spec.thinking) : null;
+    const why = spec.provider === 'anthropic' && spec.thinking !== undefined ? refusedThinking(spec.model, spec.thinking) : null;
     const refused = why !== null ? `thinking ${spec.thinking} is refused by ${spec.model}: ${why}; leave it out of the entry for the model's own` : e instanceof Error ? e.message : String(e);
     return refusedResult(spec, refused);
   }
@@ -388,7 +413,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
   const price = run.prices.get(p.model) ?? null;
   const base = { entry: spec.entry, label, provider: p.provider, model: p.model, ...(p.thinking !== undefined ? { thinking: thinkingLabel(p.thinking) } : {}), cassette, checks: checksPath };
   const empty = (): Omit<ModelResult, keyof typeof base | 'status'> => ({
-    tried: 0, generated: 0, fellBack: {}, errors: {}, untried: 0,
+    tried: 0, generated: 0, fellBack: {}, errors: {}, errorMessages: {}, untried: 0,
     wording: { measured: 0, p50: null, p95: null, overBudget: 0 },
     cost: { renderTokens: { input: 0, output: 0 }, renderUsd: price === null ? null : 0, checkTokens: { input: 0, output: 0 }, checksUsd: 0 },
     decisionMisses: { turns: 0, checks: 0 },
@@ -396,89 +421,114 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
   });
   if (run.replay && !existsSync(cassette)) return { ...base, status: 'not-recorded', ...empty() };
 
-  const recording = new RenderCassette(run.replay ? { path: cassette, mode: 'replay', model: p.model } : { path: cassette, mode: 'record', model: p.model, inner: new ModelRenderClient(p, run.fetchFn) });
-  recording.preload();
-  const client = new WatchedRenderClient(recording);
-  const decision = decisionFor(run.decision, checksPath, run.replay);
-  const checks = new WatchedChecks(decision);
-  const opts: RunOptions = {
-    client: decision,
-    thresholds: run.thresholds,
-    todayIso: REGRESS_TODAY,
-    now: () => 0,
-    ...(run.screen !== undefined ? { screen: run.screen } : {}),
-    renderer: { client, share: 100, timeoutMs: { ...GENEROUS_BUDGET_MS }, checkTimeoutMs: { ...GENEROUS_BUDGET_MS }, price: price ?? DEFAULT_RENDER_PRICE, drift: checks },
+  // --fresh: the model's cassette moved aside for the run, so every line is asked again (and timed).
+  const aside = `${cassette}${FRESH_ASIDE}`;
+  if (existsSync(aside)) return refusedResult(spec, `an interrupted --fresh run left ${aside}: move it back over ${cassette} to keep the earlier recording, or delete it to keep the new one`);
+  const fresh = !run.replay && run.fresh === true && existsSync(cassette);
+  if (fresh) renameSync(cassette, aside);
+  const restore = (): void => {
+    rmSync(cassette, { force: true });
+    renameSync(aside, cassette);
   };
+  const measured = async (): Promise<ModelResult> => {
+    const recording = new RenderCassette(run.replay ? { path: cassette, mode: 'replay', model: p.model } : { path: cassette, mode: 'record', model: p.model, inner: new ModelRenderClient(p, run.fetchFn) });
+    recording.preload();
+    const client = new WatchedRenderClient(recording);
+    const decision = decisionFor(run.decision, checksPath, run.replay);
+    const checks = new WatchedChecks(decision);
+    const opts: RunOptions = {
+      client: decision,
+      thresholds: run.thresholds,
+      todayIso: REGRESS_TODAY,
+      now: () => 0,
+      ...(run.screen !== undefined ? { screen: run.screen } : {}),
+      renderer: { client, share: 100, timeoutMs: { ...GENEROUS_BUDGET_MS }, checkTimeoutMs: { ...GENEROUS_BUDGET_MS }, price: price ?? DEFAULT_RENDER_PRICE, drift: checks },
+    };
 
-  // A model whose every line fails as a request (a wrong id, a key it refuses) is stopped early.
-  const running = emptyRenderTally();
-  // The decision model failing three turns running (a key it refuses, a timeout) stops the comparison, as it stops a recording regression.
-  let decisionErrors = 0;
-  const watch = (records: readonly TraceRecord[]): void => {
-    for (const r of records) {
-      tallyRender(running, r);
-      const failed = r.source === 'error' && r.error !== null && !isCassetteMiss(r);
-      decisionErrors = failed ? decisionErrors + 1 : 0;
-      if (decisionErrors >= 3) throw new Error(`the decision model failed 3 turns running: ${r.error!.message}`);
+    // A model whose every line fails as a request (a wrong id, a key it refuses) is stopped early.
+    const running = emptyRenderTally();
+    // The decision model failing three turns running (a key it refuses, a timeout) stops the comparison, as it stops a recording regression.
+    let decisionErrors = 0;
+    const watch = (records: readonly TraceRecord[]): void => {
+      for (const r of records) {
+        tallyRender(running, r);
+        const failed = r.source === 'error' && r.error !== null && !isCassetteMiss(r);
+        decisionErrors = failed ? decisionErrors + 1 : 0;
+        if (decisionErrors >= 3) throw new Error(`the decision model failed 3 turns running: ${r.error!.message}`);
+      }
+      const failed = running.fellBack.error ?? 0;
+      if (running.tried >= STOP_AFTER_ERRORS && failed === running.tried) {
+        const why = Object.entries(running.errors).sort(([, a], [, b]) => b - a)[0]?.[0] ?? 'unknown';
+        throw new StopModel(why);
+      }
+    };
+    const into: RunAllResult = emptyRunAll();
+    let stopped: string | undefined;
+    try {
+      await runAll(run.corpus, run.scenarios, opts, {
+        onCorpus: (done, total, _entry, record) => {
+          watch([record]);
+          if (!run.replay && done % 25 === 0) run.progress?.(`  ${label}: corpus ${done}/${total}`);
+        },
+        onScenario: (done, total, scenario, records) => {
+          watch(records);
+          if (!run.replay) run.progress?.(`  ${label}: scenario ${done}/${total} ${scenario.id}`);
+        },
+      }, into);
+    } catch (e) {
+      if (!(e instanceof StopModel)) throw e;
+      stopped = e.message;
     }
-    const failed = running.fellBack.error ?? 0;
-    if (running.tried >= STOP_AFTER_ERRORS && failed === running.tried) {
-      const why = Object.entries(running.errors).sort(([, a], [, b]) => b - a)[0]?.[0] ?? 'unknown';
-      throw new StopModel(why);
+
+    const tally: RenderTally = emptyRenderTally();
+    for (const r of into.records) tallyRender(tally, r);
+    // The wording's latency: each distinct request's, as recorded from the model (now, or in an earlier run).
+    const lines = loadRenderCassette(cassette);
+    const budget = renderSettings(run.env).timeoutMs;
+    const ms: number[] = [];
+    let overBudget = 0;
+    for (const [key, asked] of client.asked) {
+      const took = lines.get(key)?.latencyMs;
+      if (took === undefined) continue;
+      ms.push(took);
+      if (took > budget[asked.channel]) overBudget += 1;
     }
+    const renderTokens = { ...client.tokens };
+    return {
+      ...base,
+      status: stopped !== undefined ? 'stopped' : 'ran',
+      ...(stopped !== undefined ? { stopped } : {}),
+      tried: tally.tried,
+      generated: tally.generated,
+      fellBack: Object.fromEntries(Object.entries(tally.fellBack).filter(([, n]) => (n ?? 0) > 0)) as Record<string, number>,
+      errors: tally.errors,
+      errorMessages: errorMessagesOf(into.records, run.app),
+      untried: tally.skipped,
+      wording: { measured: ms.length, p50: quantile(ms, 0.5), p95: quantile(ms, 0.95), overBudget },
+      cost: {
+        renderTokens,
+        renderUsd: price === null ? null : (renderTokens.input * price.input + renderTokens.output * price.output) / 1_000_000,
+        checkTokens: { ...checks.tokens },
+        // The decision model is priced on its input, as the trace prices it (JEV_PRICE_PER_MTOK).
+        checksUsd: (checks.tokens.input * run.thresholds.JEV_PRICE_PER_MTOK) / 1_000_000,
+      },
+      decisionMisses: { turns: into.records.filter((r) => isCassetteMiss(r)).length, checks: checks.misses },
+      byLine: lineBreakdown(into.records, run.app),
+    };
   };
-  const into: RunAllResult = emptyRunAll();
-  let stopped: string | undefined;
+  let result: ModelResult;
   try {
-    await runAll(run.corpus, run.scenarios, opts, {
-      onCorpus: (done, total, _entry, record) => {
-        watch([record]);
-        if (!run.replay && done % 25 === 0) run.progress?.(`  ${label}: corpus ${done}/${total}`);
-      },
-      onScenario: (done, total, scenario, records) => {
-        watch(records);
-        if (!run.replay) run.progress?.(`  ${label}: scenario ${done}/${total} ${scenario.id}`);
-      },
-    }, into);
+    result = await measured();
   } catch (e) {
-    if (!(e instanceof StopModel)) throw e;
-    stopped = e.message;
+    if (fresh) restore();
+    throw e;
   }
-
-  const tally: RenderTally = emptyRenderTally();
-  for (const r of into.records) tallyRender(tally, r);
-  // The wording's latency: each distinct request's, as recorded from the model (now, or in an earlier run).
-  const lines = loadRenderCassette(cassette);
-  const budget = renderSettings(run.env).timeoutMs;
-  const ms: number[] = [];
-  let overBudget = 0;
-  for (const [key, asked] of client.asked) {
-    const took = lines.get(key)?.latencyMs;
-    if (took === undefined) continue;
-    ms.push(took);
-    if (took > budget[asked.channel]) overBudget += 1;
+  // A fresh run that completed replaces the earlier recording; one stopped puts it back.
+  if (fresh) {
+    if (result.status === 'ran') rmSync(aside);
+    else restore();
   }
-  const renderTokens = { ...client.tokens };
-  return {
-    ...base,
-    status: stopped !== undefined ? 'stopped' : 'ran',
-    ...(stopped !== undefined ? { stopped } : {}),
-    tried: tally.tried,
-    generated: tally.generated,
-    fellBack: Object.fromEntries(Object.entries(tally.fellBack).filter(([, n]) => (n ?? 0) > 0)) as Record<string, number>,
-    errors: tally.errors,
-    untried: tally.skipped,
-    wording: { measured: ms.length, p50: quantile(ms, 0.5), p95: quantile(ms, 0.95), overBudget },
-    cost: {
-      renderTokens,
-      renderUsd: price === null ? null : (renderTokens.input * price.input + renderTokens.output * price.output) / 1_000_000,
-      checkTokens: { ...checks.tokens },
-      // The decision model is priced on its input, as the trace prices it (JEV_PRICE_PER_MTOK).
-      checksUsd: (checks.tokens.input * run.thresholds.JEV_PRICE_PER_MTOK) / 1_000_000,
-    },
-    decisionMisses: { turns: into.records.filter((r) => isCassetteMiss(r)).length, checks: checks.misses },
-    byLine: lineBreakdown(into.records, run.app),
-  };
+  return result;
 }
 
 /** What a comparison prints and writes: the app, the decision model, the budgets the latency is held to, and each model's results. */
@@ -522,7 +572,9 @@ function notes(r: BakeoffReport): string[] {
   for (const m of r.models) {
     if (m.status === 'not-recorded') out.push(`${m.label}: not recorded (no ${m.cassette}); run without --replay to record it`);
     if (m.status === 'refused') out.push(`${m.label}: refused, nothing asked: ${m.refused}`);
-    if (m.status === 'stopped') out.push(`${m.label}: stopped after ${m.tried} lines, every one a failed request: ${m.stopped}`);
+    if (m.status === 'stopped') out.push(`${m.label}: stopped after ${m.tried} lines, every one a failed request: ${m.stopped}${m.stopped !== undefined && m.errorMessages[m.stopped] !== undefined ? ` (${m.errorMessages[m.stopped]})` : ''}`);
+    // Why the requests failed, in the API's own words (each reason once): a stopped run's is on its line above.
+    for (const [reason, message] of Object.entries(m.errorMessages)) if (!(m.status === 'stopped' && reason === m.stopped)) out.push(`${m.label}: error ${reason}: ${message}`);
     if (m.untried > 0) out.push(`${m.label}: ${m.untried} lines said fixed untried (their when, locale or the screen)`);
     if (m.decisionMisses.turns + m.decisionMisses.checks > 0) out.push(`${m.label}: the decision model's recording missed ${m.decisionMisses.turns} turns and ${m.decisionMisses.checks} checks (drift-error); record without --replay`);
     if (m.status !== 'not-recorded' && m.status !== 'refused' && m.cost.renderUsd === null && m.cost.renderTokens.input + m.cost.renderTokens.output > 0) out.push(`${m.label}: wording ${m.cost.renderTokens.input} input and ${m.cost.renderTokens.output} output tokens, no price given (--price ${m.model}=<input>,<output>)`);

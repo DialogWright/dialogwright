@@ -29,11 +29,12 @@ import { renderSettings, renderLines } from '../render/providers';
  */
 
 export const BAKEOFF_USAGE = [
-  'usage: dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay] [--by-line] [--price <model>=<input>,<output>]... [--screen inline|separate] [--out <file.md>] [--json]',
+  'usage: dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh] [--by-line] [--price <model>=<input>,<output>]... [--screen inline|separate] [--out <file.md>] [--json]',
   '  dir: the app folder (one with app.yaml); with none, the folder it is run in, or the nearest above it with an app.yaml',
-  '  --models: anthropic:<model>[:<thinking>[:<effort>]] or openrouter:<vendor/model>, comma-separated or repeated',
-  '    (anthropic:claude-haiku-5-5, anthropic:claude-haiku-5-5:adaptive:low, openrouter:anthropic/claude-haiku-5.5); thinking: disabled, between-tools, adaptive, omit; effort: low, medium, high',
+  '  --models: <provider>:<model>[:<thinking>][:<effort>], anthropic or openrouter, comma-separated or repeated',
+  '    (anthropic:claude-haiku-5-5, anthropic:claude-haiku-5-5:adaptive:low, openrouter:openai/gpt-oss-120b:low); thinking: disabled, between-tools, adaptive, omit; effort: low, medium, high',
   '  records each model into fixtures/recorded/render/<model>.jsonl with your own keys (refused in CI), then tables them; --replay: table the cassettes alone, asking no model',
+  '  --fresh: ask every line again, each model\'s cassette moved aside for its run: replaced when the run completes, put back when it is stopped or fails',
   '  --by-line: each model\'s lines, most fallbacks first, with a wording a check refused; --price: a model\'s price in US dollars per million tokens (the default model\'s is known)',
   '  --out: also write the table as Markdown; --json: the results as JSON on stdout',
 ].join('\n');
@@ -71,6 +72,7 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
       options: {
         models: { type: 'string', multiple: true, default: [] },
         replay: { type: 'boolean', default: false },
+        fresh: { type: 'boolean', default: false },
         'by-line': { type: 'boolean', default: false },
         price: { type: 'string', multiple: true, default: [] },
         screen: { type: 'string' },
@@ -104,6 +106,11 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
     return 2;
   }
   const replay = args.replay === true;
+  const fresh = args.fresh === true;
+  if (fresh && replay) {
+    io.err(`dialogwright render:bakeoff: --fresh records every line again; --replay records nothing: give one\n${BAKEOFF_USAGE}`);
+    return 2;
+  }
   const byLine = args['by-line'] === true;
   const json = args.json === true;
   // With --json, stdout is the JSON alone: the rest goes to stderr.
@@ -206,7 +213,7 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
         // A model whose settings are refused is reported in its row; the run goes on.
       }
       const result = await runModel(spec, {
-        app, recordedDir: recorded, decision, replay, env, thresholds, screen, corpus, scenarios, prices,
+        app, recordedDir: recorded, decision, replay, fresh, env, thresholds, screen, corpus, scenarios, prices,
         ...(io.fetchFn !== undefined ? { fetchFn: io.fetchFn } : {}),
         progress: io.err,
       });
