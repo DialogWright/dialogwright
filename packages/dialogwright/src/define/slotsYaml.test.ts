@@ -136,7 +136,7 @@ describe('slots.yaml: building the app', () => {
     const note = app.slots.note as ReturnType<typeof defineSlot>;
     expect(note.type).toBe('text');
     expect(note.config).toMatchObject({ what: 'a note for the librarian', say: 'your note', maxLength: 500 });
-    expect(note.questionIds).toEqual(['noteGiven']);
+    expect(note.questionIds).toEqual(['noteGiven', 'noteChanged']);
     expect(app.slots.book).toBe(libraryApp.slots.book);
     expect(app.forms.renew_loan!.slots).toEqual(['book', 'note']);
   });
@@ -358,7 +358,7 @@ describe('defineSlots: slots for an app that is not a folder', () => {
     expect(Object.keys(slots)).toEqual(['card', 'note', 'book', 'branch']);
     expect(slots.card).toBe(code.card);
     expect((slots.note as unknown as { type: string }).type).toBe('text');
-    expect(slots.note!.questionIds).toEqual(['noteGiven']);
+    expect(slots.note!.questionIds).toEqual(['noteGiven', 'noteChanged']);
   });
 
   it('takes the path of a slots.yaml, whose problems point at its lines', () => {

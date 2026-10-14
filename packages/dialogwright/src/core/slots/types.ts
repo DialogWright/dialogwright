@@ -26,6 +26,12 @@ export interface SlotContext {
   /** the slot's own current value (slotCtx sets it per spec), null when unfilled */
   current: string | null;
   /**
+   * The caller is answering the read-back of a form that holds this slot (a form's summary pending), so
+   * a slot may ask what only that moment asks (a `text` slot: whether the caller, besides agreeing,
+   * gives new or changed words for it). Absent on every other turn.
+   */
+  summary?: true;
+  /**
    * The app's records the slot specs may offer to choose from (App.facts.forSlots; e.g. the
    * customer's parcels, so one can be chosen by what it holds). Opaque to the engine; empty when
    * the app gives none, or before it has any.

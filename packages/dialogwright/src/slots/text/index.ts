@@ -5,7 +5,7 @@ import type { SlotType } from '../types';
 import { textDisplay } from './display';
 import { textFill } from './fill';
 import { textOptions, textWording, type TextOptions, type TextWording } from './options';
-import { givenIdOf, pickIdOf, textQuestions } from './questions';
+import { changedIdOf, givenIdOf, pickIdOf, textQuestions } from './questions';
 
 export { textOptions, textWording, TEXT_PARTS, TEXT_QUESTIONS, DEFAULT_MAX_LENGTH, DEFAULT_SAY } from './options';
 export type { TextOptions, TextWording } from './options';
@@ -49,6 +49,7 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
   build(id, o, wording) {
     const givenId = givenIdOf(id, o);
     const pickId = pickIdOf(id, o);
+    const changedId = changedIdOf(id, o);
     const display = textDisplay(o, wording);
     return {
       id,
@@ -66,10 +67,10 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       // answer; one that picks part of it (pick) listens.
       ...quietOf(othersOf(o)),
       detect: true,
-      questionIds: o.pick ? [givenId, pickId] : [givenId],
+      questionIds: o.pick ? [givenId, pickId] : [givenId, changedId],
       prompts: readBackPrompts(id, o.confirm ?? 'summary'),
       questions: textQuestions(id, o),
-      fill: textFill(o, { given: givenId, pick: pickId }, display),
+      fill: textFill(o, { given: givenId, pick: pickId, changed: changedId }, display),
       display,
     };
   },

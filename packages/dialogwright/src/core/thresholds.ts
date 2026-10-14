@@ -34,6 +34,12 @@ export const DEFAULT_THRESHOLDS = {
   INTENT_CHANGE: 0.6,
   // final confirm
   SLOT_CHANGE: 0.6,
+  // A yes to a form's summary that also gives new or changed words for a text slot the summary read
+  // back (the type's `<slot>Changed` question, asked only there): at this or more, the slot takes the
+  // turn's words and the summary is read again; under it, the yes accepts the words on file (live
+  // findings item 28; the maintainer's decision, 2026-10-14: a model question rather than words). The
+  // level of SLOT_DETECT and SLOT_CHANGE, which it stands beside.
+  SUMMARY_WORDS_CHANGED: 0.6,
   INTENT_SECOND: 0.6,
   // slots
   SLOT_DETECT: 0.6,

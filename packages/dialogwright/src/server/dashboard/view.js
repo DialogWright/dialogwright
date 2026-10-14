@@ -234,6 +234,8 @@ export function thresholdFor(id, thresholds, activeForm) {
   const t = thresholds ?? {};
   if (Object.hasOwn(GATE_THRESHOLD, id)) return t[GATE_THRESHOLD[id]] ?? null;
   if (/Given$/.test(id) || META.detectQuestions.includes(id)) return t.SLOT_DETECT ?? null;
+  // A text slot's question at a form's summary: besides agreeing, does the caller change its words.
+  if (/Changed$/.test(id)) return t.SUMMARY_WORDS_CHANGED ?? null;
   // INTENT_ROUTE is never applied: outside a form the ladder routes from INTENT_EXPLICIT up (the
   // lowest rung that still routes, with a confirmation), and inside one only a switch at
   // INTENT_SWITCH takes the turn away from the form (src/core/gates.ts step 8).

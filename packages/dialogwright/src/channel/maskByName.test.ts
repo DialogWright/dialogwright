@@ -97,6 +97,26 @@ describe('every copy of the caller\'s number in free text, however spaced (calle
   it('leaves other numbers, a longer run, and the last four alone', () => {
     expect(scrub('ending in 0142, order 25555550142 and 555 555 0199')).toBe('ending in 0142, order 25555550142 and 555 555 0199');
   });
+  it('a national number with its trunk 0, run together or spaced, and an en dash between groups', () => {
+    const uk = callerNumberScrub('+447911123456')!;
+    expect(uk('call 07911 123456 or 07911123456 or 7911 123456')).toBe('call …3456 or …3456 or …3456');
+    expect(scrub('on 555\u2013555\u20130142, or (555) 555\u20130142')).toBe('on …0142, or …0142');
+  });
+  it('with cutOff, a line cut off part way through the number: its start is masked, from three digits', () => {
+    const cut = callerNumberScrub('+15555550142', DEFAULT_RECORDS, { cutOff: true })!;
+    expect(cut('We will call you on 5 5 5, 5 5 5, 0')).toBe('We will call you on …0142');
+    expect(cut('We will call you on 5 5 5, 5 5')).toBe('We will call you on …0142');
+    expect(cut('We will call you on 555 555 01')).toBe('We will call you on …0142');
+    expect(cut('call 07911 12')).toBe('call 07911 12');
+    expect(callerNumberScrub('+447911123456', DEFAULT_RECORDS, { cutOff: true })!('call 07911 12')).toBe('call …3456');
+    // Fewer than three digits, digits that do not begin the number, and a whole number masked already: as they are.
+    expect(cut('We will call you on 5 5')).toBe('We will call you on 5 5');
+    expect(cut('your order 7 7 7, 1')).toBe('your order 7 7 7, 1');
+    expect(cut('We will call you on 5 5 5, 5 5 5, 0 1 4 2')).toBe('We will call you on …0142');
+    expect(cut('on ...0142')).toBe('on ...0142');
+    // Without cutOff, the start of a number is left as it is: a whole line says the number whole.
+    expect(scrub('We will call you on 5 5 5, 5 5 5, 0')).toBe('We will call you on 5 5 5, 5 5 5, 0');
+  });
   it('is nothing to do with records that keep the caller\'s number, or with no number of seven digits', () => {
     expect(callerNumberScrub('+15555550142', { ...DEFAULT_RECORDS, callerNumber: 'keep' })).toBeNull();
     expect(callerNumberScrub(undefined)).toBeNull();

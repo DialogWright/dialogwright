@@ -1230,6 +1230,101 @@
     "principalLevel": 0,
     "gate": "leaveMessage:ALLOW"
   },
+  "sm-09": {
+    "id": "sm-09",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "sm-10": {
+    "id": "sm-10",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
+  "sm-11": {
+    "id": "sm-11",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "yes but tell her it's moved to Thursday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:BLOCK"
+  },
+  "sm-12": {
+    "id": "sm-12",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "yes and also say I'll be late"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:BLOCK"
+  },
+  "sm-13": {
+    "id": "sm-13",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "yes, actually make it Friday not Thursday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:BLOCK"
+  },
   "ur-01": {
     "id": "ur-01",
     "decision": "handoff",

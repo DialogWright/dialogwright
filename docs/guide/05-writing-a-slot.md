@@ -567,6 +567,7 @@ Compare the model's numbers against `ctx.thresholds`, by name, never against a n
 | `KB_TOPIC_MARGIN` | 0.15 | Two knowledge-base topics closer than this are asked about (a `topic` slot's `disambiguate`). |
 | `NAME_BARE_SPAN` | 0.7 | A bare name (a `name` slot's `bareAnswer`): the name span's least probability. |
 | `NAME_BARE_GIVEN` | 0.2 | A bare name: the least the yes-or-no that a name was given may read; under it, a no. |
+| `SUMMARY_WORDS_CHANGED` | 0.6 | At a form's summary, a `text` slot's `changed` question: at this or more, a yes that also adds to or changes the slot's words gives it the turn's words, and the summary is read again. |
 
 An app's own thresholds go in app.yaml (`thresholds:`, the clinic's `PROVIDER_UNSURE`), and the engine adds them to `ctx.thresholds` on every turn. A unit test's `testSlotContext` has only the engine's, so the clinic reads its own through a helper that falls back to the registered app's value (`clinicThreshold` in `apps/clinic/src/domain/thresholds.ts`).
 
@@ -688,7 +689,8 @@ Some rules about questions:
 | `todayIso` | Today, for dates. |
 | `thresholds` | The engine's thresholds and the app's own, by name. |
 | `window` | This slot's pending partial value, or null (see "Partial values"). |
-| `current` | This slot's value already on file, or null (null during a correction at the summary, but for a yes to it that names no detail to change, which accepts what is on file). |
+| `current` | This slot's value already on file, or null (null during a correction at the summary, but for a yes to it, which accepts what is on file in every slot but the detail it names to change). |
+| `summary` | `true` when the caller is answering the read-back of a form's summary that holds this slot (a `text` slot asks its `changed` question only then); absent otherwise. |
 | `records` | The app's records a slot may choose among (`App.facts.forSlots`), opaque to the engine; empty when the app has none. |
 | `sources` | The app's records by name (`App.facts.forSlots` returning `{ sources: { parcels: [...], orders: [...] } }`), for a slot that names the list it chooses from (a `record` slot's `from`), so two such slots each read their own. Absent when the app names none. |
 | `prompted` | Whether the last prompt asked for this slot. |

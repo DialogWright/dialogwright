@@ -4,7 +4,7 @@ import type { SlotContext, SlotOutcome } from '../../core/slots/types';
 import { meetsThreshold } from '../parts/thresholds';
 import type { TextOptions } from './options';
 import { PICK_LABELS } from './pick';
-import { keepsCurrent, pickCandidatesOf } from './questions';
+import { changeableAtSummary, keepsCurrent, pickCandidatesOf } from './questions';
 import { writtenForm } from './written';
 
 /**
@@ -30,17 +30,21 @@ function pickedPart(o: TextOptions, pickId: string, answers: AnswerMap, ctx: Slo
  * `case: title`, code then writes that part (written.ts): the value is the written form, and the
  * display of a slot shown as said (`say: null`) is the words as said, which a line reads back. A
  * value already on file is kept as `keep` says (a later aside must not overwrite a description; the
- * engine hides `current` during a correction, so one can still replace it).
+ * engine hides `current` during a correction, so one can still replace it), but at a form's summary
+ * where the caller gives new or changed words for it (the `changed` question; without `pick`).
  */
 export function textFill(
   o: TextOptions,
-  ids: { given: string; pick: string },
+  ids: { given: string; pick: string; changed: string },
   display: (value: string, locale?: string) => string,
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   return (answers, ctx) => {
     const p = noulValue(answers, ids.given);
     if (!meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
-    if (keepsCurrent(o, ctx)) return { kind: 'absent' };
+    // At a form's summary, a yes that gives new or changed words for the slot (its `changed` question at
+    // SUMMARY_WORDS_CHANGED or more) replaces the words on file; the summary is then read again.
+    const changed = changeableAtSummary(o, ctx) && meetsThreshold(ctx.thresholds, 'SUMMARY_WORDS_CHANGED', noulValue(answers, ids.changed));
+    if (keepsCurrent(o, ctx) && !changed) return { kind: 'absent' };
     const words = pickedPart(o, ids.pick, answers, ctx) ?? ctx.text;
     const said = words.trim().slice(0, o.maxLength);
     if (!said) return { kind: 'absent' };

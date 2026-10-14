@@ -551,7 +551,7 @@ describe('a yes to the summary that names no detail accepts it (FillOptions.acce
   const specs = [recipient, message, note];
 
   it('the yes\'s own words never replace the message the caller accepted', () => {
-    const r = fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes'), specs, { correcting: true, accepted: true });
+    const r = fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes'), specs, { correcting: true, accepted: { except: null } });
     expect(r.session.slots.message!.value).toBe(MESSAGE);
     expect(r.progress).toBe(false);
     // As a correction (a no, an unanswered turn, a detail named), the words replace it, as before.
@@ -559,10 +559,23 @@ describe('a yes to the summary that names no detail accepts it (FillOptions.acce
   });
 
   it('a new value for another detail said with the yes still fills ("yes, but it\'s for Sam"), and so does an empty slot ("yes, and ...")', () => {
-    const r = fillSlots(atSummary(), { recipient: choice({ sam: 0.95, none: 0.05 }), messageGiven: noul(0.6), noteGiven: noul(0.9) }, ctx("yes, but it's for Sam"), specs, { correcting: true, accepted: true });
+    const r = fillSlots(atSummary(), { recipient: choice({ sam: 0.95, none: 0.05 }), messageGiven: noul(0.6), noteGiven: noul(0.9) }, ctx("yes, but it's for Sam"), specs, { correcting: true, accepted: { except: null } });
     expect(r.session.slots.recipient!.value).toBe('sam');
     expect(r.session.slots.message!.value).toBe(MESSAGE);
+    // The empty note fills from the whole sentence, the yes and the recipient's words with it: a text slot's
+    // value is the turn's words as said (no `pick` here), and the note's own question (noteGiven 0.9) read
+    // them as given. Nothing the caller accepted is overwritten, and the summary reads the note back
+    // before anything is done, so the caller hears it and can say no.
     expect(r.session.slots.note!.value).toBe("yes, but it's for Sam");
     expect(r.progress).toBe(true);
+  });
+
+  it('the detail the yes names to change (changeSlot) is corrected, and it alone: every other slot keeps what was accepted', () => {
+    const named = fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes, but change the message to call me tomorrow'), specs, { correcting: true, accepted: { except: 'message' } });
+    expect(named.session.slots.message!.value).toBe('yes, but change the message to call me tomorrow');
+    // Another detail named ("yes, but the number's wrong"): the message keeps what the caller accepted.
+    const other = fillSlots(atSummary(), { recipient: choice({ sam: 0.95, none: 0.05 }), messageGiven: noul(0.6) }, ctx("yes, but the recipient's wrong, it's Sam"), specs, { correcting: true, accepted: { except: 'recipient' } });
+    expect(other.session.slots.recipient!.value).toBe('sam');
+    expect(other.session.slots.message!.value).toBe(MESSAGE);
   });
 });

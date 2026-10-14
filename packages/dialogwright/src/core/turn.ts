@@ -15,7 +15,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, un
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
+import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
@@ -373,12 +373,12 @@ function summaryState(s: Session): string {
  * A correction to a form the caller has already been read back. It only counts as progress when
  * it changes something: repeating the value the summary just said is a turn the caller spent not
  * answering the question, and it must walk the ladder rather than reset it. `accepted`: the turn is a
- * yes to the summary that names no detail to change (FillOptions.accepted).
+ * yes to the summary, with the detail it names to change, if any (FillOptions.accepted).
  */
-function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted = false): FillResult {
+function correctingFill(s: Session, answers: AnswerMap, ctx: SlotContext, form: FormId, accepted?: FillOptions['accepted']): FillResult {
   const app = appOf(s);
   const before = summaryState(s);
-  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted ? { accepted: true } : {}) });
+  const fill = fillSlots(s, answers, ctx, formOf(app, form).slots.map((id) => slotSpecOf(app, id)), { correcting: true, ...(accepted !== undefined ? { accepted } : {}) });
   // A disambiguation changes no slot yet and still has to be asked, so it is progress either way.
   if (!fill.progress || fill.disambiguate || summaryState(s) !== before) return fill;
   return { ...fill, progress: false };
@@ -1884,13 +1884,14 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         // A yes that also changes a value ("yes, but it was Sunday") changes it. The write reads its
         // values from the slots, so the gate (the confirmed rule) refuses it against what the summary said, and the
         // summary is read again: what is filed is only ever what the caller heard and agreed to.
-        // A yes that names no detail to change accepts what was read back (live findings item 28): each
-        // slot sees the value it holds, so the yes's own words never replace a message the caller just
-        // accepted (a text slot keeps its value against a turn that did not ask for it), while a new value
-        // for another detail, or for an empty slot, still fills and is read back.
+        // A yes accepts what was read back (live findings item 28): each slot sees the value it holds, so
+        // the yes's own words never replace a message the caller just accepted (a text slot keeps its value
+        // against a turn that did not ask for it), while a new value for another detail, or for an empty
+        // slot, still fills and is read back. A detail the yes names to change (changeSlot) is corrected as
+        // before, and only that one.
         const read = summaryState(s);
         const asRead = formValues(s, pc.form);
-        const fill = correctingFill(s, answers, ctx, pc.form, changeSlotNamed(io.app, answers, pc.form, t) === null);
+        const fill = correctingFill(s, answers, ctx, pc.form, { except: changeSlotNamed(io.app, answers, pc.form, t) });
         if (fill.disambiguate) return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate), events: fill.events };
         // A value the yes gave that a library slot reads back ("yes, but I rent", with `confirmValues:
         // [rent]`) is read back first, as it would be anywhere else; the form loop then reads the summary

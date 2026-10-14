@@ -144,8 +144,11 @@ describe('render:bakeoff --replay', () => {
     expect(r.out).toHaveLength(1);
     const report = JSON.parse(r.out[0]!) as BakeoffReport;
     expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 700, chat: 1500 } });
-    // The committed recording (see above).
-    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 41, generated: 30, fellBack: { drift: 11 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });
+    // The committed recording (see above), less the turns it does not answer since live findings item 28:
+    // a turn at the message's read-back now also asks the text slot's `changed` question (messageChanged),
+    // so the decision model's recording misses on those 12 turns (and 2 lines are left untried, where it
+    // missed 7 before) until the maintainer records the fixture again. Re-pin then, to every turn answered.
+    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 41, generated: 30, fellBack: { drift: 11 }, untried: 2, wording: { measured: 0, p50: null }, decisionMisses: { turns: 12, checks: 0 } });
     expect(report.models[0]!.byLine).toBeUndefined();
   });
 });

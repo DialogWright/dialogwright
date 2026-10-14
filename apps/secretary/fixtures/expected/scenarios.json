@@ -590,6 +590,27 @@
     "pass": true,
     "mismatches": []
   },
+  "message-read-back-yes-adds": {
+    "id": "message-read-back-yes-adds",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "yes but tell her it's moved to Thursday"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "message-read-back-no-hears-exact-words": {
     "id": "message-read-back-no-hears-exact-words",
     "decision": "prompt",

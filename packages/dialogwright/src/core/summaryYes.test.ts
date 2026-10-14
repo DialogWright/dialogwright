@@ -10,7 +10,7 @@ import { MESSAGE_DIR, messageApp, type MessageSystems } from '../testing/message
 import { registerApp, resetAppsForTest } from './app/registry';
 import type { Session } from './session';
 import { DEFAULT_THRESHOLDS } from './thresholds';
-import { appTurnContext, resolve, type TurnResult } from './turn';
+import { appTurnContext, plan, resolve, type TurnContext, type TurnResult } from './turn';
 import { mockCodeVerifier, type Tools } from './tools';
 import { speechEvent } from '../channel/events';
 
@@ -43,7 +43,7 @@ const PLAIN: AnswerMap = {
 };
 
 /** The live turn's reading of "yes": a clear yes, no detail named, and the message's own question over its bar. */
-const LIVE_YES: AnswerMap = { ...PLAIN, confirmsYes: noul(0.98), confirmsNo: noul(0.01), changeSlot: choice({ none: 0.96, message: 0.02, recipient: 0.01, caller: 0.005, phone: 0.005 }), messageGiven: noul(0.6) };
+const LIVE_YES: AnswerMap = { ...PLAIN, confirmsYes: noul(0.98), confirmsNo: noul(0.01), changeSlot: choice({ none: 0.96, message: 0.02, recipient: 0.01, caller: 0.005, phone: 0.005 }), messageGiven: noul(0.6), messageChanged: noul(0.1) };
 
 /** A call taken to the read-back on the stub: the message for Dana, from Morgan Lee, with its callback number. */
 async function atReadBack(): Promise<{ session: Session; tools: Tools }> {
@@ -58,8 +58,10 @@ async function atReadBack(): Promise<{ session: Session; tools: Tools }> {
   return { session: last.session, tools };
 }
 
+const turnContext = (tools: Tools): TurnContext => appTurnContext(messageApp, { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools });
+
 function say(session: Session, tools: Tools, text: string, answers: AnswerMap): TurnResult {
-  return resolve(session, speechEvent(text, true), answers, appTurnContext(messageApp, { nowMs: 0, todayIso: TODAY, thresholds: { ...DEFAULT_THRESHOLDS }, tools }));
+  return resolve(session, speechEvent(text, true), answers, turnContext(tools));
 }
 
 const delivered = (tools: Tools) => (tools.sys as MessageSystems).messages;
@@ -83,6 +85,23 @@ describe('a yes to the summary is an acceptance (live findings item 28)', () => 
     expect(delivered(tools)).toEqual([]);
   });
 
+  it('a yes that names another detail to change ("yes, but the number\'s wrong"): that detail alone is corrected, and the message stays', async () => {
+    const { session, tools } = await atReadBack();
+    const t = say(session, tools, "yes, but the number's wrong", { ...LIVE_YES, changeSlot: choice({ phone: 0.9, none: 0.1 }) });
+    expect(t.session.slots.message!.value).toBe(MESSAGE);
+    // What the message was delivered as, here, is what the caller accepted. (That a clear yes which names a
+    // detail with no new value goes on to complete, rather than reopen it, is the gates' verdict as before:
+    // the confirmation gate decides a yes before changeSlot is read. Item 28 leaves it as it was.)
+    expect(delivered(tools).map((m) => m.message)).not.toContain("yes, but the number's wrong");
+    // And named with its new value ("yes, but it's for Lee, not Dana"): the recipient corrected, the message kept.
+    const again = await atReadBack();
+    const r = say(again.session, again.tools, "yes, but it's for Lee, not Dana", { ...LIVE_YES, changeSlot: choice({ recipient: 0.9, none: 0.1 }), recipient: choice({ lee: 0.95, none: 0.05 }) });
+    expect(r.session.slots.recipient!.value).toBe('lee');
+    expect(r.session.slots.message!.value).toBe(MESSAGE);
+    expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message' });
+    expect(delivered(again.tools)).toEqual([]);
+  });
+
   it('a no with new words for the message corrects it, as before', async () => {
     const { session, tools } = await atReadBack();
     const t = say(session, tools, 'no, tell her the boiler inspection moved', { ...PLAIN, confirmsYes: noul(0.02), confirmsNo: noul(0.95), changeSlot: choice({ none: 0.95, message: 0.05 }), messageGiven: noul(0.9) });
@@ -97,5 +116,42 @@ describe('a yes to the summary is an acceptance (live findings item 28)', () => 
     expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message' });
     expect(t.session.slots.message!.value).toBe('yes, but change the message to call me tomorrow');
     expect(delivered(tools)).toEqual([]);
+  });
+});
+
+describe('a yes with new words for the message (the text type\'s changed question; the maintainer\'s decision, 2026-10-14)', () => {
+  const MOVED = "yes but tell her it's moved to Thursday";
+
+  it('is asked at the read-back of the summary only: the message\'s changed question goes with that request and no other', async () => {
+    const { session, tools } = await atReadBack();
+    const asked = plan(session, speechEvent('yes', true), turnContext(tools)).questions!;
+    expect(asked.messageChanged).toMatchObject({ type: 'noul' });
+    expect(asked.messageChanged!.type === 'noul' && asked.messageChanged!.instructions).toContain('add to or change the message the caller wants to leave?');
+    // At the message's own question, and anywhere else on the call, it is not asked.
+    const r = await runScenario(
+      { id: 'to-message', steps: [{ say: 'can I leave a message for Dana' }, { say: "it's Morgan Lee" }, { say: 'five five five five five five zero one four two' }], expect: { decision: 'any' } },
+      { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...messageApp.systems(), codes: mockCodeVerifier } },
+    );
+    for (const run of r.runs) expect(Object.keys(run.record.questions ?? {})).not.toContain('messageChanged');
+    expect(Object.keys(plan(r.runs.at(-1)!.result.session, speechEvent(MOVED, true), turnContext(tools)).questions!)).not.toContain('messageChanged');
+  });
+
+  it('"yes but tell her it\'s moved to Thursday", the question at 0.9: the message takes the new words, and the summary is read again before anything is passed on', async () => {
+    const { session, tools } = await atReadBack();
+    const t = say(session, tools, MOVED, { ...LIVE_YES, messageGiven: noul(0.9), messageChanged: noul(0.9) });
+    expect(t.session.slots.message!.value).toBe(MOVED);
+    expect(t.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_take_message' });
+    expect(delivered(tools)).toEqual([]);
+    // The yes to the read-back with the new words passes them on.
+    const yes = say(t.session, tools, 'yes', LIVE_YES);
+    expect(yes.decision).toMatchObject({ kind: 'complete', promptId: 'message_taken' });
+    expect(delivered(tools)).toEqual([expect.objectContaining({ message: MOVED })]);
+  });
+
+  it('the live "yes", the question at 0.1 and messageGiven 0.6: the message is kept and passed on', async () => {
+    const { session, tools } = await atReadBack();
+    const t = say(session, tools, 'yes', { ...LIVE_YES, messageGiven: noul(0.6), messageChanged: noul(0.1) });
+    expect(t.decision).toMatchObject({ kind: 'complete', promptId: 'message_taken' });
+    expect(delivered(tools)).toEqual([expect.objectContaining({ message: MESSAGE })]);
   });
 });

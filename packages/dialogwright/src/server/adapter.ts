@@ -1563,8 +1563,8 @@ const SUMMARIES = new WeakMap<CallEntry, [string, unknown][]>();
 function interruptHeard(entry: CallEntry, text: string, mode: 'length' | 'keep'): string {
   const app = appOf(entry.session);
   if (framesMaskWords(app)) return text === '' ? text : `<${text.length} chars>`;
-  // And every copy of the caller's number, as the line sent is recorded (lineScrub).
-  const scrub = lineScrub(entry, slotsScrubber(entry.session.slots, entry.session.pendingConfirmation ?? null, mode, app, SUMMARIES.get(entry) ?? [], { cutOff: true }));
+  // And every copy of the caller's number, as the line sent is recorded (lineScrub), its start too.
+  const scrub = lineScrub(entry, slotsScrubber(entry.session.slots, entry.session.pendingConfirmation ?? null, mode, app, SUMMARIES.get(entry) ?? [], { cutOff: true }), { cutOff: true });
   return scrub === null ? text : scrub(text);
 }
 
@@ -1588,8 +1588,8 @@ const LINE_SCRUBS = new WeakMap<CallEntry, Scrub[]>();
  * says it), masked as app.yaml's records write the caller's number (channel/maskByName.ts
  * callerNumberScrub; whole with `records.callerNumber: keep`). For the records only: never what is sent.
  */
-function lineScrub(entry: CallEntry, scrub: Scrub | null): Scrub | null {
-  return bothScrubs(scrub, callerNumberScrub(entry.session.callerNumber, recordsOf(appOf(entry.session))));
+function lineScrub(entry: CallEntry, scrub: Scrub | null, options: { readonly cutOff?: boolean } = {}): Scrub | null {
+  return bothScrubs(scrub, callerNumberScrub(entry.session.callerNumber, recordsOf(appOf(entry.session)), options));
 }
 
 /**
@@ -1598,19 +1598,25 @@ function lineScrub(entry: CallEntry, scrub: Scrub | null): Scrub | null {
  * 28), with the scrubs of the call's latest lines (LINE_SCRUBS) and one built from the session as it is
  * now, for a call whose lines this server did not send (one taken over). A respelling the line was sent
  * with is read back to its word first, as the scrub finds a value as written; a string with nothing
- * masked is kept exactly as it came. What the server reads of the event (a held end, a line cut short)
+ * masked is kept exactly as it came. In an app with a slot masked in the records whose words a model
+ * summarizes (framesMaskWords), the line the event says it played (`played`, the provider's reading of
+ * it) is kept by its length alone, as what an interruption heard of a line is (interruptHeard): it may
+ * carry the message, or its summary. What the server reads of the event (a held end, a line cut short)
  * reads the event as it came.
  */
-function recordedCarrierEvent(entry: CallEntry, message: unknown): unknown {
+function recordedCarrierEvent(entry: CallEntry, message: unknown, played?: string): unknown {
   const app = appOf(entry.session);
+  const byLength = framesMaskWords(app) && played !== undefined && played !== '';
   // The latest line's first, each slot's own masking before the caller's number's (lineScrub), as the
   // line itself was masked: a number a redacted slot holds is recorded as that slot records it.
   let slots: Scrub | null = null;
   for (const s of [...(LINE_SCRUBS.get(entry) ?? [])].reverse()) slots = bothScrubs(slots, s);
   const scrub = lineScrub(entry, bothScrubs(slots, turnScrubber(entry.session, null, 'length', app, SUMMARIES.get(entry) ?? [])));
-  if (scrub === null) return message;
+  if (scrub === null && !byLength) return message;
   const respell = pronounceFor(app.voice, localeOf(entry.session));
   const mask = (text: string): string => {
+    if (byLength && text === played) return `<${text.length} chars>`;
+    if (scrub === null) return text;
     const plain = unpronounce(text, respell);
     const masked = scrub(plain);
     return masked === plain ? text : pronounce(masked, respell);
@@ -2182,10 +2188,10 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
       return;
     }
     const message = JSON.parse(raw) as unknown;
-    // Recorded as the line it may echo was: a report of the line played says it as it was sent.
-    entry.frames.write('in', { carrierEvent: recordedCarrierEvent(entry, message) });
-    // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     const ev = playbackEventOf(ctx.provider, message);
+    // Recorded as the line it may echo was: a report of the line played says it as it was sent.
+    entry.frames.write('in', { carrierEvent: recordedCarrierEvent(entry, message, ev?.kind === 'playback' && ev.state === 'finished' ? ev.text : undefined) });
+    // Read for a held `end` too (END_AFTER_PLAYBACK), which waits for the report that its lines played.
     if (ev) {
       if (ev.kind === 'playback') reportsPlayback.add(entry.callSid);
       // The caller heard speaking holds the no-input wait, on any carrier whose provider reports it.

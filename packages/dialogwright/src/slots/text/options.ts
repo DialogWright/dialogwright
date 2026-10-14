@@ -25,10 +25,19 @@ export const TEXT_PARTS = textParts('text', {
     vars: ['what'],
     about: 'With `pick`: what the pick question\'s "none" label means, which keeps the whole words; {what} is pick.what.',
   },
+  changed: {
+    template: 'Read asr.text and node.promptJustPlayed. The caller was read back {what} and asked to confirm it. Besides agreeing or disagreeing, does the caller add to or change {what}? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.',
+    vars: ['what'],
+    about: 'Without `pick`, asked only at the read-back of a form\'s summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it.',
+  },
 });
 
 /** The questions of a `text` slot, by part: `given`, and `pick` with the option. */
-export const TEXT_QUESTIONS = questionParts({ given: 'whether the caller gives the text', pick: 'which part of the caller\'s words is the value (with `pick`)' });
+export const TEXT_QUESTIONS = questionParts({
+  given: 'whether the caller gives the text',
+  pick: 'which part of the caller\'s words is the value (with `pick`)',
+  changed: 'at a form\'s summary, whether the caller adds to or changes the text besides agreeing (without `pick`)',
+});
 
 /** A joining word or preposition a slot gives for a language: a word or a phrase, on one line. */
 const pickWord = () => questionText().regex(/[\p{L}\p{N}]/u, { error: 'must hold a word' });
@@ -76,7 +85,7 @@ export const textOptions = z
     keep: z
       .enum(['first', 'first-unless-prompted'])
       .default('first-unless-prompted')
-      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way; a yes to the summary that names no detail to change keeps it.'),
+      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way. A yes to the summary keeps it, unless the yes names the slot to change or (without `pick`) gives new or changed words for it (the `changed` question, at SUMMARY_WORDS_CHANGED or more), when the slot takes the words and the summary is read again.'),
     redact: z
       .enum(['length', 'none', 'length-summarized'])
       .default('length')
@@ -153,6 +162,17 @@ export const textOptions = z
           path: [group, part],
           message: `${group}.${part} is not used without "pick"`,
           params: { fix: `add "pick: { what: ... }", or delete ${group}.${part}` },
+        });
+      }
+    }
+    if (o.pick !== undefined) {
+      for (const [group, part] of [['text', 'changed'], ['ids', 'changed']] as const) {
+        if (o[group]?.[part] === undefined) continue;
+        ctx.addIssue({
+          code: 'custom',
+          path: [group, part],
+          message: `${group}.${part} is not used with "pick": a slot that picks part of the words is not asked whether a yes to the summary changes them`,
+          params: { fix: `delete ${group}.${part}, or "pick"` },
         });
       }
     }

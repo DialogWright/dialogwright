@@ -1729,7 +1729,7 @@
           },
           "keep": {
             "default": "first-unless-prompted",
-            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way; a yes to the summary that names no detail to change keeps it.",
+            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way. A yes to the summary keeps it, unless the yes names the slot to change or (without `pick`) gives new or changed words for it (the `changed` question, at SUMMARY_WORDS_CHANGED or more), when the slot takes the words and the summary is read again.",
             "type": "string",
             "enum": [
               "first",
@@ -1872,7 +1872,7 @@
             ]
           },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: given, pick, pickNone.",
+            "description": "Text to say to the model in place of a default, word for word, by part: given, pick, pickNone, changed.",
             "type": "object",
             "properties": {
               "given": {
@@ -1892,12 +1892,18 @@
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "changed": {
+                "description": "Without `pick`, asked only at the read-back of a form's summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
               }
             },
             "additionalProperties": false
           },
           "ids": {
-            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, pick), to keep the ids an existing slot used.",
+            "description": "Question ids in place of the defaults (the slot's id followed by the part: given, pick, changed), to keep the ids an existing slot used.",
             "type": "object",
             "properties": {
               "given": {
@@ -1907,6 +1913,11 @@
               },
               "pick": {
                 "description": "The id of the question that asks which part of the caller's words is the value (with `pick`).",
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "changed": {
+                "description": "The id of the question that asks at a form's summary, whether the caller adds to or changes the text besides agreeing (without `pick`).",
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }

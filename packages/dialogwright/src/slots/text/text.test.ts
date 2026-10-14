@@ -12,6 +12,7 @@ import { redactCall } from '../../core/recording';
 import { emptySlot } from '../../core/session';
 import { redactRecordSlots } from '../../trace/redact';
 import type { TraceRecord } from '../../trace/types';
+import type { SlotContext } from '../../core/slots/types';
 import { MAX_PICK_CANDIDATES, MAX_PICK_SPLITS, MIN_TAIL_WORDS, PICK_WORDS, pickCandidates, pickWordsFor, textType } from './index';
 
 /** The `text` type: the conformance kit over its examples, then what the kit does not cover. */
@@ -21,8 +22,8 @@ const note = defineSlot('note', { type: 'text', what: 'a note for the courier' }
 const heard = (p: number) => ({ noteGiven: noul(p) });
 
 describe('a text slot built from the defaults', () => {
-  it('asks one yes-or-no question, named after the slot, in the default words', () => {
-    expect(note.questionIds).toEqual(['noteGiven']);
+  it('asks one yes-or-no question, named after the slot, in the default words (and declares the summary\'s, below)', () => {
+    expect(note.questionIds).toEqual(['noteGiven', 'noteChanged']);
     expect(note.prompts).toEqual([]);
     expect(note.questions(testSlotContext('hello'))).toEqual({
       noteGiven: {
@@ -133,7 +134,7 @@ describe('the options', () => {
   it('text.given replaces the question word for word, and ids.given renames it', () => {
     const given = 'Read asr.text. Does the caller say where to leave it? A request alone is not.';
     const slot = defineSlot('note', { type: 'text', text: { given }, ids: { given: 'saysWhere' } });
-    expect(slot.questionIds).toEqual(['saysWhere']);
+    expect(slot.questionIds).toEqual(['saysWhere', 'noteChanged']);
     expect(slot.questions(testSlotContext(''))).toEqual({ saysWhere: { type: 'noul', instructions: given } });
   });
 
@@ -625,5 +626,44 @@ describe('numbers and case: the value written by code, the words read back', () 
     expect(defineSlot('place', { type: 'text', what: 'where' }).config).toMatchObject({ numbers: 'words', case: 'as-said' });
     const r = buildSlot('place', { type: 'text', what: 'where', numbers: 'numerals' });
     expect(!r.ok && r.problems.map(formatProblem)).toEqual([expect.stringContaining('place.numbers')]);
+  });
+});
+
+describe('at a form\'s summary: a yes with new or changed words (the `changed` question, live findings item 28)', () => {
+  const MESSAGE = 'the logo files are ready for review';
+  const atSummary = (text: string, over: Partial<SlotContext> = {}): SlotContext => ({ ...testSlotContext(text), current: MESSAGE, prompted: false, summary: true, ...over });
+  const CHANGED = 'Read asr.text and node.promptJustPlayed. The caller was read back a note for the courier and asked to confirm it. Besides agreeing or disagreeing, does the caller add to or change a note for the courier? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.';
+
+  it('is asked only at the read-back of a form\'s summary that holds the slot, once it has words, and never with pick', () => {
+    expect(note.questions(atSummary('yes'))).toEqual({ noteGiven: expect.anything(), noteChanged: { type: 'noul', instructions: CHANGED } });
+    // Not at the summary, nor at it before the slot has words, nor where its words are not kept (a correction hides them).
+    expect(Object.keys(note.questions(atSummary('yes', { summary: undefined })))).toEqual(['noteGiven']);
+    expect(Object.keys(note.questions(atSummary('yes', { current: null })))).toEqual(['noteGiven']);
+    const picked = defineSlot('place', { type: 'text', what: 'the place', pick: { what: 'the street address' } });
+    expect(picked.questionIds).toEqual(['placeGiven', 'placePick']);
+    expect(Object.keys(picked.questions({ ...atSummary('yes'), current: '22 Alder Street' }))).toEqual(['placeGiven']);
+    // Its words and id, as the app's; a slot whose question is its own words names its words plainly.
+    const own = defineSlot('note', { type: 'text', text: { given: 'Read asr.text. Is there a note?', changed: 'Does the caller change the note?' }, ids: { changed: 'noteEdited' } });
+    expect(own.questions(atSummary('yes'))).toMatchObject({ noteEdited: { type: 'noul', instructions: 'Does the caller change the note?' } });
+    const plain = defineSlot('note', { type: 'text', text: { given: 'Read asr.text. Is there a note?' } });
+    expect(plain.questions(atSummary('yes')).noteChanged?.instructions).toContain('add to or change the words they gave?');
+  });
+
+  it('at SUMMARY_WORDS_CHANGED or more the turn\'s words replace the words on file; under it they are kept', () => {
+    const said = "yes but tell her it's moved to Thursday";
+    expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ kind: 'filled', value: said });
+    expect(note.fill({ noteGiven: noul(0.6), noteChanged: noul(0.1) }, atSummary('yes'))).toEqual({ kind: 'absent' });
+    // The words must still be given: a change with no words for the slot fills nothing.
+    expect(note.fill({ noteGiven: noul(0.1), noteChanged: noul(0.9) }, atSummary(said))).toEqual({ kind: 'absent' });
+    // Away from a summary the question is never asked, and keep holds whatever an answer to it says.
+    expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said, { summary: undefined }))).toEqual({ kind: 'absent' });
+  });
+
+  it('refuses its words or id on a slot with pick, which is never asked it', () => {
+    const r = buildSlot('place', { type: 'text', what: 'the place', pick: { what: 'the street address' }, text: { changed: 'x?' }, ids: { changed: 'placeEdited' } });
+    expect(!r.ok && r.problems.map((p) => `${p.path}: ${p.message}`)).toEqual([
+      'place.text.changed: text.changed is not used with "pick": a slot that picks part of the words is not asked whether a yes to the summary changes them',
+      'place.ids.changed: ids.changed is not used with "pick": a slot that picks part of the words is not asked whether a yes to the summary changes them',
+    ]);
   });
 });

@@ -59,15 +59,18 @@ export interface FillOptions {
    */
   switching?: boolean;
   /**
-   * With `correcting`: the caller said yes to the summary and named no detail to change (live findings
-   * item 28). The yes accepts what was read back, so each slot is shown the value it holds
-   * (SlotContext.current), as on any turn that did not ask for it, rather than having it hidden for a
-   * correction: a slot that keeps its value against such a turn (a text slot's `keep`) keeps what the
-   * caller accepted, and the yes's own words never replace it. A slot that does not look at its value on
-   * file still takes a new value said with the yes ("yes, but it's for Sam"), and an empty slot still
-   * fills; either is read back before anything is done.
+   * With `correcting`: the caller said yes to the summary (live findings item 28). The yes accepts what
+   * was read back, so each slot is shown the value it holds (SlotContext.current), as on any turn that
+   * did not ask for it, rather than having it hidden for a correction: a slot that keeps its value against
+   * such a turn (a text slot's `keep`) keeps what the caller accepted, and the yes's own words never
+   * replace it. `except` is the detail the yes names to change (changeSlot), if any: that slot alone is
+   * corrected as before, its value hidden. The fill is the summary's (SlotContext.summary), so a slot that
+   * asks there whether the caller gives it new words (a text slot's `changed` question) takes them when
+   * they do, and the summary is read again. A slot that does not look at its value on file still takes a
+   * new value said with the yes ("yes, but it's for Sam"), and an empty slot still fills; either is read
+   * back before anything is done.
    */
-  accepted?: boolean;
+  accepted?: { readonly except: SlotId | null };
 }
 
 /**
@@ -161,12 +164,17 @@ function withoutYesNoOffered(session: Session, specs: SlotSpec[]): SlotSpec[] {
  * miss on its own question invalid rather than absent. `current` is the slot's own value already
  * on file, so a slot can refuse to let a later unprompted turn overwrite it; a correcting fill
  * (opts.correcting) hides it as null so the same slot can still replace what is there, but for a yes
- * to the summary that names no detail (opts.accepted), which accepts what is there.
+ * to the summary (opts.accepted), which accepts what is there in every slot but the one it names.
+ * `summary` says the turn answers the read-back of a form that holds the slot.
  */
 export function slotCtx(session: Session, ctx: SlotContext, id: SlotId, opts: FillOptions = {}): SlotContext {
   const slot = session.slots[id]!;
-  const hidden = opts.correcting === true && opts.accepted !== true;
-  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value };
+  const hidden = opts.correcting === true && (opts.accepted === undefined || opts.accepted.except === id);
+  // The summary pending (the questions are built), or the yes to it being filled (opts.accepted: the
+  // confirmation is settled by then, and only the form's slots are filled).
+  const pc = session.pendingConfirmation;
+  const summary = opts.accepted !== undefined || (pc?.target === 'form' && formOf(appOf(session), pc.form).slots.includes(id));
+  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value, ...(summary ? { summary: true as const } : {}) };
 }
 
 /**

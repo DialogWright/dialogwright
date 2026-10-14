@@ -1,4 +1,5 @@
 import { SHORT_MASK } from '../gate/principal';
+import { SCRUB_MIN_LENGTH } from '../core/recording';
 import type { RecordsConfig } from '../core/app/types';
 
 /**
@@ -145,26 +146,54 @@ export function maskCopiesOf(fields: Readonly<Record<string, string>>, number: s
   }));
 }
 
-/** What may stand between two digits of a number a line says or a carrier echoes: spaces, a comma, a dot, a hyphen, a slash or a bracket, a few at most. */
-const SPOKEN_DIGIT_GAP = '[\\s,.\\-/()]{0,3}';
+/**
+ * What may stand between two digits of a number a line says or a carrier echoes: spaces, a comma, a dot,
+ * a hyphen or an en dash, a slash or a bracket, a few at most.
+ */
+const SPOKEN_DIGIT_GAP = '[\\s,.\\-\u2013/()]{0,3}';
+/** The fewest digits a line cut off part way through the caller's number must have said of it to be masked (core/recording.ts SCRUB_MIN_LENGTH). */
+const CUT_OFF_MIN_DIGITS = SCRUB_MIN_LENGTH;
 
 /**
- * Free text (our own line as the frame log records it, a carrier's report of the line it played) with
- * every copy of the caller's `number` masked as `records` write it (maskCallerValue: by its last four,
- * "…0142"), however it is spaced or grouped: whole or from its last seven digits on (the national or the
- * local number), its digits run together, in groups ("555 555 0142", "(555) 555-0142"), or one by one as
- * the voice says them ("5 5 5, 5 5 5, 0 1 4 2"), never inside a longer run of digits. Null, nothing to
- * mask, for a number of fewer than seven digits, none, and records that keep the caller's number. For
- * the records only: never what is delivered.
+ * Free text (our own line as the frame log records it, a carrier's report of the line it played, what an
+ * interruption heard of it) with every copy of the caller's `number` masked as `records` write it
+ * (maskCallerValue: by its last four, "…0142"), however it is spaced or grouped: whole or from its last
+ * seven digits on (the national or the local number), with a trunk 0 before it ("07911 123456" for
+ * +44 7911 123456), its digits run together, in groups ("555 555 0142", "(555) 555–0142"), or one by one as
+ * the voice says them ("5 5 5, 5 5 5, 0 1 4 2"), never inside a longer run of digits. With `cutOff`, for a
+ * line cut off as it was said, a last run of digits that begins one of those forms (at least
+ * CUT_OFF_MIN_DIGITS of them: "on 5 5 5, 5 5 5, 0") is masked too. Null, nothing to mask, for a number of
+ * fewer than seven digits, none, and records that keep the caller's number. For the records only: never
+ * what is delivered.
  */
-export function callerNumberScrub(number: string | undefined | null, records: NumberRecords = DEFAULT_RECORDS): ((text: string) => string) | null {
+export function callerNumberScrub(number: string | undefined | null, records: NumberRecords = DEFAULT_RECORDS, options: { readonly cutOff?: boolean } = {}): ((text: string) => string) | null {
   const digits = (number ?? '').replace(/\D/g, '');
   if (digits.length < 7 || records.callerNumber === 'keep') return null;
   const shown = maskCallerValue(number!, records);
-  const forms: string[] = [];
-  for (let n = digits.length; n >= 7; n--) forms.push([...digits.slice(-n)].join(SPOKEN_DIGIT_GAP));
-  const pattern = new RegExp(`(?<!\\p{N})\\+?\\(?(?:${forms.join('|')})(?!\\p{N})`, 'gu');
-  return (text) => text.replace(pattern, shown);
+  const endings: string[] = [];
+  for (let n = digits.length; n >= 7; n--) endings.push(digits.slice(-n));
+  const forms = endings.map((d) => [...d].join(SPOKEN_DIGIT_GAP));
+  const pattern = new RegExp(`(?<!\\p{N})\\+?\\(?(?:0${SPOKEN_DIGIT_GAP})?(?:${forms.join('|')})(?!\\p{N})`, 'gu');
+  const whole = (text: string): string => text.replace(pattern, shown);
+  if (options.cutOff !== true) return whole;
+  // The line's last run of digits, however spaced, with whatever gap the cut left after it; not the last
+  // four of a number already masked ("…0142", a slot's "...0142").
+  const tail = new RegExp(`(?<![\\p{N}.…])\\+?\\(?\\p{N}(?:${SPOKEN_DIGIT_GAP}\\p{N})*${SPOKEN_DIGIT_GAP}$`, 'u');
+  /** Whether `said` (digits) is the start of the number in one of its forms, a trunk 0 before it or not, and not all of it. */
+  const begins = (said: string): boolean => endings.some((d) => (d.length > said.length && d.startsWith(said)) || (said.startsWith('0') && d.length > said.length - 1 && d.startsWith(said.slice(1))));
+  return (text) => {
+    const done = whole(text);
+    const m = tail.exec(done);
+    if (m === null) return done;
+    // From the first digit on that begins the number, the longest run first.
+    const at = [...m[0].matchAll(/\p{N}/gu)].map((d) => d.index!);
+    for (const k of at) {
+      const said = m[0].slice(k).replace(/\D/g, '');
+      if (said.length < CUT_OFF_MIN_DIGITS) break;
+      if (begins(said)) return done.slice(0, m.index + k) + shown;
+    }
+    return done;
+  };
 }
 
 /** The caller's name a carrier sends (CNAM: Twilio's `CallerName`, Telnyx's caller ID name), written `redacted` unless `records.callerName` is `keep`. */
