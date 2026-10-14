@@ -1,4 +1,4 @@
-import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, genderBroken, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, straight, subjectMoved, toCaller } from '../render/checks';
+import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, genderBroken, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, spanMeaningBroken, straight, subjectMoved, toCaller } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -97,6 +97,12 @@ const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', '
  * for; never the caller's), and the persons are held as the checks hold them (personBroken: whose words,
  * and who does what to whom). "tell Riley I need him to call the printer" summarized with the
  * recipient's name is unfaithful. A real model is asked the question itself.
+ *
+ * It is the conservative judge: it holds every span to the strict checks' reading too (spanMeaningBroken:
+ * the negation of a to-caller span turned toward the caller, a "no" or a condition left out, and the
+ * persons and their gender), so a span under `checks: standard`, which leaves those to the judge, is
+ * refused here wherever the strict checks would refuse it, and the stub regression and the adversarial
+ * suite hold it at either level. On a call, under `standard`, those rest on the real judge's reading.
  */
 export function stubSpanDrift(state: unknown): boolean {
   const s = state as { span?: { said?: unknown; goal?: unknown; speaks?: unknown }; quoted?: { words?: unknown }[]; frame?: { value?: unknown }[] } | null;
@@ -108,6 +114,8 @@ export function stubSpanDrift(state: unknown): boolean {
   const toCallerSpan = s?.span?.speaks === 'to-caller';
   const frame = (s?.frame ?? []).flatMap((f) => (typeof f.value === 'string' ? [{ value: f.value }] : []));
   const quoted = new Set((toCallerSpan ? quotedWords.map(toCaller) : quotedWords).flatMap(tokens));
+  // The strict checks' reading, by their words: what a `standard` span's checks leave to the judge.
+  if (spanMeaningBroken(said, { content: quotedWords.map((value, i) => ({ name: `quoted${i}`, value })), ...(toCallerSpan ? { speaks: 'to-caller' as const, names: frame.map((f, i) => ({ name: `frame${i}`, value: f.value })) } : {}) }) !== null) return true;
   // A negated statement or a condition of the quoted words left out (the criteria's; render/checks.ts leftOut).
   if (toCallerSpan) {
     const { spoken, compared } = comparedToCaller(said, quotedWords, frame.map((f) => f.value));

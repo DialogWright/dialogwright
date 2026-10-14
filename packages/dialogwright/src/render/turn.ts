@@ -10,7 +10,7 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID, type SpanCheckLevel } from './checks';
 import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
@@ -104,7 +104,7 @@ function requestUsage(act: RenderAct): RenderUsage {
 }
 
 /** One span of a framed line to word on this turn: its act and the values it must not name in place of the frame's items; or why it is not tried. */
-type SpanPlan = { name: string; content: string } & ({ act: SpanAct; conflicts: string[] } | { skipped: RenderSkip });
+type SpanPlan = { name: string; content: string } & ({ act: SpanAct; conflicts: string[]; level: SpanCheckLevel } | { skipped: RenderSkip });
 
 /**
  * The spans of a framed line (prompts.yaml's `generate`) to word on this turn, or why none is tried.
@@ -156,7 +156,8 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
         ...(toCaller ? { speaks: 'to-caller' as const } : {}),
         ...(names.length > 0 ? { names } : {}),
       };
-      return { name, content, act, conflicts };
+      // How strictly its words are checked (GeneratedSpan.checks): not part of the act, so a model is never sent it and a recording's key is unchanged.
+      return { name, content, act, conflicts, level: span.checks ?? 'standard' };
     }),
   };
 }
@@ -355,7 +356,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   };
   // A framed line's span: screened, worded, held to its content alone (checkSpan), and asked of the
   // drift check as a summary of its content; never the frame.
-  const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[]): Promise<Attempt> => {
+  const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[], level: SpanCheckLevel): Promise<Attempt> => {
     const c = checker();
     // The content screened again; a to-caller span's names are not: they are the app's own option text, never the caller's words.
     const flagged = await screened(act.content, c);
@@ -371,7 +372,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const text = cleanSpan(gen.text);
     // The content back word for word: said as the exact words, in the frame for them, with nothing more asked.
     if (sameWords(text, act.content.map((c) => c.value).join(' '))) return { unchanged: true, gen };
-    const failed = checkSpan(text, act, { conflicts });
+    const failed = checkSpan(text, act, { conflicts }, level);
     if (failed !== null) return { fallback: failed, refused: text, gen };
     try {
       const r = await c.check(drift.ask({ state: renderSpanDriftState(act, text) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks), timeoutMs: c.left(), signal: abort.signal }));
@@ -398,7 +399,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     })),
     Promise.all(framed.map(async (f) => {
       if (!('spans' in f.plan)) return [];
-      return Promise.all(f.plan.spans.map(async (sp) => ('act' in sp ? timed(sp.act, () => attemptSpan(f.said.promptId, sp.name, sp.act, sp.conflicts)) : null)));
+      return Promise.all(f.plan.spans.map(async (sp) => ('act' in sp ? timed(sp.act, () => attemptSpan(f.said.promptId, sp.name, sp.act, sp.conflicts, sp.level)) : null)));
     })),
   ]);
   for (const t of timers) clearTimeout(t);

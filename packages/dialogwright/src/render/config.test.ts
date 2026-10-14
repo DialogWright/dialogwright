@@ -424,3 +424,34 @@ describe('a span that speaks to the caller (speaks: to-caller; live findings, it
     ]);
   });
 });
+
+describe('how strictly a span is checked (checks: standard | strict; live findings, item 23)', () => {
+  const FRAME = '{caller} called and left this message: {summary} and {gist}. Shall I pass it on?';
+  const span = (more: object = {}) => ({ from: 'message', goal: 'Summarize it.', ...more });
+  const framed = (more: Partial<PromptYaml> = {}, summary: object = {}, note: object = {}): PromptYaml => line(FRAME, { generate: { summary: span(summary), gist: { ...span(note), from: 'note' } }, ...more });
+  const forms = { f: form(['caller', 'message', 'note'], { summaryPromptId: 'confirm_f' }) };
+  const spansOf = (prompt: PromptYaml, style: { checks?: 'standard' | 'strict' } | null = null) => generatedWordingOf({ prompts: { confirm_f: prompt }, forms, style, localePrompts: {} })!.lines.confirm_f!.spans!;
+  const problems = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}) =>
+    generatedWordingProblems({ prompts, forms, localePrompts, identifierVars: new Set(), slots: ['caller', 'message', 'note'] }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+
+  it('is standard by default, and the span as it was (no checks on it); a span\'s own wins over its line\'s, its line\'s over style.yaml\'s', () => {
+    expect(spansOf(framed()).summary).toEqual({ from: 'message', goal: 'Summarize it.', words: 25 });
+    expect(spansOf(framed(), { checks: 'strict' }).summary).toMatchObject({ checks: 'strict' });
+    expect(spansOf(framed({ checks: 'standard' }), { checks: 'strict' }).summary).not.toHaveProperty('checks');
+    const mixed = spansOf(framed({ checks: 'strict' }, { checks: 'standard' }));
+    expect(mixed.summary).not.toHaveProperty('checks');
+    expect(mixed.gist).toMatchObject({ checks: 'strict' });
+  });
+
+  it('check refuses it on a line that is not framed (a whole line\'s checks are the same at either level), and in a locale', () => {
+    expect(problems({ confirm_f: framed({ checks: 'strict' }, { checks: 'standard' }) })).toEqual([]);
+    expect(problems({ a: line('Hi.', { mode: 'generative', goal: 'Greet.', checks: 'strict' }) })).toEqual([
+      'prompts.yaml prompts.a.checks: the line "a" is not framed (no generate), so "checks" does nothing: it says how strictly a framed line\'s spans are checked, and a line generated whole runs the same checks at either level',
+    ]);
+    expect(problems({ confirm_f: framed() }, { es: { confirm_f: line('{caller} dejó: {summary} y {gist}.', { checks: 'strict', generate: { summary: { goal: 'Resumir.', checks: 'strict' } } }) } })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f.checks: "checks" is read from prompts.yaml, for every locale; a locale gives a generated line only its goal',
+      'locale/es/prompts.yaml prompts.confirm_f.generate.summary.checks: a span\'s "checks" is read from prompts.yaml, for every locale; a locale gives a span only its goal',
+    ]);
+  });
+});
+

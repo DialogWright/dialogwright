@@ -102,6 +102,13 @@ export function validateApp(app: App): void {
       if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
     }
   }
+  // How strictly a span is checked (GeneratedSpan.checks): 'strict', or absent for standard (the default).
+  for (const [line, g] of Object.entries(app.generated?.lines ?? {})) {
+    for (const [name, span] of Object.entries(g.spans ?? {})) {
+      const checks = (span as { checks?: unknown }).checks;
+      if (checks !== undefined && checks !== 'strict') fail(`the span "${name}" of the line "${line}" says checks: ${JSON.stringify(checks)}: a span's checks are 'strict', or absent for standard (the default)`);
+    }
+  }
   // A slot a model may be sent to summarize though the records mask it (SlotSpec.summarized): never an
   // identity factor, and only a slot recorded by its length as a secret, which masks it in every record.
   for (const [id, spec] of Object.entries(app.slots)) {

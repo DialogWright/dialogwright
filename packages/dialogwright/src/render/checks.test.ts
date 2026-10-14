@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, leftOut, renderDriftQuestion, words, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, toCaller, comparedToCaller, wordCount } from './checks';
+import { checkGenerated, checkSpan as checkSpanAt, type CheckGuard, cleanGenerated, cleanSpan, leftOut, renderDriftQuestion, words, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, spanMeaningBroken, toCaller, comparedToCaller, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { instructionsOf, SPAN_INSTRUCTIONS, SPAN_INSTRUCTIONS_TO_CALLER } from './prompt';
 import type { SpanAct, SpeechAct } from './types';
+
+/**
+ * The span checks below are the strict level's (`checks: strict`): every check by its words, which was
+ * every span's before item 23 of the live findings made `standard` the default. What `standard` runs is
+ * tested at the end of this file.
+ */
+const checkSpan = (text: string, act: SpanAct, guard: CheckGuard = {}): ReturnType<typeof checkSpanAt> => checkSpanAt(text, act, guard, 'strict');
 
 /** An ask that carries one item, as a line of a message form would be asked. */
 const act = (over: Partial<SpeechAct> = {}): SpeechAct => ({
@@ -585,3 +592,49 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(judge('can you call me back about the deposit', 'Sam should call you back about the deposit')).toBe(true);
   });
 });
+
+describe('the span checks at standard, the default (live findings item 23): values and shape, the rest the judge\'s', () => {
+  const NAMES = [{ name: 'recipient', value: 'Sam Ortiz' }];
+  const spanAct = (message: string, over: Partial<SpanAct> = {}): SpanAct => ({
+    kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 25, avoid: ['unfortunately'] }, ...over,
+  });
+  const toCaller = (message: string): SpanAct => spanAct(message, { speaks: 'to-caller', names: NAMES });
+  const both = (text: string, act: SpanAct, guard: CheckGuard = {}) => ({ standard: checkSpanAt(text, act, guard), strict: checkSpanAt(text, act, guard, 'strict') });
+
+  it('is the default, and holds values and shape as strict does: a question, another recipient, a negation dropped, the budget, a phrase, a figure or a name', () => {
+    expect(checkSpanAt('call me?', spanAct('call me'))).toBe('question');
+    expect(both('a message for Lee Park', spanAct('call me'), { conflicts: ['Lee Park'] })).toEqual({ standard: 'conflict', strict: 'conflict' });
+    expect(both('send the samples and the originals', spanAct('send the samples, not the originals'))).toEqual({ standard: 'negation', strict: 'negation' });
+    expect(both(`call me ${'again '.repeat(30)}`, spanAct('call me'))).toEqual({ standard: 'words', strict: 'words' });
+    expect(both('unfortunately call me', spanAct('call me'))).toEqual({ standard: 'avoid', strict: 'avoid' });
+    expect(both('the meeting moved to Friday', spanAct('the meeting moved to Thursday'))).toEqual({ standard: 'foreign', strict: 'foreign' });
+    expect(both('please call Dana about the lease', spanAct('please call Jordan about the lease'))).toEqual({ standard: 'foreign', strict: 'foreign' });
+  });
+
+  it('leaves to the judge what strict holds by its words: a "no" or a condition left out, a person, persons swapped, a gender, a "no" about a person', () => {
+    const cases: [string, SpanAct, string][] = [
+      ['the brochure proofs are back from the printer and look great', spanAct('the brochure proofs are back from the printer and look great, no changes needed'), 'omitted'],
+      ['go ahead with the print run', spanAct('go ahead with the print run only if the payment clears'), 'omitted'],
+      ['you would like a call about the invoice', spanAct('call about the invoice'), 'person'],
+      ['she needs the report by Friday', spanAct('he needs the report by Friday'), 'person'],
+      ['Sam owes you the deposit', toCaller('I owe him the deposit'), 'person'],
+      ['you need to sign the lease', toCaller('I need you to sign the lease'), 'person'],
+      ['you can sign', toCaller('he can sign, not me'), 'negation'],
+    ];
+    for (const [text, act, strict] of cases) {
+      expect(both(text, act), text).toEqual({ standard: null, strict });
+      // The stub's judge, the conservative one, refuses each: the stub regression holds them at either level.
+      expect(spanMeaningBroken(text, act), text).toBe(strict);
+      expect(stubSpanDrift(renderSpanDriftState(act, text)), text).toBe(true);
+    }
+  });
+
+  it('passes the everyday read-backs strict refuses: "you" twice for one "me", a "you" for no first person, a caller\'s placeholder splitting a clause', () => {
+    expect(both("you'd like Sam to call you before five", toCaller('can Sam call me before five'))).toEqual({ standard: null, strict: 'person' });
+    expect(both("you'd like Sam to sign the timesheet", toCaller('please ask Sam to sign the timesheet'))).toEqual({ standard: null, strict: 'person' });
+    expect(both("you're unwell and won't be in today", toCaller("I won't be in today, I'm unwell"))).toEqual({ standard: null, strict: 'negation' });
+    // A listed name, and its possessive, are no foreign capital at either level.
+    expect(both("the project is complete and you need Sam's approval", toCaller('The project is complete and I just need him to give his approval'))).toEqual({ standard: null, strict: null });
+  });
+});
+

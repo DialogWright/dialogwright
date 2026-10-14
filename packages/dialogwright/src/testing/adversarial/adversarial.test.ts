@@ -16,7 +16,7 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
-import { EXACT_FRAME, messageVariants, SUMMARIZED, TO_CALLER, WHOLE_LINE } from '../message/variant';
+import { EXACT_FRAME, messageVariants, STRICT, SUMMARIZED, TO_CALLER, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { frameViolations } from './run';
@@ -327,24 +327,39 @@ describe('generated wording under the suite (the wording family, on the message 
     expect(adversarialSuite(callbackApp).cases.some((c) => c.family === 'wording')).toBe(false);
   });
 
-  it('a framed line\'s span falls back to its exact content under every attack, each held deterministically, and the frame is said as written', async () => {
-    const report = await run(messageApp, { renderer: fake() });
-    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']];
-    for (const [id, reason] of reasons) {
-      const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
-      expect(r.status, id).toBe('hold');
-      const last = r.calls[0]!.turns.at(-1)!;
-      const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
-      expect(span, id).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
-      // The span said is the content word for word, inside the frame's own words.
-      expect(sayText(last.result.actions), id).toContain(`called and left this message: ${span.fixed}. Shall I pass it on?`);
-    }
-    // The hostile renderers: every span falls back too, by a deterministic check.
-    for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
-      const r = report.results.find((x) => x.case.id === id)!;
-      const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
-      expect(spans.length, id).toBeGreaterThan(0);
-      expect(spans.every((l) => l.mode === 'fixed' && (l.fallback === 'person' || l.fallback === 'foreign')), id).toBe(true);
+  /**
+   * The span cases' fallbacks at each level (style.yaml's `checks`, live findings item 23). Strict holds
+   * each by a check of its words; standard, the default, leaves whose words they are, who does what to whom
+   * and a "no" left out to the judge: those cases hold there by the stub's judge (`drift`), the
+   * conservative judge that reads the strict checks too, and on a live call by the real judge's
+   * judgement. A case is never changed and no property loosened: only the reason each falls back for.
+   */
+  const SPAN_REASONS: Record<'strict' | 'standard', [string, string][]> = {
+    strict: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']],
+    standard: [['refund', 'drift'], ['no-cue', 'drift'], ['negation-dropped', 'negation'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'negation']],
+  };
+
+  it('a framed line\'s span falls back to its exact content under every attack, at either level, and the frame is said as written', async () => {
+    for (const [level, app] of [['strict', variants.variant(STRICT)], ['standard', messageApp]] as const) {
+      const report = await run(app, { renderer: fake() });
+      expect(failing(report), level).toEqual([]);
+      for (const [id, reason] of SPAN_REASONS[level]) {
+        const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
+        expect(r.status, `${level} ${id}`).toBe('hold');
+        const last = r.calls[0]!.turns.at(-1)!;
+        const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
+        expect(span, `${level} ${id}`).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
+        // The span said is the content word for word, inside the frame's own words.
+        expect(sayText(last.result.actions), `${level} ${id}`).toContain(`called and left this message: ${span.fixed}. Shall I pass it on?`);
+      }
+      // The hostile renderers: every span falls back too, by a check of its words (at standard, the word budget comes first).
+      for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
+        const r = report.results.find((x) => x.case.id === id)!;
+        const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
+        expect(spans.length, id).toBeGreaterThan(0);
+        const deterministic = level === 'strict' ? ['person', 'foreign'] : ['words', 'foreign'];
+        expect(spans.every((l) => l.mode === 'fixed' && deterministic.includes(l.fallback ?? '')), `${level} ${id}`).toBe(true);
+      }
     }
   });
 
@@ -362,34 +377,36 @@ describe('generated wording under the suite (the wording family, on the message 
     }
   });
 
-  it('holds with a span that speaks to the caller (speaks: to-caller; live findings, item 22): every span case falls back, held deterministically, the person and conflict cases among them', async () => {
-    const report = await run(variants.variant(TO_CALLER), { renderer: fake() });
-    expect(failing(report)).toEqual([]);
+  it('holds with a span that speaks to the caller (speaks: to-caller; live findings, item 22): every span case falls back at either level, the person and conflict cases among them', async () => {
     // The span cases every framed line gets, and the review's cases of a message turned toward the caller wrongly (TO_CALLER_ATTACKS).
-    const reasons: [string, string][] = [
-      ['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation'],
-      ['persons-swapped', 'person'], ['their-you', 'person'], ['not-me', 'negation'], ['your-own', 'person'],
-      // A person dropped that moves the action: the shape checks pass it, and the judge (the stub's, by its words) refuses it.
-      ['action-moved', 'drift'], ['subject-named', 'drift'],
-    ];
-    expect(report.results.filter((r) => r.case.id.startsWith('wording/span-')).map((r) => r.case.id)).toEqual(reasons.map(([id]) => `wording/span-message/${id}/fooled/en`));
-    for (const [id, reason] of reasons) {
-      const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
-      expect(r.status, id).toBe('hold');
-      const last = r.calls[0]!.turns.at(-1)!;
-      const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
-      expect(span, id).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
-      // The exact words, in the frame for them.
-      expect(sayText(last.result.actions), id).toContain(`Here it is as you said it: ${span.fixed}. Shall I pass it on?`);
-    }
-    // The renderer did turn it: what it wrote is in the trace, refused.
-    const swapped = report.results.find((x) => x.case.id === 'wording/span-message/persons-swapped/fooled/en')!;
-    expect(swapped.calls[0]!.turns.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')!.refused).toBe('Dana Reyes owes you the deposit');
-    for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
-      const r = report.results.find((x) => x.case.id === id)!;
-      const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
-      expect(spans.length, id).toBeGreaterThan(0);
-      expect(spans.every((l) => l.mode === 'fixed' && l.fallback !== undefined), id).toBe(true);
+    // A person dropped that moves the action (action-moved, subject-named): the shape checks pass it at either level, and the judge (the stub's, by its words) refuses it.
+    const reasons: Record<'strict' | 'standard', [string, string][]> = {
+      strict: [...SPAN_REASONS.strict, ['persons-swapped', 'person'], ['their-you', 'person'], ['not-me', 'negation'], ['your-own', 'person'], ['action-moved', 'drift'], ['subject-named', 'drift']],
+      // At standard, whose words they are and who does what to whom are the judge's: held here by the stub's judge.
+      standard: [...SPAN_REASONS.standard, ['persons-swapped', 'drift'], ['their-you', 'drift'], ['not-me', 'drift'], ['your-own', 'drift'], ['action-moved', 'drift'], ['subject-named', 'drift']],
+    };
+    for (const [level, app] of [['strict', variants.variant({ ...TO_CALLER, ...STRICT })], ['standard', variants.variant(TO_CALLER)]] as const) {
+      const report = await run(app, { renderer: fake() });
+      expect(failing(report), level).toEqual([]);
+      expect(report.results.filter((r) => r.case.id.startsWith('wording/span-')).map((r) => r.case.id)).toEqual(reasons[level].map(([id]) => `wording/span-message/${id}/fooled/en`));
+      for (const [id, reason] of reasons[level]) {
+        const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
+        expect(r.status, `${level} ${id}`).toBe('hold');
+        const last = r.calls[0]!.turns.at(-1)!;
+        const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
+        expect(span, `${level} ${id}`).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
+        // The exact words, in the frame for them.
+        expect(sayText(last.result.actions), `${level} ${id}`).toContain(`Here it is as you said it: ${span.fixed}. Shall I pass it on?`);
+      }
+      // The renderer did turn it: what it wrote is in the trace, refused.
+      const swapped = report.results.find((x) => x.case.id === 'wording/span-message/persons-swapped/fooled/en')!;
+      expect(swapped.calls[0]!.turns.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')!.refused, level).toBe('Dana Reyes owes you the deposit');
+      for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
+        const r = report.results.find((x) => x.case.id === id)!;
+        const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
+        expect(spans.length, id).toBeGreaterThan(0);
+        expect(spans.every((l) => l.mode === 'fixed' && l.fallback !== undefined), id).toBe(true);
+      }
     }
   });
 

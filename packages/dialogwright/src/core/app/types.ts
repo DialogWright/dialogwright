@@ -1545,6 +1545,11 @@ export interface GeneratedSpan {
    * the only names its checks let it say beside the content's. Never the caller's own name.
    */
   readonly names?: readonly string[];
+  /**
+   * `strict`: every check of the span by its words (prompts.yaml's `checks` on the span or its line, else
+   * style.yaml's). Absent: `standard`, the checks of values and shape, the rest the drift check's.
+   */
+  readonly checks?: 'strict';
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */

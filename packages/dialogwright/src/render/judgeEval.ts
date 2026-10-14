@@ -4,18 +4,18 @@ import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { checkSpan, cleanSpan, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { checkSpan, cleanSpan, type SpanCheckLevel, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
 import type { RenderFallback, SpanAct } from './types';
 
 /**
  * Measuring the span drift judge against the span's shape checks (`render:judge-eval`, live findings
  * item 23). A set of cases, each a caller's message (`content`) and a summary of it (`span`) labelled
  * faithful or unfaithful by a person, is put to three readers, each as a call puts a span to it: the
- * shape checks (checkSpan, `full` as at run time, and `core`, the checks of values and shape alone), the
+ * shape checks (checkSpan at `standard`, the default, the checks of values and shape alone, and at `strict`, every check), the
  * stub regression's judge (stubSpanDrift), and the real drift judge (the decision model asked
  * renderSpanDriftQuestion with the state renderSpanDriftState makes, nothing else). The tables say, per
  * family, how many unfaithful spans each catches and how many faithful ones each refuses, so how strict
- * the code checks should be is decided on a measurement. Nothing here is asked of a model by itself:
+ * the span's checks should be is decided on a measurement. Nothing here is asked of a model by itself:
  * the judge is a client handed in (a cassette, recording or replaying: ../harness-text/judgeEvalCommand.ts).
  */
 
@@ -101,16 +101,16 @@ export type JudgeVerdict = { p: number } | { missing: string } | { error: string
 
 export interface CaseResult {
   readonly case: JudgeCase;
-  /** checkSpan, every check, as a call runs it. */
-  readonly code: CodeVerdict;
-  /** checkSpan's core checks alone (values, foreign figures and names, the budget, a plain negation). */
-  readonly core: CodeVerdict;
+  /** checkSpan at `strict`: every check. */
+  readonly strict: CodeVerdict;
+  /** checkSpan at `standard`, the default: its checks of values and shape alone (values, foreign figures and names, the budget, a plain negation). */
+  readonly standard: CodeVerdict;
   /** The stub regression's judge: true where it holds the span unfaithful. */
   readonly stub: boolean;
   readonly judge: JudgeVerdict;
 }
 
-function codeVerdict(c: JudgeCase, level: 'full' | 'core'): CodeVerdict {
+function codeVerdict(c: JudgeCase, level: SpanCheckLevel): CodeVerdict {
   const act = actOf(c);
   const text = cleanSpan(c.span);
   // As a call does: a wording that is its content's own words is said unchanged, with nothing asked.
@@ -156,7 +156,7 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
         }
       }
     }
-    out.push({ case: c, code: codeVerdict(c, 'full'), core: codeVerdict(c, 'core'), stub: stubSpanDrift(req.state), judge: verdict });
+    out.push({ case: c, strict: codeVerdict(c, 'strict'), standard: codeVerdict(c, 'standard'), stub: stubSpanDrift(req.state), judge: verdict });
     if (opts.progress && (i + 1) % 20 === 0) opts.progress(`  ${i + 1} of ${cases.length} cases`);
   }
   return out;
@@ -166,59 +166,59 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
 export interface Tally {
   readonly label: string;
   readonly cases: number;
-  readonly code: number;
-  readonly core: number;
+  readonly strict: number;
+  readonly standard: number;
   readonly stub: number;
   /** Cases the judge answered; the judge's counts are of these. */
   readonly answered: number;
   readonly judge: number;
-  readonly codeOrJudge: number;
-  readonly coreOrJudge: number;
-  /** Refused by neither the full code checks nor the judge (for unfaithful cases, missed by both). */
-  readonly neither: number;
-  readonly coreNeither: number;
+  readonly strictOrJudge: number;
+  readonly standardOrJudge: number;
+  /** Refused by neither the strict checks nor the judge (for unfaithful cases, missed by both). */
+  readonly strictNeither: number;
+  readonly standardNeither: number;
 }
 
 export function tally(label: string, results: readonly CaseResult[]): Tally {
   const judged = results.filter((r) => refusedByJudge(r.judge) !== null);
   const j = (r: CaseResult): boolean => refusedByJudge(r.judge) === true;
-  const code = (r: CaseResult): boolean => refusedByCode(r.code);
-  const core = (r: CaseResult): boolean => refusedByCode(r.core);
+  const strict = (r: CaseResult): boolean => refusedByCode(r.strict);
+  const standard = (r: CaseResult): boolean => refusedByCode(r.standard);
   return {
     label,
     cases: results.length,
-    code: results.filter(code).length,
-    core: results.filter(core).length,
+    strict: results.filter(strict).length,
+    standard: results.filter(standard).length,
     stub: results.filter((r) => r.stub).length,
     answered: judged.length,
     judge: judged.filter(j).length,
-    codeOrJudge: judged.filter((r) => code(r) || j(r)).length,
-    coreOrJudge: judged.filter((r) => core(r) || j(r)).length,
-    neither: judged.filter((r) => !code(r) && !j(r)).length,
-    coreNeither: judged.filter((r) => !core(r) && !j(r)).length,
+    strictOrJudge: judged.filter((r) => strict(r) || j(r)).length,
+    standardOrJudge: judged.filter((r) => standard(r) || j(r)).length,
+    strictNeither: judged.filter((r) => !strict(r) && !j(r)).length,
+    standardNeither: judged.filter((r) => !standard(r) && !j(r)).length,
   };
 }
 
-/** How often a faithful span is said (the code passes it, and the judge does, or is not asked for words said unchanged), under each setting. */
+/** How often a faithful span is said (its checks pass it, and the judge does, or is not asked for words said unchanged), under each level. */
 export interface SaidRates {
   readonly cases: number;
   readonly answered: number;
-  readonly fullAndJudge: number;
-  readonly coreAndJudge: number;
+  readonly standardAndJudge: number;
+  readonly strictAndJudge: number;
   readonly judgeAlone: number;
-  readonly fullAlone: number;
+  readonly strictAlone: number;
 }
 
 export function saidRates(faithful: readonly CaseResult[]): SaidRates {
-  const judged = faithful.filter((r) => r.code === 'unchanged' || refusedByJudge(r.judge) !== null);
-  const judgeSays = (r: CaseResult): boolean => r.code === 'unchanged' || refusedByJudge(r.judge) === false;
+  const judged = faithful.filter((r) => r.strict === 'unchanged' || refusedByJudge(r.judge) !== null);
+  const judgeSays = (r: CaseResult): boolean => r.strict === 'unchanged' || refusedByJudge(r.judge) === false;
   return {
     cases: faithful.length,
     answered: judged.length,
-    fullAndJudge: judged.filter((r) => !refusedByCode(r.code) && judgeSays(r)).length,
-    coreAndJudge: judged.filter((r) => !refusedByCode(r.core) && judgeSays(r)).length,
+    standardAndJudge: judged.filter((r) => !refusedByCode(r.standard) && judgeSays(r)).length,
+    strictAndJudge: judged.filter((r) => !refusedByCode(r.strict) && judgeSays(r)).length,
     judgeAlone: judged.filter(judgeSays).length,
-    fullAlone: faithful.filter((r) => !refusedByCode(r.code)).length,
+    strictAlone: faithful.filter((r) => !refusedByCode(r.strict)).length,
   };
 }
 
@@ -241,20 +241,20 @@ const judgeText = (v: JudgeVerdict): string => ('p' in v ? v.p.toFixed(2) : 'mis
 
 function unfaithfulTable(rows: readonly Tally[]): string[] {
   return [
-    '| | cases | code | core | stub | judge | code or judge | core or judge | missed by code and judge | missed by core and judge |',
+    '| | cases | standard | strict | stub | judge | standard or judge | strict or judge | missed by standard and judge | missed by strict and judge |',
     '|---|---|---|---|---|---|---|---|---|---|',
-    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.code, t.cases)} | ${pct(t.core, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.codeOrJudge, t)} | ${judgeCell(t.coreOrJudge, t)} | ${judgeCell(t.neither, t)} | ${judgeCell(t.coreNeither, t)} |`),
+    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.standard, t.cases)} | ${pct(t.strict, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.standardOrJudge, t)} | ${judgeCell(t.strictOrJudge, t)} | ${judgeCell(t.standardNeither, t)} | ${judgeCell(t.strictNeither, t)} |`),
   ];
 }
 function faithfulTable(rows: readonly Tally[]): string[] {
   return [
-    '| | cases | code | core | stub | judge | code or judge | core or judge |',
+    '| | cases | standard | strict | stub | judge | standard or judge | strict or judge |',
     '|---|---|---|---|---|---|---|---|',
-    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.code, t.cases)} | ${pct(t.core, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.codeOrJudge, t)} | ${judgeCell(t.coreOrJudge, t)} |`),
+    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.standard, t.cases)} | ${pct(t.strict, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.standardOrJudge, t)} | ${judgeCell(t.strictOrJudge, t)} |`),
   ];
 }
 const caseLine = (r: CaseResult): string =>
-  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${quote(r.case.content)} read back ${quote(r.case.span)}; judge ${judgeText(r.judge)}, code ${codeText(r.code)}, core ${codeText(r.core)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
+  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${quote(r.case.content)} read back ${quote(r.case.span)}; judge ${judgeText(r.judge)}, standard ${codeText(r.standard)}, strict ${codeText(r.strict)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
 
 /** The report as Markdown lines: the everyday cases first, then the hard cases by family, every case, and the lists to read. */
 export function formatJudgeEval(report: JudgeEvalReport): string[] {
@@ -272,7 +272,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
-    'code: checkSpan as a call runs it (every check). core: its checks of values and shape alone (empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names): no `omitted`, no `person` (who does what to whom, the message\'s own "you", gender). stub: the stub regression\'s judge. judge: the decision model asked renderSpanDriftQuestion with the state a call sends.',
+    'standard: checkSpan at `checks: standard`, the default (its checks of values and shape: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", gender). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends.',
     '',
   ];
   // The everyday picture first.
@@ -284,7 +284,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     lines.push(
       '## Everyday messages (the realistic family)',
       '',
-      `A good read-back of an everyday message is said (otherwise the caller hears their exact words): with the full code checks and the judge ${rate(s.fullAndJudge, s.answered)}; with the core code checks and the judge ${rate(s.coreAndJudge, s.answered)}; with the judge alone ${rate(s.judgeAlone, s.answered)}; with the full code checks alone ${rate(s.fullAlone, s.cases)}.`,
+      `A good read-back of an everyday message is said (otherwise the caller hears their exact words): under checks: standard (the default: its checks and the judge) ${rate(s.standardAndJudge, s.answered)}; under checks: strict (every check and the judge) ${rate(s.strictAndJudge, s.answered)}; with the judge alone ${rate(s.judgeAlone, s.answered)}; with the strict checks alone ${rate(s.strictAlone, s.cases)}.`,
       '',
       'Good read-backs wrongly refused (each one costs the caller the summary; they hear their exact words):',
       '',
@@ -318,8 +318,8 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   );
   const missedByJudge = unfaithful.filter((r) => refusedByJudge(r.judge) === false);
   const refusedFaithful = faithful.filter((r) => refusedByJudge(r.judge) === true);
-  const codeRefusedFaithful = faithful.filter((r) => refusedByCode(r.code));
-  const missedByBoth = unfaithful.filter((r) => refusedByJudge(r.judge) === false && !refusedByCode(r.code));
+  const codeRefusedFaithful = faithful.filter((r) => refusedByCode(r.strict));
+  const missedByBoth = unfaithful.filter((r) => refusedByJudge(r.judge) === false && !refusedByCode(r.strict));
   lines.push(
     `## Unfaithful spans the judge passed (${missedByJudge.length})`,
     '',
@@ -329,11 +329,11 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     ...(refusedFaithful.length > 0 ? refusedFaithful.map(caseLine) : ['None.']),
     '',
-    `## Unfaithful spans both the code checks and the judge passed (${missedByBoth.length})`,
+    `## Unfaithful spans both the strict checks and the judge passed (${missedByBoth.length})`,
     '',
     ...(missedByBoth.length > 0 ? missedByBoth.map(caseLine) : ['None.']),
     '',
-    `## Faithful spans the code checks refused (${codeRefusedFaithful.length})`,
+    `## Faithful spans the strict checks refused (${codeRefusedFaithful.length})`,
     '',
     ...(codeRefusedFaithful.length > 0 ? codeRefusedFaithful.map(caseLine) : ['None.']),
     '',
@@ -342,9 +342,9 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   lines.push(
     '## Every case',
     '',
-    '| id | family | speaks | expected | code | core | stub | judge p |',
+    '| id | family | speaks | expected | standard | strict | stub | judge p |',
     '|---|---|---|---|---|---|---|---|',
-    ...all.map((r) => `| ${r.case.id} | ${r.case.family} | ${r.case.speaks} | ${r.case.expected} | ${codeText(r.code)} | ${codeText(r.core)} | ${r.stub ? 'refused' : 'passed'} | ${judgeText(r.judge)} |`),
+    ...all.map((r) => `| ${r.case.id} | ${r.case.family} | ${r.case.speaks} | ${r.case.expected} | ${codeText(r.standard)} | ${codeText(r.strict)} | ${r.stub ? 'refused' : 'passed'} | ${judgeText(r.judge)} |`),
   );
   return lines;
 }
@@ -362,6 +362,6 @@ export function judgeEvalJson(report: JudgeEvalReport): string {
     realisticSaid: saidRates(realFaithful),
     unfaithful: tally('unfaithful', report.results.filter((r) => r.case.expected === 'unfaithful')),
     faithful: tally('faithful', report.results.filter((r) => r.case.expected === 'faithful')),
-    cases: report.results.map((r) => ({ id: r.case.id, family: r.case.family, speaks: r.case.speaks, expected: r.case.expected, code: r.code, core: r.core, stub: r.stub, judge: r.judge })),
+    cases: report.results.map((r) => ({ id: r.case.id, family: r.case.family, speaks: r.case.speaks, expected: r.case.expected, standard: r.standard, strict: r.strict, stub: r.stub, judge: r.judge })),
   }, null, 2);
 }

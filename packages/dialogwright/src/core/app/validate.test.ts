@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { useTestkit } from '../../testing/apps';
 import { registerTestkit, testkitApp } from '../../testing/testkit';
+import { messageApp } from '../../testing/message/app';
 import { registerApp, resetAppsForTest } from './registry';
 import type { App } from './types';
 import { validateApp } from './validate';
@@ -28,6 +29,14 @@ describe('validateApp', () => {
     const app: App = { ...copy(), prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, [id]: { ...entry, exactText: 'Something else.' } } } };
     expect(() => validateApp(app)).toThrow(`the line "${id}" has exactText, a frame for a framed line's exact words, but it is not framed`);
     expect(frameOf(app, id, app.prompts.manifest[id]!)).toBe(entry.text);
+  });
+
+  it('refuses a span\'s checks that is neither strict nor absent (live findings, item 23)', () => {
+    const generated = messageApp.generated!;
+    const line = generated.lines.confirm_take_message!;
+    const withChecks = (checks: unknown): App => ({ ...messageApp, generated: { ...generated, lines: { ...generated.lines, confirm_take_message: { ...line, spans: { summary: { ...line.spans!.summary!, checks } as never } } } } });
+    expect(() => validateApp(withChecks('strict'))).not.toThrow();
+    expect(() => validateApp(withChecks('standard'))).toThrow(`the span "summary" of the line "confirm_take_message" says checks: "standard": a span's checks are 'strict', or absent for standard (the default)`);
   });
 
   it('refuses summarized on an identity factor, and on a slot the records do not mask everywhere', () => {

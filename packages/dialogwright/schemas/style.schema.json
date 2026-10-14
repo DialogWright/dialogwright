@@ -33,6 +33,14 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "checks": {
+      "description": "How strictly a framed line's span (prompts.yaml's `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values and shape (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have), and the drift check, the decision model's judgement, for the rest: whose words they are, who does what to whom, a \"no\" or a condition left out. strict: every check besides, by its words: a clause of the content that says \"no\" or sets a condition left out (omitted), a person the content does not use, persons swapped, a he or a she of another gender (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. A whole generated line's checks are the same at both levels. The policy card says which each span runs. Here, for every span of the app; a line's or a span's own (prompts.yaml) wins.",
+      "type": "string",
+      "enum": [
+        "standard",
+        "strict"
+      ]
     }
   },
   "additionalProperties": false,

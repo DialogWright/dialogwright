@@ -106,3 +106,12 @@ export const TO_CALLER: Record<string, (text: string) => string> = {
         names: [recipient]
 `),
 };
+
+/**
+ * Every span checked strictly (style.yaml's `checks: strict`, live findings item 23): every check by its
+ * words, as every span was before `standard` became the default. Combine it with another variant's
+ * changes (`{ ...TO_CALLER, ...STRICT }`): it changes style.yaml alone.
+ */
+export const STRICT: Record<string, (text: string) => string> = {
+  'style.yaml': (text) => `${text.trimEnd()}\nchecks: strict\n`,
+};

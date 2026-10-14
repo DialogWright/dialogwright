@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { identifier, text, unique } from './common';
+import { CHECK_LEVELS, CHECKS_DESCRIPTION } from './style';
 
 /**
  * prompts.yaml: every line the agent says. Mirrors App.prompts.manifest. One file per locale:
@@ -73,6 +74,10 @@ const span = z
         'A to-caller span only (`speaks: to-caller`): the line\'s variables whose value the span may say in place of a pronoun of the message, where the message makes clear who is meant: each a `choice` slot of the line (who the message is for, as said, such as [recipient]). ' +
           'They are the app\'s own option text, not the caller\'s words, so they are not screened; they are sent to the model and to the drift check, and the only names the checks let the span say beside the content\'s. Never a `name` slot (the caller\'s own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.',
       ),
+    checks: z
+      .enum(CHECK_LEVELS)
+      .optional()
+      .describe(`${CHECKS_DESCRIPTION} Here, for this span; absent, its line's, else style.yaml's, else standard. Read from prompts.yaml, for every locale.`),
   })
   .describe('One generated span of a fixed line.');
 
@@ -121,6 +126,10 @@ const prompt = z
         'A fixed line with generated spans (the framed form): each key is one of the line\'s {variables}, worded by a model from the content its `from` names; every other word of the line is the app\'s fixed text, never sent to a model and never changed. The frame says whose words the span gives ("{caller} called and left this message: {summary}"), so attribution is by design. ' +
           'A span that is not generated, or fails a check, is the exact content, word for word. Not with `mode` or a line\'s own `goal` or `from`.',
       ),
+    checks: z
+      .enum(CHECK_LEVELS)
+      .optional()
+      .describe(`${CHECKS_DESCRIPTION} Here, for every span of this framed line (a span's own wins); absent, style.yaml's, else standard. Only on a framed line (generate). Read from prompts.yaml, for every locale.`),
     exactText: text()
       .optional()
       .describe(

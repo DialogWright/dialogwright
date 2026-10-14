@@ -131,6 +131,14 @@
                     "type": "string",
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                   }
+                },
+                "checks": {
+                  "description": "How strictly a framed line's span (prompts.yaml's `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values and shape (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have), and the drift check, the decision model's judgement, for the rest: whose words they are, who does what to whom, a \"no\" or a condition left out. strict: every check besides, by its words: a clause of the content that says \"no\" or sets a condition left out (omitted), a person the content does not use, persons swapped, a he or a she of another gender (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. A whole generated line's checks are the same at both levels. The policy card says which each span runs. Here, for this span; absent, its line's, else style.yaml's, else standard. Read from prompts.yaml, for every locale.",
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "strict"
+                  ]
                 }
               },
               "required": [
@@ -139,6 +147,14 @@
               "additionalProperties": false,
               "description": "One generated span of a fixed line."
             }
+          },
+          "checks": {
+            "description": "How strictly a framed line's span (prompts.yaml's `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values and shape (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have), and the drift check, the decision model's judgement, for the rest: whose words they are, who does what to whom, a \"no\" or a condition left out. strict: every check besides, by its words: a clause of the content that says \"no\" or sets a condition left out (omitted), a person the content does not use, persons swapped, a he or a she of another gender (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. A whole generated line's checks are the same at both levels. The policy card says which each span runs. Here, for every span of this framed line (a span's own wins); absent, style.yaml's, else standard. Only on a framed line (generate). Read from prompts.yaml, for every locale.",
+            "type": "string",
+            "enum": [
+              "standard",
+              "strict"
+            ]
           },
           "exactText": {
             "description": "A framed line only (`generate`): the frame said when every span is its exact content, word for word (no model set up, a check that fails, a slow model, a read-back after a no, a repeat, a reading `when` leaves fixed); `text` is then the frame said with a generated span. For a frame whose words are true of a summary only (\"called and said, in short, {summary}\"), the exact words get a frame of their own (\"called and said: {summary}\"). It names the same variables as `text`. Absent: `text` is said either way. In a locale's prompts.yaml: that locale's own, needed there where prompts.yaml gives one.",
