@@ -15,10 +15,10 @@ actions:
       - confirmed: [recipient, caller, phone, message]
 
 # How each value the action is sent is recorded (the gate event, the trace, the console and the
-# audit). The callback number is a digits slot, recorded by its last four as the slot says. The
-# person is a choice from a short list, kept as it is. The caller's name and the message are their own
-# words: only their length is recorded. The inbox gets the message whole; the records do not.
+# audit). The callback number is a digits slot, recorded by its last four as the slot says, and the
+# message a text slot recorded by its length (redact: length-summarized, slots.yaml). The person is a
+# choice from a short list, kept as it is. The caller's name is their own words: only its length is
+# recorded. The inbox gets the message whole; the records do not.
 audit:
   recipient: keep
   caller: length
-  message: length

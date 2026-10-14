@@ -25,7 +25,7 @@
         "phone": "5555550142",
         "message": "the logo files are ready for review"
       },
-      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said:"
+      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said, in short,"
     }
   },
   {
@@ -52,7 +52,7 @@
       "slots": {
         "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
       },
-      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said:"
+      "text": "Thanks, I'll make sure Riley Moreno gets your message: Alex Rivera, on 555 555 0142, called and said, in short,"
     }
   },
   {

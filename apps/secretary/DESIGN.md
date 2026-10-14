@@ -1,6 +1,6 @@
 # Example Front Desk: design worksheet
 
-Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding assistant (Claude Opus 5.5) on 2026-10-13, from the paragraph below. The business name, "Example Front Desk", was given with the paragraph.
+Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding assistant (Claude Opus 5.5) on 2026-10-13, from the paragraph below. The business name, "Example Front Desk", was given with the paragraph. Revised on 2026-10-14, once the framework covered what the first build found (Gaps): the paragraph's "in short" restored with a frame for the exact words (`exactText`), and the message kept out of every record (`redact: length-summarized`).
 
 ## The paragraph
 
@@ -27,7 +27,7 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | `take_message` | who the message is for | `recipient` | `choice`: riley, sam, jordan, anyone ("the team") | no (keypad on the menu only) | no |
 | `take_message` | the caller's name | `caller` | `name` | no | recorded by length (audit) |
 | `take_message` | a number to call back | `phone` | `digits`: length 10, `callerNumber` (offers the number calling) | yes | by its last four (the type's default) |
-| `take_message` | the message, in the caller's words | `message` | `text`: `say: null`, `redact: none`, maxLength 400 | no | recorded by length (audit); kept as said in the trace (see "What is recorded") |
+| `take_message` | the message, in the caller's words | `message` | `text`: `say: null`, `redact: length-summarized`, maxLength 400 | no | by its length in every record; sent whole to the render model only for the read-back's span (see "What is recorded") |
 | `urgent` | nothing | | | | |
 
 ## Decisions
@@ -47,13 +47,14 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | 10 | Text at more than one moment? | No. |
 | 10b | Does call data come with the call? | No. |
 | 11 | Something that must never wait? | Yes: "A caller who says it's urgent ... is transferred". `urgent`, a form with no slots, `priority: { correctsForm: true }`, its `complete` hook handing off with the reason `urgent` (`handoff_urgent`) ([Something that must never wait](../../.claude/skills/create-app/patterns.md#something-that-must-never-wait)). |
-| 12 | What should the person taking a transfer see? | `handoff.data.unconfirmed: mark` (the default for a new app), every slot (the default `slots: all`; the callback number by its last four, as recorded). |
+| 12 | What should the person taking a transfer see? | `handoff.data.unconfirmed: mark` (the default for a new app), every slot (the default `slots: all`; the callback number by its last four, as recorded; the message by its length, as `length-summarized` hands it over whatever `handoff.data` says). |
 | 13 | Half-understood callers, corrections at the read-back, silence after "anything else?" | The paragraph is silent: the defaults. |
 | 13b | Nice-to-have details; a caller who cannot answer | Every detail is needed for the message: the engine's ladder (three tries, then the main line). |
 | 13c | Anything before the request, after identity or after a form? | No routes. The paragraph names the studio's hours as an answer, not as a rule for the line ("when no one can pick up" is any time the line rings). |
 | 13d | More than one language? | No. |
 | 14 | The phone line itself? | Nothing. |
-| A | Generated wording (the skill's rule: only where the paragraph asks) | The read-back's summary only: a framed line ([A framed line](../../.claude/skills/create-app/patterns.md#summarizing-what-the-caller-said-a-framed-line-generate)). `confirm_take_message` with `generate: { summary: { from: message, goal, words: 20 } }`, `summarizesConfirmed: true`, `when: { situations: [first-ask] }`; the form's `summary: { onNo: read-back }` with `read_back_exact`. No `wording: generative` and no `mode: generative` anywhere. |
+| A | Generated wording (the skill's rule: only where the paragraph asks) | The read-back's summary only: a framed line ([A framed line](../../.claude/skills/create-app/patterns.md#summarizing-what-the-caller-said-a-framed-line-generate)). `confirm_take_message` with `generate: { summary: { from: message, goal, words: 20 } }`, `summarizesConfirmed: true`, `when: { situations: [first-ask] }`, its `text` saying "called and said, in short, {summary}" and its `exactText` "called and said: {summary}"; the form's `summary: { onNo: read-back }` with `read_back_exact`. No `wording: generative` and no `mode: generative` anywhere. |
+| A2 | The caller's words in the records | Kept out, deliberately: the message slot is `redact: length-summarized` (guide 16.3, 16.5), the app's demo of that setting. The words are kept in the session for the call and sent whole to the render model only for the span; every caller's words, on every turn, are kept by their length in the trace, on the console and in the frame log (no frame-log replay; `kb:gaps` finds no caller questions); the audit and a handoff get the message by its length. |
 | B | Where a transfer goes | "transferred to the studio's main line": app.yaml's `transfer: { default: env.STUDIO_MAIN_LINE }`, every handoff (urgent, a person, max attempts) to the one line ([Where a transfer goes](../../.claude/skills/create-app/patterns.md#where-a-transfer-goes-and-what-goes-with-it-transfer)). The variable is in `.env.example` with a 555 number. |
 | C | Schedules and whereabouts | "the desk never says anything about the people's schedules or whereabouts": no tool reads a schedule, no line names one, and an informational intent, `whereabouts`, answers such a question with a fixed refusal and an offer to take a message (`no_whereabouts`). The span is worded from the caller's own words only, so it cannot carry anything the studio knows. |
 
@@ -72,9 +73,9 @@ Its reply is `{ ref }`, checked with `replyShape.object({ ref: replyShape.code()
 | `recipient` | `recipient`: a choice, no redact | `keep` | one of four keys |
 | `caller` | `caller`: a name, no redact | `length` | a person's name, in their own words |
 | `phone` | `phone`: digits, `last4` | the slot's | an identifier |
-| `message` | `message`: text, `redact: none` | `length` | the caller's own words: the inbox gets them, the records do not |
+| `message` | `message`: text, `length-summarized` | the slot's (by its length; no `audit` line, which `pnpm check` would refuse as a duplicate) | the caller's own words: the inbox gets them, the records do not |
 
-A trade-off, written down: the `message` slot is `say: null` (the read-back and its fallback say the words) with `redact: none`, as the text type requires for `say: null`. So the slot's value, the message as said, is in the trace and on the console's call detail, though the action's param is recorded by its length in the gate event and the audit. See Gaps.
+What `length-summarized` costs, accepted: no caller's words are in the trace, the console or the frame log, on any turn (the message may come on any), so a call cannot be replayed from its frame log and `kb:gaps` finds no caller questions; the person on the main line gets the message by its length from a transfer. The words go whole to the render model (and to the decision model's checks of the span) only to summarize them; the policy card says so.
 
 ## Who may do what
 
@@ -90,7 +91,7 @@ None: the app verifies no one.
 
 | Action | Read back as (the summary line) | Values the caller confirms |
 |---|---|---|
-| `leaveMessage` | "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?" ({summary} generated the first time, from `message`; else the message word for word) | `recipient, caller, phone, message` |
+| `leaveMessage` | "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?" ({summary} generated the first time, from `message`); with the exact words, "... called and said: {summary}. Shall I pass it on?" (`exactText`) | `recipient, caller, phone, message` |
 
 The app's one list of confirmed fields: `recipient, caller, phone, message`.
 
@@ -113,13 +114,13 @@ None.
 | The caller asks, at any time | `live-agent` | `handoff_live_agent` |
 | The caller says it is urgent, at any time (a priority intent) | `urgent` | `handoff_urgent` |
 | A detail not given after three tries | `max-attempts` | `handoff_max_attempts` |
-| The inbox's reply fails its check | `result-unchecked` | `handoff_needs_human` (no `handoff_result_unchecked` line) |
+| The inbox's reply fails its check | `result-unchecked` | `handoff_result_unchecked` ("I couldn't confirm your message was passed on, so let me put you through to the studio's main line.") |
 
 All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
 
 ## Choices the paragraph left open
 
-- **The frame's words.** The paragraph's example is "Thanks, I'll make sure Riley gets your message: Alex Rivera called and said, in short, the logo files are ready for review." The frame used is "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?". "in short" is dropped: the same frame is said with the caller's exact words (after a no, on a repeat, on a later reading and on every fallback), where "in short" would not be true (patterns.md: the frame must read true either way). The callback number is in the frame, since the read-back is where the caller hears the whole number the offer named by its last four, and "Shall I pass it on?" makes the read-back the confirmation. See Gaps.
+- **The frame's words.** The paragraph's example is "Thanks, I'll make sure Riley gets your message: Alex Rivera called and said, in short, the logo files are ready for review." The line's `text` keeps it: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?", said only with a generated summary. Its `exactText` says "called and said: {summary}", said whenever the span is the caller's exact words (no model, a fallback, after a no, a repeat, a later reading), where "in short" would not be true. The callback number is in both, since the read-back is where the caller hears the whole number the offer named by its last four, and "Shall I pass it on?" makes the read-back the confirmation.
 - **"the team"** is how the line names "anyone" ("I'll make sure the team gets your message"); its inbox is a shared one.
 - **The call ends after a message** (`{ kind: 'end' }` on `message_taken`, then "Goodbye."), as the paragraph says ("Before saying goodbye it reads the message back"). A second message for another person is a second call.
 - **"Lets them say it again"**: a bare no reads the exact words back and asks again; "no, let me say it again" (a no naming the message) asks for the message again; a second bare no asks `ask_change`, worded to say both ("You can give me the message again, or ask me to read it back.").
@@ -135,21 +136,30 @@ All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
 
 ## Gaps
 
+What the paragraph asks that the framework did not do, or did differently, when the app was first built (2026-10-13); what I did then; and what the framework does now. The findings went to the maintainer, and every row but the last two is closed: the app now uses what the framework added.
+
+| What | The framework, then | What I did then | Now |
+|---|---|---|---|
+| The paragraph's frame says "in short" before the summary | One frame, said with the summary and with the exact words alike | Dropped "in short" ("called and said:") | **Closed.** A framed line's `exactText` is the frame for the exact words ([guide 16.3](../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line)): `text` keeps the paragraph's "in short", `exactText` says "called and said:" |
+| `pnpm configure` and a transfer target | `configure` wrote `HANDOFF_NUMBER` but not `STUDIO_MAIN_LINE`, which the server needs to start | `.env.example` and the README said to add it by hand | **Closed.** `configure` asks for each number app.yaml names (`--number STUDIO_MAIN_LINE=...`) |
+| Recording with two keys in two files | `regress` read one settings file | Told the owner to copy one key next to the other | **Closed.** `ENV_FILE` names several files, separated by commas (`ENV_FILE=apps/secretary/.env,<your render.env>`); the README's recording command uses it |
+| The message in the trace | A `text` slot with `say: null` had to be `redact: none`, so the message as said was in the trace and on the console | Recorded the param by length (`audit: length`), wrote the trade-off down | **Closed.** `redact: length-summarized`: the message is kept by its length in every record, and sent whole to the render model only for the span. The app now keeps no caller words in its records at all (see "What is recorded") |
+| `handoff_result_unchecked` | The skill did not mention the line | Left it to `handoff_needs_human` | **Closed.** The skill names it; the app has its own line (prescribed) |
+| A message said in one breath with the other details | The `text` slot's value is the whole turn's words (`pick` could cut a real message short) | Kept the whole turn as the message, name and number included; scripted (`message-all-in-one-breath`), so the baseline shows it | **A known limit**, documented in [guide 16.3](../../docs/guide/16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line): the exact-words reading repeats the name and number; the summary usually leaves them out |
+| The app map drew `urgent` as "Completes without calling an action" | A form whose `complete` hook hands off was not drawn as a handoff | Nothing; the handoff is in "Where a handoff goes" and in the scripted calls | **Eased.** The map now says the hook decides in code what follows (a line, the end or a handoff) |
+
+Found while revising (2026-10-14), for the maintainer:
+
 | What | The framework | What I did | Cost |
 |---|---|---|---|
-| The paragraph's frame says "in short" before the summary | A framed line has one frame, said both with the generated summary and with the exact words (on a no, a repeat, a later reading, a fallback); there is no frame for the summary and another for the exact words | Dropped "in short"; "called and said:" reads true either way | A wording the owner asked for is not said. A frame per case (`text` with the summary, another with the exact words) would let the paragraph's wording stand |
-| `pnpm configure` and a transfer target | `configure` writes `HANDOFF_NUMBER` but not the variables app.yaml's `transfer` names; the server refuses to start without `STUDIO_MAIN_LINE` (`pnpm diagnose` says so) | `.env.example` has `STUDIO_MAIN_LINE=+15555550100`; the README tells a person trying it on a laptop to add it | One manual step on the "try it with no keys" path, found only by running `diagnose` |
-| Recording with two keys in two files | `regress` reads one settings file (the app's `.env`, or the one `ENV_FILE` names); the decision model's key and the render key kept in separate files cannot both be read without a shell `source` (which the skill forbids) | The README gives two ways: the render lines in the app's `.env`, or both keys in one file named by `ENV_FILE`, the provider and the timeouts on the command line | The owner must copy one key next to the other |
-| The message in the trace | A `text` slot with `say: null` must be `redact: none`; the param can be recorded by its length (`audit: length`), but the slot's value is in the trace and on the console as said | Recorded the param by length, and wrote the trade-off down | The caller's words are kept in the trace; a framed line has no way to read the words back while keeping them out of the trace |
-| A message said in one breath with the other details | The `text` slot's value is the whole turn's words (or one part of them with `pick`, which could cut a real message short) | Kept the whole turn: "hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on ..." is the message, name and number included | The read-back's exact words repeat the name and number; the generated summary usually will not |
-| The app map draws `urgent` as "Completes without calling an action" | A form whose `complete` hook hands off is not drawn as a handoff | Nothing; the handoff is in "Where a handoff goes" and in the scripted calls | A reader of APP-MAP.md may not see that urgent goes to a person |
-| `handoff_result_unchecked` | The skill does not mention the line; without it a reply that fails its check says `handoff_needs_human` | Left it to `handoff_needs_human` (prescribed) | None |
+| The scaffold's `src/fixtures.test.ts` runs the corpus and scripted calls with no renderer, while `regress` on the stub words generated lines with the fake renderer | With `exactText`, the two differ: a scripted call that expects the summary frame ("in short") passes in `regress` and fails in `pnpm test`, which hears the exact-words frame | Gave this app's `fixtures.test.ts` the fake renderer (`renderer: { client: new FakeRenderClient() }`), as `regress` does | One failing test to diagnose; the template (`packages/dialogwright/templates/app/src/fixtures.test.ts`) would meet it in every app with a framed line and `exactText` |
+| The fake renderer's span drops the end of a message, a negation with it ("..., no changes needed" summarized as "the brochure proofs are back from the printer") | The `negation` check holds a clause restated without its negation, not a clause left out; a dropped clause is the drift check's to judge (in the stub, its deterministic judge passes it) | Nothing: a real model's span is judged by the real drift check once recorded | A summary that leaves out a "no changes needed" is a meaning a caller may care about; the recording will show how the real model and judge treat it |
 
 No `FAIL adversarial` case and no `screened` finding on the stub: the suite holds 26/26 (injection 9, off-scope 8, hostile-reply 2, wording 7).
 
 ## Baseline edits
 
-The baseline was made once with `regress --update` on 2026-10-13 (117 corpus outcomes, 39 scripted calls) and read entry by entry against this worksheet; no entry was edited by hand since.
+The baseline was made once with `regress --update` on 2026-10-13 (117 corpus outcomes, 39 scripted calls) and read entry by entry against this worksheet; no entry was edited by hand since. The 2026-10-14 revision (`exactText`, `length-summarized`, `handoff_result_unchecked`) changed no entry: the baseline holds each turn's decision, prompt id, acknowledgements, gate and slots, none of which moved. Two scripted calls' own expectations (`message-read-back-summarized`, `message-long-read-back-summarized`) now expect "called and said, in short,", the frame said with a generated summary; the calls that hear the exact words still expect "called and said:".
 
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|

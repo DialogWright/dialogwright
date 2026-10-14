@@ -39,14 +39,19 @@ phone:
   callerNumber:
     countryCode: '1'
 
-# The message, exactly as the caller said it: the slot keeps the words (say: null, redact: none), the
+# The message, exactly as the caller said it: the slot keeps the words for the call (say: null), the
 # message is delivered word for word, and these words fill the read-back's summary whenever it is not
-# generated (a no, a repeat, a check that fails, a slow model). The records keep only its length
-# (policy.yaml's audit).
+# generated (a no, a repeat, a check that fails, a slow model). redact: length-summarized (guide 16.3,
+# 16.5): the words are sent whole to the render model only to word the read-back's summary, and kept
+# by their length in every record. The app keeps no caller's words at all: every caller's words, on
+# every turn, are kept by their length in the trace, on the console and in the frame log (so its calls
+# cannot be replayed from a frame log, and kb:gaps finds no caller questions), the audit records the
+# message by its length, and a handoff hands it over by its length. Chosen deliberately: this app is
+# the demo of that setting.
 message:
   type: text
   what: the message the caller wants to leave
   instructions: Count the message itself, even when it comes with other words.
   say: null
-  redact: none
+  redact: length-summarized
   maxLength: 400

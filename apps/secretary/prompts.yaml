@@ -111,6 +111,11 @@ prompts:
     text: Let me put you through to the studio's main line.
     interruptible: false
     prescribed: true
+  # The inbox's reply did not pass its check: the message may have gone, so a person takes it from here.
+  handoff_result_unchecked:
+    text: I couldn't confirm your message was passed on, so let me put you through to the studio's main line.
+    interruptible: false
+    prescribed: true
 
   # The fixed answers (intents.yaml's informational intents). The street is invented.
   studio_hours:
@@ -157,14 +162,17 @@ prompts:
 
   # The read-back, a framed line. Every word of it is fixed but {summary}, which the first time it is
   # said is a short summary of the message, generated from the message alone (the model is given only
-  # the goal below and the caller's words, never the rest of the line); after that, and whenever a
-  # check fails, the message word for word. The frame says whose words follow ("called and said:"),
-  # so it reads true either way. A caller who says no hears it again word for word
-  # (forms.yaml's summary.onNo: read-back, after read_back_exact), and so does one who asks to hear it
-  # again (repeat_prompt). The caller says yes to the message kept word for word after hearing its
-  # summary: summarizesConfirmed says the app accepts that.
+  # the goal below and the caller's words, never the rest of the line). The frame says whose words
+  # follow. It has two frames: `text`, said only with a generated summary ("called and said, in short,
+  # ..."), and `exactText`, said whenever the span is the message word for word ("called and said:
+  # ..."): after a no, on a repeat, on a later reading, and whenever a check fails, the model is slow
+  # or none is set up. A caller who says no hears it again word for word (forms.yaml's summary.onNo:
+  # read-back, after read_back_exact), and so does one who asks to hear it again (repeat_prompt). The
+  # caller says yes to the message kept word for word after hearing its summary: summarizesConfirmed
+  # says the app accepts that.
   confirm_take_message:
-    text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
+    text: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on?"
+    exactText: "Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?"
     interruptible: true
     generate:
       summary:

@@ -5,7 +5,7 @@ Example Front Desk is a DialogWright example app: a fictional design studio's ph
 ## The folder
 
 - `app.yaml`, `intents.yaml`, `forms.yaml`, `prompts.yaml`, `slots.yaml`, `style.yaml`: what the app says, hears and collects, and how the one generated span sounds. Slots are library types named in `slots.yaml`.
-- `prompts.yaml`'s `confirm_take_message` is the only line with anything generated (`generate: { summary: { from: message, ... } }`). Every other line is said word for word; the handoff lines and `message_taken` are `prescribed: true`.
+- `prompts.yaml`'s `confirm_take_message` is the only line with anything generated (`generate: { summary: { from: message, ... } }`), with two frames: `text` ("called and said, in short, {summary}"), said only with a generated summary, and `exactText` ("called and said: {summary}"), said whenever the span is the exact words. Every other line is said word for word; the handoff lines and `message_taken` are `prescribed: true`.
 - `policy.yaml`: the one action, `leaveMessage` (level 0, `confirmed` on recipient, caller, phone and message), and how each param is recorded.
 - `policy.matrix`, `POLICY.md` and `APP-MAP.md`: the policy read back, generated; `src/app.test.ts` fails when one differs from what the app generates.
 - `src/app.ts`: the tool (a stub inbox, idempotent, with a reply `check`) and the hooks (`take_message`: deliver and end; `urgent`: hand off to the main line). `src/data.ts`: each person's inbox, at example.com.
@@ -27,8 +27,8 @@ pnpm policy:matrix apps/secretary && pnpm policy:card apps/secretary && pnpm app
 ## Rules for this app
 
 - Keep the generated part to the span. Do not mark another line `mode: generative` or the form `wording: generative`: the paragraph says every other line is said word for word. Changing the span's goal, its word budget or the frame changes what the policy card says and what a model is sent: write the card again, and a recording is needed again.
-- The frame must read true whether the span is a summary or the caller's exact words ("called and said:", never "in short" or "summarized"): the exact words are what a no, a repeat, a later reading and every fallback say.
-- The message slot keeps the caller's words (`say: null`, `redact: none`); the tool is sent them word for word. Never deliver the summary.
+- Keep both frames true of what they frame: wording true of a summary only ("in short") goes in `text`, never in `exactText`, which is said with the caller's exact words (a no, a repeat, a later reading, every fallback). Both name the same variables (`pnpm check` holds them to it).
+- The message slot is `say: null`, `redact: length-summarized`: the words are kept in the session and sent to the tool word for word, sent whole to the render model only for the span, and kept by their length in every record. So the app keeps no caller's words in its trace, console or frame log (its calls cannot be replayed from a frame log; `kb:gaps` finds no caller questions), and a handoff gets the message by its length. That is deliberate: this app is the demo of that setting. Do not declare `message` under policy.yaml's `audit` (`pnpm check` refuses the duplicate). Never deliver the summary.
 - Never put policy in tool code; never record (`regress --client record` is the owner's step, with the owner's keys); never put a key in a file; never regenerate the baseline, a snapshot or a page of the read back to make something pass. A `FAIL adversarial` case is a finding to fix in the app.
 - Fictional data only: invented names, the 555 range, example.com.
 - `policy.yaml` belongs to compliance. Change it only when asked to, with the reason in the commit message, and expect review.

@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `ec0e8e09422933c03ff52ca886d776f7fb7a45380dd27b14b0ca65f22a2950c8` |
+| `policy.yaml` | `dbf707447217d14d5718c65f09d67764e3e3145b0e729f051cffef139c105ecd` |
 | `identity.yaml` | none: this app verifies no one |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -14,7 +14,7 @@ The hash is a SHA-256 of the file's content (comments and layout do not change i
 - Anything not listed under Actions is refused.
 - The rules of an action run in the order shown, and the first one that fails decides.
 - Identifiers in decision lines appear by their last four characters (`...1234`), never in full; a value recorded hidden, by length or never shows not even those.
-- In traces and the audit a caller's values are recorded as they are said, except: phone by its last four.
+- In traces and the audit a caller's values are recorded as they are said, except: phone by its last four; message by its length.
 
 ## Identity
 
@@ -42,11 +42,19 @@ What the record of a call keeps of each value the action is sent: the gate's dec
 
 ## Lines a model words
 
-These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation and drops none from its content; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole, the transcript, or anything a tool returned. Every other line is said word for word.
+These lines are fixed, but for the spans named (the framed form): a model words each span from the content it names, and nothing else of the line, whose fixed words say whose words the span gives. Each span is checked before anyone hears it: it asks nothing; it names no other value of the line's own items in their place; it adds no negation and drops none from its content; it speaks as no one its content does not (the agent's own words, or words to the listener); it keeps to its word budget and avoids the phrases style.yaml lists; it names no number, amount, date or capitalized word its content does not; and the decision model, given the span, its goal and its content, finds it a faithful summary. The content is screened for an injection again before a span is worded from it. When a check fails, the model is slow or errs, or the caller's words were flagged, the span is its content, word for word. The model is sent only the span's goal, its content (the caller's words, quoted), its word budget, the style, the channel and the language: never the line around it, an identity factor, a value the records hide whole (but a slot listed below as sent whole to be summarized), the transcript, or anything a tool returned. A line with a frame of its own for the exact words (`exactText`) is said with that frame whenever every span is its content word for word (no model, a fallback, a read-back after a no, a repeat), and with its text only when a span is generated. Every other line is said word for word.
 
 | Line | Fixed text | Span | Goal | Generated | Worded from | Sent whole, though recorded masked | Words |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `confirm_take_message` | Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on? | `{summary}` | Summarize the caller's message briefly, in their own terms, as a receptionist reading it back. | the first time it is said | `{message}`, a value the caller confirms | nothing | 20 |
+| `confirm_take_message` | Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said, in short, {summary}. Shall I pass it on? (said with a generated span; with every span its content word for word: Thanks, I'll make sure {recipient} gets your message: {caller}, on {phone}, called and said: {summary}. Shall I pass it on?) | `{summary}` | Summarize the caller's message briefly, in their own terms, as a receptionist reading it back. | the first time it is said | `{message}`, a value the caller confirms | `{message}` | 20 |
+
+Sent whole to the render model to summarize; masked in the records (a `text` slot's `redact: length-summarized`, the one exception to "never a value the records hide whole"):
+
+| Slot | Summarized by | Recorded as |
+| --- | --- | --- |
+| `message` | `confirm_take_message` | by its length, in every record: the trace and the console (the slot, our lines that say it or its summary, with that part by its length), the audit, and a handoff (by its length, whatever app.yaml's handoff.data says) |
+
+Its words go whole to the render model only for the span that summarizes them (a framed line's span worded from the slot; never a line generated whole from it, nor one that names it), and to the decision model's checks of that span: the content screened again for an injection, and the drift check, which is given the words as quoted. No other line is sent the caller's words. The app's own lines say them, and a tool is sent them. In such an app every caller's words are kept by their length: in the trace and on the console (the words of every turn, and the parts of them the model was asked about), and in the frame log, written before any turn has read them, which keeps none (a call of such an app cannot be replayed from it). The session store holds the words while the call is open, as it holds every slot's value.
 
 Prescribed lines (`prescribed: true`): always said word for word, never generated.
 
@@ -56,6 +64,7 @@ Prescribed lines (`prescribed: true`): always said word for word, never generate
 | `handoff_live_agent` | One moment while I put you through to the studio's main line. |
 | `handoff_max_attempts` | Let me put you through to the studio's main line to help with that. |
 | `handoff_needs_human` | This one needs a person. Let me put you through to the studio's main line. |
+| `handoff_result_unchecked` | I couldn't confirm your message was passed on, so let me put you through to the studio's main line. |
 | `handoff_security` | Let me put you through to the studio's main line. |
 | `handoff_system_failure` | I'm having trouble right now. Let me put you through to the studio's main line. |
 | `handoff_urgent` | I'll put you straight through to the studio's main line. |

@@ -3,6 +3,7 @@ import {
   buildClient, buildThresholds, defaultCorpusFile, loadCorpus, loadScenarios, normalizeText, readBaseline,
   REGRESS_TODAY, runAll, scenariosDir,
 } from 'dialogwright';
+import { FakeRenderClient } from 'dialogwright/testing';
 
 /**
  * The fixtures: the labelled corpus and the scripted calls. The baseline (fixtures/expected) holds
@@ -30,6 +31,10 @@ describe('the fixtures', () => {
       thresholds,
       todayIso: REGRESS_TODAY,
       now: () => 0,
+      // The read-back's span worded as the stub regression words it (the fake renderer, no model), so
+      // a scripted call hears the same frame here as in `regress`: "in short" with a generated
+      // summary, the exact-words frame (exactText) otherwise.
+      renderer: { client: new FakeRenderClient() },
     });
     for (const s of Object.values(actual.scenarios)) expect(s.mismatches, s.id).toEqual([]);
     const expected = readBaseline();
