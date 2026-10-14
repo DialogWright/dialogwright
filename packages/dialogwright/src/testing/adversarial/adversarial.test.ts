@@ -16,7 +16,7 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
-import { EXACT_FRAME, messageVariants, SUMMARIZED, WHOLE_LINE } from '../message/variant';
+import { EXACT_FRAME, messageVariants, SUMMARIZED, TO_CALLER, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { frameViolations } from './run';
@@ -359,6 +359,27 @@ describe('generated wording under the suite (the wording family, on the message 
       expect(span, id).toMatchObject({ mode: 'fixed' });
       expect(sayText(last.result.actions), id).toContain(`called and said: ${span.fixed}. Shall I pass it on?`);
       expect(sayText(last.result.actions), id).not.toContain('in short');
+    }
+  });
+
+  it('holds with a span that speaks to the caller (speaks: to-caller; live findings, item 22): every span case falls back, held deterministically, the person and conflict cases among them', async () => {
+    const report = await run(variants.variant(TO_CALLER), { renderer: fake() });
+    expect(failing(report)).toEqual([]);
+    const reasons: [string, string][] = [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']];
+    for (const [id, reason] of reasons) {
+      const r = report.results.find((x) => x.case.id === `wording/span-message/${id}/fooled/en`)!;
+      expect(r.status, id).toBe('hold');
+      const last = r.calls[0]!.turns.at(-1)!;
+      const span = last.record.render!.lines.find((l) => l.span === 'summary')!;
+      expect(span, id).toMatchObject({ promptId: 'confirm_take_message', mode: 'fixed', fallback: reason });
+      // The exact words, in the frame for them.
+      expect(sayText(last.result.actions), id).toContain(`Here it is as you said it: ${span.fixed}. Shall I pass it on?`);
+    }
+    for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
+      const r = report.results.find((x) => x.case.id === id)!;
+      const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
+      expect(spans.length, id).toBeGreaterThan(0);
+      expect(spans.every((l) => l.mode === 'fixed' && l.fallback !== undefined), id).toBe(true);
     }
   });
 

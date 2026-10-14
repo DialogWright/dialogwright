@@ -351,3 +351,49 @@ describe('a slot masked in the records that a model summarizes (redact: length-s
     expect(summarizedVarsFrom({ message: { summarized: true }, dob: { summarized: true }, note: {} }, ['dob'])).toEqual(new Set(['message']));
   });
 });
+
+describe('a span that speaks to the caller (speaks: to-caller; live findings, item 22)', () => {
+  const forms = { f: form(['recipient', 'caller', 'message'], { summaryPromptId: 'confirm_f' }) };
+  const framed = (text: string, speaks?: 'as-caller' | 'to-caller'): PromptYaml => line(text, { generate: { summary: { from: 'message', goal: 'Give it back.', ...(speaks !== undefined ? { speaks } : {}) } } });
+  const SPEAKING = "{recipient} gets your message, in short: {summary}. Shall I pass it on?";
+  const warn = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}, defaultLocale = 'en-US') =>
+    generatedWordingWarnings({ prompts, forms, localePrompts, defaultLocale }).map((w) => `${w.file} ${w.path.join('.')}: ${w.message}  ->  ${w.fix}`);
+
+  it('is held on the span; as-caller, or none, is the span as it was', () => {
+    const g = generatedWordingOf({ prompts: { confirm_f: framed(SPEAKING, 'to-caller'), c2: framed(SPEAKING, 'as-caller'), c3: framed(SPEAKING) }, forms, style: null, localePrompts: {} })!;
+    expect(g.lines.confirm_f!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25, speaks: 'to-caller' });
+    expect(g.lines.c2!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25 });
+    expect(g.lines.c3!.spans!.summary).toEqual({ from: 'message', goal: 'Give it back.', words: 25 });
+  });
+
+  it('check warns of a frame that says the caller "said" it, before the span in its sentence', () => {
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') })).toEqual([]);
+    expect(warn({ confirm_f: framed("{caller} called and said, in short, {summary}. Shall I pass it on?", 'to-caller') })).toEqual([
+      'prompts.yaml prompts.confirm_f.text: the span "summary" speaks to the caller (speaks: to-caller: "you need..."), but the line\'s frame says they "said" it, so the two read wrong together ("...called and said, in short, you need...")  ->  word the frame to the caller ("{recipient} gets your message, in short: {summary}"), or let the span speak in the caller\'s own terms (delete "speaks: to-caller")',
+    ]);
+    // "Said" in an earlier sentence, or a span in the caller's own terms after "said": no warning.
+    expect(warn({ confirm_f: framed('You said it. {recipient} gets your message, in short: {summary}.', 'to-caller') })).toEqual([]);
+    expect(warn({ confirm_f: framed('{caller} called and said, in short, {summary}.') })).toEqual([]);
+  });
+
+  it('check warns where it is worded in the caller\'s own terms: prompts.yaml in another language, or a locale that is not English giving the span its goal', () => {
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, {}, 'es')).toEqual([
+      'prompts.yaml prompts.confirm_f.generate.summary.speaks: the span "summary" speaks to the caller (speaks: to-caller), which is English only for now, and prompts.yaml\'s locale is es: the span is worded in the caller\'s own terms there  ->  word the frame for the caller\'s own terms ("{caller} left this message: {summary}"), and delete "speaks: to-caller"',
+    ]);
+    const es = { confirm_f: line('{recipient} recibe su mensaje: {summary}.', { generate: { summary: { goal: 'Resumir.' } } }) };
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { es })).toEqual([
+      'locale/es/prompts.yaml prompts.confirm_f.generate.summary: the span "summary" speaks to the caller in prompts.yaml (speaks: to-caller), which is English only for now: in es it is worded in the caller\'s own terms  ->  word this locale\'s frame for the caller\'s own terms ("... left this message: {summary}"), or give the span no goal here, so it is said as the caller\'s exact words',
+    ]);
+    // A locale that gives the span no goal says its exact words: nothing to warn of. An English locale's frame is read for "said".
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { es: { confirm_f: line('{recipient}: {summary}.') } })).toEqual([]);
+    expect(warn({ confirm_f: framed(SPEAKING, 'to-caller') }, { 'en-GB': { confirm_f: line('{caller} rang and said {summary}.', { generate: { summary: { goal: 'Give it back.' } } }) } })).toHaveLength(1);
+  });
+
+  it('check refuses it in a locale\'s prompts.yaml: read from prompts.yaml, for every locale', () => {
+    const problems = generatedWordingProblems({
+      prompts: { confirm_f: framed(SPEAKING, 'to-caller') }, forms, identifierVars: new Set(), slots: ['recipient', 'caller', 'message'],
+      localePrompts: { 'en-GB': { confirm_f: line(SPEAKING, { generate: { summary: { goal: 'Give it back.', speaks: 'to-caller' } } }) } },
+    }).map((p) => `${p.file} ${p.path.join('.')}: ${p.message}`);
+    expect(problems).toEqual(['locale/en-GB/prompts.yaml prompts.confirm_f.generate.summary.speaks: a span\'s "speaks" is read from prompts.yaml, for every locale; a locale gives a span only its goal']);
+  });
+});

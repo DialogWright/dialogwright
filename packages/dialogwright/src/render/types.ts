@@ -84,6 +84,27 @@ export interface SpanAct {
     readonly words: number;
     readonly avoid: readonly string[];
   };
+  /**
+   * `to-caller` where the span speaks to the caller about their own message (prompts.yaml's `speaks:
+   * to-caller`, in English): its instructions, its checks and its drift question are a to-caller span's.
+   * Absent otherwise, so every other span's act is as it was.
+   */
+  readonly speaks?: 'to-caller';
+  /**
+   * A to-caller span only: the names the line says around it (FrameName), each under its variable, that
+   * the span may put in place of a pronoun of the content where the content makes clear who is meant.
+   * Absent where the line says none, and for every other span.
+   */
+  readonly names?: readonly SpeechItem[];
+}
+
+/**
+ * A name the line says around a to-caller span: a frame variable that is a `choice` slot (its option, as
+ * said: who a message is for) or a `name` slot (a name the caller gave), with no redact setting and no
+ * identity factor. `kind` is told to the drift check, never to the render model.
+ */
+export interface FrameName extends SpeechItem {
+  readonly kind: 'option' | 'name';
 }
 
 /** What a render client is asked to word: a whole line's speech act, or a framed line's span. */

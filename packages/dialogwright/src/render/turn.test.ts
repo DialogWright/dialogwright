@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineApp } from '../define/defineApp';
@@ -14,12 +14,13 @@ import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
 import { recordableClips } from '../prompts/clips';
 import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
-import { EXACT_FRAME, messageVariants, replace, WHOLE_LINE } from '../testing/message/variant';
+import { EXACT_FRAME, messageVariants, replace, TO_CALLER, WHOLE_LINE } from '../testing/message/variant';
 import type { App } from '../core/app/types';
 import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
+import { SPAN_INSTRUCTIONS_TO_CALLER, spanKey } from './prompt';
 import { RenderClientError, type Renderer, type SpeechAct } from './types';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
@@ -40,9 +41,16 @@ afterAll(() => variants.remove());
 const whole = variants.variant(WHOLE_LINE);
 /** A message with a negated clause after its first eight words (the fake's summary leaves it out), beside the fixture's corpus. */
 const PROOFS = 'the brochure proofs are back from the printer and they look great, no changes needed';
+/** Messages for the read-back that speaks to the caller (TO_CALLER): one whose "him" is the recipient, one whose "him" is someone it names. */
+const PROJECT = 'the project is complete and I just need him to give his approval';
+const PRINTER = 'tell Riley I need him to call the printer';
+const BUDGET = 'I do not need him to approve the budget';
 const corpus = [
   ...loadCorpus(join(MESSAGE_DIR, 'fixtures', 'corpus.jsonl'), messageApp),
   { id: 'ms-proofs', text: PROOFS, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
+  { id: 'ms-project', text: PROJECT, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
+  { id: 'ms-printer', text: PRINTER, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
+  { id: 'ms-budget', text: BUDGET, intent: 'none', context: 'take_message', prompted: 'message', labels: { messageGiven: true } } as CorpusEntry,
 ];
 let current: App = whole;
 const stub = (asked: JevRequest[] = []): JevClient => {
@@ -562,6 +570,134 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
     expect(card).toContain('A line with a frame of its own for the exact words (`exactText`) is said with that frame');
     // The fixture's own card, with no exactText, is as it was.
     expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain("exactText");
+  });
+});
+
+describe('a span that speaks to the caller about their own message (speaks: to-caller; live findings, item 22)', () => {
+  const toCaller = variants.variant(TO_CALLER);
+  beforeEach(() => {
+    resetAppsForTest();
+    current = toCaller;
+    registerApp(toCaller);
+  });
+  const OPEN = "Okay, thanks! I'll make sure Dana Reyes gets your message, Morgan Lee, with your number, 555 555 0142.";
+  const END = '. Shall I pass it on?';
+  const steps = (message: string): Scenario['steps'] => [...TO_SUMMARY.slice(0, 3), { say: message }];
+  const spanOf = (r: ScenarioRun) => r.runs.at(-1)!.record.render?.lines.find((l) => l.promptId === 'confirm_take_message');
+  const saying = (say: string): Renderer => ({ client: new FakeRenderClient({ spans: { confirm_take_message: say } }) });
+
+  it('is sent its own instructions, the content, and the names the line says (never the number); its drift check is told it speaks to the caller, with the names and their kind', async () => {
+    const client = new FakeRenderClient();
+    const asked: JevRequest[] = [];
+    const r = await call(steps(PROJECT), { client }, asked);
+    const { act } = client.askedSpans[0]!;
+    expect(act).toEqual({
+      kind: 'span',
+      goal: 'Give the caller their message back in one sentence, speaking to them.',
+      content: [{ name: 'message', value: PROJECT }],
+      channel: 'voice',
+      language: 'en-US',
+      style: { persona: 'a warm, brief office receptionist', words: 25, avoid: ['unfortunately', 'I apologize for the inconvenience'] },
+      speaks: 'to-caller',
+      names: [{ name: 'recipient', value: 'Dana Reyes' }, { name: 'caller', value: 'Morgan Lee' }],
+    });
+    for (const frame of ['0142', 'Okay, thanks', 'pass it on', 'In short']) expect(JSON.stringify(act)).not.toContain(frame);
+    // Its recording key is its own: the act and the to-caller instructions.
+    expect(spanKey('confirm_take_message', 'summary', act)).not.toBe(spanKey('confirm_take_message', 'summary', { ...act, speaks: undefined, names: undefined }));
+    // The fake words it as a well-behaved model would: the first clause, turned toward the caller.
+    expect(lastSaid(r)).toBe(`${OPEN} In short, the project is complete and you just need him to give his approval${END}`);
+    expect(spanOf(r)).toMatchObject({ span: 'summary', mode: 'generated', said: 'the project is complete and you just need him to give his approval' });
+    const judged = asked.find((q) => q.questions.renderSpanDrift !== undefined)!;
+    expect(judged.state).toEqual({
+      span: { goal: act.goal, said: 'the project is complete and you just need him to give his approval', speaks: 'to-caller' },
+      quoted: [{ name: 'message', words: PROJECT }],
+      frame: [{ name: 'recipient', value: 'Dana Reyes', kind: 'option' }, { name: 'caller', value: 'Morgan Lee', kind: 'name' }],
+    });
+    expect((judged.questions.renderSpanDrift as { instructions: string }).instructions).toContain('span.speaks is "to-caller"');
+    expect(SPAN_INSTRUCTIONS_TO_CALLER).toContain('their "I", "me", "my", "mine", "we", "us" and "our" become "you", "your" and "yours"');
+  });
+
+  it('may name the one a "him" means, where the message makes it clear: "you need Dana Reyes\'s approval"', async () => {
+    for (const said of ['your project is complete and you need Dana Reyes\'s approval', 'the project is complete and you just need Dana to approve it']) {
+      const r = await call(steps(PROJECT), saying(said));
+      expect(spanOf(r), said).toMatchObject({ mode: 'generated', said });
+      expect(lastSaid(r), said).toBe(`${OPEN} In short, ${said}${END}`);
+    }
+  });
+
+  it('a name for a pronoun the message does not make clear, the caller\'s own name for "him", or an "I" of its own falls back to the exact frame', async () => {
+    const EXACT = (message: string): string => `${OPEN} Here it is as you said it: ${message}${END}`;
+    const cases: [string, string, string][] = [
+      // "him" is Riley: the recipient's name in its place passes the shape checks, and the judge refuses it.
+      [PRINTER, 'you need Dana Reyes to call the printer', 'drift'],
+      [PRINTER, 'tell Riley you need Dana Reyes to call the printer', 'drift'],
+      // The caller's own name for "him": the stub's judge lets only a choice's option stand for a pronoun.
+      [PROJECT, 'the project is complete and you need Morgan Lee\'s approval', 'drift'],
+      // The agent's own first person, kept or added: never in a span that speaks to the caller.
+      [PROJECT, 'the project is complete and I just need his approval', 'person'],
+      [PROJECT, 'we will get you the approval', 'person'],
+      // A name the line does not say.
+      [PROJECT, 'the project is complete and you need Jordan\'s approval', 'foreign'],
+      // A "no" dropped, turned toward the caller or not.
+      [BUDGET, 'you need Dana Reyes to approve the budget', 'negation'],
+    ];
+    for (const [message, said, reason] of cases) {
+      const r = await call(steps(message), saying(said));
+      expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: reason, refused: said });
+      expect(lastSaid(r), said).toBe(EXACT(message));
+    }
+    // Speaking to the caller where the message has no first person of theirs: "your" is no one's.
+    const proofs = await call(steps(PROOFS), saying('your brochure proofs are back and look great, no changes needed'));
+    expect(spanOf(proofs)).toMatchObject({ mode: 'fixed', fallback: 'person' });
+    // A "no" kept, turned toward the caller: said.
+    const kept = await call(steps(BUDGET), saying('you do not need Dana Reyes to approve the budget'));
+    expect(spanOf(kept)).toMatchObject({ mode: 'generated' });
+  });
+
+  it('the fixture\'s own span is as it was: no "speaks", no names, its own instructions; the policy card says the option on the line', async () => {
+    resetAppsForTest();
+    current = messageApp;
+    registerApp(messageApp);
+    const client = new FakeRenderClient();
+    await call(steps(PROJECT), { client });
+    expect(client.askedSpans[0]!.act).not.toHaveProperty('speaks');
+    expect(client.askedSpans[0]!.act).not.toHaveProperty('names');
+    const card = policyCardText(toCaller, MESSAGE_DIR);
+    expect(card).toContain('Give the caller their message back in one sentence, speaking to them. (spoken to the caller: their "I" and "my" said as "you" and "your"; also sent the names `{recipient}`, `{caller}`)');
+    expect(card).toContain('A span that speaks to the caller (`speaks: to-caller`, English only)');
+    expect(policyCardText(messageApp, MESSAGE_DIR)).not.toContain('speaks: to-caller');
+  });
+
+  it('in another language it is worded in the caller\'s own terms (English only for now)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-message-'));
+    try {
+      cpSync(MESSAGE_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
+      for (const [file, change] of Object.entries(TO_CALLER)) writeFileSync(join(dir, file), change(readFileSync(join(dir, file), 'utf8')));
+      mkdirSync(join(dir, 'locale', 'es'), { recursive: true });
+      writeFileSync(join(dir, 'locale', 'es', 'prompts.yaml'), [
+        'prompts:',
+        '  confirm_take_message:',
+        '    text: "Muy bien. Le diré a {recipient} que {caller}, al {phone}, llamó y dejó este mensaje: {summary}. ¿Se lo paso?"',
+        '    exactText: "Muy bien. Le diré a {recipient} que {caller}, al {phone}, llamó y dijo: {summary}. ¿Se lo paso?"',
+        '    interruptible: true',
+        '    generate:',
+        '      summary:',
+        '        goal: Resumir el mensaje en una frase, en sus propias palabras.',
+        '',
+      ].join('\n'));
+      const app = defineApp(dir, messageCode);
+      resetAppsForTest();
+      registerApp(app);
+      current = app;
+      const client = new FakeRenderClient();
+      const scenario: Scenario = { id: 'es-1', locale: 'es', steps: [TO_SUMMARY[0]!, TO_SUMMARY[1]!, { dtmf: '5555550142' }, { say: PROJECT }], expect: { decision: 'any' } };
+      await runScenario(scenario, { client: stub(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, renderer: { client } });
+      expect(client.askedSpans[0]!.act).toMatchObject({ language: 'es' });
+      expect(client.askedSpans[0]!.act).not.toHaveProperty('speaks');
+      expect(client.askedSpans[0]!.act).not.toHaveProperty('names');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

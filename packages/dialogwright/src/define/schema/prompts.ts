@@ -40,6 +40,10 @@ const when = z
 /** The most words a generated span may use when it does not say (a framed line's `generate.<span>.words`). */
 export const DEFAULT_SPAN_WORDS = 25;
 
+/** Whose person a framed line's span speaks in (`generate.<span>.speaks`): the caller's own (the default), or to the caller. */
+export const SPAN_PERSPECTIVES = ['as-caller', 'to-caller'] as const;
+export type SpanPerspective = (typeof SPAN_PERSPECTIVES)[number];
+
 const span = z
   .strictObject({
     from: identifier()
@@ -54,6 +58,14 @@ const span = z
       .max(100, { error: 'must be at most 100' })
       .optional()
       .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}.`),
+    speaks: z
+      .enum(SPAN_PERSPECTIVES)
+      .optional()
+      .describe(
+        'Whose person the span speaks in. as-caller (the default): in the caller\'s own terms, as they said it ("call me back"), under a frame that gives their words ("{caller} left this message: {summary}"). ' +
+          'to-caller: to the caller, about their own message, as a receptionist reads one back: their I, me, my, we and our said as you and your ("call you back"), and a name the line says ({recipient}, {caller}) put in place of a pronoun only where the message makes clear who is meant; under a frame that speaks to them ("{recipient} gets your message, in short: {summary}"), never one that says they "said" it. ' +
+          'English only for now: in another language the span is worded as-caller. Read from prompts.yaml, for every locale.',
+      ),
   })
   .describe('One generated span of a fixed line.');
 

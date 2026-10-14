@@ -1,6 +1,6 @@
 import type { Generation, RenderClient, RenderRequest, SpanAct, SpeechAct } from './types';
 import { isSpanAct, RenderClientError } from './types';
-import { wordCount } from './checks';
+import { toCaller, wordCount } from './checks';
 
 /**
  * A render client that asks no model (tests, the stub regression, the adversarial suite): it words a
@@ -60,12 +60,14 @@ export function fakeWording(act: SpeechAct): string {
  * stop), within the span's budget, with no question mark and no closing punctuation (the frame has its
  * own), as a short summary of its main point would be. A content of one clause is given back whole: the
  * span is then said unchanged (RenderLine.unchanged). A clause after the first is left out, so a "no" or a
- * condition there falls back (`omitted`), as it should.
+ * condition there falls back (`omitted`), as it should. A span that speaks to the caller (`speaks:
+ * to-caller`) says that clause turned toward them, their "I" and "my" as "you" and "your" (a content of
+ * one clause with a first person is then a summary, not said unchanged).
  */
 export function fakeSpanWording(act: SpanAct): string {
   const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');
   const first = text.split(/[,.;:!]/)[0] ?? '';
-  const words = first.split(/\s+/).filter((w) => w !== '');
+  const words = (act.speaks === 'to-caller' ? toCaller(first) : first).split(/\s+/).filter((w) => w !== '');
   return words.slice(0, act.style.words).join(' ');
 }
 

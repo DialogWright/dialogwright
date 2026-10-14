@@ -1534,6 +1534,12 @@ export interface GeneratedSpan {
   readonly goal: string;
   /** The most words the span may use. */
   readonly words: number;
+  /**
+   * `to-caller`: the span speaks to the caller about their own message (prompts.yaml's `speaks:
+   * to-caller`): their I and my said as you and your, and the frame's names given to the model and the
+   * checks. Absent: in the caller's own terms (`as-caller`), as before.
+   */
+  readonly speaks?: 'to-caller';
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */

@@ -83,3 +83,25 @@ export const SUMMARIZED: Record<string, (text: string) => string> = {
   // The slot's redact setting records the param: policy.yaml's audit declares it no more.
   'policy.yaml': replace('  message: length\n', ''),
 };
+
+/**
+ * The read-back speaking to the caller about their own message, as a receptionist reads one back
+ * (prompts.yaml's `speaks: to-caller` on the span; live findings, item 22): the summary turns the
+ * caller's "I" and "my" to "you" and "your", and may name the recipient for a "him" where the message
+ * makes clear who is meant; the frame speaks to the caller ("gets your message ... In short, {summary}"),
+ * never that they "said" it, and the exact words have a frame of their own ("Here it is as you said it").
+ */
+export const TO_CALLER: Record<string, (text: string) => string> = {
+  'app.yaml': replace('id: message', 'id: message-to-caller'),
+  'prompts.yaml': replace(FRAMED, `  confirm_take_message:
+    text: "Okay, thanks! I'll make sure {recipient} gets your message, {caller}, with your number, {phone}. In short, {summary}. Shall I pass it on?"
+    exactText: "Okay, thanks! I'll make sure {recipient} gets your message, {caller}, with your number, {phone}. Here it is as you said it: {summary}. Shall I pass it on?"
+    interruptible: true
+    generate:
+      summary:
+        from: message
+        goal: Give the caller their message back in one sentence, speaking to them.
+        words: 25
+        speaks: to-caller
+`),
+};
