@@ -80,9 +80,10 @@ function secs(ms) {
 }
 
 /** What a fallback reason (render/types.ts RenderFallback) or a line left untried (RenderSkip) means, in a few words. */
+// negation, person and omitted: reasons of traces written before live findings item 25 removed those checks; still worded.
 const WORDING_WHY = {
   empty: 'the model said nothing', format: 'markup or a link', words: 'over its word budget', question: 'not one question', avoid: 'a phrase to avoid',
-  items: 'a value left out', foreign: 'a number, date or name it was not given', drift: 'did more than its goal', timeout: 'too slow',
+  items: 'a value left out', foreign: 'a number, date or name it was not given', drift: 'the judge refused it', timeout: 'too slow',
   error: 'the model failed', 'cassette-miss': 'not recorded', 'drift-error': 'the drift check failed', negation: 'a negation added or dropped', conflict: 'named another value in its place', 'content-flagged': 'the collected content was flagged or unread',
   person: 'spoke as the agent or to the listener', omitted: 'left out a "no" or a condition',
   exact: 'asked for word for word', share: 'this call is in the fixed group', when: 'not generated in this situation', locale: 'no goal in this language', screen: 'the words were flagged or unread', identifier: 'names an identifier', knowledge: 'a knowledge base answer, word for word',

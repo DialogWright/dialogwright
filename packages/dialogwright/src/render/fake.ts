@@ -1,6 +1,6 @@
 import type { Generation, RenderClient, RenderRequest, SpanAct, SpeechAct } from './types';
 import { isSpanAct, RenderClientError } from './types';
-import { toCaller, wordCount } from './checks';
+import { wordCount } from './checks';
 
 /**
  * A render client that asks no model (tests, the stub regression, the adversarial suite): it words a
@@ -55,20 +55,26 @@ export function fakeWording(act: SpeechAct): string {
   return wordCount(led) <= act.style.words ? led : line;
 }
 
+/** The caller's first person as a well-behaved model turns it toward them (the fake's own wording only: no check reads it). */
+const TOWARD_CALLER: Readonly<Record<string, string>> = {
+  i: 'you', me: 'you', my: 'your', mine: 'yours', we: 'you', us: 'you', our: 'your', ours: 'yours',
+  "i'm": "you're", "i've": "you've", "i'll": "you'll", "i'd": "you'd", "we're": "you're", "we've": "you've", "we'll": "you'll",
+};
+
 /**
  * The fake's own wording of a span, deterministic: its content's first clause (to its first comma or
  * stop), within the span's budget, with no question mark and no closing punctuation (the frame has its
  * own), as a short summary of its main point would be. A content of one clause is given back whole: the
- * span is then said unchanged (RenderLine.unchanged). A clause after the first is left out, so a "no" or a
- * condition there falls back (`omitted`), as it should. A span that speaks to the caller (`speaks:
+ * span is then said unchanged (RenderLine.unchanged). A span that speaks to the caller (`speaks:
  * to-caller`) says that clause turned toward them, their "I" and "my" as "you" and "your" (a content of
  * one clause with a first person is then a summary, not said unchanged).
  */
 export function fakeSpanWording(act: SpanAct): string {
   const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');
   const first = text.split(/[,.;:!]/)[0] ?? '';
-  const words = (act.speaks === 'to-caller' ? toCaller(first) : first).split(/\s+/).filter((w) => w !== '');
-  return words.slice(0, act.style.words).join(' ');
+  // "US" in capitals is no pronoun.
+  const toward = (w: string): string => (act.speaks === 'to-caller' && w !== 'US' ? TOWARD_CALLER[w.replace(/\u2019/g, "'").toLowerCase()] ?? w : w);
+  return first.split(/\s+/).filter((w) => w !== '').map(toward).slice(0, act.style.words).join(' ');
 }
 
 export class FakeRenderClient implements RenderClient {

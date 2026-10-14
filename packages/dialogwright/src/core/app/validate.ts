@@ -102,11 +102,13 @@ export function validateApp(app: App): void {
       if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
     }
   }
-  // How strictly a span is checked (GeneratedSpan.checks): 'standard' or 'strict', absent for standard (the default).
+  // Where the drift judge refuses (RenderStyle.refuseAt): a probability, more than 0 and at most 1.
+  const refuseAt = app.generated?.style.refuseAt;
+  if (refuseAt !== undefined && !(typeof refuseAt === 'number' && refuseAt > 0 && refuseAt <= 1)) fail(`App.generated.style.refuseAt is ${JSON.stringify(refuseAt)}: the drift judge's cutoff is a probability, more than 0 and at most 1 (absent: 0.5)`);
+  // A span's check levels were removed (live findings item 25): its meaning is the drift judge's.
   for (const [line, g] of Object.entries(app.generated?.lines ?? {})) {
     for (const [name, span] of Object.entries(g.spans ?? {})) {
-      const checks = (span as { checks?: unknown }).checks;
-      if (checks !== undefined && checks !== 'standard' && checks !== 'strict') fail(`the span "${name}" of the line "${line}" says checks: ${JSON.stringify(checks)}: a span's checks are 'standard' or 'strict' (absent: standard, the default)`);
+      if ((span as { checks?: unknown }).checks !== undefined) fail(`the span "${name}" of the line "${line}" says checks, which was removed: whether a span means what the caller said is the drift judge's; delete checks (for more caution, lower App.generated.style.refuseAt, or prescribe the line)`);
     }
   }
   // A slot a model may be sent to summarize though the records mask it (SlotSpec.summarized): never an

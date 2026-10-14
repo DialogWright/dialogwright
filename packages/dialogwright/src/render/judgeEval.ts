@@ -4,22 +4,22 @@ import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { checkSpan, cleanSpan, type SpanCheckLevel, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { checkSpan, cleanSpan, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { spanSentence } from './prompt';
 import type { RenderFallback, SpanAct } from './types';
 
 /**
- * Measuring the span drift judge against the span's shape checks (`render:judge-eval`, live findings
- * item 23). A set of cases, each a caller's message (`content`) and a summary of it (`span`) labelled
- * faithful or unfaithful by a person, is put to three readers, each as a call puts a span to it: the
- * shape checks (checkSpan at `standard`, the default, the checks of values, shape and voice, and at `strict`, every check), the
- * stub regression's judge (stubSpanDrift), and the real drift judge (the decision model asked
- * renderSpanDriftQuestion with the state renderSpanDriftState makes, nothing else). The tables say, per
- * family, how many unfaithful spans each catches and how many faithful ones each refuses, so how strict
- * the span's checks should be is decided on a measurement. Nothing here is asked of a model by itself:
- * the judge is a client handed in (a cassette, recording or replaying: ../harness-text/judgeEvalCommand.ts).
+ * Measuring the span drift judge (`render:judge-eval`, live findings items 23 and 25). A set of cases,
+ * each a caller's message (`content`) and a summary of it (`span`) labelled faithful or unfaithful by a
+ * person, is put to three readers, each as a call puts a span to it: the data checks (checkSpan: a
+ * span's data and shape), the stub regression's judge (stubSpanDrift, a test double), and the real
+ * drift judge (the decision model asked renderSpanDriftQuestion with the state renderSpanDriftState
+ * makes, nothing else). The tables say, per family, how many unfaithful spans each catches, alone and
+ * together, and how many faithful ones each refuses, so how well the judge reads meaning is a
+ * measurement, and a change to its question is measured before it ships. Nothing here is asked of a
+ * model by itself: the judge is a client handed in (a cassette, recording or replaying:
+ * ../harness-text/judgeEvalCommand.ts).
  */
-
 /** The cases the command reads when none are named: written by hand, invented names, 555 numbers. */
 export const DEFAULT_CASES_FILE = fileURLToPath(new URL('./judgeCases/spans.jsonl', import.meta.url));
 
@@ -114,24 +114,22 @@ export type JudgeVerdict = { p: number } | { missing: string } | { error: string
 
 export interface CaseResult {
   readonly case: JudgeCase;
-  /** checkSpan at `strict`: every check. */
-  readonly strict: CodeVerdict;
-  /** checkSpan at `standard`, the default: its checks of values, shape and voice (values, foreign figures and names, the budget, a plain negation, a person the content does not use, gender). */
-  readonly standard: CodeVerdict;
+  /** checkSpan, as a call runs it: the checks of its data and shape (values, figures and names, the budget, the phrases to avoid, no question, no other recipient). */
+  readonly checks: CodeVerdict;
   /** The stub regression's judge: true where it holds the span unfaithful. */
   readonly stub: boolean;
   readonly judge: JudgeVerdict;
 }
 
-function codeVerdict(c: JudgeCase, level: SpanCheckLevel): CodeVerdict {
+function codeVerdict(c: JudgeCase): CodeVerdict {
   const act = actOf(c);
   const text = cleanSpan(c.span);
   // As a call does: a wording that is its content's own words is said unchanged, with nothing asked.
   if (sameWords(text, c.content)) return 'unchanged';
-  return checkSpan(text, act, { conflicts: c.conflicts ?? [] }, level);
+  return checkSpan(text, act, { conflicts: c.conflicts ?? [] });
 }
 
-/** Whether a reader refuses the span (the shape checks: a check's name; the judge: at or above DRIFT_FIRE). */
+/** Whether a reader refuses the span (the data checks: a check's name; the judge: at or above DRIFT_FIRE). */
 export const refusedByCode = (v: CodeVerdict): boolean => v !== null && v !== 'unchanged';
 export const refusedByJudge = (v: JudgeVerdict): boolean | null => ('p' in v ? v.p >= DRIFT_FIRE : null);
 
@@ -169,69 +167,62 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
         }
       }
     }
-    out.push({ case: c, strict: codeVerdict(c, 'strict'), standard: codeVerdict(c, 'standard'), stub: stubSpanDrift(req.state), judge: verdict });
+    out.push({ case: c, checks: codeVerdict(c), stub: stubSpanDrift(req.state), judge: verdict });
     if (opts.progress && (i + 1) % 20 === 0) opts.progress(`  ${i + 1} of ${cases.length} cases`);
   }
   return out;
 }
 
-/** A row of a table: how many cases, and how many each reader (and pair of readers) refuses. */
+/** A row of a table: how many cases, and how many each reader, and the data checks and the judge together, refuse. */
 export interface Tally {
   readonly label: string;
   readonly cases: number;
-  readonly strict: number;
-  readonly standard: number;
+  readonly checks: number;
   readonly stub: number;
   /** Cases the judge answered; the judge's counts are of these. */
   readonly answered: number;
   readonly judge: number;
-  readonly strictOrJudge: number;
-  readonly standardOrJudge: number;
-  /** Refused by neither the strict checks nor the judge (for unfaithful cases, missed by both). */
-  readonly strictNeither: number;
-  readonly standardNeither: number;
+  /** Refused by the data checks or the judge: what a call does. */
+  readonly together: number;
+  /** Refused by neither (for unfaithful cases, missed by both). */
+  readonly neither: number;
 }
 
 export function tally(label: string, results: readonly CaseResult[]): Tally {
   const judged = results.filter((r) => refusedByJudge(r.judge) !== null);
   const j = (r: CaseResult): boolean => refusedByJudge(r.judge) === true;
-  const strict = (r: CaseResult): boolean => refusedByCode(r.strict);
-  const standard = (r: CaseResult): boolean => refusedByCode(r.standard);
+  const code = (r: CaseResult): boolean => refusedByCode(r.checks);
   return {
     label,
     cases: results.length,
-    strict: results.filter(strict).length,
-    standard: results.filter(standard).length,
+    checks: results.filter(code).length,
     stub: results.filter((r) => r.stub).length,
     answered: judged.length,
     judge: judged.filter(j).length,
-    strictOrJudge: judged.filter((r) => strict(r) || j(r)).length,
-    standardOrJudge: judged.filter((r) => standard(r) || j(r)).length,
-    strictNeither: judged.filter((r) => !strict(r) && !j(r)).length,
-    standardNeither: judged.filter((r) => !standard(r) && !j(r)).length,
+    together: judged.filter((r) => code(r) || j(r)).length,
+    neither: judged.filter((r) => !code(r) && !j(r)).length,
   };
 }
 
-/** How often a faithful span is said (its checks pass it, and the judge does, or is not asked for words said unchanged), under each level. */
+/** How often a faithful span is said (the data checks pass it, and the judge does, or is not asked for words said unchanged). */
 export interface SaidRates {
   readonly cases: number;
   readonly answered: number;
-  readonly standardAndJudge: number;
-  readonly strictAndJudge: number;
+  /** The data checks and the judge together: what a call does. */
+  readonly together: number;
   readonly judgeAlone: number;
-  readonly strictAlone: number;
+  readonly checksAlone: number;
 }
 
 export function saidRates(faithful: readonly CaseResult[]): SaidRates {
-  const judged = faithful.filter((r) => r.strict === 'unchanged' || refusedByJudge(r.judge) !== null);
-  const judgeSays = (r: CaseResult): boolean => r.strict === 'unchanged' || refusedByJudge(r.judge) === false;
+  const judged = faithful.filter((r) => r.checks === 'unchanged' || refusedByJudge(r.judge) !== null);
+  const judgeSays = (r: CaseResult): boolean => r.checks === 'unchanged' || refusedByJudge(r.judge) === false;
   return {
     cases: faithful.length,
     answered: judged.length,
-    standardAndJudge: judged.filter((r) => !refusedByCode(r.standard) && judgeSays(r)).length,
-    strictAndJudge: judged.filter((r) => !refusedByCode(r.strict) && judgeSays(r)).length,
+    together: judged.filter((r) => !refusedByCode(r.checks) && judgeSays(r)).length,
     judgeAlone: judged.filter(judgeSays).length,
-    strictAlone: faithful.filter((r) => !refusedByCode(r.strict)).length,
+    checksAlone: faithful.filter((r) => !refusedByCode(r.checks)).length,
   };
 }
 
@@ -254,20 +245,20 @@ const judgeText = (v: JudgeVerdict): string => ('p' in v ? v.p.toFixed(2) : 'mis
 
 function unfaithfulTable(rows: readonly Tally[]): string[] {
   return [
-    '| | cases | standard | strict | stub | judge | standard or judge | strict or judge | missed by standard and judge | missed by strict and judge |',
-    '|---|---|---|---|---|---|---|---|---|---|',
-    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.standard, t.cases)} | ${pct(t.strict, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.standardOrJudge, t)} | ${judgeCell(t.strictOrJudge, t)} | ${judgeCell(t.standardNeither, t)} | ${judgeCell(t.strictNeither, t)} |`),
+    '| | cases | data checks | stub | judge | together | missed by both |',
+    '|---|---|---|---|---|---|---|',
+    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.checks, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.together, t)} | ${judgeCell(t.neither, t)} |`),
   ];
 }
 function faithfulTable(rows: readonly Tally[]): string[] {
   return [
-    '| | cases | standard | strict | stub | judge | standard or judge | strict or judge |',
-    '|---|---|---|---|---|---|---|---|',
-    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.standard, t.cases)} | ${pct(t.strict, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.standardOrJudge, t)} | ${judgeCell(t.strictOrJudge, t)} |`),
+    '| | cases | data checks | stub | judge | together |',
+    '|---|---|---|---|---|---|',
+    ...rows.map((t) => `| ${t.label} | ${t.cases} | ${pct(t.checks, t.cases)} | ${pct(t.stub, t.cases)} | ${judgeCell(t.judge, t)} | ${judgeCell(t.together, t)} |`),
   ];
 }
 const caseLine = (r: CaseResult): string =>
-  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${quote(r.case.content)} read back ${quote(r.case.span)}; judge ${judgeText(r.judge)}, standard ${codeText(r.standard)}, strict ${codeText(r.strict)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
+  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${quote(r.case.content)} read back ${quote(r.case.span)}; judge ${judgeText(r.judge)}, data checks ${codeText(r.checks)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
 
 /** The report as Markdown lines: the everyday cases first, then the hard cases by family, every case, and the lists to read. */
 export function formatJudgeEval(report: JudgeEvalReport): string[] {
@@ -281,11 +272,11 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   const missing = all.filter((r) => 'missing' in r.judge).length;
   const errors = all.filter((r) => 'error' in r.judge);
   const lines: string[] = [
-    '# The span drift judge against the shape checks',
+    '# The span drift judge and the data checks',
     '',
     `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
-    'standard: checkSpan at `checks: standard`, the default (its checks of values, shape and voice: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names, a person the content does not use, a to-caller span\'s own I or we, a he or she of another gender; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", a "your" for no "my"). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends, the span heard in a representative sentence (spoken to the caller, the secretary demo\'s read-back; in the caller\'s terms, the message fixture\'s).',
+    'data checks: checkSpan as a call runs it, the checks of a span\'s data and shape (empty, format, question, conflict, the word budget, avoid, foreign figures and names). stub: the stub regression\'s judge, a simple test double. judge: the decision model asked renderSpanDriftQuestion with the state a call sends, the span heard in a representative sentence (spoken to the caller, the secretary demo\'s read-back; in the caller\'s terms, the message fixture\'s). together: the data checks and the judge, as a call runs them.',
     '',
   ];
   // The everyday picture first.
@@ -297,7 +288,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     lines.push(
       '## Everyday messages (the realistic family)',
       '',
-      `A good read-back of an everyday message is said (otherwise the caller hears their exact words): under checks: standard (the default: its checks and the judge) ${rate(s.standardAndJudge, s.answered)}; under checks: strict (every check and the judge) ${rate(s.strictAndJudge, s.answered)}; with the judge alone ${rate(s.judgeAlone, s.answered)}; with the strict checks alone ${rate(s.strictAlone, s.cases)}.`,
+      `A good read-back of an everyday message is said (otherwise the caller hears their exact words): with the data checks and the judge, as a call runs them, ${rate(s.together, s.answered)}; with the judge alone ${rate(s.judgeAlone, s.answered)}; with the data checks alone ${rate(s.checksAlone, s.cases)}.`,
       '',
       'Good read-backs wrongly refused (each one costs the caller the summary; they hear their exact words):',
       '',
@@ -331,8 +322,8 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   );
   const missedByJudge = unfaithful.filter((r) => refusedByJudge(r.judge) === false);
   const refusedFaithful = faithful.filter((r) => refusedByJudge(r.judge) === true);
-  const codeRefusedFaithful = faithful.filter((r) => refusedByCode(r.strict));
-  const missedByBoth = unfaithful.filter((r) => refusedByJudge(r.judge) === false && !refusedByCode(r.strict));
+  const codeRefusedFaithful = faithful.filter((r) => refusedByCode(r.checks));
+  const missedByBoth = unfaithful.filter((r) => refusedByJudge(r.judge) === false && !refusedByCode(r.checks));
   lines.push(
     `## Unfaithful spans the judge passed (${missedByJudge.length})`,
     '',
@@ -342,11 +333,11 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     ...(refusedFaithful.length > 0 ? refusedFaithful.map(caseLine) : ['None.']),
     '',
-    `## Unfaithful spans both the strict checks and the judge passed (${missedByBoth.length})`,
+    `## Unfaithful spans both the data checks and the judge passed (${missedByBoth.length})`,
     '',
     ...(missedByBoth.length > 0 ? missedByBoth.map(caseLine) : ['None.']),
     '',
-    `## Faithful spans the strict checks refused (${codeRefusedFaithful.length})`,
+    `## Faithful spans the data checks refused (${codeRefusedFaithful.length})`,
     '',
     ...(codeRefusedFaithful.length > 0 ? codeRefusedFaithful.map(caseLine) : ['None.']),
     '',
@@ -355,9 +346,9 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   lines.push(
     '## Every case',
     '',
-    '| id | family | speaks | expected | standard | strict | stub | judge p |',
-    '|---|---|---|---|---|---|---|---|',
-    ...all.map((r) => `| ${r.case.id} | ${r.case.family} | ${r.case.speaks} | ${r.case.expected} | ${codeText(r.standard)} | ${codeText(r.strict)} | ${r.stub ? 'refused' : 'passed'} | ${judgeText(r.judge)} |`),
+    '| id | family | speaks | expected | data checks | stub | judge p |',
+    '|---|---|---|---|---|---|---|',
+    ...all.map((r) => `| ${r.case.id} | ${r.case.family} | ${r.case.speaks} | ${r.case.expected} | ${codeText(r.checks)} | ${r.stub ? 'refused' : 'passed'} | ${judgeText(r.judge)} |`),
   );
   return lines;
 }
@@ -375,6 +366,6 @@ export function judgeEvalJson(report: JudgeEvalReport): string {
     realisticSaid: saidRates(realFaithful),
     unfaithful: tally('unfaithful', report.results.filter((r) => r.case.expected === 'unfaithful')),
     faithful: tally('faithful', report.results.filter((r) => r.case.expected === 'faithful')),
-    cases: report.results.map((r) => ({ id: r.case.id, family: r.case.family, speaks: r.case.speaks, expected: r.case.expected, standard: r.standard, strict: r.strict, stub: r.stub, judge: r.judge })),
+    cases: report.results.map((r) => ({ id: r.case.id, family: r.case.family, speaks: r.case.speaks, expected: r.case.expected, checks: r.checks, stub: r.stub, judge: r.judge })),
   }, null, 2);
 }

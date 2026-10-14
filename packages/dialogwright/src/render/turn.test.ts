@@ -14,7 +14,7 @@ import { sayText } from '../channel/actions';
 import { spokenText } from '../prompts/render';
 import { recordableClips } from '../prompts/clips';
 import { MESSAGE_DIR, messageApp, messageCode } from '../testing/message/app';
-import { EXACT_FRAME, messageVariants, replace, STRICT, TO_CALLER, WHOLE_LINE } from '../testing/message/variant';
+import { CAUTIOUS, EXACT_FRAME, messageVariants, replace, TO_CALLER, WHOLE_LINE } from '../testing/message/variant';
 import type { App } from '../core/app/types';
 import { afterAll } from 'vitest';
 import { testkitApp } from '../testing/testkit';
@@ -22,7 +22,7 @@ import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
 import { spanKey } from './prompt';
 import { RenderClientError, SPAN_GAP, type Renderer, type SpanAct, type SpeechAct } from './types';
-import { frameViolations } from '../testing/adversarial/run';
+import { frameViolations, refusingJudge } from '../testing/adversarial/run';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
 import { screenState } from '../core/screen';
@@ -401,26 +401,34 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     return r;
   };
 
-  it('fills the span with the exact content when a check fails: each check, held to the content alone, at either level', async () => {
-    // Standard, the fixture's (the default), and strict hold each of these alike: a person the content does not use is a check of the span's voice, at either level.
-    for (const app of [messageApp, variants.variant(STRICT)]) {
-      use(app);
-      await fallsBack('', 'empty');
-      await fallsBack('a call back about {recipient}', 'format');
-      await fallsBack('please call me about the March invoice?', 'question');
-      await fallsBack('a message for Lee Park about the March invoice', 'conflict');
-      await fallsBack('please do not call me about the March invoice', 'negation');
-      await fallsBack('you would like a call about the March invoice', 'person');
-      await fallsBack('our office will sort out the March invoice', 'person');
-      // The content's own person may be kept: it says "I", so "I" in the span is the caller's, and only the judge holds what it claims.
-      await fallsBack('I will make sure the March invoice is sorted', 'drift');
-      await fallsBack(`please call me about the March invoice ${'and more '.repeat(12)}`, 'words');
-      await fallsBack('unfortunately a charge on the March invoice', 'avoid');
-      await fallsBack('please call me about the March invoice before Friday, a $40 refund', 'foreign');
-      await fallsBack('please call me about the April invoice', 'foreign');
-      await fallsBack('please call me about the March invoice, Morgan', 'foreign');
-      await fallsBack('a call about the March invoice before Friday, they want it waived immediately', 'drift');
-    }
+  it('fills the span with the exact content when a check of its data or shape fails, or the drift judge refuses it', async () => {
+    await fallsBack('', 'empty');
+    await fallsBack('a call back about {recipient}', 'format');
+    await fallsBack('please call me about the March invoice?', 'question');
+    await fallsBack('a message for Lee Park about the March invoice', 'conflict');
+    await fallsBack(`please call me about the March invoice ${'and more '.repeat(12)}`, 'words');
+    await fallsBack('unfortunately a charge on the March invoice', 'avoid');
+    await fallsBack('please call me about the March invoice before Friday, a $40 refund', 'foreign');
+    await fallsBack('please call me about the April invoice', 'foreign');
+    await fallsBack('please call me about the March invoice, Morgan', 'foreign');
+    // What it means is the judge's (live findings item 25): a "no" added, a person of its own, a claim of
+    // the agent's, a detail left out are no check of words; the stub's judge refuses these, as a real one would.
+    await fallsBack('please do not call me about the March invoice', 'drift');
+    await fallsBack('you would like a call about the March invoice', 'drift');
+    await fallsBack('our office will sort out the March invoice', 'drift');
+    await fallsBack('I will make sure the March invoice is sorted', 'drift');
+    await fallsBack('a call about the March invoice before Friday, they want it waived immediately', 'drift');
+  });
+
+  it('refuses where style.yaml\'s judge.refuseAt says: a judge answer under the default cutoff is refused under a lower one', async () => {
+    const at = (p: number): JevClient => {
+      const inner = stub();
+      return { ask: async (req) => (req.questions.renderSpanDrift ? { ...(await inner.ask(req)), answers: { renderSpanDrift: { type: 'noul', noul: p } } } : inner.ask(req)) };
+    };
+    const said = await call(TO_SUMMARY, { client: new FakeRenderClient(), drift: at(0.4) });
+    expect(spanOf(said)).toMatchObject({ mode: 'generated' });
+    use(variants.variant(CAUTIOUS));
+    await fallsBack('please call me about the March invoice before Friday', 'drift', { drift: at(0.4) });
   });
 
   it('fills the span with the exact content when the model errs or is slow, the judge cannot be asked, or the content is flagged', async () => {
@@ -575,16 +583,16 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
     expect(lastSaid(shorter)).toContain('in short');
   });
 
-  it('a span that leaves out a "no" of the message falls back (`omitted` when strict, `drift` by the judge at standard) and says the exact frame (live findings, items 21 and 23)', async () => {
+  it('a span that leaves out a "no" of the message is the judge\'s to refuse: refused (`drift`), it says the exact frame (live findings, items 21 and 25)', async () => {
     const proofs = PROOFS;
     const steps = [...TO_SUMMARY.slice(0, 3), { say: proofs }];
-    for (const [app, reason] of [[exact, 'drift'], [variants.variant({ ...EXACT_FRAME, ...STRICT }), 'omitted']] as const) {
-      use(app);
-      // The fake's own wording, the message's first clause, leaves the "no changes needed" out.
-      const r = await call(steps, fake());
-      expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: reason, refused: 'the brochure proofs are back from the printer and they look great' });
-      expect(lastSaid(r)).toBe(`${OPEN}: ${proofs}. Shall I pass it on?`);
-    }
+    use(exact);
+    // The fake's own wording, the message's first clause, leaves the "no changes needed" out; a judge that reads it refuses it.
+    const inner = stub();
+    const reading: JevClient = { ask: async (req) => (req.questions.renderSpanDrift ? { ...(await inner.ask(req)), answers: { renderSpanDrift: { type: 'noul', noul: 0.85 } } } : inner.ask(req)) };
+    const r = await call(steps, { client: new FakeRenderClient(), drift: reading });
+    expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: 'drift', refused: 'the brochure proofs are back from the printer and they look great' });
+    expect(lastSaid(r)).toBe(`${OPEN}: ${proofs}. Shall I pass it on?`);
   });
 
   it('a no reads it back with the exact frame, a repeat says the exact frame, on a call and in a chat', async () => {
@@ -673,38 +681,35 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     }
   });
 
-  it('falls back to the exact frame: a name for a pronoun not clearly meant, the caller\'s name, an "I" of its own, a "your" for no "my", persons swapped, a "no" about a person, the message\'s own "you"', async () => {
+  it('falls back to the exact frame: a name or a figure it was not given by the data checks; what it means (a name for a pronoun not meant, an "I" of its own, persons swapped, a "no" about a person, the message\'s own "you") by the judge (live findings item 25)', async () => {
     const EXACT = (message: string): string => `${OPEN} Here it is as you said it: ${message}${END}`;
-    // Each with its reason when strict, and at standard (the default), where who does what to whom and the message's own "you" are the judge's (the stub's here).
-    const cases: [string, string, string, string][] = [
-      // "him" is Riley: the recipient's name in its place passes the shape checks, and the judge refuses it.
-      [PRINTER, 'you need Dana Reyes to call the printer', 'drift', 'drift'],
-      [PRINTER, 'tell Riley you need Dana Reyes to call the printer', 'drift', 'drift'],
-      // The caller's own name: never one it lists.
-      [PROJECT, "the project is complete and you need Morgan Lee's approval", 'foreign', 'foreign'],
-      // An "I" or a "we" of its own: the agent's voice, refused at either level.
-      [PROJECT, 'the project is complete and I just need his approval', 'person', 'person'],
-      [PROJECT, 'we will get you the approval', 'person', 'person'],
-      [PROJECT, "your project is complete and you need Dana Reyes's approval", 'person', 'drift'],
-      [PROJECT, "the project is complete and you need Jordan's approval", 'foreign', 'foreign'],
-      [BUDGET, 'you need Dana Reyes to approve the budget', 'negation', 'negation'],
-      [OWE, 'Dana Reyes owes you the deposit', 'person', 'drift'],
-      [NOT_ME, 'you can sign', 'negation', 'drift'],
-      [LEASE, 'you need to sign the lease', 'person', 'drift'],
-    ];
-    for (const [app, level] of [[variants.variant({ ...TO_CALLER, ...STRICT }), 'strict'], [toCaller, 'standard']] as const) {
-      use(app);
-      for (const [message, said, strict, standard] of cases) {
-        const reason = level === 'strict' ? strict : standard;
-        const r = await call(steps(message), saying(said));
-        expect(spanOf(r), `${level}: ${said}`).toMatchObject({ mode: 'fixed', fallback: reason, refused: said });
-        expect(lastSaid(r), said).toBe(EXACT(message));
-      }
-      const proofs = await call(steps(PROOFS), saying('your brochure proofs are back and look great, no changes needed'));
-      expect(spanOf(proofs), level).toMatchObject({ mode: 'fixed', fallback: level === 'strict' ? 'person' : 'drift' });
-      const kept = await call(steps(BUDGET), saying('you do not need Dana Reyes to approve the budget'));
-      expect(spanOf(kept), level).toMatchObject({ mode: 'generated' });
+    use(toCaller);
+    // The caller's own name, a name it does not list: never given it.
+    for (const said of ["the project is complete and you need Morgan Lee's approval", "the project is complete and you need Jordan's approval"]) {
+      const r = await call(steps(PROJECT), saying(said));
+      expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: said });
+      expect(lastSaid(r), said).toBe(EXACT(PROJECT));
     }
+    // "him" is Riley, whom the message names: the stub's judge refuses Riley left out, as a real one reads it.
+    const printer = await call(steps(PRINTER), saying('you need Dana Reyes to call the printer'));
+    expect(spanOf(printer)).toMatchObject({ mode: 'fixed', fallback: 'drift' });
+    // The rest is meaning, a real judge's to read: here a judge that refuses each, so the engine's part shows.
+    const meaning: [string, string][] = [
+      [PROJECT, 'the project is complete and I just need his approval'],
+      [PROJECT, "your project is complete and you need Dana Reyes's approval"],
+      [BUDGET, 'you need Dana Reyes to approve the budget'],
+      [OWE, 'Dana Reyes owes you the deposit'],
+      [NOT_ME, 'you can sign'],
+      [LEASE, 'you need to sign the lease'],
+    ];
+    const judge = refusingJudge(stub(), new Set(meaning.map(([, said]) => said)));
+    for (const [message, said] of meaning) {
+      const r = await call(steps(message), { ...saying(said), drift: judge });
+      expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: 'drift', refused: said });
+      expect(lastSaid(r), said).toBe(EXACT(message));
+    }
+    const kept = await call(steps(BUDGET), saying('you do not need Dana Reyes to approve the budget'));
+    expect(spanOf(kept)).toMatchObject({ mode: 'generated' });
   });
 
   it('the fixture\'s own span is as it was: no "speaks", no names, its own instructions; the policy card says the option and the names on the line', async () => {

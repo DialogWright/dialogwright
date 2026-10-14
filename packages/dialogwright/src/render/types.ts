@@ -100,8 +100,8 @@ export interface SpanAct {
   };
   /**
    * `to-caller` where the span speaks to the caller about their own message (prompts.yaml's `speaks:
-   * to-caller`, in English): its instructions, its checks and its drift question are a to-caller span's.
-   * Absent otherwise, so every other span's act is as it was.
+   * to-caller`, in English): its instructions and its drift question are a to-caller span's.
+   * Absent otherwise.
    */
   readonly speaks?: 'to-caller';
   /**
@@ -173,20 +173,19 @@ export interface RenderClient {
   generate(req: RenderRequest, signal: AbortSignal): Promise<Generation>;
 }
 
-/** Why a line the app generates was said fixed instead of generated: a check that failed, or how the generation failed. */
+/**
+ * Why a line the app generates was said fixed instead of generated: a check of its data or shape that
+ * failed, the drift judge's refusal, or how the generation failed. (Traces written before live findings
+ * item 25 may also hold `negation`, `person` or `omitted`, the grammar checks it removed; the console
+ * still words them.)
+ */
 export type RenderFallback =
   | 'empty' | 'format' | 'items' | 'foreign' | 'words' | 'question' | 'avoid' | 'drift'
   | 'timeout' | 'error' | 'cassette-miss' | 'drift-error'
-  /** The line adds a negation it was not given, or drops one from words it restates. */
-  | 'negation'
-  /** A span speaks as or to someone its content does not (I, we, you...): the agent's own words, or words to the listener, in a summary. */
-  | 'person'
   /** The line names another value of an item's own slot (the wrong recipient, day or kind) that its fixed line does not. */
   | 'conflict'
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
-  | 'content-flagged'
-  /** A span leaves out a clause of its content that says "no" or sets a condition (unless, until, except, only if), or restates one without its condition. */
-  | 'omitted';
+  | 'content-flagged';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =

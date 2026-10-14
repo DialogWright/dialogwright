@@ -13,18 +13,11 @@ import { text, unique } from './common';
 export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
 
 /**
- * How strictly a framed line's span is checked by its words (`checks`, here for the app and in
- * prompts.yaml for a line or a span): `standard`, the checks of values, shape and voice, with who does
- * what to whom and what was left out the drift check's; `strict`, every check besides.
+ * Where the drift judge refuses a generated line or span (style.yaml's `judge.refuseAt`): its
+ * probability that the wording is unfaithful or does more than its goal, at or above which the fixed
+ * text is said. The default is render/checks.ts DRIFT_FIRE's; a lower one is more cautious.
  */
-export const CHECK_LEVELS = ['standard', 'strict'] as const;
-export type CheckLevel = (typeof CHECK_LEVELS)[number];
-
-/** What `checks` says, for style.yaml and prompts.yaml alike. */
-export const CHECKS_DESCRIPTION =
-  'How strictly a framed line\'s span (prompts.yaml\'s `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values, shape and voice (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have, no I, we or you the content does not use, a span spoken to the caller never saying I or we, no he or she of another gender), and the drift check, the decision model\'s judgement, for the rest: who does what to whom, a "no" or a condition left out. ' +
-  'strict: every check besides, by its words: a clause of the content that says "no" or sets a condition left out (omitted), and, for a span spoken to the caller, persons swapped, the message\'s own "you" taken for the caller, a "your" for no "my" (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. ' +
-  'A whole generated line\'s checks are the same at both levels. The policy card says which each span runs.';
+export const DEFAULT_REFUSE_AT = 0.5;
 
 export const styleSchema = z
   .strictObject({
@@ -41,10 +34,17 @@ export const styleSchema = z
     avoid: unique(text(), 'phrase')
       .optional()
       .describe('Phrases a generated line must not use ("unfortunately", "I apologize for the inconvenience"): told to the model, and a line that uses one anyway is not said (its fixed line is). Compared without regard to case.'),
-    checks: z
-      .enum(CHECK_LEVELS)
+    judge: z
+      .strictObject({
+        refuseAt: z
+          .number({ error: 'must be a number' })
+          .gt(0, { error: 'must be more than 0' })
+          .max(1, { error: 'must be at most 1' })
+          .optional()
+          .describe(`The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default ${DEFAULT_REFUSE_AT}. Lower is more cautious: more callers hear the fixed text. For a line that must never be worded by a model, mark it prescribed: true instead.`),
+      })
       .optional()
-      .describe(`${CHECKS_DESCRIPTION} Here, for every span of the app; a line's or a span's own (prompts.yaml) wins.`),
+      .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),
   })
   .describe('style.yaml: how a generated line sounds. Only read when the app generates a line.');
 

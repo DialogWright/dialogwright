@@ -1545,12 +1545,6 @@ export interface GeneratedSpan {
    * the only names its checks let it say beside the content's. Never the caller's own name.
    */
   readonly names?: readonly string[];
-  /**
-   * How strictly the span is checked by its words (prompts.yaml's `checks` on the span or its line, else
-   * style.yaml's): `strict`, every check; `standard`, the checks of values, shape and voice, the rest the
-   * drift check's. Absent: `standard` (an app folder's are written only where strict; an app in code may say either).
-   */
-  readonly checks?: 'standard' | 'strict';
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
@@ -1558,6 +1552,11 @@ export interface RenderStyle {
   readonly persona: string;
   readonly words: { readonly voice: number; readonly chat: number };
   readonly avoid: readonly string[];
+  /**
+   * Where the drift judge refuses a wording (style.yaml's `judge.refuseAt`; default 0.5): never sent to a
+   * model. Absent in an app built in code: the default.
+   */
+  readonly refuseAt?: number;
 }
 
 /** An app's generated wording (App.generated). */

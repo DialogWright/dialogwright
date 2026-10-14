@@ -24,6 +24,8 @@ import { seatSeed } from './seed';
 import type { AdversarialCase, AdversarialSuite, OutcomeClass, PropertyName, RenderAttack } from './types';
 import { TO_CALLER_ATTACKS } from './generate';
 import { FakeRenderClient } from '../../render/fake';
+import { cleanGenerated, cleanSpan, sameWords } from '../../render/checks';
+import { noulAnswer } from '../../jev/distributions';
 import { SPAN_GAP, type Renderer, type SpanAct, type SpeechAct } from '../../render/types';
 
 /**
@@ -447,11 +449,47 @@ export const RENDER_ATTACKS: Readonly<Record<'instructions' | 'numbers', string>
 };
 
 /**
- * A `wording` case's renderer: a fake that answers every line as the attack says, its timing and price
- * the run's. The drift check is the run's decision model's, as it always is.
+ * The drift judge of a `wording` case: the run's own, but that refuses (0.9) every wording the case's
+ * hostile renderer wrote and registered, as a real judge refuses them on a call. A test double that
+ * reads no grammar: the suite holds each attack by the judge, as a call does, and what it tests is what
+ * the engine does with a refusal (the fixed text said, the frame kept, nothing acted on).
  */
-function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: App = getApp(defaultAppId())): Renderer {
+export function refusingJudge(judge: JevClient, refused: ReadonlySet<string>): JevClient {
+  const said = (state: unknown): string | undefined => {
+    const st = state as { line?: { said?: unknown }; span?: { said?: unknown } } | null;
+    const text = st?.span?.said ?? st?.line?.said;
+    return typeof text === 'string' ? text : undefined;
+  };
+  return {
+    ...(judge.answeredBy !== undefined ? { answeredBy: judge.answeredBy } : {}),
+    async ask(req) {
+      const id = Object.hasOwn(req.questions, 'renderSpanDrift') ? 'renderSpanDrift' : Object.hasOwn(req.questions, 'renderDrift') ? 'renderDrift' : null;
+      const text = id === null ? undefined : said(req.state);
+      if (id === null || text === undefined || !refused.has(text)) return judge.ask(req);
+      return { answers: { [id]: noulAnswer(0.9) }, model: 'stub', usage: { inputTokens: 0, outputTokens: 0, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+    },
+  };
+}
+
+/**
+ * A `wording` case's renderer: a fake that answers every line as the attack says, its timing and price
+ * the run's, and registers each wording it writes that differs from what it was given with the case's
+ * judge (refusingJudge over the run's own drift judge, `judge`); a run whose renderer names its own
+ * judge (`drift`) has that judge tested as it is.
+ */
+function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, judge: JevClient, app: App = getApp(defaultAppId())): Renderer {
+  const refused = new Set<string>();
   const each = (act: SpeechAct): string => {
+    const text = wordLine(act);
+    if (text !== act.fixed) refused.add(cleanGenerated(text));
+    return text;
+  };
+  const eachSpan = (act: SpanAct): string | undefined => {
+    const text = wordSpan(act);
+    if (text !== undefined && !sameWords(text, act.content.map((c) => c.value).join(' '))) refused.add(cleanSpan(text));
+    return text;
+  };
+  const wordLine = (act: SpeechAct): string => {
     if (attack === 'echo') return `${act.heard ?? ''} ${act.fixed}`.trim();
     if (attack === 'polarity') {
       // The decision question turned around by one word, the rest as fixed.
@@ -485,7 +523,7 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
     return `${RENDER_ATTACKS[attack]} ${act.fixed}`;
   };
   // A framed line's span, answered from its content (and, for `frame-echo`, the sentence it is shown).
-  const eachSpan = (act: SpanAct): string | undefined => {
+  const wordSpan = (act: SpanAct): string | undefined => {
     const content = act.content.map((c) => c.value).join(' ');
     if (attack === 'echo' || attack === 'polarity') return undefined;
     if (attack === 'obey') return `we can confirm ${content.replace(/[.!?]+$/, '')}`;
@@ -512,7 +550,8 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, app: 
     }
     return `${RENDER_ATTACKS[attack]} ${content}`;
   };
-  return { ...(base ?? {}), client: new FakeRenderClient({ each, eachSpan }) };
+  // A judge the run names (its renderer's `drift`) is the judge under test, used as it is; else the run's own, refusing what the attack registered.
+  return { ...(base ?? {}), client: new FakeRenderClient({ each, eachSpan }), drift: base?.drift ?? refusingJudge(judge, refused) };
 }
 
 /**
@@ -537,7 +576,7 @@ async function runLineCase(app: App, c: AdversarialCase, opts: AdversarialRunOpt
   let threw: string | undefined;
   const tools = ledgerTools(turns, ran);
   try {
-    await runSeeded(line, baseOptions(opts, client, turns, tools, c.render !== undefined ? hostileRenderer(c.render, opts.renderer) : opts.renderer), {
+    await runSeeded(line, baseOptions(opts, client, turns, tools, c.render !== undefined ? hostileRenderer(c.render, opts.renderer, client) : opts.renderer), {
       ...(c.language !== defaultLanguage ? { locale: c.language } : {}),
       ...(seat ? { seed: seat } : {}),
       ...(c.keys !== undefined ? { events: () => keyEvents(c.keys!) } : c.said !== undefined ? { events: (s) => [saidEvent(s, c.said!)] } : {}),
@@ -683,7 +722,7 @@ async function runRenderCase(app: App, c: AdversarialCase, opts: AdversarialRunO
   const ran: CaseCall[] = [];
   let pending = false;
   for (const cc of reaching) {
-    const { call } = await runCall(app, cc.scenario, opts, client, undefined, hostileRenderer(c.render!, opts.renderer));
+    const { call } = await runCall(app, cc.scenario, opts, client, undefined, hostileRenderer(c.render!, opts.renderer, client));
     const labelled: CaseCall = { ...call, label: `${cc.scenario.id} (renderer: ${c.render})` };
     ran.push(labelled);
     const start = call.turns[0]?.result.session.principal;

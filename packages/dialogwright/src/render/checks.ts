@@ -1,12 +1,14 @@
 import type { NoulQuestion, QuestionMap } from '../jev/types';
-import type { CheckLevel } from '../define/schema/style';
 import { sentenceSaid } from './prompt';
 import type { RenderFallback, SpanAct, SpeechAct } from './types';
 
 /**
  * The checks every generated line passes before anyone hears it (design section 5). Each one bounds the
- * line's shape against what it was given; none trusts the model. A line that fails one is not said:
- * its fixed line is, and the audit records `render_fallback` with the check's name.
+ * line's data and shape against what it was given, exactly, by code; none trusts the model, and none
+ * reads meaning: whether a line or a span means what it was given is the drift judge's, given the whole
+ * context (live findings item 25: hand-written grammar rules refused good wording and still missed what a
+ * judge reads). A line that fails one is not said: its fixed line is, and the audit records
+ * `render_fallback` with the check's name.
  *
  * - `empty`: nothing to say.
  * - `format`: markup, a line break, a link, braces, or more than MAX_CHARS characters.
@@ -16,8 +18,10 @@ import type { RenderFallback, SpanAct, SpeechAct } from './types';
  * - `items`: a data item it must carry is missing (each word for word, letter case aside).
  * - `foreign`: a number, an amount, a date word or a name that is in none of what it was given (the
  *   fixed line, the goal, the items, the collected content, the caller's own words).
- * - `drift` (asked of the decision model, after the rest pass; renderDriftQuestion): the line does
- *   something beyond its goal.
+ * - `conflict`: another value of an item's own slot (the wrong recipient) named in its place.
+ * - `drift` (asked of the decision model, after the rest pass; renderDriftQuestion, and for a span
+ *   renderSpanDriftQuestion): the line does something beyond its goal, or the span is not a faithful
+ *   summary of the caller's words, heard in its sentence.
  */
 
 /** The longest a generated line may be, in characters, whatever its word budget. */
@@ -115,147 +119,6 @@ function allowedSources(act: SpeechAct): { names: string[]; figures: string[] } 
   return { names: [...given, ...heard], figures: act.act === 'acknowledge' ? [...given, ...heard] : given };
 }
 
-/** Negation words, English and Spanish: a line may not add one, nor drop one from words it restates. */
-const NEGATIONS: ReadonlySet<string> = new Set([
-  'not', 'no', 'never', 'none', 'nobody', 'nothing', 'neither', 'nor', 'cannot', "don't", "doesn't", "didn't", "won't", "can't", "isn't", "aren't",
-  "wasn't", "weren't", "shouldn't", "wouldn't", "couldn't", "haven't", "hasn't", "hadn't", "mustn't", 'dont', 'doesnt', 'didnt', 'wont', 'cant',
-  'nunca', 'jamás', 'nada', 'nadie', 'ninguno', 'ninguna', 'ningún', 'tampoco', 'ni', 'sin',
-]);
-const negates = (w: string): boolean => NEGATIONS.has(w) || w.endsWith("n't");
-
-/** Words that carry no content of a clause's own, for comparing two clauses: the common short words, the contractions of a pronoun, and the joining words. */
-const CLAUSE_STOP: ReadonlySet<string> = new Set([
-  'the', 'and', 'for', 'you', 'your', 'said', 'say', 'says', 'message', 'that', 'this', 'with', 'have', 'has', 'will', 'shall', 'would',
-  'can', 'could', 'should', 'about', 'before', 'after', 'are', 'was', 'were', 'its', "it's", 'his', 'her', 'their', 'our', 'from', 'into',
-  'just', 'also', 'note', 'asks', 'asked', 'ask', 'one', 'que', 'por', 'para', 'con', 'los', 'las', 'del', 'una', 'uno',
-  "there's", "that's", "what's", "here's", "where's", "who's", "how's", "let's", "it'll", "that'll", "there'll", "i'm", "i've", "i'll", "i'd",
-  "we're", "we've", "we'll", "we'd", "they're", "they've", "they'll", "they'd", "he's", "she's", 'there', 'here', 'then', 'though', 'although',
-  'because', 'since', 'while', 'really', 'actually', 'still', 'even',
-]);
-
-/** A text's clauses (split at punctuation, but not between two digits as in "5:30" or "1,200", and at "and"/"but"), each as its words. */
-function clauses(text: string): string[][] {
-  return text.replace(/(\d)[.,:](?=\d)/g, '$1 ').split(/[.,;:!?\u2014\u2013()]+|\s(?:and|but|y|pero)\s/i).map(words).filter((c) => c.length > 0);
-}
-
-/** A word's stem as two clauses are compared: its "'s" and one ending (-ing, -ed, -es, -e, -s) off, so "needs" and "needed", "change" and "changes" match. */
-function stem(w: string): string {
-  const base = w.replace(/'s$/, '');
-  const cut = base.replace(/(?:ing|ed|es|e|s)$/, '');
-  return cut.length >= 3 ? cut : base;
-}
-
-/** A clause's content words, by stem: three letters or more, not a negation, not a word every clause has. */
-const contentOf = (clause: readonly string[]): Set<string> => new Set(clause.filter((w) => w.length >= 3 && !negates(w) && !CLAUSE_STOP.has(w)).map(stem));
-const shared = (a: ReadonlySet<string>, b: ReadonlySet<string>): number => [...a].filter((w) => b.has(w)).length;
-/** Whether a clause says the same thing as another: two content words in common, or every one the other has where it has one alone. */
-const restates = (clause: ReadonlySet<string>, other: ReadonlySet<string>): boolean => shared(clause, other) >= Math.max(1, Math.min(2, other.size));
-
-/** A negated clause's head: the first content word after its first negation, by stem (what the "not" is about); undefined where none follows. */
-function headOf(clause: readonly string[]): string | undefined {
-  const at = clause.findIndex(negates);
-  const w = clause.slice(at + 1).find((x) => x.length >= 3 && !negates(x) && !CLAUSE_STOP.has(x));
-  return w === undefined ? undefined : stem(w);
-}
-
-/**
- * The negation check: each clause of the line with a negation in it must say the same thing as a
- * clause of what it was given that has one too (restates: two content words in common by stem, or the
- * one it has, so "need no changes" restates "no changes needed" and "not urgent" restates "though it's
- * not urgent", wherever in the line it comes), with the same head (the first content word after each
- * one's negation is among the other's content words: "I will not pass on calls before Friday" negates
- * passing on, where "please do not call me before Friday" negates calling); and each clause of what it
- * was given that has a negation, when the line restates it without one (two content words in common,
- * or, for a clause of `strict` with one content word, that word: "not today" said as "today"), breaks
- * it. Deterministic and conservative: a line that rephrases a negated clause past recognition falls
- * back rather than risk dropping its "not". `strict`: the given words whose one-word negated clauses are
- * held so (the collected content; not a fixed line's or the caller's latest words, whose short "no"
- * a line may answer).
- */
-function negationBroken(text: string, sources: readonly string[], strict: readonly string[] = []): boolean {
-  const lineClauses = clauses(text);
-  const negatedOf = (texts: readonly string[]) => texts.flatMap(clauses).filter((c) => c.some(negates)).map((c) => ({ content: contentOf(c), head: headOf(c) }));
-  const negated = negatedOf(sources);
-  for (const c of lineClauses) {
-    if (!c.some(negates)) continue;
-    const own = contentOf(c);
-    const head = headOf(c);
-    const same = (g: { content: Set<string>; head: string | undefined }): boolean => restates(own, g.content) && (head === undefined || g.content.has(head)) && (g.head === undefined || own.has(g.head));
-    if (!negated.some(same)) return true;
-  }
-  for (const { content: g } of negated) {
-    for (const c of lineClauses) if (!c.some(negates) && shared(contentOf(c), g) >= 2) return true;
-  }
-  for (const { content: g } of negatedOf(strict)) {
-    if (g.size !== 1) continue;
-    for (const c of lineClauses) if (!c.some(negates) && shared(contentOf(c), g) >= 1) return true;
-  }
-  return false;
-}
-
-/**
- * What sets a condition on a clause (English and Spanish): "unless", "except", "until" (but before a
- * day or a time, which is a time: the drift check's), "till" as "until" (not "the till"), "only if",
- * "as long as", "provided", "a menos que", "salvo" and "excepto". Plain "if" is not one (too common:
- * the drift check holds it), nor "hasta" alone ("hasta que" is).
- */
-const CONDITIONS: ReadonlySet<string> = new Set(['unless', 'except', 'provided', 'providing', 'salvo', 'excepto']);
-const CONDITION_PHRASES = /\b(?:(?:only|solo|sólo) (?:if|si|when|cuando)|as long as|a menos que|hasta que)\b/;
-/** What makes the words after "until" a time: a day, a time of day, a number, or a word of time ("the end of the month", "next week"). */
-const TIME_NOUNS: ReadonlySet<string> = new Set(['week', 'weeks', 'month', 'months', 'year', 'end', 'day', 'days', 'hour', 'hours', 'minute', 'minutes', 'later', 'then', 'now']);
-const CLOCK: ReadonlySet<string> = new Set(['am', 'pm', "o'clock", 'oclock', 'noon', 'midnight']);
-/** A time word: a day or a time of day, a word of time, or a clock or day form ("5pm", "15th"). */
-const timeWord = (w: string | undefined): boolean => w !== undefined && (DATE_WORDS.has(w) || TIME_NOUNS.has(w) || /^\d+(?:am|pm|st|nd|rd|th)$/.test(w));
-/** A number that is a time: before a time word or a clock word ("five pm", "two weeks"), or a clock's two parts ("5:30", read as 5 and 30); "two managers" is none. */
-const timeNumber = (clause: readonly string[], i: number): boolean => {
-  const w = clause[i];
-  if (w === undefined || !(NUMBER_WORDS.has(w) || /^\d+$/.test(w))) return false;
-  const next = clause[i + 1];
-  return next !== undefined && (timeWord(next) || CLOCK.has(next) || (/^\d+$/.test(w) && /^\d{2}$/.test(next)));
-};
-const timeAt = (clause: readonly string[], i: number): boolean => timeWord(clause[i]) || timeNumber(clause, i) || (['next', 'this', 'the', 'a'].includes(clause[i] ?? '') && (timeWord(clause[i + 1]) || timeNumber(clause, i + 1)));
-function conditions(clause: readonly string[]): boolean {
-  if (clause.some((w) => CONDITIONS.has(w)) || CONDITION_PHRASES.test(clause.join(' '))) return true;
-  return clause.some((w, i) => (w === 'until' || (w === 'till' && clause[i - 1] !== 'the' && clause[i - 1] !== 'a')) && !timeAt(clause, i + 1));
-}
-
-/** Words a negated clause may be that say nothing the clause's reader would act on: "no rush", "never mind", "don't hesitate", "not sure". */
-const IDIOMS = /\b(?:never mind|no (?:rush|hurry|worries|worry|pressure)|not (?:sure|a big deal)|don't (?:hesitate|worry)|ni modo|no hay prisa|no se preocupe|no sé)\b/g;
-/** Whether a clause is an idiom and nothing more: with the idiom taken out, no content word is left ("don't worry about the deposit" is more). */
-const idiomOnly = (clause: readonly string[]): boolean => {
-  const joined = clause.join(' ');
-  const rest = joined.replace(IDIOMS, ' ');
-  return rest !== joined && contentOf(rest.split(' ').filter((w) => w !== '' && w !== 'please')).size === 0;
-};
-
-/** A clause's content words as the left-out check counts them: by stem, and not the words that mark a condition or a person (I'm, you). */
-const stemsOf = (clause: readonly string[]): Set<string> => new Set([...contentOf(clause.filter((w) => !CONDITIONS.has(w) && !PERSON_WORDS.has(w) && !['only', 'solo', 'sólo', 'until', 'till', 'long', 'menos'].includes(w)))]);
-
-/**
- * The left-out check, a span's own (render/checks.ts checkSpan, `omitted`): every clause of the
- * content that says "no" (a negation; a clause that is only an idiom aside: "no rush", "never mind",
- * "don't hesitate", "not sure") or sets a condition (CONDITIONS), with two content words or more, must be restated in the
- * span: a clause of the span with two of its content words in common (by stem), that says "no" where
- * the content's does and sets a condition where it does. Leaving one out turns what is left around
- * ("the proofs look great, no changes needed" said as "the proofs look great"). Deterministic and
- * conservative: a clause rephrased past recognition falls back to the exact words; a clause of one
- * content word ("not today", "No changes.") is the drift check's.
- */
-export function leftOut(text: string, sources: readonly string[]): boolean {
-  const said = clauses(text).map((c) => ({ stems: stemsOf(c), negated: c.some(negates), conditional: conditions(c) }));
-  for (const c of sources.flatMap(clauses)) {
-    if (idiomOnly(c)) continue;
-    const negated = c.some(negates);
-    const conditional = conditions(c);
-    if (!negated && !conditional) continue;
-    const own = stemsOf(c);
-    if (own.size < 2) continue;
-    const kept = said.some((s) => shared(own, s.stems) >= 2 && (!negated || s.negated) && (!conditional || s.conditional));
-    if (!kept) return true;
-  }
-  return false;
-}
-
 /** The decision question a line ends on: its fixed text's last sentence, where it is a question. */
 export function decisionQuestionOf(fixed: string): string | undefined {
   const last = fixed.trim().split(/(?<=[.!?])\s+/).at(-1);
@@ -294,7 +157,6 @@ export function checkGenerated(text: string, act: SpeechAct, guard: CheckGuard =
   const folded = fold(text);
   // Another value of an item's own slot, which the fixed line does not name: the wrong recipient, say.
   if (conflicting(folded, act, guard.conflicts ?? [])) return 'conflict';
-  if (negationBroken(text, [act.fixed, act.goal, ...(act.content ?? []).map((c) => c.value), ...(act.heard !== undefined ? [act.heard] : [])], (act.content ?? []).map((c) => c.value))) return 'negation';
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   if (act.items.some((item) => fold(item.value) !== '' && !folded.includes(fold(item.value)))) return 'items';
@@ -367,190 +229,6 @@ export function sameWords(a: string, b: string): boolean {
   return wa.length > 0 && wa.join(' ') === words(b).join(' ');
 }
 
-/** First- and second-person words: a span may use one only where its content does (it speaks in the caller's own terms). */
-const PERSON_WORDS: ReadonlySet<string> = new Set([
-  'i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', 'myself', 'we', "we're", "we'll", "we've", "we'd", 'us', 'our', 'ours', 'ourselves',
-  'you', "you're", "you'll", "you've", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'youre', 'youll', 'youve', 'youd',
-  'yo', 'nosotros', 'nosotras', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'tú', 'usted', 'ustedes', 'vosotros',
-]);
-
-/**
- * The caller's first person, as a span that speaks to the caller (`speaks: to-caller`) says it: their I,
- * me, my, mine, we, us and our as you, your and yours. English only (a to-caller span is worded only in
- * English).
- */
-const TO_CALLER_WORDS: Readonly<Record<string, string>> = {
-  i: 'you', me: 'you', my: 'your', mine: 'yours', myself: 'yourself', we: 'you', us: 'you', our: 'your', ours: 'yours', ourselves: 'yourselves',
-  "i'm": "you're", "i've": "you've", "i'll": "you'll", "i'd": "you'd", "we're": "you're", "we've": "you've", "we'll": "you'll", "we'd": "you'd",
-};
-/** The caller's first person, its possessives apart (my, mine, our, ours): what a to-caller span says "your" and "yours" for. */
-const FIRST_POSSESSIVE: ReadonlySet<string> = new Set(['my', 'mine', 'our', 'ours']);
-/** The first person a to-caller span never says: it would be heard as the agent's own. */
-const FIRST_PERSON: ReadonlySet<string> = new Set(Object.keys(TO_CALLER_WORDS));
-/** The second person: what a to-caller span says for the caller's own first person, and what a message says to the one it is for. */
-const SECOND_POSSESSIVE: ReadonlySet<string> = new Set(['your', 'yours']);
-const SECOND_PERSON: ReadonlySet<string> = new Set(['you', "you're", "you'll", "you've", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'youre', 'youll', 'youve', 'youd']);
-/** The caller's first person as acted on (me, us), and as acting (I, we): what a span's "to you" and "by you" stand for. */
-const FIRST_OBJECT: ReadonlySet<string> = new Set(['me', 'us', 'myself', 'ourselves']);
-const FIRST_SUBJECT: ReadonlySet<string> = new Set(['i', 'we', "i'm", "i've", "i'll", "i'd", "we're", "we've", "we'll", "we'd"]);
-/** The words before a "you" that make it the one acted on: "to you", "for you", "from you", "with you". */
-const PREPOSITIONS: ReadonlySet<string> = new Set(['to', 'for', 'from', 'with']);
-/** Third-person pronouns as a subject (he, she, they), and as an object or a possessive (him, his, her, them, their). */
-const THIRD_SUBJECT: ReadonlySet<string> = new Set(['he', 'she', 'they', "he's", "she's", "they're", "they've", "they'll", "they'd", "he'll", "she'll", "he'd", "she'd"]);
-const THIRD_OTHER: ReadonlySet<string> = new Set(['him', 'his', 'himself', 'her', 'hers', 'herself', 'them', 'their', 'theirs', 'themselves']);
-const THIRD_PERSON: ReadonlySet<string> = new Set([...THIRD_SUBJECT, ...THIRD_OTHER]);
-
-/** A text with the caller's first person turned to the second, as a to-caller span says it ("I need" as "you need"); "US" in capitals is no pronoun. */
-export function toCaller(text: string): string {
-  return straight(text).replace(/[\p{L}']+/gu, (w) => (w === 'US' ? w : TO_CALLER_WORDS[w.toLowerCase()] ?? w));
-}
-
-/** What a name of the line is read as where a to-caller span is compared with its content. */
-const NAME_MARK = 'xname';
-const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/**
- * A text with each name the span lists (its whole value, then each capitalized word of it, a possessive
- * "'s" with it) read as NAME_MARK: a value with a capital in any case, a value the app wrote lowercase
- * ("the team") only as written.
- */
-function markNames(text: string, names: readonly string[]): string {
-  let t = straight(text);
-  const edge = (re: string, anyCase: boolean): RegExp => new RegExp(`(?<![\\p{L}\\p{N}'])${re}(?:'s)?(?![\\p{L}\\p{N}'])`, anyCase ? 'giu' : 'gu');
-  // A name the app wrote with a capital is read whatever its case; one it wrote lowercase ("the team",
-  // "anyone") only as written, so a common word is not taken for the name throughout a message.
-  for (const n of names.map((x) => straight(x).trim()).filter((x) => x !== '')) t = t.replace(edge(n.split(/\s+/).map(escaped).join('\\s+'), /\p{Lu}/u.test(n)), ` ${NAME_MARK} `);
-  for (const w of names.flatMap((n) => straight(n).split(/\s+/)).filter((w) => w.length >= 2 && /^\p{Lu}/u.test(w))) {
-    t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}'])${escaped(w)}(?:'s)?(?![\\p{L}\\p{N}'])`, 'gu'), ` ${NAME_MARK} `);
-  }
-  return t;
-}
-
-/**
- * A word's person, read for a to-caller span (`span`) or its content (`content`). In the content: the
- * caller's own first person is `Y` (the caller), a third-person subject `S` (he, she, they), and every
- * other person `N` (him, his, them, a "you" of the message, which is the one it is for, and a name of the
- * line). In the span: its second person is `Y` (the caller), a third-person pronoun `P`, a name of the
- * line `M`, and a first person `F` (never allowed: it would be the agent's). `possessive` for my, our,
- * your and the like; `place`, what the word is compared as: the caller's person `xcaller`, a third
- * person as a subject `xsubject`, any other person `xother` (each a content word of its own, so "not me"
- * and "not to Sam" stay negated clauses of one content word).
- */
-interface PersonWord { readonly person?: 'Y' | 'S' | 'N' | 'P' | 'M' | 'F'; readonly possessive?: boolean; readonly place?: string }
-function personOf(raw: string, side: 'span' | 'content'): PersonWord {
-  if (raw === 'US') return {};
-  const w = raw.toLowerCase();
-  if (w === NAME_MARK) return side === 'span' ? { person: 'M', place: 'xother' } : { person: 'N', place: 'xother' };
-  if (FIRST_PERSON.has(w)) return side === 'span' ? { person: 'F' } : { person: 'Y', possessive: FIRST_POSSESSIVE.has(w), place: 'xcaller' };
-  if (SECOND_PERSON.has(w)) return side === 'span' ? { person: 'Y', possessive: SECOND_POSSESSIVE.has(w), place: 'xcaller' } : { person: 'N', place: 'xother' };
-  if (THIRD_SUBJECT.has(w)) return { person: side === 'span' ? 'P' : 'S', place: 'xsubject' };
-  if (THIRD_OTHER.has(w)) return { person: side === 'span' ? 'P' : 'N', place: 'xother' };
-  return {};
-}
-const personsIn = (text: string, names: readonly string[], side: 'span' | 'content'): PersonWord[] =>
-  (markNames(text, names).match(/[\p{L}\p{N}']+/gu) ?? []).map((w) => personOf(w, side)).filter((p) => p.person !== undefined);
-/** A text with each person read as its place (PersonWord.place), its punctuation kept: what two clauses are compared as. */
-const placed = (text: string, names: readonly string[], side: 'span' | 'content'): string =>
-  markNames(text, names).replace(/[\p{L}\p{N}']+/gu, (w) => personOf(w, side).place ?? w);
-
-/**
- * A to-caller span and its content as two clauses of them are compared (checkSpan's negation and
- * left-out checks, and the stub's judge): on both sides, the caller's person read as `xcaller` (the
- * content's I, me, my; the span's you, your), a third person as a subject as `xsubject`, and every other
- * person (him, them, a name of the line, the message's own "you") as `xother`. Each counts as a content
- * word, so a "no" about a person is held as any other: "he can sign, not me" summarized "you can sign"
- * turns "not me" around, and "not to Sam Ortiz" is a negated clause of one content word.
- */
-export function comparedToCaller(span: string, content: readonly string[], names: readonly string[]): { spoken: string; compared: string[] } {
-  return { spoken: placed(span, names, 'span'), compared: content.map((c) => placed(c, names, 'content')) };
-}
-
-/**
- * Whether a to-caller span changes whose words it gives or who does what to whom (`person`): a first
- * person of its own (the agent's); a "you" where the message says "you" to the one it is for (a "you"
- * of the message is never the caller); more "you" (you, you're, yourself) than the message has I, me,
- * we and us, or more "your" and "yours" than it has my, mine, our and ours ("your invoice" for "the
- * invoice"); or the persons out of the message's order: the span's caller (`Y`), pronouns and names of
- * the line, read in order, must be found in that order among the message's (a name standing only for a
- * him, his, them or a "you" of the message, never a he, she or they), so "I owe him the deposit" said
- * "Sam owes you the deposit", or "he needs me to call the printer" said "Sam needs you to call the
- * printer", is refused; and a "you" after to, for, from or with only for a "me" or "us" of the message,
- * "by you" only for an "I" or "we" (a passive turned around: "the deposit is owed to you" for "I owe him
- * the deposit"; "the deposit is owed to you" for "he owes me the deposit" passes).
- */
-export function personBroken(span: string, content: readonly string[], names: readonly string[]): boolean {
-  const said = personsIn(span, names, 'span');
-  const given = content.flatMap((c) => personsIn(c, names, 'content'));
-  if (said.some((p) => p.person === 'F')) return true;
-  const you = said.filter((p) => p.person === 'Y');
-  if (you.length > 0 && content.some((c) => words(c).some((w) => SECOND_PERSON.has(w)))) return true;
-  const callers = given.filter((p) => p.person === 'Y');
-  // "you" after to, for, from or with stands for the caller as acted on (a "me" or "us" of the message), and
-  // "by you" for the caller acting (an "I" or "we"): a passive turned around ("the deposit is owed to you"
-  // for "I owe him the deposit", "the contract was sent by you" for "he sent me the contract") is refused.
-  const spanWords = words(span);
-  const givenWords = content.flatMap(words);
-  const objectYou = spanWords.filter((w, i) => (w === 'you' || w === 'yourself' || w === 'yourselves') && PREPOSITIONS.has(spanWords[i - 1] ?? '')).length;
-  const agentYou = spanWords.filter((w, i) => w === 'you' && spanWords[i - 1] === 'by').length;
-  if (objectYou > givenWords.filter((w) => FIRST_OBJECT.has(w)).length || agentYou > givenWords.filter((w) => FIRST_SUBJECT.has(w)).length) return true;
-  if (you.filter((p) => p.possessive !== true).length > callers.filter((p) => p.possessive !== true).length) return true;
-  if (you.filter((p) => p.possessive === true).length > callers.filter((p) => p.possessive === true).length) return true;
-  const fits = (s: PersonWord, g: PersonWord): boolean => (s.person === 'Y' ? g.person === 'Y' : s.person === 'P' ? g.person === 'S' || g.person === 'N' : g.person === 'N');
-  let at = 0;
-  for (const s of said) {
-    while (at < given.length && !fits(s, given[at]!)) at++;
-    if (at === given.length) return true;
-    at++;
-  }
-  return false;
-}
-
-/** Masculine and feminine third-person pronouns: a span's he or she must be the gender of one of its content's ("they" is neither). */
-const MASCULINE: ReadonlySet<string> = new Set(['he', 'him', 'his', 'himself', "he's", "he'll", "he'd"]);
-const FEMININE: ReadonlySet<string> = new Set(['she', 'her', 'hers', 'herself', "she's", "she'll", "she'd"]);
-
-/**
- * Whether a span says "he" or "she" (and their forms) where its content has no pronoun of that gender:
- * "he needs the report" summarized "she needs the report". Every span's (`person`), whether it speaks
- * to the caller or not.
- */
-export function genderBroken(span: string, content: readonly string[]): boolean {
-  const given = new Set(content.flatMap(words));
-  const has = (set: ReadonlySet<string>): boolean => [...given].some((w) => set.has(w));
-  const said = words(span);
-  return (said.some((w) => MASCULINE.has(w)) && !has(MASCULINE)) || (said.some((w) => FEMININE.has(w)) && !has(FEMININE));
-}
-
-/**
- * Whether a to-caller span gives what a he, she or they of its content does to someone else: the word
- * after the content's third-person subject (its verb) said in the span after the caller's "you" ("I'll be
- * out, he'll cover" summarized "you'll cover"), or after a word the content does not have, no pronoun and
- * no listed name ("he needs me to approve" summarized "the client needs you to approve"). The stub's
- * judge's (a real judge reads the question); a person dropped that moves the action.
- */
-export function subjectMoved(span: string, content: readonly string[], names: readonly string[]): boolean {
-  const said = markNames(span, names).toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
-  const known = new Set(content.flatMap(words));
-  for (const c of content) {
-    const given = words(c);
-    for (const [i, w] of given.entries()) {
-      const verb = given[i + 1];
-      if (!THIRD_SUBJECT.has(w) || verb === undefined) continue;
-      for (const [j, x] of said.entries()) {
-        const before = said[j - 1];
-        if (j === 0 || stem(x) !== stem(verb) || before === undefined) continue;
-        if (SECOND_PERSON.has(before) || (!THIRD_PERSON.has(before) && before !== NAME_MARK && !known.has(before))) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** Whether a lower-cased word is in the second person ("you", "your", "you're"...). */
-export const isSecondPerson = (w: string): boolean => SECOND_PERSON.has(w);
-
-/** Whether a text has a third-person pronoun, or a "you" (in a message, the one it is for): what a name of the line may stand for. */
-export const hasPronounFor = (text: string): boolean => words(text).some((w) => THIRD_PERSON.has(w) || w === 'you' || w === 'your');
-
 /** Words a span may begin with, capitalized, that are not names (beside the common words a line's sentences begin with). */
 const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's", 'they', "they're", "they'd", "they'll", 'them', 'their', 'his', 'her', 'about', 'asking', 'wants', 'needs', 'call', 'calling', 'regarding', 're',
   // Summary verbs: a span begins mid-sentence, but a model may still capitalize its first word.
@@ -558,32 +236,14 @@ const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's"
 
 /**
  * The first check a framed line's span fails, or null when it passes them all (the drift check aside).
- * The span is held to its content alone (it is never given the frame): no question (the frame asks
- * any); no other value of the frame's own items in its place (`conflict`); no negation added or dropped
- * against the content; no clause of the content that says "no" or sets a condition left out (`omitted`,
- * leftOut); no first or second person the content does not use (`person`: the agent's own
- * words, or words to the listener); its word budget; style.yaml's phrases; and no figure or capitalized
- * word that is not in the content (`foreign`).
- *
- * A span that speaks to the caller (`speaks: to-caller`) is held the same way, its clauses compared with
- * the content's with each person read as a placeholder (comparedToCaller), so a "no" about a person is
- * held; `person` holds its persons to the content's (personBroken: no first person of its own, no more
- * "you" or "your" than the content's I or my, none where the content says "you" to the one it is for,
- * and who does what to whom in the content's order); and a name it lists (`act.names`, who the message
- * is for), or its possessive, is no `foreign` capital. Whether a name stands for the one a pronoun means
- * is the drift check's.
- *
- * `level` (prompts.yaml's and style.yaml's `checks`; GeneratedSpan.checks): `standard`, the default, runs
- * the checks of values and shape (`empty`, `format`, `question`, `conflict`, a plain `negation` against
- * the content's own words, `words`, `avoid` and `foreign`, a to-caller span's listed names allowed as
- * capitals) and of whose voice it speaks in (`person`, spanVoiceBroken: a first or second person the
- * content does not use, a to-caller span's own first person, a he or a she of another gender), and
- * leaves who does what to whom and what was left out to the drift check; `strict` runs every check above
- * (spanMeaningBroken's). Measured on 2026-10-14
- * (`render:judge-eval`, live findings item 23): the judge alone caught every everyday slip and 94% of the
- * hard cases, while the strict checks refused one good everyday read-back in six.
+ * The span is held to its data and shape, against its content (it is shown its sentence so it fits the
+ * line, never as something it may draw on): no question (the frame asks any); no other value of the
+ * frame's own items in its place (`conflict`); its word budget; style.yaml's phrases; and no figure or
+ * capitalized word that is not in its content (`foreign`), but the names a to-caller span lists
+ * (`act.names`, who the message is for) and their possessives ("Sam's"). Whether it says what the content
+ * says (a "no" kept, who does what to whom, whose words they are) is the drift judge's.
  */
-export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}, level: SpanCheckLevel = 'standard'): RenderFallback | null {
+export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): RenderFallback | null {
   if (text.trim() === '') return 'empty';
   if (text.length > MAX_CHARS || /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text) || /\bhttps?:|www\./i.test(text)) return 'format';
   if (text.includes('?')) return 'question';
@@ -596,95 +256,27 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}, le
     if (f === '' || !folded.includes(f)) continue;
     if (!contentFolded.includes(f) || new RegExp(`\\bfor ${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(folded)) return 'conflict';
   }
-  if (level === 'strict') {
-    const broken = spanMeaningBroken(text, act);
-    if (broken !== null) return broken;
-  } else {
-    if (negationBroken(text, content, content)) return 'negation';
-    if (spanVoiceBroken(text, act)) return 'person';
-  }
-  const toCallerSpan = act.speaks === 'to-caller';
-  const nameWords = new Set((act.names ?? []).flatMap((n) => words(n.value)));
-  const said = new Set(content.flatMap(words));
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
+  const said = new Set(content.flatMap(words));
   const allowedDigits = new Set(content.flatMap(digitRuns));
   if (digitRuns(text).some((d) => !allowedDigits.has(d))) return 'foreign';
   if (/[$\u20ac\u00a3]/.test(text) && !content.some((c) => /[$\u20ac\u00a3]/.test(c))) return 'foreign';
   for (const w of words(text)) {
     if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !said.has(w)) return 'foreign';
   }
-  // A to-caller span may say a name it lists (and a name's possessive: "Sam's approval").
-  const named = (w: string): boolean => toCallerSpan && (nameWords.has(w) || ((said.has(w.replace(/'s$/, '')) || nameWords.has(w.replace(/'s$/, ''))) && w.endsWith("'s")));
+  // The names it was given: its content's words, and a to-caller span's listed names, with a possessive ("Sam's approval").
+  const nameWords = new Set((act.names ?? []).flatMap((n) => words(n.value)));
+  const given = (w: string): boolean => said.has(w) || nameWords.has(w) || (w.endsWith("'s") && (said.has(w.slice(0, -2)) || nameWords.has(w.slice(0, -2))));
   for (const { word, initial } of capitals(text)) {
     const lower = word.toLowerCase();
-    if (said.has(lower) || named(lower)) continue;
+    if (given(lower)) continue;
     if (initial && (COMMON_CAPITALS.has(lower) || SPAN_CAPITALS.has(lower))) continue;
     return 'foreign';
   }
   return null;
 }
 
-/**
- * Whose voice a span speaks in, and the gender of its pronouns: the person checks every span runs, at
- * either level (checkSpan). In the caller's own terms, no first or second person its content does not
- * use (the agent's own words, or words to the listener); speaking to the caller (`speaks: to-caller`), no
- * first person of its own (an "I" or a "we" would be heard as the agent's; "US" in capitals is no pronoun)
- * and no other pronoun its content does not have; and for every span, no "he" or "she" of a gender its
- * content has no pronoun of (genderBroken). Measured on the judge-eval (live findings item 23): these
- * refuse no faithful case, and hold four hard cases and the adversarial suite's refund and no-cue spans
- * by their words. Who does what to whom (personBroken's counts and order) and the message's own "you"
- * are `strict`'s, and the judge's.
- */
-export function spanVoiceBroken(text: string, act: Pick<SpanAct, 'content' | 'speaks' | 'names'>): boolean {
-  const content = act.content.map((c) => c.value);
-  const said = new Set(content.flatMap(words));
-  if (act.speaks === 'to-caller') {
-    if (personsIn(text, (act.names ?? []).map((n) => n.value), 'span').some((p) => p.person === 'F')) return true;
-    if (words(text).some((w) => PERSON_WORDS.has(w) && !SECOND_PERSON.has(w) && !FIRST_PERSON.has(w) && !said.has(w))) return true;
-  } else if (words(text).some((w) => PERSON_WORDS.has(w) && !said.has(w))) return true;
-  return genderBroken(text, content);
-}
-
-/**
- * The checks a `strict` span runs (checkSpan) beyond the standard ones, each by its words: the negation check against the
- * content turned toward the caller for a to-caller span (comparedToCaller: a "no" about a person); a
- * clause of the content that says "no" or sets a condition left out (`omitted`, leftOut); and its persons
- * (`person`): spanVoiceBroken's, and for a to-caller span personBroken (no more "you" or "your" than the
- * content's I or my, none where the content says "you" to the one it is for, who does what to whom in
- * the content's order, a passive the right way round). The stub's span judge runs them too (jev/heuristicStub.ts
- * stubSpanDrift), so a `standard` span the strict checks would refuse is refused there by the judge, and
- * the stub regression and the adversarial suite hold it at either level; on a call, under `standard`, it
- * rests on the real judge's reading.
- */
-export function spanMeaningBroken(text: string, act: Pick<SpanAct, 'content' | 'speaks' | 'names'>): 'negation' | 'omitted' | 'person' | null {
-  const content = act.content.map((c) => c.value);
-  const toCallerSpan = act.speaks === 'to-caller';
-  const names = (act.names ?? []).map((n) => n.value);
-  // A span that speaks to the caller is compared with its content turned toward them ("I need" as "you
-  // need"), each person read as a placeholder on both sides (a name may stand for a pronoun: whether it
-  // rightly does is the drift check's).
-  const { spoken, compared } = toCallerSpan ? comparedToCaller(text, content, names) : { spoken: text, compared: content };
-  if (negationBroken(spoken, compared, compared)) return 'negation';
-  // A clause of the content that says "no" or sets a condition, left out of the span (or restated without it).
-  if (leftOut(spoken, compared)) return 'omitted';
-  const said = new Set(content.flatMap(words));
-  if (toCallerSpan) {
-    // No first person of its own, "you" only for the caller's own first person, in its form and in the message's order of persons.
-    if (personBroken(text, content, names)) return 'person';
-    if (words(text).some((w) => PERSON_WORDS.has(w) && !SECOND_PERSON.has(w) && !FIRST_PERSON.has(w) && !said.has(w))) return 'person';
-  } else if (words(text).some((w) => PERSON_WORDS.has(w) && !said.has(w))) return 'person';
-  // A he or a she the content does not have: another person than the one it speaks of, whatever its perspective.
-  if (genderBroken(text, content)) return 'person';
-  return null;
-}
-
-/**
- * Which of a span's checks run (prompts.yaml's and style.yaml's `checks`, define/schema/style.ts
- * CHECK_LEVELS): `standard` (the default), the checks of values and shape, the rest the drift check's;
- * `strict`, every check (checkSpan).
- */
-export type SpanCheckLevel = CheckLevel;
 
 /** The span drift check's question id, asked of the decision model on its own request. */
 export const SPAN_DRIFT_QUESTION_ID = 'renderSpanDrift';

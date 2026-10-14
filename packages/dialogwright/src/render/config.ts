@@ -1,7 +1,7 @@
 import type { FormId, GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyle } from '../core/app/types';
 import type { FormsYaml, PromptYaml, StyleYaml } from '../define/schema/index';
 import { DEFAULT_SPAN_WORDS } from '../define/schema/prompts';
-import { DEFAULT_WORDS, type CheckLevel } from '../define/schema/style';
+import { DEFAULT_WORDS } from '../define/schema/style';
 
 /** The persona a generated line has when style.yaml names none. */
 export const DEFAULT_PERSONA = 'a calm, plain-spoken agent';
@@ -13,13 +13,9 @@ export const DEFAULT_GOAL = 'Say what the fixed line says, in words that fit thi
 export const FRAMED_GOAL = 'Said as written, but for its generated spans.';
 
 /** A framed line's spans (prompts.yaml's `generate`) as the engine holds them, each with its word budget. */
-function spansOf(p: PromptYaml, appChecks: CheckLevel | undefined): Record<string, GeneratedSpan> | undefined {
+function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
   if (p.generate === undefined) return undefined;
-  return Object.fromEntries(Object.entries(p.generate).map(([name, s]) => {
-    // The span's own level, else its line's, else the app's (style.yaml), else standard.
-    const checks = s.checks ?? p.checks ?? appChecks ?? 'standard';
-    return [name, { from: s.from ?? '', goal: s.goal, words: s.words ?? DEFAULT_SPAN_WORDS, ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}), ...(checks === 'strict' ? { checks: 'strict' as const } : {}) }];
-  }));
+  return Object.fromEntries(Object.entries(p.generate).map(([name, s]) => [name, { from: s.from ?? '', goal: s.goal, words: s.words ?? DEFAULT_SPAN_WORDS, ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}) }]));
 }
 
 /** style.yaml with its defaults filled in. */
@@ -28,6 +24,8 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     persona: style?.persona ?? DEFAULT_PERSONA,
     words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat },
     avoid: [...(style?.avoid ?? [])],
+    // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DEFAULT_REFUSE_AT).
+    ...(style?.judge?.refuseAt !== undefined ? { refuseAt: style.judge.refuseAt } : {}),
   };
 }
 
@@ -61,7 +59,7 @@ export function generatedWordingOf(input: {
   const ids = Object.keys(input.prompts);
   const prescribed = ids.filter((id) => input.prompts[id]!.prescribed === true).sort();
   const lineOf = (p: PromptYaml, by: GeneratedLine['by'], formAcknowledges?: boolean): GeneratedLine => {
-    const spans = spansOf(p, input.style?.checks);
+    const spans = spansOf(p);
     // A line's own `acknowledge` wins; else its form's, for a line the form's switch generates. A span never acknowledges.
     const acknowledge = spans === undefined ? (p.acknowledge ?? formAcknowledges ?? true) : true;
     return {
@@ -229,9 +227,6 @@ export function generatedWordingProblems(input: {
     if (p.exactText !== undefined && (p.generate === undefined || p.prescribed === true)) {
       out.push({ file, path: at('exactText'), message: `the line "${id}" is not framed (no generate${p.prescribed === true ? ', and it is prescribed' : ''}), so it has no span that is said word for word, and "exactText" (a framed line's frame for its exact words) does not apply to it`, fix: p.prescribed === true ? 'delete "exactText": a prescribed line is said as its text, always' : 'delete "exactText", or frame the line (generate) so a span of it is worded by a model', atKey: true });
     }
-    if (p.checks !== undefined && p.generate === undefined) {
-      out.push({ file, path: at('checks'), message: `the line "${id}" is not framed (no generate), so "checks" does nothing: it says how strictly a framed line's spans are checked, and a line generated whole runs the same checks at either level`, fix: 'delete "checks"', atKey: true });
-    }
     if (p.generate !== undefined) {
       out.push(...framedProblems(id, p, { ...input, summarized: summarizedSet }));
       continue;
@@ -290,7 +285,7 @@ export function generatedWordingProblems(input: {
   for (const [locale, prompts] of Object.entries(input.localePrompts)) {
     const dir = `locale/${locale}/prompts.yaml`;
     for (const [id, p] of Object.entries(prompts)) {
-      for (const key of ['mode', 'prescribed', 'when', 'from', 'summarizesConfirmed', 'acknowledge', 'checks'] as const) {
+      for (const key of ['mode', 'prescribed', 'when', 'from', 'summarizesConfirmed', 'acknowledge'] as const) {
         if (p[key] !== undefined) out.push({ file: dir, path: ['prompts', id, key], message: `"${key}" is read from prompts.yaml, for every locale; a locale gives a generated line only its goal`, fix: `move "${key}" to the line in prompts.yaml, or delete it here`, atKey: true });
       }
       const spans = Object.hasOwn(generated, id) ? generated[id]!.spans : undefined;
@@ -322,7 +317,7 @@ export function generatedWordingProblems(input: {
           out.push({ file: dir, path: ['prompts', id, 'generate', name], message: spans === undefined ? `the line "${id}" is not framed in prompts.yaml, so a span here does nothing` : `prompts.yaml frames no span {${name}} in the line "${id}" (it frames ${Object.keys(spans).map((v) => `{${v}}`).join(', ')}), so this one does nothing`, fix: spans === undefined ? 'frame the line in prompts.yaml (generate), or delete it here' : `rename it to one of the spans prompts.yaml frames, or delete it here`, atKey: true });
           continue;
         }
-        for (const key of ['from', 'words', 'speaks', 'names', 'checks'] as const) {
+        for (const key of ['from', 'words', 'speaks', 'names'] as const) {
           if (sp[key] !== undefined) out.push({ file: dir, path: ['prompts', id, 'generate', name, key], message: `a span's "${key}" is read from prompts.yaml, for every locale; a locale gives a span only its goal`, fix: `move "${key}" to the span in prompts.yaml, or delete it here`, atKey: true });
         }
       }

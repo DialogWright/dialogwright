@@ -1,4 +1,4 @@
-import { AMOUNT_WORDS, comparedToCaller, DATE_WORDS, genderBroken, hasPronounFor, isFigureWord, isSecondPerson, leftOut, personBroken, spanMeaningBroken, straight, subjectMoved, toCaller } from '../render/checks';
+import { AMOUNT_WORDS, DATE_WORDS, isFigureWord, straight } from '../render/checks';
 import { choiceAnswer, choiceLabels, noulAnswer, normalize, scoreAnswer, sharp } from './distributions';
 import { quietAnswer } from './defaults';
 import { estimateTokens, type Answer, type AnswerMap, type JevClient, type JevRequest, type JevResponse, type Question } from './types';
@@ -81,68 +81,34 @@ export function stubDrift(state: unknown): boolean {
   return false;
 }
 
-/** First- and second-person words: a summary that uses one its quoted words do not speaks as the agent or to the listener. */
-const PERSON = new Set(['i', "i'm", "i'll", "i've", "i'd", 'me', 'my', 'mine', 'we', "we're", "we'll", "we've", 'us', 'our', 'ours', 'you', "you're", "you'll", "you've", "you'd", 'your', 'yours']);
-
 /**
- * The stub's span drift judge (render/checks.ts renderSpanDriftQuestion), deterministic, holding a
- * framed line's span to the question's criteria by its words: a span is a faithful summary of the
- * quoted words when every word of it of its own (not filler, not in its goal) is in them, it speaks in
- * no person they do not, states no figure or name they do not, leaves out none of their clauses that
- * says "no" or sets a condition (leftOut) and none of their times, amounts and names (mustKeep), and
- * carries no words of an injection. A span that speaks to the caller (`span.speaks: to-caller`) is held
- * to the quoted words turned toward the caller, and may say a name of the line (`frame`) that they do not
- * only in place of a pronoun the stub can tell is that one: the quoted words have a third-person pronoun
- * or a "you" and name no one of their own (the names are only those the span lists, who the message is
- * for; never the caller's), and the persons are held as the checks hold them (personBroken: whose words,
- * and who does what to whom). "tell Riley I need him to call the printer" summarized with the
- * recipient's name is unfaithful. A real model is asked the question itself.
- *
- * It is the conservative judge: it holds every span to the strict checks' reading too (spanMeaningBroken:
- * the negation of a to-caller span turned toward the caller, a "no" or a condition left out, and the
- * persons and their gender), so a span under `checks: standard`, which leaves those to the judge, is
- * refused here wherever the strict checks would refuse it, and the stub regression and the adversarial
- * suite hold it at either level. On a call, under `standard`, those rest on the real judge's reading.
+ * The stub's span drift judge (render/checks.ts renderSpanDriftQuestion): a test double, deterministic,
+ * conservative and simple, that reads no grammar. It refuses a span that leaves out a time, an amount or
+ * a name of the quoted words (mustKeep); that says a figure or a capitalized name neither the quoted
+ * words nor the names it lists (`frame`) have; that carries words of an injection or an instruction; or
+ * that has two words or more of its own (in neither the quoted words, its goal, its names nor common
+ * filler). Whether a span keeps a "no" or a condition, whose words they are and who does what to whom are
+ * a real judge's to read, given the sentence the span is heard in; the adversarial suite's hostile
+ * wordings are refused by the judge their attack registers them with (testing/adversarial/run.ts
+ * refusingJudge), as a real judge refuses them on a call.
  */
 export function stubSpanDrift(state: unknown): boolean {
-  const s = state as { span?: { said?: unknown; goal?: unknown; speaks?: unknown }; quoted?: { words?: unknown }[]; frame?: { value?: unknown }[] } | null;
+  const s = state as { span?: { said?: unknown; goal?: unknown }; quoted?: { words?: unknown }[]; frame?: { value?: unknown }[] } | null;
   const said = typeof s?.span?.said === 'string' ? s.span.said : '';
   const goal = new Set(tokens(typeof s?.span?.goal === 'string' ? s.span.goal : ''));
   const quotedWords = (s?.quoted ?? []).flatMap((q) => (typeof q.words === 'string' ? [q.words] : []));
-  // A span that speaks to the caller: the quoted words turned toward the caller ("I need" as "you need"),
-  // and a name of the line said for a pronoun faithful only where the stub can tell it is the one meant.
-  const toCallerSpan = s?.span?.speaks === 'to-caller';
-  const frame = (s?.frame ?? []).flatMap((f) => (typeof f.value === 'string' ? [{ value: f.value }] : []));
-  const quoted = new Set((toCallerSpan ? quotedWords.map(toCaller) : quotedWords).flatMap(tokens));
-  // The strict checks' reading, by their words: what a `standard` span's checks leave to the judge.
-  if (spanMeaningBroken(said, { content: quotedWords.map((value, i) => ({ name: `quoted${i}`, value })), ...(toCallerSpan ? { speaks: 'to-caller' as const, names: frame.map((f, i) => ({ name: `frame${i}`, value: f.value })) } : {}) }) !== null) return true;
-  // A negated statement or a condition of the quoted words left out (the criteria's; render/checks.ts leftOut).
-  if (toCallerSpan) {
-    const { spoken, compared } = comparedToCaller(said, quotedWords, frame.map((f) => f.value));
-    if (leftOut(spoken, compared)) return true;
-  } else if (leftOut(said, quotedWords)) return true;
-  // A time, an amount or who is to act left out.
+  const quoted = new Set(quotedWords.flatMap(tokens));
+  const names = new Set((s?.frame ?? []).flatMap((f) => (typeof f.value === 'string' ? tokens(f.value) : [])));
+  const bare = (w: string): string => w.replace(/'s$/, '');
+  // A time, an amount or a name of the quoted words left out.
   const kept = new Set(tokens(said));
   if (quotedWords.some((q) => mustKeep(q).some((w) => !kept.has(w)))) return true;
-  // Who does what to whom, and whose words they are: the checks' own reading (render/checks.ts personBroken).
-  if (toCallerSpan && personBroken(said, quotedWords, frame.map((f) => f.value))) return true;
-  // A person dropped that moves the action ("he'll cover" said "you'll cover"), or a subject named that the quoted words do not.
-  if (toCallerSpan && subjectMoved(said, quotedWords, frame.map((f) => f.value))) return true;
-  // A he or a she of another gender than the quoted words' (the checks' own, for a to-caller span).
-  if (toCallerSpan && genderBroken(said, quotedWords)) return true;
-  // A to-caller span may say a name the line lists (who the message is for) for a pronoun, conservatively:
-  // only where the quoted words have a third-person pronoun or a "you" and name no one of their own.
-  const bare = (w: string): string => w.replace(/'s$/, '');
-  const frameWords = new Set(frame.flatMap((f) => tokens(f.value)));
-  const standsIn = toCallerSpan && quotedWords.some(hasPronounFor) && quotedWords.every((q) => mustKeep(q).every((w) => isFigureWord(w)));
-  const allowed = new Set(standsIn ? frameWords : []);
-  if (tokens(said).some((w) => !quoted.has(bare(w)) && frameWords.has(bare(w)) && !allowed.has(bare(w)))) return true;
-  // Speaking to the caller, "you" and "your" stand for the caller's own first person (personBroken has held them to it).
-  const own = tokens(said).filter((w) => !quoted.has(w) && !allowed.has(bare(w)) && !(toCallerSpan && isSecondPerson(w)));
+  const given = (w: string): boolean => quoted.has(w) || quoted.has(bare(w)) || names.has(bare(w));
+  const own = tokens(said).filter((w) => !given(w));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
-  if (own.some((w) => PERSON.has(w) || isFigureWord(w))) return true;
-  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => (toCallerSpan ? straight(w) : w).toLowerCase());
-  if (capitalized.some((w) => !quoted.has(w) && !allowed.has(bare(w)))) return true;
+  if (own.some(isFigureWord)) return true;
+  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());
+  if (capitalized.some((w) => !given(w))) return true;
   return own.filter((w) => !FILLER.has(w) && !goal.has(w)).length >= 2;
 }
 

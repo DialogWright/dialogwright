@@ -301,6 +301,23 @@ export function problemsOfIssues(issues: readonly ZodIssue[], src: IssueSource):
   return problems;
 }
 
+/**
+ * A key an app's file may still say that the engine removed, with why and what to do instead: style.yaml's
+ * and prompts.yaml's `checks` (a framed line's span check levels, removed by live findings item 25:
+ * whether a span means what the caller said is the drift judge's, never a hand-written rule of grammar).
+ */
+function removedKey(file: string, path: DataPath, key: string): { message: string; fix: string } | undefined {
+  if (key !== 'checks') return undefined;
+  const base = file.split('/').at(-1);
+  const inStyle = base === 'style.yaml' && path.length === 0;
+  const inPrompts = base === 'prompts.yaml' && path[0] === 'prompts';
+  if (!inStyle && !inPrompts) return undefined;
+  return {
+    message: '"checks" (a span\'s check level, standard or strict) was removed: generated wording is checked for its data and shape by code, and for its meaning by the drift judge',
+    fix: 'delete "checks"; for more caution, lower style.yaml\'s judge.refuseAt (default 0.5), or mark the line prescribed: true so it is never generated',
+  };
+}
+
 /** The problems one zod issue amounts to (an issue that names several unknown keys is several problems). */
 export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
   const make = (path: DataPath, message: string, fix: string, at: DataPath = path): Problem => ({
@@ -318,6 +335,9 @@ export function problemsOf(issue: ZodIssue, src: IssueSource): Problem[] {
       const known = knownKeys(src.schema, path, valueAt(src.value, path));
       return issue.keys.map((key) => {
         const where = path.length === 0 ? 'in this file' : `under ${formatPath(path)}`;
+        // A key the engine had and removed: said plainly, with what to do instead.
+        const gone = removedKey(src.file, path, key);
+        if (gone !== undefined) return { ...make([...path, key], gone.message, gone.fix), ...keyPositionOf(src.doc, src.lines, [...path, key]) };
         const homes = homesOf(key, path, src);
         if (homes.length > 0) {
           const files = homes.join(' or ');

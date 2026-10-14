@@ -31,13 +31,15 @@ describe('validateApp', () => {
     expect(frameOf(app, id, app.prompts.manifest[id]!)).toBe(entry.text);
   });
 
-  it('refuses a span\'s checks that is neither standard, strict nor absent (live findings, item 23)', () => {
+  it('refuses a span\'s checks, removed by live findings item 25, and a judge cutoff that is no probability', () => {
     const generated = messageApp.generated!;
     const line = generated.lines.confirm_take_message!;
     const withChecks = (checks: unknown): App => ({ ...messageApp, generated: { ...generated, lines: { ...generated.lines, confirm_take_message: { ...line, spans: { summary: { ...line.spans!.summary!, checks } as never } } } } });
-    expect(() => validateApp(withChecks('strict'))).not.toThrow();
-    expect(() => validateApp(withChecks('standard'))).not.toThrow();
-    expect(() => validateApp(withChecks('loose'))).toThrow(`the span "summary" of the line "confirm_take_message" says checks: "loose": a span's checks are 'standard' or 'strict' (absent: standard, the default)`);
+    expect(() => validateApp(withChecks('strict'))).toThrow('the span "summary" of the line "confirm_take_message" says checks, which was removed: whether a span means what the caller said is the drift judge\'s; delete checks');
+    const withCutoff = (refuseAt: unknown): App => ({ ...messageApp, generated: { ...generated, style: { ...generated.style, refuseAt: refuseAt as number } } });
+    expect(() => validateApp(withCutoff(0.3))).not.toThrow();
+    expect(() => validateApp(withCutoff(1))).not.toThrow();
+    for (const bad of [0, 1.5, '0.5']) expect(() => validateApp(withCutoff(bad)), String(bad)).toThrow('the drift judge\'s cutoff is a probability, more than 0 and at most 1');
   });
 
   it('refuses summarized on an identity factor, and on a slot the records do not mask everywhere', () => {

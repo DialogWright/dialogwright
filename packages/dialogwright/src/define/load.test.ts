@@ -798,3 +798,19 @@ describe('loadAppFolder: the review fixes', () => {
 
 /** The real path of a directory (the temp directory is itself a link on some systems). */
 const realpath = (path: string): string => realpathSync(path);
+
+describe('loadAppFolder: a key the engine removed', () => {
+  it('says plainly that a span\'s "checks" was removed, in style.yaml and on a line of prompts.yaml, with the fix to delete it (live findings item 25)', () => {
+    const result = loadAppFolder(folder((dir) => {
+      writeFileSync(join(dir, 'style.yaml'), 'persona: a calm agent\nchecks: strict\n');
+      const prompts = readFileSync(join(dir, 'prompts.yaml'), 'utf8');
+      writeFileSync(join(dir, 'prompts.yaml'), prompts.replace(/^prompts:\n(\s+)(\w+):\n/m, (_, indent: string, id: string) => `prompts:\n${indent}${id}:\n${indent}  checks: standard\n`));
+    }));
+    const removed = result.problems.filter((p) => p.path.endsWith('checks'));
+    expect(removed.map((p) => p.file).sort()).toEqual(['prompts.yaml', 'style.yaml']);
+    for (const p of removed) {
+      expect(p.message).toBe('"checks" (a span\'s check level, standard or strict) was removed: generated wording is checked for its data and shape by code, and for its meaning by the drift judge');
+      expect(p.fix).toBe('delete "checks"; for more caution, lower style.yaml\'s judge.refuseAt (default 0.5), or mark the line prescribed: true so it is never generated');
+    }
+  });
+});
