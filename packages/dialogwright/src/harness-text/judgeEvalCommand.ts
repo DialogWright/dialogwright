@@ -7,7 +7,7 @@ import { cassetteFileName, resolveJevProvider } from '../jev/provider';
 import { SdkJevClient } from '../jev/sdkClient';
 import type { JevClient } from '../jev/types';
 import { loadHarnessEnv } from '../server/envFile';
-import { DEFAULT_CASES_FILE, evaluateCases, formatJudgeEval, judgeEvalJson, loadJudgeCases, type JudgeEvalReport } from '../render/judgeEval';
+import { DEFAULT_CASES_FILE, evaluateCases, formatJudgeEval, judgeEvalJson, judgeLatency, loadJudgeCases, type JudgeEvalReport } from '../render/judgeEval';
 
 /**
  * `dialogwright render:judge-eval [--replay] [--cases <file>] [--out <file.md>] [--json]` (../render/judgeEval.ts):
@@ -107,9 +107,21 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   }
   const cassette = judgeCassettePath(casesFile, jev.model);
   const answeredBy = { provider: jev.provider, model: jev.model, official: jev.official };
-  const judge = replay
+  // Only the requests sent to the judge are timed (a cassette hit is not): what a call would wait.
+  const timings: number[] = [];
+  const timed = (inner: JevClient): JevClient => ({
+    ...(inner.answeredBy ? { answeredBy: inner.answeredBy } : {}),
+    async ask(req) {
+      const start = performance.now();
+      const r = await inner.ask(req);
+      timings.push(performance.now() - start);
+      return r;
+    },
+  });
+  const live = replay ? null : (io.judge ?? new SdkJevClient({ endpoint: jev, timeoutMs: 15_000 }));
+  const judge = live === null
     ? new CassetteClient({ path: cassette, mode: 'replay', answeredBy })
-    : new CassetteClient({ path: cassette, mode: 'record', answeredBy, inner: io.judge ?? new SdkJevClient({ endpoint: jev, timeoutMs: 15_000 }) });
+    : new CassetteClient({ path: cassette, mode: 'record', answeredBy, inner: timed(live) });
   try {
     judge.preload();
   } catch (e) {
@@ -120,8 +132,11 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   const key = jev.apiKey;
   const redact = (s: string): string => (key !== null && key.length >= 4 ? s.split(key).join('***') : s);
   say(`${cases.length} cases from ${shown(casesFile)}; the judge ${jev.model} from ${jev.provider}, ${replay ? 'replayed from' : 'recording what is missing into'} ${shown(cassette)}`);
+  // The connection opened before the first case, so the first request is not timed with its setup.
+  if (live?.warm) await live.warm().catch(() => undefined);
   const results = await evaluateCases(cases, judge, { timeoutMs: 15_000, redact, progress: io.err });
-  const report: JudgeEvalReport = { casesFile: shown(casesFile), model: jev.model, provider: jev.provider, replay, cassette: shown(cassette), results };
+  const latency = judgeLatency(timings);
+  const report: JudgeEvalReport = { casesFile: shown(casesFile), model: jev.model, provider: jev.provider, replay, cassette: shown(cassette), results, ...(latency ? { latency } : {}) };
   const markdown = formatJudgeEval(report);
   if (json) io.out(judgeEvalJson(report));
   else {

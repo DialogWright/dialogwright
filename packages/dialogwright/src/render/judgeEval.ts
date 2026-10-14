@@ -6,7 +6,7 @@ import { stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
 import { checkSpan, cleanSpan, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { spanSentence } from './prompt';
-import type { RenderFallback, SpanAct } from './types';
+import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
 
 /**
  * Measuring the span drift judge (`render:judge-eval`, live findings items 23 and 25). A set of cases,
@@ -234,6 +234,24 @@ export interface JudgeEvalReport {
   readonly replay: boolean;
   readonly cassette: string;
   readonly results: readonly CaseResult[];
+  /** How long the judge took, timed on the requests this run sent it (none when every answer was replayed). */
+  readonly latency?: JudgeLatency;
+}
+
+/** The judge's latency over the requests a run sent it: what a call waits after a wording. */
+export interface JudgeLatency {
+  readonly measured: number;
+  readonly p50: number;
+  readonly p95: number;
+  readonly max: number;
+}
+
+/** The latency of the requests timed (milliseconds), or undefined when none was. */
+export function judgeLatency(ms: readonly number[]): JudgeLatency | undefined {
+  if (ms.length === 0) return undefined;
+  const sorted = [...ms].sort((a, b) => a - b);
+  const at = (q: number): number => Math.round(sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)]!);
+  return { measured: sorted.length, p50: at(0.5), p95: at(0.95), max: Math.round(sorted[sorted.length - 1]!) };
 }
 
 const pct = (n: number, of: number): string => (of === 0 ? '-' : `${n} (${Math.round((100 * n) / of)}%)`);
@@ -276,6 +294,9 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
+    ...(report.latency
+      ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']
+      : []),
     'data checks: checkSpan as a call runs it, the checks of a span\'s data and shape (empty, format, question, conflict, the word budget, avoid, foreign figures and names). stub: the stub regression\'s judge, a simple test double. judge: the decision model asked renderSpanDriftQuestion with the state a call sends, the span heard in a representative sentence (spoken to the caller, the secretary demo\'s read-back; in the caller\'s terms, the message fixture\'s). together: the data checks and the judge, as a call runs them.',
     '',
   ];
@@ -363,6 +384,7 @@ export function judgeEvalJson(report: JudgeEvalReport): string {
     replay: report.replay,
     cassette: report.cassette,
     fire: DRIFT_FIRE,
+    ...(report.latency ? { latency: report.latency } : {}),
     realisticSaid: saidRates(realFaithful),
     unfaithful: tally('unfaithful', report.results.filter((r) => r.case.expected === 'unfaithful')),
     faithful: tally('faithful', report.results.filter((r) => r.case.expected === 'faithful')),

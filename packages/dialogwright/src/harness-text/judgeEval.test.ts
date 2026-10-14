@@ -6,7 +6,7 @@ import { main } from '../define/cli';
 import { loadCassette } from '../jev/cassette';
 import type { JevClient, JevRequest } from '../jev/types';
 import { renderSpanDriftQuestion, renderSpanDriftState } from '../render/checks';
-import { actOf, DEFAULT_CASES_FILE, evaluateCases, judgeRequest, loadJudgeCases, REALISTIC, saidRates, type JudgeCase } from '../render/judgeEval';
+import { actOf, DEFAULT_CASES_FILE, evaluateCases, judgeLatency, judgeRequest, loadJudgeCases, REALISTIC, saidRates, type JudgeCase } from '../render/judgeEval';
 import { judgeCassettePath, judgeEvalCommand } from './judgeEvalCommand';
 
 /**
@@ -160,6 +160,15 @@ describe('the readers', () => {
   });
 });
 
+describe('the judge\'s latency', () => {
+  it('is the requests timed, by their 50th and 95th percentile and the slowest, or nothing when none was', () => {
+    expect(judgeLatency([])).toBeUndefined();
+    expect(judgeLatency([120.4])).toEqual({ measured: 1, p50: 120, p95: 120, max: 120 });
+    const ms = Array.from({ length: 20 }, (_, i) => (i + 1) * 10);
+    expect(judgeLatency(ms)).toEqual({ measured: 20, p50: 100, p95: 190, max: 200 });
+  });
+});
+
 describe('render:judge-eval', () => {
   it('records the judge\'s answers into a cassette beside the cases, tables the everyday cases first, and never prints the key', async () => {
     const dir = tempDir();
@@ -184,10 +193,15 @@ describe('render:judge-eval', () => {
     expect(run.out.at(-1)).toBe(`written to ${out}`);
     expect([...run.out, ...run.err].join('\n')).not.toContain(FAKE_KEY);
 
-    // Recording again asks nothing the cassette has.
+    // The judge's latency, timed on the 5 requests sent it, in the report a reader compares judges by.
+    expect(text).toMatch(/The judge's latency, timed on the 5 requests this run sent it .*: p50 \d+ ms, p95 \d+ ms, max \d+ ms\. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording \(default 500 ms by voice, 1000 ms in a chat\)/);
+
+    // Recording again asks nothing the cassette has, and times nothing: no latency line.
     const again = fakeJudge(new Set());
-    expect(await judgeEvalCommand(['--cases', cases], io({ TYPESAFE_API_KEY: FAKE_KEY }, again).io)).toBe(0);
+    const second = io({ TYPESAFE_API_KEY: FAKE_KEY }, again);
+    expect(await judgeEvalCommand(['--cases', cases], second.io)).toBe(0);
     expect(again.asked).toBe(0);
+    expect(second.out.join('\n')).not.toContain("The judge's latency");
   });
 
   it('--replay tables the cassette with no key; a case it lacks is "not recorded" and the run exits 1', async () => {
@@ -200,6 +214,7 @@ describe('render:judge-eval', () => {
     expect(json.replay).toBe(true);
     expect(json.cases.find((c) => c.id === 'r-slip')!.judge).toEqual({ p: 0.9 });
     expect(json.realisticSaid.together).toBe(2);
+    expect(json).not.toHaveProperty('latency');
     writeFileSync(cases, readFileSync(cases, 'utf8') + line({ id: 'new', span: 'call about the invoice' }) + '\n');
     const stale = io({});
     expect(await judgeEvalCommand(['--cases', cases, '--replay'], stale.io)).toBe(1);
