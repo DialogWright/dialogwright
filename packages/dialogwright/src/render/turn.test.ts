@@ -21,7 +21,8 @@ import { testkitApp } from '../testing/testkit';
 import { FakeRenderClient, type FakeRenderOptions } from './fake';
 import { renderGroupOf, withRenderAudit } from './turn';
 import { spanKey } from './prompt';
-import { RenderClientError, type Renderer, type SpeechAct } from './types';
+import { RenderClientError, SPAN_GAP, type Renderer, type SpanAct, type SpeechAct } from './types';
+import { frameViolations } from '../testing/adversarial/run';
 import type { AuditDraft } from '../audit/types';
 import { traceLine } from '../trace/writer';
 import { screenState } from '../core/screen';
@@ -344,7 +345,7 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     ]);
   });
 
-  it('sends the model only the span\'s goal, its content quoted, its budget, the style, the channel and the language: never the frame', async () => {
+  it('sends the model only the span\'s goal, its sentence (the frame\'s own words, every value a placeholder), its content quoted, its budget, the style, the channel and the language: never a value of the frame', async () => {
     const client = new FakeRenderClient();
     const asked: JevRequest[] = [];
     await call(TO_SUMMARY, { client }, asked);
@@ -355,16 +356,41 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     expect(act).toEqual({
       kind: 'span',
       goal: "Summarize the caller's message in one sentence, in their own terms.",
+      sentence: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: ____. Shall I pass it on?",
       content: [{ name: 'message', value: MESSAGE }],
       channel: 'voice',
       language: 'en-US',
       style: { persona: 'a warm, brief office receptionist', words: 25, avoid: ['unfortunately', 'I apologize for the inconvenience'] },
     });
-    for (const frame of ['Dana', 'Morgan', '0142', 'Okay, thanks', 'pass it on']) expect(JSON.stringify(act)).not.toContain(frame);
-    // Its drift check is asked of the span and its content alone.
+    // The frame's values never: not the recipient (a span in the caller's terms lists no names), the caller's name or the number.
+    for (const value of ['Dana', 'Morgan', '0142', '555']) expect(JSON.stringify(act)).not.toContain(value);
+    // Its drift check is asked of the span, heard in its sentence, and its content.
     const judged = asked.find((r) => r.questions.renderSpanDrift !== undefined)!;
-    expect(judged.state).toEqual({ span: { goal: act.goal, said: 'please call me about the March invoice before Friday' }, quoted: [{ name: 'message', words: MESSAGE }] });
-    expect(JSON.stringify(judged.state)).not.toContain('Dana');
+    expect(judged.state).toEqual({
+      span: { goal: act.goal, said: 'please call me about the March invoice before Friday', sentence: "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: please call me about the March invoice before Friday. Shall I pass it on?" },
+      quoted: [{ name: 'message', words: MESSAGE }],
+    });
+    for (const value of ['Dana', 'Morgan', '0142']) expect(JSON.stringify(judged.state)).not.toContain(value);
+  });
+
+  it('a span shown its sentence still reaches only the span: one that echoes the frame\'s words or rewrites the frame never changes what the frame says (live findings item 24)', async () => {
+    const hostile: ((act: SpanAct) => string)[] = [
+      // The whole sentence written back, the content in its gap.
+      (act) => act.sentence.split(SPAN_GAP).join('please call me about the March invoice before Friday'),
+      // The sentence rewritten: its decision turned, its placeholders' braces dropped.
+      (act) => act.sentence.replace('Shall I pass it on?', 'I will not pass it on.').replace(/[{}]/g, '').split(SPAN_GAP).join('a call about the March invoice'),
+      // The frame's own words before a summary, as a model that repeats its lead-in would.
+      () => 'called and left this message: please call me about the March invoice before Friday',
+      () => 'so you\'re saying please call me about the March invoice before Friday. Shall I pass it on',
+    ];
+    for (const word of hostile) {
+      const r = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: (act) => word(act) } }) });
+      const span = spanOf(r)!;
+      const said = lastSaid(r);
+      // The frame as written, around the span alone: its wording where it passed every check, else the exact content.
+      expect(said).toBe(`${FRAME_START}${span.mode === 'generated' ? span.said : MESSAGE}${FRAME_END}`);
+      expect(frameViolations(messageApp, r.runs)).toEqual([]);
+    }
   });
 
   const fallsBack = async (say: string | Error, reason: string, renderer: Partial<Renderer> = {}, client?: FakeRenderClient): Promise<ScenarioRun> => {
@@ -490,7 +516,8 @@ describe('a framed line: a fixed line with a generated span (the message fixture
         const said = sayText(r.runs.at(-1)!.result.actions);
         expect(said.startsWith('Muy bien. Le diré a Dana Reyes que Morgan Lee, al 555 555 0142, llamó y dejó este mensaje: ')).toBe(true);
         if (goal) {
-          expect(client.askedSpans[0]!.act).toMatchObject({ goal: 'Resumir el mensaje en una frase, en sus propias palabras.', language: 'es' });
+          // Its sentence is the locale's frame, every value a placeholder.
+          expect(client.askedSpans[0]!.act).toMatchObject({ goal: 'Resumir el mensaje en una frase, en sus propias palabras.', language: 'es', sentence: 'Muy bien. Le diré a {recipient} que {caller}, al {phone}, llamó y dejó este mensaje: ____. ¿Se lo paso?' });
           expect(said).toContain('dejó este mensaje: please call me about the March invoice before Friday. ¿Se lo paso?');
         } else {
           expect(client.askedSpans).toEqual([]);
@@ -609,6 +636,8 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(act).toEqual({
       kind: 'span',
       goal: 'Give the caller their message back in one sentence, speaking to them.',
+      // The names it lists filled in its sentence, every other value a placeholder.
+      sentence: "Okay, thanks! I'll make sure Dana Reyes gets your message, {caller}, with your number, {phone}. In short, ____. Shall I pass it on?",
       content: [{ name: 'message', value: PROJECT }],
       channel: 'voice',
       language: 'en-US',
@@ -616,7 +645,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
       speaks: 'to-caller',
       names: [{ name: 'recipient', value: 'Dana Reyes' }],
     });
-    for (const frame of ['Morgan', '0142', 'Okay, thanks', 'pass it on', 'In short']) expect(JSON.stringify(act)).not.toContain(frame);
+    for (const value of ['Morgan', '0142', '555']) expect(JSON.stringify(act)).not.toContain(value);
     // The content is screened again; the names are not: they are the app's own option text, never the caller's words.
     const screenedWords = asked.filter((q) => q.questions.manipulation !== undefined && q.questions.renderSpanDrift === undefined).map((q) => JSON.stringify(q.state));
     expect(screenedWords.some((st) => st.includes(PROJECT))).toBe(true);
@@ -629,7 +658,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     expect(spanOf(r)).toMatchObject({ span: 'summary', mode: 'generated', said: 'the project is complete and you just need him to give his approval' });
     const judged = asked.find((q) => q.questions.renderSpanDrift !== undefined)!;
     expect(judged.state).toEqual({
-      span: { goal: act.goal, said: 'the project is complete and you just need him to give his approval', speaks: 'to-caller' },
+      span: { goal: act.goal, said: 'the project is complete and you just need him to give his approval', sentence: "Okay, thanks! I'll make sure Dana Reyes gets your message, {caller}, with your number, {phone}. In short, the project is complete and you just need him to give his approval. Shall I pass it on?", speaks: 'to-caller' },
       quoted: [{ name: 'message', words: PROJECT }],
       frame: [{ name: 'recipient', value: 'Dana Reyes' }],
     });

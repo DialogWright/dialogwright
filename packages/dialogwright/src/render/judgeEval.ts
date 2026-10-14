@@ -5,6 +5,7 @@ import { CASSETTE_MISS } from '../jev/cassette';
 import { stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
 import { checkSpan, cleanSpan, type SpanCheckLevel, DRIFT_FIRE, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { spanSentence } from './prompt';
 import type { RenderFallback, SpanAct } from './types';
 
 /**
@@ -30,6 +31,17 @@ export const DEFAULT_GOALS: Readonly<Record<'as-caller' | 'to-caller', string>> 
   'as-caller': "Summarize the caller's message briefly, in their own terms, as a receptionist reading it back.",
   'to-caller': 'Give the caller their message back briefly, speaking to them, as a receptionist reading it back.',
 };
+/**
+ * The framed line each case's span is said in, by its perspective (its act's `sentence`, as a call sends
+ * one; live findings item 24): spoken to the caller, the secretary demo's read-back; in the caller's own
+ * terms, the message fixture's. The span is `{summary}`; a to-caller case's names fill their variables
+ * (`{recipient}`), every other variable stays a placeholder, as on a call.
+ */
+export const JUDGE_FRAMES: Readonly<Record<'as-caller' | 'to-caller', string>> = {
+  'as-caller': "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: {summary}. Shall I pass it on?",
+  'to-caller': "Thanks! I'll make sure {recipient} gets your message, in short: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?",
+};
+
 /** The word budget a case's span is held to when it names none: wide, so `words` measures nothing here. */
 export const DEFAULT_WORDS = 25;
 
@@ -74,12 +86,13 @@ export function loadJudgeCases(path: string): JudgeCase[] {
   return cases;
 }
 
-/** A case's span act, as the engine builds one for a framed line's span: its content quoted under `message`. */
+/** A case's span act, as the engine builds one for a framed line's span: its content quoted under `message`, said in its perspective's frame (JUDGE_FRAMES). */
 export function actOf(c: JudgeCase): SpanAct {
   const names = Object.entries(c.names ?? {}).map(([name, value]) => ({ name, value }));
   return {
     kind: 'span',
     goal: c.goal ?? DEFAULT_GOALS[c.speaks],
+    sentence: spanSentence(JUDGE_FRAMES[c.speaks], 'summary', c.speaks === 'to-caller' ? names : []),
     content: [{ name: 'message', value: c.content }],
     channel: 'voice',
     language: 'en-US',
@@ -272,7 +285,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
-    'standard: checkSpan at `checks: standard`, the default (its checks of values, shape and voice: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names, a person the content does not use, a to-caller span\'s own I or we, a he or she of another gender; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", a "your" for no "my"). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends.',
+    'standard: checkSpan at `checks: standard`, the default (its checks of values, shape and voice: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names, a person the content does not use, a to-caller span\'s own I or we, a he or she of another gender; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", a "your" for no "my"). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends, the span heard in a representative sentence (spoken to the caller, the secretary demo\'s read-back; in the caller\'s terms, the message fixture\'s).',
     '',
   ];
   // The everyday picture first.

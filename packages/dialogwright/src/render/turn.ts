@@ -12,7 +12,7 @@ import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/ty
 import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID, type SpanCheckLevel } from './checks';
 import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
-import { actMessage, instructionsOf, renderKey, spanKey } from './prompt';
+import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
@@ -110,7 +110,9 @@ type SpanPlan = { name: string; content: string } & ({ act: SpanAct; conflicts: 
  * The spans of a framed line (prompts.yaml's `generate`) to word on this turn, or why none is tried.
  * The line as a whole is held as a line generated whole is (said exactly, the call's group, `when`,
  * the screen); then each span to its own goal in the call's locale and its content. A span's act is
- * its goal, its content (quoted), its budget, the style, the channel and the language: never the frame.
+ * its goal, its sentence (the frame's own words, the span a gap and every value a placeholder, but the
+ * names it lists), its content (quoted), its budget, the style, the channel and the language: never a
+ * value of the frame.
  */
 function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans: NonNullable<GeneratedLine['spans']> }, said: SaidLine, group: 'generated' | 'fixed', identifiers: ReadonlySet<string>): { spans: SpanPlan[] } | { skipped: RenderSkip } {
   const { before, result, event } = input;
@@ -149,6 +151,9 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
       const act: SpanAct = {
         kind: 'span',
         goal,
+        // The sentence it is put into: the frame's own words in the call's locale, the span a gap, its
+        // listed names filled, every other value a placeholder (never the caller's name or number).
+        sentence: spanSentence(template, name, names),
         content: [{ name: span.from, value: content }],
         channel,
         language,
@@ -355,7 +360,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     return { said: text, gen };
   };
   // A framed line's span: screened, worded, held to its content alone (checkSpan), and asked of the
-  // drift check as a summary of its content; never the frame.
+  // drift check as a summary of its content, heard in its sentence; the frame itself is never the model's.
   const attemptSpan = async (promptId: string, span: string, act: SpanAct, conflicts: readonly string[], level: SpanCheckLevel): Promise<Attempt> => {
     const c = checker();
     // The content screened again; a to-caller span's names are not: they are the app's own option text, never the caller's words.

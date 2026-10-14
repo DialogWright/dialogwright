@@ -107,6 +107,11 @@ describe('the case file', () => {
     expect(judgeRequest(toCaller)).toEqual({ state: renderSpanDriftState(act, toCaller.span), questions: renderSpanDriftQuestion('to-caller') });
     const plain = actOf(cases.find((c) => c.speaks === 'as-caller')!);
     expect('speaks' in plain || 'names' in plain).toBe(false);
+    // Heard in a representative sentence, as on a call (live findings item 24): spoken to the caller, the
+    // secretary demo's read-back with its names filled; in the caller's terms, the message fixture's.
+    expect(act.sentence).toBe("Thanks! I'll make sure Sam Ortiz gets your message, in short: ____. I have you as {caller}, on {phone}. Shall I pass it on?");
+    expect(plain.sentence).toBe("Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: ____. Shall I pass it on?");
+    expect((judgeRequest(toCaller).state as { span: { sentence: string } }).span.sentence).toBe(`Thanks! I'll make sure Sam Ortiz gets your message, in short: ${toCaller.span}. I have you as {caller}, on {phone}. Shall I pass it on?`);
   });
 });
 

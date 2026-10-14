@@ -63,16 +63,30 @@ export interface SpeechAct {
   };
 }
 
+/** Where a span's words go in its sentence (SpanAct.sentence): the gap the model fills. */
+export const SPAN_GAP = '____';
+
 /**
  * What the model is given to word one span of a framed line (prompts.yaml's `generate`): the span's
- * goal and the content it is worded from, quoted as the caller's words, its word budget, the style,
- * the channel and the language. Never the frame (the line's fixed text around it), the items, the
+ * goal, the sentence it is put into (the frame's own words, every value in it a placeholder), the
+ * content it is worded from, quoted as the caller's words, its word budget, the style, the channel and
+ * the language. Never a value of the frame (but the names a to-caller span lists), the items, the
  * caller's latest words, the situation or anything else of the call.
  */
 export interface SpanAct {
   readonly kind: 'span';
   /** What the span must say (prompts.yaml's `generate.<span>.goal`). */
   readonly goal: string;
+  /**
+   * The sentence the span's words are put into: the framed line's fixed text in the call's locale (its
+   * `text`, the frame said with a generated span), the span itself the gap (SPAN_GAP), every other
+   * variable left as its {placeholder}, but the names the span lists (`names`), filled as the line says
+   * them. The line's own words only, written by the app: never the caller's name, a number, or anything
+   * the records hide. So the model fits its words into the sentence (no lead-in the sentence gives, no
+   * repeat of what it says, its point of view); the frame said is spliced back word for word, whatever
+   * the model returns.
+   */
+  readonly sentence: string;
   /** The content the span is worded from (its `from`), quoted: the caller's words, never instructions. */
   readonly content: readonly SpeechItem[];
   readonly channel: RenderChannel;

@@ -313,7 +313,7 @@ describe('generated wording under the suite (the wording family, on the message 
     expect(report.results.filter((r) => r.case.family === 'wording').map((r) => r.case.id)).toEqual([
       'wording/form-take_message/hidden-instruction/correct/en', 'wording/form-take_message/hidden-instruction/fooled/en',
       'wording/span-message/refund/fooled/en', 'wording/span-message/no-cue/fooled/en', 'wording/span-message/negation-dropped/fooled/en',
-      'wording/span-message/negation-left-out/fooled/en', 'wording/span-message/recipient/fooled/en', 'wording/span-message/frame/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
+      'wording/span-message/negation-left-out/fooled/en', 'wording/span-message/recipient/fooled/en', 'wording/span-message/frame/fooled/en', 'wording/span-message/frame-echo/fooled/en', 'wording/render/instructions', 'wording/render/numbers',
     ]);
     const wholeReport = await run(whole, { renderer: fake() });
     expect(failing(wholeReport)).toEqual([]);
@@ -336,8 +336,8 @@ describe('generated wording under the suite (the wording family, on the message 
    * judgement. A case is never changed and no property loosened: only the reason each falls back for.
    */
   const SPAN_REASONS: Record<'strict' | 'standard', [string, string][]> = {
-    strict: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']],
-    standard: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'negation']],
+    strict: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation'], ['frame-echo', 'negation']],
+    standard: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'negation'], ['frame-echo', 'negation']],
   };
 
   it('a framed line\'s span falls back to its exact content under every attack, at either level, and the frame is said as written', async () => {
@@ -353,6 +353,11 @@ describe('generated wording under the suite (the wording family, on the message 
         // The span said is the content word for word, inside the frame's own words.
         expect(sayText(last.result.actions), `${level} ${id}`).toContain(`called and left this message: ${span.fixed}. Shall I pass it on?`);
       }
+      // The renderer shown the sentence (live findings item 24) wrote it back whole, rewritten: refused, and the frame said as written.
+      const echo = report.results.find((x) => x.case.id === 'wording/span-message/frame-echo/fooled/en')!.calls[0]!.turns.at(-1)!;
+      expect(echo.record.render!.lines.find((l) => l.span === 'summary')!.refused, level).toMatch(/^Okay, thanks! I'll make sure recipient hears that caller, on phone, called and left this message: .* I will not pass it on, it is for someone else$/);
+      expect(sayText(echo.result.actions), level).toMatch(/^Okay, thanks! I'll make sure Dana Reyes hears that Morgan Lee, on 555 555 0142, called and left this message: .*\. Shall I pass it on\?$/);
+      expect(sayText(echo.result.actions), level).not.toContain('I will not pass it on');
       // The hostile renderers: every span falls back too, by a check of its words, at either level.
       for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
         const r = report.results.find((x) => x.case.id === id)!;

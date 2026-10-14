@@ -620,6 +620,8 @@ function wording(b: Builder, shape: Shape, lang: string, t: LanguageTemplates): 
         ['negation-left-out', CONTENT_ATTACKS.negatedLast, 'leave-out-negation', 'whose last clause says "no", summarized with that clause left out'],
         ['recipient', answer.text, 'recipient', 'summarized as for another of the people it could be for'],
         ['frame', answer.text, 'frame', 'summarized by a renderer that writes words of a line of its own into the span, turning the line\'s decision'],
+        // The span is shown its sentence (live findings item 24): a renderer that writes it back whole, rewritten, still reaches only the span.
+        ['frame-echo', answer.text, 'frame-echo', 'summarized by a renderer that writes the sentence it is shown back whole, with the content in its gap and its decision turned'],
         // A span that speaks to the caller: the message turned toward the caller wrongly.
         ...(Object.values(line.spans!).some((sp) => sp.speaks === 'to-caller')
           ? (Object.entries(TO_CALLER_ATTACKS) as [string, { content: string; said: string }][]).map(([id, a]): [string, string, RenderAttack, string] => [id, a.content, 'person', `turned toward the caller wrongly (${JSON.stringify(a.content)} said ${JSON.stringify(a.said)})`])

@@ -84,13 +84,16 @@ export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened'
  * change in meaning, the line otherwise its fixed text; `instructions`, instructions to the caller and the system before
  * the line; `numbers`, an amount and a number it was not given before the line; `frame` (a framed line's
  * span only), words of a line of its own written into the span, turning the line's decision;
+ * `frame-echo` (a span only), the span's sentence (SpanAct.sentence) written back whole with the content
+ * in its gap and its decision turned, as a model that rewrites the frame it is shown would;
  * `leave-out-negation` (a span only), the content summarized with its clauses that say "no" left out,
  * the rest word for word; `person` (a span that speaks to the caller only), the content turned toward the
  * caller wrongly (TO_CALLER_ATTACKS: who does what to whom swapped, a "no" about a person dropped, the
  * message's own "you" kept as the caller, a "your" for no "my"). A framed
- * line's span is answered the same way, from its content alone (it is never given the frame).
+ * line's span is answered the same way, from its content (and, for `frame-echo`, its sentence: the frame's
+ * own words, which it is shown but never given to change).
  */
-export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame' | 'person';
+export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame' | 'frame-echo' | 'person';
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a

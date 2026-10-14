@@ -10,6 +10,9 @@ import { instructionsOf, RENDER_INSTRUCTIONS, RENDER_INSTRUCTIONS_NO_ACKNOWLEDGE
 import { ModelRenderClient, renderCassetteModel, renderLines, renderSettings, resolveRenderProvider } from './providers';
 import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
+/** A span's sentence, as a call sends one (SpanAct.sentence): the frame's own words, the span a gap. */
+const SENTENCE = "I'll make sure {recipient} gets your message from {caller}: ____. Shall I pass it on?";
+
 /**
  * The render providers (OpenRouter and Anthropic, with the author's own key from its own variable),
  * their settings, and the render cassette. No test reaches a model: each request goes to a fetch
@@ -137,9 +140,9 @@ describe('ModelRenderClient', () => {
     expect([bare.message, bare.detail]).toEqual(['anthropic: HTTP 502', undefined]);
   });
 
-  it('a framed line\'s span: its own instructions and its span act alone, the frame never sent', async () => {
+  it('a framed line\'s span: its own instructions and its span act alone, the frame sent only as its sentence (its own words, the span a gap, no value)', async () => {
     sent.length = 0;
-    const span: SpanAct = { kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
+    const span: SpanAct = { kind: 'span', sentence: SENTENCE, goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
     const spanReq: RenderRequest = { promptId: 'confirm_take_message', span: 'summary', act: span, key: spanKey('confirm_take_message', 'summary', span) };
     for (const [provider, keyVar, answer] of [['anthropic', 'ANTHROPIC_API_KEY', { content: [{ type: 'text', text: 'a call about the invoice' }], stop_reason: 'end_turn' }], ['openrouter', 'OPENROUTER_API_KEY', { choices: [{ message: { content: 'a call about the invoice' } }] }]] as const) {
       const p = resolveRenderProvider({ RENDER_PROVIDER: provider, [keyVar]: KEY })!;
@@ -153,6 +156,7 @@ describe('ModelRenderClient', () => {
     // A span's key is its own: never a line's, and it changes with its span and its act.
     expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'gist', span));
     expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'summary', { ...span, goal: 'Sum it up.' }));
+    expect(spanKey('confirm_take_message', 'summary', span)).not.toBe(spanKey('confirm_take_message', 'summary', { ...span, sentence: 'Here is your message: ____.' }));
   });
 
   it('a line is told what an acknowledgement may do: show the caller was heard, never what the agent will do, never a name the caller gave as someone else\'s', async () => {
@@ -171,10 +175,12 @@ describe('ModelRenderClient', () => {
     const [a, o] = sent.map((x) => JSON.parse(String(x.init.body)));
     expect(a.system).toContain(sentence);
     expect(o.messages[0].content).toContain(sentence);
-    // A span acknowledges nothing: its instructions are unchanged, so a recorded span is replayed by the same key.
+    // A span acknowledges nothing: item 18 left its instructions as they were. Its key has changed once
+    // since, by design: its act carries the sentence it is put into, and its instructions say what to do
+    // with it (live findings item 24), so every recorded span re-keys; this pins the key as it now is.
     expect(SPAN_INSTRUCTIONS).not.toContain('An acknowledgement');
-    const span: SpanAct = { kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
-    expect(spanKey('confirm_take_message', 'summary', span)).toBe('82c11e6f76db15de0a40c19507714b0aa9346faff1aab7def851d47d4f53198b');
+    const span: SpanAct = { kind: 'span', sentence: SENTENCE, goal: 'Summarize the message.', content: [{ name: 'message', value: 'call me about the invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
+    expect(spanKey('confirm_take_message', 'summary', span)).toBe('bf0db369a65a555972f800956425a1a5f201e16620822e0ab4a3cddf0c098603');
   });
 
   it('says which model, from where, how it thinks, never the key', () => {
