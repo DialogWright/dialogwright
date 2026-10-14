@@ -407,6 +407,22 @@ describe('the keypad menu from the greeting (intents.yaml menuListens, a menu en
     expect(key(words, '9').menuKey).toEqual({ digit: '9', intent: 'spanish' });
   });
 
+  it('takes the same key again as a choice when the turn before was that key doing something else (a keypad yes at a summary)', () => {
+    const t = tc();
+    const start = started(every);
+    const renew = say(start, 'I want to renew The River Atlas', { intent: choice({ renew_loan: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    expect(renew.session.pendingConfirmation?.target).toBe('form');
+    // The summary's keypad yes: the renewal is made, and "anything else?" asked.
+    const yes = key(renew, '1');
+    expect(yes.gateEvents.map((e) => `${e.decision.call.tool}:${e.decision.verdict}`)).toEqual(['renewLoan:ALLOW']);
+    expect(yes.session.lastPromptId).toBe('anything_else');
+    expect(yes.session.history.at(-1)?.intent).toBe('dtmf:1');
+    // The 1 again, at "anything else?": the menu's 1, a renewal started, not a repeat to ignore.
+    const again = key(yes, '1');
+    expect(again.menuKey).toEqual({ digit: '1', intent: 'renew_loan' });
+    expect(again.session.form).toBe('renew_loan');
+  });
+
   it('forgets a barge-in the key made, so the first words after the switch are not reported as one', () => {
     const start = started(nine);
     const cut = resolve(start.session, interruptEvent('Thanks for calling', 900), null, tc());

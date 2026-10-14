@@ -2152,12 +2152,19 @@ function greetingKeyOf(app: App, digit: string): App['menu'][number] | undefined
 }
 
 /**
- * Whether the call's last turn was this same key (its history's last entry, `dtmf:<digit>`): a key taken
- * at the open question that is pressed again with nothing between, no words, no silence, no other key.
- * An ignored turn writes no history, so a third press is the same.
+ * Whether the call's last turn was this same key (its history's last entry, `dtmf:<digit>`): pressed
+ * again with nothing between, no words, no silence, no other key. Any key turn writes that entry (a
+ * keypad yes at a summary, a keyed slot's last digit), so it is read only with switchesToCurrent. An
+ * ignored turn writes no history, so a third press is the same.
  */
 function repeatsLastKey(s: Session, digit: string): boolean {
   return s.history.at(-1)?.intent === `dtmf:${digit}`;
+}
+
+/** Whether `intent` is an informational intent that switches to the locale the call is in already: chosen again, it changes nothing. */
+function switchesToCurrent(s: Session, app: App, intent: Intent): boolean {
+  const locale = app.intents[intent]?.locale;
+  return locale !== undefined && locale === s.locale;
 }
 
 /**
@@ -2208,9 +2215,10 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
   const early = atOpenQuestion(s) ? greetingKeyOf(io.app, digit) : undefined;
   if (early !== undefined) {
     s.dtmfBuffer = '';
-    // The same key again, with nothing between: a caller pressing again over a line they could not cut
-    // short (BARGE_IN none), not a second choice. The switch's line is not said twice.
-    if (repeatsLastKey(s, digit)) return { decision: { kind: 'ignore' }, rows: [] };
+    // The language key again, with nothing between, to the language the call is in now: a caller
+    // pressing again over a line they could not cut short (BARGE_IN none), not a second choice. The
+    // switch's line is not said twice. Any other key is a choice, the same key included.
+    if (repeatsLastKey(s, digit) && switchesToCurrent(s, io.app, early.intent)) return { decision: { kind: 'ignore' }, rows: [] };
     const decision = menuChoice(s, io, early.intent);
     if (decision.kind !== 'ignore') {
       io.out.menuKey = { digit, intent: early.intent };
