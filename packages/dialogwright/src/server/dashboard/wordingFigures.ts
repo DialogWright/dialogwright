@@ -77,8 +77,8 @@ export function renderFactsOf(records: readonly TraceRecord[], reasks: number): 
       const p = (facts.prompts[l.promptId] ??= { tried: 0, generated: 0, fellBack: 0, ms: 0 });
       p.tried += 1;
       if (l.mode === 'generated') p.generated += 1;
-      // A span said exactly (its wording was its content word for word) is no fallback.
-      else if (l.exactly !== true) p.fellBack += 1;
+      // A span said unchanged (its wording was its content word for word) is no fallback.
+      else if (l.unchanged !== true) p.fellBack += 1;
       p.ms += l.ms ?? 0;
     }
   }

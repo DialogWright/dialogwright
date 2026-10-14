@@ -87,7 +87,7 @@ function turnLines(run: TurnRun, indent: string): string[] {
   if (said !== '') lines.push(`${indent}   says   ${JSON.stringify(said)}`);
   // An app that generates lines: each such line's mode, and for one said generated or fallen back, its fixed line.
   for (const l of run.record.render?.lines ?? []) {
-    const how = l.mode === 'generated' ? 'generated' : l.exactly === true ? 'fixed, said exactly (the wording was the words themselves)' : l.fallback !== undefined ? `fixed, fell back (${l.fallback})` : `fixed (${l.skipped ?? 'not tried'})`;
+    const how = l.mode === 'generated' ? 'generated' : l.unchanged === true ? 'fixed, said unchanged (the wording was the words themselves)' : l.fallback !== undefined ? `fixed, fell back (${l.fallback})` : `fixed (${l.skipped ?? 'not tried'})`;
     lines.push(`${indent}   line   ${l.promptId}: ${how}${l.mode === 'generated' ? `; fixed ${JSON.stringify(l.fixed)}` : ''}${l.refused !== undefined ? `; refused ${JSON.stringify(l.refused)}` : ''}`);
   }
   // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.

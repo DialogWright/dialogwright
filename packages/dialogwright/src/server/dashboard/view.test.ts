@@ -1346,8 +1346,8 @@ describe('generated wording on the call detail', () => {
     for (const skipped of ['share', 'when', 'locale', 'screen', 'identifier', 'knowledge', 'exact', 'no-content']) expect(wordingOf({ lines: [{ promptId: 'p', mode: 'fixed', fixed: 'x', skipped }] })[0]!.why).not.toBe('not tried');
   });
 
-  it('a span said exactly (its wording was its content word for word) is not a fallback', () => {
-    expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', exactly: true }] })[0]!.why).toBe('said exactly: the wording was the words themselves');
+  it('a span said unchanged (its wording was its content word for word) is not a fallback', () => {
+    expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', unchanged: true }] })[0]!.why).toBe('said unchanged: the wording was the words themselves');
   });
 
   it('a framed line\'s span is named, with its exact content beside it', () => {

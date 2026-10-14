@@ -59,7 +59,7 @@ export function fakeWording(act: SpeechAct): string {
  * The fake's own wording of a span, deterministic: its content's first clause (to its first comma or
  * stop), within the span's budget, with no question mark and no closing punctuation (the frame has its
  * own), as a short summary of its main point would be. A content of one clause is given back whole: the
- * span is then said exactly (RenderLine.exactly). A clause after the first is left out, so a "no" or a
+ * span is then said unchanged (RenderLine.unchanged). A clause after the first is left out, so a "no" or a
  * condition there falls back (`omitted`), as it should.
  */
 export function fakeSpanWording(act: SpanAct): string {

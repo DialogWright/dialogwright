@@ -244,8 +244,8 @@ export interface LineBreakdown {
   tried: number;
   generated: number;
   fellBack: Record<string, number>;
-  /** Spans whose wording was their content word for word, said exactly (RenderLine.exactly): not a fallback. Absent when none. */
-  exactly?: number;
+  /** Spans whose wording was their content word for word, said unchanged (RenderLine.unchanged): not a fallback. Absent when none. */
+  unchanged?: number;
   /** The most common fallback's first instance: a wording a check refused (scrubbed as the trace is), or a failed request's reason. */
   example?: { reason: string; text: string };
 }
@@ -273,8 +273,8 @@ export interface ModelResult {
   generated: number;
   /** Fallbacks by reason. */
   fellBack: Record<string, number>;
-  /** Spans whose wording was their content word for word, said exactly (RenderLine.exactly): not a fallback. Absent when none. */
-  exactly?: number;
+  /** Spans whose wording was their content word for word, said unchanged (RenderLine.unchanged): not a fallback. Absent when none. */
+  unchanged?: number;
   /** The `error` fallbacks by why the request failed. */
   errors: Record<string, number>;
   /** For each of those reasons, the API's own words the first time (the trace's `error.message`, scrubbed as the trace is), where it gave any. */
@@ -394,7 +394,7 @@ export function lineBreakdown(records: readonly TraceRecord[], app: App): LineBr
       }
       b.tried += 1;
       if (line.mode === 'generated') b.generated += 1;
-      else if (line.exactly === true) b.exactly = (b.exactly ?? 0) + 1;
+      else if (line.unchanged === true) b.unchanged = (b.unchanged ?? 0) + 1;
       else if (line.fallback !== undefined) {
         b.fellBack[line.fallback] = (b.fellBack[line.fallback] ?? 0) + 1;
         const text = line.refused ?? (line.error !== undefined ? `${line.error.reason}${line.error.message !== undefined ? `: ${line.error.message}` : ''}` : undefined);
@@ -597,7 +597,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
       ...(stopped !== undefined ? { stopped } : {}),
       tried: tally.tried,
       generated: tally.generated,
-      ...(tally.exactly > 0 ? { exactly: tally.exactly } : {}),
+      ...(tally.unchanged > 0 ? { unchanged: tally.unchanged } : {}),
       fellBack: Object.fromEntries(Object.entries(tally.fellBack).filter(([, n]) => (n ?? 0) > 0)) as Record<string, number>,
       errors: tally.errors,
       errorMessages: errorMessagesOf(into.records, run.app),
@@ -680,7 +680,7 @@ function row(m: ModelResult, r: Pick<BakeoffReport, 'recordBudgetMs'>): string[]
   const fell = sum(m.fellBack);
   const latency = m.wording.p50 === null ? 'not measured' : `${m.wording.p50.toFixed(0)} / ${m.wording.p95!.toFixed(0)}`;
   const over = m.wording.measured === 0 ? '-' : `${m.wording.overBudget} of ${m.wording.measured}${m.wording.timedOut > 0 ? ` (${m.wording.timedOut} past ${seconds(r.recordBudgetMs)})` : ''}`;
-  const why = [reasonsOf(m), (m.exactly ?? 0) > 0 ? `said exactly ${m.exactly}` : ''].filter((w) => w !== '').join('; ');
+  const why = [reasonsOf(m), (m.unchanged ?? 0) > 0 ? `unchanged ${m.unchanged}` : ''].filter((w) => w !== '').join('; ');
   return [m.label, String(m.tried), `${m.generated}${pct(m.generated, m.tried)}`, `${fell}${pct(fell, m.tried)}`, why || '-', latency, over, usd(m.cost.renderUsd), usd(m.cost.checksUsd)];
 }
 
@@ -740,7 +740,7 @@ function byLineText(m: ModelResult): string[] {
     const fell = sum(l.fellBack);
     const why = fell === 0 ? '' : `: ${Object.entries(l.fellBack).sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([k, v]) => `${k} ${v}`).join(', ')}`;
     const e = l.example === undefined ? '' : `  e.g. ${l.example.reason}: "${l.example.text}"`;
-    return `  ${lineName(l).padEnd(width)}  ${l.tried} tried, ${l.generated} generated, ${(l.exactly ?? 0) > 0 ? `${l.exactly} said exactly, ` : ''}${fell} fell back${why}${e}`;
+    return `  ${lineName(l).padEnd(width)}  ${l.tried} tried, ${l.generated} generated, ${(l.unchanged ?? 0) > 0 ? `${l.unchanged} unchanged, ` : ''}${fell} fell back${why}${e}`;
   })];
 }
 

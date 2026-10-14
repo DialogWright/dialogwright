@@ -100,7 +100,7 @@ export function wordingOf(render) {
     ...(l.span !== undefined ? { span: l.span } : {}),
     mode: l.mode,
     fixed: l.fixed,
-    ...(l.mode === 'generated' ? {} : { why: l.exactly === true ? 'said exactly: the wording was the words themselves' : l.fallback !== undefined ? `fell back: ${WORDING_WHY[l.fallback] ?? l.fallback}` : WORDING_WHY[l.skipped] ?? 'not tried' }),
+    ...(l.mode === 'generated' ? {} : { why: l.unchanged === true ? 'said unchanged: the wording was the words themselves' : l.fallback !== undefined ? `fell back: ${WORDING_WHY[l.fallback] ?? l.fallback}` : WORDING_WHY[l.skipped] ?? 'not tried' }),
   }));
 }
 

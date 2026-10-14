@@ -204,11 +204,11 @@ export interface RenderLine {
   fallback?: RenderFallback;
   /**
    * A framed line's span whose wording was its content word for word (letter case, punctuation and
-   * spacing aside): said exactly, as the content (`mode: fixed`), and the line in its frame for the
+   * spacing aside): said unchanged, as the content (`mode: fixed`), and the line in its frame for the
    * exact words (`exactText`), so a frame written for a summary ("in short") never comes before the
    * caller's own words. Not a fallback: no check failed, and no drift check was asked.
    */
-  exactly?: true;
+  unchanged?: true;
   /** The wording a check refused, for whoever reads the trace; never said. */
   refused?: string;
   /**

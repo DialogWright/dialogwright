@@ -515,10 +515,10 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
       const r = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: verbatim } }) }, asked);
       expect(lastSaid(r), verbatim).toBe(EXACT_LINE);
       expect(lastSaid(r), verbatim).not.toContain('in short');
-      expect(spanOf(r), verbatim).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, exactly: true, source: 'fake' });
+      expect(spanOf(r), verbatim).toMatchObject({ span: 'summary', mode: 'fixed', fixed: MESSAGE, unchanged: true, source: 'fake' });
       expect(spanOf(r)!.said).toBeUndefined();
       expect(spanOf(r)!.fallback).toBeUndefined();
-      // Said exactly is no fallback: no audit row.
+      // Said unchanged is no fallback: no audit row.
       expect(r.runs.at(-1)!.record.audit?.filter((a) => a.type === 'render_fallback')).toEqual([]);
       expect(asked.filter((q) => q.questions.renderSpanDrift !== undefined)).toEqual([]);
     }

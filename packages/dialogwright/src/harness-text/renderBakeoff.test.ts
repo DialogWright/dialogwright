@@ -294,7 +294,7 @@ describe('render:bakeoff --fresh', () => {
     const replayed = await run('anthropic:claude-test-5-5', '--replay');
     expect(replayed.code).toBe(0);
     expect(replayed.table).toContain(`anthropic:claude-test-5-5: an interrupted --fresh run left ${cassette}.fresh (partial, never tabled); delete it`);
-    expect(replayed.table).toMatch(/^anthropic:claude-test-5-5\s+36\s+34 \(94%\)\s+0 \(0%\)\s+said exactly 2/m);
+    expect(replayed.table).toMatch(/^anthropic:claude-test-5-5\s+36\s+34 \(94%\)\s+0 \(0%\)\s+unchanged 2/m);
     const again = await run('anthropic:claude-test-5-5', '--fresh');
     expect(again.table).toContain('this fresh run replaced it');
     expect(existsSync(`${cassette}.fresh`)).toBe(false);

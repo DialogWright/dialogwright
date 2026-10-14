@@ -36,10 +36,20 @@ const tokens = (text: string): string[] => straight(text).toLowerCase().match(/[
 /**
  * What a summary must not leave out of the quoted words (the span drift question's criteria): a time or
  * an amount (a date word, an amount word, a digit) and who is to act (a name: a capitalized word that
- * does not begin the words, "I" aside), lower-cased.
+ * does not begin a sentence, "I" aside), lower-cased.
  */
 function mustKeep(quoted: string): string[] {
-  const named = (straight(quoted).match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => w.toLowerCase()).filter((w) => w !== 'i' && !w.startsWith("i'"));
+  const text = straight(quoted);
+  const named: string[] = [];
+  for (const m of text.matchAll(/[\p{L}\p{N}']+/gu)) {
+    const w = m[0];
+    if (!/^\p{Lu}/u.test(w)) continue;
+    // A capital that begins a sentence is no name (as the checks read capitals).
+    const before = text.slice(0, m.index).trimEnd();
+    if (before === '' || /[.!?:;\u2014\u2013"\u201c(]$/.test(before)) continue;
+    const lower = w.toLowerCase();
+    if (lower !== 'i' && !lower.startsWith("i'")) named.push(lower);
+  }
   return [...new Set([...tokens(quoted).filter((w) => DATE_WORDS.has(w) || AMOUNT_WORDS.has(w) || /\d/.test(w)), ...named])];
 }
 

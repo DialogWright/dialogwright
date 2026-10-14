@@ -308,12 +308,15 @@ describe('the span checks on realistic summaries (the secretary review, round 2)
     expect(leftOut('the invoice copy is attached', ["the invoice copy is attached, that's not urgent"])).toBe(false);
   });
 
-  it('an idiom with a "no" in it is not a refusal: never mind, no rush, no worries, don\'t hesitate, not sure', () => {
-    for (const idiom of ['never mind the old invoice', 'no rush on the invoice copies', 'no worries about the invoice copies', "don't hesitate to call about the invoice", "I'm not sure the invoice copies arrived"]) {
+  it('a clause that is only an idiom with a "no" in it is not a refusal: never mind, no rush, no worries, don\'t hesitate, not sure', () => {
+    for (const idiom of ['never mind', 'no rush', 'no worries', "please don't hesitate", "I'm not sure", 'no hay prisa']) {
       expect(leftOut('the delivery is ready', [`the delivery is ready, ${idiom}`]), idiom).toBe(false);
     }
     // A refusal beside an idiom is still held.
     expect(leftOut('the delivery is ready', ['the delivery is ready, no rush, but do not ship the damaged cartons'])).toBe(true);
+    // An idiom with more in its clause is no idiom alone: held (the review's reversals).
+    expect(leftOut('the delivery is ready', ['the delivery is ready, never mind the old invoice copies'])).toBe(true);
+    expect(leftOut('the delivery is ready', ["the delivery is ready, I'm not sure the invoice copies arrived"])).toBe(true);
   });
 
   it('"until" before a day or a time is a time (the drift check\'s), before a clause a condition; "the till" is no condition', () => {
@@ -335,8 +338,81 @@ describe('the span checks on realistic summaries (the secretary review, round 2)
 
   it('the whole-line drift question holds a summary of the quoted words the same way', () => {
     const q = renderDriftQuestion().renderDrift as { criteria: { true: string; false: string } };
-    expect(q.criteria.true).toContain('or, giving back the quoted words, it leaves out a negated statement, a refusal or a condition they set');
+    expect(q.criteria.true).toContain('or, summarizing or reading back the quoted words (not a brief acknowledgement of them), it leaves out a negated statement, a refusal or a condition they set');
+    expect(q.criteria.false).toContain('a brief acknowledgement of what the caller said (which need not give all of it back)');
     expect(q.criteria.true).toContain('or a time, an amount or who is to act that they give');
     expect(q.criteria.false).toContain('a short summary of the quoted words that says they are the caller\'s, with nothing dropped that changes their meaning or what the recipient should do (a time, an amount, who is to act), and every negated statement, refusal and condition kept with its no or its condition');
+  });
+});
+
+describe('the review\'s cases, round 3 (the negation head, one-word negated clauses, idioms, times)', () => {
+  const spanOf = (message: string): SpanAct => ({ kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 40, avoid: [] } });
+  const held = (cases: [string, string, string | null][]): void => {
+    for (const [message, said, reason] of cases) expect(checkSpan(said, spanOf(message)), `${message} => ${said}`).toBe(reason);
+  };
+
+  it('a negated clause keeps its head: what the "not" is about is among the given clause\'s words, and its head among the line\'s', () => {
+    held([
+      ['please do not call me before Friday', 'I will not pass on calls before Friday', 'negation'],
+      ["don't send the invoice to accounts", 'the invoice does not go to accounts yet, send it', 'negation'],
+      ['please do not call me before Friday', 'they will not call before Friday', null],
+      ['please do not call me before Friday', 'they want no calls before Friday', null],
+      ['please do not call me before Friday about the invoice', 'they ask not to be called before Friday about the invoice', null],
+      ['please do not call me before Friday about the invoice', 'no call before Friday about the invoice', null],
+      ['the brochure proofs are back from the printer and look great, no changes needed', 'the brochure proofs look great and need no changes', null],
+      ['the brochure proofs are back from the printer and look great, no changes needed', 'the brochure proofs look great, no changes are needed', null],
+      ["it's not urgent, but the invoice needs a look this week", "the invoice needs a look this week, though it's not urgent", null],
+      ["it's not urgent, but the invoice needs a look this week", 'the invoice is not urgent', null],
+      ['the logo files are ready, but the colours are still not quite right', "the logo files are ready, but the colours still aren't quite right", null],
+      ["please don't send the final files until we've signed off on the colours", "don't send the final files until they've signed off on the colours", null],
+      // An irregular form ("sent" for "send", "left" for "leave") is not recognized: it falls back, the safe way.
+      ["please don't send the final files until we've signed off on the colours", "they ask that the final files not be sent until they've signed off on the colours", 'negation'],
+      ['the courier did not leave the parcel at the door', 'the parcel was not left at the door', 'negation'],
+    ]);
+  });
+
+  it('a negated clause of one content word of the content, said without its "no", breaks it', () => {
+    held([
+      ['please call me about the invoice, not today', 'they want a call about the invoice today', 'negation'],
+      ['send the samples, not the originals', 'send the originals', 'negation'],
+      ["the order is ready, don't ship it", 'the order is ready to ship', 'negation'],
+      ['please call me about the invoice, not today', 'a call about the invoice', null],
+    ]);
+    // Held to the content only: a short "no" of the caller's latest words, or of the fixed line, is a line's to answer.
+    const answer = act({ fixed: 'Who is the message for, Dana Reyes or Lee Park?', items: [], heard: 'no, not Dana', act: 'ask', goal: 'Ask who the message is for.' });
+    expect(checkGenerated('Sorry about that. Who is the message for, Dana Reyes or Lee Park?', answer)).toBeNull();
+  });
+
+  it('an idiom is set aside only when it is the whole clause; "no problems found" is no idiom', () => {
+    held([
+      ["don't worry about the deposit, don't refund it", 'refund the deposit', 'negation'],
+      ["no problem with the deposit, don't refund it", 'refund the deposit', 'negation'],
+      ['the brakes were checked, no problems found', 'the brakes were checked', 'omitted'],
+      ['never mind the old quote, never send the new one', 'send the new quote', 'negation'],
+      ["don't hesitate to cancel the order, don't ship it", 'ship the order', 'negation'],
+      ["not sure the courier came, don't pay the invoice", 'pay the invoice', 'negation'],
+    ]);
+  });
+
+  it('a number after "until" is a time only before a time word or as a clock: "until two managers approve" is a condition', () => {
+    held([
+      ['hold the release until two managers approve', 'hold the release', 'omitted'],
+      ['hold the files until five', 'hold the files', 'omitted'],
+      ['hold the files until the client approves', 'hold the files', 'omitted'],
+      ['ship it as long as payment clears', 'ship it', 'omitted'],
+    ]);
+    for (const time of ['until 5pm', 'until 5:30', 'until five pm', 'until two weeks from now', 'until the 15th', 'until Friday', 'until next week']) {
+      expect(leftOut('hold the files', [`hold the files ${time}`]), time).toBe(false);
+    }
+  });
+});
+
+describe('the stub\'s span judge: what a summary must keep (times, amounts, who is to act)', () => {
+  const judge = (message: string, said: string): boolean => stubSpanDrift(renderSpanDriftState({ kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 40, avoid: [] } }, said));
+  it('a capital that begins a sentence is no name; a name inside one, a day and an amount are kept', () => {
+    expect(judge('Please call about the invoice. Thanks a lot.', 'a call about the invoice')).toBe(false);
+    expect(judge('please ask Jordan to call about the invoice', 'a call about the invoice')).toBe(true);
+    expect(judge('please call about the invoice on Friday', 'a call about the invoice')).toBe(true);
+    expect(judge('the refund of 40 dollars is late', 'the refund is late')).toBe(true);
   });
 });

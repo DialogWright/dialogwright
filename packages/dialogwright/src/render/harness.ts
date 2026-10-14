@@ -54,8 +54,8 @@ export function stubRenderer(app: App = getApp(defaultAppId()), env: Record<stri
 export interface RenderTally {
   tried: number;
   generated: number;
-  /** Spans whose wording was their content word for word, said exactly (RenderLine.exactly): tried, neither generated nor a fallback. */
-  exactly: number;
+  /** Spans whose wording was their content word for word, said unchanged (RenderLine.unchanged): tried, neither generated nor a fallback. */
+  unchanged: number;
   fellBack: Partial<Record<RenderFallback, number>>;
   /** Lines the app generates that were said fixed without being tried (RENDER_SHARE, `when`, a locale, the screen). */
   skipped: number;
@@ -67,7 +67,7 @@ export interface RenderTally {
 }
 
 export function emptyRenderTally(): RenderTally {
-  return { tried: 0, generated: 0, exactly: 0, fellBack: {}, skipped: 0, costUsd: 0, errors: {}, ms: [] };
+  return { tried: 0, generated: 0, unchanged: 0, fellBack: {}, skipped: 0, costUsd: 0, errors: {}, ms: [] };
 }
 
 /** Adds a trace record's generated lines to `tally`. */
@@ -80,7 +80,7 @@ export function tallyRender(tally: RenderTally, record: TraceRecord): void {
     tally.tried += 1;
     if (line.ms !== undefined) tally.ms.push(line.ms);
     if (line.mode === 'generated') tally.generated += 1;
-    else if (line.exactly === true) tally.exactly += 1;
+    else if (line.unchanged === true) tally.unchanged += 1;
     else if (line.fallback !== undefined) tally.fellBack[line.fallback] = (tally.fellBack[line.fallback] ?? 0) + 1;
     if (line.fallback === 'error') {
       const why = line.error?.reason ?? 'unknown';
@@ -108,5 +108,5 @@ export function formatRenderTally(t: RenderTally): string {
   const errors = why.length === 0 ? '' : ` (${why.length === 1 ? why[0]![0] : why.map(([r, n]) => `${r} ${n}`).join('; ')})`;
   const reasons = Object.entries(t.fellBack).sort(([a], [b]) => a.localeCompare(b)).map(([r, n]) => `${r} ${n}${r === 'error' ? errors : ''}`).join(', ');
   const latency = t.ms.length > 0 ? `; latency ms p50 ${quantile(t.ms, 0.5).toFixed(0)} p95 ${quantile(t.ms, 0.95).toFixed(0)}` : '';
-  return `generated lines  ${t.tried} tried, ${t.generated} said generated, ${t.exactly > 0 ? `${t.exactly} said exactly (the wording was the words themselves), ` : ''}${fell} fell back (${rate.toFixed(1)}%)${reasons ? `: ${reasons}` : ''}${t.skipped > 0 ? `; ${t.skipped} said fixed untried` : ''}${latency}`;
+  return `generated lines  ${t.tried} tried, ${t.generated} said generated, ${t.unchanged > 0 ? `${t.unchanged} said unchanged (the wording was the words themselves), ` : ''}${fell} fell back (${rate.toFixed(1)}%)${reasons ? `: ${reasons}` : ''}${t.skipped > 0 ? `; ${t.skipped} said fixed untried` : ''}${latency}`;
 }
