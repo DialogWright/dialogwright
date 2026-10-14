@@ -1729,7 +1729,7 @@
           },
           "keep": {
             "default": "first-unless-prompted",
-            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way.",
+            "description": "When a value is on file: \"first-unless-prompted\" replaces it only when the slot was just asked for; \"first\" never does. A correction at the summary replaces it either way; a yes to the summary that names no detail to change keeps it.",
             "type": "string",
             "enum": [
               "first",

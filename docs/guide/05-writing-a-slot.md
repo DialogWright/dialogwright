@@ -688,7 +688,7 @@ Some rules about questions:
 | `todayIso` | Today, for dates. |
 | `thresholds` | The engine's thresholds and the app's own, by name. |
 | `window` | This slot's pending partial value, or null (see "Partial values"). |
-| `current` | This slot's value already on file, or null (null during a correction at the summary). |
+| `current` | This slot's value already on file, or null (null during a correction at the summary, but for a yes to it that names no detail to change, which accepts what is on file). |
 | `records` | The app's records a slot may choose among (`App.facts.forSlots`), opaque to the engine; empty when the app has none. |
 | `sources` | The app's records by name (`App.facts.forSlots` returning `{ sources: { parcels: [...], orders: [...] } }`), for a slot that names the list it chooses from (a `record` slot's `from`), so two such slots each read their own. Absent when the app names none. |
 | `prompted` | Whether the last prompt asked for this slot. |

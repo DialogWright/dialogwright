@@ -534,3 +534,35 @@ describe('a dictation turn belongs to its slot (live findings item 27)', () => {
     expect(fillSlots(at(), heard, ctx(MESSAGE), [recipient, howUrgent, message({ listen: ['recipient'] })]).session.slots.recipient!.value).toBe('anyone');
   });
 });
+
+describe('a yes to the summary that names no detail accepts it (FillOptions.accepted, live findings item 28)', () => {
+  const recipient = defineSlot('recipient', { type: 'choice', fillAt: 'SLOT_CHOICE_CONFIRM', options: { riley: { say: 'Riley Moreno' }, sam: { say: 'Sam Okafor' } } });
+  const message = defineSlot('message', { type: 'text', what: 'the message', say: null, redact: 'none' });
+  const note = defineSlot('note', { type: 'text', what: 'a note for the courier', say: null, redact: 'none' });
+  const MESSAGE = 'please call me back about the spreadsheet';
+  function atSummary(): Session {
+    const s = newSession('s', 0, VOICE_RELAY);
+    s.slots.recipient = { ...emptySlot(), value: 'riley', display: 'Riley Moreno' };
+    s.slots.message = { ...emptySlot(), value: MESSAGE, display: MESSAGE };
+    s.slots.note = emptySlot();
+    s.promptedFor = 'confirm';
+    return s;
+  }
+  const specs = [recipient, message, note];
+
+  it('the yes\'s own words never replace the message the caller accepted', () => {
+    const r = fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes'), specs, { correcting: true, accepted: true });
+    expect(r.session.slots.message!.value).toBe(MESSAGE);
+    expect(r.progress).toBe(false);
+    // As a correction (a no, an unanswered turn, a detail named), the words replace it, as before.
+    expect(fillSlots(atSummary(), { messageGiven: noul(0.6) }, ctx('yes'), specs, { correcting: true }).session.slots.message!.value).toBe('yes');
+  });
+
+  it('a new value for another detail said with the yes still fills ("yes, but it\'s for Sam"), and so does an empty slot ("yes, and ...")', () => {
+    const r = fillSlots(atSummary(), { recipient: choice({ sam: 0.95, none: 0.05 }), messageGiven: noul(0.6), noteGiven: noul(0.9) }, ctx("yes, but it's for Sam"), specs, { correcting: true, accepted: true });
+    expect(r.session.slots.recipient!.value).toBe('sam');
+    expect(r.session.slots.message!.value).toBe(MESSAGE);
+    expect(r.session.slots.note!.value).toBe("yes, but it's for Sam");
+    expect(r.progress).toBe(true);
+  });
+});

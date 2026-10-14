@@ -121,6 +121,16 @@ export interface GateResult {
 const NO_SLOTS: ReadonlySet<SlotId> = new Set();
 
 /**
+ * The detail of `form` the turn names as the one to change (changeSlot's top label, a slot of the form,
+ * at SLOT_CHANGE or more), or null: what the summary's resolution reads, and what a yes to the summary
+ * reads to tell an acceptance from a yes that names a detail (turn.ts, the confirmed summary).
+ */
+export function changeSlotNamed(app: App, answers: AnswerMap, form: FormId, t: Thresholds): SlotId | null {
+  const [changeTop] = isChoice(answers.changeSlot) ? rankProbabilities(answers.changeSlot.probabilities) : [];
+  return changeTop && changeTop.label !== 'none' && atLeast(changeTop.p, t.SLOT_CHANGE) && formOf(app, form).slots.includes(changeTop.label as SlotId) ? (changeTop.label as SlotId) : null;
+}
+
+/**
  * `given` is read only at a form's summary: the slots of that form this turn's words give a value
  * they do not already hold (fia.ts valuesGiven, read by turn.ts before anything is filled). Empty
  * where the caller says no new value, and wherever there is no summary pending.
@@ -393,7 +403,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       // name is read before the no is settled for. A no that carries a value instead answers the
       // question's `none`, and turn.ts fills it on the rejected path.
       const [changeTop] = isChoice(answers.changeSlot) ? rankProbabilities(answers.changeSlot.probabilities) : [];
-      const asked = changeTop && changeTop.label !== 'none' && atLeast(changeTop.p, t.SLOT_CHANGE) && formOf(app, pending.form).slots.includes(changeTop.label as SlotId) ? (changeTop.label as SlotId) : null;
+      const asked = changeSlotNamed(app, answers, pending.form, t);
       // The form may keep the detail named, taking the answer as its own move ("a later time that day"
       // names the date and asks to keep it): the slot is not reopened, and the answer goes on to the
       // form's summary hook as a no or an unanswered turn (FormDef.keepsSlot, onSummaryAnswer).

@@ -58,6 +58,16 @@ export interface FillOptions {
    * is not hidden from the slot (a text slot's `keep` still holds).
    */
   switching?: boolean;
+  /**
+   * With `correcting`: the caller said yes to the summary and named no detail to change (live findings
+   * item 28). The yes accepts what was read back, so each slot is shown the value it holds
+   * (SlotContext.current), as on any turn that did not ask for it, rather than having it hidden for a
+   * correction: a slot that keeps its value against such a turn (a text slot's `keep`) keeps what the
+   * caller accepted, and the yes's own words never replace it. A slot that does not look at its value on
+   * file still takes a new value said with the yes ("yes, but it's for Sam"), and an empty slot still
+   * fills; either is read back before anything is done.
+   */
+  accepted?: boolean;
 }
 
 /**
@@ -150,11 +160,13 @@ function withoutYesNoOffered(session: Session, specs: SlotSpec[]): SlotSpec[] {
  * pending partial says what year is still owed on the next turn; `prompted` lets a slot call a
  * miss on its own question invalid rather than absent. `current` is the slot's own value already
  * on file, so a slot can refuse to let a later unprompted turn overwrite it; a correcting fill
- * (opts.correcting) hides it as null so the same slot can still replace what is there.
+ * (opts.correcting) hides it as null so the same slot can still replace what is there, but for a yes
+ * to the summary that names no detail (opts.accepted), which accepts what is there.
  */
 export function slotCtx(session: Session, ctx: SlotContext, id: SlotId, opts: FillOptions = {}): SlotContext {
   const slot = session.slots[id]!;
-  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: opts.correcting === true ? null : slot.value };
+  const hidden = opts.correcting === true && opts.accepted !== true;
+  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value };
 }
 
 /**

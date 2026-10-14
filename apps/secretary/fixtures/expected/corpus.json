@@ -1211,6 +1211,25 @@
     "principalLevel": 0,
     "gate": "leaveMessage:ALLOW"
   },
+  "sm-08": {
+    "id": "sm-08",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "Alex Rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW"
+  },
   "ur-01": {
     "id": "ur-01",
     "decision": "handoff",

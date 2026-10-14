@@ -111,6 +111,46 @@
     }
   },
   {
+    "id": "message-read-back-yes-kept",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "text": "Your message is on its way to Riley Moreno.",
+      "gate": "leaveMessage:ALLOW",
+      "slots": {
+        "message": "the logo files are ready for review"
+      }
+    },
+    "knownGap": {
+      "reason": "not yet in the recording: added with live findings item 28 (2026-10-14), after recording 4, so the cassette has no answers for this \"yes\" at the read-back and a replay misses (the slow-model line is said). Not a gap of the model's: remove this tag when the maintainer records again, when the run says knownGap now matches",
+      "outcome": {
+        "decision": "prompt",
+        "promptId": "system_slow_dtmf_hint",
+        "decidedGate": null,
+        "verdict": null,
+        "gate": null
+      }
+    }
+  },
+  {
     "id": "message-read-back-no-hears-exact-words",
     "callerNumber": "+15555550142",
     "steps": [

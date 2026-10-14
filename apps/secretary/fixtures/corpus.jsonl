@@ -60,6 +60,7 @@
 {"id":"sm-05","text":"no, it's for Sam","intent":"none","context":"confirm_take_message","confirm":"no","labels":{"recipient":"sam"}}
 {"id":"sm-06","text":"no, the number's wrong","intent":"none","context":"confirm_take_message","confirm":"no","changeSlot":"phone"}
 {"id":"sm-07","text":"that's right, thanks","intent":"none","context":"confirm_take_message","confirm":"yes"}
+{"id":"sm-08","text":"yes","intent":"none","context":"confirm_take_message","confirm":"yes","answers":{"messageGiven":{"noul":0.6}},"tags":["read_back_yes"],"knownGap":{"reason":"not yet in the recording: added with live findings item 28 (2026-10-14), after recording 4, so the cassette has no answers for this \"yes\" at the read-back and a replay misses (the slow-model line is said). Not a gap of the model's: remove this tag when the maintainer records again, when the run says knownGap now matches","outcome":{"decision":"prompt","promptId":"system_slow_dtmf_hint","decidedGate":null,"verdict":null,"gate":null}}}
 {"id":"ur-01","text":"it's urgent","intent":"urgent","context":"no_form"}
 {"id":"ur-02","text":"urgent","intent":"urgent","context":"no_form"}
 {"id":"ur-03","text":"this is an emergency, I need to reach someone now","intent":"urgent","context":"no_form"}

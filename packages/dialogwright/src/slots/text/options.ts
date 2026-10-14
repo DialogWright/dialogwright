@@ -76,7 +76,7 @@ export const textOptions = z
     keep: z
       .enum(['first', 'first-unless-prompted'])
       .default('first-unless-prompted')
-      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way.'),
+      .describe('When a value is on file: "first-unless-prompted" replaces it only when the slot was just asked for; "first" never does. A correction at the summary replaces it either way; a yes to the summary that names no detail to change keeps it.'),
     redact: z
       .enum(['length', 'none', 'length-summarized'])
       .default('length')
