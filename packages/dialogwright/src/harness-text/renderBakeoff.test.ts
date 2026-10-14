@@ -121,15 +121,11 @@ describe('render:bakeoff --replay', () => {
     const r = io();
     expect(await bakeoffCommand([MESSAGE, '--replay', '--models', 'anthropic:claude-sonnet-5-5:disabled,anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5', '--by-line'], r.io)).toBe(0);
     const table = r.out.join('\n');
-    // These pin the replay as it is between live findings item 24 and the maintainer's re-record: item 24
-    // re-keyed the read-back's span, so its 3 recorded wordings miss on its 8 attempts (19 generated, 17
-    // fell back: drift 9, cassette-miss 8). Re-pinned (live findings item 27): the fixture's dictation
-    // scripted call and corpus line (message-names-someone-else, ms-03) are not in the decision model's
-    // recording, so 3 of their turns miss (the call goes to a person) and the lines its other turns say
-    // add 3 (39 tried, 21 generated, 18 fell back: drift 10, cassette-miss 8); this waits for Jason's
-    // re-record. Once the maintainer re-records the message fixture, they pin the committed recording's
-    // numbers again, here and in the --json test below.
-    expect(table).toMatch(/^anthropic:claude-haiku-5-5\s+39\s+21 \(54%\)\s+18 \(46%\)\s+drift 10, cassette-miss 8\s+not measured\s+-\s+\$\d/m);
+    // These pin the committed recording (the maintainer's re-record of 2026-10-14, after live findings
+    // item 27): every turn and every span answered, 41 tried (the dictation call and its corpus line
+    // included), 30 generated, 11 fell back by the drift judge. A change here is a finding: read it, never
+    // re-pin it to pass.
+    expect(table).toMatch(/^anthropic:claude-haiku-5-5\s+41\s+30 \(73%\)\s+11 \(27%\)\s+drift 11\s+not measured\s+-\s+\$\d/m);
     expect(table).toMatch(/^anthropic:claude-sonnet-5-5\s+-\s+-\s+-\s+not recorded/m);
     // A thinking the model refuses (as the server refuses it at start): that model reported, the run going on.
     expect(table).toMatch(/^anthropic:claude-sonnet-5-5:disabled\s+-\s+-\s+-\s+refused/m);
@@ -137,7 +133,7 @@ describe('render:bakeoff --replay', () => {
     expect(table).toContain('anthropic:claude-sonnet-5-5: not recorded (no src/testing/message/fixtures/recorded/render/claude-sonnet-5-5.jsonl)');
     // By line: the line that fell back, with a wording the drift check refused.
     expect(table).toMatch(/^ {2}ask_caller\s+11 tried, 1 generated, 10 fell back: drift 10 {2}e\.g\. drift: ".+"$/m);
-    expect(table).toMatch(/^ {2}confirm_take_message\.summary\s+8 tried, 0 generated, 8 fell back: cassette-miss 8$/m);
+    expect(table).toMatch(/^ {2}confirm_take_message\.summary\s+10 tried, 9 generated, 1 fell back: drift 1 {2}e\.g\. drift: ".+"$/m);
     // Nothing was recorded: the cassettes are as committed.
     expect(existsSync(join(RECORDED, 'render', 'claude-sonnet-5-5.jsonl'))).toBe(false);
   });
@@ -148,8 +144,8 @@ describe('render:bakeoff --replay', () => {
     expect(r.out).toHaveLength(1);
     const report = JSON.parse(r.out[0]!) as BakeoffReport;
     expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 700, chat: 1500 } });
-    // Between item 24 and the maintainer's re-record (see above): the span's 8 attempts miss, and item 27's new call's 3 turns; then the committed recording's numbers again.
-    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 39, generated: 21, fellBack: { drift: 10, 'cassette-miss': 8 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 3, checks: 0 } });
+    // The committed recording (see above).
+    expect(report.models[0]).toMatchObject({ status: 'ran', tried: 41, generated: 30, fellBack: { drift: 11 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });
     expect(report.models[0]!.byLine).toBeUndefined();
   });
 });
@@ -167,8 +163,8 @@ describe('render:bakeoff, recording (fake providers)', () => {
     expect(new Set(sent.map((s) => `${s.url} ${s.model}`))).toEqual(new Set(['https://api.anthropic.com/v1/messages claude-test-5-5', 'https://openrouter.ai/api/v1/chat/completions vendor/small', 'https://api.anthropic.com/v1/messages claude-missing']));
     expect(sent.filter((s) => s.model === 'vendor/small').every((s) => s.headers.authorization === `Bearer ${OR_KEY}`)).toBe(true);
     const table = r.out.join('\n');
-    expect(table).toMatch(/^anthropic:claude-test-5-5\s+39\s+\d+ \(\d+%\)/m);
-    expect(table).toMatch(/^openrouter:vendor\/small\s+39\s+/m);
+    expect(table).toMatch(/^anthropic:claude-test-5-5\s+41\s+\d+ \(\d+%\)/m);
+    expect(table).toMatch(/^openrouter:vendor\/small\s+41\s+/m);
     // A wrong model id: stopped early, with why.
     expect(table).toMatch(/^anthropic:claude-missing\s+5\s+0 \(0%\)\s+5 \(100%\)\s+error 5 \(anthropic: HTTP 404 not_found_error\)/m);
     // With the API's own words (scrubbed: the key it echoed is masked), in the notes and by line.
@@ -180,17 +176,17 @@ describe('render:bakeoff, recording (fake providers)', () => {
     expect(table).toContain('no price given (--price vendor/small=<input>,<output>)');
     // Each recorded, with how long its wordings took.
     const test = loadRenderCassette(join(dir, 'render', 'claude-test-5-5.jsonl'));
-    expect(test.size).toBe(12);
+    expect(test.size).toBe(13);
     expect([...test.values()].every((l) => typeof l.latencyMs === 'number')).toBe(true);
     expect(existsSync(join(dir, 'render', 'vendor__small.jsonl'))).toBe(true);
     expect(existsSync(join(dir, 'render', 'claude-missing.jsonl'))).toBe(false);
     // The drift checks of each model's wordings are kept beside its cassette; the app's own recording is only read.
     expect(existsSync(join(dir, 'render', 'checks', 'claude-test-5-5', 'jev-1.13.0.jsonl'))).toBe(true);
     expect(readFileSync(join(dir, 'jev-1.13.0.jsonl'), 'utf8')).toBe(readFileSync(join(RECORDED, 'jev-1.13.0.jsonl'), 'utf8'));
-    expect(table).toMatch(/^anthropic:claude-test-5-5\s+.*\s\d+ \/ \d+\s+0 of 12\s+\$\d/m);
+    expect(table).toMatch(/^anthropic:claude-test-5-5\s+.*\s\d+ \/ \d+\s+0 of 13\s+\$\d/m);
     // The Markdown page: the same table.
     const page = readFileSync(out, 'utf8');
-    expect(page).toMatch(/^\| anthropic:claude-test-5-5 \| 39 \| /m);
+    expect(page).toMatch(/^\| anthropic:claude-test-5-5 \| 41 \| /m);
     expect(page).toContain('## anthropic:claude-test-5-5, by line');
     // No key anywhere it printed or wrote.
     for (const k of [KEY, OR_KEY, JEV_KEY]) {
@@ -207,9 +203,9 @@ describe('render:bakeoff, recording (fake providers)', () => {
     const replayed = JSON.parse(again.out[0]!) as BakeoffReport;
     const recorded = r.out.join('\n');
     expect(replayed.models.map((m) => m.status)).toEqual(['ran', 'ran', 'not-recorded']);
-    expect(replayed.models[0]!.wording.measured).toBe(12);
+    expect(replayed.models[0]!.wording.measured).toBe(13);
     expect(recorded).toContain(`${replayed.models[0]!.wording.p50!.toFixed(0)} / ${replayed.models[0]!.wording.p95!.toFixed(0)}`);
-    expect(replayed.models[0]).toMatchObject({ tried: 39, decisionMisses: { turns: 0, checks: 0 } });
+    expect(replayed.models[0]).toMatchObject({ tried: 41, decisionMisses: { turns: 0, checks: 0 } });
   }, 60_000);
 
   it('counts the wordings that would have run past the app\'s RENDER_TIMEOUT_MS on a call', async () => {
@@ -222,8 +218,8 @@ describe('render:bakeoff, recording (fake providers)', () => {
     // Measured in full under the generous budget, so none fell back as a timeout; every one over the call's.
     const m = report.models[0]!;
     expect(m.fellBack.timeout).toBeUndefined();
-    expect(m.wording.measured).toBe(12);
-    expect(m.wording.overBudget).toBe(12);
+    expect(m.wording.measured).toBe(13);
+    expect(m.wording.overBudget).toBe(13);
     expect(m.wording.p50!).toBeGreaterThanOrEqual(50);
   }, 60_000);
 });
@@ -239,7 +235,7 @@ describe('render:bakeoff, an OpenRouter model\'s reasoning', () => {
     expect(sent.filter((s) => s.model === 'vendor/always-reasons').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ effort: 'none' }))).toBe(true);
     expect(existsSync(join(dir, 'render', 'vendor__think.thinking-adaptive.effort-low.jsonl'))).toBe(true);
     const table = r.out.join('\n');
-    expect(table).toMatch(/^openrouter:vendor\/think \(thinking adaptive, effort low\)\s+39\s+/m);
+    expect(table).toMatch(/^openrouter:vendor\/think \(thinking adaptive, effort low\)\s+41\s+/m);
     expect(table).toContain('openrouter:vendor/always-reasons: stopped after 5 lines, every one a failed request: openrouter: HTTP 400 (Provider returned error (Example: Reasoning is mandatory for this endpoint and cannot be disabled.))');
   }, 60_000);
 });
@@ -266,14 +262,14 @@ describe('render:bakeoff --fresh', () => {
     // Again without --fresh: every line replays, nothing is asked.
     expect((await run('anthropic:claude-test-5-5')).code).toBe(0);
     expect(sent.length).toBe(asked);
-    // --fresh: every line asked again, the cassette replaced (its 12 lines, not 24), nothing left beside it.
+    // --fresh: every line asked again, the cassette replaced (its 13 lines, not 26), nothing left beside it.
     const first = readFileSync(cassette, 'utf8');
     const kept = await run('anthropic:claude-test-5-5', '--fresh');
     expect(kept.code).toBe(0);
     expect(sent.length).toBe(asked * 2);
     expect(kept.table).toContain(`anthropic:claude-test-5-5: --fresh: every line asked again, recorded into ${cassette}`);
-    expect(loadRenderCassette(cassette).size).toBe(12);
-    expect(readFileSync(cassette, 'utf8').trim().split('\n')).toHaveLength(12);
+    expect(loadRenderCassette(cassette).size).toBe(13);
+    expect(readFileSync(cassette, 'utf8').trim().split('\n')).toHaveLength(13);
     expect(readFileSync(cassette, 'utf8')).not.toBe(first);
     expect(existsSync(`${cassette}.fresh`)).toBe(false);
     // Only the bake-off's own recordings carry a latency, with the budget they were recorded under.
@@ -284,8 +280,8 @@ describe('render:bakeoff --fresh', () => {
     failSpans.on = true;
     const partly = await run('anthropic:claude-test-5-5', '--fresh');
     expect(partly.code).toBe(0);
-    expect(partly.table).toMatch(/^anthropic:claude-test-5-5\s+39\s+31 \(79%\)\s+8 \(21%\)\s+error 8 \(anthropic: HTTP 529 overloaded_error\)/m);
-    expect(partly.table).toContain(`anthropic:claude-test-5-5: --fresh: not kept (error 8): ${cassette} is as it was, the fresh recording discarded; the table is the fresh run's`);
+    expect(partly.table).toMatch(/^anthropic:claude-test-5-5\s+41\s+31 \(76%\)\s+10 \(24%\)\s+error 10 \(anthropic: HTTP 529 overloaded_error\)/m);
+    expect(partly.table).toContain(`anthropic:claude-test-5-5: --fresh: not kept (error 10): ${cassette} is as it was, the fresh recording discarded; the table is the fresh run's`);
     expect(partly.table).toContain('anthropic:claude-test-5-5: error anthropic: HTTP 529 overloaded_error: Overloaded');
     expect(readFileSync(cassette, 'utf8')).toBe(before);
     expect(existsSync(`${cassette}.fresh`)).toBe(false);
@@ -303,11 +299,11 @@ describe('render:bakeoff --fresh', () => {
     const replayed = await run('anthropic:claude-test-5-5', '--replay');
     expect(replayed.code).toBe(0);
     expect(replayed.table).toContain(`anthropic:claude-test-5-5: an interrupted --fresh run left ${cassette}.fresh (partial, never tabled); delete it`);
-    expect(replayed.table).toMatch(/^anthropic:claude-test-5-5\s+39\s+37 \(95%\)\s+0 \(0%\)\s+unchanged 2/m);
+    expect(replayed.table).toMatch(/^anthropic:claude-test-5-5\s+41\s+37 \(90%\)\s+2 \(5%\)\s+drift 2; unchanged 2/m);
     const again = await run('anthropic:claude-test-5-5', '--fresh');
     expect(again.table).toContain('this fresh run replaced it');
     expect(existsSync(`${cassette}.fresh`)).toBe(false);
-    expect(loadRenderCassette(cassette).size).toBe(12);
+    expect(loadRenderCassette(cassette).size).toBe(13);
   }, 120_000);
 
   it('keeps the app\'s own cassette, recording a fresh run under the comparison\'s name, unless --replace-app-cassette', async () => {
@@ -318,7 +314,7 @@ describe('render:bakeoff --fresh', () => {
     const fresh = await run('anthropic:claude-test-5-5', '--fresh');
     expect(fresh.code).toBe(0);
     expect(readFileSync(cassette, 'utf8')).toBe(app);
-    expect(loadRenderCassette(comparison).size).toBe(12);
+    expect(loadRenderCassette(comparison).size).toBe(13);
     expect(fresh.table).toContain(`recorded into ${comparison}`);
     // From then on the comparison is what the bake-off tables.
     const json = await run('anthropic:claude-test-5-5', '--replay', '--json');
@@ -354,8 +350,8 @@ describe('render:bakeoff, what a run counts and when it stops', () => {
     const r = io({ env: { OPENROUTER_API_KEY: OR_KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: stubDecision(), recordBudgetMs: 60 });
     expect(await bakeoffCommand([MESSAGE, '--models', 'openrouter:vendor/slow'], r.io), r.all()).toBe(0);
     const table = r.out.join('\n');
-    expect(table).toMatch(/^openrouter:vendor\/slow\s+39\s+0 \(0%\)\s+39 \(100%\)\s+timeout 39\s+60 \/ 60\s+12 of 12 \(12 past 60 ms\)/m);
-    expect(table).toContain('openrouter:vendor/slow: 12 wordings ran past the bake-off\'s own 60 ms (timeout): counted over the call budget, and at 60 ms in the percentiles');
+    expect(table).toMatch(/^openrouter:vendor\/slow\s+41\s+0 \(0%\)\s+41 \(100%\)\s+timeout 41\s+60 \/ 60\s+13 of 13 \(13 past 60 ms\)/m);
+    expect(table).toContain('openrouter:vendor/slow: 13 wordings ran past the bake-off\'s own 60 ms (timeout): counted over the call budget, and at 60 ms in the percentiles');
   }, 60_000);
 
   it('the decision model failing out stops the comparison, the models before it still tabled', async () => {
