@@ -117,10 +117,11 @@ describe('the readers', () => {
     const picked = ['neg-09', 'role-01', 'gen-01', 'val-01', 'cond-02', 'real-02a'].map((id) => byId.get(id)!);
     const results = await evaluateCases(picked, fakeJudge(new Set(['you can sign'])));
     const got = Object.fromEntries(results.map((r) => [r.case.id, { strict: r.strict, standard: r.standard, judge: r.judge }]));
-    // A "no" about a person, who owes whom, a gender, a condition: the strict checks' alone.
+    // A "no" about a person, who owes whom, a condition: the strict checks' alone.
     expect(got['neg-09']).toEqual({ strict: 'negation', standard: null, judge: { p: 0.9 } });
     expect(got['role-01']).toMatchObject({ strict: 'person', standard: null });
-    expect(got['gen-01']).toMatchObject({ strict: 'person', standard: null });
+    // A gender, by its words at either level.
+    expect(got['gen-01']).toMatchObject({ strict: 'person', standard: 'person' });
     expect(got['cond-02']).toMatchObject({ strict: 'omitted', standard: null });
     // Another day: both.
     expect(got['val-01']).toMatchObject({ strict: 'foreign', standard: 'foreign' });

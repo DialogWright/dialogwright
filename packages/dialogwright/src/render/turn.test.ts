@@ -375,17 +375,17 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     return r;
   };
 
-  it('fills the span with the exact content when a check fails: each check, held to the content alone, at either level (standard leaves a person to the judge)', async () => {
-    // Standard, the fixture's (the default): a person the content does not use is the judge's, refused here by the stub's; strict holds it by its words.
-    for (const [app, person] of [[messageApp, 'drift'], [variants.variant(STRICT), 'person']] as const) {
+  it('fills the span with the exact content when a check fails: each check, held to the content alone, at either level', async () => {
+    // Standard, the fixture's (the default), and strict hold each of these alike: a person the content does not use is a check of the span's voice, at either level.
+    for (const app of [messageApp, variants.variant(STRICT)]) {
       use(app);
       await fallsBack('', 'empty');
       await fallsBack('a call back about {recipient}', 'format');
       await fallsBack('please call me about the March invoice?', 'question');
       await fallsBack('a message for Lee Park about the March invoice', 'conflict');
       await fallsBack('please do not call me about the March invoice', 'negation');
-      await fallsBack('you would like a call about the March invoice', person);
-      await fallsBack('our office will sort out the March invoice', person);
+      await fallsBack('you would like a call about the March invoice', 'person');
+      await fallsBack('our office will sort out the March invoice', 'person');
       // The content's own person may be kept: it says "I", so "I" in the span is the caller's, and only the judge holds what it claims.
       await fallsBack('I will make sure the March invoice is sorted', 'drift');
       await fallsBack(`please call me about the March invoice ${'and more '.repeat(12)}`, 'words');
@@ -646,15 +646,16 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
 
   it('falls back to the exact frame: a name for a pronoun not clearly meant, the caller\'s name, an "I" of its own, a "your" for no "my", persons swapped, a "no" about a person, the message\'s own "you"', async () => {
     const EXACT = (message: string): string => `${OPEN} Here it is as you said it: ${message}${END}`;
-    // Each with its reason when strict, and at standard (the default), where whose words they are and who does what to whom are the judge's (the stub's here).
+    // Each with its reason when strict, and at standard (the default), where who does what to whom and the message's own "you" are the judge's (the stub's here).
     const cases: [string, string, string, string][] = [
       // "him" is Riley: the recipient's name in its place passes the shape checks, and the judge refuses it.
       [PRINTER, 'you need Dana Reyes to call the printer', 'drift', 'drift'],
       [PRINTER, 'tell Riley you need Dana Reyes to call the printer', 'drift', 'drift'],
       // The caller's own name: never one it lists.
       [PROJECT, "the project is complete and you need Morgan Lee's approval", 'foreign', 'foreign'],
-      [PROJECT, 'the project is complete and I just need his approval', 'person', 'drift'],
-      [PROJECT, 'we will get you the approval', 'person', 'drift'],
+      // An "I" or a "we" of its own: the agent's voice, refused at either level.
+      [PROJECT, 'the project is complete and I just need his approval', 'person', 'person'],
+      [PROJECT, 'we will get you the approval', 'person', 'person'],
       [PROJECT, "your project is complete and you need Dana Reyes's approval", 'person', 'drift'],
       [PROJECT, "the project is complete and you need Jordan's approval", 'foreign', 'foreign'],
       [BUDGET, 'you need Dana Reyes to approve the budget', 'negation', 'negation'],

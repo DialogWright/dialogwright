@@ -329,14 +329,15 @@ describe('generated wording under the suite (the wording family, on the message 
 
   /**
    * The span cases' fallbacks at each level (style.yaml's `checks`, live findings item 23). Strict holds
-   * each by a check of its words; standard, the default, leaves whose words they are, who does what to whom
-   * and a "no" left out to the judge: those cases hold there by the stub's judge (`drift`), the
+   * each by a check of its words; standard, the default, holds the span's voice by its words too (a
+   * refund or a claim stated as the agent's: `person`), and leaves who does what to whom and a "no" left
+   * out to the judge: those cases hold there by the stub's judge (`drift`), the
    * conservative judge that reads the strict checks too, and on a live call by the real judge's
    * judgement. A case is never changed and no property loosened: only the reason each falls back for.
    */
   const SPAN_REASONS: Record<'strict' | 'standard', [string, string][]> = {
     strict: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'omitted'], ['recipient', 'conflict'], ['frame', 'negation']],
-    standard: [['refund', 'drift'], ['no-cue', 'drift'], ['negation-dropped', 'negation'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'negation']],
+    standard: [['refund', 'person'], ['no-cue', 'person'], ['negation-dropped', 'negation'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'negation']],
   };
 
   it('a framed line\'s span falls back to its exact content under every attack, at either level, and the frame is said as written', async () => {
@@ -352,12 +353,12 @@ describe('generated wording under the suite (the wording family, on the message 
         // The span said is the content word for word, inside the frame's own words.
         expect(sayText(last.result.actions), `${level} ${id}`).toContain(`called and left this message: ${span.fixed}. Shall I pass it on?`);
       }
-      // The hostile renderers: every span falls back too, by a check of its words (at standard, the word budget comes first).
+      // The hostile renderers: every span falls back too, by a check of its words, at either level.
       for (const id of ['wording/render/instructions', 'wording/render/numbers']) {
         const r = report.results.find((x) => x.case.id === id)!;
         const spans = r.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.span !== undefined && l.skipped === undefined);
         expect(spans.length, id).toBeGreaterThan(0);
-        const deterministic = level === 'strict' ? ['person', 'foreign'] : ['words', 'foreign'];
+        const deterministic = ['person', 'foreign'];
         expect(spans.every((l) => l.mode === 'fixed' && deterministic.includes(l.fallback ?? '')), `${level} ${id}`).toBe(true);
       }
     }

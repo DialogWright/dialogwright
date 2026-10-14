@@ -14,16 +14,16 @@ export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
 
 /**
  * How strictly a framed line's span is checked by its words (`checks`, here for the app and in
- * prompts.yaml for a line or a span): `standard`, the checks of values and shape, with whose words they
- * are, who does what to whom and what was left out the drift check's; `strict`, every check besides.
+ * prompts.yaml for a line or a span): `standard`, the checks of values, shape and voice, with who does
+ * what to whom and what was left out the drift check's; `strict`, every check besides.
  */
 export const CHECK_LEVELS = ['standard', 'strict'] as const;
 export type CheckLevel = (typeof CHECK_LEVELS)[number];
 
 /** What `checks` says, for style.yaml and prompts.yaml alike. */
 export const CHECKS_DESCRIPTION =
-  'How strictly a framed line\'s span (prompts.yaml\'s `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values and shape (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have), and the drift check, the decision model\'s judgement, for the rest: whose words they are, who does what to whom, a "no" or a condition left out. ' +
-  'strict: every check besides, by its words: a clause of the content that says "no" or sets a condition left out (omitted), a person the content does not use, persons swapped, a he or a she of another gender (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. ' +
+  'How strictly a framed line\'s span (prompts.yaml\'s `generate`) is checked by its words before anyone hears it. standard (the default): the checks of values, shape and voice (no question, no other recipient, a negation of the content kept, the word budget, the phrases to avoid, no figure or name the content does not have, no I, we or you the content does not use, a span spoken to the caller never saying I or we, no he or she of another gender), and the drift check, the decision model\'s judgement, for the rest: who does what to whom, a "no" or a condition left out. ' +
+  'strict: every check besides, by its words: a clause of the content that says "no" or sets a condition left out (omitted), and, for a span spoken to the caller, persons swapped, the message\'s own "you" taken for the caller, a "your" for no "my" (person); conservative, so it refuses more good summaries (the caller hears their exact words), for a regulated line or an owner who wants every guard. ' +
   'A whole generated line\'s checks are the same at both levels. The policy card says which each span runs.';
 
 export const styleSchema = z

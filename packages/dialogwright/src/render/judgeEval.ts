@@ -11,7 +11,7 @@ import type { RenderFallback, SpanAct } from './types';
  * Measuring the span drift judge against the span's shape checks (`render:judge-eval`, live findings
  * item 23). A set of cases, each a caller's message (`content`) and a summary of it (`span`) labelled
  * faithful or unfaithful by a person, is put to three readers, each as a call puts a span to it: the
- * shape checks (checkSpan at `standard`, the default, the checks of values and shape alone, and at `strict`, every check), the
+ * shape checks (checkSpan at `standard`, the default, the checks of values, shape and voice, and at `strict`, every check), the
  * stub regression's judge (stubSpanDrift), and the real drift judge (the decision model asked
  * renderSpanDriftQuestion with the state renderSpanDriftState makes, nothing else). The tables say, per
  * family, how many unfaithful spans each catches and how many faithful ones each refuses, so how strict
@@ -103,7 +103,7 @@ export interface CaseResult {
   readonly case: JudgeCase;
   /** checkSpan at `strict`: every check. */
   readonly strict: CodeVerdict;
-  /** checkSpan at `standard`, the default: its checks of values and shape alone (values, foreign figures and names, the budget, a plain negation). */
+  /** checkSpan at `standard`, the default: its checks of values, shape and voice (values, foreign figures and names, the budget, a plain negation, a person the content does not use, gender). */
   readonly standard: CodeVerdict;
   /** The stub regression's judge: true where it holds the span unfaithful. */
   readonly stub: boolean;
@@ -272,7 +272,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
-    'standard: checkSpan at `checks: standard`, the default (its checks of values and shape: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", gender). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends.',
+    'standard: checkSpan at `checks: standard`, the default (its checks of values, shape and voice: empty, format, question, conflict, a plain negation against the content\'s words, the word budget, avoid, foreign figures and names, a person the content does not use, a to-caller span\'s own I or we, a he or she of another gender; the rest is the judge\'s). strict: checkSpan at `checks: strict` (every check: besides, `omitted`, and `person`: who does what to whom, the message\'s own "you", a "your" for no "my"). stub: the stub regression\'s judge, which holds the strict reading too. judge: the decision model asked renderSpanDriftQuestion with the state a call sends.',
     '',
   ];
   // The everyday picture first.

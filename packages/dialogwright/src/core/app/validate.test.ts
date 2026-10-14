@@ -31,12 +31,13 @@ describe('validateApp', () => {
     expect(frameOf(app, id, app.prompts.manifest[id]!)).toBe(entry.text);
   });
 
-  it('refuses a span\'s checks that is neither strict nor absent (live findings, item 23)', () => {
+  it('refuses a span\'s checks that is neither standard, strict nor absent (live findings, item 23)', () => {
     const generated = messageApp.generated!;
     const line = generated.lines.confirm_take_message!;
     const withChecks = (checks: unknown): App => ({ ...messageApp, generated: { ...generated, lines: { ...generated.lines, confirm_take_message: { ...line, spans: { summary: { ...line.spans!.summary!, checks } as never } } } } });
     expect(() => validateApp(withChecks('strict'))).not.toThrow();
-    expect(() => validateApp(withChecks('standard'))).toThrow(`the span "summary" of the line "confirm_take_message" says checks: "standard": a span's checks are 'strict', or absent for standard (the default)`);
+    expect(() => validateApp(withChecks('standard'))).not.toThrow();
+    expect(() => validateApp(withChecks('loose'))).toThrow(`the span "summary" of the line "confirm_take_message" says checks: "loose": a span's checks are 'standard' or 'strict' (absent: standard, the default)`);
   });
 
   it('refuses summarized on an identity factor, and on a slot the records do not mask everywhere', () => {

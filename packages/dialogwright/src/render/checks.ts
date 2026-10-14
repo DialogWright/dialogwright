@@ -573,10 +573,12 @@ const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's"
  * is the drift check's.
  *
  * `level` (prompts.yaml's and style.yaml's `checks`; GeneratedSpan.checks): `standard`, the default, runs
- * the checks of values and shape alone (`empty`, `format`, `question`, `conflict`, a plain `negation`
- * against the content's own words, `words`, `avoid` and `foreign`, a to-caller span's listed names allowed
- * as capitals), and leaves whose words they are, who does what to whom and what was left out to the drift
- * check; `strict` runs every check above (spanMeaningBroken's besides). Measured on 2026-10-14
+ * the checks of values and shape (`empty`, `format`, `question`, `conflict`, a plain `negation` against
+ * the content's own words, `words`, `avoid` and `foreign`, a to-caller span's listed names allowed as
+ * capitals) and of whose voice it speaks in (`person`, spanVoiceBroken: a first or second person the
+ * content does not use, a to-caller span's own first person, a he or a she of another gender), and
+ * leaves who does what to whom and what was left out to the drift check; `strict` runs every check above
+ * (spanMeaningBroken's). Measured on 2026-10-14
  * (`render:judge-eval`, live findings item 23): the judge alone caught every everyday slip and 94% of the
  * hard cases, while the strict checks refused one good everyday read-back in six.
  */
@@ -596,7 +598,10 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}, le
   if (level === 'strict') {
     const broken = spanMeaningBroken(text, act);
     if (broken !== null) return broken;
-  } else if (negationBroken(text, content, content)) return 'negation';
+  } else {
+    if (negationBroken(text, content, content)) return 'negation';
+    if (spanVoiceBroken(text, act)) return 'person';
+  }
   const toCallerSpan = act.speaks === 'to-caller';
   const nameWords = new Set((act.names ?? []).flatMap((n) => words(n.value)));
   const said = new Set(content.flatMap(words));
@@ -620,12 +625,33 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}, le
 }
 
 /**
- * The checks only a `strict` span runs (checkSpan), each by its words: the negation check against the
+ * Whose voice a span speaks in, and the gender of its pronouns: the person checks every span runs, at
+ * either level (checkSpan). In the caller's own terms, no first or second person its content does not
+ * use (the agent's own words, or words to the listener); speaking to the caller (`speaks: to-caller`), no
+ * first person of its own (an "I" or a "we" would be heard as the agent's; "US" in capitals is no pronoun)
+ * and no other pronoun its content does not have; and for every span, no "he" or "she" of a gender its
+ * content has no pronoun of (genderBroken). Measured on the judge-eval (live findings item 23): these
+ * refuse no faithful case, and hold four hard cases and the adversarial suite's refund and no-cue spans
+ * by their words. Who does what to whom (personBroken's counts and order) and the message's own "you"
+ * are `strict`'s, and the judge's.
+ */
+export function spanVoiceBroken(text: string, act: Pick<SpanAct, 'content' | 'speaks' | 'names'>): boolean {
+  const content = act.content.map((c) => c.value);
+  const said = new Set(content.flatMap(words));
+  if (act.speaks === 'to-caller') {
+    if (personsIn(text, (act.names ?? []).map((n) => n.value), 'span').some((p) => p.person === 'F')) return true;
+    if (words(text).some((w) => PERSON_WORDS.has(w) && !SECOND_PERSON.has(w) && !FIRST_PERSON.has(w) && !said.has(w))) return true;
+  } else if (words(text).some((w) => PERSON_WORDS.has(w) && !said.has(w))) return true;
+  return genderBroken(text, content);
+}
+
+/**
+ * The checks a `strict` span runs (checkSpan) beyond the standard ones, each by its words: the negation check against the
  * content turned toward the caller for a to-caller span (comparedToCaller: a "no" about a person); a
  * clause of the content that says "no" or sets a condition left out (`omitted`, leftOut); and its persons
- * (`person`): for a span in the caller's terms, no first or second person the content does not use;
- * for a to-caller span, personBroken and no other pronoun of its own; for every span, a he or a she of
- * a gender the content does not have (genderBroken). The stub's span judge runs them too (jev/heuristicStub.ts
+ * (`person`): spanVoiceBroken's, and for a to-caller span personBroken (no more "you" or "your" than the
+ * content's I or my, none where the content says "you" to the one it is for, who does what to whom in
+ * the content's order, a passive the right way round). The stub's span judge runs them too (jev/heuristicStub.ts
  * stubSpanDrift), so a `standard` span the strict checks would refuse is refused there by the judge, and
  * the stub regression and the adversarial suite hold it at either level; on a call, under `standard`, it
  * rests on the real judge's reading.

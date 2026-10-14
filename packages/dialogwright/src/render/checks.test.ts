@@ -593,7 +593,7 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
   });
 });
 
-describe('the span checks at standard, the default (live findings item 23): values and shape, the rest the judge\'s', () => {
+describe('the span checks at standard, the default (live findings item 23): values, shape and voice, the rest the judge\'s', () => {
   const NAMES = [{ name: 'recipient', value: 'Sam Ortiz' }];
   const spanAct = (message: string, over: Partial<SpanAct> = {}): SpanAct => ({
     kind: 'span', goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 25, avoid: ['unfortunately'] }, ...over,
@@ -611,12 +611,24 @@ describe('the span checks at standard, the default (live findings item 23): valu
     expect(both('please call Dana about the lease', spanAct('please call Jordan about the lease'))).toEqual({ standard: 'foreign', strict: 'foreign' });
   });
 
-  it('leaves to the judge what strict holds by its words: a "no" or a condition left out, a person, persons swapped, a gender, a "no" about a person', () => {
+  it('holds whose voice it speaks in at either level: a person the content does not use, a to-caller span\'s own "I" or "we", a he or a she of another gender', () => {
+    const cases: [string, SpanAct][] = [
+      ['you would like a call about the invoice', spanAct('call about the invoice')],
+      ['our office will sort out the invoice', spanAct('call about the invoice')],
+      ['she needs the report by Friday', spanAct('he needs the report by Friday')],
+      ['we will get you the approval', toCaller('the project is complete and I just need him to give his approval')],
+      ['the project is complete and I just need his approval', toCaller('the project is complete and I just need him to give his approval')],
+      ['she wants you to call her back', toCaller('he wants me to call him back')],
+    ];
+    for (const [text, act] of cases) expect(both(text, act), text).toEqual({ standard: 'person', strict: 'person' });
+    // "US" in capitals is no pronoun of its own.
+    expect(both('the US office has your parcel', toCaller('the US office has my parcel'))).toEqual({ standard: null, strict: null });
+  });
+
+  it('leaves to the judge what strict holds by its words: a "no" or a condition left out, persons swapped, the message\'s own "you", a "no" about a person', () => {
     const cases: [string, SpanAct, string][] = [
       ['the brochure proofs are back from the printer and look great', spanAct('the brochure proofs are back from the printer and look great, no changes needed'), 'omitted'],
       ['go ahead with the print run', spanAct('go ahead with the print run only if the payment clears'), 'omitted'],
-      ['you would like a call about the invoice', spanAct('call about the invoice'), 'person'],
-      ['she needs the report by Friday', spanAct('he needs the report by Friday'), 'person'],
       ['Sam owes you the deposit', toCaller('I owe him the deposit'), 'person'],
       ['you need to sign the lease', toCaller('I need you to sign the lease'), 'person'],
       ['you can sign', toCaller('he can sign, not me'), 'negation'],

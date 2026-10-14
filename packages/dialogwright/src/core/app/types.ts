@@ -1546,10 +1546,11 @@ export interface GeneratedSpan {
    */
   readonly names?: readonly string[];
   /**
-   * `strict`: every check of the span by its words (prompts.yaml's `checks` on the span or its line, else
-   * style.yaml's). Absent: `standard`, the checks of values and shape, the rest the drift check's.
+   * How strictly the span is checked by its words (prompts.yaml's `checks` on the span or its line, else
+   * style.yaml's): `strict`, every check; `standard`, the checks of values, shape and voice, the rest the
+   * drift check's. Absent: `standard` (an app folder's are written only where strict; an app in code may say either).
    */
-  readonly checks?: 'strict';
+  readonly checks?: 'standard' | 'strict';
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
