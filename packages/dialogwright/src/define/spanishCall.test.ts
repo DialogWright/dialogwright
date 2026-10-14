@@ -11,13 +11,12 @@ import { promptSay, spokenText } from '../prompts/render';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap, QuestionMap } from '../jev/types';
 import type { SlotSpec } from '../core/slots/types';
-import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll } from 'vitest';
 import type { Action } from '../channel/actions';
-import { libraryApp, libraryCode, LibrarySystems, LIBRARY_DIR } from './fixture/app';
-import { defineApp } from './defineApp';
+import { libraryApp, LibrarySystems, LIBRARY_DIR } from './fixture/app';
+import { spanishSwitchVariants } from '../testing/spanishSwitch';
 
 /**
  * A whole call to the library line in Spanish (session.start asks for es): the card number said in
@@ -162,39 +161,15 @@ describe('the language each line is said in', () => {
 });
 
 describe('switching language mid-call (an informational intent with locale:)', () => {
-  const scratch: string[] = [];
-  afterAll(() => {
-    for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
-  });
+  const variants = spanishSwitchVariants();
+  afterAll(() => variants.remove());
 
   /**
    * The library's folder with a `spanish` intent that switches the call to es (key 9 on the menu),
    * its line in both locales, and `voice` written under app.yaml's voice block; the app's id is `id`.
    */
   function switchApp(id: string, voice: string[] = []) {
-    const dir = mkdtempSync(join(tmpdir(), 'dialogwright-switch-'));
-    scratch.push(dir);
-    cpSync(LIBRARY_DIR, dir, { recursive: true, filter: (src) => !src.endsWith('.ts') });
-    const appYaml = readFileSync(join(dir, 'app.yaml'), 'utf8').replace('id: library', `id: ${id}`).replace('      spell: lead\n', `      spell: lead\n${voice.map((l) => `${l}\n`).join('')}`);
-    writeFileSync(join(dir, 'app.yaml'), appYaml);
-    const intents = readFileSync(join(dir, 'intents.yaml'), 'utf8')
-      .replace('\nmenu:\n', [
-        '  spanish:',
-        '    kind: informational',
-        '    label: continue in Spanish',
-        '    criteria: The caller asks to continue in Spanish, or says they speak Spanish',
-        '    locale: es',
-        '    promptId: switched_to_spanish',
-        '',
-        'menu:',
-        '  - digit: "9"',
-        '    intent: spanish',
-        '',
-      ].join('\n'));
-    writeFileSync(join(dir, 'intents.yaml'), intents);
-    appendFileSync(join(dir, 'prompts.yaml'), '  switched_to_spanish:\n    text: Of course, we will continue in Spanish.\n    interruptible: false\n');
-    appendFileSync(join(dir, 'locale', 'es', 'prompts.yaml'), '  switched_to_spanish:\n    text: Muy bien, seguimos en español.\n    interruptible: false\n');
-    const app = defineApp(dir, libraryCode);
+    const app = variants.build(id, voice);
     registerApp(app);
     return app;
   }
@@ -321,5 +296,111 @@ describe('switching language mid-call (an informational intent with locale:)', (
     const again = say(start, 'en español', { intent: choice({ spanish: 0.95, none: 0.05 }) }, t).turn;
     expect(again.session.locale).toBe('es');
     expect(lines(again)).toEqual([{ lang: 'es', text: 'Muy bien, seguimos en español.' }, { lang: 'es', text: ASK_INTENT_ES }]);
+  });
+});
+
+describe('the keypad menu from the greeting (intents.yaml menuListens, a menu entry\'s fromGreeting)', () => {
+  const variants = spanishSwitchVariants();
+  afterAll(() => variants.remove());
+  const build = (id: string, menu: Parameters<typeof variants.build>[2]) => {
+    const app = variants.build(id, [], menu);
+    registerApp(app);
+    return app;
+  };
+  /** The 9 (Spanish) taken from the greeting on; every other key only once the menu is offered. */
+  const nine = build('library-nine', { nineFromGreeting: true });
+  /** Every key taken from the greeting on. */
+  const every = build('library-every', { menuListens: 'greeting' });
+  /** The option off: as every app was before it. */
+  const off = build('library-offered', {});
+  const ASK_INTENT_ES = '¿En qué puedo ayudarle hoy?';
+  const SWITCHED = [
+    { type: 'set_language', tts: 'es', transcription: 'es' },
+    { lang: 'es', text: 'Muy bien, seguimos en español.' },
+    { lang: 'es', text: ASK_INTENT_ES },
+  ];
+  const lines = (r: TurnResult) => r.actions.map((a) => (a.type === 'say' ? { lang: a.lang, text: a.parts.map((p) => ('text' in p ? p.text : '')).join(' ') } : a));
+  const started = (app: { id: string }, channel = VOICE_RELAY): TurnResult => resolve(newSession(`${app.id}-call`, 0, channel, ANONYMOUS, app.id), startEvent(), null, tc());
+  const key = (r: TurnResult, digit: string): TurnResult => resolve(r.session, keyEvents(digit)[0]!, null, tc());
+  const ignored = (before: TurnResult, after: TurnResult): void => {
+    expect(after.decision).toEqual({ kind: 'ignore' });
+    expect(after.actions).toEqual([]);
+    expect(after.menuKey).toBeUndefined();
+    expect(after.session).toEqual(before.session);
+  };
+
+  it('builds each entry\'s listening into App.menu: the 9 alone, every key, or none', () => {
+    expect(nine.menu).toEqual([{ digit: '9', intent: 'spanish', fromGreeting: true }, { digit: '1', intent: 'renew_loan' }, { digit: '2', intent: 'check_hold' }, { digit: '0', intent: 'agent' }]);
+    expect(every.menu.every((m) => m.fromGreeting === true)).toBe(true);
+    expect(off.menu.some((m) => 'fromGreeting' in m)).toBe(false);
+    // An entry's own fromGreeting over menuListens: every key but the 9.
+    const butNine = build('library-but-nine', { menuListens: 'greeting', nineFromGreeting: false });
+    expect(butNine.menu.map((m) => [m.digit, m.fromGreeting === true])).toEqual([['9', false], ['1', true], ['2', true], ['0', true]]);
+  });
+
+  it('switches on the 9 pressed at the greeting: set_language, the line, and the open question in Spanish; nothing counted', () => {
+    const start = started(nine);
+    const switched = key(start, '9');
+    expect(switched.session.locale).toBe('es');
+    expect(lines(switched)).toEqual(SWITCHED);
+    expect(switched.menuKey).toEqual({ digit: '9', intent: 'spanish' });
+    expect([switched.session.menuActive, switched.session.intentAttempts, switched.session.promptedFor, switched.session.dtmfBuffer]).toEqual([false, 0, 'intent', '']);
+    // The call goes on in Spanish, by words.
+    const loans = say(switched, 'quiero saber qué tengo prestado', { intent: choice({ check_loans: 0.95, none: 0.05 }) }, tc()).turn;
+    expect(heard(loans)).toBe('Claro, puedo ayudarle a revisar sus préstamos. ¿Cuál es el número de su tarjeta de la biblioteca?');
+  });
+
+  it('ignores a key that does not listen from the greeting, and every key with the option off, as before', () => {
+    const start = started(nine);
+    ignored(start, key(start, '1'));
+    ignored(start, key(start, '0'));
+    const plain = started(off);
+    ignored(plain, key(plain, '9'));
+    ignored(plain, key(plain, '1'));
+    // Offered, the menu takes every key, the 9 among them, as it always has.
+    const onMenu = { ...start, session: { ...start.session, menuActive: true } };
+    const picked = key(onMenu, '1');
+    expect(picked.session.form).toBe('renew_loan');
+    expect(picked.menuKey).toBeUndefined();
+  });
+
+  it('with menuListens: greeting, starts a form by its key and goes to a person on 0; a key not on the menu is ignored, not a miss', () => {
+    const start = started(every);
+    const renew = key(start, '1');
+    expect(renew.session.form).toBe('renew_loan');
+    expect(renew.decision.kind).toBe('prompt');
+    expect(spokenText(every, renew.decision, renew.session.locale)).toMatch(/^Sure, I can help you renew a book\./);
+    expect(renew.menuKey).toEqual({ digit: '1', intent: 'renew_loan' });
+    const person = key(start, '0');
+    expect(person.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent' });
+    ignored(start, key(start, '5'));
+  });
+
+  it('listens wherever the open question is asked: after a miss and at "anything else?"; not inside a form or at a confirmation', () => {
+    const t = tc();
+    const start = started(nine);
+    const missed = say(start, 'um', {}, t).turn;
+    expect(missed.session.intentAttempts).toBe(1);
+    expect(lines(key(missed, '9'))).toEqual(SWITCHED);
+
+    const hold = say(start, 'is my hold for The River Atlas in', { intent: choice({ check_hold: 0.95, none: 0.05 }), book: choice({ river_atlas: 0.9, none: 0.1 }) }, t).turn;
+    const inForm = key(hold, '9');
+    expect(inForm.session.locale).toBe('en-US');
+    expect(inForm.menuKey).toBeUndefined();
+    const done = say(hold, 'North', { branch: choice({ north: 0.92, none: 0.08 }) }, t).turn;
+    expect(done.session.lastPromptId).toBe('anything_else');
+    expect(lines(key(done, '9'))).toEqual(SWITCHED);
+
+    const unsure = say(start, 'maybe a hold', { intent: choice({ check_hold: 0.5, none: 0.5 }) }, t).turn;
+    expect(unsure.session.pendingConfirmation?.target).toBe('intent');
+    ignored(unsure, key(unsure, '9'));
+  });
+
+  it('takes no key on a chat, and asks the model the same questions of words said at the greeting', () => {
+    const chat = started(nine, WEB_CHAT);
+    ignored(chat, key(chat, '9'));
+    // Keys only: "nine" said at the greeting is words, read as before, so no request changes.
+    const words = speechEvent('nine', true, 'en-US');
+    expect(plan(started(nine).session, words, tc()).questions).toEqual(plan(started(off).session, words, tc()).questions);
   });
 });

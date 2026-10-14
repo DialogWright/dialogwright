@@ -1161,11 +1161,24 @@ export interface HandoffData {
  */
 export type HandoffUnconfirmed = 'send' | 'mark' | 'omit';
 
+/**
+ * One key of the keypad menu. `fromGreeting`: the key is taken from the greeting on, whenever the caller
+ * is asked what they want (the open question: the greeting's, its re-asks, "anything else?"), before the
+ * menu has been offered; absent or false, only once the menu has been offered (after the second missed
+ * answer), and a key pressed before is ignored. intents.yaml's `menuListens: greeting` sets it on every
+ * entry, and an entry's own `fromGreeting` overrides that.
+ */
+export interface MenuEntry {
+  digit: string;
+  intent: Intent;
+  fromGreeting?: boolean;
+}
+
 export interface App {
   id: string;
   intents: Record<Intent, IntentDef>;
   /** Keypad menu order: digit to intent. */
-  menu: ReadonlyArray<{ digit: string; intent: Intent }>;
+  menu: ReadonlyArray<MenuEntry>;
   forms: Record<FormId, FormDef>;
   slots: Record<SlotId, SlotSpec>;
   /**

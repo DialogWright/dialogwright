@@ -21,6 +21,13 @@ describe('validateApp', () => {
     expect(() => validateApp(testkitApp)).not.toThrow();
   });
 
+  it('takes a menu key from the greeting on (fromGreeting) as true or false, and refuses anything else', () => {
+    const app = (fromGreeting: unknown): App => ({ ...copy(), menu: testkitApp.menu.map((m, i) => (i === 0 ? { ...m, fromGreeting: fromGreeting as boolean } : m)) });
+    expect(() => validateApp(app(true))).not.toThrow();
+    expect(() => validateApp(app(false))).not.toThrow();
+    expect(() => validateApp(app('yes'))).toThrow(`menu digit "${testkitApp.menu[0]!.digit}" has fromGreeting "yes", which is not true or false`);
+  });
+
   it('names a form slot that is not a slot', () => {
     const app = copy();
     app.forms.track_parcel = { ...testkitApp.forms.track_parcel!, slots: ['parcelSelect', 'ghostSlot'] };

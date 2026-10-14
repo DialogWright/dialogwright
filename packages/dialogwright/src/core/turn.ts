@@ -8,7 +8,7 @@ import { formLabel, informationOf, intentLabel, isFormIntent, relabelled, type I
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
 import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { App, CheckOutcome, Completion, FormCheck, FormId, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
+import type { App, CheckOutcome, Completion, FormCheck, FormId, Intent, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
 import { candidateSpans, candidateWordSpans } from './spans';
 import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, unparkTask, type PendingConfirmation, type Session } from './session';
 import { buildTurnState, type TurnState } from './state';
@@ -17,7 +17,7 @@ import { evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type 
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
+import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, hintsCallerNumber, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, yesNoOffer, type OfferPending } from './callerNumber';
@@ -234,6 +234,8 @@ export interface TurnResult {
   consent?: ConsentSettled;
   /** what became of the caller-ID match this turn (identity.yaml's callerId), in order; absent on every other turn */
   callerMatch?: CallerMatchStep[];
+  /** a keypad menu key taken at the open question before the menu was offered (MenuEntry.fromGreeting); absent on every other turn */
+  menuKey?: MenuKeyTaken;
   /** what the injection screen made of this turn's words; null when it was not asked (no model turn) */
   screen: ScreenResult | null;
   /** the screen fired: perception's answers were discarded and nothing was filled, gated or called */
@@ -2125,6 +2127,36 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
   }
 }
 
+/**
+ * The open question: the caller asked what they want (the greeting's, a re-ask of it, "anything
+ * else?") on a channel with keys, with nothing else in hand: no form, no confirmation or offer
+ * pending, no identity under way at the greeting, no downstream answer awaited, and the keypad menu
+ * not offered (on the menu, every key is the menu's already). Where a key the menu takes from the
+ * greeting on (MenuEntry.fromGreeting) is taken.
+ */
+function atOpenQuestion(s: Session): boolean {
+  return s.caps.keypad && s.promptedFor === 'intent' && !s.menuActive && s.form === null && s.pendingConfirmation === null
+    && s.stepUp === null && s.pendingService === null && !awaitingSignIn(s);
+}
+
+/**
+ * A key of the keypad menu, taken: `agent` goes to a person, an informational intent plays its line as
+ * the spoken intent does (the inform verdict: an ack in front of the question the caller was on, the
+ * keypad menu with its rung intact, or the open question), and a form intent starts its form. A key for
+ * any other control intent is ignored (pnpm check warns of one).
+ */
+function menuChoice(s: Session, io: TurnIO, intent: Intent): Decision {
+  if (intent === 'agent') return handoff(s, 'live-agent');
+  const informs = informationOf(io.app, intent);
+  if (informs !== undefined) {
+    const said = informed(s, io, informs);
+    return (said.answered ? null : offerAfterUnavailable(s, said.acks)) ?? resume(s, io, said.acks);
+  }
+  if (!isFormIntent(io.app, intent)) return { kind: 'ignore' };
+  setForm(s, intent);
+  return continueForm(s, io, [ackIntent(s, intent)], null);
+}
+
 function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision; rows: GateRow[] } {
   const tc = io.tc;
   // The keypad code: buffered, checked and forgotten by the lifecycle. It is never a slot.
@@ -2141,23 +2173,23 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
     s.dtmfBuffer += digit;
     return { decision: { kind: 'ignore' }, rows: [] };
   }
+  // A key the menu takes from the greeting on (MenuEntry.fromGreeting), pressed at the open question
+  // before the menu is offered: taken as the offered menu takes it ("para español, oprima 9" in the
+  // greeting). Any other key there is ignored, as before: the menu has not been offered.
+  const early = atOpenQuestion(s) ? io.app.menu.find((m) => m.digit === digit && m.fromGreeting === true) : undefined;
+  if (early !== undefined) {
+    s.dtmfBuffer = '';
+    const decision = menuChoice(s, io, early.intent);
+    if (decision.kind !== 'ignore') io.out.menuKey = { digit, intent: early.intent };
+    return { decision, rows: [] };
+  }
   s.dtmfBuffer += digit;
   if (s.menuActive) {
     const option = io.app.menu.find((m) => m.digit === digit);
     s.dtmfBuffer = '';
     // A wrong key is a failed menu attempt, not dead air.
     if (!option) return { decision: failAttempt(s, 'intent', io), rows: [] };
-    if (option.intent === 'agent') return { decision: handoff(s, 'live-agent'), rows: [] };
-    // An informational intent's key plays its line as the spoken intent does (the inform verdict):
-    // an ack in front of the question the caller was on, here the keypad menu, its rung intact.
-    const informs = informationOf(io.app, option.intent);
-    if (informs !== undefined) {
-      const said = informed(s, io, informs);
-      return { decision: (said.answered ? null : offerAfterUnavailable(s, said.acks)) ?? resume(s, io, said.acks), rows: [] };
-    }
-    if (!isFormIntent(io.app, option.intent)) return { decision: { kind: 'ignore' }, rows: [] };
-    setForm(s, option.intent);
-    return { decision: continueForm(s, io, [ackIntent(s, option.intent)], null), rows: [] };
+    return { decision: menuChoice(s, io, option.intent), rows: [] };
   }
   // The summary's keypad fallback: 1 confirms, 2 opens the change question, anything else is a miss.
   if (s.promptedFor === 'confirm' && s.pendingConfirmation?.target === 'form') {

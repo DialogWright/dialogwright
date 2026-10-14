@@ -237,9 +237,10 @@ function menuDiagram(app: App): string[] {
   };
   if (app.menu.length > 0) {
     out.push(`  menu(${mermaidLabel('Keypad menu')})`);
-    for (const { digit, intent } of app.menu) {
+    for (const { digit, intent, fromGreeting } of app.menu) {
       leaf(intent);
-      out.push(`  menu -->|${mermaidLabel(`press ${digit}`)}| ${intentNode(intent)}`);
+      // A key taken from the greeting on (MenuEntry.fromGreeting) says so; every other key is as it was.
+      out.push(`  menu -->|${mermaidLabel(fromGreeting === true ? `press ${digit}, from the greeting` : `press ${digit}`)}| ${intentNode(intent)}`);
     }
   }
   const informational = Object.entries(app.intents).filter(([id, i]) => i.kind === 'informational' && !shown.has(id));

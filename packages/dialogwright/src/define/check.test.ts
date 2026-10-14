@@ -913,3 +913,45 @@ describe('checkApp: a framed line (review fixes)', () => {
     }
   });
 });
+
+describe('checkAppFully: a key the greeting names, and the menu from the greeting', () => {
+  const warnings = async (dir: string): Promise<string[]> => ((await checkAppFully(dir, { code: libraryCode })).warnings ?? []).map(formatProblem).filter(otherThanSpeech);
+  const GREETING = 'Thanks for calling Example Town Library. I can renew a book or check a hold. How can I help?';
+  const greeting = (said: string) => (text: string): string => text.replace(GREETING, `${GREETING} ${said}`);
+  const ES_GREETING = '¿En qué puedo ayudarle?\n';
+  const zeroListens = (text: string): string => text.replace('  - digit: "0"\n    intent: agent', '  - digit: "0"\n    intent: agent\n    fromGreeting: true');
+
+  it('warns of a greeting that asks for a key the menu takes only once offered, at its entry', async () => {
+    const dir = folder({ 'prompts.yaml': greeting('For a person, press 0.') });
+    expect(await lines(dir)).toEqual([]);
+    expect(await warnings(dir)).toEqual([
+      'intents.yaml:46:12  menu[2].digit  the greeting "greeting" asks the caller to press 0, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses 0 at the greeting hears nothing  ->  add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the greeting',
+    ]);
+  });
+
+  it('reads every locale\'s greeting, and the key said as a word', async () => {
+    const dir = folder({ 'locale/es/prompts.yaml': (t) => t.replace(ES_GREETING, '¿En qué puedo ayudarle? Para hablar con una persona, oprima el cero.\n') });
+    expect(await lines(dir)).toEqual([]);
+    const found = await warnings(dir);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('menu[2].digit  the greeting "greeting" (es) asks the caller to press 0');
+  });
+
+  it('says nothing when the key listens from the greeting (its entry, or menuListens), or the greeting names no key', async () => {
+    expect(await warnings(folder({ 'prompts.yaml': greeting('For a person, press 0.'), 'intents.yaml': zeroListens }))).toEqual([]);
+    const every = folder({ 'prompts.yaml': greeting('For a person, press 0.'), 'intents.yaml': (t) => `${t}\nmenuListens: greeting\n` });
+    expect(await lines(every)).toEqual([]);
+    expect(await warnings(every)).toEqual([]);
+    // A figure is no key: only a press word names one.
+    expect(await warnings(folder({ 'prompts.yaml': greeting('We are open 9 to 5, and 0 waiting.') }))).toEqual([]);
+  });
+
+  it('refuses menuListens with no keys to listen for, a value it does not know, and a fromGreeting that is not true or false', async () => {
+    const empty = await lines(folder({ 'intents.yaml': (t) => t.replace(/\nmenu:[\s\S]*$/, '\nmenu: []\nmenuListens: greeting\n') }));
+    expect(empty.some((l) => l.includes('menuListens  menuListens is greeting, and the menu has no keys to listen for  ->  add the keys under menu:, or delete menuListens'))).toBe(true);
+    const unknown = await lines(folder({ 'intents.yaml': (t) => `${t}\nmenuListens: always\n` }));
+    expect(unknown.some((l) => l.includes('menuListens'))).toBe(true);
+    const notBoolean = await lines(folder({ 'intents.yaml': (t) => t.replace('    intent: agent', '    intent: agent\n    fromGreeting: yes') }));
+    expect(notBoolean.some((l) => l.includes('menu[2].fromGreeting'))).toBe(true);
+  });
+});

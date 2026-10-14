@@ -9,7 +9,7 @@ import { ALL_SLOTS as REAL_ALL_SLOTS } from '../../testing/testkit/domain/slots'
 import type { AuditEntry } from '../../audit/types';
 import type { FrameDir, FrameLogLine } from '../frameLog';
 import { CALL, FROM, TODAY, replayRecords, scripted, type Step } from '../../testing/scripted';
-import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges, nowChipLabel, SHORT_MASK, wordingOf } from './view.js';
+import { ALL_SLOTS, FORM_SLOTS, configure, decisiveRows, formLabel, groupRows, handoffReasonText, latestTrace, positionText, reduce, replayEvents, replayStops, scriptOf, CODE_MASK, serviceNoteView, traceLabel, cleanTraceName, TRACE_NAME_MAX, stepStop, thresholdFor, exchanges, nowChipLabel, SHORT_MASK, wordingOf, menuKeyNote } from './view.js';
 import { consoleMetaOf } from './meta';
 import { testkitApp } from '../../testing/testkit';
 import { useTestkit } from '../../testing/apps';
@@ -243,6 +243,11 @@ describe('reduce', () => {
     expect(after.jev.groups).toEqual(before.jev.groups);
     expect(after.jev.header).toBe('Jev · turn 3 · no questions (last: turn 2)');
     expect(after.jev.decision).not.toBe(before.jev.decision);
+  });
+
+  it('notes a keypad menu key taken from the greeting on (TraceRecord.menuKey) in the header of its turn, and nothing for any other', () => {
+    expect(menuKeyNote({ menuKey: { digit: '9', intent: 'spanish' } })).toBe(' · menu key 9 taken from the greeting (spanish)');
+    expect(menuKeyNote({})).toBe('');
   });
 
   it('says so when the model call failed, and leaves the rows pending', async () => {

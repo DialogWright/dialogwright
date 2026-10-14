@@ -361,6 +361,7 @@ export function decisiveRows(
   activeForm?: string | null,
 ): Row[];
 /** The call detail header's note of a turn's second request on the same words (TraceRecord.followUp); '' for a turn that made none. */
+export function menuKeyNote(r: { menuKey?: { digit: string; intent: string } | null }): string;
 export function followUpNote(r: { followUp?: { slot: string; questions?: Record<string, unknown>; error?: { name: string } | null } | null; timing?: { followUpMs?: number } | null }): string;
 export function groupRows(rows: Row[], formSlots: readonly string[], pending: PendingConfirmation | { target: string } | null): Group[];
 export function thresholdFor(id: string, thresholds: Partial<Thresholds>, activeForm?: string | null): number | null;

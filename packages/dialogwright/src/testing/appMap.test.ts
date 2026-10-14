@@ -101,3 +101,14 @@ describe('the app map: a slot that runs out, and an outcome that enters a form',
     expect(map).toContain('After `renew_loan` (an outcome), `check_hold` (an outcome): the internal form `desk`');
   });
 });
+
+describe('the app map: the keypad menu', () => {
+  it('says which keys are taken from the greeting on (MenuEntry.fromGreeting), and draws every other as before', () => {
+    const app: App = { ...libraryApp, menu: libraryApp.menu.map((m) => (m.digit === '0' ? { ...m, fromGreeting: true } : m)) };
+    const map = appMapText(app);
+    expect(map).toContain('press 0, from the greeting');
+    expect(map).toContain('press 1');
+    expect(map).not.toContain('press 1, from the greeting');
+    expect(appMapText(libraryApp)).not.toContain('from the greeting');
+  });
+});

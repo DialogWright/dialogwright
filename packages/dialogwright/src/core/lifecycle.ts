@@ -142,6 +142,18 @@ export interface TurnOut {
    * for a value that is no Error), never its message, which may hold a value. Absent on every other turn.
    */
   startHookFailed?: string;
+  /**
+   * A keypad menu key taken at the open question, before the menu was offered (MenuEntry.fromGreeting;
+   * intents.yaml's menuListens or an entry's fromGreeting): the key and the intent it chose, for the trace
+   * and the console. Absent on every other turn, a key on the offered menu among them.
+   */
+  menuKey?: MenuKeyTaken;
+}
+
+/** A keypad menu key taken from the greeting on (TurnOut.menuKey): the key, and the intent it chose. */
+export interface MenuKeyTaken {
+  readonly digit: string;
+  readonly intent: string;
 }
 
 /** A route taken, as the turn notes it: the record, and where among the turn's gate events it was taken. */

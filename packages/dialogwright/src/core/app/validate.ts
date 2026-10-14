@@ -228,6 +228,7 @@ export function validateApp(app: App): void {
   }
   for (const slot of Object.keys(change?.text ?? {})) if (!(change?.order ?? []).includes(slot)) fail(`wording's changeSlot text has slot "${slot}", which is not in its order`);
   for (const { digit, intent } of app.menu) if (!Object.hasOwn(app.intents, intent)) fail(`menu digit "${digit}" has unknown intent "${intent}"`);
+  for (const { digit, fromGreeting } of app.menu) if (fromGreeting !== undefined && typeof fromGreeting !== 'boolean') fail(`menu digit "${digit}" has fromGreeting ${JSON.stringify(fromGreeting)}, which is not true or false`);
   // The locales the app speaks (core/locale.ts localesOf, written out here: that module reads the registry, which reads this one).
   const speaks = app.locales ? [app.locales.default, ...Object.keys(app.locales.prompts)] : ['en-US'];
   const within = app.voice?.continueWithinMs;

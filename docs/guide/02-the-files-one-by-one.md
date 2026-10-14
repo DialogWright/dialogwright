@@ -169,7 +169,17 @@ menu:
 - Keypad digits are quoted strings.
 - An informational intent may switch the call's language: `locale:` names one of the app's locales, with a `promptId` said in it, or alone (never with a `passage`). No intent switches unless the app writes one; [13.3](13-channels.md#133-languages-on-the-phone) has the example and what a switch does on a call and in a chat.
 - A key on the menu starts a form, plays an informational intent's line, or (`agent`) goes to a person. A key for any other control intent does nothing on a call (the caller hears nothing), so `pnpm check` refuses one.
-- The menu listens only once it has been offered. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
+- The menu listens only once it has been offered, by default. On a call with a keypad (a phone call; a chat has none), the second missed answer to the intent question (words it did not understand, or a silence) offers it with `nomatch_dtmf_menu`, and the keys of the next turn are menu keys; with `MAX_ATTEMPTS` at its default of 3, a third miss goes to a person. A key pressed before then, at the greeting for example, is ignored. After an informational key the menu is offered again, so it keeps listening. A scripted call that presses a menu key therefore misses twice first.
+- A key the greeting names listens from the greeting: give its entry `fromGreeting: true`, or write `menuListens: greeting` at the top of intents.yaml for every key (an entry's own `fromGreeting: false` then keeps that one key for the offered menu). Such a key is taken wherever the caller is asked what they want: the greeting's open question, its re-asks, and "anything else?" (the open question: no form open, nothing pending to confirm, no identity under way at the greeting). It does what it does on the offered menu: a form intent starts its form ("Sure, I can help you renew a book." and its first question), `agent` goes to a person, and an informational intent says its line and asks the open question again (`ask_intent`), in the new language for one with `locale:`. Nothing is counted against the caller. Any other key there is still ignored, and so is every key inside a form, where its own keypad answers, and at a confirmation. Keys only: a menu number said aloud is heard on the offered menu alone, so the model is asked what it was before. `menuListens: offered` is the default and says so; `pnpm check` refuses `menuListens: greeting` with no keys, and warns when the greeting (in any locale) asks the caller to press a key ("press 9", "oprima el nueve") whose entry does not listen from the greeting. The turn's trace record says the key was taken (`menuKey`: the key and the intent), and the console's call page notes it on the turn's header.
+
+  ```yaml
+  menu:
+    - digit: "9"
+      intent: spanish
+      fromGreeting: true   # "para español, oprima 9" in the greeting
+    - digit: "1"
+      intent: renew_loan   # offered after the second missed answer, as before
+  ```
 
 #### When the model is unsure: `unsure`
 

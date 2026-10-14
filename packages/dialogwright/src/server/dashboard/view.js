@@ -437,6 +437,16 @@ export function followUpNote(r) {
   return ` · then ${Object.keys(f.questions ?? {}).length} more (${f.slot})${ms != null ? ` · ${Math.round(ms)} ms` : ''}${f.error ? ` · error: ${f.error.name}` : ''}`;
 }
 
+/**
+ * The header's note of a keypad menu key taken before the menu was offered (TraceRecord.menuKey: a key
+ * the menu takes from the greeting on, pressed at the open question), with the intent it chose; '' for
+ * any other turn, a key on the offered menu among them.
+ */
+export function menuKeyNote(r) {
+  const k = r.menuKey;
+  return k ? ` · menu key ${k.digit} taken from the greeting (${k.intent})` : '';
+}
+
 function tokensOf(usage) {
   return (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
 }
@@ -980,7 +990,7 @@ export function reduce(events, opts) {
           // A turn nobody asked the model about (a silence, a keypad digit) must not blank the
           // column: the last consultation stays on screen and the header says which turn it was.
           const last = lastConsult === null ? '' : ` (last: turn ${lastConsult})`;
-          v.jev = { header: `Jev · turn ${r.turnIndex} · no questions${last}`, pending: false, groups: v.jev.groups, decision };
+          v.jev = { header: `Jev · turn ${r.turnIndex} · no questions${last}${menuKeyNote(r)}`, pending: false, groups: v.jev.groups, decision };
         }
         break;
       }

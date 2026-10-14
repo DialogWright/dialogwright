@@ -188,6 +188,12 @@ export interface TraceRecord {
   /** The app's start hook (App.onStart) threw on this turn: its kind of error (a class's name), never its message. Absent on every other turn. */
   startHookFailed?: string;
   /**
+   * A keypad menu key taken at the open question, before the menu was offered (intents.yaml's
+   * menuListens, a menu entry's fromGreeting): the key and the intent it chose. Absent on every other
+   * turn, a key on the offered menu among them (the event and the decision say that one).
+   */
+  menuKey?: { digit: string; intent: string };
+  /**
    * This turn's audit drafts, in the order they were chained -- before chaining: no `seq` or
    * `hash` yet (those are the sink's, core/audit.ts's `AuditDraft` is what a turn reports). The
    * dashboard's live audit tail (hash and all) comes from the separate `audit` bus event instead;

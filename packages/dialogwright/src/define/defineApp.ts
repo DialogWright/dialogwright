@@ -1011,7 +1011,8 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   const app: Partial<App> = {
     id: a.id,
     intents: Object.fromEntries(Object.entries(config.intents.intents).map(([id, def]) => [id, intentOf(def)])),
-    menu: config.intents.menu.map(({ digit, intent }) => ({ digit, intent })),
+    // A key taken from the greeting on (menuListens, an entry's fromGreeting) says so; every other entry is as it was.
+    menu: config.intents.menu.map(({ digit, intent, fromGreeting }) => ({ digit, intent, ...((fromGreeting ?? config.intents.menuListens === 'greeting') ? { fromGreeting: true } : {}) })),
     forms: Object.fromEntries(Object.entries(config.forms.forms).map(([id, form]) => [id, formOf(form, code.forms?.[id])])),
     slots,
   };

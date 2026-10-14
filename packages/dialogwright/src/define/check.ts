@@ -379,6 +379,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  greetingKeyWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   // A line generated whole from what the caller said: the framed form is the pattern (render/config.ts).
   const redacted = Object.fromEntries(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => (spec?.redact !== undefined ? [[id, spec.redact]] : [])));
   for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: {}, redacted })) {
@@ -1000,6 +1004,51 @@ function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[
     });
   });
   return problems;
+}
+
+/** A key's spoken names, in the languages the warning below reads (English, Spanish), by key. */
+const KEY_WORDS: Readonly<Record<string, readonly string[]>> = {
+  '0': ['zero', 'cero'], '1': ['one', 'uno'], '2': ['two', 'dos'], '3': ['three', 'tres'], '4': ['four', 'cuatro'],
+  '5': ['five', 'cinco'], '6': ['six', 'seis'], '7': ['seven', 'siete'], '8': ['eight', 'ocho'], '9': ['nine', 'nueve'],
+  '*': ['star', 'asterisco'], '#': ['pound', 'hash', 'numeral'],
+};
+/** The words a line asks a caller to press a key with, in English and Spanish. */
+const PRESS = '(?:press|dial|key|enter|push|oprima|marque|pulse|presione|teclee)';
+
+/**
+ * Whether a line asks the caller to press `digit`: a press word ("press", "oprima", "marque", ...)
+ * followed by the key, written as the key or as its name ("press 9", "oprima el nueve", "press star").
+ * Only with a press word, so a figure in a greeting ("open 9 to 5") is no key.
+ */
+export function namesKey(line: string, digit: string): boolean {
+  const key = digit === '*' ? '\\*' : digit;
+  const words = (KEY_WORDS[digit] ?? []).join('|');
+  const said = new RegExp(`\\b${PRESS}\\s+(?:(?:the|el|la)\\s+)?(?:${key}(?![\\d])${words !== '' ? `|(?:${words})\\b` : ''})`, 'iu');
+  return said.test(line);
+}
+
+/**
+ * A greeting that names a key the menu takes only once offered: "para español, oprima 9" in the
+ * greeting, with the 9's entry not listening from the greeting (MenuEntry.fromGreeting; intents.yaml's
+ * menuListens), so a caller who presses it then hears nothing. Read in every locale's greeting line
+ * (app.yaml's prompts.greetings.voice, else `greeting`), with English and Spanish press words; one
+ * warning per key, at its menu entry.
+ */
+function greetingKeyWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const { menu, menuListens } = config.intents;
+  const id = config.app.prompts?.greetings?.voice ?? 'greeting';
+  const defaults = config.prompts[config.defaultLocale] ?? {};
+  menu.forEach(({ digit, fromGreeting }, i) => {
+    if (fromGreeting ?? menuListens === 'greeting') return;
+    for (const [locale, prompts] of Object.entries(config.prompts)) {
+      const line = (prompts[id] ?? defaults[id])?.text;
+      if (line === undefined || !namesKey(line, digit)) continue;
+      report('intents.yaml', ['menu', i, 'digit'],
+        `the greeting "${id}"${locale === config.defaultLocale ? '' : ` (${locale})`} asks the caller to press ${digit}, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses ${digit} at the greeting hears nothing`,
+        `add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the greeting`);
+      break;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -122,6 +122,13 @@ const menuEntry = z
     digit: matching(/^[0-9*#]$/, 'is not a keypad digit: it must be one of 0-9, * or #', 'use a single key: 0 to 9, * or #, in quotes')
       .describe('The key the caller presses, as a quoted string ("1"; an unquoted 1 is a number in YAML).'),
     intent: identifier().describe('The intent that key chooses (an id under `intents`).'),
+    fromGreeting: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this key is taken from the greeting on: whenever the caller is asked what they want (the greeting\'s open question, its re-asks, "anything else?"), before the menu is offered. ' +
+          'For a key the greeting names ("para español, oprima 9"). Default: menuListens (offered: the key is taken only once the menu has been offered, after the second missed answer).',
+      ),
   })
   .describe('One key of the keypad menu.');
 
@@ -167,7 +174,27 @@ export const intentsSchema = z
         });
       }))
       .describe('The keypad menu: digit to intent, in the order it is read out. May be empty for an app with no keypad menu.'),
+    menuListens: z
+      .enum(['offered', 'greeting'])
+      .optional()
+      .describe(
+        'When the keypad menu\'s keys are taken. offered (the default): only once the menu has been offered (nomatch_dtmf_menu, after the second missed answer); a key pressed before is ignored. ' +
+          'greeting: every key from the greeting on, whenever the caller is asked what they want (the open question, its re-asks, "anything else?"), and on the menu as before. ' +
+          'An entry\'s own fromGreeting overrides it for that key. Keys only: a menu number said aloud is heard on the offered menu alone.',
+      ),
   })
+  .check(checkAlways((file, ctx) => {
+    const f = file as { menu?: unknown; menuListens?: unknown } | null;
+    if (typeof f !== 'object' || f === null) return;
+    if (f.menuListens === 'greeting' && Array.isArray(f.menu) && f.menu.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['menuListens'],
+        message: 'menuListens is greeting, and the menu has no keys to listen for',
+        params: { fix: 'add the keys under menu:, or delete menuListens' },
+      });
+    }
+  }))
   .describe('intents.yaml: what a caller can ask for, and the keypad menu.');
 
 export type IntentsYaml = z.infer<typeof intentsSchema>;
