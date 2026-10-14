@@ -414,6 +414,17 @@
 1 answerQuestion ALLOW {"topic":"parking"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # corpus aq-14
+# corpus aq-15
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-16
+1 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+1 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"patel"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# corpus aq-17
 # corpus sq-01
 1 answerQuestion ALLOW {"topic":"parking"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
@@ -802,3 +813,24 @@
 1 answerQuestion ALLOW {"topic":"cancellation_policy"}
     identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
 # scenario question-none
+# scenario question-at-reschedule-summary
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+# scenario question-at-reschedule-summary-then-yes
+4 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+4 listOpenings ALLOW {"provider":"chen","date":"2026-09-22"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 answerQuestion ALLOW {"topic":"opening_hours"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+5 findAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+6 moveAppointment ALLOW {"name":"morgan ellis","dob":"•","provider":"chen","date":"2026-09-22","time":"8:30 AM"}
+    identity pass  Identity strong enough for this action  |  identity.level 0 >= 0
+    confirmed pass  The caller confirmed exactly these values  |  confirmed hash = call hash

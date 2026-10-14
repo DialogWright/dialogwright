@@ -5728,6 +5728,75 @@
     "principalLevel": 0,
     "gate": null
   },
+  "aq-15": {
+    "id": "aq-15",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": "2026-09-22",
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW"
+  },
+  "aq-16": {
+    "id": "aq-16",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": "2026-09-22",
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW"
+  },
+  "aq-17": {
+    "id": "aq-17",
+    "decision": "prompt",
+    "promptId": "ask_date",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "patel",
+      "date": null,
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "answerQuestion:ALLOW"
+  },
   "sq-01": {
     "id": "sq-01",
     "decision": "prompt",

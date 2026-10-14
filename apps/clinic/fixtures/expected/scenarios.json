@@ -2216,5 +2216,53 @@
     "gate": null,
     "pass": true,
     "mismatches": []
+  },
+  "question-at-reschedule-summary": {
+    "id": "question-at-reschedule-summary",
+    "decision": "prompt",
+    "promptId": "confirm_time",
+    "acks": [
+      "kb_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22",
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "findAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "question-at-reschedule-summary-then-yes": {
+    "id": "question-at-reschedule-summary-then-yes",
+    "decision": "complete",
+    "promptId": "reschedule_confirmed",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "reschedule",
+    "slots": {
+      "name": "morgan ellis",
+      "dob": "1975-06-14",
+      "memberId": null,
+      "provider": "chen",
+      "date": "2026-09-22",
+      "subject": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "moveAppointment:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }
