@@ -246,7 +246,7 @@ describe('reduce', () => {
   });
 
   it('notes a keypad menu key taken from the greeting on (TraceRecord.menuKey) in the header of its turn, and nothing for any other', () => {
-    expect(menuKeyNote({ menuKey: { digit: '9', intent: 'spanish' } })).toBe(' · menu key 9 taken from the greeting (spanish)');
+    expect(menuKeyNote({ menuKey: { digit: '9', intent: 'spanish' } })).toBe(' · menu key 9 taken before the menu was offered (spanish)');
     expect(menuKeyNote({})).toBe('');
   });
 

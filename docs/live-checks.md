@@ -279,6 +279,22 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log.
 
+## 17. The language key from the greeting, on Twilio and on Telnyx
+
+**Why.** Follow-up 17 of [the live findings](designs/2026-10-13-live-findings.md) takes a menu key from the greeting (`fromGreeting: true`). The tests hold that the engine takes the key from both carriers' frames, under every `BARGE_IN`; what the caller hears around it is the carrier's, and only a call says it.
+
+**Set.** A scratch copy of the routed fixture (check 13's settings), with an informational `spanish` intent (`locale: es`, `promptId: switched_to_spanish`, the line in `prompts.yaml` and `locale/es/prompts.yaml`), a menu entry `{ digit: "9", intent: spanish, fromGreeting: true }`, and a greeting, written `interruptible: true`, that ends "Para español, oprima 9." `pnpm check` should say nothing of the 9. Call the main number (not the Spanish line).
+
+**Do and look for.** On each carrier, with `BARGE_IN=any`, then `BARGE_IN=none` (and once `BARGE_IN_TELNYX=none` with `BARGE_IN=any`, to see the carrier's own):
+
+1. **The key arrives.** Press 9 early in the greeting: the frame log has the `dtmf` frame while the greeting plays (between the greeting's `text` frame and any `info` or playback event that says it finished), the key's turn has `menuKey: { "digit": "9", "intent": "spanish" }`, and the console's call page says "menu key 9 taken before the menu was offered (spanish)".
+2. **Whether the greeting stops.** Under `any`, the greeting should stop at the key; under `none`, it should play to its end. Note what was heard either way, and, on Telnyx, the order of the `dtmf` frame and any `interrupt` frame (a `dtmf` before the `interrupt` leaves the interrupt to be read by the next words; the engine clears it when the key is taken).
+3. **The switch mid-line.** Under `none`, the `language` frame goes out while the greeting still plays: listen to whether the rest of the greeting stays in English and the Spanish lines follow in Spanish, in the Spanish voice, with no gap longer than a second and nothing cut; then answer in Spanish and look for the Spanish words in the next `prompt` frame (the recognizer switched).
+4. **A double press.** Press 9 twice, quickly, under `none`: "Muy bien, seguimos en español." is said once.
+5. **Another key.** Press 1 at the greeting: nothing happens (the 1 waits for the menu), and the call goes on as before.
+
+**Record.** One row per carrier and barge-in in the results log; write what was heard into the guide's 13.3, in place of "documented rather than yet confirmed".
+
 ## Results log
 
 One row per check run. Keep earlier rows.

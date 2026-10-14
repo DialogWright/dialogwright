@@ -444,7 +444,7 @@ export function followUpNote(r) {
  */
 export function menuKeyNote(r) {
   const k = r.menuKey;
-  return k ? ` · menu key ${k.digit} taken from the greeting (${k.intent})` : '';
+  return k ? ` · menu key ${k.digit} taken before the menu was offered (${k.intent})` : '';
 }
 
 function tokensOf(usage) {

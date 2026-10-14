@@ -62,6 +62,7 @@ function liveCall(menu: SwitchMenu, provider: 'twilio' | 'telnyx', bargeIn: Barg
     sent,
     texts: () => sent.filter((f) => f.type === 'text').map((f) => ({ token: (f.token as string).trimEnd(), interruptible: f.interruptible })),
     records: () => readFileSync(join(dir, `${CALL}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord),
+    logged: () => readFileSync(join(dir, `${CALL}.frames.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> }).filter((l) => l.dir === 'log').map((l) => l.msg),
     replay: () => replayFrameLog(join(dir, `${CALL}.frames.jsonl`), { ...opts, trace: null }, undefined, { todayIsoOverride: opts.todayIso }),
     session: () => store.get(CALL)!.session,
   };
@@ -90,6 +91,34 @@ describe('a key the menu takes from the greeting on, through the voice adapter',
       });
     }
   }
+
+  it('telnyx, BARGE_IN none: a double press of the 9 says the switch once, and replays the same', async () => {
+    const call = liveCall(NINE, 'telnyx', 'none');
+    await call.start();
+    await call.key('9');
+    await call.key('9');
+    await call.key('9');
+    expect(call.texts().map((t) => t.token)).toEqual([promptText(call.app, 'greeting', {}), 'Muy bien, seguimos en español.', '¿En qué puedo ayudarle hoy?']);
+    expect(call.sent.filter((f) => f.type === 'language')).toHaveLength(1);
+    const live = call.records();
+    expect(live.filter((r) => r.menuKey !== undefined)).toHaveLength(1);
+    const replayed = await call.replay();
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+  });
+
+  it('twilio: a 9 keyed while the greeting\'s turn runs is taken once it has ended at the open question, and replays the same', async () => {
+    const call = liveCall(NINE, 'twilio', 'any');
+    // The setup's turn not awaited: the key arrives while it is queued or running, keyed ahead.
+    const started = call.start();
+    await call.key('9');
+    await started;
+    expect(call.logged()).toContainEqual({ keyedAhead: true });
+    expect(call.logged()).toContainEqual({ aheadAccepted: '9' });
+    expect(call.session().locale).toBe('es');
+    const live = call.records();
+    const replayed = await call.replay();
+    expect(replayed.records.map(shape)).toEqual(live.map(shape));
+  });
 
   for (const provider of ['twilio', 'telnyx'] as const) {
     it(`${provider}: with the option off, the 9 at the greeting is ignored, as before; and a key that does not listen, with it on`, async () => {

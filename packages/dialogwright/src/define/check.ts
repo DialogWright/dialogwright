@@ -379,7 +379,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
-  greetingKeyWarnings(config, (file, path, message, fix) => {
+  menuKeyWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
@@ -1006,47 +1006,93 @@ function checkMenu(config: LoadedConfig, locate: LoadResult['locate']): Problem[
   return problems;
 }
 
-/** A key's spoken names, in the languages the warning below reads (English, Spanish), by key. */
+/** A key's spoken names, in the languages the warnings below read (English, Spanish), by key. */
 const KEY_WORDS: Readonly<Record<string, readonly string[]>> = {
   '0': ['zero', 'cero'], '1': ['one', 'uno'], '2': ['two', 'dos'], '3': ['three', 'tres'], '4': ['four', 'cuatro'],
   '5': ['five', 'cinco'], '6': ['six', 'seis'], '7': ['seven', 'siete'], '8': ['eight', 'ocho'], '9': ['nine', 'nueve'],
   '*': ['star', 'asterisco'], '#': ['pound', 'hash', 'numeral'],
 };
-/** The words a line asks a caller to press a key with, in English and Spanish. */
-const PRESS = '(?:press|dial|key|enter|push|oprima|marque|pulse|presione|teclee)';
+/** Every digit's name, for a key followed by another digit ("nine one one"), which is a number and no key. */
+const DIGIT_WORDS = Object.entries(KEY_WORDS).filter(([k]) => /\d/.test(k)).flatMap(([, w]) => w).join('|');
+/**
+ * The words a line asks a caller to press a key with, in English and Spanish, each form a line uses:
+ * press, pressing, dial, key, enter, push; oprima, oprime, marca, marque, pulsa, pulse, presiona,
+ * presione, teclea, teclee.
+ */
+const PRESS = '(?:press(?:ing)?|dial(?:ing)?|key|enter|push|oprim[ae]|marc[ae]|marque|puls[ae]|presion[ae]|tecle[ae])';
+/** What may stand between the press word and the key: an article, then "number", "número", "tecla" or "key". */
+const BEFORE_KEY = '(?:(?:the|el|la)\\s+)?(?:(?:number|n[uú]mero|tecla|key)\\s+)?';
 
 /**
- * Whether a line asks the caller to press `digit`: a press word ("press", "oprima", "marque", ...)
- * followed by the key, written as the key or as its name ("press 9", "oprima el nueve", "press star").
- * Only with a press word, so a figure in a greeting ("open 9 to 5") is no key.
+ * Whether a line asks the caller to press `digit`: a press word ("press", "oprima", "marque", ...),
+ * an optional article and "number", "número" or "tecla", then the key, written as the key or as its
+ * name ("press 9", "oprima el número 9", "presione la tecla 9", "by pressing nine", "press star").
+ * Only with a press word, so a figure in a line ("open 9 to 5") is no key; and a key followed by
+ * another digit is a number, not a key ("dial nine one one", "press 9-1-1", "dial 1-800-...", "enter
+ * the 9 digit number").
  */
 export function namesKey(line: string, digit: string): boolean {
   const key = digit === '*' ? '\\*' : digit;
   const words = (KEY_WORDS[digit] ?? []).join('|');
-  const said = new RegExp(`\\b${PRESS}\\s+(?:(?:the|el|la)\\s+)?(?:${key}(?![\\d])${words !== '' ? `|(?:${words})\\b` : ''})`, 'iu');
+  // Not a key: another digit after it ("19", "9-1-1", "9 1 1", "nine one one"), or "digit(s)" after it.
+  const notAKey = `(?!\\d|[\\s-]+\\d|[\\s-]+(?:${DIGIT_WORDS}|digits?|d[ií]gitos?)\\b)`;
+  const said = new RegExp(`\\b${PRESS}\\s+${BEFORE_KEY}(?:${key}${notAKey}${words !== '' ? `|(?:${words})\\b${notAKey}` : ''})`, 'iu');
   return said.test(line);
 }
 
 /**
- * A greeting that names a key the menu takes only once offered: "para español, oprima 9" in the
- * greeting, with the 9's entry not listening from the greeting (MenuEntry.fromGreeting; intents.yaml's
- * menuListens), so a caller who presses it then hears nothing. Read in every locale's greeting line
- * (app.yaml's prompts.greetings.voice, else `greeting`), with English and Spanish press words; one
- * warning per key, at its menu entry.
+ * The menu's keys against the lines that name them, with English and Spanish press words (namesKey),
+ * in every locale; at most one warning per key and line, at the key's menu entry:
+ *
+ * - A line said at the open question (the greeting, app.yaml's prompts.greetings.voice, else
+ *   `greeting`; `greet_after_offer`, `ask_intent`, `nomatch_open`, `anything_else`) that asks the
+ *   caller to press a key whose entry takes it only once the menu is offered (MenuEntry.fromGreeting;
+ *   intents.yaml's menuListens): a caller who presses it there hears nothing.
+ * - The opening offer's line (prompts.greetings.offer, else `greeting_offer`: the caller-ID question,
+ *   the consent to text, a proposal at the greeting) that names any key: no menu key is taken while
+ *   the offer is unanswered (the key answers the offer, or keys the identity question), so it is live
+ *   only once the offer is answered.
+ * - A `*` or `#` entry: the voice server passes those keys over on a phone call (they only end keys
+ *   held at an offer that takes a yes or a no), so the entry can never be pressed. No line warning is
+ *   given for one: this says it.
  */
-function greetingKeyWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+function menuKeyWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
   const { menu, menuListens } = config.intents;
-  const id = config.app.prompts?.greetings?.voice ?? 'greeting';
+  const greetings = config.app.prompts?.greetings;
+  const greeting = greetings?.voice ?? 'greeting';
+  const openLines = [greeting, 'greet_after_offer', 'ask_intent', 'nomatch_open', 'anything_else'];
+  const offer = greetings?.offer ?? 'greeting_offer';
   const defaults = config.prompts[config.defaultLocale] ?? {};
-  menu.forEach(({ digit, fromGreeting }, i) => {
-    if (fromGreeting ?? menuListens === 'greeting') return;
+  /** The first locale whose line `id` asks for `digit`, as written in a message ('' for the default), or null. */
+  const naming = (id: string, digit: string): string | null => {
     for (const [locale, prompts] of Object.entries(config.prompts)) {
       const line = (prompts[id] ?? defaults[id])?.text;
-      if (line === undefined || !namesKey(line, digit)) continue;
-      report('intents.yaml', ['menu', i, 'digit'],
-        `the greeting "${id}"${locale === config.defaultLocale ? '' : ` (${locale})`} asks the caller to press ${digit}, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses ${digit} at the greeting hears nothing`,
-        `add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the greeting`);
-      break;
+      if (line !== undefined && namesKey(line, digit)) return locale === config.defaultLocale ? '' : ` (${locale})`;
+    }
+    return null;
+  };
+  menu.forEach(({ digit, fromGreeting }, i) => {
+    const at: DataPath = ['menu', i, 'digit'];
+    if (digit === '*' || digit === '#') {
+      report('intents.yaml', at,
+        `menu digit "${digit}" can never be pressed on a phone call: the voice server passes * and # over (they only end keys held at an offer that takes a yes or a no), so a caller who presses ${digit} hears nothing`,
+        'give this entry a key from 0 to 9');
+      return;
+    }
+    if (!(fromGreeting ?? menuListens === 'greeting')) {
+      for (const id of openLines) {
+        const where = naming(id, digit);
+        if (where === null) continue;
+        report('intents.yaml', at,
+          `the ${id === greeting ? 'greeting' : 'line'} "${id}"${where} asks the caller to press ${digit}, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses ${digit} there hears nothing`,
+          'add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the line');
+      }
+    }
+    const where = naming(offer, digit);
+    if (where !== null) {
+      report('intents.yaml', at,
+        `the opening offer's line "${offer}"${where} asks the caller to press ${digit}, and no menu key is taken while the call's opening offer (the caller-ID question, the consent to text, a proposal at the greeting) is unanswered: a ${digit} pressed there answers the offer, or is keyed into the identity question`,
+        'name the key in the line said once the offer is answered (greet_after_offer), with "fromGreeting: true" on this entry; or take it out of the offer\'s line');
     }
   });
 }

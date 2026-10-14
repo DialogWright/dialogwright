@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANONYMOUS } from '../gate/principal';
 import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
-import { keyEvents, speechEvent, startEvent, textEvent } from '../channel/events';
+import { interruptEvent, keyEvents, speechEvent, startEvent, textEvent } from '../channel/events';
 import { registerApp } from '../core/app/registry';
 import { newSession } from '../core/session';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
@@ -394,6 +394,41 @@ describe('the keypad menu from the greeting (intents.yaml menuListens, a menu en
     const unsure = say(start, 'maybe a hold', { intent: choice({ check_hold: 0.5, none: 0.5 }) }, t).turn;
     expect(unsure.session.pendingConfirmation?.target).toBe('intent');
     ignored(unsure, key(unsure, '9'));
+  });
+
+  it('does not say the switch twice for a double press, and takes the key again once anything came between', () => {
+    const switched = key(started(nine), '9');
+    // Pressed again over a line the caller could not cut short: ignored, and so is a third press.
+    const again = key(switched, '9');
+    ignored(switched, again);
+    ignored(again, key(again, '9'));
+    // After a turn of words, the key is a choice again (said in the language the call is in).
+    const words = say(switched, 'um', {}, tc()).turn;
+    expect(key(words, '9').menuKey).toEqual({ digit: '9', intent: 'spanish' });
+  });
+
+  it('forgets a barge-in the key made, so the first words after the switch are not reported as one', () => {
+    const start = started(nine);
+    const cut = resolve(start.session, interruptEvent('Thanks for calling', 900), null, tc());
+    expect(cut.session.lastInterrupt).not.toBeNull();
+    expect(key(cut, '9').session.lastInterrupt).toBeNull();
+    // A key not taken leaves it as it was.
+    expect(key(cut, '1').session.lastInterrupt).toEqual(cut.session.lastInterrupt);
+  });
+
+  it('takes a listening key keyed while the call\'s first turn ran, once that turn ended at the open question; no other', () => {
+    const start = started(nine);
+    const ahead = (r: TurnResult, digit: string) => resolve(r.session, keyEvents(digit)[0]!, null, { ...tc(), digitClass: 'ahead', digitEpoch: 0 });
+    const taken = ahead(start, '9');
+    expect(taken.menuKey).toEqual({ digit: '9', intent: 'spanish' });
+    expect(taken.session.locale).toBe('es');
+    ignored(start, ahead(start, '1'));
+    // Keyed during the first turn but run later, after another prompt: ignored, as any key keyed ahead.
+    const missed = say(start, 'um', {}, tc()).turn;
+    ignored(missed, ahead(missed, '9'));
+    // With the option off, as before.
+    const plain = started(off);
+    ignored(plain, ahead(plain, '9'));
   });
 
   it('takes no key on a chat, and asks the model the same questions of words said at the greeting', () => {

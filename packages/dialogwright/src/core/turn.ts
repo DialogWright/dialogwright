@@ -160,7 +160,14 @@ export function digitAtRun(session: Session, event: SessionEvent, tc: DigitArriv
   if (session.ended || session.pendingService !== null || tc.duringService === true) return 'ignored';
   const now = sensitiveDigit(session, event);
   const arrived = tc.digitClass === undefined ? now : tc.digitClass;
-  if (arrived === 'ahead') return now === null && tc.digitEpoch !== undefined && tc.digitEpoch === promptEpoch(session) ? null : 'ignored';
+  if (arrived === 'ahead') {
+    if (now !== null || tc.digitEpoch === undefined) return 'ignored';
+    if (tc.digitEpoch === promptEpoch(session)) return null;
+    // Keyed while the call's first turn ran (the greeting, after a call-start lookup), and that turn
+    // ended at the open question: a key the menu takes from the greeting on is the caller's answer to
+    // the greeting, as if pressed while it played (MenuEntry.fromGreeting). Any other key is ignored.
+    return tc.digitEpoch === 0 && promptEpoch(session) === 1 && greetingKeyAt(session, event) ? null : 'ignored';
+  }
   if (arrived !== now) return 'ignored';
   if (tc.digitPromptedFor !== undefined && tc.digitPromptedFor !== session.promptedFor) return 'ignored';
   return now;
@@ -2139,6 +2146,28 @@ function atOpenQuestion(s: Session): boolean {
     && s.stepUp === null && s.pendingService === null && !awaitingSignIn(s);
 }
 
+/** The menu entry for `digit` when it is taken from the greeting on (MenuEntry.fromGreeting), else undefined. */
+function greetingKeyOf(app: App, digit: string): App['menu'][number] | undefined {
+  return app.menu.find((m) => m.digit === digit && m.fromGreeting === true);
+}
+
+/**
+ * Whether the call's last turn was this same key (its history's last entry, `dtmf:<digit>`): a key taken
+ * at the open question that is pressed again with nothing between, no words, no silence, no other key.
+ * An ignored turn writes no history, so a third press is the same.
+ */
+function repeatsLastKey(s: Session, digit: string): boolean {
+  return s.history.at(-1)?.intent === `dtmf:${digit}`;
+}
+
+/**
+ * A key the menu takes from the greeting on, pressed at the open question (MenuEntry.fromGreeting):
+ * whether `event` is one on `session` as it stands. For digitAtRun's key keyed during the call's first turn.
+ */
+function greetingKeyAt(session: Session, event: SessionEvent): boolean {
+  return event.type === 'user.key' && atOpenQuestion(session) && greetingKeyOf(appOf(session), event.digit) !== undefined;
+}
+
 /**
  * A key of the keypad menu, taken: `agent` goes to a person, an informational intent plays its line as
  * the spoken intent does (the inform verdict: an ack in front of the question the caller was on, the
@@ -2176,11 +2205,19 @@ function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision
   // A key the menu takes from the greeting on (MenuEntry.fromGreeting), pressed at the open question
   // before the menu is offered: taken as the offered menu takes it ("para español, oprima 9" in the
   // greeting). Any other key there is ignored, as before: the menu has not been offered.
-  const early = atOpenQuestion(s) ? io.app.menu.find((m) => m.digit === digit && m.fromGreeting === true) : undefined;
+  const early = atOpenQuestion(s) ? greetingKeyOf(io.app, digit) : undefined;
   if (early !== undefined) {
     s.dtmfBuffer = '';
+    // The same key again, with nothing between: a caller pressing again over a line they could not cut
+    // short (BARGE_IN none), not a second choice. The switch's line is not said twice.
+    if (repeatsLastKey(s, digit)) return { decision: { kind: 'ignore' }, rows: [] };
     const decision = menuChoice(s, io, early.intent);
-    if (decision.kind !== 'ignore') io.out.menuKey = { digit, intent: early.intent };
+    if (decision.kind !== 'ignore') {
+      io.out.menuKey = { digit, intent: early.intent };
+      // A barge-in before the key (the key cut the greeting short) is the key's, not the next words':
+      // the caller's first words after the switch are not reported to the model as talking over a line.
+      s.lastInterrupt = null;
+    }
     return { decision, rows: [] };
   }
   s.dtmfBuffer += digit;

@@ -5,7 +5,7 @@ import { withShortTmp } from '../testing/shortTmp';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, DONE_INTENT_YAML, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts } from './check';
+import { CODE_PROMPTS, DEFAULT_ROLE_PERSON_REASON, DONE_INTENT_YAML, ENGINE_PROMPTS, IDENTITY_PROMPTS, MAX_CORPUS_BYTES, PORTAL_PROMPTS, checkApp, checkAppFully, enginePrompts, namesKey } from './check';
 import type { AppCode } from './defineApp';
 import { USAGE, findAppFolders, main, type Io } from './cli';
 import { libraryCode, LIBRARY_DIR } from './fixture/app';
@@ -925,7 +925,7 @@ describe('checkAppFully: a key the greeting names, and the menu from the greetin
     const dir = folder({ 'prompts.yaml': greeting('For a person, press 0.') });
     expect(await lines(dir)).toEqual([]);
     expect(await warnings(dir)).toEqual([
-      'intents.yaml:46:12  menu[2].digit  the greeting "greeting" asks the caller to press 0, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses 0 at the greeting hears nothing  ->  add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the greeting',
+      'intents.yaml:46:12  menu[2].digit  the greeting "greeting" asks the caller to press 0, and the menu takes that key only once it has been offered (after the second missed answer): a caller who presses 0 there hears nothing  ->  add "fromGreeting: true" to this menu entry, so the key is taken from the greeting on (or "menuListens: greeting" at the top of intents.yaml for every key); or take the key out of the line',
     ]);
   });
 
@@ -944,6 +944,42 @@ describe('checkAppFully: a key the greeting names, and the menu from the greetin
     expect(await warnings(every)).toEqual([]);
     // A figure is no key: only a press word names one.
     expect(await warnings(folder({ 'prompts.yaml': greeting('We are open 9 to 5, and 0 waiting.') }))).toEqual([]);
+  });
+
+  it('reads a key asked for in the ways a line asks (namesKey), and no number that is not a key', () => {
+    for (const line of ['Para español, oprima 9.', 'oprima el número 9', 'presione la tecla 9', 'oprime 9', 'marca el 9', 'presiona 9', 'press number 9', 'by pressing 9', 'press nine for Spanish', 'Oprima el nueve.', 'Pulse 9.', 'teclee el 9', 'marque 9', 'For Spanish press 9 now']) {
+      expect(namesKey(line, '9'), line).toBe(true);
+    }
+    for (const line of ['hang up and dial nine one one', 'press 9-1-1', 'Please enter the 9 digit number', 'enter the nine digit number', 'We are open 9 to 5', 'press 19', 'oprima 9 1 1']) {
+      expect(namesKey(line, '9'), line).toBe(false);
+    }
+    expect(namesKey('dial 1-800-555-0100', '1')).toBe(false);
+    expect(namesKey('press 1 or 2', '1')).toBe(true);
+    expect(namesKey('impress one', '1')).toBe(false);
+  });
+
+  it('warns of the open question\'s other lines naming a key that does not listen, and of the opening offer\'s line naming any key', async () => {
+    const asks = folder({ 'prompts.yaml': (t) => t.replace(/(\n  anything_else:\n    text: )([^\n]*)/, '$1$2 For a person, press 0.') });
+    const found = await warnings(asks);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('menu[2].digit  the line "anything_else" asks the caller to press 0, and the menu takes that key only once it has been offered');
+    expect(await warnings(folder({ 'prompts.yaml': (t) => t.replace(/(\n  anything_else:\n    text: )([^\n]*)/, '$1$2 For a person, press 0.'), 'intents.yaml': zeroListens }))).toEqual([]);
+    // The opening offer's line: the key is not taken there, listening or not.
+    const offer = folder({ 'prompts.yaml': (t) => `${t}  greeting_offer:\n    text: Thanks for calling. For a person, press 0.\n    interruptible: true\n`, 'intents.yaml': zeroListens });
+    const offered = await warnings(offer);
+    expect(offered).toHaveLength(1);
+    expect(offered[0]).toContain('menu[2].digit  the opening offer\'s line "greeting_offer" asks the caller to press 0, and no menu key is taken while the call\'s opening offer');
+    expect(offered[0]).toContain('->  name the key in the line said once the offer is answered (greet_after_offer)');
+  });
+
+  it('warns of a * or # on the menu, which a phone call never passes on, and does not advise fromGreeting for it', async () => {
+    const star = folder({
+      'intents.yaml': (t) => t.replace('  - digit: "0"\n    intent: agent', '  - digit: "*"\n    intent: agent'),
+      'prompts.yaml': greeting('For a person, press star.'),
+    });
+    expect(await warnings(star)).toEqual([
+      'intents.yaml:46:12  menu[2].digit  menu digit "*" can never be pressed on a phone call: the voice server passes * and # over (they only end keys held at an offer that takes a yes or a no), so a caller who presses * hears nothing  ->  give this entry a key from 0 to 9',
+    ]);
   });
 
   it('refuses menuListens with no keys to listen for, a value it does not know, and a fromGreeting that is not true or false', async () => {
