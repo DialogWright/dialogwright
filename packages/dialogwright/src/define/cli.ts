@@ -117,7 +117,7 @@ export const USAGE = [
   '  dir: an app folder with a kb/, or a kb folder; lists the passages by state (fresh, stale, unapproved) and the drafts, with the fix for each',
   '       dialogwright regress [dir] [options]',
   '  the app\'s regression run, as its src/regress.ts runs it (dialogwright regress --help: the options)',
-  '       dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh] [--by-line] [--price <model>=<input>,<output>]... [--out <file.md>] [--json]',
+  '       dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh [--replace-app-cassette]] [--by-line] [--price <model>=<input>,<output>]... [--out <file.md>] [--json]',
   '  render models compared on the app\'s generated lines, each recorded into its own render cassette with your keys (refused in CI); --replay tables the cassettes alone (dialogwright render:bakeoff --help)',
   '       dialogwright configure | start | serve | diagnose | service | fallback | console:link | audit:verify [options]',
   '  running an app: each prints its own usage; dialogwright help lists every command',

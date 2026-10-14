@@ -84,7 +84,8 @@ describe('ModelRenderClient', () => {
     expect(sent[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
     expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
     expect(JSON.parse(String(sent[0]!.init.body)).messages[0]).toEqual({ role: 'system', content: RENDER_INSTRUCTIONS });
-    expect(JSON.parse(String(sent[0]!.init.body)).reasoning).toEqual({ enabled: false });
+    // Reasoning off, in OpenRouter's documented form.
+    expect(JSON.parse(String(sent[0]!.init.body)).reasoning).toEqual({ effort: 'none' });
   });
 
   it('a failed request, a refusal or an answer with no line rejects with an error that names no key', async () => {
@@ -119,11 +120,18 @@ describe('ModelRenderClient', () => {
     const named = await new ModelRenderClient(or, answering(400, { error: { code: 'bad_request', message: 'No' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect(named.message).toBe('openrouter: HTTP 400 bad_request');
     // The upstream provider's own error, which OpenRouter passes on in metadata: what says why, made safe the same way.
+    // Only the provider's name, its type and code, and its own message when short: never the rest of its payload.
     const upstream = await new ModelRenderClient(or, answering(400, { error: { code: 400, message: 'Provider returned error', metadata: { provider_name: 'Example', raw: `{"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled.","key":"${KEY}"}}` } } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect(upstream.message).toBe('openrouter: HTTP 400');
-    expect(upstream.detail).toBe('Provider returned error (Example: {"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled.","key":"•"}})');
+    expect(upstream.detail).toBe('Provider returned error (Example: Reasoning is mandatory for this endpoint and cannot be disabled.)');
     const rawOnly = await new ModelRenderClient(or, answering(400, { error: { code: 400, metadata: { raw: 'model not found' } } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect(rawOnly.detail).toBe('model not found');
+    // A long payload (a decline quoting the caller's words), a moderation's flagged input, another provider's key: none kept.
+    const quoted = `The request was declined because it contains: ${'tell her the boiler inspection moved to next Tuesday morning '.repeat(4)}`;
+    const declined = await new ModelRenderClient(or, answering(403, { error: { code: 403, message: 'Provider returned error', metadata: { provider_name: 'Example', error_type: 'content_filter', provider_code: 'SAFETY', raw: JSON.stringify({ error: { message: quoted } }), flagged_input: 'tell her the boiler inspection', reasons: ['x'] } } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(declined.detail).toBe('Provider returned error (Example: content_filter: SAFETY)');
+    const keyed = await new ModelRenderClient(or, answering(401, { error: { code: 401, message: 'Invalid key AIzaSyA1234567890abcdefghijklmnopqrstuv for the upstream' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect(keyed.detail).toBe('Invalid key • for the upstream');
     // A body that is not JSON: the status alone.
     const bare = await new ModelRenderClient(p, (async () => new Response('Bad gateway', { status: 502 })) as typeof fetch).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
     expect([bare.message, bare.detail]).toEqual(['anthropic: HTTP 502', undefined]);
@@ -253,11 +261,14 @@ describe('how an Anthropic model thinks while it words a line', () => {
   };
 
   it('OpenRouter reasons as RENDER_THINKING and RENDER_EFFORT say, in its reasoning setting, with room for it; off by default', async () => {
-    expect(await openRouterBody({})).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { enabled: false } });
-    expect(await openRouterBody({ RENDER_THINKING: 'disabled' })).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { enabled: false } });
+    // Off: OpenRouter's documented { effort: 'none' }.
+    expect(await openRouterBody({})).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { effort: 'none' } });
+    expect(await openRouterBody({ RENDER_THINKING: 'disabled' })).toEqual({ model: 'vendor/reasoner', max_tokens: 200, reasoning: { effort: 'none' } });
     // An effort alone turns reasoning on at that effort, its text not returned.
     expect(await openRouterBody({ RENDER_EFFORT: 'low' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { effort: 'low', exclude: true } });
-    expect(await openRouterBody({ RENDER_THINKING: 'adaptive' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { enabled: true, exclude: true } });
+    // adaptive with no effort is OpenRouter's own default when reasoning is on, medium: sent and named so.
+    expect(await openRouterBody({ RENDER_THINKING: 'adaptive' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { effort: 'medium', exclude: true } });
+    expect(renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_MODEL: 'v/m', RENDER_THINKING: 'adaptive' })!)).toBe('v/m.thinking-adaptive.effort-medium');
     expect(await openRouterBody({ RENDER_THINKING: 'omit' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000 });
     expect(await openRouterBody({ RENDER_THINKING: 'omit', RENDER_EFFORT: 'high' })).toEqual({ model: 'vendor/reasoner', max_tokens: 4000, reasoning: { effort: 'high', exclude: true } });
     const p = resolveRenderProvider({ RENDER_PROVIDER: 'openrouter', OPENROUTER_API_KEY: KEY, RENDER_MODEL: 'openai/gpt-oss-120b', RENDER_EFFORT: 'low' })!;

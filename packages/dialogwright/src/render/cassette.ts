@@ -23,10 +23,12 @@ export interface RenderCassetteLine {
   text: string;
   usage: { inputTokens: number; outputTokens: number };
   /**
-   * How long the model took to word it, ms, when it was recorded from a model: what `render:bakeoff`
-   * tables as the wording's latency (harness-text/renderBakeoff.ts). Absent in a line recorded before it was kept.
+   * How long the model took to word it, ms, and the wording budget it was recorded under: written only
+   * by `render:bakeoff` (harness-text/renderBakeoff.ts), which records with a budget generous enough to
+   * measure rather than cut off, and tables only these. A regression's recording writes neither.
    */
   latencyMs?: number;
+  budgetMs?: number;
   recordedAt: string;
 }
 
@@ -63,7 +65,8 @@ export function renderCassettePath(recordedDir: string, model: string): string {
 export class RenderCassette implements RenderClient {
   private lines: Map<string, RenderCassetteLine> | null = null;
 
-  constructor(private readonly opts: { path: string; mode: 'replay' | 'record'; model: string; inner?: RenderClient; now?: () => number }) {
+  /** `budgetMs`: record each wording's latency, and this budget it was recorded under (render:bakeoff's own recordings). */
+  constructor(private readonly opts: { path: string; mode: 'replay' | 'record'; model: string; inner?: RenderClient; now?: () => number; budgetMs?: number }) {
     if (opts.mode === 'record' && !opts.inner) throw new Error('RenderCassette: record mode needs an inner client');
   }
 
@@ -90,7 +93,7 @@ export class RenderCassette implements RenderClient {
     if (hit) return { text: hit.text, model: hit.model, usage: { ...hit.usage }, latencyMs: 0, source: 'recorded' };
     if (this.opts.mode === 'replay') throw new RenderClientError(`render cassette miss: ${req.key} ${req.promptId} (${this.opts.path})`, 'cassette-miss');
     const g = await this.opts.inner!.generate(req, signal);
-    const line: RenderCassetteLine = { v: 1, key: req.key, promptId: req.promptId, ...(req.span !== undefined ? { span: req.span } : {}), model: g.model, text: g.text, usage: { ...g.usage }, ...(g.source === 'model' ? { latencyMs: Math.round(g.latencyMs) } : {}), recordedAt: new Date((this.opts.now ?? Date.now)()).toISOString() };
+    const line: RenderCassetteLine = { v: 1, key: req.key, promptId: req.promptId, ...(req.span !== undefined ? { span: req.span } : {}), model: g.model, text: g.text, usage: { ...g.usage }, ...(g.source === 'model' && this.opts.budgetMs !== undefined ? { latencyMs: Math.round(g.latencyMs), budgetMs: this.opts.budgetMs } : {}), recordedAt: new Date((this.opts.now ?? Date.now)()).toISOString() };
     mkdirSync(dirname(this.opts.path), { recursive: true });
     appendFileSync(this.opts.path, `${JSON.stringify(line)}\n`);
     this.load().set(req.key, line);

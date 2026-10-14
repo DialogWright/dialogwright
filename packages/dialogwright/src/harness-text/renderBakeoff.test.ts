@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { resetAppsForTest } from '../core/app/registry';
 import { HeuristicStubClient } from '../jev/heuristicStub';
+import { JevClientError } from '../jev/types';
 import { SHORT_TMP } from '../testing/shortTmp';
-import { envForModel, parseModelSpecs, parsePrices, type BakeoffReport } from './renderBakeoff';
+import { envForModel, guardFresh, parseModelSpecs, parsePrices, type BakeoffReport } from './renderBakeoff';
 import { bakeoffCommand, BAKEOFF_USAGE, type BakeoffIo } from './renderBakeoffCommand';
 import { loadRenderCassette } from '../render/cassette';
 import { FakeRenderClient } from '../render/fake';
@@ -52,7 +53,7 @@ function recordedCopy(): string {
  * carries), Anthropic's and OpenRouter's answers in their own shapes. A model named `claude-missing`
  * answers 404, as a wrong id does, with the key in its message (which must never reach the output).
  */
-function fakeProviders(opts: { delayMs?: number; failing?: Set<string> } = {}) {
+function fakeProviders(opts: { delayMs?: number; failing?: Set<string>; failSpans?: { on: boolean } } = {}) {
   const sent: { url: string; model: string; headers: Record<string, string>; reasoning?: unknown }[] = [];
   const fake = new FakeRenderClient();
   const fetchFn = (async (url: string | URL, init?: RequestInit) => {
@@ -61,8 +62,18 @@ function fakeProviders(opts: { delayMs?: number; failing?: Set<string> } = {}) {
     if (opts.failing?.has(body.model)) return new Response(JSON.stringify({ error: { code: 400, message: 'Provider returned error', metadata: { provider_name: 'Example', raw: 'Reasoning is mandatory for this endpoint and cannot be disabled.' } } }), { status: 400 });
     if (body.model === 'claude-missing') return new Response(JSON.stringify({ type: 'error', error: { type: 'not_found_error', message: `model: claude-missing (key ${KEY})` } }), { status: 404 });
     const act = JSON.parse(body.messages.at(-1)!.content) as RenderAct;
+    if (opts.failSpans?.on === true && (act as { kind?: string }).kind === 'span') return new Response(JSON.stringify({ error: { type: 'overloaded_error', message: 'Overloaded' } }), { status: 529 });
     const g = await fake.generate({ promptId: 'line', act, key: '' }, new AbortController().signal);
-    if (opts.delayMs !== undefined) await new Promise((r) => setTimeout(r, opts.delayMs));
+    // A slow provider, which stops when the request is aborted (as fetch does).
+    if (opts.delayMs !== undefined) {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, opts.delayMs);
+        init!.signal?.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+    }
     const answer = String(url).includes('anthropic.com')
       ? { model: body.model, content: [{ type: 'text', text: g.text }], stop_reason: 'end_turn', usage: { input_tokens: 400, output_tokens: 20 } }
       : { model: body.model, choices: [{ message: { content: g.text }, finish_reason: 'stop' }], usage: { prompt_tokens: 400, completion_tokens: 20 } };
@@ -208,59 +219,162 @@ describe('render:bakeoff, recording (fake providers)', () => {
   }, 60_000);
 });
 
-describe('render:bakeoff, an OpenRouter model\'s reasoning and --fresh', () => {
+describe('render:bakeoff, an OpenRouter model\'s reasoning', () => {
   it('sends an OpenRouter entry\'s reasoning, records it apart, and says why a model refuses a setting in the API\'s own words', async () => {
     const dir = recordedCopy();
     const { fetchFn, sent } = fakeProviders({ failing: new Set(['vendor/always-reasons']) });
     const r = io({ env: { OPENROUTER_API_KEY: OR_KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: stubDecision() });
     expect(await bakeoffCommand([MESSAGE, '--models', 'openrouter:vendor/think:low,openrouter:vendor/always-reasons'], r.io), r.all()).toBe(0);
     expect(sent.filter((s) => s.model === 'vendor/think').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ effort: 'low', exclude: true }))).toBe(true);
-    expect(sent.filter((s) => s.model === 'vendor/always-reasons').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ enabled: false }))).toBe(true);
+    // Reasoning off, in OpenRouter's documented form.
+    expect(sent.filter((s) => s.model === 'vendor/always-reasons').every((s) => JSON.stringify(s.reasoning) === JSON.stringify({ effort: 'none' }))).toBe(true);
     expect(existsSync(join(dir, 'render', 'vendor__think.thinking-adaptive.effort-low.jsonl'))).toBe(true);
     const table = r.out.join('\n');
     expect(table).toMatch(/^openrouter:vendor\/think \(thinking adaptive, effort low\)\s+36\s+/m);
     expect(table).toContain('openrouter:vendor/always-reasons: stopped after 5 lines, every one a failed request: openrouter: HTTP 400 (Provider returned error (Example: Reasoning is mandatory for this endpoint and cannot be disabled.))');
   }, 60_000);
+});
 
-  it('--fresh asks every line again, the cassette replaced when the run completes and put back when it is stopped', async () => {
+describe('render:bakeoff --fresh', () => {
+  /** A copy of the fixture's recordings, the fake providers, and a run of the bake-off on them. */
+  function setup(opts: { isAppCassette?: (path: string) => boolean } = {}) {
     const dir = recordedCopy();
     const failing = new Set<string>();
-    const { fetchFn, sent } = fakeProviders({ failing });
-    const env = { ANTHROPIC_API_KEY: KEY, TYPESAFE_API_KEY: JEV_KEY };
-    const cassette = join(dir, 'render', 'claude-test-5-5.jsonl');
-    const run = async (...args: string[]) => {
-      const r = io({ env, fetchFn, recordedDir: dir, decisionModel: stubDecision() });
-      const code = await bakeoffCommand([MESSAGE, '--models', 'anthropic:claude-test-5-5', ...args], r.io);
-      return { code, r };
+    const failSpans = { on: false };
+    const { fetchFn, sent } = fakeProviders({ failing, failSpans });
+    const run = async (models: string, ...args: string[]) => {
+      const r = io({ env: { ANTHROPIC_API_KEY: KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: stubDecision(), isAppCassette: opts.isAppCassette ?? (() => false) });
+      const code = await bakeoffCommand([MESSAGE, '--models', models, ...args], r.io);
+      return { code, r, table: r.out.join('\n') };
     };
-    expect((await run()).code).toBe(0);
+    return { dir, failing, failSpans, sent, run, cassette: join(dir, 'render', 'claude-test-5-5.jsonl') };
+  }
+
+  it('asks every line again into a file beside the cassette, put over it only when the run completes with every line answered', async () => {
+    const { run, sent, failing, failSpans, cassette } = setup();
+    expect((await run('anthropic:claude-test-5-5')).code).toBe(0);
     const asked = sent.length;
     // Again without --fresh: every line replays, nothing is asked.
-    expect((await run()).code).toBe(0);
+    expect((await run('anthropic:claude-test-5-5')).code).toBe(0);
     expect(sent.length).toBe(asked);
-    // --fresh: every line asked again, the cassette replaced (its 12 lines, not 24), nothing left aside.
+    // --fresh: every line asked again, the cassette replaced (its 12 lines, not 24), nothing left beside it.
     const first = readFileSync(cassette, 'utf8');
-    expect((await run('--fresh')).code).toBe(0);
+    const kept = await run('anthropic:claude-test-5-5', '--fresh');
+    expect(kept.code).toBe(0);
     expect(sent.length).toBe(asked * 2);
+    expect(kept.table).toContain(`anthropic:claude-test-5-5: --fresh: every line asked again, recorded into ${cassette}`);
     expect(loadRenderCassette(cassette).size).toBe(12);
     expect(readFileSync(cassette, 'utf8').trim().split('\n')).toHaveLength(12);
-    expect(existsSync(`${cassette}.before-fresh`)).toBe(false);
-    // A fresh run that is stopped (every request refused) puts the earlier cassette back as it was.
-    const kept = readFileSync(cassette, 'utf8');
-    expect(kept).not.toBe(first);
+    expect(readFileSync(cassette, 'utf8')).not.toBe(first);
+    expect(existsSync(`${cassette}.fresh`)).toBe(false);
+    // Only the bake-off's own recordings carry a latency, with the budget they were recorded under.
+    expect([...loadRenderCassette(cassette).values()].every((l) => typeof l.latencyMs === 'number' && l.budgetMs === 30_000)).toBe(true);
+
+    // A fresh run in which some requests fail (the spans, overloaded): not kept, the cassette as it was.
+    const before = readFileSync(cassette, 'utf8');
+    failSpans.on = true;
+    const partly = await run('anthropic:claude-test-5-5', '--fresh');
+    expect(partly.code).toBe(0);
+    expect(partly.table).toMatch(/^anthropic:claude-test-5-5\s+36\s+28 \(78%\)\s+8 \(22%\)\s+error 8 \(anthropic: HTTP 529 overloaded_error\)/m);
+    expect(partly.table).toContain(`anthropic:claude-test-5-5: --fresh: not kept (error 8): ${cassette} is as it was, the fresh recording discarded; the table is the fresh run's`);
+    expect(partly.table).toContain('anthropic:claude-test-5-5: error anthropic: HTTP 529 overloaded_error: Overloaded');
+    expect(readFileSync(cassette, 'utf8')).toBe(before);
+    expect(existsSync(`${cassette}.fresh`)).toBe(false);
+    failSpans.on = false;
+
+    // A fresh run that is stopped (every request refused): the same.
     failing.add('claude-test-5-5');
-    const stopped = await run('--fresh');
-    expect(stopped.code).toBe(0);
-    expect(stopped.r.out.join('\n')).toContain('anthropic:claude-test-5-5: stopped after 5 lines');
-    expect(readFileSync(cassette, 'utf8')).toBe(kept);
-    expect(existsSync(`${cassette}.before-fresh`)).toBe(false);
-    // A cassette an interrupted fresh run left aside: the model is not run until a person decides.
-    writeFileSync(`${cassette}.before-fresh`, kept);
-    const left = await run();
-    expect(left.r.out.join('\n')).toContain(`anthropic:claude-test-5-5: refused, nothing asked: an interrupted --fresh run left ${cassette}.before-fresh`);
-    // --fresh with --replay is not understood.
-    expect((await run('--fresh', '--replay')).code).toBe(2);
+    const stopped = await run('anthropic:claude-test-5-5', '--fresh');
+    expect(stopped.table).toContain('anthropic:claude-test-5-5: --fresh: not kept (stopped (anthropic: HTTP 400))');
+    expect(readFileSync(cassette, 'utf8')).toBe(before);
+    failing.delete('claude-test-5-5');
+
+    // A partial file an interrupted run left: said first, in a replay as in a recording; a fresh run starts it again.
+    writeFileSync(`${cassette}.fresh`, before.split('\n')[0]! + '\n');
+    const replayed = await run('anthropic:claude-test-5-5', '--replay');
+    expect(replayed.code).toBe(0);
+    expect(replayed.table).toContain(`anthropic:claude-test-5-5: an interrupted --fresh run left ${cassette}.fresh (partial, never tabled); delete it`);
+    expect(replayed.table).toMatch(/^anthropic:claude-test-5-5\s+36\s+36 \(100%\)/m);
+    const again = await run('anthropic:claude-test-5-5', '--fresh');
+    expect(again.table).toContain('this fresh run replaced it');
+    expect(existsSync(`${cassette}.fresh`)).toBe(false);
+    expect(loadRenderCassette(cassette).size).toBe(12);
+  }, 120_000);
+
+  it('keeps the app\'s own cassette, recording a fresh run under the comparison\'s name, unless --replace-app-cassette', async () => {
+    const { run, cassette, dir } = setup({ isAppCassette: (path) => path.endsWith('claude-test-5-5.jsonl') });
+    expect((await run('anthropic:claude-test-5-5')).code).toBe(0);
+    const app = readFileSync(cassette, 'utf8');
+    const comparison = join(dir, 'render', 'claude-test-5-5.bakeoff.jsonl');
+    const fresh = await run('anthropic:claude-test-5-5', '--fresh');
+    expect(fresh.code).toBe(0);
+    expect(readFileSync(cassette, 'utf8')).toBe(app);
+    expect(loadRenderCassette(comparison).size).toBe(12);
+    expect(fresh.table).toContain(`recorded into ${comparison}`);
+    // From then on the comparison is what the bake-off tables.
+    const json = await run('anthropic:claude-test-5-5', '--replay', '--json');
+    expect((JSON.parse(json.r.out[0]!) as BakeoffReport).models[0]!.cassette).toBe(comparison);
+    // --replace-app-cassette: the app's own replaced, and said what that does to its regression.
+    const replaced = await run('anthropic:claude-test-5-5', '--fresh', '--replace-app-cassette');
+    expect(replaced.code).toBe(0);
+    expect(readFileSync(cassette, 'utf8')).not.toBe(app);
+    expect(replaced.table).toContain('anthropic:claude-test-5-5: replaced the app\'s own cassette: the app\'s recording has no drift checks of the new wordings');
+    expect((await run('anthropic:claude-test-5-5', '--replace-app-cassette')).code).toBe(2);
+  }, 120_000);
+
+  it('on SIGINT or SIGTERM a fresh run\'s partial file is deleted and the process exits, the cassette untouched', () => {
+    const dir = recordedCopy();
+    const partial = join(dir, 'x.jsonl.fresh');
+    writeFileSync(partial, '{}\n');
+    const exits: number[] = [];
+    const before = process.listeners('SIGTERM').length;
+    const unguard = guardFresh(partial, (code) => void exits.push(code));
+    const handler = process.listeners('SIGTERM').at(-1) as () => void;
+    handler();
+    expect(existsSync(partial)).toBe(false);
+    expect(exits).toEqual([143]);
+    unguard();
+    expect(process.listeners('SIGTERM').length).toBe(before);
+  });
+});
+
+describe('render:bakeoff, what a run counts and when it stops', () => {
+  it('a wording past the bake-off\'s own budget is a timeout, counted over the call budget and at that budget', async () => {
+    const dir = recordedCopy();
+    const { fetchFn } = fakeProviders({ delayMs: 150 });
+    const r = io({ env: { OPENROUTER_API_KEY: OR_KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: stubDecision(), recordBudgetMs: 60 });
+    expect(await bakeoffCommand([MESSAGE, '--models', 'openrouter:vendor/slow'], r.io), r.all()).toBe(0);
+    const table = r.out.join('\n');
+    expect(table).toMatch(/^openrouter:vendor\/slow\s+36\s+0 \(0%\)\s+36 \(100%\)\s+timeout 36\s+60 \/ 60\s+12 of 12 \(12 past 60 ms\)/m);
+    expect(table).toContain('openrouter:vendor/slow: 12 wordings ran past the bake-off\'s own 60 ms (timeout): counted over the call budget, and at 60 ms in the percentiles');
   }, 60_000);
+
+  it('the decision model failing out stops the comparison, the models before it still tabled', async () => {
+    const dir = recordedCopy();
+    // No recording of the decision model: every turn asks it, and it fails once the first model has run.
+    rmSync(join(dir, 'jev-1.13.0.jsonl'));
+    const stub = stubDecision();
+    let failing = false;
+    const flaky = { ask: (req: Parameters<HeuristicStubClient['ask']>[0]) => (failing ? Promise.reject(new JevClientError('the decision model is down')) : stub.ask(req)) };
+    const { fetchFn } = fakeProviders();
+    const r = io({ env: { ANTHROPIC_API_KEY: KEY, TYPESAFE_API_KEY: JEV_KEY }, fetchFn, recordedDir: dir, decisionModel: flaky });
+    r.io.err = (line) => {
+      r.err.push(line);
+      if (line.includes('anthropic:claude-test-5-5: scenario 7/7')) failing = true;
+    };
+    const code = await bakeoffCommand([MESSAGE, '--models', 'anthropic:claude-test-5-5,anthropic:claude-second-5-5'], r.io);
+    const table = r.out.join('\n');
+    expect(code).toBe(1);
+    expect(table).toMatch(/^anthropic:claude-test-5-5\s+\d+\s+/m);
+    expect(table).not.toMatch(/^anthropic:claude-second-5-5/m);
+    expect(table).toMatch(/^the comparison stopped: anthropic:claude-second-5-5: the decision model failed 3 turns running: .*; the models before it are tabled$/m);
+  }, 60_000);
+
+  it('two entries that name one recording are refused', async () => {
+    const r = io();
+    expect(await bakeoffCommand([MESSAGE, '--replay', '--models', 'anthropic:claude-haiku-5-5,anthropic:claude-haiku-5-5:disabled'], r.io)).toBe(2);
+    expect(r.err[0]).toContain('"anthropic:claude-haiku-5-5" and "anthropic:claude-haiku-5-5:disabled" name the same recording');
+  });
 });
 
 describe('render:bakeoff refuses', () => {

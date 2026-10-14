@@ -1,5 +1,6 @@
+import { inCi } from '../define/ci';
 import { existsSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { getApp, registerApp } from '../core/app/registry';
 import type { App } from '../core/app/types';
@@ -14,9 +15,11 @@ import type { JevClient } from '../jev/types';
 import { buildThresholds } from '../run/client';
 import { defaultCorpusFile, recordedDir, scenariosDir } from '../run/fixtures';
 import { loadHarnessEnv } from '../server/envFile';
-import { bakeoffJson, formatBakeoff, formatBakeoffMarkdown, parseModelSpecs, parsePrices, providerOf, RENDER_KEY_VARS, runModel, type BakeoffReport, type ModelResult } from './renderBakeoff';
+import { DecisionFailed, GENEROUS_BUDGET_MS, bakeoffJson, formatBakeoff, formatBakeoffMarkdown, parseModelSpecs, parsePrices, providerOf, RENDER_KEY_VARS, runModel, type BakeoffReport, type ModelResult } from './renderBakeoff';
 import { generatesLines } from '../render/config';
-import { renderSettings, renderLines } from '../render/providers';
+import { renderCassetteModel, renderSettings, renderLines, resolveRenderProvider } from '../render/providers';
+import { renderCassettePath } from '../render/cassette';
+import { spawnSync } from 'node:child_process';
 
 /**
  * `dialogwright render:bakeoff [dir] --models <entries> [--replay] [--by-line] [--price <model>=<in>,<out>]...
@@ -29,12 +32,13 @@ import { renderSettings, renderLines } from '../render/providers';
  */
 
 export const BAKEOFF_USAGE = [
-  'usage: dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh] [--by-line] [--price <model>=<input>,<output>]... [--screen inline|separate] [--out <file.md>] [--json]',
+  'usage: dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh [--replace-app-cassette]] [--by-line] [--price <model>=<input>,<output>]... [--screen inline|separate] [--out <file.md>] [--json]',
   '  dir: the app folder (one with app.yaml); with none, the folder it is run in, or the nearest above it with an app.yaml',
   '  --models: <provider>:<model>[:<thinking>][:<effort>], anthropic or openrouter, comma-separated or repeated',
   '    (anthropic:claude-haiku-5-5, anthropic:claude-haiku-5-5:adaptive:low, openrouter:openai/gpt-oss-120b:low); thinking: disabled, between-tools, adaptive, omit; effort: low, medium, high',
   '  records each model into fixtures/recorded/render/<model>.jsonl with your own keys (refused in CI), then tables them; --replay: table the cassettes alone, asking no model',
-  '  --fresh: ask every line again, each model\'s cassette moved aside for its run: replaced when the run completes, put back when it is stopped or fails',
+  '  --fresh: ask every line again, recorded beside each model\'s cassette and put over it only when the run completes with no error or timeout;',
+  '    a cassette that is the app\'s own (git tracks it, or its regression replays it) is kept, the fresh run recorded as <model>.bakeoff.jsonl, unless --replace-app-cassette',
   '  --by-line: each model\'s lines, most fallbacks first, with a wording a check refused; --price: a model\'s price in US dollars per million tokens (the default model\'s is known)',
   '  --out: also write the table as Markdown; --json: the results as JSON on stdout',
 ].join('\n');
@@ -54,12 +58,18 @@ export interface BakeoffIo {
   decisionModel?: JevClient;
   /** Tests: where the recordings are, in place of the app's. */
   recordedDir?: string;
+  /** Tests: the budget a recording words and checks a line within, in place of the bake-off's 30 s. */
+  recordBudgetMs?: number;
+  /** Tests: which cassettes are the app's own, in place of git and the app's settings. */
+  isAppCassette?: (path: string) => boolean;
 }
 
-/** Whether `CI` is set the way CI services set it (any value but empty, 0 or false). */
-function inCi(env: Record<string, string | undefined>): boolean {
-  const v = env.CI?.trim().toLowerCase();
-  return v !== undefined && v !== '' && v !== '0' && v !== 'false';
+
+/** Whether git tracks `path` (false where there is no git, or it is outside a repository). */
+function gitTracks(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const r = spawnSync('git', ['ls-files', '--error-unmatch', path], { cwd: dirname(path), stdio: 'ignore' });
+  return r.status === 0;
 }
 
 /** Runs the comparison; returns the exit code (2: a command line it does not understand; 1: refused, or nothing to compare). */
@@ -73,6 +83,7 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
         models: { type: 'string', multiple: true, default: [] },
         replay: { type: 'boolean', default: false },
         fresh: { type: 'boolean', default: false },
+        'replace-app-cassette': { type: 'boolean', default: false },
         'by-line': { type: 'boolean', default: false },
         price: { type: 'string', multiple: true, default: [] },
         screen: { type: 'string' },
@@ -109,6 +120,11 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
   const fresh = args.fresh === true;
   if (fresh && replay) {
     io.err(`dialogwright render:bakeoff: --fresh records every line again; --replay records nothing: give one\n${BAKEOFF_USAGE}`);
+    return 2;
+  }
+  const replaceAppCassette = args['replace-app-cassette'] === true;
+  if (replaceAppCassette && !fresh) {
+    io.err(`dialogwright render:bakeoff: --replace-app-cassette goes with --fresh\n${BAKEOFF_USAGE}`);
     return 2;
   }
   const byLine = args['by-line'] === true;
@@ -205,21 +221,56 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
     const scenarios = loadScenarios(scenariosDir(app));
     const budget = renderSettings(env).timeoutMs;
     say(`${app.id}: ${corpus.length} corpus lines and ${scenarios.length} scripted calls; the decision model ${jev.model} from ${jev.provider}, its answers replayed from the app's recording (${shown(decisionCassette)}${existsSync(decisionCassette) ? '' : ', not found'})`);
+    // The app's own cassettes: one git tracks, or the one its regression replays (RENDER_PROVIDER and
+    // RENDER_MODEL, default Anthropic's default model, as `regress --client recorded` reads them).
+    let regressCassette: string | null = null;
+    try {
+      const own = resolveRenderProvider({ RENDER_PROVIDER: 'anthropic', ...env }, { needKey: false });
+      if (own !== null) regressCassette = renderCassettePath(recorded, renderCassetteModel(own));
+    } catch {
+      // Settings the server would refuse: no cassette is the regression's.
+    }
+    const isAppCassette = io.isAppCassette ?? ((path: string): boolean => path === regressCassette || gitTracks(path));
+    // Two entries that name one recording would record into, and table, the same file.
+    const byPath = new Map<string, string>();
+    for (const spec of specs) {
+      let path: string;
+      try {
+        path = renderCassettePath(recorded, renderCassetteModel(providerOf(spec, { env, replay })));
+      } catch {
+        continue;
+      }
+      const other = byPath.get(path);
+      if (other !== undefined) {
+        io.err(`dialogwright render:bakeoff: "${other}" and "${spec.entry}" name the same recording (${shown(path)}): give one`);
+        return 2;
+      }
+      byPath.set(path, spec.entry);
+    }
     const models: ModelResult[] = [];
+    let aborted: string | undefined;
     for (const spec of specs) {
       try {
         for (const line of renderLines(providerOf(spec, { env, replay }), { replayed: replay })) say(line);
       } catch {
         // A model whose settings are refused is reported in its row; the run goes on.
       }
-      const result = await runModel(spec, {
-        app, recordedDir: recorded, decision, replay, fresh, env, thresholds, screen, corpus, scenarios, prices,
-        ...(io.fetchFn !== undefined ? { fetchFn: io.fetchFn } : {}),
-        progress: io.err,
-      });
+      let result: ModelResult;
+      try {
+        result = await runModel(spec, {
+          app, recordedDir: recorded, decision, replay, fresh, replaceAppCassette, isAppCassette, env, ...(io.recordBudgetMs !== undefined ? { recordBudgetMs: io.recordBudgetMs } : {}), thresholds, screen, corpus, scenarios, prices,
+          ...(io.fetchFn !== undefined ? { fetchFn: io.fetchFn } : {}),
+          progress: io.err,
+        });
+      } catch (e) {
+        // The decision model failing out stops the comparison; what ran before it is still tabled.
+        if (!(e instanceof DecisionFailed)) throw e;
+        aborted = `${spec.entry}: ${e.message}`;
+        break;
+      }
       models.push(result.status === 'refused' ? result : { ...result, cassette: shown(result.cassette), checks: shown(result.checks) });
     }
-    report = { app: app.id, decisionModel: jev.model, replay, budgetMs: budget, corpus: corpus.length, scenarios: scenarios.length, models };
+    report = { app: app.id, decisionModel: jev.model, replay, budgetMs: budget, corpus: corpus.length, scenarios: scenarios.length, models, recordBudgetMs: io.recordBudgetMs ?? GENEROUS_BUDGET_MS.voice, ...(aborted !== undefined ? { aborted } : {}) };
   } catch (e) {
     io.err(`dialogwright render:bakeoff: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
@@ -233,5 +284,5 @@ export async function bakeoffCommand(argv: readonly string[], io: BakeoffIo): Pr
     writeFileSync(out, formatBakeoffMarkdown(report, { byLine }));
     say(`written to ${out}`);
   }
-  return 0;
+  return report.aborted !== undefined ? 1 : 0;
 }

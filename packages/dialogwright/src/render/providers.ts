@@ -19,7 +19,7 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_T
  *   million tokens, for the cost in the trace and Insights; default the default model's.
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
  *   (renderThinkingOf), default the model's own way of thinking least (THINKING_BY_MODEL); on OpenRouter
- *   (openRouterThinkingOf), default reasoning off (`reasoning: { enabled: false }`), one vocabulary for both.
+ *   (openRouterThinkingOf), default reasoning off (`reasoning: { effort: 'none' }`), one vocabulary for both.
  */
 export const RENDER_PROVIDERS = ['openrouter', 'anthropic'] as const;
 export type RenderProviderName = (typeof RENDER_PROVIDERS)[number];
@@ -102,12 +102,12 @@ export function refusedThinking(model: string, mode: RenderThinkingMode): string
 /**
  * How an OpenRouter model reasons while it words a line, in the same vocabulary (RENDER_THINKING,
  * RENDER_EFFORT), sent as OpenRouter's `reasoning` object (openRouterReasoningBody); null when neither is
- * set, and the request is as it always was (`reasoning: { enabled: false }`). Its default is reasoning
- * off, `disabled`; an effort given alone turns reasoning on at that effort (`adaptive`); `between-tools`
- * is Claude Sonnet 5.5's on Anthropic, refused here; and `disabled` with an effort is refused (an effort
- * is for reasoning). Which model honours which setting is OpenRouter's and the model's: a model that
- * cannot turn reasoning off (one that always reasons) answers `disabled` with an error, and needs an
- * effort or `omit`.
+ * set (reasoning off, the default). An effort given alone turns reasoning on at that effort; `adaptive`
+ * without an effort is OpenRouter's own default effort when reasoning is on, `medium`, and is named so
+ * (in the run's header and the cassette's name); `between-tools` is Claude Sonnet 5.5's on Anthropic,
+ * refused here; and `disabled` with an effort is refused (an effort is for reasoning). Which model
+ * honours which setting is OpenRouter's and the model's: a model that always reasons refuses reasoning
+ * off (live: "Reasoning is mandatory for this endpoint and cannot be disabled."), and needs an effort.
  */
 export function openRouterThinkingOf(env: Env): RenderThinking | null {
   const mode = value(env, 'RENDER_THINKING');
@@ -117,23 +117,26 @@ export function openRouterThinkingOf(env: Env): RenderThinking | null {
   if (effort !== null && !(RENDER_EFFORTS as readonly string[]).includes(effort)) throw new Error(`RENDER_EFFORT must be ${RENDER_EFFORTS.join(', ')}, got "${effort}"`);
   if (mode === 'between-tools') throw new Error('RENDER_THINKING=between-tools is Claude Sonnet 5.5\'s on RENDER_PROVIDER=anthropic; on OpenRouter use disabled, adaptive or omit');
   if (mode === 'disabled' && effort !== null) throw new Error('RENDER_EFFORT asks for reasoning, which RENDER_THINKING=disabled turns off: unset one');
-  const out: RenderThinking = { mode: (mode ?? 'adaptive') as RenderThinkingMode, ...(effort !== null ? { effort: effort as RenderEffort } : {}), overridden: false };
-  out.overridden = out.mode !== 'disabled' || out.effort !== undefined;
-  return out;
+  const m = (mode ?? 'adaptive') as RenderThinkingMode;
+  // Reasoning on with no effort named is OpenRouter's medium: said as such.
+  const e = (effort ?? (m === 'adaptive' ? 'medium' : undefined)) as RenderEffort | undefined;
+  return { mode: m, ...(e !== undefined ? { effort: e } : {}), overridden: m !== 'disabled' };
 }
 
 /**
- * The `reasoning` object an OpenRouter request carries for `t` (OpenRouter's unified reasoning setting,
- * as its documentation describes it; what each model does with it is unconfirmed): `disabled`
- * `{ enabled: false }`; with an effort `{ effort, exclude: true }`; `adaptive` alone `{ enabled: true,
- * exclude: true }`; `omit` alone no field (the model's own default). `exclude: true` asks that the
- * reasoning not be returned: only the line (`message.content`) is ever read, and a reasoning text that
- * comes back anyway (`message.reasoning`) is never read or kept.
+ * The `reasoning` object an OpenRouter request carries for `t`, as OpenRouter's documentation describes
+ * its unified setting (what each model does with it is unconfirmed): reasoning off (no setting, or
+ * `disabled`) `{ effort: 'none' }`, the documented way to turn it off; an effort `{ effort, exclude: true }`
+ * (`adaptive` always has one: medium unless named); `omit` alone no field, the model's own default.
+ * `exclude: true` asks that the reasoning not be returned: only the line (`message.content`) is ever read,
+ * and a reasoning text that comes back anyway (`message.reasoning`) is never read or kept. The body is
+ * not in a recording's key (render/prompt.ts renderKey), so recordings made with the earlier off form
+ * (`{ enabled: false }`) replay as they are.
  */
 export function openRouterReasoningBody(t: RenderThinking | undefined): Record<string, unknown> {
-  if (t === undefined || t.mode === 'disabled') return { reasoning: { enabled: false } };
+  if (t === undefined || t.mode === 'disabled') return { reasoning: { effort: 'none' } };
   if (t.effort !== undefined) return { reasoning: { effort: t.effort, exclude: true } };
-  return t.mode === 'omit' ? {} : { reasoning: { enabled: true, exclude: true } };
+  return {};
 }
 
 /** The `thinking` and `output_config` an Anthropic request carries for `t`. */
@@ -248,18 +251,60 @@ function apiError(json: unknown, key: string): { type?: string; message?: string
   if (e === null || typeof e !== 'object') return {};
   const o = e as { type?: unknown; code?: unknown; message?: unknown; metadata?: unknown };
   // Anthropic's error has a type; OpenRouter's a code, which may be the HTTP status again (a number:
-  // then nothing is added to the status), or a name. OpenRouter's shape is to be confirmed on a live call.
+  // then nothing is added to the status), or a name.
   const type = typeof o.type === 'string' ? o.type : typeof o.code === 'string' ? o.code : undefined;
-  const clean = (t: string): string => t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
-  // OpenRouter passes on the upstream provider's own error in `metadata` (`provider_name`, and `raw`, its
-  // body as text): where it is there, it is what says why (OpenRouter's message is often only "Provider
-  // returned error"). Made safe the same way: one line, short, no key.
-  const meta = o.metadata !== null && typeof o.metadata === 'object' ? (o.metadata as { raw?: unknown; provider_name?: unknown }) : {};
-  const raw = typeof meta.raw === 'string' && meta.raw.trim() !== '' ? meta.raw : null;
-  const from = typeof meta.provider_name === 'string' && /^[A-Za-z0-9 _.-]{1,40}$/.test(meta.provider_name) ? `${meta.provider_name}: ` : '';
   const own = typeof o.message === 'string' && o.message.trim() !== '' ? o.message : null;
-  const message = own !== null && raw !== null ? `${own} (${from}${raw})` : own ?? (raw !== null ? `${from}${raw}` : null);
-  return { ...(type !== undefined && /^[A-Za-z0-9_.-]{1,64}$/.test(type) ? { type } : {}), ...(message !== null ? { message: clean(message) } : {}) };
+  const upstream = upstreamError(o.metadata);
+  const message = own !== null && upstream !== null ? `${own} (${upstream})` : own ?? upstream;
+  return { ...(type !== undefined && WORD.test(type) ? { type } : {}), ...(message !== null ? { message: safeErrorText(message, key) } : {}) };
+}
+
+/** A word an error may name as it is: a type, a code, a provider. */
+const WORD = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/** The longest provider message kept: a sentence saying why, never a payload. */
+const SHORT_MESSAGE = 160;
+
+/**
+ * What OpenRouter passes on of an upstream provider's error (`error.metadata`), in the few fields that
+ * say why: the provider's name, its error type and code where given, and its own message only when it
+ * is short, read from the provider's error (`raw`, its body: `error.message` or `message` of it as
+ * JSON, or the text itself). Never the rest of the payload, which may be the provider's verbatim answer
+ * (a content decline can quote the caller's words), and never a moderation's flagged input. Null when
+ * there is nothing.
+ */
+function upstreamError(metadata: unknown): string | null {
+  if (metadata === null || typeof metadata !== 'object') return null;
+  const m = metadata as { provider_name?: unknown; error_type?: unknown; provider_code?: unknown; raw?: unknown };
+  const word = (v: unknown): string | null => (typeof v === 'string' && WORD.test(v) ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : null);
+  const provider = typeof m.provider_name === 'string' && /^[A-Za-z0-9 _.-]{1,40}$/.test(m.provider_name) ? m.provider_name : null;
+  let said: string | null = null;
+  if (typeof m.raw === 'string' && m.raw.trim() !== '') {
+    let text: unknown = m.raw;
+    try {
+      const parsed = JSON.parse(m.raw) as { error?: { message?: unknown } | string; message?: unknown } | null;
+      text = typeof parsed?.error === 'object' && parsed.error !== null ? parsed.error.message : typeof parsed?.error === 'string' ? parsed.error : parsed?.message;
+    } catch {
+      // Not JSON: the text itself.
+    }
+    if (typeof text === 'string') {
+      const one = text.replace(/\s+/g, ' ').trim();
+      if (one !== '' && one.length <= SHORT_MESSAGE) said = one;
+    }
+  }
+  const codes = [word(m.error_type), word(m.provider_code)].filter((c): c is string => c !== null);
+  const parts = [...codes, ...(said !== null ? [said] : [])].join(': ');
+  if (provider === null && parts === '') return null;
+  return provider === null ? parts : parts === '' ? provider : `${provider}: ${parts}`;
+}
+
+/**
+ * An API's account of a failed request, made safe to record: one line, at most 200 characters, the key
+ * masked, anything shaped like a key (`sk-...`, `key-...`) and any long unbroken token (24 characters or
+ * more of letters, digits, `_` and `-`: another provider's key such as `AIza...`, a bearer token) masked.
+ */
+function safeErrorText(t: string, key: string): string {
+  return t.split(key).join('•').replace(/\b(sk|key)-[A-Za-z0-9_-]{8,}/g, '•').replace(/[A-Za-z0-9_-]{24,}/g, '•').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 /** Words a line through OpenRouter's OpenAI-compatible chat completions, or the Anthropic Messages API. */

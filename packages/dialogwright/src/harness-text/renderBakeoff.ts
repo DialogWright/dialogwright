@@ -1,10 +1,10 @@
-import { existsSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { App } from '../core/app/types';
 import type { Thresholds } from '../core/thresholds';
 import type { ScreenMode } from '../core/screen';
 import type { CorpusEntry } from '../jev/corpus';
-import { CassetteClient, CASSETTE_MISS, isCassetteMiss } from '../jev/cassette';
+import { CassetteClient, CASSETTE_MISS, isCassetteMiss, loadCassette, requestKey, trimCassette } from '../jev/cassette';
 import { cassetteFileName, type JevProvider } from '../jev/provider';
 import { SdkJevClient } from '../jev/sdkClient';
 import type { JevClient, JevRequest, JevResponse } from '../jev/types';
@@ -47,10 +47,11 @@ import type { RenderChannel } from '../core/app/types';
  * (`--client recorded`'s cassette, only read), so every model words the same turns, and the drift
  * check is the same judge for all. Its answers about a model's wordings (and any turn the app's
  * recording lacks) are kept beside that model's render cassette (checksCassettePath), never in the
- * app's own recording, so a comparison leaves the app's recording as it was and a trim of it never
- * loses the comparison. A recording run's budgets are generous (GENEROUS_BUDGET_MS), so a
- * slow model's wording is measured rather than cut off: what a call would have dropped is the
- * over-budget count, not a fallback. Recording is the author's step, with their own keys, on their
+ * app's own recording, which a comparison leaves as it was. A recording run's budgets are generous
+ * (GENEROUS_BUDGET_MS), so a slow model's wording is measured rather than cut off: what a call would
+ * have dropped is the over-budget count, not a fallback. `--fresh` asks every line again into a file
+ * beside the cassette, put over it only when the run completes with every line answered; the app's own
+ * cassette is kept unless the author says to replace it (comparisonCassettePath). Recording is the author's step, with their own keys, on their
  * machine; the command refuses in CI, and no test records (tests use fakes).
  */
 
@@ -138,8 +139,36 @@ export function parsePrices(values: readonly string[]): Map<string, RenderPrice>
  */
 export const GENEROUS_BUDGET_MS = { voice: 30_000, chat: 30_000 } as const;
 
-/** What `--fresh` adds to a model's cassette's name while it is moved aside for the run. */
-export const FRESH_ASIDE = '.before-fresh';
+/** What a `--fresh` run records into, beside the model's cassette (`<cassette>.fresh`), until it is accepted. */
+export const FRESH_SUFFIX = '.fresh';
+
+/**
+ * The comparison's own name for a model whose cassette is the app's (git tracks it, or it is the one the
+ * app's regression replays): `<model>.bakeoff.jsonl`, beside it. A `--fresh` run of such a model is
+ * recorded there unless `--replace-app-cassette` is given, and the bake-off tables it from then on.
+ */
+export function comparisonCassettePath(cassette: string): string {
+  return cassette.replace(/\.jsonl$/, '.bakeoff.jsonl');
+}
+
+/**
+ * While a fresh run records into `path`: on SIGINT or SIGTERM, the partial file is deleted (synchronously)
+ * and the process exits, the model's cassette untouched. Returns the function that removes the handlers.
+ */
+export function guardFresh(path: string, exit: (code: number) => void = (code) => process.exit(code)): () => void {
+  const on = (signal: NodeJS.Signals): void => {
+    rmSync(path, { force: true });
+    exit(signal === 'SIGINT' ? 130 : 143);
+  };
+  const int = (): void => on('SIGINT');
+  const term = (): void => on('SIGTERM');
+  process.once('SIGINT', int);
+  process.once('SIGTERM', term);
+  return () => {
+    process.removeListener('SIGINT', int);
+    process.removeListener('SIGTERM', term);
+  };
+}
 
 /** Stop a model's run once this many lines were tried and every one failed as a request (`error`): a wrong id, a key it refuses. */
 export const STOP_AFTER_ERRORS = 5;
@@ -182,14 +211,30 @@ export interface DecisionModel {
   thresholds: Thresholds;
 }
 
-function decisionFor(d: DecisionModel, checks: string, replay: boolean): JevClient {
+function decisionFor(d: DecisionModel, checks: string, replay: boolean): { client: JevClient; used: Set<string> } {
   const main = new CassetteClient({ path: d.main, mode: 'replay', answeredBy: { provider: d.provider.provider, model: d.provider.model, official: d.provider.official } });
   main.preload();
   const side = replay
     ? new CassetteClient({ path: checks, mode: 'replay' })
     : new CassetteClient({ path: checks, mode: 'record', inner: d.live ?? new SdkJevClient({ endpoint: d.provider, timeoutMs: d.thresholds.JEV_TIMEOUT_MS }) });
   side.preload();
-  return new LayeredDecision(main, side);
+  // What this run asked of the checks cassette: a completed recording keeps those answers alone (pruneChecks).
+  const used = new Set<string>();
+  const counted: JevClient = { ask: (req) => (used.add(requestKey(req)), side.ask(req)) };
+  return { client: new LayeredDecision(main, counted), used };
+}
+
+/**
+ * After a recording run that completed: the checks cassette keeps only the answers this run asked for,
+ * so the answers about wordings a fresh run replaced do not pile up. Returns how many were dropped.
+ */
+function pruneChecks(path: string, used: ReadonlySet<string>): number {
+  if (!existsSync(path)) return 0;
+  const lines = loadCassette(path);
+  const kept = trimCassette(lines, used);
+  const dropped = lines.size - kept.length;
+  if (dropped > 0) writeFileSync(path, kept.map((l) => `${JSON.stringify(l)}\n`).join(''));
+  return dropped;
 }
 
 /** One line of the app (a prompt id, or a framed line's span), across a model's run. */
@@ -239,7 +284,17 @@ export interface ModelResult {
     p95: number | null;
     /** Of those, how many took longer than the app's RENDER_TIMEOUT_MS for their channel: on a call, a fixed line. */
     overBudget: number;
+    /** Wordings (distinct requests) that ran past even the bake-off's own budget and never answered: counted as measured and over, at that budget, in the percentiles. */
+    timedOut: number;
   };
+  /** A `--fresh` run's outcome: `kept` (it replaced the cassette), or why it was not (the earlier cassette kept, the fresh one discarded). */
+  fresh?: { kept: true } | { kept: false; why: string };
+  /** A partial `<cassette>.fresh` an interrupted run left: deleted by a fresh run, otherwise only said. */
+  leftover?: string;
+  /** Answers about wordings no longer recorded, dropped from the checks cassette after a completed recording. */
+  checksPruned?: number;
+  /** True when this run replaced the app's own cassette (`--replace-app-cassette`): its drift checks are not in the app's recording. */
+  replacedAppCassette?: boolean;
   cost: {
     /** The wordings' tokens, every request the run made (a replayed one counted as asked again). */
     renderTokens: { input: number; output: number };
@@ -258,6 +313,8 @@ export interface ModelResult {
 class WatchedRenderClient implements RenderClient {
   readonly asked = new Map<string, { promptId: string; span?: string; channel: RenderChannel }>();
   readonly tokens = { input: 0, output: 0 };
+  /** Requests the turn stopped waiting for (its budget ran out, and it aborted them) that never answered. */
+  readonly pastBudget = new Set<string>();
 
   constructor(private readonly inner: RenderClient) {}
 
@@ -267,7 +324,14 @@ class WatchedRenderClient implements RenderClient {
 
   async generate(req: RenderRequest, signal: AbortSignal): Promise<Generation> {
     this.asked.set(req.key, { promptId: req.promptId, ...(req.span !== undefined ? { span: req.span } : {}), channel: req.act.channel });
-    const g = await this.inner.generate(req, signal);
+    let g: Generation;
+    try {
+      g = await this.inner.generate(req, signal);
+    } catch (e) {
+      // Aborted because the turn's budget ran out: a wording past the budget, not a failed request.
+      if (signal.aborted) this.pastBudget.add(req.key);
+      throw e;
+    }
     this.tokens.input += g.usage.inputTokens;
     this.tokens.output += g.usage.outputTokens;
     return g;
@@ -306,6 +370,9 @@ function quantile(xs: readonly number[], q: number): number | null {
 }
 
 class StopModel extends Error {}
+
+/** The decision model failing three turns running: it stops the whole comparison (the models run so far are still tabled). */
+export class DecisionFailed extends Error {}
 
 /** A run's lines, one by one, from its records scrubbed as the trace scrubs them: by prompt id and span, most fallbacks first. */
 export function lineBreakdown(records: readonly TraceRecord[], app: App): LineBreakdown[] {
@@ -361,11 +428,17 @@ export interface BakeoffRun {
   decision: DecisionModel;
   /** True: table from the cassettes alone, asking no model. */
   replay: boolean;
+  /** The budget a recording words and checks each line within (tests: a short one); default GENEROUS_BUDGET_MS. */
+  recordBudgetMs?: number;
   /**
-   * Recording only: ask every line again, the model's cassette moved aside (FRESH_ASIDE) for the run.
-   * A run that completes replaces it; one stopped or failed puts it back.
+   * Recording only: ask every line again, recorded into `<cassette>.fresh` (the cassette never moved),
+   * renamed over it only when the run completes with no `error` or `timeout` fallback.
    */
   fresh?: boolean;
+  /** With `fresh`: a model whose cassette is the app's (isAppCassette) is replaced too, rather than recorded under its comparison name. */
+  replaceAppCassette?: boolean;
+  /** Whether a cassette is the app's own: git tracks it, or the app's regression replays it. Default: none is. */
+  isAppCassette?: (path: string) => boolean;
   /** The settings (the keys among them, never printed); RENDER_TIMEOUT_MS is the call's budget the latency is held to. */
   env: Env;
   thresholds: Thresholds;
@@ -389,7 +462,7 @@ function refusedResult(spec: ModelSpec, refused: string): ModelResult {
   return {
     entry: spec.entry, label: spec.entry, provider: spec.provider, model: spec.model, cassette: '', checks: '', status: 'refused', refused,
     tried: 0, generated: 0, fellBack: {}, errors: {}, errorMessages: {}, untried: 0,
-    wording: { measured: 0, p50: null, p95: null, overBudget: 0 },
+    wording: { measured: 0, p50: null, p95: null, overBudget: 0, timedOut: 0 },
     cost: { renderTokens: { input: 0, output: 0 }, renderUsd: null, checkTokens: { input: 0, output: 0 }, checksUsd: 0 },
     decisionMisses: { turns: 0, checks: 0 },
     byLine: [],
@@ -407,42 +480,52 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
     const refused = why !== null ? `thinking ${spec.thinking} is refused by ${spec.model}: ${why}; leave it out of the entry for the model's own` : e instanceof Error ? e.message : String(e);
     return refusedResult(spec, refused);
   }
-  const cassette = renderCassettePath(run.recordedDir, renderCassetteModel(p));
+  const own = renderCassettePath(run.recordedDir, renderCassetteModel(p));
+  const comparison = comparisonCassettePath(own);
+  const appOwn = run.isAppCassette?.(own) ?? false;
+  const fresh = !run.replay && run.fresh === true;
+  // The cassette tabled (and recorded into): the comparison's own name where a fresh run of the app's cassette made one.
+  const cassette = fresh ? (appOwn && run.replaceAppCassette !== true ? comparison : own) : existsSync(comparison) ? comparison : own;
   const checksPath = checksCassettePath(run.recordedDir, renderCassetteModel(p), run.decision.provider.model);
   const label = `${spec.provider}:${spec.model}${p.thinking?.overridden ? ` (${thinkingLabel(p.thinking)})` : ''}`;
   const price = run.prices.get(p.model) ?? null;
   const base = { entry: spec.entry, label, provider: p.provider, model: p.model, ...(p.thinking !== undefined ? { thinking: thinkingLabel(p.thinking) } : {}), cassette, checks: checksPath };
+  // A partial fresh recording an interrupted run left: said first, whatever this run does.
+  const partial = `${cassette}${FRESH_SUFFIX}`;
+  const leftover = existsSync(partial) ? { leftover: partial } : {};
   const empty = (): Omit<ModelResult, keyof typeof base | 'status'> => ({
     tried: 0, generated: 0, fellBack: {}, errors: {}, errorMessages: {}, untried: 0,
-    wording: { measured: 0, p50: null, p95: null, overBudget: 0 },
+    wording: { measured: 0, p50: null, p95: null, overBudget: 0, timedOut: 0 },
     cost: { renderTokens: { input: 0, output: 0 }, renderUsd: price === null ? null : 0, checkTokens: { input: 0, output: 0 }, checksUsd: 0 },
     decisionMisses: { turns: 0, checks: 0 },
     byLine: [],
+    ...leftover,
   });
   if (run.replay && !existsSync(cassette)) return { ...base, status: 'not-recorded', ...empty() };
 
-  // --fresh: the model's cassette moved aside for the run, so every line is asked again (and timed).
-  const aside = `${cassette}${FRESH_ASIDE}`;
-  if (existsSync(aside)) return refusedResult(spec, `an interrupted --fresh run left ${aside}: move it back over ${cassette} to keep the earlier recording, or delete it to keep the new one`);
-  const fresh = !run.replay && run.fresh === true && existsSync(cassette);
-  if (fresh) renameSync(cassette, aside);
-  const restore = (): void => {
-    rmSync(cassette, { force: true });
-    renameSync(aside, cassette);
-  };
+  // --fresh: recorded beside the cassette, started empty, so every line is asked (and timed); the cassette is never moved.
+  const intoFresh = fresh;
+  const recordPath = intoFresh ? partial : cassette;
+  if (intoFresh) rmSync(partial, { force: true });
+  const unguard = intoFresh ? guardFresh(partial) : () => {};
+  const generous = run.recordBudgetMs ?? GENEROUS_BUDGET_MS.voice;
+  let used: ReadonlySet<string> = new Set();
   const measured = async (): Promise<ModelResult> => {
-    const recording = new RenderCassette(run.replay ? { path: cassette, mode: 'replay', model: p.model } : { path: cassette, mode: 'record', model: p.model, inner: new ModelRenderClient(p, run.fetchFn) });
+    const recording = new RenderCassette(run.replay
+      ? { path: recordPath, mode: 'replay', model: p.model }
+      : { path: recordPath, mode: 'record', model: p.model, inner: new ModelRenderClient(p, run.fetchFn), budgetMs: generous });
     recording.preload();
     const client = new WatchedRenderClient(recording);
     const decision = decisionFor(run.decision, checksPath, run.replay);
-    const checks = new WatchedChecks(decision);
+    const checks = new WatchedChecks(decision.client);
+    used = decision.used;
     const opts: RunOptions = {
-      client: decision,
+      client: decision.client,
       thresholds: run.thresholds,
       todayIso: REGRESS_TODAY,
       now: () => 0,
       ...(run.screen !== undefined ? { screen: run.screen } : {}),
-      renderer: { client, share: 100, timeoutMs: { ...GENEROUS_BUDGET_MS }, checkTimeoutMs: { ...GENEROUS_BUDGET_MS }, price: price ?? DEFAULT_RENDER_PRICE, drift: checks },
+      renderer: { client, share: 100, timeoutMs: { voice: generous, chat: generous }, checkTimeoutMs: { voice: generous, chat: generous }, price: price ?? DEFAULT_RENDER_PRICE, drift: checks },
     };
 
     // A model whose every line fails as a request (a wrong id, a key it refuses) is stopped early.
@@ -454,7 +537,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
         tallyRender(running, r);
         const failed = r.source === 'error' && r.error !== null && !isCassetteMiss(r);
         decisionErrors = failed ? decisionErrors + 1 : 0;
-        if (decisionErrors >= 3) throw new Error(`the decision model failed 3 turns running: ${r.error!.message}`);
+        if (decisionErrors >= 3) throw new DecisionFailed(`the decision model failed 3 turns running: ${r.error!.message}`);
       }
       const failed = running.fellBack.error ?? 0;
       if (running.tried >= STOP_AFTER_ERRORS && failed === running.tried) {
@@ -482,8 +565,9 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
 
     const tally: RenderTally = emptyRenderTally();
     for (const r of into.records) tallyRender(tally, r);
-    // The wording's latency: each distinct request's, as recorded from the model (now, or in an earlier run).
-    const lines = loadRenderCassette(cassette);
+    // The wording's latency: each distinct request's, as the bake-off recorded it (only it writes latencyMs),
+    // now or in an earlier run; a line that ran past even the bake-off's budget counts at that budget.
+    const lines = loadRenderCassette(recordPath);
     const budget = renderSettings(run.env).timeoutMs;
     const ms: number[] = [];
     let overBudget = 0;
@@ -492,6 +576,14 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
       if (took === undefined) continue;
       ms.push(took);
       if (took > budget[asked.channel]) overBudget += 1;
+    }
+    // A request the turn gave up on that never answered ran past even the bake-off's budget: counted at it.
+    let timedOut = 0;
+    for (const key of client.pastBudget) {
+      if (lines.get(key)?.latencyMs !== undefined || !client.asked.has(key)) continue;
+      timedOut += 1;
+      ms.push(generous);
+      overBudget += 1;
     }
     const renderTokens = { ...client.tokens };
     return {
@@ -504,7 +596,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
       errors: tally.errors,
       errorMessages: errorMessagesOf(into.records, run.app),
       untried: tally.skipped,
-      wording: { measured: ms.length, p50: quantile(ms, 0.5), p95: quantile(ms, 0.95), overBudget },
+      wording: { measured: ms.length, p50: quantile(ms, 0.5), p95: quantile(ms, 0.95), overBudget, timedOut },
       cost: {
         renderTokens,
         renderUsd: price === null ? null : (renderTokens.input * price.input + renderTokens.output * price.output) / 1_000_000,
@@ -514,19 +606,35 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
       },
       decisionMisses: { turns: into.records.filter((r) => isCassetteMiss(r)).length, checks: checks.misses },
       byLine: lineBreakdown(into.records, run.app),
+      ...leftover,
     };
   };
   let result: ModelResult;
   try {
     result = await measured();
   } catch (e) {
-    if (fresh) restore();
+    // The model's cassette was never moved: only the partial fresh one goes.
+    if (intoFresh) rmSync(partial, { force: true });
     throw e;
+  } finally {
+    unguard();
   }
-  // A fresh run that completed replaces the earlier recording; one stopped puts it back.
-  if (fresh) {
-    if (result.status === 'ran') rmSync(aside);
-    else restore();
+  if (intoFresh) {
+    // Accepted only when it completed with every line answered: no request failed, none ran out of time.
+    const failed = ['error', 'timeout'].filter((r) => (result.fellBack[r] ?? 0) > 0).map((r) => `${r} ${result.fellBack[r]}`);
+    const why = result.status === 'stopped' ? `stopped (${result.stopped})` : failed.length > 0 ? failed.join(', ') : null;
+    if (why === null) {
+      renameSync(partial, cassette);
+      result = { ...result, fresh: { kept: true }, ...(cassette === own && appOwn ? { replacedAppCassette: true } : {}) };
+    } else {
+      rmSync(partial, { force: true });
+      result = { ...result, fresh: { kept: false, why } };
+    }
+  }
+  // A recording that completed (and, fresh, was kept) keeps only the checks it asked for.
+  if (!run.replay && result.status === 'ran' && (!intoFresh || result.fresh?.kept === true)) {
+    const checksPruned = pruneChecks(checksPath, used);
+    if (checksPruned > 0) result = { ...result, checksPruned };
   }
   return result;
 }
@@ -542,8 +650,13 @@ export interface BakeoffReport {
   corpus: number;
   scenarios: number;
   models: ModelResult[];
+  /** The budget the recordings were made within (the bake-off's own, GENEROUS_BUDGET_MS): a wording past it is a `timeout`. */
+  recordBudgetMs: number;
+  /** Why the comparison stopped before its last model (the decision model failing): the models before it are tabled. */
+  aborted?: string;
 }
 
+const seconds = (ms: number): string => (ms >= 1000 ? `${ms / 1000} s` : `${ms} ms`);
 const pct = (n: number, of: number): string => (of === 0 ? '' : ` (${((100 * n) / of).toFixed(0)}%)`);
 const usd = (n: number | null): string => (n === null ? 'no price' : `$${n.toFixed(4)}`);
 const sum = (r: Record<string, number>): number => Object.values(r).reduce((a, n) => a + n, 0);
@@ -556,11 +669,11 @@ export function reasonsOf(m: Pick<ModelResult, 'fellBack' | 'errors'>): string {
 }
 
 /** A model's row, cell by cell, under TABLE_HEAD. */
-function row(m: ModelResult): string[] {
+function row(m: ModelResult, r: Pick<BakeoffReport, 'recordBudgetMs'>): string[] {
   if (m.status === 'not-recorded' || m.status === 'refused') return [m.label, '-', '-', '-', m.status === 'refused' ? 'refused' : 'not recorded', '-', '-', '-', '-'];
   const fell = sum(m.fellBack);
   const latency = m.wording.p50 === null ? 'not measured' : `${m.wording.p50.toFixed(0)} / ${m.wording.p95!.toFixed(0)}`;
-  const over = m.wording.measured === 0 ? '-' : `${m.wording.overBudget} of ${m.wording.measured}`;
+  const over = m.wording.measured === 0 ? '-' : `${m.wording.overBudget} of ${m.wording.measured}${m.wording.timedOut > 0 ? ` (${m.wording.timedOut} past ${seconds(r.recordBudgetMs)})` : ''}`;
   return [m.label, String(m.tried), `${m.generated}${pct(m.generated, m.tried)}`, `${fell}${pct(fell, m.tried)}`, reasonsOf(m) || '-', latency, over, usd(m.cost.renderUsd), usd(m.cost.checksUsd)];
 }
 
@@ -568,13 +681,19 @@ const TABLE_HEAD = ['model', 'tried', 'said generated', 'fell back', 'why', 'wor
 
 /** The notes under the table: a model not recorded, one stopped, a cassette the decision model missed, a price not given. */
 function notes(r: BakeoffReport): string[] {
-  const out: string[] = [];
+  const out: string[] = r.aborted !== undefined ? [`the comparison stopped: ${r.aborted}; the models before it are tabled`] : [];
   for (const m of r.models) {
+    if (m.leftover !== undefined) out.push(`${m.label}: an interrupted --fresh run left ${m.leftover} (partial, never tabled)${m.fresh !== undefined ? '; this fresh run replaced it' : '; delete it'}`);
     if (m.status === 'not-recorded') out.push(`${m.label}: not recorded (no ${m.cassette}); run without --replay to record it`);
     if (m.status === 'refused') out.push(`${m.label}: refused, nothing asked: ${m.refused}`);
     if (m.status === 'stopped') out.push(`${m.label}: stopped after ${m.tried} lines, every one a failed request: ${m.stopped}${m.stopped !== undefined && m.errorMessages[m.stopped] !== undefined ? ` (${m.errorMessages[m.stopped]})` : ''}`);
     // Why the requests failed, in the API's own words (each reason once): a stopped run's is on its line above.
     for (const [reason, message] of Object.entries(m.errorMessages)) if (!(m.status === 'stopped' && reason === m.stopped)) out.push(`${m.label}: error ${reason}: ${message}`);
+    if (m.fresh?.kept === true) out.push(`${m.label}: --fresh: every line asked again, recorded into ${m.cassette}`);
+    if (m.fresh?.kept === false) out.push(`${m.label}: --fresh: not kept (${m.fresh.why}): ${m.cassette} is as it was, the fresh recording discarded; the table is the fresh run's`);
+    if (m.replacedAppCassette === true) out.push(`${m.label}: replaced the app's own cassette: the app's recording has no drift checks of the new wordings, so regress --client recorded falls back on them (drift-error) until the owner records again (regress --client record)`);
+    if (m.checksPruned !== undefined) out.push(`${m.label}: ${m.checksPruned} checks of wordings no longer recorded dropped from ${m.checks}`);
+    if (m.wording.timedOut > 0) out.push(`${m.label}: ${m.wording.timedOut} wordings ran past the bake-off's own ${seconds(r.recordBudgetMs)} (timeout): counted over the call budget, and at ${seconds(r.recordBudgetMs)} in the percentiles`);
     if (m.untried > 0) out.push(`${m.label}: ${m.untried} lines said fixed untried (their when, locale or the screen)`);
     if (m.decisionMisses.turns + m.decisionMisses.checks > 0) out.push(`${m.label}: the decision model's recording missed ${m.decisionMisses.turns} turns and ${m.decisionMisses.checks} checks (drift-error); record without --replay`);
     if (m.status !== 'not-recorded' && m.status !== 'refused' && m.cost.renderUsd === null && m.cost.renderTokens.input + m.cost.renderTokens.output > 0) out.push(`${m.label}: wording ${m.cost.renderTokens.input} input and ${m.cost.renderTokens.output} output tokens, no price given (--price ${m.model}=<input>,<output>)`);
@@ -584,7 +703,7 @@ function notes(r: BakeoffReport): string[] {
 
 /** The comparison as text: a header, one row per model, its notes, and with `byLine` each model's lines, most fallbacks first. */
 export function formatBakeoff(r: BakeoffReport, opts: { byLine?: boolean } = {}): string[] {
-  const rows = [TABLE_HEAD, ...r.models.map((m) => row(m))];
+  const rows = [TABLE_HEAD, ...r.models.map((m) => row(m, r))];
   const widths = TABLE_HEAD.map((_, i) => Math.max(...rows.map((c) => c[i]!.length)));
   const out = [
     `generated lines of ${r.app}: ${r.corpus} corpus lines and ${r.scenarios} scripted calls, each model in turn${r.replay ? ', replayed from its render cassette' : ''}`,
@@ -630,7 +749,7 @@ export function formatBakeoffMarkdown(r: BakeoffReport, opts: { byLine?: boolean
     '',
     `| ${TABLE_HEAD.join(' | ')} |`,
     `| ${TABLE_HEAD.map(() => '---').join(' | ')} |`,
-    ...r.models.map((m) => `| ${row(m).map(md).join(' | ')} |`),
+    ...r.models.map((m) => `| ${row(m, r).map(md).join(' | ')} |`),
   ];
   const n = notes(r);
   if (n.length > 0) out.push('', ...n.map((l) => `- ${md(l)}`));

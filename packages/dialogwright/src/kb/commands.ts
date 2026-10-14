@@ -1,3 +1,4 @@
+import { inCi } from '../define/ci';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
@@ -57,11 +58,6 @@ async function terminalConfirm(question: string): Promise<boolean> {
   }
 }
 
-/** Whether `CI` is set the way CI services set it (any value but empty, 0 or false). */
-function inCi(env: NodeJS.ProcessEnv): boolean {
-  const v = env.CI?.trim().toLowerCase();
-  return v !== undefined && v !== '' && v !== '0' && v !== 'false';
-}
 
 /** A knowledge base folder found from a dir: the folder, how problems name it, and the knowledge base (or the problems loading it). */
 interface Found {
