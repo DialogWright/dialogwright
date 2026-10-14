@@ -1260,6 +1260,23 @@ function chatFrameEvents(dir, m, callSid, at, opts, attempt) {
   return [];
 }
 
+/**
+ * The name a call's trace is kept under, from its call id: server/fileStem.ts safeFileStem exactly (a
+ * test holds the two equal). Every character outside [A-Za-z0-9_-] becomes `_` (a Telnyx id's `v3:` is
+ * `v3_`), cut to 64; an empty id is `unknown`. A replay is opened and matched by this name, as the
+ * traces list names it and as the server finds it.
+ */
+export function traceName(id) {
+  const cleaned = String(id ?? '').replace(/[^A-Za-z0-9_-]/g, '_');
+  return cleaned.length ? cleaned.slice(0, 64) : 'unknown';
+}
+
+/** The address of a call's replay (a Calls row, or a call's own id and app): `#/replay/<trace name>`, with `?app=` on a host. */
+export function replayHref(row) {
+  const app = typeof row?.app === 'string' && row.app !== '' ? `?app=${encodeURIComponent(row.app)}` : '';
+  return `#/replay/${encodeURIComponent(traceName(row?.callSid))}${app}`;
+}
+
 /** The longest run name kept: enough to be descriptive, short enough for the picker. */
 export const TRACE_NAME_MAX = 32;
 

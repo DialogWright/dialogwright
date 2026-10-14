@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { scripted, type Step } from './scripted';
 import { S3TraceStore, type S3TraceSetting } from '../trace/store';
 import type { FrameDir } from '../server/frameLog';
+import { safeFileStem } from '../server/fileStem';
 
 /**
  * Calls that happened, written as a server writes them, for the console's tests (the Calls page,
@@ -29,13 +30,16 @@ function endFrames(end: CallEnd, at: string, reason: string): { ts: string; dir:
   return [];
 }
 
-/** A call's trace and frame log in a trace folder, last written as the call ended (5 s a step, and a second). */
+/**
+ * A call's trace and frame log in a trace folder, last written as the call ended (5 s a step, and a
+ * second), under its id's file stem as a server names them (a Telnyx id's `v3:` becomes `v3_`).
+ */
 export async function writeFolderCall(dir: string, callSid: string, steps: Step[], end: CallEnd, startMs: number, o: WrittenCall = {}): Promise<void> {
   const { records } = await scripted(steps, { callSid, startMs });
   const raw = records.map((r) => (o.from && r.event.type === 'session.start' ? { ...r, event: { ...r.event, provider: { ...r.event.provider, from: o.from } } } : r));
   const endMs = startMs + 5_000 * steps.length + 1_000;
-  const trace = join(dir, `${callSid}.jsonl`);
-  const frames = join(dir, `${callSid}.frames.jsonl`);
+  const trace = join(dir, `${safeFileStem(callSid)}.jsonl`);
+  const frames = join(dir, `${safeFileStem(callSid)}.frames.jsonl`);
   writeFileSync(trace, raw.map((r) => JSON.stringify(r)).join('\n') + '\n');
   const carrier = o.provider === undefined ? 'twilio' : o.provider;
   const lines = [...(carrier === null ? [] : [{ ts: new Date(startMs).toISOString(), dir: 'log', msg: { provider: carrier } }]), ...endFrames(end, new Date(endMs).toISOString(), o.reason ?? 'live-agent')];

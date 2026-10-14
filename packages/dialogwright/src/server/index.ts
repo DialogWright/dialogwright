@@ -56,6 +56,7 @@ import { chatTraceMeta } from './traceMeta';
 import type { ServiceUrls } from './services';
 import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
+import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
 import { CHAT_PATH, chatByApp, chatEndpoint, type ChatEndpoint } from './chat/socket';
 import { diskUsageCache, sweepRetention, type RetentionSettings } from './retention';
@@ -196,15 +197,8 @@ const DRAIN_POLL_MS = 100;
  */
 const GOING_AWAY_MS = 3_000;
 
-/**
- * Call SIDs come from Twilio (CA + 32 hex), but they arrive over the socket, so never let one shape a path.
- * Dots are replaced too, not only separators: a SID of `CA1.frames` would otherwise write its trace to
- * `CA1.frames.jsonl` and collide with call CA1's frame log.
- */
-export function safeFileStem(callSid: string): string {
-  const cleaned = callSid.replace(/[^A-Za-z0-9_-]/g, '_');
-  return cleaned.length ? cleaned.slice(0, 64) : 'unknown';
-}
+/** A call's trace is named by its id through safeFileStem (fileStem.ts), which the console's lookups share. */
+export { safeFileStem };
 
 /**
  * The Postgres stores SESSION_STORE=postgres://... names, through the pg driver (or the connection a test

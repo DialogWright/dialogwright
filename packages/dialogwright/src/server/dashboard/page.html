@@ -574,7 +574,7 @@
 <script type="module">
   // The page is served at /dashboard, so the module is loaded by absolute path: a relative
   // './dashboard/view.js' would resolve differently when the page is opened at '/dashboard/'.
-  import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
+  import { configure, reduce, replayEvents, latestTrace, positionText, traceLabel, cleanTraceName, traceName, replayHref, handoffReasonText, exchanges, scriptOf, replayStops, stepStop, CODE_MASK,
     STATUS_TEXT, isAlert, liveList, liveStrip, alertCount, alertsRaised, pageTitle, durationText, callsQuery,
     insightsRange, callsSeries, peakOf, barsSvg, splitSvg, percentText, moneyText, lengthBucketText, bytesText, wordingRows } from '/dashboard/view.js';
 
@@ -1115,7 +1115,8 @@
     // In replay the call's own id is more use than `live · replay`, but the end of the call still
     // has to show.
     const ended = String(v.status).startsWith('ended') ? ` · ${v.status}` : '';
-    const name = traceNames()[v.callSid];
+    // Run names are kept by the trace's name, as the picker names a run.
+    const name = traceNames()[traceName(v.callSid)];
     return `replay · ${name ? `${name} (${String(v.callSid).slice(0, 10)}…)` : v.callSid}${ended}`;
   }
 
@@ -1253,7 +1254,8 @@
     const conn = (reconnecting) => {
       el('conn').textContent = state.missed > 0 ? `missed ${state.missed} events, reload to catch up` : reconnecting ? 'reconnecting…' : '';
     };
-    const es = new EventSource(sid ? `/dashboard/events?call=${encodeURIComponent(sid)}` : `/dashboard/events${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`);
+    // One call's feed names the call as its trace is (traceName): any carrier's id, a Telnyx `v3:` among them.
+    const es = new EventSource(sid ? `/dashboard/events?call=${encodeURIComponent(traceName(sid))}` : `/dashboard/events${FILTER ? `?app=${encodeURIComponent(FILTER)}` : ''}`);
     state.es = es;
     es.onopen = () => conn(false);
     es.onerror = () => conn(true);
@@ -1319,10 +1321,13 @@
   }
 
   /**
-   * A call's replay: the call `sid` (from the Calls page, in its app `app` on a host), or with none the
-   * most recent trace, as the console's Replay always opened.
+   * A call's replay: the call `sid` (from the Calls page, in its app `app` on a host; its id or its trace's
+   * name), or with none the most recent trace, as the console's Replay always opened.
    */
   async function startReplay(sid = null, app = null) {
+    // A replay is opened and matched by its trace's name, as the traces list names it (an address with a
+    // call's own id, a Telnyx `v3:...`, opens the trace `v3_...`).
+    if (sid) sid = traceName(sid);
     state.mode = 'replay';
     if (state.es) { state.es.close(); state.es = null; }
     el('conn').textContent = '';
@@ -1507,7 +1512,7 @@
     const sid = e.target.value;
     const row = (state.traceRows ?? []).find((r) => String(r.callSid) === sid);
     // The address names the call shown, without opening it twice.
-    history.replaceState(null, '', `#/replay/${encodeURIComponent(sid)}${row && typeof row.app === 'string' ? `?app=${encodeURIComponent(row.app)}` : ''}`);
+    history.replaceState(null, '', replayHref({ callSid: sid, app: row && typeof row.app === 'string' ? row.app : null }));
     void pick(sid);
   });
   el('reset').addEventListener('click', () => { stopPlay(); state.cursor = 0; draw(); });
@@ -1666,12 +1671,14 @@
    */
   function toggleMode() {
     if (state.mode === 'replay') {
-      location.hash = state.sid && live.rows.has(state.sid) ? `#/call/${encodeURIComponent(state.sid)}` : '#/call/latest';
+      // The replay is named by its trace, the Live list by the call's own id: the call whose trace it is.
+      const sid = state.sid ? [...live.rows.keys()].find((id) => traceName(id) === state.sid) : undefined;
+      location.hash = sid ? `#/call/${encodeURIComponent(sid)}` : '#/call/latest';
       return;
     }
     const sid = state.followSid;
     const app = sid ? live.rows.get(sid)?.app : null;
-    location.hash = sid ? `#/replay/${encodeURIComponent(sid)}${app ? `?app=${encodeURIComponent(app)}` : ''}` : '#/replay';
+    location.hash = sid ? replayHref({ callSid: sid, app }) : '#/replay';
   }
 
   // ---------- Live: the calls in progress ----------
@@ -1916,7 +1923,7 @@
     const tasks = Array.isArray(r.tasks) && r.tasks.length ? r.tasks.map((t) => t.label).join(', ') : '–';
     const until = r.endedAt ?? r.lastAt;
     const length = typeof r.startedAt === 'number' && typeof until === 'number' ? durationText(until - r.startedAt) : '–';
-    const href = `#/replay/${encodeURIComponent(r.callSid)}${r.app ? `?app=${encodeURIComponent(r.app)}` : ''}`;
+    const href = replayHref(r);
     return `<div class="lrow" role="row" tabindex="0" data-href="${esc(href)}" title="${esc(r.callSid)}">`
       + `<span role="cell" class="c-when">${esc(whenText(r.startedAt))}</span><span role="cell" class="c-app">${esc(r.appName ?? appName(r.app))}</span>`
       + `<span role="cell" class="c-who">${esc(whoText(r))}</span><span role="cell" class="c-chan">${esc(r.channel === 'chat' ? 'Chat' : 'Voice')}</span>`
@@ -2220,7 +2227,7 @@
     } catch { /* storage blocked or bad value: no place to go back to */ }
     if (!state.resume || state.resume.mode !== 'replay') state.resume = null;
     // A reload during a replay came from the replay's own address (#/replay/<call>), which route() opens again.
-    if (state.resume && state.resume.sid && !location.hash.startsWith('#/replay/')) history.replaceState(null, '', `#/replay/${encodeURIComponent(state.resume.sid)}`);
+    if (state.resume && state.resume.sid && !location.hash.startsWith('#/replay/')) history.replaceState(null, '', replayHref({ callSid: state.resume.sid }));
     startRows();
     route();
   })();

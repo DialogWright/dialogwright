@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { DashboardBus } from './bus';
 import { redactFrameLine, redactRecord } from './events';
 import { isConsolePath } from '../localOnly';
+import { safeFileStem } from '../fileStem';
 import { parseFrameLog, readFrameLog, type ReadFrameLogLine } from '../frameLog';
 import type { S3TraceReader } from '../../trace/store';
 import type { Chained } from '../../audit/types';
@@ -305,7 +306,8 @@ function liveCallsOf(deps: DashboardDeps): LiveCalls {
 
 /**
  * Which events one viewer of the live feed is sent, by what it asked for:
- * - `?call=<id>`: that call's history and events (a call's detail, opened from the Live list);
+ * - `?call=<id>`: that call's history and events (a call's detail, opened from the Live list), the call
+ *   named as its trace is (safeFileStem of its id, the page's traceName), so any carrier's id reaches it;
  * - nothing: the newest call, as the console has always followed it, switching to each call that starts
  *   (on a host with `?app=<id>`, the newest of that app's calls).
  * Null for a call id that is not one.
@@ -314,7 +316,8 @@ function feedFilter(deps: DashboardDeps, query: URLSearchParams): ((event: Publi
   const call = query.get('call');
   if (call !== null) {
     if (!SID.test(call)) return null;
-    return (event) => event.callSid === call;
+    // Named as its trace is (safeFileStem): a Telnyx call's `v3:...` is asked for as `v3_...`.
+    return (event) => safeFileStem(event.callSid) === call;
   }
   const app = deps.apps && deps.apps.length > 0 ? query.get('app') : null;
   const appOf = (sid: string): string | undefined => {
@@ -456,7 +459,9 @@ function chain(first: Chained<void>, next: () => Chained<void>): Chained<void> {
 
 /** The app a kept call is in, on a host (its call_started says so); undefined otherwise. */
 function appOfCall(deps: DashboardDeps, callSid: string): string | undefined {
-  const first = deps.bus.historyOf(callSid)[0];
+  // Asked for by its trace's name (a call's feed): the call the bus keeps under its own id.
+  const id = deps.bus.callIds().find((c) => c === callSid || safeFileStem(c) === callSid) ?? callSid;
+  const first = deps.bus.historyOf(id)[0];
   return first?.type === 'call_started' ? first.app : undefined;
 }
 
@@ -824,7 +829,10 @@ export function handleDashboardRequest(req: IncomingMessage, res: ServerResponse
   if (m) {
     let sid: string;
     try {
-      sid = decodeURIComponent(m[1]!);
+      // A trace is named by its call's id through safeFileStem, so a call is looked up by the same
+      // mapping: a Telnyx id (`v3:...`) finds `v3_....jsonl`, and a trace's name is itself. The check
+      // below stays the boundary; what this mapping makes can only be a safe name.
+      sid = safeFileStem(decodeURIComponent(m[1]!));
     } catch {
       send(res, 404, 'text/plain', 'not found', head);
       return true;

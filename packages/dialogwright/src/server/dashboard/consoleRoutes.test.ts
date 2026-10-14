@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DashboardBus } from './bus';
@@ -10,6 +10,7 @@ import { LiveCalls } from './live';
 import type { CallRow } from './view.js';
 import type { DashboardEvent } from './events';
 import { scripted } from '../../testing/scripted';
+import { writeFolderCall } from '../../testing/consoleCalls';
 import { defaultAppId, getApp } from '../../core/app/registry';
 import { useTestkit } from '../../testing/apps';
 import { FakeS3 } from '../../testing/fakeS3';
@@ -200,6 +201,9 @@ async function writeCall(dir: string, callSid: string, steps: Parameters<typeof 
     : end === 'handoff' || end === 'completed' ? [{ ts: last, dir: 'out', msg: { type: 'end', handoffData: JSON.stringify({ reasonCode: end === 'handoff' ? 'live-agent' : 'completed' }) } }]
       : [];
   writeFileSync(join(dir, `${callSid}.frames.jsonl`), frames.map((f) => JSON.stringify(f)).join('\n') + (frames.length ? '\n' : ''));
+  // The frame log last written as the call ended, as a server writes it: a call's last write is its
+  // trace's and its frame log's together (calls.ts folderCandidates).
+  utimesSync(join(dir, `${callSid}.frames.jsonl`), new Date(last), new Date(last));
 }
 
 /** A day in the past, so a store's own write times (the real clock's) are after it, as a server's always are. */
@@ -314,6 +318,27 @@ describe('the Calls page\'s list (/dashboard/calls)', () => {
     expect(second.more).toBe(false);
   });
 
+  it('a call read while it was in progress shows its end once its frame log records it (live findings, 2026-10-14)', async () => {
+    const bus = new DashboardBus();
+    const { base, dir } = await serve({ bus });
+    // The call as a read during it finds it (a minute ago, so not yet silent long enough to settle): its
+    // turns in the trace, nothing yet in the frame log that ends it.
+    const start = Date.now() - 60_000;
+    await writeFolderCall(dir, 'CA_during', [OPENER, 'let me talk to a person'], 'none', start);
+    const get = async () => ((await (await fetch(`${base}/dashboard/calls`)).json()) as { rows: CallRow[] }).rows;
+    const during = await get();
+    expect(during.map((r) => [r.callSid, r.endedAt, r.ending])).toEqual([['CA_during', null, null]]);
+    // The end lands in the frame log a few seconds after the last turn record; the trace is not written again.
+    const frames = join(dir, 'CA_during.frames.jsonl');
+    const endAt = start + 5_000 * 2 + 4_000;
+    appendFileSync(frames, JSON.stringify({ ts: new Date(endAt).toISOString(), dir: 'out', msg: { type: 'end', handoffData: JSON.stringify({ reasonCode: 'live-agent' }) } }) + '\n');
+    utimesSync(frames, new Date(endAt), new Date(endAt));
+    const after = await get();
+    expect(after).toHaveLength(1);
+    expect(after[0]!.endedAt).not.toBeNull();
+    expect(after[0]!.ending).toMatchObject({ kind: 'person', reason: 'live-agent', text: 'to a person · caller asked for a person' });
+  });
+
   it('on a host: every app\'s calls with the app on each row, or one app\'s with ?app=', async () => {
     const bus = new DashboardBus();
     const a = mkdtempSync(join(tmpdir(), 'console-a-'));
@@ -359,6 +384,32 @@ describe('the Calls page on the trace store (TRACE_STORE=s3://...)', () => {
       expect(old.rows).toEqual([]);
       expect(s3.requests.slice(before).filter((r) => r.method === 'GET' && /\.jsonl/.test(r.key)).length).toBe(0);
       expect(ranged.rows.map((r) => r.callSid)).toEqual(['CA_s2']);
+    } finally {
+      await s3.close();
+    }
+  });
+  it('a call read while it was in progress shows its end once a frame segment records it: a call\'s segments of both kinds count', async () => {
+    const keys = { accessKeyId: 'AKIDCONSOLECALLS', secretAccessKey: 'a-secret-the-fake-store-checks' };
+    const s3 = await FakeS3.start({ bucket: 'call-traces', region: 'us-east-1', credentials: keys });
+    try {
+      const setting = traceStoreSettingOf({ TRACE_STORE: 's3://call-traces/prod/traces', S3_ENDPOINT: s3.endpoint, S3_REGION: 'us-east-1', S3_ACCESS_KEY_ID: keys.accessKeyId, S3_SECRET_ACCESS_KEY: keys.secretAccessKey, S3_FORCE_PATH_STYLE: 'on' })!;
+      const startMs = Date.now() - 60_000;
+      const { records } = await scripted([OPENER, 'let me talk to a person'], { callSid: 'CA_s3during', startMs });
+      let t = startMs + 11_000;
+      const store = new S3TraceStore(setting, { server: 'a-1', now: () => t });
+      const sinks = store.open('CA_s3during', () => ({ turn: 2, gen: 0, startedAtMs: startMs, held: true }));
+      for (const r of records) sinks.trace.write(r);
+      await store.flush();
+      const { base } = await serve({ bus: new DashboardBus(), traces: new S3TraceStore(setting, { server: 'reader' }).reader() });
+      const get = async () => ((await (await fetch(`${base}/dashboard/calls`)).json()) as { rows: CallRow[] }).rows;
+      expect((await get()).map((r) => [r.callSid, r.endedAt, r.ending])).toEqual([['CA_s3during', null, null]]);
+      // The end goes out as a frame segment a few seconds after the last turn record.
+      t += 3_000;
+      sinks.frames.write('out', { type: 'end', handoffData: JSON.stringify({ reasonCode: 'live-agent' }) });
+      await store.flush();
+      const after = await get();
+      expect(after[0]!.endedAt).not.toBeNull();
+      expect(after[0]!.ending).toMatchObject({ kind: 'person', reason: 'live-agent' });
     } finally {
       await s3.close();
     }

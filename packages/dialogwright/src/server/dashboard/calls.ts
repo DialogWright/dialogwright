@@ -45,8 +45,9 @@ export interface CallsSource {
 export interface Candidate {
   source: CallsSource;
   sid: string;
-  /** Its last write: a file's mtime, or the newest segment's. */
+  /** Its last write: the newer of its trace's and its frame log's mtimes, or the newest segment's (of either). */
   lastMs: number;
+  /** Its bytes: its trace's and its frame log's, or its segments' (of either). */
   size: number;
   /** The store's day folder it is under. */
   day?: string;
@@ -105,24 +106,35 @@ const yieldToOthers = (): Promise<void> => new Promise((r) => setImmediate(r));
  * The names of a folder's traces, with their sizes and last writes, in the range by their last write:
  * a call that started in the range was last written at or after its start, and no later than a day
  * after its end. None for a folder not made yet. Read without blocking the server.
+ *
+ * A call's last write and size are its trace's and its frame log's together (the newer write, the two
+ * sizes summed), as the trace store's are its segments' of both kinds: its end (the `end` frame, the
+ * socket closed, the transfer) lands in the frame log a few seconds after its last turn record, so a
+ * summary read during the call is read again once the end is there (live findings, 2026-10-14).
  */
 async function folderCandidates(source: CallsSource, fromMs: number | undefined, toMs: number | undefined): Promise<Candidate[]> {
   let names: string[];
+  let frameLogs: Set<string>;
   try {
-    names = (await readdir(source.traceDir)).filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'));
+    const all = await readdir(source.traceDir);
+    names = all.filter((f) => f.endsWith('.jsonl') && !f.endsWith('.frames.jsonl'));
+    frameLogs = new Set(all.filter((f) => f.endsWith('.frames.jsonl')));
   } catch {
     return [];
   }
   const out: Candidate[] = [];
   for (let i = 0; i < names.length; i += STAT_CONCURRENCY) {
     const batch = names.slice(i, i + STAT_CONCURRENCY);
-    const stats = await Promise.all(batch.map((f) => stat(join(source.traceDir, f)).catch(() => null)));
+    const statOf = (f: string) => stat(join(source.traceDir, f)).catch(() => null);
+    const framesOf = (f: string): string => `${f.slice(0, -'.jsonl'.length)}.frames.jsonl`;
+    const stats = await Promise.all(batch.map((f) => Promise.all([statOf(f), frameLogs.has(framesOf(f)) ? statOf(framesOf(f)) : null])));
     batch.forEach((f, k) => {
-      const st = stats[k];
+      const [st, frames] = stats[k]!;
       if (!st) return;
-      if (fromMs !== undefined && st.mtimeMs < fromMs) return;
-      if (toMs !== undefined && st.mtimeMs > toMs + MAX_CALL_MS) return;
-      out.push({ source, sid: f.slice(0, -'.jsonl'.length), lastMs: st.mtimeMs, size: st.size });
+      const lastMs = Math.max(st.mtimeMs, frames?.mtimeMs ?? 0);
+      if (fromMs !== undefined && lastMs < fromMs) return;
+      if (toMs !== undefined && lastMs > toMs + MAX_CALL_MS) return;
+      out.push({ source, sid: f.slice(0, -'.jsonl'.length), lastMs, size: st.size + (frames?.size ?? 0) });
     });
   }
   return out;

@@ -311,6 +311,10 @@ export function askedWords(id: string): string;
 export function reduce(events: DashboardEvent[], opts?: ReduceOptions): View;
 export function replayEvents(records: ReplayRecord[], frames: FrameLogLine[], opts?: ReplayOptions): DashboardEvent[];
 export function latestTrace(rows: TraceRow[]): TraceRow | null;
+/** The name a call's trace is kept under, from its call id: server/fileStem.ts safeFileStem exactly. */
+export function traceName(id: string | null | undefined): string;
+/** The address of a call's replay: `#/replay/<trace name>`, with `?app=<id>` on a host. */
+export function replayHref(row: { callSid: string | null; app?: string | null }): string;
 export const TRACE_NAME_MAX: number;
 export function cleanTraceName(raw: unknown): string;
 export function traceLabel(row: TraceRow, name?: string | null): string;
