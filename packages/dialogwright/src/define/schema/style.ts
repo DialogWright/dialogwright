@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { text, unique } from './common';
+import { DRIFT_FIRE } from '../../render/checks';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -11,13 +12,6 @@ import { text, unique } from './common';
 
 /** The most words a generated line may use on each channel when style.yaml does not say. */
 export const DEFAULT_WORDS = { voice: 25, chat: 40 } as const;
-
-/**
- * Where the drift judge refuses a generated line or span (style.yaml's `judge.refuseAt`): its
- * probability that the wording is unfaithful or does more than its goal, at or above which the fixed
- * text is said. The default is render/checks.ts DRIFT_FIRE's; a lower one is more cautious.
- */
-export const DEFAULT_REFUSE_AT = 0.5;
 
 export const styleSchema = z
   .strictObject({
@@ -41,7 +35,7 @@ export const styleSchema = z
           .gt(0, { error: 'must be more than 0' })
           .max(1, { error: 'must be at most 1' })
           .optional()
-          .describe(`The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default ${DEFAULT_REFUSE_AT}. Lower is more cautious: more callers hear the fixed text. For a line that must never be worded by a model, mark it prescribed: true instead.`),
+          .describe(`The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default ${DRIFT_FIRE}. Lower is more cautious: more callers hear the fixed text. Higher is less cautious than the default: more of what the judge doubts is said (pnpm check warns, and the policy card says so). For a line that must never be worded by a model, mark it prescribed: true instead.`),
       })
       .optional()
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),

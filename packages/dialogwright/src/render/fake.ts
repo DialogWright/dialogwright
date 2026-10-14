@@ -62,19 +62,31 @@ const TOWARD_CALLER: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Words that may turn a clause around: a later clause with one is never left out of the fake's wording.
+ * The fake renderer's own (a test double, so a stub run never shows a lossy read-back as generated); no
+ * check reads them: on a call, what a span leaves out is the drift judge's.
+ */
+const TURNS_A_CLAUSE = /\b(?:no|not|never|unless|until|except|only if)\b|n['\u2019]t\b/i;
+
+/**
  * The fake's own wording of a span, deterministic: its content's first clause (to its first comma or
  * stop), within the span's budget, with no question mark and no closing punctuation (the frame has its
- * own), as a short summary of its main point would be. A content of one clause is given back whole: the
- * span is then said unchanged (RenderLine.unchanged). A span that speaks to the caller (`speaks:
- * to-caller`) says that clause turned toward them, their "I" and "my" as "you" and "your" (a content of
- * one clause with a first person is then a summary, not said unchanged).
+ * own), as a short summary of its main point would be; but the whole content where a later clause has a
+ * "no", a "not", a "never", an "n't", "unless", "until", "except" or "only if", as a careful summary
+ * keeps it (then said unchanged, or over its budget falling back to the exact words). A content of one
+ * clause is given back whole: the span is then said unchanged (RenderLine.unchanged). A span that speaks
+ * to the caller (`speaks: to-caller`) says it turned toward them, their "I" and "my" as "you" and "your"
+ * (a content with a first person is then a summary, not said unchanged).
  */
 export function fakeSpanWording(act: SpanAct): string {
   const text = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ').replace(/\?/g, '');
-  const first = text.split(/[,.;:!]/)[0] ?? '';
+  const clauses = text.split(/[,.;:!]/);
+  const whole = clauses.slice(1).some((c) => TURNS_A_CLAUSE.test(c));
+  const kept = whole ? text.replace(/[.!;:,\s]+$/u, '') : (clauses[0] ?? '');
   // "US" in capitals is no pronoun.
   const toward = (w: string): string => (act.speaks === 'to-caller' && w !== 'US' ? TOWARD_CALLER[w.replace(/\u2019/g, "'").toLowerCase()] ?? w : w);
-  return first.split(/\s+/).filter((w) => w !== '').map(toward).slice(0, act.style.words).join(' ');
+  const said = kept.replace(/[\p{L}'\u2019]+/gu, toward).split(/\s+/).filter((w) => w !== '');
+  return (whole ? said : said.slice(0, act.style.words)).join(' ');
 }
 
 export class FakeRenderClient implements RenderClient {

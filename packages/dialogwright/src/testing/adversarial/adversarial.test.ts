@@ -16,7 +16,7 @@ import { routedApp } from '../routed/app';
 import { screenedApp } from '../screened/app';
 import { textingApp } from '../texting/app';
 import { messageApp } from '../message/app';
-import { EXACT_FRAME, messageVariants, SUMMARIZED, TO_CALLER, WHOLE_LINE } from '../message/variant';
+import { EXACT_FRAME, messageVariants, replace, SUMMARIZED, TO_CALLER, WHOLE_LINE } from '../message/variant';
 import { FakeRenderClient } from '../../render/fake';
 import { adversarialSuite, formatAdversarialReport, runAdversarialSuite, type AdversarialReport, type AdversarialRunOptions, type AdversarialSuite } from './index';
 import { frameViolations } from './run';
@@ -329,12 +329,12 @@ describe('generated wording under the suite (the wording family, on the message 
 
   /**
    * The span cases' fallbacks (live findings item 25): a case is held by a check of its data or shape
-   * where its attack changes them (another recipient; a line of its own, or the sentence written back,
-   * past the word budget), and by the drift judge where it changes meaning (a claim stated as the agent's
+   * where its attack changes them (another recipient; a line of its own after the span, a second sentence;
+   * the sentence written back, its own words copied), and by the drift judge where it changes meaning (a claim stated as the agent's
    * own, a "no" dropped or left out): the judge each attack registers its wording with (refusingJudge),
    * as a real judge refuses them on a call. A case is never changed and no property loosened.
    */
-  const SPAN_REASONS: [string, string][] = [['refund', 'drift'], ['no-cue', 'drift'], ['negation-dropped', 'drift'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'words'], ['frame-echo', 'words']];
+  const SPAN_REASONS: [string, string][] = [['refund', 'drift'], ['no-cue', 'drift'], ['negation-dropped', 'drift'], ['negation-left-out', 'drift'], ['recipient', 'conflict'], ['frame', 'format'], ['frame-echo', 'frame']];
 
   it('a framed line\'s span falls back to its exact content under every attack, and the frame is said as written', async () => {
     const report = await run(messageApp, { renderer: fake() });
@@ -454,6 +454,24 @@ describe('generated wording under the suite (the wording family, on the message 
     // The instructions renderer passes every deterministic check: it is the drift check that holds it.
     const instructions = report.results.find((x) => x.case.id === 'wording/render/instructions')!;
     expect(instructions.calls.flatMap((c) => c.turns.flatMap((t) => t.record.render?.lines ?? [])).filter((l) => l.skipped === undefined).every((l) => l.fallback === 'drift' || l.fallback === 'words')).toBe(true);
+  });
+
+  it('a span that writes the frame in is refused by a check of its shape, whatever its budget and whatever the judge: render-held holds with a blind judge (live findings item 25)', async () => {
+    // A budget no echo reaches, and a judge that passes everything: only the checks of copying and of one sentence are left to hold them.
+    const roomy = variants.variant({ 'app.yaml': replace('id: message', 'id: message-roomy'), 'prompts.yaml': replace('        words: 25\n', '        words: 100\n') });
+    resetAppsForTest();
+    registerApp(roomy);
+    const { suite, opts } = stubRun(roomy);
+    const blind: JevClient = { ask: async () => ({ answers: { renderDrift: { type: 'noul', noul: 0.01 }, renderSpanDrift: { type: 'noul', noul: 0.01 }, manipulation: { type: 'noul', noul: 0.01 } }, model: 'blind', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:heuristic' }) };
+    // The sentence written back (four words of the line's own copied: `frame`); a line of its own after the span (a second sentence: `format`).
+    for (const [id, reason] of [['frame-echo', 'frame'], ['frame', 'format']] as const) {
+      const cases = suite.cases.filter((c) => c.id === `wording/span-message/${id}/fooled/en`);
+      expect(cases, id).toHaveLength(1);
+      const report = await runAdversarialSuite({ ...suite, cases }, { ...opts, renderer: { client: new FakeRenderClient(), drift: blind } });
+      expect(report.results[0]!.status, `${id}: ${report.results[0]!.violations.join('; ')}`).toBe('hold');
+      const span = report.results[0]!.calls[0]!.turns.at(-1)!.record.render!.lines.find((l) => l.span === 'summary')!;
+      expect(span, id).toMatchObject({ mode: 'fixed', fallback: reason });
+    }
   });
 
   it('render-held catches a line said from a hostile renderer: here, a drift check that misses instructions the other checks let by', async () => {

@@ -8,6 +8,7 @@ import { DEFAULT_THRESHOLDS } from '../thresholds';
 import { CONFIG_HASH, combinedConfigHash } from './configHash';
 import { CODE_LENGTHS, SIGN_IN_CLAIM, topLevelOf } from './lookup';
 import { principalProblems } from './principals';
+import { SPAN_GAP } from '../../render/types';
 import { factorsEnteringByOutcome, formsEnteringByOutcome, formsLeadingTo, nextCycles, slotOutcomesOf } from './next';
 import type { App, ConfigHashes } from './types';
 import type { CatalogTopic, KnowledgeBase } from '../../kb/types';
@@ -100,6 +101,12 @@ export function validateApp(app: App): void {
   for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { exactText?: string }>>][]) {
     for (const [id, entry] of Object.entries(lines)) {
       if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
+    }
+  }
+  // A framed line's text may not hold the gap a span's sentence marks its place with (render/types.ts SPAN_GAP).
+  for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { text?: string }>>][]) {
+    for (const [id, entry] of Object.entries(lines)) {
+      if (app.generated?.lines[id]?.spans !== undefined && (entry.text ?? '').includes(SPAN_GAP)) fail(`the framed line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has "${SPAN_GAP}" in its text, which marks a span's place in the sentence its model is shown: write it some other way`);
     }
   }
   // Where the drift judge refuses (RenderStyle.refuseAt): a probability, more than 0 and at most 1.

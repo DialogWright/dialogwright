@@ -2,6 +2,8 @@ import type { FormId, GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyl
 import type { FormsYaml, PromptYaml, StyleYaml } from '../define/schema/index';
 import { DEFAULT_SPAN_WORDS } from '../define/schema/prompts';
 import { DEFAULT_WORDS } from '../define/schema/style';
+import { DRIFT_FIRE } from './checks';
+import { SPAN_GAP } from './types';
 
 /** The persona a generated line has when style.yaml names none. */
 export const DEFAULT_PERSONA = 'a calm, plain-spoken agent';
@@ -24,7 +26,7 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     persona: style?.persona ?? DEFAULT_PERSONA,
     words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat },
     avoid: [...(style?.avoid ?? [])],
-    // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DEFAULT_REFUSE_AT).
+    // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).
     ...(style?.judge?.refuseAt !== undefined ? { refuseAt: style.judge.refuseAt } : {}),
   };
 }
@@ -296,6 +298,7 @@ export function generatedWordingProblems(input: {
       }
       // A framed line in a locale: its text says every span prompts.yaml frames, and gives each span at most its goal.
       if (spans !== undefined) {
+        if (p.text.includes(SPAN_GAP)) out.push({ file: dir, path: ['prompts', id, 'text'], message: `the line "${id}" is framed (generate), and its text has "${SPAN_GAP}", which marks a span's place in the sentence its model is shown, so the model could not tell its own gap from the line's words`, fix: 'write it some other way (a dash, or words)' });
         const vars = lineVars(p.text);
         for (const name of Object.keys(spans)) {
           if (!vars.includes(name)) out.push({ file: dir, path: ['prompts', id, 'text'], message: `the line "${id}" is framed in prompts.yaml with a generated span {${name}}, which this locale's text does not say, so the content it gives would never be heard in this locale`, fix: `say {${name}} in this locale's text, where the content belongs` });
@@ -391,6 +394,8 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
   if (p.goal !== undefined) out.push({ file, path: at('goal'), message: `the line "${id}" is framed (generate): each span has its own goal, so a goal of the whole line does nothing`, fix: 'move what it says into the goal of a span under "generate", or delete it', atKey: true });
   if (p.from !== undefined) out.push({ file, path: at('from'), message: `the line "${id}" is framed (generate): each span names the content it is worded from in its own "from"`, fix: 'delete "from" here, and name the content in the span\'s "from"', atKey: true });
   if (p.acknowledge !== undefined) out.push({ file, path: at('acknowledge'), message: `the line "${id}" is framed (generate): only its spans are generated, and a span never acknowledges the caller, so "acknowledge" does nothing`, fix: 'delete "acknowledge"; the frame\'s fixed words are said as written', atKey: true });
+  // The span's place in the sentence a model is shown (SPAN_GAP): the line's own text may not hold it.
+  if (p.text.includes(SPAN_GAP)) out.push({ file, path: at('text'), message: `the line "${id}" is framed (generate), and its text has "${SPAN_GAP}", which marks a span's place in the sentence its model is shown, so the model could not tell its own gap from the line's words`, fix: `write it some other way (a dash, or words)` });
   const vars = lineVars(p.text);
   if (p.exactText !== undefined) {
     const problem = sameVariables(p.text, p.exactText);
@@ -463,9 +468,15 @@ export function generatedWordingWarnings(input: {
   defaultLocale?: string;
   /** The `name` slots: a frame that names one before a to-caller span gives the caller's words in the third person. */
   nameSlots?: ReadonlySet<string>;
+  /** style.yaml: a judge cutoff above the default is less cautious, the app's choice, warned of. */
+  style?: StyleYaml | null;
 }): WordingWarning[] {
   const generated = generatedWordingOf({ ...input, style: null })?.lines ?? {};
   const out: WordingWarning[] = [];
+  const refuseAt = input.style?.judge?.refuseAt;
+  if (refuseAt !== undefined && refuseAt > DRIFT_FIRE) {
+    out.push({ file: 'style.yaml', path: ['judge', 'refuseAt'], message: `judge.refuseAt is ${refuseAt}, less cautious than the default (${DRIFT_FIRE}): the drift judge lets by a wording it holds up to ${Math.round(refuseAt * 100)}% likely to be unfaithful, so more of what it doubts is said (the app's choice; the policy card says so)`, fix: `lower it to ${DRIFT_FIRE} or below, or keep it if that is the owner's choice` });
+  }
   for (const [id, line] of Object.entries(generated)) {
     for (const [name, span] of Object.entries(line.spans ?? {})) {
       if (span.speaks !== 'to-caller') continue;

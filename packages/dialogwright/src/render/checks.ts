@@ -1,6 +1,6 @@
 import type { NoulQuestion, QuestionMap } from '../jev/types';
 import { sentenceSaid } from './prompt';
-import type { RenderFallback, SpanAct, SpeechAct } from './types';
+import { SPAN_GAP, type RenderFallback, type SpanAct, type SpeechAct } from './types';
 
 /**
  * The checks every generated line passes before anyone hears it (design section 5). Each one bounds the
@@ -19,6 +19,7 @@ import type { RenderFallback, SpanAct, SpeechAct } from './types';
  * - `foreign`: a number, an amount, a date word or a name that is in none of what it was given (the
  *   fixed line, the goal, the items, the collected content, the caller's own words).
  * - `conflict`: another value of an item's own slot (the wrong recipient) named in its place.
+ * - `frame` (a span): four words running of its line's own fixed words, which its content does not have.
  * - `drift` (asked of the decision model, after the rest pass; renderDriftQuestion, and for a span
  *   renderSpanDriftQuestion): the line does something beyond its goal, or the span is not a faithful
  *   summary of the caller's words, heard in its sentence.
@@ -235,10 +236,26 @@ const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's"
   'asks', 'requests', 'says', 'would', 'wanted', 'needed', 'reports', 'mentions']);
 
 /**
+ * Whether a span copies its line's own words: four words running of its sentence's fixed words (a run
+ * broken by the gap and by each placeholder) that its content does not have (`frame`). A copy, not a
+ * reading of grammar: a renderer that writes the frame, or a rewrite of it, into the span is refused
+ * whatever its budget, while a summary that shares a phrase with the caller's own words is not.
+ */
+export function copiesFrame(text: string, act: Pick<SpanAct, 'sentence' | 'content'>): boolean {
+  const said = ` ${words(text).join(' ')} `;
+  const content = ` ${act.content.flatMap((c) => words(c.value)).join(' ')} `;
+  const runs = act.sentence.split(SPAN_GAP).flatMap((part) => part.split(/\{\w+\}/)).map(words).filter((r) => r.length >= 4);
+  return runs.some((run) => run.slice(0, run.length - 3).some((_, i) => {
+    const four = ` ${run.slice(i, i + 4).join(' ')} `;
+    return said.includes(four) && !content.includes(four);
+  }));
+}
+
+/**
  * The first check a framed line's span fails, or null when it passes them all (the drift check aside).
  * The span is held to its data and shape, against its content (it is shown its sentence so it fits the
- * line, never as something it may draw on): no question (the frame asks any); no other value of the
- * frame's own items in its place (`conflict`); its word budget; style.yaml's phrases; and no figure or
+ * line, never as something it may draw on): one sentence or less (a stop and a capital after it is `format`); no question (the frame asks any); no other value of the
+ * frame's own items in its place (`conflict`); no four words running of its sentence's own (`frame`); its word budget; style.yaml's phrases; and no figure or
  * capitalized word that is not in its content (`foreign`), but the names a to-caller span lists
  * (`act.names`, who the message is for) and their possessives ("Sam's"). Whether it says what the content
  * says (a "no" kept, who does what to whom, whose words they are) is the drift judge's.
@@ -246,6 +263,10 @@ const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's"
 export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): RenderFallback | null {
   if (text.trim() === '') return 'empty';
   if (text.length > MAX_CHARS || /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text) || /\bhttps?:|www\./i.test(text)) return 'format';
+  // The line's own words copied into the span (the frame written back, or rewritten).
+  if (copiesFrame(text, act)) return 'frame';
+  // One sentence or less: a stop and a capital after it is a sentence of its own, written after the span (shape, not grammar).
+  if (/[.!]\s+["\u201c(]?\p{Lu}/u.test(text)) return 'format';
   if (text.includes('?')) return 'question';
   const folded = fold(text);
   const content = act.content.map((c) => c.value);

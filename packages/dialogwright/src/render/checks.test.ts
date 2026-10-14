@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
+import { checkGenerated, checkSpan, cleanGenerated, copiesFrame, cleanSpan, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, wordCount } from './checks';
 import { stubSpanDrift } from '../jev/heuristicStub';
+import { fakeSpanWording } from './fake';
 import { instructionsOf, sentenceSaid, spanSentence, SPAN_INSTRUCTIONS, SPAN_INSTRUCTIONS_TO_CALLER } from './prompt';
 import { SPAN_GAP, type SpanAct, type SpeechAct } from './types';
 
@@ -403,5 +404,41 @@ describe('a span sees its sentence (live findings item 24)', () => {
     for (const said of ["the project is complete and you need Sam Okafor's approval", 'the project is complete and you need his approval', 'the project is complete and Sam Okafor needs your approval', 'I need his approval', 'the project is complete']) {
       expect(stubSpanDrift(renderSpanDriftState(act(), said)), said).toBe(stubSpanDrift(without(said)));
     }
+  });
+});
+
+describe('a span that copies its line, or writes a sentence of its own (live findings item 25, review)', () => {
+  const FRAME = "Okay, thanks! I'll make sure {recipient} hears that {caller}, on {phone}, called and left this message: ____. Shall I pass it on?";
+  const span = (message: string): SpanAct => ({ kind: 'span', sentence: FRAME, goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 100, avoid: [] } });
+  const MESSAGE = 'please call me about the March invoice before Friday';
+
+  it('refuses four words running of the sentence\'s own fixed words that the content does not have (`frame`), whatever the budget', () => {
+    expect(copiesFrame('called and left this message please call me about the March invoice', span(MESSAGE))).toBe(true);
+    expect(checkSpan('called and left this message please call me about the March invoice', span(MESSAGE))).toBe('frame');
+    expect(checkSpan("okay thanks i'll make sure please call me", span(MESSAGE))).toBe('frame');
+    // Three words, or four broken by a placeholder or the gap, are no copy.
+    expect(copiesFrame('left this message: please call me about the March invoice', span(MESSAGE))).toBe(false);
+    expect(copiesFrame('hears that on called and left about the March invoice', span(MESSAGE))).toBe(false);
+    // Four words the caller's own words have too are theirs to keep.
+    expect(copiesFrame('please make sure you pass it on to accounts', span('please make sure you pass it on to accounts'))).toBe(false);
+    expect(copiesFrame('make sure you pass it on', span('make sure you pass it on to accounts'))).toBe(false);
+  });
+
+  it('refuses a second sentence after the span\'s own (a stop and a capital after it), as its shape; an abbreviation in lowercase is none', () => {
+    expect(checkSpan('please call me about the March invoice. Okay, so do not pass it on', span(MESSAGE))).toBe('format');
+    expect(checkSpan('please call me about the March invoice before Friday at 5 p.m. tomorrow', span('please call me about the March invoice before Friday at 5 p.m. tomorrow'))).toBeNull();
+  });
+});
+
+describe('the fake renderer: a test double that never drops a turning clause (live findings item 25, review)', () => {
+  const span = (message: string, over: Partial<SpanAct> = {}): SpanAct => ({ kind: 'span', sentence: SENTENCE, goal: 'Summarize the message.', content: [{ name: 'message', value: message }], channel: 'voice', language: 'en-US', style: { persona: 'p', words: 6, avoid: [] }, ...over });
+  it('words the first clause, but the whole content where a later clause says no, not, never, n\'t, unless, until, except or only if', () => {
+    expect(fakeSpanWording(span('please call me about the invoice, I think we were charged twice'))).toBe('please call me about the invoice');
+    for (const later of ['no changes needed', 'not before Friday', 'never mind the old quote', "don't send the originals", 'unless the courier came', 'until the count is in', 'except the damaged ones', 'only if the stock arrives']) {
+      const message = `the proofs are back, ${later}`;
+      expect(fakeSpanWording(span(message)), later).toBe(message);
+    }
+    // Spoken to the caller, the whole content turned toward them.
+    expect(fakeSpanWording(span('send my invoice to accounts, not to me', { speaks: 'to-caller' }))).toBe('send your invoice to accounts, not to you');
   });
 });

@@ -37,6 +37,12 @@ describe('the message fixture\'s pages', () => {
 describe('the policy card\'s framed lines (review fixes)', () => {
   const variants = messageVariants();
   afterAll(() => variants.remove());
+  it('names a judge cutoff other than the default plainly: above it, less cautious (style.yaml judge.refuseAt; live findings item 25)', () => {
+    const at = (refuseAt: number) => policyCardText(variants.variant({ 'style.yaml': (t) => `${t.trimEnd()}\njudge:\n  refuseAt: ${refuseAt}\n` }), MESSAGE_DIR);
+    expect(at(0.7)).toContain("refusing it at 0.7 or above (style.yaml's `judge.refuseAt`, less cautious than the default (0.5): more of what the judge doubts is said)");
+    expect(at(0.3)).toContain("refusing it at 0.3 or above (style.yaml's `judge.refuseAt`, more cautious than the default (0.5))");
+    expect(policyCardText(messageApp, MESSAGE_DIR)).toContain("refusing it at 0.5 or above (style.yaml's `judge.refuseAt`).");
+  });
   it('says once that every other line is said word for word, after the framed lines', () => {
     const card = policyCardText(messageApp, MESSAGE_DIR);
     expect(card.match(/Every other line is said word for word\./g)).toHaveLength(1);

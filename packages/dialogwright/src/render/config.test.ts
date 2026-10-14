@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { FormsYaml, PromptYaml } from '../define/schema/index';
-import { DEFAULT_REFUSE_AT } from '../define/schema/style';
 import { DRIFT_FIRE } from './checks';
 import { formLineIds, generatedWordingOf, generatedWordingProblems, generatedWordingWarnings, identifierVarsFrom, KB_ANSWER_LINE_VAR, styleOf, summarizedVarsFrom } from './config';
 import { KB_ANSWER_VAR } from '../kb/answer';
@@ -430,9 +429,28 @@ describe('a span that speaks to the caller (speaks: to-caller; live findings, it
 describe('the drift judge\'s cutoff (style.yaml judge.refuseAt; live findings, item 25)', () => {
   it('is absent by default (the turn refuses at 0.5), style.yaml\'s where it says one, and never on a span', () => {
     expect(styleOf(null)).not.toHaveProperty('refuseAt');
-    expect(DEFAULT_REFUSE_AT).toBe(DRIFT_FIRE);
+    expect(DRIFT_FIRE).toBe(0.5);
     expect(styleOf({ judge: { refuseAt: 0.3 } }).refuseAt).toBe(0.3);
     const spans = generatedWordingOf({ prompts: { confirm_f: line('{caller} called and left this message: {summary}. Shall I pass it on?', { generate: { summary: { from: 'message', goal: 'Summarize it.' } } }) }, forms: { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f' }) }, style: null, localePrompts: {} })!.lines.confirm_f!.spans!;
     expect(spans.summary).toEqual({ from: 'message', goal: 'Summarize it.', words: 25 });
+  });
+
+  it('check warns of a cutoff above the default, less cautious (the app\'s choice), and says nothing of one at or below it', () => {
+    const warned = (refuseAt: number) => generatedWordingWarnings({ prompts: {}, forms: {}, localePrompts: {}, style: { judge: { refuseAt } } }).map((w) => `${w.file} ${w.path.join('.')}: ${w.message}`);
+    expect(warned(0.7)).toEqual(['style.yaml judge.refuseAt: judge.refuseAt is 0.7, less cautious than the default (0.5): the drift judge lets by a wording it holds up to 70% likely to be unfaithful, so more of what it doubts is said (the app\'s choice; the policy card says so)']);
+    expect(warned(0.5)).toEqual([]);
+    expect(warned(0.3)).toEqual([]);
+  });
+});
+
+describe('the gap a span\'s sentence marks its place with (live findings item 25, review)', () => {
+  it('check refuses it in a framed line\'s text, here and in a locale', () => {
+    const forms = { f: form(['caller', 'message'], { summaryPromptId: 'confirm_f' }) };
+    const framed = (text: string) => line(text, { generate: { summary: { from: 'message', goal: 'Summarize it.' } } });
+    const problems = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>> = {}) =>
+      generatedWordingProblems({ prompts, forms, localePrompts, identifierVars: new Set(), slots: ['caller', 'message'] }).map((p) => `${p.file} ${p.path.join('.')}`);
+    expect(problems({ confirm_f: framed('{caller} said ____ and then: {summary}.') })).toEqual(['prompts.yaml prompts.confirm_f.text']);
+    expect(problems({ confirm_f: framed('{caller} left this message: {summary}.') }, { es: { confirm_f: line('{caller} dijo ____: {summary}.', { generate: { summary: { goal: 'Resumir.' } } }) } })).toEqual(['locale/es/prompts.yaml prompts.confirm_f.text']);
+    expect(problems({ confirm_f: framed('{caller} left this message: {summary}.') })).toEqual([]);
   });
 });

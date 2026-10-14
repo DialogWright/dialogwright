@@ -185,7 +185,9 @@ export type RenderFallback =
   /** The line names another value of an item's own slot (the wrong recipient, day or kind) that its fixed line does not. */
   | 'conflict'
   /** The collected content (`from`) was flagged by the injection screen read again on it, or could not be read: nothing was worded from it. */
-  | 'content-flagged';
+  | 'content-flagged'
+  /** A span copies four words running of its line's own fixed words (its sentence's) that its content does not have: the frame written into the span. */
+  | 'frame';
 
 /** Why a line the app generates was not tried on this turn (its fixed line said, no fallback). */
 export type RenderSkip =

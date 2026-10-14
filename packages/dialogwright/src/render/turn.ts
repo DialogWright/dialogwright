@@ -295,7 +295,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // The turn's whole budget: no line takes longer than the wording's and the checks' together.
   const deadline = after(budget + checkBudget);
   const drift = renderer.drift ?? input.client;
-  // Where the drift judge refuses a wording (style.yaml's judge.refuseAt), default DRIFT_FIRE (DEFAULT_REFUSE_AT).
+  // Where the drift judge refuses a wording (style.yaml's judge.refuseAt), default DRIFT_FIRE.
   const refuseAt = generated.style.refuseAt ?? DRIFT_FIRE;
   let checkUsage: JevUsage | null = null;
   const used = (u: JevUsage): void => {

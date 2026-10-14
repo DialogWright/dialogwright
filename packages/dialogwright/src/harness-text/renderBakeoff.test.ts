@@ -121,8 +121,11 @@ describe('render:bakeoff --replay', () => {
     const r = io();
     expect(await bakeoffCommand([MESSAGE, '--replay', '--models', 'anthropic:claude-sonnet-5-5:disabled,anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5', '--by-line'], r.io)).toBe(0);
     const table = r.out.join('\n');
-    // The read-back's span re-keyed when it was given its sentence (live findings item 24): its 3 recorded
-    // wordings miss on its 8 attempts until the maintainer records again (then 27 generated, 9 drift).
+    // These pin the replay as it is between live findings item 24 and the maintainer's re-record: item 24
+    // re-keyed the read-back's span, so its 3 recorded wordings miss on its 8 attempts (19 generated, 17
+    // fell back: drift 9, cassette-miss 8). Once the maintainer re-records the message fixture, they pin
+    // the committed recording's numbers again (before item 24: 27 generated, 9 fell back, drift 9; the
+    // summary span 8 tried, 8 generated), here and in the --json test below.
     expect(table).toMatch(/^anthropic:claude-haiku-5-5\s+36\s+19 \(53%\)\s+17 \(47%\)\s+drift 9, cassette-miss 8\s+not measured\s+-\s+\$\d/m);
     expect(table).toMatch(/^anthropic:claude-sonnet-5-5\s+-\s+-\s+-\s+not recorded/m);
     // A thinking the model refuses (as the server refuses it at start): that model reported, the run going on.
@@ -142,7 +145,7 @@ describe('render:bakeoff --replay', () => {
     expect(r.out).toHaveLength(1);
     const report = JSON.parse(r.out[0]!) as BakeoffReport;
     expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 700, chat: 1500 } });
-    // Until the span is recorded again (item 24): its 8 attempts miss.
+    // Between item 24 and the maintainer's re-record (see above): the span's 8 attempts miss; then the committed recording's numbers again.
     expect(report.models[0]).toMatchObject({ status: 'ran', tried: 36, generated: 19, fellBack: { drift: 9, 'cassette-miss': 8 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });
     expect(report.models[0]!.byLine).toBeUndefined();
   });

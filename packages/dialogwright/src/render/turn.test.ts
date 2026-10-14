@@ -587,10 +587,10 @@ describe('a framed line with a frame of its own for the exact words (exactText; 
     const proofs = PROOFS;
     const steps = [...TO_SUMMARY.slice(0, 3), { say: proofs }];
     use(exact);
-    // The fake's own wording, the message's first clause, leaves the "no changes needed" out; a judge that reads it refuses it.
+    // A wording that leaves the "no changes needed" out (the fake's own keeps it: a test double never drops a "no"); a judge that reads it refuses it.
     const inner = stub();
     const reading: JevClient = { ask: async (req) => (req.questions.renderSpanDrift ? { ...(await inner.ask(req)), answers: { renderSpanDrift: { type: 'noul', noul: 0.85 } } } : inner.ask(req)) };
-    const r = await call(steps, { client: new FakeRenderClient(), drift: reading });
+    const r = await call(steps, { client: new FakeRenderClient({ spans: { confirm_take_message: 'the brochure proofs are back from the printer and they look great' } }), drift: reading });
     expect(spanOf(r)).toMatchObject({ mode: 'fixed', fixed: proofs, fallback: 'drift', refused: 'the brochure proofs are back from the printer and they look great' });
     expect(lastSaid(r)).toBe(`${OPEN}: ${proofs}. Shall I pass it on?`);
   });

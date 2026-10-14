@@ -39,7 +39,7 @@
       "type": "object",
       "properties": {
         "refuseAt": {
-          "description": "The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default 0.5. Lower is more cautious: more callers hear the fixed text. For a line that must never be worded by a model, mark it prescribed: true instead.",
+          "description": "The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default 0.5. Lower is more cautious: more callers hear the fixed text. Higher is less cautious than the default: more of what the judge doubts is said (pnpm check warns, and the policy card says so). For a line that must never be worded by a model, mark it prescribed: true instead.",
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1
