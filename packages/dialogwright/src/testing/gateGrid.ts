@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { App, IdentityConfig, PolicyMatrix, PolicyMatrixSubject, PolicyTables, ToolName } from '../core/app/types';
 import { delegateProblem } from '../core/app/principals';
-import { identityOf } from '../core/app/lookup';
+import { gateOf, identityOf } from '../core/app/lookup';
 import { identityToolsOf, LEGACY_RULE_ID, LEGACY_UNLISTED_ID, subjectOnlyDecision, UNLISTED_RULE_ID } from '../gate/compiled';
 import { confirmationHash, evaluateCall } from '../gate/policy';
 import { ANONYMOUS } from '../gate/principal';
@@ -48,6 +48,12 @@ export interface GateGridInput {
    * matrix's `callerNumber`: every case is run with it and with none. Absent: no case carries one.
    */
   readonly callerFacts?: Pick<GateFacts, 'callerNumber' | 'callerNumberAs'>;
+  /**
+   * Whether every case with the caller's number is also run with it withheld (GateFacts.callerWithheld):
+   * set for a policy with a callerNumber rule that says `withheld: refuse`, so the matrix shows its
+   * refusal. Absent or false: no such case, and every other grid is as it was.
+   */
+  readonly callerWithheld?: boolean;
 }
 
 /** An app's grid input: its tables, its subject kind, its matrix, and the matrix's lookups or a fresh copy of the app's. */
@@ -58,7 +64,10 @@ export function gateGridInput(app: App): GateGridInput {
   const tools = [...Object.keys(app.tools), id.verifyTool, id.codeTool, id.sendCodeTool].filter((t): t is string => t !== undefined && t !== '');
   const input = { policy: app.policy, subjectKind: id.subjectKind, lookups: matrix.lookups?.() ?? app.systems().lookups, matrix, tools };
   const withIdentity = app.identity ? { ...input, identity: app.identity } : input;
-  return matrix.callerNumber === undefined ? withIdentity : { ...withIdentity, callerFacts: callerGateFacts(app, matrix.callerNumber) };
+  if (matrix.callerNumber === undefined) return withIdentity;
+  // A callerNumber rule that refuses a withheld number: each case is run with the number withheld too.
+  const refusesWithheld = Object.values(gateOf(app).source.actions).some((a) => a.rules.some((r) => r.rule === 'callerNumber' && r.withheld === 'refuse'));
+  return { ...withIdentity, callerFacts: callerGateFacts(app, matrix.callerNumber), ...(refusesWithheld ? { callerWithheld: true } : {}) };
 }
 
 /** A gate to put through the grid: the legacy evaluator, or a candidate to compare with it. */
@@ -119,8 +128,8 @@ export interface GateGridCase {
   readonly fields: 'exact' | 'extra' | 'missing';
   readonly attempts: number;
   readonly confirmation: 'none' | 'match' | 'mismatch';
-  /** Whether the case's facts carry the caller's number (GateGridInput.callerFacts): `kept` or `none`. Absent for a grid with no caller's number. */
-  readonly caller?: 'kept' | 'none';
+  /** Whether the case's facts carry the caller's number (GateGridInput.callerFacts): `kept`, `withheld` (kept, the caller having withheld it: GateGridInput.callerWithheld) or `none`. Absent for a grid with no caller's number. */
+  readonly caller?: 'kept' | 'withheld' | 'none';
   readonly call: ToolCall;
   readonly p: Principal;
   readonly facts: GateFacts;
@@ -290,6 +299,7 @@ export function gateGridCases(input: GateGridInput): GateGridCase[] {
                   if (callerFacts === undefined) out.push({ key, ...base, facts });
                   else {
                     out.push({ key: `${key} caller`, ...base, caller: 'kept', facts: { ...facts, ...callerFacts } });
+                    if (input.callerWithheld === true) out.push({ key: `${key} withheld`, ...base, caller: 'withheld', facts: { ...facts, ...callerFacts, callerWithheld: true } });
                     out.push({ key: `${key} no-caller`, ...base, caller: 'none', facts });
                   }
                 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
-import WebSocket from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import {
   CHAT_PROTOCOL_VERSION as ENGINE_VERSION,
   CHAT_TEXT_MAX as ENGINE_TEXT_MAX,
@@ -221,6 +221,32 @@ describe('the chat client', () => {
     await t.c.send(server.agentLine);
     await waitFor(() => t.of('transfer').length > 0);
     expect(t.of('transfer')[0]).toEqual({ type: 'transfer', reason: 'live-agent', data: { reason: 'live-agent', source: 'web' } });
+  });
+
+  it('hands on the collected slots and the names never confirmed (handoff.data.chat: send), strings only and names it sent', async () => {
+    // A server that speaks the wire alone, sending a transfer as the engine does for an app that sends its slots to a chat.
+    const wss = new WebSocketServer({ port: 0 });
+    await new Promise<void>((r) => wss.once('listening', () => r()));
+    wss.on('connection', (ws) => {
+      ws.on('message', (raw) => {
+        if ((JSON.parse(String(raw)) as { type?: string }).type !== 'start') return;
+        ws.send(JSON.stringify({ type: 'ready', session: 's1', resume: 'r1', locale: 'en-US' }));
+        ws.send(JSON.stringify({ type: 'transfer', reason: 'live-agent', slots: { caller: 'Jordan Avery', note: 'call after five', bad: 7 }, unconfirmed: ['note', 'bad', 'other', 3] }));
+        ws.send(JSON.stringify({ type: 'end' }));
+      });
+    });
+    try {
+      const port = (wss.address() as { port: number }).port;
+      const s = sockets();
+      const events: ChatClientEvent[] = [];
+      const c = createChatClient({ endpoint: `ws://127.0.0.1:${port}/chat`, socket: s.socket, onEvent: (e) => events.push(e), backoffMs: [10] });
+      clients.push(c);
+      await waitFor(() => events.some((e) => e.type === 'transfer')).catch((e: unknown) => { throw new Error(`${String(e)}: ${JSON.stringify(events)}`); });
+      expect(events.find((e) => e.type === 'transfer')).toEqual({ type: 'transfer', reason: 'live-agent', slots: { caller: 'Jordan Avery', note: 'call after five' }, unconfirmed: ['note'] });
+    } finally {
+      for (const ws of wss.clients) ws.terminate();
+      await new Promise<void>((r) => wss.close(() => r()));
+    }
   });
 
   it('when the server is full, says busy, backs off, then stops and says the chat is unavailable', async () => {

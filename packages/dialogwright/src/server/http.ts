@@ -12,7 +12,7 @@ import { type AuditCheck, type DayCounters, type HealthNumbers, type HealthSourc
 import { AUDIO_TYPES, CLIP_FILE } from '../prompts/clips';
 import { redactDeep } from './dashboard/events';
 import { maskCallerValue, maskCopiesOf, recordsOf, type NumberRecords } from '../channel/maskByName';
-import { ATTESTATION_PARAMETER, HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept, WITHHELD_PARAMETER } from '../channel/callData';
+import { ATTESTATION_PARAMETER, HOST_APP_PARAMETER, recordedWebhookFields, webhookParameters, webhookParametersOfKept, WITHHELD_PARAMETER, writableValue } from '../channel/callData';
 import { whenChained, type AuditSink } from '../run/turn';
 import type { S3TraceReader } from '../trace/store';
 import { routeOwns, validateRoutes, type AppRoute } from './appRoutes';
@@ -309,7 +309,8 @@ function hostEcho(id: string | null): Record<string, string> {
 function callerEcho(params: CallbackParams, withheld = false): Record<string, string> {
   return {
     ...(params.privacy === 'withheld' || withheld ? { [WITHHELD_PARAMETER]: 'true' } : {}),
-    ...(params.attestation !== undefined && params.attestation !== '' && params.attestation.length <= 200 ? { [ATTESTATION_PARAMETER]: params.attestation } : {}),
+    // A start document carries a value as it is, or none: a control character (or one too long) leaves it out.
+    ...(params.attestation !== undefined && params.attestation !== '' && params.attestation.length <= 200 && writableValue(params.attestation) ? { [ATTESTATION_PARAMETER]: params.attestation } : {}),
   };
 }
 

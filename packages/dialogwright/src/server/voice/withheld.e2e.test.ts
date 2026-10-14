@@ -229,12 +229,23 @@ describe('a caller who withheld their number on Telnyx', () => {
     expect(running!.store.get(CALL_ID)!.session).toMatchObject({ callerNumber: NUMBER, callerPrivacy: 'withheld' });
     expect(written(join(dir, 'traces'))).not.toContain(DIGITS);
     expect(JSON.stringify([...first.events, ...second.events])).not.toContain(DIGITS);
+    // The server's log, on both servers, writes the caller as the records do: by the last four, never whole.
+    expect(first.lines.some((l) => l.includes(`${CALL_ID} from …0142 (withheld)`))).toBe(true);
+    for (const s of [first, second]) {
+      expect(s.lines.join('\n')).not.toContain(DIGITS);
+      expect(s.lines.join('\n')).not.toContain('Jordan Avery');
+    }
+    // The saved session holds the number whole, as the app's code needs it on a reconnect (guide 14.7).
+    expect(written(join(dir, 'sessions'))).toContain(NUMBER);
     relay.close();
   }, 20_000);
 
-  it('a server refuses to start with records that keep the caller\'s number whole and no console sign-in', async () => {
+  it('a server refuses to start with records that keep the caller\'s number whole and a console with no sign-in', async () => {
     serve({ ...textingApp, records: { callerNumber: 'keep' } });
     await expect(start(folder())).rejects.toThrow(/records keeps the caller's number whole.*CONSOLE_AUTH=token/);
+    // With no console at all it starts: the records are only on disk.
+    const s = await start(folder(), { DASHBOARD: 'off' });
+    expect(s.lines.some((l) => l.includes("records: the caller's number kept whole"))).toBe(true);
   });
 
   it('a call with its number given is as before: kept, looked up, and shown by its last four', async () => {

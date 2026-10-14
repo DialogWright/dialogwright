@@ -689,7 +689,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const httpApps = new Map<string, HttpApp & { readonly app: App; readonly hints: string; readonly startParameters: Readonly<Record<string, string>>; readonly transfer: ServerTransfer | null; readonly numbers: readonly NumberLocale[] }>();
   for (const a of appsRun) {
     // app.yaml's records: a caller's number or name kept whole needs the console behind sign-in, or the server stops here.
-    const recordsLine = forApp(a.id, () => recordsSettingFor(a.app, config.consoleAuth));
+    const recordsLine = forApp(a.id, () => recordsSettingFor(a.app, config));
     if (recordsLine !== null) log(`${tag(a.id)}${recordsLine}`);
     const startParameters = forApp(a.id, () => startParametersFrom(a.app, a.env));
     if (Object.keys(startParameters).length > 0) log(`${tag(a.id)}start parameters: ${Object.keys(startParameters).join(', ')}`);

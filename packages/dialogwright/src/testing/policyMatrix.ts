@@ -278,7 +278,7 @@ export function policyMatrixText(app: App, input: GateGridInput = gateGridInput(
     `#   attempts    0; ${source.maxAttempts} (the maximum)`,
     '#   params      the policy matrix\'s named sets of values for the action',
     // Only for a matrix with the caller's number: every other app's header is as it was.
-    ...(input.callerFacts !== undefined ? ['#   caller      kept (the call came from the matrix\'s caller number); none'] : []),
+    ...(input.callerFacts !== undefined ? [input.callerWithheld === true ? '#   caller      kept (the call came from the matrix\'s caller number); withheld (the same number, the caller having withheld it); none' : '#   caller      kept (the call came from the matrix\'s caller number); none'] : []),
     '# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>',
     '',
     `purposes: ${Object.entries(source.purposes).map(([purpose, level]) => `${purpose} needs level ${level}`).join(', ') || 'none'}`,

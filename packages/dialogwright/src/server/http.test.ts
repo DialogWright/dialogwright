@@ -107,6 +107,16 @@ describe('http routes', () => {
     expect(r.text).toContain('hints="depot, parcel"');
   });
 
+  it('carries the STIR/SHAKEN attestation to the setup, and leaves out one a start document cannot carry (live findings item 26)', async () => {
+    const d = deps();
+    const base = await listen(d);
+    const given = await post(base, '/voice', { CallSid: 'CA1', From: '+15555550142', To: '+2', StirVerstat: 'TN-Validation-Passed-A' });
+    expect(given.text).toContain('<Parameter name="dialogwright_attestation" value="TN-Validation-Passed-A"/>');
+    const control = await post(base, '/voice', { CallSid: 'CA2', From: '+15555550142', To: '+2', StirVerstat: 'TN-Validation\u0007-Passed-A' });
+    expect(control.status).toBe(200);
+    expect(control.text).not.toContain('dialogwright_attestation');
+  });
+
   it('logs a /voice call with the caller number masked to its last four', async () => {
     const lines: string[] = [];
     const base = await listen({ ...deps(), log: (l) => lines.push(l) });

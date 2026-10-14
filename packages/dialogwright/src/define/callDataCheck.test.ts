@@ -182,3 +182,13 @@ describe('validateApp (an app written in code)', () => {
     ]);
   });
 });
+
+describe('call data that reads the caller\'s number, with callerNumber.withheld: ignore (review fix)', () => {
+  it('warns that the key still carries a withheld number, and refuses nothing', async () => {
+    const change = (t: string): string => replace('from: param.queue', 'from: setup.from')(`${t}\ncallerNumber:\n  withheld: ignore\n`);
+    expect(await problemsOf(change)).toEqual([]);
+    const warnings = (await warningsOf(change)).join('\n');
+    expect(warnings).toContain('callerNumber.withheld is ignore, but the call data key "queue" reads the caller\'s number from "setup.from"');
+    expect((await warningsOf(replace('from: param.queue', 'from: setup.from'))).join('\n')).not.toContain('withheld is ignore');
+  });
+});

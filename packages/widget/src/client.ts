@@ -43,9 +43,10 @@ export type ChatClientEvent =
   | { type: 'say'; text: string; lang: string }
   /**
    * `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some;
-   * `slots`: the collected slots, only where the app's handoff.data.chat says send.
+   * `slots`: the collected slots, only where the app's handoff.data.chat says send; `unconfirmed`: those
+   * of them the caller never confirmed, where the app marks them (handoff.data.unconfirmed: mark).
    */
-  | { type: 'transfer'; reason: string; data?: Record<string, string>; slots?: Record<string, string> }
+  | { type: 'transfer'; reason: string; data?: Record<string, string>; slots?: Record<string, string>; unconfirmed?: string[] }
   | { type: 'end' }
   | { type: 'signed_in'; level: number }
   | { type: 'error'; code: ChatErrorCode; message: string }
@@ -268,7 +269,9 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
           // Only string values are handed on: the page's handover reads them as text.
           const data = transferData(m.data);
           const slots = transferData(m.slots);
-          emit({ type: 'transfer', reason: m.reason, ...(data !== undefined ? { data } : {}), ...(slots !== undefined ? { slots } : {}) });
+          // Only names of slots it sends, as strings: the page reads them as which values to check.
+          const unconfirmed = slots !== undefined && Array.isArray(m.unconfirmed) ? m.unconfirmed.filter((s): s is string => typeof s === 'string' && Object.hasOwn(slots, s)) : [];
+          emit({ type: 'transfer', reason: m.reason, ...(data !== undefined ? { data } : {}), ...(slots !== undefined ? { slots } : {}), ...(unconfirmed.length > 0 ? { unconfirmed } : {}) });
           break;
         }
         case 'signed_in':

@@ -7,8 +7,8 @@ import { defaultAppOrNull } from '../core/app/registry';
 import { IDENTITY_UNVERIFIED, IDENTITY_VERIFIED } from '../core/decision';
 import type { TraceRecord } from './types';
 import { transferSources } from '../core/transfer';
-import { callDataSourceOf, OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, redactionOf, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
-import { floorByName, maskBusinessValue, maskCallerValue, recordsOf } from '../channel/maskByName';
+import { callDataSourceOf, OWN_RULE_PARAMETERS, parameterRedactions, recordedCallData, recordedCallDataMap, redactionOf, SETUP_FIELDS, setupRedactions, UNNAMED_PARAMETER } from '../channel/callData';
+import { floorByName, maskBusinessValue, maskCallerValue, maskCopiesOf, recordsOf } from '../channel/maskByName';
 import { callerNumberOf } from '../core/callerNumber';
 
 /**
@@ -590,17 +590,23 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
       return offering !== null && callerNumberOf(v) !== null ? maskValue(app, offering, v, mode) ?? maskCallerValue(v, records) : maskCallerValue(v, records);
     };
     const business = (v: string): string => maskBusinessValue(v, records);
+    const readFields = setupRedactions(app?.callData);
     const provider = isObject(start.provider)
       ? Object.fromEntries(Object.entries(start.provider as Readonly<Record<string, unknown>>).flatMap(([k, v]): [string, string][] => {
         if (typeof v !== 'string') return [];
         if (k === 'param.telnyx_call_from' || (raw !== null && v === raw && !k.startsWith('param.'))) return [[k, caller(v)]];
         if (k === 'param.telnyx_call_to' || (called !== null && v === called && !k.startsWith('param.'))) return [[k, business(v)]];
         if (k.startsWith('param.')) return [[k, v]];
+        // A field the wire passed through that no carrier documents, and no call data key reads: written
+        // `redacted`, as a custom parameter no key reads is (a key that reads it records it by its redact, below).
+        if (!SETUP_FIELDS.includes(k) && !readFields.has(k)) return [[k, UNNAMED_PARAMETER]];
         const floored = floorByName(k, v, records);
         return floored === null ? [] : [[k, floored]];
       }))
       : start.provider;
-    out.event = { ...start, provider, ...(raw !== null ? { callerNumber: caller(raw) } : {}), ...(called !== null ? { calledNumber: business(called) } : {}) };
+    // And, whatever its name, any copy of the caller's number left (maskCopiesOf), as a defence beside the names.
+    const copiesMasked = isObject(provider) ? maskCopiesOf(provider as Record<string, string>, raw ?? undefined, records) : provider;
+    out.event = { ...start, provider: copiesMasked, ...(raw !== null ? { callerNumber: caller(raw) } : {}), ...(called !== null ? { calledNumber: business(called) } : {}) };
   }
   // The custom parameters and the call data of a session start, in the trace file and on the console
   // alike. The call data the app names (SessionStart.callData), each key as its redact says, and the

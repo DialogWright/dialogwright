@@ -8,8 +8,8 @@ import type { AuditEntry } from '../../audit/types';
 import { consoleKbSource, redactHandoffData, redactRecordSlots } from '../../trace/redact';
 import { defaultAppOrNull } from '../../core/app/registry';
 import type { CallDataKey } from '../../core/app/types';
-import { ATTESTATION_PARAMETER, callDataSourceOf, recordedCustomParameters, UNNAMED_PARAMETER, WITHHELD_PARAMETER } from '../../channel/callData';
-import { DEFAULT_RECORDS, droppedByName, floorByName, MASK_KEYS, maskNumber, recordsOf, type NumberRecords } from '../../channel/maskByName';
+import { ATTESTATION_PARAMETER, callDataSourceOf, recordedCallData, recordedCustomParameters, SETUP_FIELDS, setupRedactions, UNNAMED_PARAMETER, WITHHELD_PARAMETER } from '../../channel/callData';
+import { DEFAULT_RECORDS, droppedByName, floorByName, MASK_KEYS, maskCopiesOf, maskNumber, recordsOf, type NumberRecords } from '../../channel/maskByName';
 
 // Where the masking by name lives (beside the call data, which the core's audit floors by it too).
 export { floorByName, frameLogKeepsField, maskNumber } from '../../channel/maskByName';
@@ -137,11 +137,38 @@ type CallDataSpec = Readonly<Record<string, CallDataKey>> | undefined;
  */
 export function redactSetupFrame(frame: unknown, spec: CallDataSpec, records: NumberRecords = DEFAULT_RECORDS): unknown {
   const out = redactDeep(frame, records);
-  const params = typeof frame === 'object' && frame !== null ? (frame as { customParameters?: unknown }).customParameters : undefined;
-  if (typeof out !== 'object' || out === null || typeof params !== 'object' || params === null || Array.isArray(params)) return out;
+  if (typeof out !== 'object' || out === null || Array.isArray(out) || typeof frame !== 'object' || frame === null) return out;
+  const source = frame as Record<string, unknown>;
+  const params = source.customParameters;
   const floor = (name: string, v: string): string | null => floorByName(name, v, records);
-  const customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? floor(name, v) ?? UNNAMED_PARAMETER : ENGINE_RECORDED.has(name) ? v : UNNAMED_PARAMETER), floor);
-  return { ...(out as Record<string, unknown>), customParameters };
+  const written: Record<string, unknown> = { ...(out as Record<string, unknown>) };
+  // A field the wire passed through that no carrier documents (wire.ts passedThrough): written `redacted`,
+  // as a custom parameter no key reads is, or by the redact of the call data key that reads it (`setup.<field>`).
+  const read = setupRedactions(spec);
+  for (const [name, v] of Object.entries(source)) {
+    if (name === 'type' || name === 'customParameters' || SETUP_FIELDS.includes(name) || typeof v !== 'string' || !Object.hasOwn(written, name)) continue;
+    const how = read.get(name);
+    if (how === undefined) written[name] = UNNAMED_PARAMETER;
+    else {
+      const shown = recordedCallData(how, v);
+      const floored = shown === null ? null : shown !== v ? shown : floor(name, shown);
+      if (floored === null) delete written[name];
+      else written[name] = floored;
+    }
+  }
+  if (typeof params === 'object' && params !== null && !Array.isArray(params)) {
+    written.customParameters = recordedCustomParameters(spec, params as Record<string, unknown>, (name, v) => (MASK_KEYS.has(name.toLowerCase()) ? floor(name, v) ?? UNNAMED_PARAMETER : ENGINE_RECORDED.has(name) ? v : UNNAMED_PARAMETER), floor);
+  }
+  // And, whatever its name, any copy of the caller's number left (maskCopiesOf), as on the webhook's lines.
+  const caller = typeof source.from === 'string' && source.from !== '' ? source.from
+    : typeof params === 'object' && params !== null && typeof (params as Record<string, unknown>).telnyx_call_from === 'string' ? (params as Record<string, string>).telnyx_call_from : undefined;
+  const strings = (o: Record<string, unknown>): Record<string, string> => Object.fromEntries(Object.entries(o).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  Object.assign(written, maskCopiesOf(strings(written), caller, records));
+  if (typeof written.customParameters === 'object' && written.customParameters !== null) {
+    const cp = written.customParameters as Record<string, unknown>;
+    written.customParameters = { ...cp, ...maskCopiesOf(strings(cp), caller, records) };
+  }
+  return written;
 }
 
 /** The engine's own custom parameters, written as they came (a flag, an attestation), never a value of the caller's words. */

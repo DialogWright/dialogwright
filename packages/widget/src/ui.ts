@@ -41,7 +41,7 @@ export interface WidgetOptions {
    * app sends some (its app.yaml transfer.send.chat), the data for the handover. Default: the panel says
    * strings.transferred.
    */
-  onTransfer?: (reason: string, data?: Readonly<Record<string, string>>, slots?: Readonly<Record<string, string>>) => void;
+  onTransfer?: (reason: string, data?: Readonly<Record<string, string>>, slots?: Readonly<Record<string, string>>, unconfirmed?: readonly string[]) => void;
   /** Delays between reconnect attempts, in ms (the client's backoffMs). */
   backoffMs?: readonly number[];
   /** Reconnects in a row a dropped chat may try before the widget says it is unavailable (the client's maxReconnects). Default: no limit. */
@@ -235,7 +235,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
       case 'transfer':
         if (options.onTransfer) {
           try {
-            options.onTransfer(e.reason, e.data, e.slots);
+            options.onTransfer(e.reason, e.data, e.slots, e.unconfirmed);
           } catch (err) {
             warn(`DialogWright widget: onTransfer failed: ${String(err)}`);
           }

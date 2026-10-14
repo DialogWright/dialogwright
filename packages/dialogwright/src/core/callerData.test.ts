@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { runScenario, type Scenario, type ScenarioRun } from '../harness-text/runner';
 import { loadCorpus } from '../jev/corpus';
@@ -18,6 +18,12 @@ import { callbackApp } from '../testing/callback/app';
 import { VOICE_RELAY } from '../channel/caps';
 import { handoffDataProblems } from '../handoff/data';
 import { recordsSettingFor } from '../server/config';
+import { replace, textingVariants } from '../testing/texting/variant';
+import { policyMatrixText } from '../testing/policyMatrix';
+import { checkPolicyInvariants } from '../testing/policyInvariants';
+import { parseInbound } from '../channel/relay/wire';
+import { frameToEvent } from '../channel/relay/map';
+import { redactDeep, redactSetupFrame } from '../server/dashboard/events';
 
 /**
  * Live findings item 26: the framework provides the call's data, and the limits on it are the app's.
@@ -118,10 +124,60 @@ describe('the checks the app\'s own choices get', () => {
   });
 
   it('honours records that keep the caller\'s number or name only with the console behind sign-in', () => {
-    expect(recordsSettingFor({}, undefined)).toBeNull();
-    expect(recordsSettingFor({ records: { businessNumbers: 'last4' } }, undefined)).toBe("records: the business's numbers by their last four");
-    expect(() => recordsSettingFor({ records: { callerNumber: 'keep' } }, undefined)).toThrow(/CONSOLE_AUTH=token/);
-    expect(() => recordsSettingFor({ records: { callerName: 'keep' } }, undefined)).toThrow(/callerName: redact/);
-    expect(recordsSettingFor({ records: { callerNumber: 'keep' } }, { mode: 'token' })).toBe("records: the caller's number kept whole");
+    const open = { dashboard: true };
+    expect(recordsSettingFor({}, open)).toBeNull();
+    expect(recordsSettingFor({ records: { businessNumbers: 'last4' } }, open)).toBe("records: the business's numbers by their last four");
+    expect(() => recordsSettingFor({ records: { callerNumber: 'keep' } }, open)).toThrow(/CONSOLE_AUTH=token/);
+    expect(() => recordsSettingFor({ records: { callerName: 'keep' } }, open)).toThrow(/callerName: redact/);
+    expect(recordsSettingFor({ records: { callerNumber: 'keep' } }, { dashboard: true, consoleAuth: { mode: 'token' } })).toBe("records: the caller's number kept whole");
+    // With no console at all, nothing shows the records but the files on disk.
+    expect(recordsSettingFor({ records: { callerNumber: 'keep' } }, { dashboard: false })).toBe("records: the caller's number kept whole");
+  });
+});
+
+describe('a setup\'s fields passed through on the wire, in the records (review fix)', () => {
+  const raw = JSON.stringify({
+    type: 'setup', sessionId: 'VX1', callSid: 'CA1', from: MOBILE, to: '+15555550100', customParameters: {},
+    pAssertedIdentity: 'sip:+15555550142@carrier.example.com', callerDisplay: 'Jordan Avery',
+  });
+
+  it('are delivered whole to the start event, and written redacted in the frame log, the console and the trace', () => {
+    use(textingApp);
+    const frame = parseInbound(raw)!;
+    const event = frameToEvent(frame);
+    // Delivery: the start event (what call data and the app's code read) has them as they came.
+    expect(event).toMatchObject({ provider: { pAssertedIdentity: 'sip:+15555550142@carrier.example.com', callerDisplay: 'Jordan Avery' } });
+    const logged = JSON.stringify(redactSetupFrame(frame, undefined));
+    expect(logged).not.toMatch(/5555550142|Jordan Avery/);
+    expect(redactSetupFrame(frame, undefined)).toMatchObject({ from: '…0142', pAssertedIdentity: 'redacted', callerDisplay: 'redacted' });
+    const record = { slots: {}, decision: { kind: 'ignore' }, actions: [], event: { ...event, callerNumber: MOBILE } } as unknown as TraceRecord;
+    const traced = redactRecordSlots(record, 'length', textingApp);
+    expect(JSON.stringify(traced.event)).not.toMatch(/5555550142|Jordan Avery/);
+    expect(JSON.stringify(redactDeep(redactRecordSlots(record, 'keep', textingApp).event))).not.toMatch(/5555550142|Jordan Avery/);
+  });
+
+  it('a field a call data key reads is written by the key\'s redact, any copy of the caller\'s number masked', () => {
+    const spec = { asserted: { from: 'setup.pAssertedIdentity', redact: 'keep' as const }, display: { from: 'setup.callerDisplay', redact: 'keep' as const } };
+    const written = redactSetupFrame(parseInbound(raw)!, spec) as Record<string, string>;
+    expect(written.callerDisplay).toBe('Jordan Avery');
+    expect(written.pAssertedIdentity).toBe('sip:…0142@carrier.example.com');
+  });
+});
+
+describe('the policy matrix and invariants of a callerNumber rule that refuses a withheld number (review fix)', () => {
+  const variants = textingVariants();
+  afterAll(() => variants.remove());
+
+  it('runs each case with the number withheld too, and shows the refusal', () => {
+    const app = variants.variant({
+      'app.yaml': replace('id: texting', 'id: texting-refuses-withheld'),
+      'policy.yaml': replace('- callerNumber: { field: textTo, else: confirmed }', '- callerNumber: { field: textTo, else: confirmed, withheld: refuse }'),
+    });
+    const text = policyMatrixText(app);
+    expect(text).toContain('withheld (the same number, the caller having withheld it)');
+    expect(text).toContain('caller-number-withheld');
+    expect(checkPolicyInvariants(app).violations).toEqual([]);
+    // The fixture as it is has no withheld cases: its matrix is as it was.
+    expect(policyMatrixText(textingApp)).not.toContain('caller-number-withheld');
   });
 });

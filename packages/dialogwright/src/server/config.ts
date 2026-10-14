@@ -562,16 +562,17 @@ export const DEFAULT_WIDGET_FILE = 'node_modules/@dialogwright/widget/dist/dialo
 export type Env = Record<string, string | undefined>;
 
 /**
- * app.yaml's `records` against the console's sign-in: a setting that writes the caller's number or name
- * whole (`callerNumber: keep`, `callerName: keep`) is honoured only with the console behind sign-in
- * (CONSOLE_AUTH=token), where only its owner sees the calls. Throws, with the fix, otherwise; returns the
- * line the server's log says of a setting that keeps anything whole (null for the defaults).
+ * app.yaml's `records` against the console: a setting that writes the caller's number or name whole
+ * (`callerNumber: keep`, `callerName: keep`) is honoured only where no one sees the calls without
+ * signing in: the console behind sign-in (CONSOLE_AUTH=token), or no console at all (DASHBOARD=off, where
+ * the records are only on disk). Throws, with the fix, otherwise; returns the line the server's log says
+ * of a setting that keeps anything whole (null for the defaults).
  */
-export function recordsSettingFor(app: { readonly records?: RecordsConfig } | undefined, consoleAuth: unknown): string | null {
+export function recordsSettingFor(app: { readonly records?: RecordsConfig } | undefined, console: { readonly dashboard: boolean; readonly consoleAuth?: unknown }): string | null {
   const records = recordsOf(app);
   const kept = [records.callerNumber === 'keep' ? "the caller's number" : null, records.callerName === 'keep' ? "the caller's name" : null].filter((w): w is string => w !== null);
-  if (kept.length > 0 && consoleAuth === undefined) {
-    throw new Error(`app.yaml's records keeps ${kept.join(' and ')} whole, which the server honours only with the console behind sign-in: set CONSOLE_AUTH=token, or write records: { ${records.callerNumber === 'keep' ? 'callerNumber: last4' : ''}${kept.length === 2 ? ', ' : ''}${records.callerName === 'keep' ? 'callerName: redact' : ''} } (the defaults)`);
+  if (kept.length > 0 && console.dashboard && console.consoleAuth === undefined) {
+    throw new Error(`app.yaml's records keeps ${kept.join(' and ')} whole, which the server honours only with the console behind sign-in or off: set CONSOLE_AUTH=token (or DASHBOARD=off), or write records: { ${records.callerNumber === 'keep' ? 'callerNumber: last4' : ''}${kept.length === 2 ? ', ' : ''}${records.callerName === 'keep' ? 'callerName: redact' : ''} } (the defaults)`);
   }
   const lines = [...kept.map((w) => `${w} kept whole`), ...(records.businessNumbers === 'last4' ? ["the business's numbers by their last four"] : [])];
   return lines.length > 0 ? `records: ${lines.join(', ')}` : null;

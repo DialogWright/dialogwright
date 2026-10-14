@@ -310,7 +310,7 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
   // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
-  if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config.consoleAuth));
+  if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config));
   // The app's languages as the carriers listed are sent them: a tag with no region, a recognizer that hears English only.
   if (o.appDir !== undefined) results.push(...languageChecks(o.appDir, config));
 
@@ -398,18 +398,18 @@ const TEMPORARY_ROOTS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp',
  */
 /**
  * app.yaml's records (what the records keep of the numbers): a setting that keeps the caller's number or
- * name whole, with the console behind sign-in (CONSOLE_AUTH=token), as the server says at start; one with
- * the console not behind sign-in fails, as the server refuses to start with it. Nothing for an app that
+ * name whole, with the console behind sign-in (CONSOLE_AUTH=token) or off (DASHBOARD=off), as the server
+ * says at start; one with a console that needs no sign-in fails, as the server refuses to start with it. Nothing for an app that
  * keeps the defaults, or a folder that cannot be read (pnpm check says why).
  */
-export function recordsChecks(appDir: string, consoleAuth: unknown): CheckResult[] {
+export function recordsChecks(appDir: string, console: { readonly dashboard: boolean; readonly consoleAuth?: unknown }): CheckResult[] {
   const loaded = loadAppFolder(appDir).config;
   if (loaded === null || loaded.app.records === undefined) return [];
   try {
-    const line = recordsSettingFor({ records: loaded.app.records }, consoleAuth);
+    const line = recordsSettingFor({ records: loaded.app.records }, console);
     return line === null ? [] : [{ id: 'records', status: 'ok', message: line }];
   } catch (e) {
-    return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token in the settings file, or let app.yaml\'s records keep the defaults' }];
+    return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token (or DASHBOARD=off) in the settings file, or let app.yaml\'s records keep the defaults' }];
   }
 }
 

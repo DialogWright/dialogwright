@@ -461,11 +461,19 @@ function transferWarnings(config: LoadedConfig, report: (file: string, path: Dat
  * Warnings, never refusals: each may be meant.
  */
 function callDataWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const ignoresWithheld = config.app.callerNumber?.withheld === 'ignore';
   for (const [key, def] of Object.entries(config.app.callData ?? {})) {
     const problem = callDataSourceProblem(def.from);
     if (problem?.warning === true) report('app.yaml', ['callData', key, 'from'], problem.message, problem.fix);
+    // The app's own read of the caller's number is never dropped: with withheld: ignore it still carries a withheld one.
+    if (ignoresWithheld && CALLER_NUMBER_SOURCES.includes(def.from)) {
+      report('app.yaml', ['callData', key, 'from'], `callerNumber.withheld is ignore, but the call data key "${key}" reads the caller's number from "${def.from}", which carries a number the caller withheld as it came: to a transfer that sends it, a route or a transfer rule that reads it, and the app's code`, `keep it if the app means to have the number whatever the caller chose; otherwise take the key out, or test callerOf(s)?.withheld in the code that uses it`);
+    }
   }
 }
+
+/** The call data sources that carry the caller's own number, whatever the carrier calls them. */
+const CALLER_NUMBER_SOURCES: readonly string[] = ['setup.from', 'param.telnyx_call_from', 'webhook.From', 'webhook.Caller'];
 
 /**
  * The warnings for app.yaml's handoff.data (handoff/data.ts handoffDataProblems): a secret held by its
