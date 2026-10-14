@@ -1614,7 +1614,7 @@ export interface GeneratedSpan {
   readonly speaks?: 'to-caller';
   /**
    * A to-caller span only: the line's variables (each a `choice` slot, who the message is for) whose
-   * value it may say in place of a pronoun of the message; given to the model and the drift check, and
+   * value it may use (to name whom the message is for); given to the model and the drift check, and
    * the only names its checks let it say beside the content's. Never the caller's own name.
    */
   readonly names?: readonly string[];

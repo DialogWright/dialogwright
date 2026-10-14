@@ -354,7 +354,7 @@ function renderSpanDriftQuestionToCaller(): QuestionMap {
  * names it lists), and the content apart, as quoted. Nothing else of the call; but, for a span that
  * speaks to the caller, that it does (`span.speaks`), and the names it lists (`frame`: who the message
  * is for, each under its variable, as the line says it; never the caller's name nor a value the records
- * hide), so the judge can tell whether a name it put for a pronoun is the one meant.
+ * hide), so the judge can tell whether a name the span says is the one the message means.
  */
 export function renderSpanDriftState(act: SpanAct, said: string): { span: { goal: string; said: string; sentence: string; speaks?: 'to-caller' }; quoted: QuotedWords[]; frame?: SpeechItemOut[] } {
   const quoted = act.content.map((c) => ({ name: c.name, words: c.value }));
