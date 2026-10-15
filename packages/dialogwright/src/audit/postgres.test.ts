@@ -104,7 +104,8 @@ describe('the audit in Postgres', () => {
     expect(both.filter((x) => x.startsWith('day 2026-10-11 (b-2222): BROKEN at anchor 3'))).toHaveLength(1);
     // The roster itself cut: its chain breaks.
     expect(await run('DELETE FROM dw_audit_roster WHERE seq = 1')).toContain('roster 2026-10-11: BROKEN at entry 2 (entry 1 is missing)');
-  });
+    // Many cuts, each on a fresh database: about a second here, past the 5 s default on a CI runner busy with the whole suite.
+  }, 30_000);
 
   it('a server enters its chain in the roster when it opens it, its head every ten minutes as it writes, and its head as it stops', async () => {
     let t = Date.UTC(2026, 9, 11, 12);
