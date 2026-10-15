@@ -123,6 +123,9 @@ section p { max-width: 46rem; }
   }
   .steps > li h3 { margin: 0 0 1rem; }
 }
+/* A numbered heading wraps beside its number, not under it. */
+.steps h3, .step { display: flex; align-items: flex-start; gap: 0.45rem; }
+.steps h3 .num, .step .num { flex: none; margin-right: 0; margin-top: -0.1em; }
 .two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
 .cards > * {
   background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent);
