@@ -825,7 +825,7 @@ describe('pnpm diagnose: generated wording', () => {
   it('who words the lines, the key by its variable only; every line fixed with RENDER_PROVIDER unset; a setting the server would refuse', () => {
     expect(wordingChecks(MESSAGE, {})[0]).toMatchObject({ id: 'wording', status: 'warn', message: '9 generated lines, but RENDER_PROVIDER is unset: every line is said fixed' });
     const ok = wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_SHARE: '50' })[0]!;
-    expect(ok).toMatchObject({ status: 'ok', message: '9 generated lines, worded by claude-haiku-5-5 from anthropic (named by the environment; key in ANTHROPIC_API_KEY; thinking disabled), 50% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms' });
+    expect(ok).toMatchObject({ status: 'ok', message: '9 generated lines, worded by claude-haiku-5-5 from anthropic (named by the environment; key in ANTHROPIC_API_KEY; thinking disabled), 50% of calls, within 900 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms' });
     expect(JSON.stringify(ok)).not.toContain('sk-test-not-real');
     // How the model thinks: its own least (Sonnet 5.5's between-tools), or the settings', each checked.
     expect(wordingChecks(MESSAGE, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_MODEL: 'claude-sonnet-5-5' })[0]!.message).toContain('(named by the environment; key in ANTHROPIC_API_KEY; thinking between-tools)');
@@ -840,7 +840,7 @@ describe('pnpm diagnose: generated wording', () => {
       writeFileSync(join(dir, 'style.yaml'), `${readFileSync(join(MESSAGE, 'style.yaml'), 'utf8').trimEnd()}\nmodel:\n  provider: openrouter\n  id: google/gemini-3.1-flash-lite-preview\n`);
       expect(wordingChecks(dir, {})[0]).toEqual({ id: 'wording', status: 'warn', message: "9 generated lines, worded by style.yaml's model, openrouter google/gemini-3.1-flash-lite-preview, but OPENROUTER_API_KEY is unset: every line is said fixed", fix: 'set OPENROUTER_API_KEY in the settings file to have them generated' });
       const ok = wordingChecks(dir, { OPENROUTER_API_KEY: 'or-test-not-real' })[0]!;
-      expect(ok).toMatchObject({ status: 'ok', message: "9 generated lines, worded by google/gemini-3.1-flash-lite-preview from openrouter (named in style.yaml; key in OPENROUTER_API_KEY), 100% of calls, within 700 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms" });
+      expect(ok).toMatchObject({ status: 'ok', message: "9 generated lines, worded by google/gemini-3.1-flash-lite-preview from openrouter (named in style.yaml; key in OPENROUTER_API_KEY), 100% of calls, within 900 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms" });
       expect(JSON.stringify(ok)).not.toContain('or-test-not-real');
       // The environment chose the provider and its key is missing: the server will not start, as before.
       expect(wordingChecks(dir, { RENDER_PROVIDER: 'openrouter' })[0]).toMatchObject({ status: 'fail', message: '9 generated lines: missing required environment variable OPENROUTER_API_KEY (RENDER_PROVIDER=openrouter): the server will not start' });

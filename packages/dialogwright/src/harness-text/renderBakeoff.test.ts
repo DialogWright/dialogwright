@@ -143,7 +143,7 @@ describe('render:bakeoff --replay', () => {
     expect(await bakeoffCommand([MESSAGE, '--replay', '--json', '--models', 'anthropic:claude-haiku-5-5'], r.io), r.all()).toBe(0);
     expect(r.out).toHaveLength(1);
     const report = JSON.parse(r.out[0]!) as BakeoffReport;
-    expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 700, chat: 1500 } });
+    expect(report).toMatchObject({ app: 'message', decisionModel: 'jev-1.13.0', replay: true, budgetMs: { voice: 900, chat: 1500 } });
     // The committed recording (see above; the maintainer recorded the fixture again after live findings
     // item 28, 2026-10-14, so every turn is answered, the text slot's `changed` question included).
     expect(report.models[0]).toMatchObject({ status: 'ran', tried: 41, generated: 30, fellBack: { drift: 11 }, untried: 7, wording: { measured: 0, p50: null }, decisionMisses: { turns: 0, checks: 0 } });

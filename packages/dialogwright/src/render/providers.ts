@@ -13,10 +13,13 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_T
  *   own where its provider is in force, else a current Claude Haiku (`claude-haiku-5-5` on Anthropic, `anthropic/claude-haiku-5.5` on OpenRouter).
  * - the key: OPENROUTER_API_KEY or ANTHROPIC_API_KEY, the provider's own variable.
  * - RENDER_SHARE: the share of calls served generated, 0 to 100; default 100.
- * - RENDER_TIMEOUT_MS: how long a line's wording may take; default 700 on a call and 1500 in a chat
- *   (one value given sets both).
- * - RENDER_CHECK_TIMEOUT_MS: how long the decision model's checks of a line may take together (the
- *   collected content screened again, the drift check); default 500 on a call and 1000 in a chat.
+ * - RENDER_TIMEOUT_VOICE_MS and RENDER_TIMEOUT_CHAT_MS: how long a line's wording may take on a call and in
+ *   a chat; default 900 and 1500 (the maintainer's decision, 2026-10-14: 900 on a call, where it was 700, and
+ *   each channel set on its own, so changing one never changes the other). RENDER_TIMEOUT_MS sets both at
+ *   once (as before), and a channel's own setting wins over it.
+ * - RENDER_CHECK_TIMEOUT_VOICE_MS and RENDER_CHECK_TIMEOUT_CHAT_MS: how long the decision model's checks of a
+ *   line may take together (the collected content screened again, the drift check); default 500 and 1000.
+ *   RENDER_CHECK_TIMEOUT_MS sets both at once, and a channel's own setting wins over it.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
  *   million tokens, for the cost in the trace and Insights; default the default model's.
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
@@ -294,14 +297,25 @@ function price(env: Env, name: string, fallback: number): number {
   return n;
 }
 
-/** RENDER_SHARE, RENDER_TIMEOUT_MS and the price, with their defaults. */
+/**
+ * A budget per channel: the channel's own setting (`<base>_VOICE_MS`, `<base>_CHAT_MS`), else the setting for
+ * both (`<base>_MS`), else the channel's default. Setting one channel never changes the other.
+ */
+function perChannel(env: Env, base: string, defaults: { readonly voice: number; readonly chat: number }): { voice: number; chat: number } {
+  const both = value(env, `${base}_MS`) === null ? null : bounded(env, `${base}_MS`, 50, 30_000, 0);
+  const one = (channel: 'voice' | 'chat'): number => {
+    const name = `${base}_${channel.toUpperCase()}_MS`;
+    return value(env, name) === null ? (both ?? defaults[channel]) : bounded(env, name, 50, 30_000, 0);
+  };
+  return { voice: one('voice'), chat: one('chat') };
+}
+
+/** RENDER_SHARE, the wording's and the checks' budgets per channel, and the price, with their defaults. */
 export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
-  const timeout = value(env, 'RENDER_TIMEOUT_MS') === null ? null : bounded(env, 'RENDER_TIMEOUT_MS', 50, 30_000, 0);
-  const checks = value(env, 'RENDER_CHECK_TIMEOUT_MS') === null ? null : bounded(env, 'RENDER_CHECK_TIMEOUT_MS', 50, 30_000, 0);
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
-    timeoutMs: timeout === null ? { ...DEFAULT_RENDER_TIMEOUT_MS } : { voice: timeout, chat: timeout },
-    checkTimeoutMs: checks === null ? { ...DEFAULT_RENDER_CHECK_TIMEOUT_MS } : { voice: checks, chat: checks },
+    timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
+    checkTimeoutMs: perChannel(env, 'RENDER_CHECK_TIMEOUT', DEFAULT_RENDER_CHECK_TIMEOUT_MS),
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', DEFAULT_RENDER_PRICE.input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', DEFAULT_RENDER_PRICE.output) },
   };
 }

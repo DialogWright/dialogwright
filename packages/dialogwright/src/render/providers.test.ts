@@ -96,8 +96,8 @@ describe('the model an app names (style.yaml\'s model, live findings item 27)', 
 });
 
 describe('renderSettings', () => {
-  it('defaults: every call generated, 700 ms on a call and 1500 in a chat, the default model\'s price', () => {
-    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 700, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, price: { input: 0.1, output: 0.5 } });
+  it('defaults: every call generated, 900 ms on a call and 1500 in a chat, the default model\'s price', () => {
+    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, price: { input: 0.1, output: 0.5 } });
   });
 
   it('RENDER_SHARE, RENDER_TIMEOUT_MS (both channels) and the price, each checked', () => {
@@ -105,6 +105,15 @@ describe('renderSettings', () => {
     expect(() => renderSettings({ RENDER_SHARE: '150' })).toThrow('RENDER_SHARE must be a whole number from 0 to 100, got "150"');
     expect(() => renderSettings({ RENDER_TIMEOUT_MS: 'fast' })).toThrow('RENDER_TIMEOUT_MS');
     expect(() => renderSettings({ RENDER_PRICE_INPUT_PER_MTOK: '-1' })).toThrow('RENDER_PRICE_INPUT_PER_MTOK');
+  });
+
+  it('each channel set on its own: changing one never changes the other, and a channel\'s own setting wins over the one for both (the maintainer, 2026-10-14)', () => {
+    expect(renderSettings({ RENDER_TIMEOUT_VOICE_MS: '1200' }).timeoutMs).toEqual({ voice: 1200, chat: 1500 });
+    expect(renderSettings({ RENDER_TIMEOUT_CHAT_MS: '2000' }).timeoutMs).toEqual({ voice: 900, chat: 2000 });
+    expect(renderSettings({ RENDER_TIMEOUT_MS: '15000', RENDER_TIMEOUT_VOICE_MS: '900' }).timeoutMs).toEqual({ voice: 900, chat: 15000 });
+    expect(renderSettings({ RENDER_CHECK_TIMEOUT_VOICE_MS: '700' }).checkTimeoutMs).toEqual({ voice: 700, chat: 1000 });
+    expect(renderSettings({ RENDER_CHECK_TIMEOUT_MS: '300', RENDER_CHECK_TIMEOUT_CHAT_MS: '800' }).checkTimeoutMs).toEqual({ voice: 300, chat: 800 });
+    expect(() => renderSettings({ RENDER_TIMEOUT_VOICE_MS: '10' })).toThrow('RENDER_TIMEOUT_VOICE_MS must be a whole number from 50 to 30000, got "10"');
   });
 });
 

@@ -296,7 +296,7 @@ export interface Renderer {
 }
 
 /** The default budget of a line's wording, ms, on each channel. */
-export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 700, chat: 1500 } as const;
+export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 900, chat: 1500 } as const;
 
 /** The default budget of a line's checks by the decision model, ms, on each channel. */
 export const DEFAULT_RENDER_CHECK_TIMEOUT_MS = { voice: 500, chat: 1000 } as const;
