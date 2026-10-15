@@ -114,7 +114,15 @@ section p { max-width: 46rem; }
 
 /* Cards */
 .cards { display: grid; gap: 1.25rem; padding: 0; margin: 0 0 2rem; list-style: none; }
-.steps { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.steps { grid-template-columns: 1fr; }
+/* The three parts happen in order: from a laptop's width each is a row, its title beside its text. */
+@media (min-width: 720px) {
+  .steps > li {
+    display: grid; grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); column-gap: 2rem; align-items: start;
+    border-top: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 1.25rem 1.5rem 0.25rem;
+  }
+  .steps > li h3 { margin: 0 0 1rem; }
+}
 .two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
 .cards > * {
   background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent);
