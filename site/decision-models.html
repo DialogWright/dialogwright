@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright: decision models</title>
+  <meta name="description" content="What a decision model is, how DialogWright asks one typed questions each turn and acts on the answers with thresholds, Jev as the default, and how to measure another model on your own app's cases.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/decision-models.html">
+  <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="brand/favicon-180.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/decision-models.html">
+  <meta property="og:title" content="Decision models in DialogWright">
+  <meta property="og:description" content="A decision model answers typed questions with probabilities and writes no text. How DialogWright asks one, Jev as the default, and measuring another.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="./" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-mark-dark.svg">
+          <img src="brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="./#why">Why</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="decision-models.html" aria-current="page">Decision models</a></li>
+          <li><a href="./#guides">Guides</a></li>
+          <li><a href="./#examples">Examples</a></li>
+          <li><a href="./#start">Quick start</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="./">DialogWright</a> / Decision models</p>
+      <h1>Decision models</h1>
+      <p class="lede">
+        DialogWright understands callers through a decision model: a model that answers typed questions with
+        probabilities and writes no text. Everything else, what happens next and what is said, is code and the
+        lines you approved.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#what">What a decision model is</a></li>
+          <li><a href="#asking">How DialogWright asks one</a></li>
+          <li><a href="#thresholds">Thresholds</a></li>
+          <li><a href="#gaps">Known gaps</a></li>
+          <li><a href="#jev">Jev, the default</a></li>
+          <li><a href="#measured">Speed and cost, measured</a></li>
+          <li><a href="#judge">Measuring a model on your own cases</a></li>
+          <li><a href="#settings">The settings</a></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="wrap guide">
+      <section id="what" aria-labelledby="what-title">
+        <h2 id="what-title">What a decision model is</h2>
+        <p>
+          A generative LLM writes text. To act on it, an agent prompts it, reads what it wrote and parses a choice
+          out of the words, and the words differ from one call to the next. A decision model is asked a question
+          with its answers defined in advance, and returns the answer as a type, with a probability:
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr><th scope="col">Kind</th><th scope="col">Answers</th><th scope="col">In the shape it comes back</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Noul</th>
+                <td data-label="Answers">Yes or no: the probability that a condition holds</td>
+                <td data-label="In the shape it comes back"><code>{"type":"noul","noul":0.97}</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Choice</th>
+                <td data-label="Answers">Which one of a defined set, with a probability for each option</td>
+                <td data-label="In the shape it comes back"><code>{"type":"choice","choice":"sam","probabilities":{"sam":1,"riley":0}}</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Score</th>
+                <td data-label="Answers">How much, along ordered levels the question describes</td>
+                <td data-label="In the shape it comes back"><code>{"type":"score","score":0,"probabilities":{"low":1,"normal":0,"high":0}}</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The answers above are an illustration, abridged from one turn of the front desk's recording. A noul near 0.5
+          is a coin toss, yes and no about equally likely, not a medium amount of anything. And a typed answer
+          guarantees the shape, not the truth: how well a model reads an app's callers is measured on that app's own
+          recorded calls.
+        </p>
+      </section>
+
+      <section id="asking" aria-labelledby="asking-title">
+        <h2 id="asking-title">How DialogWright asks one</h2>
+        <p>
+          Each turn, the engine sends the caller's words, the state of the call and every question the moment needs,
+          in one request. The model answers them together, and none sees another's answer. The questions come from
+          three places:
+        </p>
+        <ul>
+          <li><strong>The intents.</strong> One choice over everything a caller can ask for, each option described by its <code>criteria</code> in <code>intents.yaml</code>.</li>
+          <li><strong>The slots.</strong> Each slot type asks its own: whether a value was given, which part of the words it is, whether it is complete, which option was meant.</li>
+          <li><strong>The engine's own checks.</strong> Whether the caller is talking to the line, whether the words could be made out, whether they finished, whether they want a person, how frustrated or urgent they are, whether they switched language, and a screen for an attempt to steer the agent.</li>
+        </ul>
+        <p>
+          On a turn of the front desk, that is about 20 questions. A second request is made only in a narrow case: a
+          question for the knowledge base asked in the middle of a task, whose topic is asked once the turn has been
+          read as one. A generated line's checks are asked after it is worded. Each request has a budget,
+          <code>JEV_TIMEOUT_MS</code> (1500 ms by default), with one retry inside it; a turn the model never answers
+          gets the slow-turn line, and is handed to a person if it fails again.
+        </p>
+        <figure class="wrapped">
+          <figcaption>An intent's criteria, sent to the model as written: <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/intents.yaml">apps/secretary/intents.yaml</a> (excerpt)</figcaption>
+<pre data-from="apps/secretary/intents.yaml"><code>  urgent:
+    criteria: Says their call or their matter is urgent, an emergency, or cannot wait for a call back, and wants to reach someone at the studio now. Said at any point in the call it is urgent's, even in the same breath as a correction or another detail of a message, as in wait, it's for Sam, and it's urgent
+    label: reach the studio's main line
+    kind: form
+    priority: { correctsForm: true, threshold: URGENT_SURE }</code></pre>
+        </figure>
+      </section>
+
+      <section id="thresholds" aria-labelledby="thresholds-title">
+        <h2 id="thresholds-title">Thresholds</h2>
+        <p>
+          Deterministic code reads the answers against named thresholds: how sure the model must be to take an
+          intent, to fill a slot, to treat a turn as addressed to the line. The engine has defaults, and an app sets
+          its own where its callers need it. An intent the model is unsure of is confirmed with the caller by default.
+          The front desk lowers the bar for an urgent call, because missing an urgent caller costs more than putting
+          through one who did not need it:
+        </p>
+        <figure>
+          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/app.yaml">apps/secretary/app.yaml</a> (excerpt)</figcaption>
+<pre data-from="apps/secretary/app.yaml"><code>thresholds:
+  URGENT_SURE: 0.4</code></pre>
+        </figure>
+        <p>
+          A threshold is moved by measurement across an app's recording, never on one call: the regression takes
+          <code>--threshold NAME=value</code>, and a sweep compares values across the recorded calls.
+        </p>
+      </section>
+
+      <section id="gaps" aria-labelledby="gaps-title">
+        <h2 id="gaps-title">Known gaps</h2>
+        <p>
+          A known gap is a line where the real model, in a recorded run, reads a borderline case differently from what
+          the caller meant. Almost all are short: a single word, a fragment, a bare name. Each is tagged in its app's
+          corpus with the reason and the outcome the model is known to produce, and none of the current ones leads to a
+          wrong action: each ends in a re-ask, a reasonable different question, or a person. The usual fix is the
+          question's words or a rule of context in code, not a different model.
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/known-gaps.md">The known gaps</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md#174-a-score-near-05-is-a-coin-toss-suspect-the-question-first">A score near 0.5: suspect the question first</a>
+        </p>
+      </section>
+
+      <section id="jev" aria-labelledby="jev-title">
+        <h2 id="jev-title">Jev, the default</h2>
+        <p>
+          The default decision model is Jev, TypeSafe's System One model (<code>jev-1.13</code>). It is reached
+          through TypeSafe, the default, or through OpenRouter or the Vercel AI Gateway, which serve the same model.
+          The engine's thresholds were measured on Jev, and every example app is recorded against it.
+        </p>
+        <p>
+          The perceiver is pluggable. Any model that speaks the same System One API (a state, typed questions, typed
+          answers) can take Jev's place. Its probabilities are not calibrated like Jev's, so a run on one says so at
+          start, its answers are recorded into a cassette of their own, and the app's thresholds are checked against
+          that recording before they are trusted.
+        </p>
+      </section>
+
+      <section id="measured" aria-labelledby="measured-title">
+        <h2 id="measured-title">Speed and cost, measured</h2>
+        <p>
+          A decision model writes no text, only a few probabilities, so a turn pays almost only for reading it. From
+          the maintainer's recordings on 2026-10-14:
+        </p>
+        <ul>
+          <li><strong>Speed.</strong> A turn's batch of about 20 questions was answered in about 90 to 150 ms at the median (p50), and about 150 to 250 ms at p95.</li>
+          <li><strong>Cost.</strong> A recorded run of 309 requests to Jev, the front desk's recording, cost about $0.046: about $0.00015 a turn.</li>
+          <li>Microsoft-Decision-1's public price has no charge for output.</li>
+        </ul>
+      </section>
+
+      <section id="judge" aria-labelledby="judge-title">
+        <h2 id="judge-title">Measuring a model on your own cases</h2>
+        <p>
+          Which model reads an app's callers best is a measurement on the app's own words. Every adapter records into
+          the same cassette format, so an app's labelled utterances and scripted calls are a benchmark: record them
+          with another model (<code>regress --client record</code>) and compare its run with Jev's.
+        </p>
+        <p>
+          The decision model also judges generated wording: asked whether a generated summary, heard in its sentence,
+          is faithful to what the caller said. <code>pnpm render:judge-eval</code> measures a judge on labelled cases,
+          each a caller's message and a summary marked faithful or unfaithful by a person. On 2026-10-14 the
+          maintainer compared two decision models on the same 180 cases, both through OpenRouter:
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr>
+                <th scope="col">Judge</th>
+                <th scope="col">Unfaithful summaries caught</th>
+                <th scope="col">Faithful summaries refused</th>
+                <th scope="col">p50</th>
+                <th scope="col">p95</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Jev (<code>typesafe/jev-1.13</code>)</th>
+                <td data-label="Unfaithful summaries caught">56 of 64</td>
+                <td data-label="Faithful summaries refused">15 of 116</td>
+                <td data-label="p50">198 ms</td>
+                <td data-label="p95">299 ms</td>
+              </tr>
+              <tr>
+                <th scope="row">Microsoft-Decision-1 (<code>microsoft/microsoft-decision-1</code>)</th>
+                <td data-label="Unfaithful summaries caught">48 of 64</td>
+                <td data-label="Faithful summaries refused">3 of 116</td>
+                <td data-label="p50">262 ms</td>
+                <td data-label="p95">370 ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Both fit the 500 ms a call gives the checks. Microsoft-Decision-1 refused far fewer faithful summaries, so
+          callers would hear a generated summary more often; Jev caught more unfaithful ones, and every everyday slip.
+          Neither follows who "you" is in a summary spoken to the caller. Jev stayed the judge, as the stricter and the
+          faster. A refused summary is never lost: the caller hears their exact words instead.
+        </p>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/16-generated-wording.md#1613-measuring-the-judge">Measuring the judge (guide 16.13)</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md#1711-choosing-models-by-measurement">Choosing models by measurement (guide 17.11)</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-10-13-live-findings.md#item-27-measured-the-maintainers-recordings-2026-10-14">The measurement</a>
+        </p>
+      </section>
+
+      <section id="settings" aria-labelledby="settings-title">
+        <h2 id="settings-title">The settings</h2>
+        <p>Where the decision model is reached is a setting in the app's <code>.env</code>, never in the app's files:</p>
+        <div class="table-wrap">
+          <table class="stack settings">
+            <thead>
+              <tr><th scope="col">Setting</th><th scope="col">What it does</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>JEV_PROVIDER</code></th>
+                <td data-label="What it does"><code>typesafe</code> (the default, with <code>TYPESAFE_API_KEY</code>), <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>), <code>vercel</code> (<code>AI_GATEWAY_API_KEY</code>) or <code>custom</code>, a compatible endpoint</td>
+              </tr>
+              <tr>
+                <th scope="row"><code>JEV_MODEL</code></th>
+                <td data-label="What it does">The model to ask, as <code>microsoft/microsoft-decision-1</code> on OpenRouter; required for <code>custom</code></td>
+              </tr>
+              <tr>
+                <th scope="row"><code>JEV_BASE_URL</code></th>
+                <td data-label="What it does">The endpoint's base, the part before <code>/v1/systemone</code>; required for <code>custom</code>, with <code>JEV_API_KEY</code> if it needs one</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/02-the-files-one-by-one.md#fixtures-optional">Keys and cassettes (guide 2)</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/14-running-it.md#1412-the-options">Every option (guide 14.12)</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#2-the-roles">The roles in the design</a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="decision-models.html">Decision models</a></li>
+            <li><a href="guides/home-server.html">A machine you own</a></li>
+            <li><a href="guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

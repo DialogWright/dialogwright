@@ -102,7 +102,7 @@ The same app answers on the phone through Twilio, Telnyx or both (`VOICE_PROVIDE
 
 ### The website
 
-`site/`: the website at [dialogwright.com](https://dialogwright.com), static pages published to GitHub Pages by `.github/workflows/pages.yml`: the landing page and two guides, [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html) (try it with no accounts, then a phone line with a carrier, a model key and a tunnel, kept running by launchd or systemd) and [scaling out](https://dialogwright.com/guides/scaling.html) (what one machine already has, and the design for many servers). A test checks every page's links against the repository.
+`site/`: the website at [dialogwright.com](https://dialogwright.com), static pages published to GitHub Pages by `.github/workflows/pages.yml`: the landing page (how DialogWright differs from IVRs and LLM agents, and why decision models are its heart), [how it works](https://dialogwright.com/how-it-works.html) (the three parts, the app folder, `pnpm check`, testing, assistants, compliance, scale, generated wording, tuning with live calls), [decision models](https://dialogwright.com/decision-models.html) (what one is, how DialogWright asks one, Jev, the measurements and the settings), and two guides, [running your own IVR on a machine you own](https://dialogwright.com/guides/home-server.html) (try it with no accounts, then a phone line with a carrier, a model key and a tunnel, kept running by launchd or systemd) and [scaling out](https://dialogwright.com/guides/scaling.html) (what one machine already has, and the design for many servers). A test checks every page's links against the repository.
 
 ### Design, history and contributing
 

@@ -255,3 +255,96 @@ pre[data-copy] code { overflow-wrap: anywhere; }
     content: attr(data-label); display: block; font-size: 0.8rem; font-weight: 700; color: var(--muted); margin-bottom: 0.15rem;
   }
 }
+
+/* The current page in the header. */
+.top nav a[aria-current="page"] { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 3px; text-underline-offset: 0.45em; }
+
+/* The front page: fewer sections, more air. */
+main.front > section { padding: 80px 0; }
+main.front > section.hero { padding: 80px 0 72px; }
+.front .hero h1 { max-width: 24ch; }
+.front .intro { font-size: 1.1rem; }
+
+/* How it is different: a comparison, DialogWright's column marked. */
+.compare-wrap { margin: 0 0 1.5rem; }
+.compare { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; font-size: 0.95rem; line-height: 1.4; }
+.compare th, .compare td { text-align: left; vertical-align: top; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--line); }
+.compare thead td { width: 16%; }
+.compare thead th { width: 26%; color: var(--heading); font-size: 0.98rem; border-bottom: 2px solid var(--line); }
+.compare thead th.ours { width: 32%; }
+.compare tbody th { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
+.compare td { color: var(--muted); font-size: 0.92rem; }
+.compare .ours { background: var(--surface); color: var(--text); font-weight: 600; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+.compare thead .ours { border-top: 4px solid var(--accent); border-bottom-color: var(--accent); border-radius: 10px 10px 0 0; }
+.compare tbody tr:last-child th, .compare tbody tr:last-child td { border-bottom: 0; }
+.compare tbody tr:last-child td.ours { border-bottom: 1px solid var(--line); border-radius: 0 0 10px 10px; }
+.verdict { font-size: clamp(1.15rem, 1rem + 0.6vw, 1.4rem); font-weight: 600; color: var(--heading); max-width: 38rem; margin: 0; line-height: 1.4; }
+/* Below 720 px each row is a card: its label, then the three answers, DialogWright's marked. */
+@media (max-width: 720px) {
+  .compare thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .compare, .compare tbody, .compare tr, .compare th, .compare td { display: block; width: auto; }
+  .compare tr { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 0.75rem; }
+  .compare tbody th { padding: 0 0 0.4rem; border: 0; color: var(--heading); font-size: 1rem; }
+  .compare td { padding: 0.3rem 0 0.3rem 0.75rem; border: 0; border-left: 3px solid var(--line); margin-top: 0.3rem; }
+  .compare td.ours, .compare tbody tr:last-child td.ours { padding: 0.45rem 0.75rem; border: 0; border-left: 3px solid var(--accent); border-radius: 0; background: var(--bg-alt); }
+  .compare td[data-label]::before { content: attr(data-label); display: block; font-size: 0.78rem; font-weight: 700; color: var(--muted); }
+}
+
+/* Decision models: one turn, from the question to what code does. */
+.turn { display: grid; gap: 1.5rem 2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); margin: 0 0 3rem; }
+.turn figure { margin: 0; min-width: 0; }
+.turn figure pre + pre { margin-top: 0.75rem; }
+.turn pre { white-space: pre-wrap; }
+.step { display: block; font-size: 1rem; font-weight: 700; color: var(--heading); margin-bottom: 0.15rem; }
+.said blockquote { margin: 0; padding: 0.4rem 0 0.4rem 1.25rem; border-left: 4px solid var(--accent); }
+.said blockquote p { margin: 0; font-size: clamp(1.3rem, 1.05rem + 1vw, 1.75rem); line-height: 1.35; color: var(--text); }
+pre.answers { background: var(--term-bg); color: var(--term-text); border-color: var(--term-bg); white-space: pre; }
+pre.answers .q { color: var(--term-prompt); }
+.after { margin: 0.75rem 0 0; font-size: 0.95rem; }
+.wrapped pre { white-space: pre-wrap; }
+
+.model-facts { display: grid; gap: 1.5rem 3rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); align-items: start; padding-top: 2rem; border-top: 1px solid var(--line); }
+.model-facts p { margin: 0 0 1rem; }
+.model-facts .source { grid-column: 1 / -1; margin: 0; }
+.measures { margin: 0; display: grid; gap: 1rem; }
+.measures div { padding-left: 1rem; border-left: 3px solid var(--accent); }
+.measures dt { color: var(--muted); font-size: 0.9rem; }
+.measures dd { margin: 0; font-size: 1.15rem; font-weight: 600; color: var(--heading); line-height: 1.35; }
+
+/* Why you would use it */
+.reasons { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.1rem 2.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+.reasons li { padding-left: 1rem; border-left: 3px solid var(--accent); color: var(--muted); }
+.reasons a { font-weight: 700; }
+
+/* The Claude Code skill: a paragraph in, an app out. */
+.skill { display: grid; gap: 2rem 3.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; }
+@media (min-width: 900px) { .skill { grid-template-columns: 3fr 2fr; } }
+.skill h2 { max-width: 24ch; }
+.skill-steps { list-style: none; counter-reset: step; margin: 0.5rem 0 0; padding: 0; }
+.skill-steps li {
+  counter-increment: step; position: relative; padding: 0 0 1.1rem 2.75rem; font-weight: 600; color: var(--heading);
+}
+.skill-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: -0.1rem; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem;
+  background: var(--surface); border: 2px solid var(--accent); color: var(--heading);
+}
+.skill-steps li::after { content: ""; position: absolute; left: 0.9rem; top: 1.85rem; bottom: 0.1rem; width: 2px; background: var(--line); }
+.skill-steps li:last-child { padding-bottom: 0; }
+.skill-steps li:last-child::after { display: none; }
+.skill-steps li:last-child::before { background: var(--button-bg); border-color: var(--button-bg); color: var(--button-text); }
+
+.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+
+.more { display: grid; gap: 1.5rem 3rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.more h3 { font-size: 1rem; color: var(--muted); }
+.more ul { list-style: none; padding: 0; margin: 0; }
+.more li { margin-bottom: 0.5rem; font-size: 1.05rem; }
+
+/* Cards and callouts inside a page of its own. */
+.guide .cards h3, .guide .callout h3 { margin-top: 0; }
+.guide .cards > li { margin-bottom: 0; }
+.guide .facts { margin-bottom: 1.5rem; }
+.guide figure { max-width: 100%; }
+pre.answers { font-size: 0.8rem; }
+.guide table.settings th[scope="row"] code { overflow-wrap: normal; white-space: nowrap; }

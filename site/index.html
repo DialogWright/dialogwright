@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>DialogWright: voice and chat agents that understand people and act safely</title>
-  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents, easy enough to run yourself and powerful enough for your contact center. A decision model understands what callers mean, code decides what happens, and a policy gate checks every action.">
+  <title>DialogWright: voice and chat agents that understand like an LLM and act like code</title>
+  <meta name="description" content="DialogWright is an open-source TypeScript framework for voice and chat agents. A decision model understands what callers mean, code decides what happens, the words are the ones you approved, and a policy gate checks and audits every action.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dialogwright.com/">
   <meta property="og:title" content="DialogWright">
-  <meta property="og:description" content="Voice and chat agents that understand people and act safely. Easy enough to run yourself, powerful enough for your contact center. An open-source TypeScript framework.">
+  <meta property="og:description" content="Voice and chat agents that understand people like an LLM and act like code: predictable words and actions, fast replies. An open-source TypeScript framework.">
   <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
   <link rel="stylesheet" href="style.css">
   <script src="copy.js" defer></script>
@@ -33,10 +33,11 @@
           <img src="brand/dialogwright-mark.svg" alt="" width="32" height="32">
         </picture>
       </a>
-      <nav aria-label="On this page">
+      <nav aria-label="Site">
         <ul>
           <li><a href="#why">Why</a></li>
-          <li><a href="#how">How it works</a></li>
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="decision-models.html">Decision models</a></li>
           <li><a href="#guides">Guides</a></li>
           <li><a href="#examples">Examples</a></li>
           <li><a href="#start">Quick start</a></li>
@@ -46,314 +47,223 @@
     </div>
   </header>
 
-  <main id="main">
+  <main id="main" class="front">
     <section class="hero" aria-labelledby="hero-title">
       <div class="wrap">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
           <img class="logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
         </picture>
-        <h1 id="hero-title">Voice and chat agents that understand people and act safely.</h1>
+        <h1 id="hero-title">Voice and chat agents that understand people like an LLM, and act like code.</h1>
         <p class="lede">
-          A new take on virtual agents: natural understanding, predictable words and actions, and fast
-          replies. Callers say it their own way; the agent understands, does the right thing and says what
-          you approved.
+          Callers say it their own way. A decision model works out what they mean, your code decides what
+          happens, and they hear the words you approved. What is said and done is predictable, and replies are fast.
         </p>
-        <p class="lede"><strong>Easy enough to run yourself, powerful enough for your contact center.</strong></p>
         <p class="actions">
           <a class="button primary" href="https://github.com/DialogWright/dialogwright">GitHub repository</a>
           <a class="button" href="#start">Quick start</a>
-          <a class="button" href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Read the design</a>
         </p>
-        <p class="note">An open-source TypeScript framework. Apache-2.0. Pre-release. Runs on a laptop with no keys.</p>
+        <p class="note">Open source, Apache-2.0. Pre-release. Try it on your laptop, no keys needed.</p>
       </div>
     </section>
 
     <section id="why" class="alt" aria-labelledby="why-title">
       <div class="wrap">
-        <h2 id="why-title">Nobody calls an IVR to chat</h2>
-        <p>
-          People call to pay a bill, report an outage or move an appointment. They judge your IVR or chatbot
-          by one thing: whether it understood them. Nobody hangs up impressed that it said the same thing a
-          dozen different ways.
-        </p>
-        <p>
-          Large language models finally made real understanding possible, and generation came bundled with
-          it. Sometimes that is what you want: a warmer greeting, an explanation in the caller's own terms.
-          But in most of a service call, varied wording is not the point, and every reply you did not write
-          is a reply you cannot fully predict.
-        </p>
-        <p>
-          DialogWright unbundles them. Understanding is always on: a fast decision model works out what the
-          caller meant and chooses the next action. What the agent says was written and approved, and a
-          policy gate checks every action before it happens. Generated wording, where you
-          decide it helps, will be an opt-in for each prompt (it is on the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#5-generated-wording">roadmap</a>).
-        </p>
-        <p>
-          Your agent does not need to talk about everything. It needs to understand its own domain thoroughly
-          and act on it safely. <strong>The intelligence is in the understanding.</strong>
-        </p>
+        <h2 id="why-title">How it is different</h2>
+        <p class="intro">Three ways to answer a phone line or a chat.</p>
+        <div class="compare-wrap">
+          <table class="compare">
+            <thead>
+              <tr>
+                <td></td>
+                <th scope="col">Traditional IVRs and bots</th>
+                <th scope="col">LLM agents</th>
+                <th scope="col" class="ours">DialogWright</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Understanding</th>
+                <td data-label="Traditional IVRs and bots">Menus and rigid grammars</td>
+                <td data-label="LLM agents">Understands natural speech</td>
+                <td data-label="DialogWright" class="ours">Understands natural speech</td>
+              </tr>
+              <tr>
+                <th scope="row">What callers hear</th>
+                <td data-label="Traditional IVRs and bots">Recorded prompts</td>
+                <td data-label="LLM agents">Generated, different every call</td>
+                <td data-label="DialogWright" class="ours">The lines you approved</td>
+              </tr>
+              <tr>
+                <th scope="row">What it does</th>
+                <td data-label="Traditional IVRs and bots">A fixed flow</td>
+                <td data-label="LLM agents">Whatever the prompt leads to</td>
+                <td data-label="DialogWright" class="ours">Decided by code, checked and audited</td>
+              </tr>
+              <tr>
+                <th scope="row">Each turn</th>
+                <td data-label="Traditional IVRs and bots">Fast</td>
+                <td data-label="LLM agents">Slower; pays for every word generated</td>
+                <td data-label="DialogWright" class="ours">Fast; a fraction of a cent</td>
+              </tr>
+              <tr>
+                <th scope="row">Tuning</th>
+                <td data-label="Traditional IVRs and bots">Grammars and menu trees</td>
+                <td data-label="LLM agents">Editing the prompt</td>
+                <td data-label="DialogWright" class="ours">Measured on recorded calls</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="verdict">DialogWright: an LLM's understanding, with predictable words and actions, at a fraction of a cent a turn.</p>
       </div>
     </section>
 
-    <section id="how" aria-labelledby="how-title">
+    <section id="models" aria-labelledby="models-title">
       <div class="wrap">
-        <h2 id="how-title">How it works</h2>
+        <h2 id="models-title">Decision models are the heart of it</h2>
         <p class="intro">
-          Callers talk naturally, and the system maps what they mean to the right action. Three parts, each
-          with one job: the model never decides, and the code never guesses. Replies are fast, because a
-          decision is a short typed question, not a composed answer.
+          A decision model reads what the caller said and answers typed questions: yes or no (a noul), which
+          option (a choice), how much (a score), each with a probability. It never writes text. DialogWright asks
+          all of a turn's questions in one request, and code acts on the answers with thresholds the app sets.
         </p>
-        <ol class="cards steps">
-          <li>
-            <h3><span class="num" aria-hidden="true">1</span> The model understands</h3>
+
+        <div class="turn">
+          <figure>
+            <figcaption><span class="step">The question, as the app writes it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/slots.yaml">apps/secretary/slots.yaml</a> (excerpt)</figcaption>
+<pre data-from="apps/secretary/slots.yaml"><code>recipient:
+  type: choice
+  options:
+    riley:
+      say: Riley Moreno
+      means: The message is for Riley Moreno, or Riley
+    sam:
+      say: Sam Okafor
+      means: The message is for Sam Okafor, or Sam</code></pre>
+          </figure>
+          <figure class="said">
+            <figcaption><span class="step">The caller says</span></figcaption>
+            <blockquote><p>It's not urgent, but could Sam call me back about the brochure?</p></blockquote>
+          </figure>
+          <figure>
+            <figcaption><span class="step">What comes back</span> <strong>An illustration:</strong> four answers, in the model's shape</figcaption>
+<pre class="answers"><code><span class="q">intent</span>        {"type":"choice","choice":"take_message",
+               "probabilities":{"take_message":0.99,
+                 "agent":0.01,"urgent":0}}
+<span class="q">recipient</span>     {"type":"choice","choice":"sam",
+               "probabilities":{"sam":1,"riley":0,
+                 "jordan":0,"anyone":0}}
+<span class="q">messageGiven</span>  {"type":"noul","noul":0.97}
+<span class="q">urgency</span>       {"type":"score","score":0,
+               "probabilities":{"low":1,"normal":0,
+                 "high":0}}</code></pre>
+          </figure>
+          <figure>
+            <figcaption><span class="step">What code does with it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/intents.yaml">intents.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/app.yaml">app.yaml</a> (excerpts)</figcaption>
+<pre data-from="apps/secretary/intents.yaml"><code>  urgent:
+    priority: { correctsForm: true, threshold: URGENT_SURE }</code></pre>
+<pre data-from="apps/secretary/app.yaml"><code>thresholds:
+  URGENT_SURE: 0.4</code></pre>
+            <p class="after">Urgent reads 0, under 0.4: no transfer. The message form starts, Sam filled in, and asks the caller's name.</p>
+          </figure>
+        </div>
+
+        <div class="model-facts">
+          <div>
             <p>
-              A fast decision model reads what the caller said and answers typed questions: is this a request
-              to reschedule, which of these three appointments, what date was given. It returns judgments with
-              probabilities, never generated text. Callers can say it in their own words, give three answers
-              at once or change their mind.
+              <strong>Jev is the default,</strong> TypeSafe's decision model (<code>jev-1.13</code>). Any model that
+              speaks the same System One API can replace it, measured on the app's own recorded calls, as
+              Microsoft-Decision-1 has been.
             </p>
-          </li>
-          <li>
-            <h3><span class="num" aria-hidden="true">2</span> Code decides</h3>
             <p>
-              Deterministic code owns the dialog: which form is active, which slot to ask next, when to read
-              back, when to hand off to a person. The same judgments and state always lead to the same step,
-              and every line the caller hears is a fixed, approved line filled with checked values.
+              <strong>Why it is cheap:</strong> it writes no text, only a few probabilities, so a turn pays almost
+              only for reading.
             </p>
-          </li>
-          <li>
-            <h3><span class="num" aria-hidden="true">3</span> The gate checks every action</h3>
-            <p>
-              Before any tool runs, a policy gate checks the caller's identity level, whose record it is,
-              exact confirmation, role and attempt limits. The gate does not read the conversation, so no one
-              can talk past it. Every decision, allowed or refused, goes to a hash-chained audit log.
-            </p>
-          </li>
-        </ol>
-        <ul class="facts">
-          <li><strong>Reproducible.</strong> Replay a call against its recorded model answers and get the same outcome.</li>
-          <li><strong>Explainable.</strong> The audit names the rule that passed or failed, and what it compared.</li>
-          <li><strong>Not steerable by the caller.</strong> What a caller says is data the model classifies, never instructions the code follows.</li>
-          <li><strong>Tunable.</strong> Thresholds are numbers, adjusted by measurement rather than by rewording a prompt.</li>
+            <p><a class="button" href="decision-models.html">Decision models in depth</a></p>
+          </div>
+          <dl class="measures">
+            <div>
+              <dt>Questions in a turn</dt>
+              <dd>about 20, in one request</dd>
+            </div>
+            <div>
+              <dt>Answered in</dt>
+              <dd>about 90 to 150 ms at p50, 150 to 250 ms at p95</dd>
+            </div>
+            <div>
+              <dt>Cost</dt>
+              <dd>309 requests to Jev for about $0.046, about $0.00015 a turn</dd>
+            </div>
+          </dl>
+          <p class="note source">The maintainer's recordings, 2026-10-14; the cost is the secretary's recording.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="use" class="alt" aria-labelledby="use-title">
+      <div class="wrap">
+        <h2 id="use-title">Why you would use it</h2>
+        <ul class="reasons">
+          <li><a href="how-it-works.html#understands">Callers talk naturally.</a> Their own words, three answers at once.</li>
+          <li><a href="how-it-works.html#decides">What is said and done is predictable.</a> Approved lines, steps decided by code.</li>
+          <li><a href="decision-models.html#measured">Fast and cheap per turn.</a> A turn's answers in about 90 to 150 ms (p50).</li>
+          <li><a href="how-it-works.html#gate">Every decision is audited.</a> Allowed or refused, hash-chained.</li>
+          <li><a href="how-it-works.html#tested">Tested with recorded calls and an adversarial suite.</a></li>
+          <li>Runs on your own machine, scales to <a href="guides/scaling.html">High Availability</a>. Servers share one database; a call is taken over when its server stops.</li>
+          <li><a href="#skill">Built for AI coding assistants: Claude Code builds the app.</a></li>
+          <li><a href="how-it-works.html#wording">Generated wording only where you opt in.</a> The front desk's read-back: a fixed line, a checked summary, the caller's exact words if a check fails.</li>
         </ul>
       </div>
     </section>
 
-    <section id="guides" class="alt" aria-labelledby="guides-title">
-      <div class="wrap">
-        <h2 id="guides-title">From a single instance to full horizontal scale</h2>
-        <p class="intro">
-          From a personal system on one machine you own to a contact center across many servers, it is the same
-          app: what it understands, what it says and what the policy allows do not change.
-        </p>
-        <div class="cards two">
-          <article class="card">
-            <h3>On a machine you own</h3>
-            <p>
-              Try it on a laptop, then run it on any machine that stays on, for a small office or your own line. A
-              phone line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick
-              one needs no account). It starts at boot, survives its own restarts without dropping a caller, and
-              shows you calls on your phone.
-            </p>
-            <p><a href="guides/home-server.html">Run it on a machine you own</a></p>
-          </article>
-          <article class="card">
-            <h3>Across many servers</h3>
-            <p>
-              Behind a load balancer, with sessions in a shared store, so a deploy or a failed server never drops a
-              call. Designed, with the seams in place (store interfaces with a contract suite, versioned sessions,
-              idempotent writes); the shared stores are Phase 8b of the
-              <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>.
-            </p>
-            <p><a href="guides/scaling.html">Scaling out (a design)</a></p>
-          </article>
-        </div>
-        <ul class="facts">
-          <li><strong>The same app folder.</strong> Intents, forms, prompts and slots in YAML, tools in TypeScript.</li>
-          <li><strong>The same policy.</strong> <code>policy.yaml</code> and the gate decide every action, on one machine or fifty.</li>
-          <li><strong>The same audit.</strong> Every decision, allowed or refused, in a hash-chained log, with a trace of every turn.</li>
-          <li><strong>The same tests.</strong> <code>pnpm check</code>, the policy matrix and the scripted calls, before any call is taken.</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="folder" aria-labelledby="folder-title">
-      <div class="wrap">
-        <h2 id="folder-title">An app is a folder</h2>
-        <p class="intro">
-          YAML for what is data: intents, forms, slots, prompts, policy, identity, locales. TypeScript for what
-          runs: tools, form hooks, rules of your own. <code>defineApp</code> joins the two. Most slots are
-          configuration: name a type from the slot library (<code>digits</code>, <code>choice</code>,
-          <code>date</code>, <code>birthdate</code>, <code>name</code>, <code>record</code>, <code>text</code>)
-          and give it a few options.
-        </p>
-        <div class="code-grid">
-          <figure>
-            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/slots.yaml">apps/utility/slots.yaml</a> (excerpt)</figcaption>
-<pre data-from="apps/utility/slots.yaml"><code>account:
-  type: digits
-  noun: account
-  length: 8
-  group: [4, 4]
-  keypad: true
-
-firstDate:
-  type: date
-  range: future
-  keypad: true</code></pre>
-          </figure>
-          <figure>
-            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/policy.yaml">apps/utility/policy.yaml</a> (excerpt)</figcaption>
-<pre data-from="apps/utility/policy.yaml"><code>actions:
-  setUpPlan:
-    say: set up a payment arrangement
-    level: 2
-    rules:
-      - identity
-      - role: { manager: person }
-      - scope: { param: accountId }
-      - confirmed: [accountId, place, symptom, count, firstDate, total]
-      - limit: { field: total, min: 0.01, max: amountDue(accountId) }
-      - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }</code></pre>
-          </figure>
-        </div>
-
-        <h3><code>pnpm check</code> says what to fix</h3>
-        <p>
-          It reads every YAML file against its schema and cross-checks the folder against the code: a slot a
-          form names that does not exist, a line the engine needs that no prompt provides, a tool with no
-          policy. Each problem is one line, <code>file:line:column&nbsp; path&nbsp; message&nbsp; <span class="nobr">-&gt;</span>&nbsp; fix</code>,
-          written for a person or an assistant to act on. Here is the first line it printed for a misspelt slot
-          name in the utility's <code>forms.yaml</code>, and the run after the fix:
-        </p>
-<pre class="terminal"><code><span class="prompt">$ pnpm check</span>
-forms.yaml:11:20  forms.report_outage.slots[1]  slot "symptm" is not defined  -&gt;  rename it to "symptom", or add "symptm:" to slots.yaml (a library type, or { type: code } with the slot in src/app.ts (code.slots.symptm))
-
-<span class="prompt">$ pnpm check</span>
-apps/clinic: ok
-apps/utility: ok</code></pre>
-      </div>
-    </section>
-
-    <section id="assistants" class="alt" aria-labelledby="assistants-title">
-      <div class="wrap">
-        <h2 id="assistants-title">Built for AI coding assistants</h2>
-        <p class="intro">
-          The repository is written to be read by an AI coding assistant as well as by you. A root
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a>
-          gives the roles, the commands and the rules,
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt"><code>llms.txt</code></a>
-          indexes the docs, and every app has a <code>CLAUDE.md</code> of its own.
-        </p>
-        <div class="cards two">
-          <div class="card">
-            <h3>The create-app skill</h3>
-            <p>
-              The procedure an assistant follows to turn a paragraph into an app: a worksheet, the mapping onto
-              slot types, policy and identity, the scaffold, the corpus and scripted calls, then the checks until
-              they pass. It comes with a page of verified patterns and a corpus guide.
-            </p>
-            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">Read the skill</a></p>
-          </div>
-          <div class="card">
-            <h3><code>pnpm create-app &lt;name&gt;</code></h3>
-            <p>
-              The scaffold the skill calls. It writes a small app under <code>apps/&lt;name&gt;</code> that passes
-              <code>pnpm check</code>, its own tests and its regression as created. Add <code>--identity</code> for
-              an app that verifies its callers.
-            </p>
-            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/11-walkthroughs.md#where-to-start">Where to start</a></p>
-          </div>
-        </div>
-        <div class="callout">
-          <h3>We tried it</h3>
+    <section id="skill" aria-labelledby="skill-title">
+      <div class="wrap skill">
+        <div>
+          <h2 id="skill-title">Describe your line in a paragraph. Claude Code builds the app.</h2>
           <p>
-            Two fresh assistants, with no context from the people who built the framework, were each given one
-            paragraph (a fictional electric utility, a fictional transit agency) and told to use the skill. Each
-            built a working app, in about 15 and 11 minutes by their own count, with <code>pnpm check</code> and
-            the scripted calls green. Both caught the same real hole in their own policy by reading the policy
-            matrix: a delegate could have had a one-time code texted to someone else's phone. The engine now
-            refuses that for every app. Every stumble they logged was fixed or recorded with its reason.
+            DialogWright ships a Claude Code skill, <code>create-app</code>, in every project
+            <code>npm create dialogwright</code> makes. Say what callers can ask for, who must verify, what must be
+            confirmed and what goes to a person. Claude Code plans the app, scaffolds it, writes the YAML, the code,
+            the corpus and the scripted calls, and works until the checks, the type check, the tests and the stub
+            regression are green. Then it hands you the recording command, and triages the recording.
           </p>
-          <p><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/trials/README.md">Read the trials and their logs</a></p>
+          <p>The utility and the front desk were each built this way, from one paragraph.</p>
+          <p class="links">
+            <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">Read the skill</a>
+            <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/first-app.md">Your first app, from a paragraph</a>
+            <a href="how-it-works.html#assistants">More for assistants</a>
+          </p>
         </div>
-      </div>
-    </section>
-
-    <section id="policy" aria-labelledby="policy-title">
-      <div class="wrap">
-        <h2 id="policy-title">Compliance can read it</h2>
-        <p class="intro">
-          Policy is a file, not code. <code>policy.yaml</code> names the rules each action runs, and
-          <code>identity.yaml</code> says who the app serves and how a caller proves who they are. Both compile
-          to what the gate runs. Three generated pages make a change readable by someone who does not write code:
-        </p>
-        <ul class="list">
-          <li><strong><code>POLICY.md</code>, the policy card:</strong> each action and each rule in plain English, with diagrams, written from the same compiled policy the gate runs.</li>
-          <li><strong><code>policy.matrix</code>:</strong> for every action and every kind of caller, the verdict and its reason, so a policy change shows up as a diff of what the gate decides.</li>
-          <li><strong><code>APP-MAP.md</code>:</strong> the app's intents, forms, slots, actions and rules as diagrams.</li>
-        </ul>
-        <p>
-          Each is written by a command and compared by a test, never written by CI.
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/.github/CODEOWNERS"><code>CODEOWNERS</code></a>
-          makes a change to the policy files and these pages need compliance's review.
-        </p>
-        <figure>
-          <figcaption>
-            From <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/policy.matrix">apps/utility/policy.matrix</a>:
-            who may set up a payment arrangement. A customer needs the one-time code (level 2), their own account
-            and an exact read-back; a property manager goes to a person.
-          </figcaption>
-<pre data-from="apps/utility/policy.matrix"><code>setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate)
-  anonymous           STEP_UP to 2
-  subject@1           as anonymous
-  subject@2           subject own, fields exact, confirmed none|mismatch  BLOCK confirmation
-                      subject own, fields exact, confirmed match          ALLOW
-                      subject own, fields extra|missing                   BLOCK confirmation
-                      subject inScope|outOfScope|unknown|empty            BLOCK scope
-  delegate:manager    NEEDS_HUMAN role-person
-  delegate:manager@1  BLOCK identity
-  unlisted-role       BLOCK role</code></pre>
-        </figure>
-        <p class="links">
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/POLICY.md">The utility's policy card</a>
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/POLICY.md">The clinic's policy card</a>
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#6-identity-and-policy">Identity and policy in the design</a>
-        </p>
+        <ol class="skill-steps" aria-label="What the skill does">
+          <li>Your paragraph</li>
+          <li>A worksheet</li>
+          <li>The scaffold</li>
+          <li>YAML, code, corpus, scripted calls</li>
+          <li>Checks, types, tests, regression: green</li>
+          <li>Your recording, triaged</li>
+        </ol>
       </div>
     </section>
 
     <section id="examples" class="alt" aria-labelledby="examples-title">
       <div class="wrap">
         <h2 id="examples-title">Examples</h2>
-        <p class="intro">Two fictional organizations. Every name, date and number in them is made up, and neither needs a key to run.</p>
-        <div class="cards two">
+        <p class="intro">Three fictional organizations, none needing a key to run.</p>
+        <div class="cards three">
           <article class="card">
             <h3>Example Family Practice</h3>
-            <p>
-              A clinic's appointment line: a caller can schedule, reschedule, cancel or confirm an appointment
-              with one of eight providers. The first app to read. It has every slot configured from the slot
-              library, writes that go through the gate after a read-back, 241 labelled utterances and 89
-              scripted calls.
-            </p>
-            <p class="links">
-              <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">Read about the clinic</a>
-              <a href="https://github.com/DialogWright/dialogwright/tree/main/apps/clinic">The folder</a>
-            </p>
+            <p>Appointments: schedule, reschedule, cancel. The app to learn from.</p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/README.md">Read about the clinic</a></p>
           </article>
           <article class="card">
             <h3>Example Power &amp; Light</h3>
-            <p>
-              An electric utility's phone and chat line, built by an AI coding assistant from one paragraph.
-              Report an outage, hear a balance after verifying, or set up a payment arrangement behind a
-              one-time code. A property manager acts for their buildings. The app to read for identity and policy.
-            </p>
-            <p class="links">
-              <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/README.md">Read about the utility</a>
-              <a href="https://github.com/DialogWright/dialogwright/tree/main/apps/utility">The folder</a>
-            </p>
+            <p>Outages, balances and payment plans behind a one-time code. The app for policy.</p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/README.md">Read about the utility</a></p>
+          </article>
+          <article class="card">
+            <h3>Example Front Desk</h3>
+            <p>Messages, read back in short. The app for generated wording.</p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/README.md">Read about the front desk</a></p>
           </article>
         </div>
       </div>
@@ -362,45 +272,52 @@ apps/utility: ok</code></pre>
     <section id="start" aria-labelledby="start-title">
       <div class="wrap">
         <h2 id="start-title">Quick start</h2>
-        <p class="intro">Requires Node 22.19 or later and pnpm. The first four steps need no key: with no model attached, each app answers from its own labelled examples. The fifth needs two.</p>
+        <p class="intro">Node 22.19 or later and pnpm. No keys: each app answers from its own labelled examples.</p>
         <ol class="commands">
           <li>
-            <p>Clone the repository and install.</p>
+            <p>Clone and install.</p>
 <pre data-copy><code>git clone https://github.com/DialogWright/dialogwright.git
 cd dialogwright
 pnpm install</code></pre>
-          </li>
-          <li>
-            <p>Check every app folder. It prints <code>apps/clinic: ok</code> when there is nothing to fix.</p>
-<pre data-copy><code>pnpm check</code></pre>
           </li>
           <li>
             <p>Talk to the clinic in a text console.</p>
 <pre data-copy><code>pnpm --filter @dialogwright/example-clinic cli --client heuristic</code></pre>
           </li>
           <li>
-            <p>Start an app of your own. It passes the checks as created; add <code>--identity</code> for one that verifies callers.</p>
+            <p>Start an app of your own.</p>
 <pre data-copy><code>pnpm create-app &lt;name&gt;</code></pre>
-          </li>
-          <li>
-            <p>Answer a real phone call. With a carrier's key and a model's, and <code>cloudflared</code> installed, it asks for the
-              keys, opens a tunnel that needs no account, and prints the webhook to paste into your number.</p>
-<pre data-copy><code>pnpm configure
-pnpm start --tunnel quick</code></pre>
           </li>
         </ol>
         <p>
-          The full walkthrough, from your first call to a machine that stays on, is
-          <a href="guides/home-server.html">Run your own IVR on a machine you own</a>.
-          To build your own app, read <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a>,
-          or describe it in a paragraph to an AI coding assistant and point it at the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">create-app skill</a>.
+          A real phone line needs a carrier account and a decision model's key (and a render model's for generated
+          wording): <a href="guides/home-server.html">run it on a machine you own</a>.
         </p>
-        <p class="note">
-          Pre-release: APIs will change, and the package is not on npm yet. See the
-          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#12-roadmap">roadmap</a>
-          for what is built and what comes next.
-        </p>
+      </div>
+    </section>
+
+    <section id="guides" class="alt" aria-labelledby="guides-title">
+      <div class="wrap">
+        <h2 id="guides-title">Read more</h2>
+        <div class="more">
+          <nav aria-label="Pages and guides">
+            <h3>On this site</h3>
+            <ul>
+              <li><a href="how-it-works.html">How it works</a></li>
+              <li><a href="decision-models.html">Decision models</a></li>
+              <li><a href="guides/home-server.html">Run it on a machine you own</a></li>
+              <li><a href="guides/scaling.html">Scaling out</a></li>
+            </ul>
+          </nav>
+          <nav aria-label="In the repository">
+            <h3>In the repository</h3>
+            <ul>
+              <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+              <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">The design</a></li>
+              <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/README.md">Every doc and command</a></li>
+            </ul>
+          </nav>
+        </div>
       </div>
     </section>
   </main>
@@ -419,6 +336,8 @@ pnpm start --tunnel quick</code></pre>
         <nav aria-label="Guides">
           <h2>Guides</h2>
           <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="decision-models.html">Decision models</a></li>
             <li><a href="guides/home-server.html">A machine you own</a></li>
             <li><a href="guides/scaling.html">Scaling out</a></li>
           </ul>

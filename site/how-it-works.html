@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>DialogWright: how it works</title>
+  <meta name="description" content="How DialogWright works: a decision model understands, code decides, a policy gate checks and audits every action. An app is a folder, pnpm check says what to fix, compliance can read the policy, and generated wording is opt-in and checked.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1124" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://dialogwright.com/how-it-works.html">
+  <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="brand/favicon-180.png">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://dialogwright.com/how-it-works.html">
+  <meta property="og:title" content="How DialogWright works">
+  <meta property="og:description" content="The model understands, code decides, the gate checks every action. An app is a folder; the policy is a file compliance can read.">
+  <meta property="og:image" content="https://dialogwright.com/brand/avatar-navy-512.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="copy.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="home" href="./" aria-label="DialogWright, home page">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-mark-dark.svg">
+          <img src="brand/dialogwright-mark.svg" alt="" width="32" height="32">
+        </picture>
+      </a>
+      <nav aria-label="Site">
+        <ul>
+          <li><a href="./#why">Why</a></li>
+          <li><a href="how-it-works.html" aria-current="page">How it works</a></li>
+          <li><a href="decision-models.html">Decision models</a></li>
+          <li><a href="./#guides">Guides</a></li>
+          <li><a href="./#examples">Examples</a></li>
+          <li><a href="./#start">Quick start</a></li>
+          <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap guide-head">
+      <p class="crumbs"><a href="./">DialogWright</a> / How it works</p>
+      <h1>How it works</h1>
+      <p class="lede">
+        Callers talk naturally, and the system maps what they mean to the right action. Three parts, each with one
+        job: the model never decides, and the code never guesses.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <h2>On this page</h2>
+        <ol>
+          <li><a href="#parts">The three parts</a></li>
+          <li><a href="#folder">An app is a folder</a></li>
+          <li><a href="#check"><code>pnpm check</code> says what to fix</a></li>
+          <li><a href="#tested">Tested before a call is taken</a></li>
+          <li><a href="#assistants">Built for AI coding assistants</a></li>
+          <li><a href="#policy">Compliance can read it</a></li>
+          <li><a href="#scale">From one machine to many servers</a></li>
+          <li><a href="#wording">Generated wording, where you opt in</a></li>
+          <li><a href="#tuning">Tuning with live calls</a></li>
+        </ol>
+      </nav>
+    </div>
+
+    <div class="wrap guide">
+      <section id="parts" aria-labelledby="parts-title">
+        <h2 id="parts-title">The three parts</h2>
+        <p>
+          Replies are fast because a decision is a short typed question, not a composed answer. How the model is
+          asked is on a page of its own: <a href="decision-models.html">decision models</a>.
+        </p>
+        <ol class="cards steps">
+          <li id="understands">
+            <h3><span class="num" aria-hidden="true">1</span> The model understands</h3>
+            <p>
+              A decision model reads what the caller said and answers typed questions: is this a request to
+              reschedule, which of these three appointments, what date was given. It returns judgments with
+              probabilities, never generated text. Callers can say it in their own words, give three answers at
+              once or change their mind.
+            </p>
+          </li>
+          <li id="decides">
+            <h3><span class="num" aria-hidden="true">2</span> Code decides</h3>
+            <p>
+              Deterministic code owns the dialog: which form is active, which slot to ask next, when to read back,
+              when to hand off to a person. The same judgments and state always lead to the same step, and every
+              line the caller hears is an approved line filled with checked values, unless the app has asked for a
+              generated one (<a href="#wording">below</a>).
+            </p>
+          </li>
+          <li id="gate">
+            <h3><span class="num" aria-hidden="true">3</span> The gate checks every action</h3>
+            <p>
+              Before any tool runs, a policy gate checks the caller's identity level, whose record it is, exact
+              confirmation, role and attempt limits. The gate does not read the conversation, so no one can talk
+              past it. Every decision, allowed or refused, goes to a hash-chained audit log.
+            </p>
+          </li>
+        </ol>
+        <ul class="facts">
+          <li><strong>Reproducible.</strong> Replay a call against its recorded model answers and get the same outcome.</li>
+          <li><strong>Explainable.</strong> The audit names the rule that passed or failed, and what it compared.</li>
+          <li><strong>Not steerable by the caller.</strong> What a caller says is data the model classifies, never instructions the code follows.</li>
+          <li><strong>Tunable.</strong> Thresholds are numbers, adjusted by measurement rather than by rewording a prompt.</li>
+        </ul>
+      </section>
+
+      <section id="folder" aria-labelledby="folder-title">
+        <h2 id="folder-title">An app is a folder</h2>
+        <p>
+          YAML for what is data: intents, forms, slots, prompts, policy, identity, locales. TypeScript for what runs:
+          tools, form hooks, rules of your own. <code>defineApp</code> joins the two. Most slots are configuration:
+          name a type from the slot library (<code>digits</code>, <code>choice</code>, <code>date</code>,
+          <code>birthdate</code>, <code>name</code>, <code>record</code>, <code>text</code>) and give it a few options.
+        </p>
+        <div class="code-grid">
+          <figure>
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/slots.yaml">apps/utility/slots.yaml</a> (excerpt)</figcaption>
+<pre data-from="apps/utility/slots.yaml"><code>account:
+  type: digits
+  noun: account
+  length: 8
+  group: [4, 4]
+  keypad: true
+
+firstDate:
+  type: date
+  range: future
+  keypad: true</code></pre>
+          </figure>
+          <figure>
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/policy.yaml">apps/utility/policy.yaml</a> (excerpt)</figcaption>
+<pre data-from="apps/utility/policy.yaml"><code>actions:
+  setUpPlan:
+    say: set up a payment arrangement
+    level: 2
+    rules:
+      - identity
+      - role: { manager: person }
+      - scope: { param: accountId }
+      - confirmed: [accountId, place, symptom, count, firstDate, total]
+      - limit: { field: total, min: 0.01, max: amountDue(accountId) }
+      - dateInRange: { field: firstDate, notBefore: today, notAfter: today+30 }</code></pre>
+          </figure>
+        </div>
+        <p>
+          The authoring guide takes the folder a file at a time:
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a>.
+        </p>
+      </section>
+
+      <section id="check" aria-labelledby="check-title">
+        <h2 id="check-title"><code>pnpm check</code> says what to fix</h2>
+        <p>
+          It reads every YAML file against its schema and cross-checks the folder against the code: a slot a form
+          names that does not exist, a line the engine needs that no prompt provides, a tool with no policy. Each
+          problem is one line, <code>file:line:column&nbsp; path&nbsp; message&nbsp; <span class="nobr">-&gt;</span>&nbsp; fix</code>,
+          written for a person or an assistant to act on. Here is the line it prints for a misspelt slot name in the
+          utility's <code>forms.yaml</code>, and the run after the fix:
+        </p>
+<pre class="terminal"><code><span class="prompt">$ pnpm check</span>
+forms.yaml:11:20  forms.report_outage.slots[1]  slot "symptm" is not defined  -&gt;  rename it to "symptom", or add "symptm:" to slots.yaml (a library type, or { type: code } with the slot in src/app.ts (code.slots.symptm))
+
+<span class="prompt">$ pnpm check</span>
+apps/clinic: ok
+apps/secretary: ok
+apps/utility: ok</code></pre>
+      </section>
+
+      <section id="tested" aria-labelledby="tested-title">
+        <h2 id="tested-title">Tested before a call is taken</h2>
+        <ul>
+          <li><strong>Labelled utterances and scripted calls.</strong> Each app keeps what callers say, labelled, and whole calls with the outcome each must reach. The regression runs them against a committed baseline, and a changed outcome is a finding to explain.</li>
+          <li><strong>Recorded calls.</strong> The real model's answers are recorded once into a cassette, so the same calls replay offline, with no key, to the same outcome.</li>
+          <li><strong>The policy matrix.</strong> For every action and every kind of caller, what the gate decides, compared by a test (<a href="#policy">below</a>).</li>
+          <li><strong>The adversarial suite.</strong> Cases generated from the app itself: injections, relationships claimed and not proven, off-scope requests, codes said aloud, hostile replies from every tool. Each is held to properties over its run, never to lines, and a failing case is fixed in the app or the engine.</li>
+        </ul>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#7-testing">Testing in the design</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/15-the-adversarial-suite.md">The adversarial suite</a>
+        </p>
+      </section>
+
+      <section id="assistants" aria-labelledby="assistants-title">
+        <h2 id="assistants-title">Built for AI coding assistants</h2>
+        <p>
+          The repository is written to be read by an AI coding assistant as well as by you. A root
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a>
+          gives the roles, the commands and the rules,
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt"><code>llms.txt</code></a>
+          indexes the docs, and every app has a <code>CLAUDE.md</code> of its own.
+        </p>
+        <div class="cards two">
+          <div class="card">
+            <h3>The create-app skill</h3>
+            <p>
+              The procedure an assistant follows to turn a paragraph into an app: a worksheet, the mapping onto slot
+              types, policy and identity, the scaffold, the corpus and scripted calls, then the checks until they
+              pass. It comes with a page of verified patterns and a corpus guide.
+            </p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/.claude/skills/create-app/SKILL.md">Read the skill</a></p>
+          </div>
+          <div class="card">
+            <h3><code>pnpm create-app &lt;name&gt;</code></h3>
+            <p>
+              The scaffold the skill calls. It writes a small app under <code>apps/&lt;name&gt;</code> that passes
+              <code>pnpm check</code>, its own tests and its regression as created. Add <code>--identity</code> for an
+              app that verifies its callers.
+            </p>
+            <p><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/11-walkthroughs.md#where-to-start">Where to start</a></p>
+          </div>
+        </div>
+        <div class="callout">
+          <h3>We tried it</h3>
+          <p>
+            Two fresh assistants, with no context from the people who built the framework, were each given one
+            paragraph (a fictional electric utility, a fictional transit agency) and told to use the skill. Each built
+            a working app, in about 15 and 11 minutes by their own count, with <code>pnpm check</code> and the scripted
+            calls green. Both caught the same real hole in their own policy by reading the policy matrix: a delegate
+            could have had a one-time code texted to someone else's phone. The engine now refuses that for every app.
+            Every stumble they logged was fixed or recorded with its reason.
+          </p>
+          <p><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/trials/README.md">Read the trials and their logs</a></p>
+        </div>
+      </section>
+
+      <section id="policy" aria-labelledby="policy-title">
+        <h2 id="policy-title">Compliance can read it</h2>
+        <p>
+          Policy is a file, not code. <code>policy.yaml</code> names the rules each action runs, and
+          <code>identity.yaml</code> says who the app serves and how a caller proves who they are. Both compile to
+          what the gate runs. Three generated pages make a change readable by someone who does not write code:
+        </p>
+        <ul>
+          <li><strong><code>POLICY.md</code>, the policy card:</strong> each action and each rule in plain English, with diagrams, written from the same compiled policy the gate runs. It lists every line a model words and every prescribed line.</li>
+          <li><strong><code>policy.matrix</code>:</strong> for every action and every kind of caller, the verdict and its reason, so a policy change shows up as a diff of what the gate decides.</li>
+          <li><strong><code>APP-MAP.md</code>:</strong> the app's intents, forms, slots, actions and rules as diagrams.</li>
+        </ul>
+        <p>
+          Each is written by a command and compared by a test, never written by CI.
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/.github/CODEOWNERS"><code>CODEOWNERS</code></a>
+          makes a change to the policy files and these pages need compliance's review.
+        </p>
+        <figure>
+          <figcaption>
+            From <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/policy.matrix">apps/utility/policy.matrix</a>:
+            who may set up a payment arrangement. A customer needs the one-time code (level 2), their own account and
+            an exact read-back; a property manager goes to a person.
+          </figcaption>
+<pre data-from="apps/utility/policy.matrix"><code>setUpPlan · level 2 · identity, role(manager person), scope(accountId), confirmed(accountId, place, symptom, count, firstDate, total), limit(total), dateInRange(firstDate)
+  anonymous           STEP_UP to 2
+  subject@1           as anonymous
+  subject@2           subject own, fields exact, confirmed none|mismatch  BLOCK confirmation
+                      subject own, fields exact, confirmed match          ALLOW
+                      subject own, fields extra|missing                   BLOCK confirmation
+                      subject inScope|outOfScope|unknown|empty            BLOCK scope
+  delegate:manager    NEEDS_HUMAN role-person
+  delegate:manager@1  BLOCK identity
+  unlisted-role       BLOCK role</code></pre>
+        </figure>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/utility/POLICY.md">The utility's policy card</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/clinic/POLICY.md">The clinic's policy card</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/POLICY.md">The front desk's policy card</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md#6-identity-and-policy">Identity and policy in the design</a>
+        </p>
+      </section>
+
+      <section id="scale" aria-labelledby="scale-title">
+        <h2 id="scale-title">From one machine to many servers</h2>
+        <p>
+          From a personal line on one machine you own to a contact center across many servers, it is the same app:
+          what it understands, what it says and what the policy allows do not change.
+        </p>
+        <div class="cards two">
+          <article class="card">
+            <h3>On a machine you own</h3>
+            <p>
+              Try it on a laptop, then run it on any machine that stays on, for a small office or your own line. A
+              phone line needs two keys, a carrier's (Telnyx or Twilio) and a decision model's, and a tunnel (a quick
+              one needs no account). It starts at boot, survives its own restarts without dropping a caller, and shows
+              you calls on your phone.
+            </p>
+            <p><a href="guides/home-server.html">Run it on a machine you own</a></p>
+          </article>
+          <article class="card">
+            <h3>Across many servers</h3>
+            <p>
+              Several servers behind a load balancer, with sessions, the audit and the traces in shared stores
+              (Postgres and S3-compatible storage). When the server holding a call stops or crashes, another takes the
+              call over from the shared session. Built for Phase 8b's scope; roles, single sign-on for the console and
+              OpenTelemetry are left for later.
+            </p>
+            <p><a href="guides/scaling.html">Scaling out</a></p>
+          </article>
+        </div>
+        <ul class="facts">
+          <li><strong>The same app folder.</strong> Intents, forms, prompts and slots in YAML, tools in TypeScript.</li>
+          <li><strong>The same policy.</strong> <code>policy.yaml</code> and the gate decide every action, on one machine or many.</li>
+          <li><strong>The same audit.</strong> Every decision, allowed or refused, in a hash-chained log, with a trace of every turn.</li>
+          <li><strong>The same tests.</strong> <code>pnpm check</code>, the policy matrix and the scripted calls, before any call is taken.</li>
+        </ul>
+      </section>
+
+      <section id="wording" aria-labelledby="wording-title">
+        <h2 id="wording-title">Generated wording, where you opt in</h2>
+        <p>
+          Every line is said word for word unless the app asks for a generated one, a line at a time
+          (<code>mode: generative</code>) or a form at a time (<code>wording: generative</code>). What is regulated is
+          the app designer's call: a line marked <code>prescribed: true</code> is never generated, and the policy card
+          lists every generated and every prescribed line. The model chooses the words, never the content: the core
+          has decided before any line is worded.
+        </p>
+        <p>
+          To summarize what a caller said, the app frames it: the line is fixed and says whose words follow, and only
+          a span of it is generated. The front desk's read-back is the example:
+        </p>
+        <figure class="wrapped">
+          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/prompts.yaml">apps/secretary/prompts.yaml</a> (excerpt): only <code>{summary}</code> is generated</figcaption>
+<pre data-from="apps/secretary/prompts.yaml"><code>  confirm_take_message:
+    text: "Thanks! I'll make sure {recipient} gets your message, in short: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
+    exactText: "I'll make sure {recipient} gets your message, as you said it: {summary}. I have you as {caller}, on {phone}. Shall I pass it on?"
+    generate:
+      summary:
+        from: message
+        words: 30
+        speaks: to-caller
+        names: [recipient]</code></pre>
+        </figure>
+        <ul>
+          <li><strong>Checked before anyone hears it.</strong> Code holds the span to its data and shape: every value word for word, no figure or name it was not given, its word budget, one sentence. What it means is the drift judge's: the decision model, asked whether the span, heard in its sentence, is a faithful summary. That is a judgment, not a guarantee, and it is measured (<a href="decision-models.html#judge">the judge</a>).</li>
+          <li><strong>Any failure says the exact words.</strong> A check that fails, a slow model or an error, and the caller hears their own message word for word, in the line's other frame.</li>
+          <li><strong>Within a budget.</strong> A line's wording has 900 ms on a call and 1500 ms in a chat by default, and its checks 500 ms and 1000 ms; past either, the fixed text is said.</li>
+          <li><strong>The message itself is never changed.</strong> The caller's yes covers what the slots hold, and the message is delivered as they said it.</li>
+        </ul>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/16-generated-wording.md">Guide, chapter 16: generated wording</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/README.md">The front desk</a>
+        </p>
+      </section>
+
+      <section id="tuning" aria-labelledby="tuning-title">
+        <h2 id="tuning-title">Tuning with live calls</h2>
+        <p>
+          An app green on its recordings has been tried on its own words. A live call adds a carrier, a recognizer, a
+          room and a person who does not know the script. Chapter 17 of the guide is the working method that follows,
+          with examples from a day of live calls to the front desk:
+        </p>
+        <ul>
+          <li>trace every call, and read it turn by turn in the console, each question beside its answer;</li>
+          <li>tune on a private copy that keeps the caller's words, when the shipped app keeps none;</li>
+          <li>treat a score near 0.5 as a coin toss, and suspect the question's words before the threshold;</li>
+          <li>change the words, record again, and triage the recording;</li>
+          <li>choose the render model and the judge by measurement, against the call's time budgets.</li>
+        </ul>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md">Guide, chapter 17: tuning with live calls</a>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="brand/dialogwright-logo-dark.svg">
+            <img class="foot-logo" src="brand/dialogwright-logo.svg" alt="DialogWright" width="1760" height="391">
+          </picture>
+          <p>Status: pre-release.</p>
+          <p>Code under the <a href="https://github.com/DialogWright/dialogwright/blob/main/LICENSE">Apache-2.0 license</a>.</p>
+        </div>
+        <nav aria-label="Guides">
+          <h2>Guides</h2>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="decision-models.html">Decision models</a></li>
+            <li><a href="guides/home-server.html">A machine you own</a></li>
+            <li><a href="guides/scaling.html">Scaling out</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Documentation">
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/design.md">Design</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/README.md">Authoring an app</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/slots/README.md">Slot types</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/llms.txt">llms.txt</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/DialogWright/dialogwright">GitHub</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/CLA.md">Contributor agreement</a></li>
+            <li><a href="https://github.com/DialogWright/dialogwright/blob/main/SECURITY.md">Security</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="fine">
+        The DialogWright name and logo are trademarks and are not covered by the license; see
+        <a href="https://github.com/DialogWright/dialogwright/blob/main/NOTICE">NOTICE</a>.
+        This site sets no cookies and runs no analytics.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
