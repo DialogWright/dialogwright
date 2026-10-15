@@ -51,10 +51,12 @@ export function textFill(
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   return (answers, ctx) => {
     const p = noulValue(answers, ids.given);
-    if (!meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
     // At a form's summary, a yes that gives new or changed words for the slot (its `changed` question at
-    // SUMMARY_WORDS_CHANGED or more) adds them after the words on file; the summary is then read again.
+    // SUMMARY_WORDS_CHANGED or more) adds them after the words on file; the summary is then read again. There
+    // the changed question alone decides: a correction ("make it Friday not Thursday") need not read as words
+    // given on its own (recording 5, 2026-10-14: changed 0.92, given 0.25).
     const changed = changeableAtSummary(o, ctx) && meetsThreshold(ctx.thresholds, 'SUMMARY_WORDS_CHANGED', noulValue(answers, ids.changed));
+    if (!changed && !meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
     if (keepsCurrent(o, ctx) && !changed) return { kind: 'absent' };
     const words = (pickedPart(o, ids.pick, answers, ctx) ?? ctx.text).trim();
     if (!words) return { kind: 'absent' };
@@ -62,7 +64,7 @@ export function textFill(
       // The accepted words, then the turn's exactly as said, cut to maxLength as any of the slot's values is.
       const value = appended(ctx.current, writtenForm(words, o, ctx.locale)).slice(0, o.maxLength);
       const said = appended(ctx.current, words).slice(0, o.maxLength);
-      return { kind: 'filled', value, display: o.say === null ? said : display(value, ctx.locale), confidence: p, confirm: 'none' };
+      return { kind: 'filled', value, display: o.say === null ? said : display(value, ctx.locale), confidence: noulValue(answers, ids.changed) ?? p, confirm: 'none' };
     }
     const said = words.slice(0, o.maxLength);
     const value = writtenForm(said, o, ctx.locale);

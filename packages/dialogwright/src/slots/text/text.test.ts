@@ -661,8 +661,10 @@ describe('at a form\'s summary: a yes with new or changed words (the `changed` q
     const shown = defineSlot('note', { type: 'text', what: 'a note for the courier', say: null, redact: 'none' });
     expect(shown.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said))).toMatchObject({ value: `${MESSAGE}. ${said}`, display: `${MESSAGE}. ${said}` });
     expect(note.fill({ noteGiven: noul(0.6), noteChanged: noul(0.1) }, atSummary('yes'))).toEqual({ kind: 'absent' });
-    // The words must still be given: a change with no words for the slot fills nothing.
-    expect(note.fill({ noteGiven: noul(0.1), noteChanged: noul(0.9) }, atSummary(said))).toEqual({ kind: 'absent' });
+    // At the summary the changed question alone decides (recording 5, 2026-10-14: "yes, actually make it Friday
+    // not Thursday" read changed 0.92 and given only 0.25, since a correction alone does not read as a message,
+    // and the change was lost): the given question's bar is for words given anywhere else.
+    expect(note.fill({ noteGiven: noul(0.25), noteChanged: noul(0.92) }, atSummary(said))).toMatchObject({ kind: 'filled', value: `${MESSAGE}. ${said}` });
     // Away from a summary the question is never asked, and keep holds whatever an answer to it says.
     expect(note.fill({ noteGiven: noul(0.9), noteChanged: noul(0.9) }, atSummary(said, { summary: undefined }))).toEqual({ kind: 'absent' });
   });
