@@ -414,7 +414,9 @@ export interface SlotSpec {
    * words too. The injection screen, words the model cannot make out (intelligible), a partial held for
    * the rest (utteranceComplete) and silence are as on any turn. The turn then fills the slot with its
    * words whatever its own question read (SlotContext.dictated), and its read-back follows as ever.
-   * Absent: the turn is read as any other.
+   * Never applied to an identity factor. A slot that declares it must take the words when its context
+   * says `dictated` (the text type's fill does), or a turn at its question acts on nothing and fills
+   * nothing. Absent: the turn is read as any other.
    */
   dictation?: { readonly listen: readonly string[] };
   /**

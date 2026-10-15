@@ -121,7 +121,7 @@ None.
 
 All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
 
-At "Go ahead with your message." the turn is the message, whole (the engine's default for a `text` slot without `pick`, `commands: ignore`; live findings item 29, the maintainer's decision of 2026-10-14, which this app follows): "hold on, it's really urgent, the website is down" or "can I just talk to a real person" said there is read back as the message, and a no lets the caller say it again or ask for someone. `commands: { listen: [urgent, agent] }` on the message slot would put those through instead; the owner chose the default.
+At "Go ahead with your message." the turn is the message, whole (the engine's default for a `text` slot without `pick`, `commands: ignore`; live findings item 29, the maintainer's decision of 2026-10-14, which this app follows): "hold on, it's really urgent, the website is down" or "can I just talk to a real person" said there is read back as the message, and a no lets the caller say it again or ask for someone. `commands: { listen: [urgent, agent] }` on the message slot would put those through instead; the owner chose the default, written out in slots.yaml (`commands: ignore`), since `pnpm check` warns of a text slot that says nothing there in an app with a priority intent.
 
 ## Choices the paragraph left open
 

@@ -84,12 +84,15 @@ export interface FillOptions {
  * item 29), with the intents still acted on there, or null. Only where the turn answers that slot's own
  * question: it is the prompted slot (Session.promptedFor) of the open form, a slot the turn fills
  * (slotsToFill), with no confirmation or offer pending (a read-back, the caller's number offered), and
- * the turn has words. Every other turn is read as any turn is.
+ * the turn has words. Never an identity factor: a caller asked to prove who they are ("I don't know it,
+ * can I talk to someone") is heard as on any turn, and no words go to the verify tool that its own
+ * question did not read as given. Every other turn is read as any turn is.
  */
 export function dictationOf(session: Session, text: string): { slot: SlotId; listen: ReadonlySet<string> } | null {
   const asked = session.promptedFor;
   if (asked === null || asked === 'intent' || asked === 'confirm' || asked === 'otp') return null;
   if (session.form === null || session.pendingConfirmation !== null || text.trim() === '') return null;
+  if (identityOf(appOf(session)).factorSlots.includes(asked)) return null;
   const spec = slotsToFill(session).find((s) => s.id === asked);
   if (spec?.dictation === undefined) return null;
   return { slot: asked, listen: new Set(spec.dictation.listen) };

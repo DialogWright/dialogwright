@@ -12,6 +12,7 @@ import { defineSlot } from '../slots/defineSlot';
 import { choice, noul, score } from '../testing/answers';
 import { MESSAGE_DIR, messageApp } from '../testing/message/app';
 import { ScreenedSystems, screenedApp } from '../testing/screened/app';
+import { recognizedApp } from '../testing/recognized/app';
 import { registerApp, resetAppsForTest } from './app/registry';
 import type { App } from './app/types';
 import { dictationOf } from './fia';
@@ -180,6 +181,31 @@ describe('the turn at a whole-answer text slot\'s question is its words (command
     const none = newSession('hand', 0, VOICE_RELAY, ANONYMOUS, DEFAULT.id);
     none.promptedFor = 'details';
     expect(dictationOf(none, 'words')).toBeNull();
+    // A slot's own read-back pending (confirm: always, an offer): its answer is read as ever.
+    const slotReadBack = atDetails(DEFAULT);
+    slotReadBack.pendingConfirmation = { target: 'slot', slot: 'details', value: 'a leak', display: 'a leak' };
+    expect(dictationOf(slotReadBack, 'words')).toBeNull();
+  });
+
+  it('is never an identity factor: a caller asked to prove who they are is heard as on any turn', () => {
+    // The recognized fixture, its second factor made a free-text slot (a security word, say).
+    const word = defineSlot('dob', { type: 'text', what: 'the security word' });
+    expect(word.dictation).toEqual({ listen: [] });
+    const app: App = { ...recognizedApp, id: 'dictation-factor', slots: { ...recognizedApp.slots, dob: word } };
+    use(app);
+    const s = newSession('hand', 0, VOICE_RELAY, ANONYMOUS, app.id);
+    setForm(s, 'check_status');
+    s.promptedFor = 'dob';
+    expect(dictationOf(s, "I don't know it, can I talk to someone")).toBeNull();
+  });
+
+  it('the other slots listen where the slot says so (others: listen), the turn still its words', () => {
+    const app = withDetails('dictation-others', { others: 'listen' });
+    use(app);
+    const t = say(atDetails(app), 'it is a crack now, not a leak', { ...PLAIN, ...LOW, problem: choice({ crack: 0.9, leak: 0.05, none: 0.05 }) });
+    expect(t.verdict).toMatchObject({ kind: 'proceed', dictated: 'details' });
+    expect(t.session.slots.problem!.value).toBe('crack');
+    expect(t.session.slots.details!.value).toBe('it is a crack now, not a leak');
   });
 });
 
@@ -196,6 +222,16 @@ describe('commands: { listen: [...] }: the intents listed are acted on, the rest
   it('a request it does not list is the words: a person asked for, a question', () => {
     readBackWith(say(atDetails(URGENT_ONLY), 'can I just talk to a real person', { ...PLAIN, ...LOW, wantsHuman: noul(0.97), intent: choice({ agent: 0.97, none: 0.03 }) }), 'can I just talk to a real person');
     readBackWith(say(atDetails(URGENT_ONLY), 'when are you open', { ...PLAIN, ...LOW, intent: choice({ opening_hours: 0.95, none: 0.05 }), intentChange: choice({ replacing: 0.9, answering: 0.1 }) }), 'when are you open');
+  });
+
+  it('a spoken menu number whose intent is listed is acted on', () => {
+    const app = withDetails('dictation-menu', { commands: { listen: ['agent'] } });
+    use(app);
+    const s = atDetails(app);
+    s.menuActive = true;
+    const t = say(s, 'zero', { ...PLAIN, ...LOW, menuNumberSaid: choice({ 0: 0.95, none: 0.05 }) });
+    expect(t.decision).toMatchObject({ kind: 'handoff', reason: 'live-agent' });
+    expect(t.rows.find((r) => r.decided)).toMatchObject({ gate: 'menuNumber', outcome: 'menu:agent' });
   });
 
   it('with agent listed, the wantsHuman gate acts too', () => {

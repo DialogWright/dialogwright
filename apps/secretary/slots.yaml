@@ -55,3 +55,9 @@ message:
   say: null
   redact: length-summarized
   maxLength: 500
+  # The turn at "Go ahead with your message." is the message, whole (the engine's default for a text slot
+  # without pick, written out: the owner's choice, live findings item 29): no bar on messageGiven, and
+  # nothing said there is acted on as a request, "it's urgent" and "can I talk to someone" included; the
+  # read-back follows, and a no lets the caller say it again. `commands: { listen: [urgent, agent] }`
+  # would put those through instead.
+  commands: ignore

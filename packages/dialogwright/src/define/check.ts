@@ -372,6 +372,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
   });
+  dictationWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   telnyxVoiceWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -439,6 +443,26 @@ function priorityHandoffWarnings(config: LoadedConfig, report: (file: string, pa
   const unconfirmed = data?.unconfirmed;
   if ((unconfirmed === 'mark' || unconfirmed === 'omit') && data?.slots === 'none') {
     report('app.yaml', ['handoff', 'data', 'unconfirmed'], `unconfirmed is ${unconfirmed}, but slots is none, so a transfer sends no value to ${unconfirmed === 'mark' ? 'mark' : 'leave out'}`, 'delete "unconfirmed", or name the slots that go');
+  }
+}
+
+/**
+ * The warning for a priority intent a dictation does not hear (live findings item 29): an app that marks
+ * an intent priority, and a `text` slot of slots.yaml without `pick` in one of its forms that says no
+ * `commands`, so the turn at its question is its words, whole (`ignore`, the default), and an emergency
+ * said there is read back as the words. A warning, never a refusal: the app may mean it (the secretary
+ * does); saying `commands` either way quiets it.
+ */
+function dictationWarnings(config: LoadedConfig, report: (file: string, path: DataPath, message: string, fix: string) => void): void {
+  const priority = Object.entries(config.intents.intents).filter(([, def]) => def.priority !== undefined && def.priority !== false && def.kind !== 'control').map(([id]) => id);
+  if (priority.length === 0 || config.slots === null) return;
+  const inForms = new Set(Object.values(config.forms.forms).flatMap((form) => form.slots));
+  const factors = new Set(identityParts(config)?.factors ?? []);
+  for (const [id, raw] of Object.entries(config.slots)) {
+    const slot = raw as { type?: unknown; pick?: unknown; commands?: unknown };
+    if (slot.type !== 'text' || slot.pick !== undefined || slot.commands !== undefined || !inForms.has(id) || factors.has(id)) continue;
+    const named = priority.map((p) => `"${p}"`).join(', ');
+    report(SLOTS_FILE, [id], `the turn at the question of "${id}" is its words, whole (commands: ignore, the default for a text slot without pick), so the priority ${priority.length === 1 ? 'intent' : 'intents'} ${named} said there ${priority.length === 1 ? 'is' : 'are'} read back as the words, never acted on`, `add "commands: { listen: [${[...priority, 'agent'].join(', ')}] }" to hear ${priority.length === 1 ? 'it' : 'them'} (and a request for a person) there, or "commands: ignore" if that is meant`);
   }
 }
 
