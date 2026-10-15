@@ -130,7 +130,7 @@
 
         <div class="turn">
           <figure>
-            <figcaption><span class="step">The question, as the app writes it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/slots.yaml">apps/secretary/slots.yaml</a> (excerpt)</figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">1</span> The question, as the app writes it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/slots.yaml">apps/secretary/slots.yaml</a> (excerpt)</figcaption>
 <pre data-from="apps/secretary/slots.yaml"><code>recipient:
   type: choice
   options:
@@ -142,11 +142,11 @@
       means: The message is for Sam Okafor, or Sam</code></pre>
           </figure>
           <figure class="said">
-            <figcaption><span class="step">The caller says</span></figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">2</span> The caller says</span></figcaption>
             <blockquote><p>It's not urgent, but could Sam call me back about the brochure?</p></blockquote>
           </figure>
           <figure>
-            <figcaption><span class="step">What comes back</span> <strong>An illustration:</strong> four answers, in the model's shape</figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">3</span> What comes back</span> <strong>An illustration:</strong> four answers, in the model's shape</figcaption>
 <pre class="answers"><code><span class="q">intent</span>        {"type":"choice","choice":"take_message",
                "probabilities":{"take_message":0.99,
                  "agent":0.01,"urgent":0}}
@@ -159,7 +159,7 @@
                  "high":0}}</code></pre>
           </figure>
           <figure>
-            <figcaption><span class="step">What code does with it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/intents.yaml">intents.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/app.yaml">app.yaml</a> (excerpts)</figcaption>
+            <figcaption><span class="step"><span class="num" aria-hidden="true">4</span> What code does with it</span> <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/intents.yaml">intents.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/app.yaml">app.yaml</a> (excerpts)</figcaption>
 <pre data-from="apps/secretary/intents.yaml"><code>  urgent:
     priority: { correctsForm: true, threshold: URGENT_SURE }</code></pre>
 <pre data-from="apps/secretary/app.yaml"><code>thresholds:
