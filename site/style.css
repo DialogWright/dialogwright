@@ -86,7 +86,26 @@ h3 { font-size: 1.2rem; margin: 0 0 0.5rem; }
 .top { border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; background: var(--bg); }
 /* The bar stays on screen, so a link to a section lands below it, not under it. */
 html { scroll-padding-top: 4.5rem; }
-@media (max-width: 720px) { html { scroll-padding-top: 7.5rem; } }
+/* On a narrow screen the bar is one row: the links fold into a menu (a details element, no script needed). */
+.menu { display: none; position: relative; }
+.menu summary {
+  list-style: none; cursor: pointer; font-weight: 600; padding: 0.4rem 0.8rem; border: 1px solid var(--line);
+  border-radius: 8px; color: var(--heading); user-select: none;
+}
+.menu summary::-webkit-details-marker { display: none; }
+.menu summary::before { content: "\2630\00a0"; }
+.menu[open] summary::before { content: "\2715\00a0"; }
+.menu nav {
+  position: absolute; right: 0; top: calc(100% + 0.5rem); min-width: 13rem; padding: 0.4rem 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+}
+.top .menu ul { display: block; }
+.top .menu a { display: block; padding: 0.55rem 1.1rem; font-size: 1rem; }
+@media (max-width: 720px) {
+  .top nav[aria-label="Site"] { display: none; }
+  .menu { display: block; }
+  .bar { flex-wrap: nowrap; }
+}
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 60px; flex-wrap: wrap; }
 .home { display: inline-flex; align-items: center; gap: 0.55rem; padding: 4px; text-decoration: none; }
 /* The name beside the mark. On the front page it waits until the hero's logo has scrolled away (copy.js). */

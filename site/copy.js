@@ -38,3 +38,11 @@ if (heroLogo && 'IntersectionObserver' in window) {
   root.classList.toggle('hero-in', box.bottom > 0 && box.top < window.innerHeight);
   new IntersectionObserver(([entry]) => root.classList.toggle('hero-in', entry.isIntersecting)).observe(heroLogo);
 }
+
+// Optional: the narrow screen's menu closes when a link in it is chosen, or a tap lands outside it.
+document.querySelectorAll('details.menu').forEach((menu) => {
+  menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => menu.removeAttribute('open')));
+  document.addEventListener('click', (event) => {
+    if (menu.open && !menu.contains(event.target)) menu.removeAttribute('open');
+  });
+});
