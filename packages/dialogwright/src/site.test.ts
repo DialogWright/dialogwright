@@ -208,5 +208,21 @@ describe('the site', () => {
         expect(readFileSync(join(SITE, file)).equals(readFileSync(join(ROOT, 'assets/brand', name))), file).toBe(true);
       }
     });
+
+    it('says on a phone what its comparison table says', () => {
+      // The phone shows one card per approach in place of the table; each card is a column of it.
+      if (!html.includes('<table class="compare">')) return expect(html).not.toContain('class="ccard');
+      const table = html.slice(html.indexOf('<table class="compare">'), html.indexOf('</table>'));
+      const columns = [...table.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((m) => m[1]!);
+      const rows = [...table.matchAll(/<tr>\s*<th scope="row">(.*?)<\/th>([\s\S]*?)<\/tr>/g)].map((m) => ({ label: m[1]!, cells: [...m[2]!.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((c) => c[1]!) }));
+      const fromTable = columns.map((column, i) => ({ column, answers: rows.map((r) => [r.label, r.cells[i]]) }));
+      const cards = [...html.matchAll(/<section class="ccard[^"]*"[^>]*>\s*<h3>(.*?)<\/h3>\s*<dl>([\s\S]*?)<\/dl>/g)].map((m) => ({
+        column: m[1]!,
+        answers: [...m[2]!.matchAll(/<dt>(.*?)<\/dt><dd>(.*?)<\/dd>/g)].map((a) => [a[1], a[2]]),
+      }));
+      expect(columns.length).toBe(3);
+      expect(rows.length).toBeGreaterThan(3);
+      expect(cards).toEqual(fromTable);
+    });
   });
 });

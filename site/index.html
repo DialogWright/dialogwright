@@ -99,36 +99,68 @@
             <tbody>
               <tr>
                 <th scope="row">Understanding</th>
-                <td data-label="Traditional IVRs and bots">Menus and rigid grammars</td>
-                <td data-label="LLM agents">Understands natural speech</td>
-                <td data-label="DialogWright" class="ours">Understands natural speech</td>
+                <td>Menus and rigid grammars</td>
+                <td>Understands natural speech</td>
+                <td class="ours">Understands natural speech</td>
               </tr>
               <tr>
                 <th scope="row">What callers hear</th>
-                <td data-label="Traditional IVRs and bots">Recorded prompts</td>
-                <td data-label="LLM agents">Generated, different every call</td>
-                <td data-label="DialogWright" class="ours">The lines you approved</td>
+                <td>Recorded prompts</td>
+                <td>Generated, different every call</td>
+                <td class="ours">The lines you approved</td>
               </tr>
               <tr>
                 <th scope="row">What it does</th>
-                <td data-label="Traditional IVRs and bots">A fixed flow</td>
-                <td data-label="LLM agents">Whatever the prompt leads to</td>
-                <td data-label="DialogWright" class="ours">Decided by code, checked and audited</td>
+                <td>A fixed flow</td>
+                <td>Whatever the prompt leads to</td>
+                <td class="ours">Decided by code, checked and audited</td>
               </tr>
               <tr>
                 <th scope="row">Each turn</th>
-                <td data-label="Traditional IVRs and bots">Fast</td>
-                <td data-label="LLM agents">Slower; pays for every word generated</td>
-                <td data-label="DialogWright" class="ours">Fast; a fraction of a cent</td>
+                <td>Fast</td>
+                <td>Slower; pays for every word generated</td>
+                <td class="ours">Fast; a fraction of a cent</td>
               </tr>
               <tr>
                 <th scope="row">Tuning</th>
-                <td data-label="Traditional IVRs and bots">Grammars and menu trees</td>
-                <td data-label="LLM agents">Editing the prompt</td>
-                <td data-label="DialogWright" class="ours">Measured on recorded calls</td>
+                <td>Grammars and menu trees</td>
+                <td>Editing the prompt</td>
+                <td class="ours">Measured on recorded calls</td>
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="compare-cards">
+          <section class="ccard" aria-label="Traditional IVRs and bots">
+            <h3>Traditional IVRs and bots</h3>
+            <dl>
+              <dt>Understanding</dt><dd>Menus and rigid grammars</dd>
+              <dt>What callers hear</dt><dd>Recorded prompts</dd>
+              <dt>What it does</dt><dd>A fixed flow</dd>
+              <dt>Each turn</dt><dd>Fast</dd>
+              <dt>Tuning</dt><dd>Grammars and menu trees</dd>
+            </dl>
+          </section>
+          <section class="ccard" aria-label="LLM agents">
+            <h3>LLM agents</h3>
+            <dl>
+              <dt>Understanding</dt><dd>Understands natural speech</dd>
+              <dt>What callers hear</dt><dd>Generated, different every call</dd>
+              <dt>What it does</dt><dd>Whatever the prompt leads to</dd>
+              <dt>Each turn</dt><dd>Slower; pays for every word generated</dd>
+              <dt>Tuning</dt><dd>Editing the prompt</dd>
+            </dl>
+          </section>
+          <section class="ccard ours" aria-label="DialogWright">
+            <h3>DialogWright</h3>
+            <dl>
+              <dt>Understanding</dt><dd>Understands natural speech</dd>
+              <dt>What callers hear</dt><dd>The lines you approved</dd>
+              <dt>What it does</dt><dd>Decided by code, checked and audited</dd>
+              <dt>Each turn</dt><dd>Fast; a fraction of a cent</dd>
+              <dt>Tuning</dt><dd>Measured on recorded calls</dd>
+            </dl>
+          </section>
         </div>
         <p class="verdict">DialogWright: an LLM's understanding, with predictable words and actions, at a fraction of a cent a turn.</p>
       </div>

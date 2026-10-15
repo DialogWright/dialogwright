@@ -319,15 +319,22 @@ main.front > section.hero { padding: 80px 0 72px; }
 .compare tbody tr:last-child th, .compare tbody tr:last-child td { border-bottom: 0; }
 .compare tbody tr:last-child td.ours { border-bottom: 1px solid var(--line); border-radius: 0 0 10px 10px; }
 .verdict { font-size: clamp(1.15rem, 1rem + 0.6vw, 1.4rem); font-weight: 600; color: var(--heading); max-width: 38rem; margin: 0; line-height: 1.4; }
-/* Below 720 px each row is a card: its label, then the three answers, DialogWright's marked. */
+/* Below 720 px the table gives way to one card per approach (built from the same rows), DialogWright's last and marked. */
+.compare-cards { display: none; }
 @media (max-width: 720px) {
-  .compare thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .compare, .compare tbody, .compare tr, .compare th, .compare td { display: block; width: auto; }
-  .compare tr { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 0.75rem; }
-  .compare tbody th { padding: 0 0 0.4rem; border: 0; color: var(--heading); font-size: 1rem; }
-  .compare td { padding: 0.3rem 0 0.3rem 0.75rem; border: 0; border-left: 3px solid var(--line); margin-top: 0.3rem; }
-  .compare td.ours, .compare tbody tr:last-child td.ours { padding: 0.45rem 0.75rem; border: 0; border-left: 3px solid var(--accent); border-radius: 0; background: var(--bg-alt); }
-  .compare td[data-label]::before { content: attr(data-label); display: block; font-size: 0.78rem; font-weight: 700; color: var(--muted); }
+  .compare-wrap { display: none; }
+  .compare-cards { display: grid; gap: 0.75rem; margin-bottom: 1.25rem; }
+  .ccard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem 0.8rem; }
+  .ccard.ours { border: 2px solid var(--accent); background: var(--bg-alt); }
+  .ccard h3 { margin: 0 0 0.4rem; font-size: 1rem; color: var(--heading); }
+  .ccard dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 0.75rem; margin: 0; font-size: 0.92rem; line-height: 1.35; }
+  .ccard dt { color: var(--muted); font-size: 0.8rem; font-weight: 600; padding-top: 0.1rem; }
+  .ccard dd { margin: 0; }
+  .ccard.ours dd { font-weight: 600; }
+}
+@media (max-width: 360px) {
+  .ccard dl { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .ccard dd { margin-bottom: 0.3rem; }
 }
 
 /* Decision models: one turn, from the question to what code does. */
