@@ -14,7 +14,7 @@
 {"id":"tm-14","text":"call me back as soon as possible","intent":"take_message","context":"no_form","labels":{"messageGiven":true}}
 {"id":"tm-15","text":"can I get a quote for a website","intent":"take_message","context":"no_form"}
 {"id":"tm-16","text":"can you book me a meeting with Riley","intent":"take_message","context":"no_form","labels":{"recipient":"riley"}}
-{"id":"tm-17","text":"how much do you charge for a logo","intent":"take_message","context":"no_form","knownGap":{"reason":"recording 5 (2026-10-14): \"how much do you charge for a logo\" at the opening reads take_message 0.55, other 0.45, so the caller is asked whether they want to leave a message (confirm_intent_explicit) before the recipient: one more yes, and safe","outcome":{"promptId":"confirm_intent_explicit","acks":[],"form":null}}}
+{"id":"tm-17","text":"how much do you charge for a logo","intent":"take_message","context":"no_form"}
 {"id":"rc-01","text":"Riley","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"riley"}}
 {"id":"rc-02","text":"for Sam Okafor please","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"sam"}}
 {"id":"rc-03","text":"Jordan Lee","intent":"none","context":"take_message","prompted":"recipient","labels":{"recipient":"jordan"}}
@@ -70,7 +70,7 @@
 {"id":"ur-02","text":"urgent","intent":"urgent","context":"no_form"}
 {"id":"ur-03","text":"this is an emergency, I need to reach someone now","intent":"urgent","context":"no_form"}
 {"id":"ur-04","text":"it can't wait, I need someone right now","intent":"urgent","context":"no_form"}
-{"id":"ur-05","text":"the print shop needs sign-off within the hour, it's urgent","intent":"urgent","context":"no_form"}
+{"id":"ur-05","text":"the print shop needs sign-off within the hour, it's urgent","intent":"urgent","context":"no_form","knownGap":{"reason":"recording 6 (2026-10-14): at the opening, urgent 0.57 against take_message 0.41, so the priority gate takes it rather than the intent gate: the same handoff to the main line by another gate","outcome":{"decidedGate":"priorityIntent"}}}
 {"id":"ur-06","text":"actually this is urgent, can I talk to someone now","intent":"urgent","context":"take_message","prompted":"caller","change":"replacing","answers":{"wantsHuman":{"noul":0.95}}}
 {"id":"ur-07","text":"hold on, it's really urgent, the website is down","intent":"urgent","context":"take_message","prompted":"message","change":"replacing","labels":{"messageGiven":true}}
 {"id":"ur-08","text":"wait, it's for Sam, and it's urgent","intent":"urgent","context":"confirm_take_message","change":"replacing","labels":{"recipient":"sam"},"knownGap":{"reason":"recording 2 (2026-10-14), after urgent's criteria were reworded: take_message 0.50, urgent 0.43 (recording 1: 0.64 / 0.21). With urgent's own bar, URGENT_SURE 0.4 (app.yaml), the priority gate acts and the call goes to the main line with Sam as the recipient: the same handoff by another gate","outcome":{"decidedGate":"priorityIntent"}}}

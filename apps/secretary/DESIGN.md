@@ -286,6 +286,10 @@ After recording 2 (2026-10-14), edited by hand from `--json`:
 
   `person-in-the-middle-of-a-message` and `hours-in-the-middle-of-a-message` are said at the caller's name, not the message's question, and are unchanged. `message-for-anyone` now takes "just say Alex called" whatever it reads. Every request of the app asks the reworded question, so `--client recorded` misses on every turn until the owner records again (226 misses); with the old wording, only the dictation change, the recorded run took "just say Alex called" as the message and missed once, at the read-back after it, never recorded.
 
+- **Recording 6, 2026-10-14, the same models**, by the maintainer, after the engine's item 29 (the turn at "Go ahead with your message." is the message, `commands: ignore`; and the text type's given question reworded, "Only asking to give it, without saying it, is not."): corpus 129/137, scripted calls 54/55 (the one, `whereabouts-then-sure`, its accepted known gap); `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`.
+  - The reworded question: messages that are requests now read as messages, "please call me back as soon as possible about the proofs" 0.97, the invoice message 0.96, "please don't send the final files until we've signed off on the colours" 0.97, "just say Alex called" 0.78 and 0.60; and what is not a message stays out, "hmm, what should I say" 0.02, "I'd rather not say what it's about" 0.02 (both are taken as the message at the message's own question all the same, item 29, and read back).
+  - `message-for-anyone` passes. `tm-17`'s known gap removed (the run said it now matches). `ur-05` "the print shop needs sign-off within the hour, it's urgent" at the opening: urgent 0.57, take_message 0.41, so the priority gate takes it rather than the intent gate, the same handoff: tagged.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
