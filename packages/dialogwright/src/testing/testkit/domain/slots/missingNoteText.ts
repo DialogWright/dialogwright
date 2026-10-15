@@ -14,6 +14,12 @@ import { MAX_NOTE } from './shared';
  * over-answer (nt-05: "it was a box of plates, due last tuesday", the expected date filled with the
  * description); under `quiet` that turn would be the description alone and the date asked next. The
  * default is the message fixture's (src/testing/message), whose scripted calls cover it.
+ *
+ * `commands: listen`: the same, over the default `ignore` for such a slot (live findings item 29), and
+ * the engine's regression test of the old reading: the turn at the description's question is read for
+ * requests, and the words fill the slot only where its question reads them as a description. Under
+ * `ignore` the corpus's nt-04 ("i don't know what to say" at the description's question, asked again)
+ * would be taken as the description. The default is the message fixture's and the secretary's.
  */
 export const missingNoteTextSlot = defineSlot('missingNote', {
   type: 'text',
@@ -27,4 +33,5 @@ export const missingNoteTextSlot = defineSlot('missingNote', {
   keep: 'first-unless-prompted',
   redact: 'length',
   others: 'listen',
+  commands: 'listen',
 });

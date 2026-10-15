@@ -114,12 +114,14 @@ None.
 
 | When | Reason | Line |
 |---|---|---|
-| The caller asks, at any time | `live-agent` | `handoff_live_agent` |
-| The caller says it is urgent, at any time (a priority intent) | `urgent` | `handoff_urgent` |
+| The caller asks, at any time but at the message's own question | `live-agent` | `handoff_live_agent` |
+| The caller says it is urgent, at any time but at the message's own question (a priority intent) | `urgent` | `handoff_urgent` |
 | A detail not given after three tries | `max-attempts` | `handoff_max_attempts` |
 | The inbox's reply fails its check | `result-unchecked` | `handoff_result_unchecked` ("I couldn't confirm your message was passed on, so let me put you through to the studio's main line.") |
 
 All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
+
+At "Go ahead with your message." the turn is the message, whole (the engine's default for a `text` slot without `pick`, `commands: ignore`; live findings item 29, the maintainer's decision of 2026-10-14, which this app follows): "hold on, it's really urgent, the website is down" or "can I just talk to a real person" said there is read back as the message, and a no lets the caller say it again or ask for someone. `commands: { listen: [urgent, agent] }` on the message slot would put those through instead; the owner chose the default.
 
 ## Choices the paragraph left open
 
@@ -272,6 +274,17 @@ After recording 2 (2026-10-14), edited by hand from `--json`:
   - The new question at the read-back: "yes" 0.05, "yes that's right" 0.05, "yep sounds good thanks" 0.05 (each kept and delivered); "yes but tell her it's moved to Thursday" 0.97, "yes and also say I'll be late" 0.97 (each appended and read back again); "yes, actually make it Friday not Thursday" 0.92, with messageGiven only 0.25. The engine first held a change to messageGiven's bar as well, so `sm-13` was kept and delivered without the change; the engine now lets the changed question alone decide at the read-back, and `sm-13` matches.
   - Tagged `knownGap`: `tm-11` "yes please" at the opening, take_message 0.51 / none 0.49, now either `nomatch_open` or the check `confirm_intent_explicit`; `tm-17` "how much do you charge for a logo", take_message 0.55 / other 0.45, the check before the recipient. Both safe.
   - Still failing, the owner's to decide: `message-for-anyone`. "just say Alex called" at "Go ahead with your message" reads messageGiven 0.58, under the slot's bar 0.6 (recording 4: above it), so the caller is asked again ("Sorry, what message should I pass on?"). The same reading as the first live call of 2026-10-14, whose four messages each read under 0.1: at the message's own question, the given question's bar can turn away a real message.
+
+- **Live findings item 29 (the engine, 2026-10-14): the turn at the message's question is the message.** The first live call's four messages at "Go ahead with your message." read `messageGiven` 0.03 to 0.08, and recording 5's "just say Alex called" 0.58, each under the slot's bar 0.6: the line asked again and handed off. The engine's default for a text slot without `pick` (`commands: ignore`) now takes the turn at its own question whole: no bar, and no request in it acted on; the screen, silence, words not made out and an unfinished answer joined work as before, and the read-back follows. The app follows the default. The engine also rewords the text type's default question ("Only asking to give it, without saying it, is not." in place of "A request alone is not ..."), which the app's own `instructions` contradicted ("A request to be called back about something is a message too"); the instructions are unchanged, so the next recording measures the engine change alone. Edited by hand, each matched by the stub:
+
+| Entry | Field | Before -> after | Why |
+|---|---|---|---|
+| corpus `ms-05` ("hmm, what should I say" at the message) | `decision`, `promptId`, `decidedGate`, `verdict`, `slots.message` | `ignore` at `addressedToSystem` -> `confirm_take_message`, `proceed`, the words | an aside at the message's question is taken as the message, and the read-back lets the caller say no |
+| corpus `ms-10` ("I'd rather not say what it's about") | `promptId`, `slots.message` | `ask_message_retry`, none -> `confirm_take_message`, the words | the words are the message, read back |
+| corpus `ur-07` ("hold on, it's really urgent, the website is down" at the message) | `decision`, `promptId`, `reason`, `decidedGate`, `verdict`, `form` | the urgent handoff -> `confirm_take_message`, `proceed`, `take_message` (the message the words, as before) | urgent said at the message's question is part of the message; its knownGap (the gate that took the handoff) no longer applies and is gone |
+| scripted call `urgent-in-the-middle-of-a-message` | renamed, moved | `handoffs.json` -> `messages.json`'s `message-urgent-in-the-message`, expecting the read-back with the words as the message | the old name and file said a handoff, which it no longer is |
+
+  `person-in-the-middle-of-a-message` and `hours-in-the-middle-of-a-message` are said at the caller's name, not the message's question, and are unchanged. `message-for-anyone` now takes "just say Alex called" whatever it reads. Every request of the app asks the reworded question, so `--client recorded` misses on every turn until the owner records again (226 misses); with the old wording, only the dictation change, the recorded run took "just say Alex called" as the message and missed once, at the read-back after it, never recorded.
 
 ## Final checklist
 

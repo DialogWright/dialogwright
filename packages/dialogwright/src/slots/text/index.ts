@@ -30,6 +30,21 @@ function quietOf(others: NonNullable<TextOptions['others']>): { quietsOthers?: t
   return { quietsOthers: true, listensWhileQuiet: [...others.listen] };
 }
 
+/**
+ * Whether the turn that answers the slot's question is read for requests (`commands`): the app's
+ * setting, else `ignore` for a slot that takes the whole answer as its content and `listen` for one
+ * that picks part of a longer answer (`pick`).
+ */
+export function commandsOf(o: Pick<TextOptions, 'commands' | 'pick'>): NonNullable<TextOptions['commands']> {
+  return o.commands ?? (o.pick !== undefined ? 'listen' : 'ignore');
+}
+
+/** What `commands` makes of the slot (SlotSpec.dictation): nothing for `listen`, whose turns are read as any. */
+function dictationOf(commands: NonNullable<TextOptions['commands']>): { dictation?: { readonly listen: readonly string[] } } {
+  if (commands === 'listen') return {};
+  return { dictation: { listen: commands === 'ignore' ? [] : [...commands.listen] } };
+}
+
 /** Whether a fill's display is the words as said while its value is written from them (SlotSpec.displayFrom). */
 const displaysSaid = (o: TextOptions): boolean => o.say === null && (o.numbers === 'digits' || o.case === 'title');
 
@@ -66,6 +81,10 @@ export const textType: SlotType<TextOptions, TextWording> = defineSlotType<TextO
       // the slots the app lists (others: { listen }): the default for a slot that takes the whole
       // answer; one that picks part of it (pick) listens.
       ...quietOf(othersOf(o)),
+      // The turn that answers its question is its words, whole, and no request in it is acted on but
+      // those the app lists (commands: ignore, { listen }): the default for a slot that takes the whole
+      // answer; one that picks part of it (pick) is read as any turn (listen).
+      ...dictationOf(commandsOf(o)),
       detect: true,
       questionIds: o.pick ? [givenId, pickId] : [givenId, changedId],
       // Asked only at a form's summary read-back (questions.ts changeableAtSummary), never with pick.

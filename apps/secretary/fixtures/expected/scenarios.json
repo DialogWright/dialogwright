@@ -359,27 +359,6 @@
     "pass": true,
     "mismatches": []
   },
-  "urgent-in-the-middle-of-a-message": {
-    "id": "urgent-in-the-middle-of-a-message",
-    "decision": "handoff",
-    "promptId": "handoff_urgent",
-    "acks": [],
-    "reason": "urgent",
-    "decidedGate": "intent",
-    "verdict": "route",
-    "form": "urgent",
-    "slots": {
-      "recipient": "riley",
-      "caller": "alex rivera",
-      "phone": "5555550142",
-      "message": "hold on, it's really urgent, the website is down"
-    },
-    "queued": [],
-    "principalLevel": 0,
-    "gate": null,
-    "pass": true,
-    "mismatches": []
-  },
   "urgent-at-the-read-back-with-a-correction": {
     "id": "urgent-at-the-read-back-with-a-correction",
     "decision": "handoff",
@@ -1181,6 +1160,27 @@
       "caller": "alex rivera",
       "phone": "5555550142",
       "message": "please call me back as soon as possible about the proofs"
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "message-urgent-in-the-message": {
+    "id": "message-urgent-in-the-message",
+    "decision": "prompt",
+    "promptId": "confirm_take_message",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "hold on, it's really urgent, the website is down"
     },
     "queued": [],
     "principalLevel": 0,

@@ -6,6 +6,7 @@ import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
 import type { TurnState } from './state';
 import { atLeast, type Thresholds } from './thresholds';
+import { dictationOf } from './fia';
 
 export interface GateRow {
   gate: string;
@@ -54,7 +55,11 @@ export type Verdict =
   | ({ kind: 'queue'; intent: FormId } & Frustrated)
   | ({ kind: 'disambiguate_intent'; a: Intent; b: Intent } & Frustrated)
   | ({ kind: 'intent_failed' } & Frustrated)
-  | ({ kind: 'proceed' } & Frustrated);
+  /**
+   * The turn goes to the form's slots. `dictated`: the turn is that slot's words, whole (SlotSpec.dictation,
+   * fia.ts dictationOf): the gates acted on nothing in it, and the slot takes the words (core/turn.ts).
+   */
+  | ({ kind: 'proceed'; dictated?: SlotId } & Frustrated);
 
 /** The rung a verdict carries, if it is one of the kinds that can carry one. */
 export function frustrationOf(verdict: Verdict): FrustrationRung | undefined {
@@ -164,12 +169,21 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     rows.push({ gate, value, threshold: null, passed: true, outcome, decided: false });
   };
 
+  // 0. A dictation (SlotSpec.dictation, fia.ts dictationOf; live findings item 29): the turn answers the
+  // question of a slot that takes it whole, so it is the slot's words, and no request in it is acted on
+  // but the intents the slot lists (`heeds`). Only what leaves no words to take still decides: words not
+  // made out (2) and a partial held for the rest (3); the injection screen ran before the gates. An aside
+  // (1) is taken as words: a message is words meant for someone else, which is what the aside question
+  // looks for, and the read-back lets the caller say no. A gate that would have acted reports `dictation`.
+  const dictation = dictationOf(session, ts.asr.text);
+  const heeds = (intent: string): boolean => dictation === null || dictation.listen.has(intent);
+
   // 1. addressed to system
   {
     const v = noulValue(answers, 'addressedToSystem');
     const passed = atLeast(v, t.GATE_ADDRESSED);
-    const row = { gate: 'addressedToSystem', value: v, threshold: t.GATE_ADDRESSED, passed, outcome: passed ? 'pass' : 'ignore', decided: false };
-    passed ? rows.push(row) : decide(row, { kind: 'ignore' });
+    const row = { gate: 'addressedToSystem', value: v, threshold: t.GATE_ADDRESSED, passed, outcome: passed ? 'pass' : dictation !== null ? 'dictation' : 'ignore', decided: false };
+    passed || dictation !== null ? rows.push(row) : decide(row, { kind: 'ignore' });
   }
 
   // 2. intelligible
@@ -201,8 +215,10 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     const pc = session.pendingConfirmation;
     const forNoAnswer = pc?.target === 'transfer' && pc.why === 'no-answer';
     const reason = pc?.target === 'transfer' && !forNoAnswer ? 'frustrated' : 'live-agent';
-    const row = { gate: 'wantsHuman', value: v, threshold: t.GATE_WANTS_HUMAN, passed, outcome: passed ? 'pass' : 'handoff', decided: false };
-    passed ? rows.push(row) : decide(row, { kind: 'handoff', reason });
+    // At a dictation a request for a person is acted on only where the slot lists `agent`.
+    const heard = heeds('agent');
+    const row = { gate: 'wantsHuman', value: v, threshold: t.GATE_WANTS_HUMAN, passed, outcome: passed ? 'pass' : heard ? 'handoff' : 'dictation', decided: false };
+    passed || !heard ? rows.push(row) : decide(row, { kind: 'handoff', reason });
   }
 
   // 5. frustration escalation (before intent; see Deviation note). The gate reads the rung off the
@@ -212,7 +228,9 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   {
     const f = answers.frustration;
     const high = isScore(f) ? (f.probabilities.high ?? 0) : 0;
-    const frustrated = atLeast(high, t.GATE_FRUSTRATION_HIGH);
+    // At a dictation the caller's tone is the words' own (an annoyed message is still a message): the
+    // turn is neither counted nor answered for it, and the row says so.
+    const frustrated = atLeast(high, t.GATE_FRUSTRATION_HIGH) && dictation === null;
     // The caller answering the offer is not counted again, however crossly they answer it.
     const atOffer = session.pendingConfirmation?.target === 'transfer';
     const count = frustrated && !atOffer ? session.frustratedTurns + 1 : session.frustratedTurns;
@@ -220,7 +238,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       : count === 1 ? 'ack'
         : count === 2 && !session.transferDeclined ? 'offer'
           : 'handoff';
-    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: rung, decided: false };
+    const unheard = dictation !== null && atLeast(high, t.GATE_FRUSTRATION_HIGH);
+    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: unheard ? 'dictation' : rung, decided: false };
     if (rung !== 'handoff') rows.push(row);
     // The third rung is a verdict of its own, and `decide` is first-wins, so a verdict an earlier
     // gate already settled has to be answered for rather than quietly swallowing the transfer.
@@ -271,8 +290,10 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     const [top] = isChoice(m) ? rankProbabilities(m.probabilities) : [];
     const mapped = top && top.label !== 'none' ? app.menu.find((o) => o.digit === top.label) : undefined;
     if (top && mapped && atLeast(top.p, t.MENU_NUMBER)) {
-      const row = { gate: 'menuNumber', value: top.p, threshold: t.MENU_NUMBER, passed: true, outcome: `menu:${mapped.intent}`, decided: false };
-      if (mapped.intent === 'agent') decide(row, { kind: 'handoff', reason: 'live-agent' });
+      const row = { gate: 'menuNumber', value: top.p, threshold: t.MENU_NUMBER, passed: true, outcome: heeds(mapped.intent) ? `menu:${mapped.intent}` : 'dictation', decided: false };
+      // At a dictation a number said is words too, unless its intent is one the slot lists.
+      if (!heeds(mapped.intent)) rows.push(row);
+      else if (mapped.intent === 'agent') decide(row, { kind: 'handoff', reason: 'live-agent' });
       else if (isFormIntent(app, mapped.intent)) decide(row, { kind: 'route', intent: mapped.intent, confirm: 'none' });
       else rows.push(row);
     } else {
@@ -372,6 +393,9 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     }
     // An unrecognized change label decides nothing; carry on with the form.
     else { routeVerdict = { kind: 'proceed' }; outcome = 'proceed'; }
+    // At a dictation the request is acted on only where the slot lists its intent; else the turn is words.
+    const acted = intentActedOn(routeVerdict, label);
+    if (acted !== null && !heeds(acted)) { routeVerdict = { kind: 'proceed' }; outcome = 'dictation'; }
   }
 
   // Second task on the opening utterance: only a plain route carries it;
@@ -456,12 +480,16 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   // explicit-confirm band and turns "confirm the top one" into "ask which of two".
   let marginRow: GateRow | null = null;
   // Only for a route on the top intent: an aside added beside the task is read from below it.
-  if (routeVerdict.kind === 'route' && routeVerdict.intent === label && second && isFormIntent(app, second.label)) {
+  // At a dictation, only between two intents the slot lists: an unlisted one is the slot's words.
+  if (routeVerdict.kind === 'route' && routeVerdict.intent === label && second && isFormIntent(app, second.label) && heeds(second.label)) {
     const margin = top.p - second.p;
     const passed = atLeast(margin, t.GATE_INTENT_MARGIN);
     marginRow = { gate: 'intentMargin', value: margin, threshold: t.GATE_INTENT_MARGIN, passed, outcome: passed ? 'pass' : 'disambiguate', decided: false };
     if (!passed) routeVerdict = { kind: 'disambiguate_intent', a: label, b: second.label as Intent };
   }
+
+  // A dictation that goes to the form's slots is the slot's words: the turn says which slot takes them.
+  if (dictation !== null && routeVerdict.kind === 'proceed') routeVerdict = { kind: 'proceed', dictated: dictation.slot };
 
   if (routeVerdict.kind === 'proceed') {
     rows.push(intentRow);
@@ -497,6 +525,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     if (p === null) row.outcome = 'none';
     else if (!p.reached) row.outcome = 'below';
     else if (inHand.includes(p.intent)) row.outcome = 'in_form';
+    // At a dictation, acted on only where the slot lists it: else the turn is the slot's words.
+    else if (!heeds(p.intent)) row.outcome = 'dictation';
     else if (settledVerdict.kind === 'handoff' || settledVerdict.kind === 'hold') row.outcome = `stands:${decidedBy}`;
     else if (actsOn(settledVerdict, p.intent, label)) row.outcome = 'agrees';
     else {
@@ -527,6 +557,21 @@ function priorityReading(app: App, ranked: readonly { label: string; p: number }
     return { intent: label as Intent, p, threshold, reached: threshold !== null && atLeast(p, threshold) };
   }
   return null;
+}
+
+/**
+ * The intent a verdict of the form's ladder acts on, if any: the agent intent's handoff, the repeat's
+ * replay, an informational answer (the top intent, `top`), a form entered or queued. Null for the turn
+ * that goes to the form's slots. Read at a dictation, where only the intents the slot lists are acted on.
+ */
+function intentActedOn(v: Verdict, top: Intent): string | null {
+  switch (v.kind) {
+    case 'handoff': return 'agent';
+    case 'replay': return 'repeat_prompt';
+    case 'inform': return top;
+    case 'route': case 'queue': return v.intent;
+    default: return null;
+  }
 }
 
 /**

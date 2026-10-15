@@ -303,14 +303,17 @@ function slotThreshold(app: App, slot: SlotId, t: Thresholds): number {
   return slotSpecOf(app, slot).detect === true ? t.SLOT_DETECT : t.SLOT_CHOICE_CONFIRM;
 }
 
-/** One row per slot the turn tried to fill, so the debug table is complete. */
-function slotRows(app: App, events: FillEvent[], t: Thresholds): GateRow[] {
+/**
+ * One row per slot the turn tried to fill, so the debug table is complete. The slot a dictation filled
+ * (`dictated`, the proceed verdict's) says so: it took the words whatever its question read against its bar.
+ */
+function slotRows(app: App, events: FillEvent[], t: Thresholds, dictated?: SlotId): GateRow[] {
   return events.map(({ slot, outcome }) => ({
     gate: `slot:${slot}`,
     value: outcome.kind === 'filled' || outcome.kind === 'window' ? outcome.confidence : null,
     threshold: slotThreshold(app, slot, t),
     passed: outcome.kind === 'filled' || outcome.kind === 'window' || outcome.kind === 'disambiguate' || outcome.kind === 'help',
-    outcome: outcome.kind === 'invalid' ? `${outcome.kind}:${outcome.reason}` : outcome.kind,
+    outcome: outcome.kind === 'invalid' ? `${outcome.kind}:${outcome.reason}` : outcome.kind === 'filled' && slot === dictated ? 'filled:dictation' : outcome.kind,
     decided: false,
   }));
 }
@@ -2142,7 +2145,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // not at all. A code actually said aloud arrives masked (spokenCode.ts) and counts as exposed,
       // so the caller is told a new one has been sent rather than asked to key the old one.
       if (s.promptedFor === 'otp') return { decision: codeReask(s, io, [], saidCode(ctx.text) ? 'otp_spoken_reissued' : 'ask_otp_spoken'), events: [] };
-      const fill = fillSlots(s, answers, ctx, slotsToFill(s));
+      // A dictation (gates.ts, SlotSpec.dictation): the turn is the slot's words, whatever its own question read.
+      const fill = fillSlots(s, answers, ctx, slotsToFill(s), verdict.dictated !== undefined ? { dictated: verdict.dictated } : {});
       if (!fill.progress) {
         // Nothing to blame the failure on when the prompt was not a slot's: the slot the form
         // needs next takes the attempt, so the retry ladder still walks somewhere.
@@ -3018,7 +3022,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (rung !== undefined) s.frustratedTurns += 1;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
       const decided = readSummary(s, escalate(s, resolved, rung), io);
-      rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds));
+      rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined));
       const decision = settle(decided, verdict.kind);
       // The barge-in has now been reported to the model; it does not carry into the next turn.
       s.lastInterrupt = null;

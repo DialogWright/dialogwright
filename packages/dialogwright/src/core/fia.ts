@@ -71,6 +71,28 @@ export interface FillOptions {
    * back before anything is done.
    */
   accepted?: { readonly except: SlotId | null };
+  /**
+   * The turn is this slot's words, whole (SlotSpec.dictation, dictationOf): the gates acted on nothing
+   * in it, so the slot is told (SlotContext.dictated) and takes the words whatever its own question
+   * read. Set only by the turn the gates let proceed as a dictation (core/turn.ts, the proceed verdict).
+   */
+  dictated?: SlotId;
+}
+
+/**
+ * The slot whose words this turn is, whole (SlotSpec.dictation, a `text` slot's `commands`; live findings
+ * item 29), with the intents still acted on there, or null. Only where the turn answers that slot's own
+ * question: it is the prompted slot (Session.promptedFor) of the open form, a slot the turn fills
+ * (slotsToFill), with no confirmation or offer pending (a read-back, the caller's number offered), and
+ * the turn has words. Every other turn is read as any turn is.
+ */
+export function dictationOf(session: Session, text: string): { slot: SlotId; listen: ReadonlySet<string> } | null {
+  const asked = session.promptedFor;
+  if (asked === null || asked === 'intent' || asked === 'confirm' || asked === 'otp') return null;
+  if (session.form === null || session.pendingConfirmation !== null || text.trim() === '') return null;
+  const spec = slotsToFill(session).find((s) => s.id === asked);
+  if (spec?.dictation === undefined) return null;
+  return { slot: asked, listen: new Set(spec.dictation.listen) };
 }
 
 /**
@@ -174,7 +196,9 @@ export function slotCtx(session: Session, ctx: SlotContext, id: SlotId, opts: Fi
   const hidden = opts.correcting === true && (opts.accepted === undefined || opts.accepted.except === id);
   // The yes to the summary being filled: the confirmation is settled by then, and only the form's slots fill.
   const summary = opts.accepted !== undefined;
-  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value, ...(summary ? { summary: true as const } : {}) };
+  // The turn the gates let proceed as this slot's words (dictationOf): never a correction or a switch.
+  const dictated = opts.dictated === id && opts.correcting !== true && opts.switching !== true;
+  return { ...ctx, window: slot.window, prompted: session.promptedFor === id, current: hidden ? null : slot.value, ...(summary ? { summary: true as const } : {}), ...(dictated ? { dictated: true as const } : {}) };
 }
 
 /**

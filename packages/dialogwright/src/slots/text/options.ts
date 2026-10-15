@@ -11,7 +11,7 @@ import { alwaysConfirmText } from '../parts/readBack';
  */
 export const TEXT_PARTS = textParts('text', {
   given: {
-    template: 'Read asr.text. Does the caller give {what}? A request alone is not {what}.{instructions}',
+    template: 'Read asr.text. Does the caller give {what}? Only asking to give it, without saying it, is not.{instructions}',
     vars: ['what', 'instructions'],
     about: 'The yes-or-no question that asks whether the caller gives the text, word for word.',
   },
@@ -117,7 +117,20 @@ export const textOptions = z
       ])
       .optional()
       .describe(
-        'What the other slots do on a turn that gives this slot its words while it is the slot just asked for: the app decides, by its business. "quiet": the turn is this slot\'s content, and no other slot fills or changes from it, so a word in a message ("could someone send it again") never replaces a value already given (who the message is for). "listen": every slot listens on that turn too, so a caller who names another value in the same breath as the words gives it ("14 Birch Lane, and there\'s a line down"). { listen: [<slot>, ...] }: quiet, but for the slots listed, which still fill or change from that turn (an urgency slot read from the content of a message). Default: "quiet" for a slot that takes the whole answer as its content (no `pick`), "listen" for one that picks part of a longer answer (`pick`). It applies only on a turn that gives this slot its words: a turn where the caller gives no text, or where another slot was asked, fills every slot. Either way, intents, priority switches (an urgent request, asking for a person, with what they say of the form) and the injection screen read the turn as ever, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot.',
+        'What the other slots do on a turn that gives this slot its words while it is the slot just asked for: the app decides, by its business. "quiet": the turn is this slot\'s content, and no other slot fills or changes from it, so a word in a message ("could someone send it again") never replaces a value already given (who the message is for). "listen": every slot listens on that turn too, so a caller who names another value in the same breath as the words gives it ("14 Birch Lane, and there\'s a line down"). { listen: [<slot>, ...] }: quiet, but for the slots listed, which still fill or change from that turn (an urgency slot read from the content of a message). Default: "quiet" for a slot that takes the whole answer as its content (no `pick`), "listen" for one that picks part of a longer answer (`pick`). It applies only on a turn that gives this slot its words: a turn where the caller gives no text, or where another slot was asked, fills every slot. Whether that turn is read for requests (an urgent request, asking for a person, a question) is `commands`; either way the injection screen reads it, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot.',
+      ),
+    commands: z
+      .union([
+        z.enum(['ignore', 'listen']),
+        z.strictObject({
+          listen: unique(identifier(), 'intent')
+            .min(1, { error: 'must name at least one intent' })
+            .describe('The intents still acted on at the slot\'s question (an urgent request, asking for a person): each an intent of intents.yaml, a priority intent or a control intent such as agent or repeat_prompt. pnpm check refuses any other.'),
+        }),
+      ])
+      .optional()
+      .describe(
+        'Whether the turn that answers this slot\'s question is read for requests: the app decides, by its business. "ignore": the turn is the slot\'s words, whole (when the line listens for a message, that is the message): the slot\'s own question sets no bar, so whatever is said is the value, and nothing in it is acted on as a request: no intent, priority switch, repeat, request for a person, menu number or frustration, and words that sound like an aside are taken too. Still as on any turn: the injection screen, silence, words the model cannot make out (asked again), a partial held for the rest, and an unfinished answer joined to what the caller goes on with; the read-back follows as ever, so the caller hears the words and can say no. "listen": the turn is read as any other: every request is acted on, and the words fill the slot only where its question reads them as given (SLOT_DETECT). { listen: [<intent>, ...] }: as "ignore", but the intents listed are acted on when the turn makes one (asking for a person is `agent`, which takes in the wantsHuman gate; a repeat is `repeat_prompt`), and every other turn is the slot\'s words. Default: "ignore" for a slot that takes the whole answer as its content (no `pick`), "listen" for one that picks part of a longer answer (`pick`). It applies only where this slot was the one just asked for, with no read-back or offer pending, and the turn has words: a turn at another question, or answering a read-back, is read as ever.',
       ),
     confirm: z
       .enum(['summary', 'always'])

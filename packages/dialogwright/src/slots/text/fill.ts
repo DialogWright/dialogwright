@@ -56,7 +56,10 @@ export function textFill(
     // the changed question alone decides: a correction ("make it Friday not Thursday") need not read as words
     // given on its own (recording 5, 2026-10-14: changed 0.92, given 0.25).
     const changed = changeableAtSummary(o, ctx) && meetsThreshold(ctx.thresholds, 'SUMMARY_WORDS_CHANGED', noulValue(answers, ids.changed));
-    if (!changed && !meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
+    // The turn that answers the slot's question is its words, whole (`commands`, SlotContext.dictated): the
+    // given question sets no bar there (live findings item 29: real messages read 0.03 to 0.58 at the very
+    // line that asked for one). Its answer is still recorded as the fill's confidence.
+    if (!changed && ctx.dictated !== true && !meetsThreshold(ctx.thresholds, 'SLOT_DETECT', p)) return { kind: 'absent' };
     if (keepsCurrent(o, ctx) && !changed) return { kind: 'absent' };
     const words = (pickedPart(o, ids.pick, answers, ctx) ?? ctx.text).trim();
     if (!words) return { kind: 'absent' };

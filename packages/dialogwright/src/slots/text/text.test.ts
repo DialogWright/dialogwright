@@ -28,7 +28,7 @@ describe('a text slot built from the defaults', () => {
     expect(note.questions(testSlotContext('hello'))).toEqual({
       noteGiven: {
         type: 'noul',
-        instructions: 'Read asr.text. Does the caller give a note for the courier? A request alone is not a note for the courier.',
+        instructions: 'Read asr.text. Does the caller give a note for the courier? Only asking to give it, without saying it, is not.',
       },
     });
   });
@@ -36,7 +36,7 @@ describe('a text slot built from the defaults', () => {
   it('adds the instructions after the default question', () => {
     const slot = defineSlot('note', { type: 'text', what: 'a note for the courier', instructions: 'Count where to leave the parcel.' });
     expect(slot.questions(testSlotContext('')).noteGiven?.instructions).toBe(
-      'Read asr.text. Does the caller give a note for the courier? A request alone is not a note for the courier. Count where to leave the parcel.',
+      'Read asr.text. Does the caller give a note for the courier? Only asking to give it, without saying it, is not. Count where to leave the parcel.',
     );
   });
 
@@ -66,6 +66,34 @@ describe('a text slot built from the defaults', () => {
     expect(defineSlot('place', { ...place, others: 'quiet' }).quietsOthers).toBe(true);
     const bad = buildSlot('note', { type: 'text', what: 'a note for the courier', others: 'sometimes' });
     expect(bad.ok).toBe(false);
+  });
+
+  it('the turn at its own question is its words, whole (commands, live findings item 29): ignore by default for the whole answer, listen with pick, the intents listed kept', () => {
+    // Takes the whole answer as its content: the turn is the words, no request acted on.
+    expect(note.dictation).toEqual({ listen: [] });
+    expect(defineSlot('note', { type: 'text', what: 'a note for the courier', commands: 'ignore' }).dictation).toEqual({ listen: [] });
+    expect(defineSlot('note', { type: 'text', what: 'a note for the courier', commands: 'listen' })).not.toHaveProperty('dictation');
+    expect(defineSlot('note', { type: 'text', what: 'a note for the courier', commands: { listen: ['urgent', 'agent'] } }).dictation).toEqual({ listen: ['urgent', 'agent'] });
+    // Picks part of a longer answer: read as any turn by default, as the app says otherwise.
+    const place = { type: 'text', what: 'the place', pick: { what: 'the street address' } } as const;
+    expect(defineSlot('place', place)).not.toHaveProperty('dictation');
+    expect(defineSlot('place', { ...place, commands: 'ignore' }).dictation).toEqual({ listen: [] });
+    for (const bad of ['sometimes', { listen: [] }, { listen: ['urgent', 'urgent'] }, { listen: ['not an id'] }]) {
+      expect(buildSlot('note', { type: 'text', what: 'a note for the courier', commands: bad }).ok).toBe(false);
+    }
+  });
+
+  it('told the turn is its words (SlotContext.dictated), fills with them whatever its question read; never past keep', () => {
+    const dictated = (text: string, over: Partial<SlotContext> = {}): SlotContext => ({ ...testSlotContext(text), prompted: true, dictated: true, ...over });
+    expect(note.fill(heard(0.05), dictated('  could you send me that updated spreadsheet  '))).toEqual({ kind: 'filled', value: 'could you send me that updated spreadsheet', display: 'your description', confidence: 0.05, confirm: 'none' });
+    expect(note.fill({}, dictated('just say Alex called'))).toMatchObject({ kind: 'filled', value: 'just say Alex called' });
+    // Empty words are no value (the engine sends no dictation without words).
+    expect(note.fill(heard(0.05), dictated('   '))).toEqual({ kind: 'absent' });
+    // keep: first keeps the value on file even then.
+    const first = defineSlot('note', { type: 'text', what: 'a note for the courier', keep: 'first' });
+    expect(first.fill(heard(0.05), dictated('another note', { current: 'by the gate' }))).toEqual({ kind: 'absent' });
+    // Without it, the same answer is below the bar.
+    expect(note.fill(heard(0.05), { ...testSlotContext('could you send me that updated spreadsheet'), prompted: true })).toEqual({ kind: 'absent' });
   });
 
   it('fills with the words, trimmed, at SLOT_DETECT and not below it', () => {
@@ -192,7 +220,7 @@ describe('the docs', () => {
   it('the docs page names every option', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/text.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(textType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['attempts', 'case', 'confirm', 'ids', 'instructions', 'keep', 'listen', 'maxLength', 'numbers', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'others', 'pick', 'redact', 'say', 'text', 'what']);
+    expect(options.sort()).toEqual(['attempts', 'case', 'commands', 'confirm', 'ids', 'instructions', 'keep', 'listen', 'maxLength', 'numbers', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'others', 'pick', 'redact', 'say', 'text', 'what']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
   });
 });

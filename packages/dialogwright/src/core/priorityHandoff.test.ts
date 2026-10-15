@@ -262,8 +262,10 @@ describe('a priority switch mid-form, before the read-back', () => {
 describe('a priority switch at a dictation (live findings item 27, review fixes)', () => {
   // The booking with a free-text slot of its own, asked last: a dictation turn there quiets the other
   // slots (others: quiet, the default), but a priority switch's correction is a switch of task, not a
-  // dictation, and corrects the form as it does anywhere else.
-  const details = defineSlot('details', { type: 'text', what: 'the details of the problem', say: null, redact: 'none' });
+  // dictation, and corrects the form as it does anywhere else. Since live findings item 29 the slot's own
+  // question takes its turn whole by default (commands: ignore), so the switch is acted on there only where
+  // the slot lists it (commands: { listen: [urgent] }); core/dictation.test.ts has the default.
+  const details = defineSlot('details', { type: 'text', what: 'the details of the problem', say: null, redact: 'none', commands: { listen: ['urgent'] } });
   const withDetails: App = {
     ...screenedApp,
     id: 'screened-details',

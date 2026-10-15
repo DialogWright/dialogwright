@@ -32,6 +32,12 @@ export interface SlotContext {
    */
   summary?: true;
   /**
+   * The turn is this slot's words, whole (SlotSpec.dictation; core/fia.ts slotCtx with
+   * FillOptions.dictated): the gates acted on nothing in it, so the slot takes the words whatever its
+   * own question read. Absent on every other turn.
+   */
+  dictated?: true;
+  /**
    * The app's records the slot specs may offer to choose from (App.facts.forSlots; e.g. the
    * customer's parcels, so one can be chosen by what it holds). Opaque to the engine; empty when
    * the app gives none, or before it has any.
@@ -398,6 +404,19 @@ export interface SlotSpec {
    * a slot of a form that holds this one (pnpm check). Absent: none.
    */
   listensWhileQuiet?: readonly SlotId[];
+  /**
+   * The turn that answers this slot's question is its words, whole (a `text` slot's `commands: ignore`,
+   * its default without `pick`, or `{ listen: [...] }`; live findings item 29): where this slot is the
+   * prompted slot (Session.promptedFor) in an open form, with no confirmation pending and words heard
+   * (core/fia.ts dictationOf), the gates act on no request in the turn but the intents in `listen`
+   * (core/gates.ts): no intent, priority switch, repeat, request for a person (wantsHuman, unless
+   * `agent` is listed), spoken menu number or frustration, and an aside (addressedToSystem) is taken as
+   * words too. The injection screen, words the model cannot make out (intelligible), a partial held for
+   * the rest (utteranceComplete) and silence are as on any turn. The turn then fills the slot with its
+   * words whatever its own question read (SlotContext.dictated), and its read-back follows as ever.
+   * Absent: the turn is read as any other.
+   */
+  dictation?: { readonly listen: readonly string[] };
   /**
    * How a handoff hands the slot over in what the call collected (HandoffDecision.slots). Absent:
    * its display (its value for a slot shown as said, `displayFrom: 'said'`). `last4`: the value's last four digits. `verified`: only whether identity was

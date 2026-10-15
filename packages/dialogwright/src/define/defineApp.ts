@@ -651,6 +651,19 @@ export function crossLink(
       else inTs(['slots', id, 'listensWhileQuiet'], message, fix);
     });
   }
+  // The intents a slot that takes its question's turn whole still acts on there (SlotSpec.dictation, a
+  // text slot's `commands: { listen }`): each an intent of intents.yaml, else it would never be heard.
+  for (const [id, spec] of Object.entries(linked.slots)) {
+    const listed = spec?.dictation?.listen;
+    if (listed === undefined) continue;
+    listed.forEach((intent, i) => {
+      if (has(intents, intent)) return;
+      const message = `the slot "${id}" acts on "${intent}" while it takes the caller's words (commands: listen), but "${intent}" is not an intent in intents.yaml`;
+      const fix = `${renameHint(intent, Object.keys(intents))}name one of ${Object.keys(intents).map((k) => `"${k}"`).join(', ')}, or take "${intent}" out of the list`;
+      if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'commands', 'listen', i], message, fix);
+      else inTs(['slots', id, 'dictation', 'listen'], message, fix);
+    });
+  }
   // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
   // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
   // the code that proposes (code.facts.offers). What feeds the facts is the app's: the call-start

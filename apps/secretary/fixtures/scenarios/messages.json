@@ -844,5 +844,33 @@
       "promptId": "confirm_take_message",
       "form": "take_message"
     }
+  },
+  {
+    "id": "message-urgent-in-the-message",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "can I leave a message for Riley"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "hold on, it's really urgent, the website is down"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_take_message",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley",
+        "phone": "5555550142",
+        "message": "hold on, it's really urgent, the website is down"
+      }
+    }
   }
 ]

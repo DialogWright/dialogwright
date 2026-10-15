@@ -2,7 +2,7 @@
 
 The caller's own words, kept as said: a description of a problem, a note for a courier, a reason for a request.
 
-One yes-or-no question asks whether the caller gives the text. When the model says yes (at `SLOT_DETECT` or above), the value is the caller's words on that turn, trimmed and cut to `maxLength`. The model never writes or rewrites the value. A summary reads the slot back by a stand-in (`say`, "your description"), and by default the words leave the turn (the trace, a tool call's param of the same name) as their length only.
+One yes-or-no question asks whether the caller gives the text. When the model says yes (at `SLOT_DETECT` or above), the value is the caller's words on that turn, trimmed and cut to `maxLength`; at the slot's own question, by default, the words are the value whatever the question reads (`commands`, below). The model never writes or rewrites the value. A summary reads the slot back by a stand-in (`say`, "your description"), and by default the words leave the turn (the trace, a tool call's param of the same name) as their length only.
 
 With `pick`, the value is the part of the words that is the value, picked out rather than written: code splits the words into candidate parts, a second question asks which of them is the value, and the value is that part, as said (see "Picking the value out of the words").
 
@@ -28,13 +28,23 @@ A message whose read-back summarizes it (a framed line's span worded from the sl
 
 The default follows what the slot is for. A slot that takes the whole answer as its content (no `pick`: a message, a note, a description) is `quiet`. A slot that picks part of a longer answer (`pick`: an address out of "14 Birch Lane, and there's a line down") is `listen`, so what else the caller said with it is heard; consider `{ listen: [...] }` there when only some of the other answers belong with it. An explicit setting always wins: `listen` on a description that often says when something was due as well, `quiet` on a picked value whose answers are dictated.
 
-It applies only on a turn that fills the slot: a turn where the caller gives no text ("oh, it's for Sam actually"), or where another slot was asked, fills every slot. Whatever it says, intents, priority switches and the injection screen read the turn as ever: an urgent request in the middle of a message still goes to a person and corrects the form with what it said, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot. It changes no question the model is asked, so a recorded cassette still replays; a baseline whose dictation turn filled another slot changes.
+It applies only on a turn that fills the slot: a turn where another slot was asked fills every slot, and so, with `commands: listen`, does a turn at this slot's question where the caller gives no text ("oh, it's for Sam actually"). With `commands: ignore` (the default without `pick`) every turn at its question that has words fills it, so that turn is the message, read back for a yes. Whether the turn is read for requests (an urgent request, asking for a person, a question) is `commands`, below; whatever either says, the injection screen reads the turn, the form a turn switches to hears it whole, and a correction at a read-back or the summary changes any slot. It changes no question the model is asked, so a recorded cassette still replays; a baseline whose dictation turn filled another slot changes.
+
+## The turn is the words: `commands`
+
+When the line asks for a message, what the caller says is the message: no line can take free words and also listen for requests in them, since a message is so often a request ("could you send me the updated spreadsheet", "call me back about the proofs"). `commands` says whether the turn that answers this slot's question is read for requests. The app decides, by its business:
+
+- `commands: ignore`: the turn is the slot's words, whole. The slot's question sets no bar (whatever is said is the value, whatever `<slot>Given` reads), and nothing in it is acted on as a request: no intent (an informational question, a form, a repeat, "that's all"), no priority switch ("it's urgent"), no request for a person (the agent intent and the `wantsHuman` gate), no spoken menu number, no frustration rung, and words that sound like an aside are taken too (a message is words meant for someone else, which is what the aside question looks for). Still as on any turn: the injection screen (a screened turn is set aside), silence and no input, words the model cannot make out (`intelligible`: asked again, `ask_<slot>_retry`), a partial held for the rest, and an unfinished answer joined to what the caller goes on with (the voice server's join of a reply cut off, `voice.continueWithinMs`). The read-back follows as ever (the form's summary, or `confirm_<slot>`), so the caller hears the words and can say no.
+- `commands: listen`: the turn is read as any other: every request is acted on, and the words fill the slot only where its question reads them as given (`SLOT_DETECT`).
+- `commands: { listen: [urgent, agent] }`: as `ignore`, but the intents listed are acted on when the turn makes one (`agent` takes in the `wantsHuman` gate; a repeat is `repeat_prompt`; a priority intent may be listed), and every other turn is the slot's words. Each must be an intent of intents.yaml; `dialogwright check` refuses any other.
+
+The default follows what the slot is for: `ignore` for a slot that takes the whole answer as its content (no `pick`), `listen` for one that picks part of a longer answer (`pick`), where the turn is longer than the value. It applies only where the slot is the one just asked for, in an open form, with no read-back or offer pending, and the turn has words: an opening that gives a message in one breath, a turn at another question, and the answer to a read-back are read as ever. It changes no question the model is asked; the gates act on less.
 
 ## The question
 
 With `what: a description of the problem` on the slot `problem`, the question is `problemGiven`:
 
-> Read asr.text. Does the caller give a description of the problem? A request alone is not a description of the problem.
+> Read asr.text. Does the caller give a description of the problem? Only asking to give it, without saying it, is not.
 
 With `instructions`, its words follow, after a space.
 

@@ -107,6 +107,25 @@
         messageGiven: { noul: 0.93 }
       expect: { kind: filled, value: "please call me back today about the invoice, it's urgent", display: "please call me back today about the invoice, it's urgent", displays: { es: "please call me back today about the invoice, it's urgent" } }
 
+- name: a message that still hears an urgent request
+  about: "At its own question the turn is the message, whole (commands: ignore, the default without pick): whatever is said is taken, whatever messageGiven reads, and nothing in it is acted on as a request, so \"call me back about the proofs\" is a message, never a request to the line; the read-back lets the caller say no. This app still acts on two requests said there (commands: { listen: [urgent, agent] }): an urgent request goes to a person, and so does asking for one; every other turn at the question is the message. pnpm check holds each listed id to an intent of intents.yaml. Away from its question (a message given in one breath at the opening) the slot fills only where messageGiven reaches SLOT_DETECT, as here."
+  slot: message
+  config:
+    what: the message the caller wants to leave
+    say: null
+    redact: none
+    maxLength: 400
+    commands: { listen: [urgent, agent] }
+  utterances:
+    - text: could you ask Sam to call me back about the proofs
+      answers:
+        messageGiven: { noul: 0.88 }
+      expect: { kind: filled, value: could you ask Sam to call me back about the proofs, display: could you ask Sam to call me back about the proofs, displays: { es: "could you ask Sam to call me back about the proofs" } }
+    - text: can I leave a message
+      answers:
+        messageGiven: { noul: 0.1 }
+      expect: { kind: absent }
+
 - name: picking the value out of the words
   about: "pick: code splits the words into candidate parts, a second question chooses which part is the street address, and the value is that part as said. Two clauses side by side are offered joined as said too, so the corner of Elm and Third can be picked whole; then each clause's tails from each word, so an address after any lead-in (\"yeah my address is\") can be picked, and one past the eighth clause too. None of these, a choice below SLOT_DETECT, or words that make one candidate keep the whole words. French is split with the slot's own words. A slot that picks part of a longer answer lets the other slots listen on that turn by default (others: listen), so what else the caller said with the address is heard."
   slot: place

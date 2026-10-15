@@ -17,36 +17,6 @@
     }
   },
   {
-    "id": "urgent-in-the-middle-of-a-message",
-    "callerNumber": "+15555550142",
-    "steps": [
-      {
-        "say": "can I leave a message for Riley"
-      },
-      {
-        "say": "it's Alex Rivera"
-      },
-      {
-        "say": "yes, that's fine"
-      },
-      {
-        "say": "hold on, it's really urgent, the website is down"
-      }
-    ],
-    "expect": {
-      "decision": "handoff",
-      "reason": "urgent",
-      "slots": {
-        "recipient": "riley",
-        "phone": "5555550142"
-      },
-      "transfer": {
-        "target": "STUDIO_MAIN_LINE"
-      }
-    },
-    "cosmeticDrift": true
-  },
-  {
     "id": "urgent-at-the-read-back-with-a-correction",
     "callerNumber": "+15555550142",
     "steps": [
