@@ -969,6 +969,14 @@ describe('row helpers', () => {
     expect(groupRows(rows as never, ['missingNote'], null).map((x) => x.name)).toEqual(['gates', 'intent', 'slot · missingNote', 'other']);
   });
 
+  it('marks the slot the line asked for: its question decided the turn even when it missed its bar (live call, 2026-10-14)', () => {
+    const rows = [{ id: 'intent', decisive: true }, { id: 'describesParcel', decisive: false }, { id: 'expectedDateMode', decisive: false }];
+    const g = groupRows(rows as never, ['missingNote', 'expectedDate'], null, 'missingNote');
+    expect(g.find((x) => x.name === 'slot · missingNote')).toMatchObject({ asked: true, decisive: false, quiet: 1 });
+    expect(g.find((x) => x.name === 'slot · expectedDate')).toMatchObject({ asked: false });
+    expect(groupRows(rows as never, ['missingNote'], null).find((x) => x.name === 'slot · missingNote')).toMatchObject({ asked: false });
+  });
+
   it('keeps a known slot the current form does not have in a slot group of its own', () => {
     // The identity slots are the everyday case: no form lists them, and every form asks them.
     const rows = [{ id: 'parcelChoice' }, { id: 'containsAccountId' }, { id: 'somethingNew' }];

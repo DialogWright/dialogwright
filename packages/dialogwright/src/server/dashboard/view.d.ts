@@ -26,6 +26,8 @@ export interface Group {
   rows: Row[];
   decisive: boolean;
   quiet: number;
+  /** The slot the line asked for on this turn: shown open, since its question decided the turn even on a miss. */
+  asked: boolean;
 }
 
 export interface Chip {
@@ -367,7 +369,7 @@ export function decisiveRows(
 /** The call detail header's note of a turn's second request on the same words (TraceRecord.followUp); '' for a turn that made none. */
 export function menuKeyNote(r: { menuKey?: { digit: string; intent: string } | null }): string;
 export function followUpNote(r: { followUp?: { slot: string; questions?: Record<string, unknown>; error?: { name: string } | null } | null; timing?: { followUpMs?: number } | null }): string;
-export function groupRows(rows: Row[], formSlots: readonly string[], pending: PendingConfirmation | { target: string } | null): Group[];
+export function groupRows(rows: Row[], formSlots: readonly string[], pending: PendingConfirmation | { target: string } | null, asked?: string | null): Group[];
 export function thresholdFor(id: string, thresholds: Partial<Thresholds>, activeForm?: string | null): number | null;
 // The lists' types live in rows.ts, a TypeScript module, so the server's declarations that use them never name this file.
 import type { CallRow, CallEnding, CallStatus } from './rows';

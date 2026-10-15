@@ -295,8 +295,12 @@ export function decisiveRows(answers, thresholds, gateRows, questions, activeFor
   });
 }
 
-/** Groups rows: gates, intent, confirmation (when pending), then one group per form slot in form order. */
-export function groupRows(rows, formSlots, pending) {
+/**
+ * Groups rows: gates, intent, confirmation (when pending), then one group per form slot in form order.
+ * `asked` is the slot the line asked for on this turn: its group is marked, since its question decided the
+ * turn even when it missed its bar (an `ask_<slot>_retry` follows a miss), and the page shows it open.
+ */
+export function groupRows(rows, formSlots, pending, asked) {
   const gates = { name: 'gates', rows: [] };
   const intent = { name: 'intent', rows: [] };
   const confirmation = { name: 'confirmation', rows: [] };
@@ -321,7 +325,7 @@ export function groupRows(rows, formSlots, pending) {
   const extra = ALL_SLOTS.filter((s) => offForm.has(s)).map((s) => offForm.get(s));
   const out = fixed.concat([...slotGroups.values()], extra);
   if (other.rows.length) out.push(other);
-  return out.map((g) => ({ ...g, decisive: g.rows.some((r) => r.decisive), quiet: g.rows.filter((r) => !r.decisive).length }));
+  return out.map((g) => ({ ...g, decisive: g.rows.some((r) => r.decisive), quiet: g.rows.filter((r) => !r.decisive).length, asked: typeof asked === 'string' && g.name === `slot · ${asked}` }));
 }
 
 /** A slot's pending narrowing, as the chip and the decision line say it: a dob month and day. */
@@ -814,6 +818,8 @@ export function reduce(events, opts) {
   let from = null;
   let ended = false;
   let prevSlots = null;
+  /** The slot the line asked for before this record's turn: the last record's `promptedFor`. */
+  let prevPromptedFor = null;
   /** The last turn whose batch reached the model, for the header of a turn that asked nothing. */
   let lastConsult = null;
   /** The previous event's clock, for how long a silence lasted. */
@@ -847,6 +853,7 @@ export function reduce(events, opts) {
         // and every total, line and panel starts over rather than continuing the last one's.
         Object.assign(v, emptyView());
         prevSlots = null;
+        prevPromptedFor = null;
         lastConsult = null;
         asks = [];
         task = null;
@@ -960,6 +967,7 @@ export function reduce(events, opts) {
           routed: routedOf(r.audit),
         };
         prevSlots = r.slots;
+        prevPromptedFor = typeof r.promptedFor === 'string' ? r.promptedFor : null;
         v.pending = pendingLine(r.pendingConfirmation);
         v.queued = r.queued ?? [];
         v.asking = askingLine(r, v.thresholds);
@@ -987,7 +995,7 @@ export function reduce(events, opts) {
           // to the post-turn state when it says "nothing was pending" would put the group back on
           // the very turn that has no answer to group.
           const pending = askedUnder ? askedUnder.pendingConfirmation ?? null : r.pendingConfirmation ?? null;
-          v.jev = { header, pending: false, groups: groupRows(rows, slotsOf(r.form), pending), decision };
+          v.jev = { header, pending: false, groups: groupRows(rows, slotsOf(r.form), pending, prevPromptedFor), decision };
           lastConsult = r.turnIndex;
           asks.push(r.timing?.askMs ?? 0);
           v.totals.p50AskMs = median(asks);

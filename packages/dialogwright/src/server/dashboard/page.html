@@ -1078,7 +1078,7 @@
   function groupsHtml(jev, groups) {
     return groups.map((g) => {
       // While the batch is still out every group is open, so the empty bars of the question batch are what appears.
-      const open = jev.pending || g.decisive || state.open.has(g.name);
+      const open = jev.pending || g.decisive || g.asked || state.open.has(g.name);
       const quiet = !open && g.quiet ? ` (${g.quiet} quiet)` : '';
       return `<div class="grp" data-grp="${esc(g.name)}">${esc(g.name)}${quiet}</div>`
         + (open ? g.rows.map(rowHtml).join('') : '');
@@ -1094,7 +1094,8 @@
     if (showAll) body = groupsHtml(jev, groups);
     else if (jev.pending) body = `<div class="row"><span class="id muted">asking Jev…</span><div class="bar pending"><i></i></div><span class="val muted">in flight</span></div>`;
     else {
-      const top = groups.flatMap((g) => g.rows.filter((r) => r.decisive));
+      // The slot the line asked for shows too: a miss on it is what decided an ask-again.
+      const top = groups.flatMap((g) => g.rows.filter((r) => r.decisive || g.asked));
       body = top.length ? top.map(rowHtml).join('') : '<div class="muted" style="font-size:.9em">No decisive signals this turn</div>';
     }
     const decision = jev.decision ? `<div class="decision">${esc(jev.decision)}</div>` : '';
