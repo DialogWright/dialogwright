@@ -83,9 +83,19 @@ h3 { font-size: 1.2rem; margin: 0 0 0.5rem; }
 .skip:focus { top: 12px; }
 
 /* Header */
-.top { border-bottom: 1px solid var(--line); }
+.top { border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; background: var(--bg); }
+/* The bar stays on screen, so a link to a section lands below it, not under it. */
+html { scroll-padding-top: 4.5rem; }
+@media (max-width: 720px) { html { scroll-padding-top: 7.5rem; } }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 60px; flex-wrap: wrap; }
-.home { display: inline-flex; padding: 4px; }
+.home { display: inline-flex; align-items: center; gap: 0.55rem; padding: 4px; text-decoration: none; }
+/* The name beside the mark. On the front page it waits until the hero's logo has scrolled away (copy.js). */
+.home .word {
+  font-weight: 800; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--heading); white-space: nowrap;
+  overflow: hidden; max-width: 12rem; transition: opacity 0.2s ease, max-width 0.25s ease;
+}
+html.hero-in .home .word { opacity: 0; max-width: 0; }
+@media (prefers-reduced-motion: reduce) { .home .word { transition: none; } }
 .home img { width: 32px; height: 32px; }
 .top nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
 .top nav a { text-decoration: none; font-weight: 600; font-size: 0.95rem; display: inline-block; padding: 0.4rem 0; }

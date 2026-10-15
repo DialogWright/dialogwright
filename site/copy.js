@@ -28,3 +28,13 @@ document.querySelectorAll('pre[data-copy]').forEach((pre) => {
     }, 2000);
   });
 });
+
+// Optional: on the front page, the top bar's name appears once the hero's logo has scrolled away. Without
+// this, the name always shows, as it does on every other page.
+const heroLogo = document.querySelector('.hero .logo');
+if (heroLogo && 'IntersectionObserver' in window) {
+  const root = document.documentElement;
+  const box = heroLogo.getBoundingClientRect();
+  root.classList.toggle('hero-in', box.bottom > 0 && box.top < window.innerHeight);
+  new IntersectionObserver(([entry]) => root.classList.toggle('hero-in', entry.isIntersecting)).observe(heroLogo);
+}
