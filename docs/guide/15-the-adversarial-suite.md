@@ -1,6 +1,6 @@
 # 15. The adversarial suite
 
-[Contents](README.md) · Previous: [14. Running it](14-running-it.md)
+[Contents](README.md) · Previous: [14. Running it](14-running-it.md) · Next: [16. Generated wording](16-generated-wording.md)
 
 Every app inherits a suite of hostile calls, generated from the app itself, so it needs no writing: announced injections, callers claiming a relationship they have not proven, requests the line does not handle, one-time codes said aloud or never sent, and downstream systems answering with instructions in their replies. Each case is held to properties over its run (what ran, who the caller was proven to be, what was said, what the trace kept), never to the words of a line, so a correct app may word its answers as it likes. It is `adversarialSuite(app)` and `runAdversarialSuite` in `'dialogwright/testing'`, and the regression runs it for an app that turns it on.
 

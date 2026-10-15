@@ -28,6 +28,7 @@ Everything in this repository, what each part is, and where its documentation is
 14. [Running it](guide/14-running-it.md): on a machine you own, from the first hour with two keys to a machine that stays on, many servers on one database, several apps on one server (`host.yaml`), and every option.
 15. [The adversarial suite](guide/15-the-adversarial-suite.md): the hostile calls every app inherits, and how to read a failure.
 16. [Generated wording (opt-in)](guide/16-generated-wording.md): lines a model words for the moment where the app asks for it, held by checks to their fixed text, which is said whenever a check fails; prescribed lines; measured against fixed lines.
+17. [Tuning with live calls](guide/17-tuning-with-live-calls.md): the working method after a live call: the call read in the console, a question found to be the problem, the fix measured and the recording made again; dictation, the read-back, a generated summary, time budgets and choosing models by measurement.
 
 The guide was one page, `docs/authoring-an-app.md`; that page now keeps a line for each of its old sections, so a link to it still lands.
 

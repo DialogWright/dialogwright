@@ -13,7 +13,7 @@ Five supporting files sit next to this one:
 - [options.md](options.md): the options index, one row per need (the option, the file it goes in, its pattern, its guide section), and the defaults the skill sets for a new app. Read it whole at step 2.
 - [patterns.md](patterns.md): for each option, when it fits, the YAML and TypeScript, the scripted calls that test it and its pitfall, each tried in a running app, and the known gaps with their workarounds.
 - [corpus.md](corpus.md): how to write corpus lines and scripted calls, including how to label each slot type's questions.
-- [triage.md](triage.md): what to do with the owner's recording (step 9): the three buckets, the order of the fixes, and what to bring to the owner.
+- [triage.md](triage.md): what to do with the owner's recording (step 9): the three buckets, the order of the fixes, what to bring to the owner, and the steps after a live call.
 
 ## Before you start
 
@@ -218,7 +218,7 @@ Tick the checklist at the end of the worksheet ([worksheet.md](worksheet.md#fina
 
 ## Step 9: Hand over the recording, then triage it
 
-**Guide**: [fixtures/](../../../docs/guide/02-the-files-one-by-one.md#fixtures-optional) (the keys, the providers and the cassettes); [triage.md](triage.md) has the rest.
+**Guide**: [fixtures/](../../../docs/guide/02-the-files-one-by-one.md#fixtures-optional) (the keys, the providers and the cassettes); [triage.md](triage.md) has the rest; after the app's first live calls, [17. Tuning with live calls](../../../docs/guide/17-tuning-with-live-calls.md).
 
 The app is green on the stub, which answers from your own labels. How the real model reads the same lines is the next thing to know, and only a recording shows it. Recording calls a paid API with the owner's key, so the owner runs it, never you.
 
@@ -240,7 +240,9 @@ It runs at the repository root and reads the key from the app's own `apps/<name>
 
 Commit the cassette with the triage: it holds only the corpus text and the model's answers.
 
-**An app that generates lines** (generated wording): the recording words them with the render model the app names in style.yaml (`model: { provider, id }`) or its `.env` names over it (`RENDER_PROVIDER` and `RENDER_MODEL`; with neither, Claude Haiku 5.5), the key from the `.env`, into `fixtures/recorded/render/<model>.jsonl`, and the replay's `generated lines` line says how many were said generated and why the rest fell back. When the owner wants to know whether another model words them better, or fits a call's budget (700 ms a line), hand them the comparison, theirs to run with their keys, whole: `pnpm render:bakeoff apps/<name> --models anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5` (in a project of its own, `npx dialogwright render:bakeoff --models ...`). It records each model into its own cassette, so you then table it again for free, `pnpm render:bakeoff apps/<name> --replay --by-line --models <the same>`, and bring them the table: the model that says the most lines generated with the fewest over the call's budget, and the lines that fall back most, each with a wording a check refused ([choosing a model](../../../docs/guide/16-generated-wording.md#1612-choosing-a-model)). When the owner chooses a model, name it in style.yaml (`model: { provider: openrouter, id: <vendor/model> }`) so the app's tests replay its cassette on every machine and the server words with it; the key stays in the `.env`. A line that falls back for every model is the line's to change (its goal, `acknowledge: false`, or keeping it fixed), not the model's.
+**After a live call.** Once the owner calls the app on a real line, what a call finds (a message split in two, a reading tipped under its bar, a yes read as a message) comes back to this step: the turn found on the console, written as a corpus line or a scripted call with the live reading, its question read before any threshold is touched, the rewording done at once and one recording handed over, as [triage.md, "After a live call"](triage.md#after-a-live-call) says in steps.
+
+**An app that generates lines** (generated wording): the recording words them with the render model the app names in style.yaml (`model: { provider, id }`) or its `.env` names over it (`RENDER_PROVIDER` and `RENDER_MODEL`; with neither, Claude Haiku 5.5), the key from the `.env`, into `fixtures/recorded/render/<model>.jsonl`, and the replay's `generated lines` line says how many were said generated and why the rest fell back. When the owner wants to know whether another model words them better, or fits a call's budget (`RENDER_TIMEOUT_VOICE_MS`, 900 ms a line by default), hand them the comparison, theirs to run with their keys, whole: `pnpm render:bakeoff apps/<name> --models anthropic:claude-haiku-5-5,anthropic:claude-sonnet-5-5` (in a project of its own, `npx dialogwright render:bakeoff --models ...`). It records each model into its own cassette, so you then table it again for free, `pnpm render:bakeoff apps/<name> --replay --by-line --models <the same>`, and bring them the table: the model that says the most lines generated with the fewest over the call's budget, and the lines that fall back most, each with a wording a check refused ([choosing a model](../../../docs/guide/16-generated-wording.md#1612-choosing-a-model)). When the owner chooses a model, name it in style.yaml (`model: { provider: openrouter, id: <vendor/model> }`) so the app's tests replay its cassette on every machine and the server words with it; the key stays in the `.env`. A line that falls back for every model is the line's to change (its goal, `acknowledge: false`, or keeping it fixed), not the model's.
 
 ## When something doesn't fit
 
