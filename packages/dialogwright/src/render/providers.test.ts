@@ -97,11 +97,11 @@ describe('the model an app names (style.yaml\'s model, live findings item 27)', 
 
 describe('renderSettings', () => {
   it('defaults: every call generated, 900 ms on a call and 1500 in a chat, the default model\'s price', () => {
-    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, price: { input: 0.1, output: 0.5 } });
+    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, price: { input: 0.1, output: 0.5 } });
   });
 
   it('RENDER_SHARE, RENDER_TIMEOUT_MS (both channels) and the price, each checked', () => {
-    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, price: { input: 1, output: 5 } });
+    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, price: { input: 1, output: 5 } });
     expect(() => renderSettings({ RENDER_SHARE: '150' })).toThrow('RENDER_SHARE must be a whole number from 0 to 100, got "150"');
     expect(() => renderSettings({ RENDER_TIMEOUT_MS: 'fast' })).toThrow('RENDER_TIMEOUT_MS');
     expect(() => renderSettings({ RENDER_PRICE_INPUT_PER_MTOK: '-1' })).toThrow('RENDER_PRICE_INPUT_PER_MTOK');
@@ -110,6 +110,10 @@ describe('renderSettings', () => {
   it('each channel set on its own: changing one never changes the other, and a channel\'s own setting wins over the one for both (the maintainer, 2026-10-14)', () => {
     expect(renderSettings({ RENDER_TIMEOUT_VOICE_MS: '1200' }).timeoutMs).toEqual({ voice: 1200, chat: 1500 });
     expect(renderSettings({ RENDER_TIMEOUT_CHAT_MS: '2000' }).timeoutMs).toEqual({ voice: 900, chat: 2000 });
+    // A knowledge answer's limit, each channel on its own, both at once, and refused out of bounds.
+    expect(renderSettings({ RENDER_ANSWER_TIMEOUT_VOICE_MS: '5000' }).answerTimeoutMs).toEqual({ voice: 5000, chat: 6000 });
+    expect(renderSettings({ RENDER_ANSWER_TIMEOUT_MS: '3000', RENDER_ANSWER_TIMEOUT_CHAT_MS: '8000' }).answerTimeoutMs).toEqual({ voice: 3000, chat: 8000 });
+    expect(() => renderSettings({ RENDER_ANSWER_TIMEOUT_MS: 'slow' })).toThrow('RENDER_ANSWER_TIMEOUT_MS');
     expect(renderSettings({ RENDER_TIMEOUT_MS: '15000', RENDER_TIMEOUT_VOICE_MS: '900' }).timeoutMs).toEqual({ voice: 900, chat: 15000 });
     expect(renderSettings({ RENDER_CHECK_TIMEOUT_VOICE_MS: '700' }).checkTimeoutMs).toEqual({ voice: 700, chat: 1000 });
     expect(renderSettings({ RENDER_CHECK_TIMEOUT_MS: '300', RENDER_CHECK_TIMEOUT_CHAT_MS: '800' }).checkTimeoutMs).toEqual({ voice: 300, chat: 800 });

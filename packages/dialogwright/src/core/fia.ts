@@ -386,6 +386,8 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         slot.window = null;
         // A slot the caller declined (SlotState.declined) that they now give a value is filled, no longer declined.
         delete slot.declined;
+        // A topic slot whose answer the app words for the caller's question keeps the words it was heard in.
+        if (isNew) keepHeard(session, spec.id, slot, ctx.text);
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
         if (isNew) progress = true;
         break;
@@ -416,6 +418,22 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
     }
   }
   return { session, events, acks, disambiguate, progress, help };
+}
+
+/**
+ * The caller's words a topic slot's new value was heard in (SlotState.heard), for a slot whose form's
+ * answer line words its answer for the caller's question (App.generated.answerSlots); never words said at
+ * a question whose answer is sensitive (the one-time code, an identity factor, a slot the records mask),
+ * which are never sent to a model. Every other slot is left as it was.
+ */
+function keepHeard(session: Session, id: SlotId, slot: Session['slots'][SlotId], text: string): void {
+  const app = appOf(session);
+  if (!(app.generated?.answerSlots ?? []).includes(id)) return;
+  const asked = session.promptedFor;
+  const sensitive = asked === 'otp'
+    || (asked !== null && asked !== 'intent' && asked !== 'confirm' && (identityOf(app).factorSlots.includes(asked) || (Object.hasOwn(app.slots, asked) && app.slots[asked]!.redact !== undefined)));
+  if (sensitive || text.trim() === '') delete slot!.heard;
+  else slot!.heard = text.trim();
 }
 
 export type NextPrompt =

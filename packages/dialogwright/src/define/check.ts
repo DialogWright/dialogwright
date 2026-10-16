@@ -404,7 +404,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   const redacted = Object.fromEntries(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => (spec?.redact !== undefined ? [[id, spec.redact]] : [])));
   const summarized = new Set(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => (spec?.summarized === true ? [id] : [])));
   const nameSlots = new Set(Object.entries(code?.slots ?? {}).flatMap(([id, spec]) => ((spec as { type?: unknown } | undefined)?.type === 'name' ? [id] : [])));
-  for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)), redacted, summarized, defaultLocale: config.defaultLocale, nameSlots, style: config.style })) {
+  for (const w of generatedWordingWarnings({ prompts: config.prompts[config.defaultLocale] ?? {}, forms: config.forms.forms, localePrompts: Object.fromEntries(Object.entries(config.prompts).filter(([locale]) => locale !== config.defaultLocale)), redacted, summarized, defaultLocale: config.defaultLocale, nameSlots, style: config.style, ...(config.knowledge ? { kbTopics: config.knowledge.topics } : {}) })) {
     const at = (w.atKey === true && loaded.locateKey ? loaded.locateKey(w.file, w.path) : locate(w.file, w.path)) ?? { line: 1, column: 1 };
     warnings.push({ file: w.file, line: at.line, column: at.column, path: formatPath(w.path), message: w.message, fix: w.fix });
   }

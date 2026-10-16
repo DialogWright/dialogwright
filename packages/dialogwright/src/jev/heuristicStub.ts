@@ -112,6 +112,32 @@ export function stubSpanDrift(state: unknown): boolean {
   return own.filter((w) => !FILLER.has(w) && !goal.has(w)).length >= 2;
 }
 
+/**
+ * The stub's answer drift judge (render/checks.ts renderAnswerDriftQuestion): a test double, deterministic,
+ * conservative and simple, that reads no grammar. It refuses a knowledge answer's wording that leaves out a
+ * time, an amount or a name of the passage (mustKeep); that says a figure or a capitalized name the passage
+ * does not have; that carries words of an injection or an instruction; or that has two words or more of its
+ * own (in neither the passage, the caller's question, its goal nor common filler). Whether it keeps a
+ * condition or an exclusion that bears on the question, or turns one around, is a real judge's to read;
+ * the adversarial suite's drifting wordings are refused by the judge their attack registers them with.
+ */
+export function stubAnswerDrift(state: unknown): boolean {
+  const s = state as { answer?: { said?: unknown; goal?: unknown; passage?: unknown; question?: unknown } } | null;
+  const said = typeof s?.answer?.said === 'string' ? s.answer.said : '';
+  const passage = typeof s?.answer?.passage === 'string' ? s.answer.passage : '';
+  const goal = new Set(tokens(typeof s?.answer?.goal === 'string' ? s.answer.goal : ''));
+  const question = new Set(tokens(typeof s?.answer?.question === 'string' ? s.answer.question : ''));
+  const given = new Set(tokens(passage));
+  const kept = new Set(tokens(said));
+  if (mustKeep(passage).some((w) => !kept.has(w))) return true;
+  const own = tokens(said).filter((w) => !given.has(w));
+  if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
+  if (own.some(isFigureWord)) return true;
+  const capitalized = (said.match(/(?<!^)\b\p{Lu}[\p{L}']*/gu) ?? []).map((w) => straight(w).toLowerCase());
+  if (capitalized.some((w) => !given.has(w))) return true;
+  return own.filter((w) => !FILLER.has(w) && !goal.has(w) && !question.has(w)).length >= 2;
+}
+
 const DRIFT_CUES = /\b(instructions?|system|prompt|mode|override|transfer(ring)?|refund|credit|guarantee|promise|password|admin|developer|assistant)\b/;
 
 function has(text: string, re: RegExp): boolean {
@@ -220,6 +246,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
     case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)
     case 'renderSpanDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubSpanDrift)
+    case 'renderAnswerDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAnswerDrift)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -250,6 +277,8 @@ export class HeuristicStubClient implements JevClient {
     if (Object.hasOwn(req.questions, 'renderDrift')) answers.renderDrift = noulAnswer(stubDrift(req.state) ? 0.9 : 0.04);
     // A framed line's span: held to the content it summarizes alone.
     if (Object.hasOwn(req.questions, 'renderSpanDrift')) answers.renderSpanDrift = noulAnswer(stubSpanDrift(req.state) ? 0.9 : 0.04);
+    // A knowledge answer's wording: held to its approved passage.
+    if (Object.hasOwn(req.questions, 'renderAnswerDrift')) answers.renderAnswerDrift = noulAnswer(stubAnswerDrift(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

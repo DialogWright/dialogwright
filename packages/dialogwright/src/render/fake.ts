@@ -90,6 +90,29 @@ export function fakeSpanWording(act: SpanAct): string {
   return (whole ? said : said.slice(0, act.style.words)).join(' ');
 }
 
+/** Words of a question too common to tie it to a sentence of a passage. */
+const COMMON = new Set(['a', 'an', 'the', 'and', 'or', 'is', 'are', 'was', 'be', 'it', 'its', "it's", 'that', 'this', 'do', 'does', 'did', 'you', 'your', 'i', 'my', 'me', 'we', 'our', 'us',
+  'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with', 'from', 'about', 'what', 'how', 'can', 'will', 'would', 'if', 'any', 'have', 'has', 'get', 'pay', 'plan', 'covered', 'cover', 'covers']);
+
+/** A sentence a careful answer keeps whatever was asked: one with a figure, a name past its first word, or a word that limits or turns it. */
+const KEEPS = /\d|\b(?:no|not|never|unless|until|except|only|up to|but|isn't|aren't|won't|doesn't|don't|can't)\b|n['\u2019]t\b/i;
+
+/**
+ * The fake's own wording of a knowledge answer (a span `from: answer`), deterministic: the passage's
+ * sentences that share a word with the caller's question (past the most common), and every sentence with a
+ * figure, a name or a word that limits or turns it, in the passage's order, as a careful answer focused on
+ * the question would keep them; the passage whole where that is all of it (then said unchanged). That
+ * choice is this test double's own, standing in for what a model might word: no model is told it.
+ */
+export function fakeAnswerWording(act: SpanAct): string {
+  const passage = act.content.map((c) => c.value.trim()).filter((v) => v !== '').join(' ');
+  const asked = new Set((act.answer?.question ?? '').toLowerCase().match(/[\p{L}\p{N}']+/gu)?.filter((w) => !COMMON.has(w)) ?? []);
+  const sentences = passage.split(/(?<=[.!])\s+/).filter((x) => x !== '');
+  const named = (x: string): boolean => /\s\p{Lu}/u.test(x.slice(1));
+  const kept = sentences.filter((x) => KEEPS.test(x) || named(x) || (x.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).some((w) => asked.has(w)));
+  return (kept.length === 0 ? sentences : kept).join(' ');
+}
+
 export class FakeRenderClient implements RenderClient {
   readonly model = FAKE_RENDER_MODEL;
   /** The acts it was asked to word, in order, with their prompt ids: what a test reads back. */
@@ -122,7 +145,7 @@ export class FakeRenderClient implements RenderClient {
       said = typeof own === 'function' ? own(act) : own;
     }
     if (said instanceof Error) throw new RenderClientError(said.message);
-    const text = said ?? (isSpanAct(act) ? fakeSpanWording(act) : fakeWording(act));
+    const text = said ?? (isSpanAct(act) ? (act.answer !== undefined ? fakeAnswerWording(act) : fakeSpanWording(act)) : fakeWording(act));
     return { text, model: FAKE_RENDER_MODEL, usage: { inputTokens: Math.ceil(JSON.stringify(act).length / 4), outputTokens: Math.ceil(text.length / 4) }, latencyMs: this.opts.delayMs ?? 0, source: 'fake' };
   }
 }

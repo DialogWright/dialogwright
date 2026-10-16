@@ -456,14 +456,14 @@ export const RENDER_ATTACKS: Readonly<Record<'instructions' | 'numbers', string>
  */
 export function refusingJudge(judge: JevClient, refused: ReadonlySet<string>): JevClient {
   const said = (state: unknown): string | undefined => {
-    const st = state as { line?: { said?: unknown }; span?: { said?: unknown } } | null;
-    const text = st?.span?.said ?? st?.line?.said;
+    const st = state as { line?: { said?: unknown }; span?: { said?: unknown }; answer?: { said?: unknown } } | null;
+    const text = st?.answer?.said ?? st?.span?.said ?? st?.line?.said;
     return typeof text === 'string' ? text : undefined;
   };
   return {
     ...(judge.answeredBy !== undefined ? { answeredBy: judge.answeredBy } : {}),
     async ask(req) {
-      const id = Object.hasOwn(req.questions, 'renderSpanDrift') ? 'renderSpanDrift' : Object.hasOwn(req.questions, 'renderDrift') ? 'renderDrift' : null;
+      const id = Object.hasOwn(req.questions, 'renderAnswerDrift') ? 'renderAnswerDrift' : Object.hasOwn(req.questions, 'renderSpanDrift') ? 'renderSpanDrift' : Object.hasOwn(req.questions, 'renderDrift') ? 'renderDrift' : null;
       const text = id === null ? undefined : said(req.state);
       if (id === null || text === undefined || !refused.has(text)) return judge.ask(req);
       return { answers: { [id]: noulAnswer(0.9) }, model: 'stub', usage: { inputTokens: 0, outputTokens: 0, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };

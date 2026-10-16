@@ -111,7 +111,17 @@ export interface SpanAct {
    * Absent where it lists none, and for every other span.
    */
   readonly names?: readonly SpeechItem[];
+  /**
+   * A knowledge base's answer worded for the caller's question (a span `from: answer` of a form's answer
+   * line, on a topic marked `risk: low`): its `content` is then the approved passage as it would be said
+   * (under `answer`), the only facts it may state, never the caller's words; and `question` is the
+   * caller's question in their own words, quoted (data, never instructions). Absent for every other span.
+   */
+  readonly answer?: { readonly question: string };
 }
+
+/** Whether `act` is a span that words a knowledge base's answer (SpanAct.answer). */
+export const isAnswerAct = (act: RenderAct): act is SpanAct & { answer: { question: string } } => isSpanAct(act) && act.answer !== undefined;
 
 
 /** What a render client is asked to word: a whole line's speech act, or a framed line's span. */
@@ -206,7 +216,11 @@ export type RenderSkip =
   /** The core asked for the line word for word (a summary read back exactly, forms.yaml's `summary.onNo: read-back`). */
   | 'exact'
   /** A framed line's span whose content is empty: there is nothing to word. */
-  | 'no-content';
+  | 'no-content'
+  /** A knowledge answer whose topic is not marked `risk: low` (kb/topics.yaml): the approved passage, word for word. */
+  | 'regulated'
+  /** A knowledge answer with no question of the caller's to word it for (an informational passage, a call resumed from before, an app whose caller words no line is sent): the passage, word for word. */
+  | 'no-question';
 
 /** One line the app generates, as said on a turn (TraceRecord.render.lines). */
 export interface RenderLine {
@@ -250,6 +264,26 @@ export interface RenderLine {
   ms?: number;
   usage?: RenderUsage;
   source?: Generation['source'];
+  /**
+   * A knowledge base's answer (a span `from: answer`): the passage it is worded from, by id and topic.
+   * `fixed` is then the approved passage, and `said` its wording, when one was said. Absent on every other line.
+   */
+  answer?: { passageId: string; topic: string };
+}
+
+/**
+ * The hold line said on a turn whose knowledge answer was still being worded when the line's budget ran
+ * out (RenderRecord.hold): said before the answer, in the turn's actions at `index`.
+ */
+export interface RenderHold {
+  /** Its index in the turn's actions (the answer's lines after it moved one on). */
+  index: number;
+  /** The prompt it was said from (`kb_hold`), or null for the engine's own words (the app has no `kb_hold`). */
+  promptId: string | null;
+  /** When it was said, ms after the turn's rendering began. */
+  atMs: number;
+  /** Whether it went to the caller before the turn ended (RunOptions.early took it), or only with the turn's other lines. */
+  early: boolean;
 }
 
 /** What generated wording did on a turn (TraceRecord.render), only for an app that generates a line and a run with a renderer. */
@@ -265,6 +299,8 @@ export interface RenderRecord {
   usage?: RenderUsage & { costUsd: number };
   /** How long the turn's rendering took, ms. */
   ms?: number;
+  /** The hold line, where a knowledge answer's wording ran past the line's budget; absent on every other turn. */
+  hold?: RenderHold;
 }
 
 /** A model's price, US dollars per million tokens. */
@@ -286,6 +322,13 @@ export interface Renderer {
    * waits at most both budgets.
    */
   checkTimeoutMs?: { voice: number; chat: number };
+  /**
+   * RENDER_ANSWER_TIMEOUT_MS: how long a knowledge answer's wording and its checks may take together, per
+   * channel, counted from when the turn's rendering began; default 4000 on voice, 6000 in a chat. Past the
+   * line's own budgets (the wording's and the checks'), the caller first hears the hold line; past this,
+   * the approved passage is said word for word. Only an answer line framed `from: answer` waits for it.
+   */
+  answerTimeoutMs?: { voice: number; chat: number };
   /** The model's price, for the cost in the trace and Insights; default the default model's. */
   price?: RenderPrice;
   /**
@@ -300,6 +343,15 @@ export const DEFAULT_RENDER_TIMEOUT_MS = { voice: 900, chat: 1500 } as const;
 
 /** The default budget of a line's checks by the decision model, ms, on each channel. */
 export const DEFAULT_RENDER_CHECK_TIMEOUT_MS = { voice: 500, chat: 1000 } as const;
+
+/**
+ * The default limit of a knowledge answer's wording and its checks together, ms, on each channel
+ * (RENDER_ANSWER_TIMEOUT_MS). On a call the hold line comes at 1.4 s (the wording's 900 ms and the checks'
+ * 500 ms) and takes about two and a half seconds to say, so an answer ready by 4 s follows it with
+ * little or no silence; in a chat the hold line comes at 2.5 s, and 6 s is about as long as a reader waits
+ * for a reply after being told one is coming.
+ */
+export const DEFAULT_RENDER_ANSWER_TIMEOUT_MS = { voice: 4000, chat: 6000 } as const;
 
 /** The default model's price (Claude Haiku 5.5), US dollars per million tokens: what the cost is counted at unless RENDER_PRICE_* says otherwise. */
 export const DEFAULT_RENDER_PRICE: RenderPrice = { input: 0.1, output: 0.5 };

@@ -73,6 +73,12 @@ export interface KbSource {
   /** Whether it may be said: approved, and nothing it was approved over has changed since. */
   fresh: boolean;
   /**
+   * What was said of it, on a turn whose answer line words its answer (a span `from: answer`): the
+   * approved passage word for word (`passage`), or a wording of it the checks and the drift judge passed
+   * (`worded`; the trace's render line has the wording beside the passage). Absent on every other turn.
+   */
+  said?: 'passage' | 'worded';
+  /**
    * @deprecated Phase 6: one fact a passage depended on, from before `applies`. Use
    * `applies: { plan }` instead. Kept for one release so an app that still sets it compiles; the
    * engine never reads or shows it, and the next release removes it.

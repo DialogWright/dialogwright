@@ -8,6 +8,7 @@ import type { Session } from '../core/session';
 import type { TurnContext } from '../core/turn';
 import { isAnonymous } from '../gate/types';
 import { VAR } from '../prompts/segments';
+import { answerSpanOf, KB_ACCOUNT_VAR, KB_QUESTION_VAR } from '../render/config';
 import { collapseWhitespace } from './hash';
 import { kbAuditRow, kbSourceOf } from './record';
 import { resolvePassage } from './resolve';
@@ -19,7 +20,10 @@ import type { AppKnowledge, KbAnswer, KbPassage, KnowledgeBase } from './types';
  * an informational intent's passage (informationalAnswer, intents.yaml `passage:`).
  *
  * The answer is a passage's approved text, said word for word through the answer line ("{answer}");
- * nothing in it is generated. A completion reads it through the gate (the resolving tool reads the
+ * nothing in it is generated, unless the app frames the answer line with a span worded from the answer
+ * (`from: answer`) and marks the topic `risk: low`: then a model may word the passage for the caller's
+ * question, held to it by the checks and the drift judge, and the passage is said whenever one fails
+ * (render/turn.ts). A completion reads it through the gate (the resolving tool reads the
  * caller's facts from the system of record, never from what the caller said), may add the topic's
  * account line (a second gated read, of the caller's own data; dropped when that read is refused or
  * comes back without the values the line needs), and records the passage (TurnOut.kb). When there is
@@ -195,13 +199,31 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     const defaultLocale = defaultLocaleOf(app);
     const locale = result.source.locale ?? s.locale ?? defaultLocale;
     let answer = result.answer;
+    let account: string | null = null;
     const line = accountLineOf(app.knowledge, result.source.topic, locale, defaultLocale);
     if (line !== null) {
       const read = c.callTool({ tool: line.from, params: kbCallParams(app, s, line.from, result.source.topic, opts.subject) });
-      const filled = read.decision.verdict === 'ALLOW' ? fillAccountLine(line.text, read.value) : null;
-      if (filled !== null) answer = `${answer} ${filled}`;
+      account = read.decision.verdict === 'ALLOW' ? fillAccountLine(line.text, read.value) : null;
+      if (account !== null) answer = `${answer} ${account}`;
     }
-    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer } }] };
+    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer, ...wordingVars(app, answerPrompt, account, s.slots[opts.slot]?.heard) } }] };
+  };
+}
+
+/**
+ * What an answer line that words its answer (a span `from: answer`, render/config.ts) is given beside
+ * {answer}: the account line alone (said after a wording of the passage), and the caller's question, in
+ * their words (what the wording is for), each only where there is one. Nothing for every other line, so
+ * its decision is as it was. In an app whose caller's words are sent to a model only to summarize a slot
+ * the records mask (a `text` slot's `redact: length-summarized`), the question is not given: no other line
+ * is sent the caller's words, and the passage is said word for word.
+ */
+function wordingVars(app: App, promptId: string, account: string | null, heard: string | undefined): Record<string, string> {
+  if (answerSpanOf(app.generated?.lines[promptId]) === null) return {};
+  const summarizing = Object.values(app.slots).some((spec) => spec.summarized === true);
+  return {
+    ...(account !== null ? { [KB_ACCOUNT_VAR]: account } : {}),
+    ...(heard !== undefined && heard !== '' && !summarizing ? { [KB_QUESTION_VAR]: heard } : {}),
   };
 }
 

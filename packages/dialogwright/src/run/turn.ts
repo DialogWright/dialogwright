@@ -21,7 +21,7 @@ import { topicsListening } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
-import { renderTurn, withRenderAudit } from '../render/turn';
+import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
 import type { Renderer } from '../render/types';
 
 export interface TurnObserver {
@@ -111,6 +111,14 @@ export interface RunOptions {
    * generates no line, every line is its fixed text and the turn is exactly as it was.
    */
   renderer?: Renderer | null;
+  /**
+   * A channel that can say lines before the turn has ended (the voice relay, the chat socket): handed a
+   * knowledge answer's hold line, with the turn's lines before it, as soon as the answer's wording runs
+   * past its line's budget (render/turn.ts EarlyLines). True when it said them; the turn's run then says
+   * how many of its actions went early (TurnRun.early). Unset (the harness, the CLI, a chat that answers
+   * one request with one reply), every line goes with the turn, the hold line in its place.
+   */
+  early?: EarlyLines;
 }
 
 /**
@@ -162,6 +170,11 @@ export interface TurnRun {
   record: TraceRecord;
   /** the turn's audit entries as the sink chained them; empty when no sink is set */
   audit: AuditEntry[];
+  /**
+   * How many of `result.actions`, from the first, the channel already said before the turn ended
+   * (RunOptions.early: a knowledge answer's hold line and the lines before it); absent or 0 on every other turn.
+   */
+  early?: number;
 }
 
 /** A turn's second request (core/turn.ts FollowUp) as it went: what it asked, and what came back or why nothing did. */
@@ -401,8 +414,10 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const retrievedAny = retrieved ?? second?.retrieved ?? null;
   // Generated wording, once the core has decided: only for an app that generates a line, on a run with a
   // renderer. The lines are worded and checked; the decision, the session and its fixed lines stand.
-  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null }) : null;
-  const result = rendered ? { ...resolved, actions: rendered.actions, audit: withRenderAudit(resolved.audit, rendered.audit) } : resolved;
+  const rendered = opts.renderer ? await renderTurn({ before: session, result: resolved, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}) }) : null;
+  // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
+  const kb = rendered?.kbSaid !== undefined && resolved.kb !== null ? { ...resolved.kb, said: rendered.kbSaid } : resolved.kb;
+  const result = rendered ? { ...resolved, actions: rendered.actions, audit: withRenderAudit(resolved.audit, rendered.audit), kb } : resolved;
   // Chained before anything else is written: the audit is the record of what the turn did.
   // The audit entries are recorded under the session's own channel kind.
   const chained = opts.audit ? chainDrafts(opts.audit, result.session.sessionId, result.session.channel, result.audit) : [];
@@ -457,5 +472,5 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       /* observers are best effort */
     }
   }
-  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited };
+  return { result, questions: p.questions, response, error, screenResponse, followUp: second?.run ?? null, record, audit: audited, ...(rendered !== null && rendered.early > 0 ? { early: rendered.early } : {}) };
 }

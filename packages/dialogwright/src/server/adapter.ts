@@ -11,6 +11,7 @@ import { keyEvents, serviceResultEvent, silenceEvent, withCallData, withCalledNu
 import { callDataFrom, HOST_APP_PARAMETER } from '../channel/callData';
 import { cutShort, playbackEstimateMs } from '../channel/relay/playback';
 import { arrivalContext, CODE_DIGIT, whenChained, type Arrival } from '../run/turn';
+import type { EarlyLines } from '../render/turn';
 import { CONTINUE_MAX_CHARS, CONTINUE_MAX_FRAGMENTS, Continuation, continueWithinMsOf, undoable, type ContinuedRun, type HeldWords } from '../run/continuation';
 import { pronounce, pronounceFor, unpronounce, type PronounceList } from '../channel/pronounce';
 import { digitsSaidOf, sayDigits } from '../channel/sayDigits';
@@ -1791,9 +1792,23 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
   // `end`, kept with the call by a durable store for the next socket (SessionStore.endUndelivered).
   let unsent: OutboundFrame[] | null = null;
   try {
+    // A knowledge answer still being worded when its line's budget ran out (render/turn.ts): the lines
+    // before it and the hold line go to the caller now, and the answer follows when it is ready. Never a
+    // reply that may be held for a caller who had not finished (holdReply), nor on a call with no socket.
+    let earlyFrames: OutboundFrame[] = [];
+    let earlySent: Promise<OutboundFrame[]> | null = null;
+    const early: EarlyLines = (lines, result) => {
+      if (entry.socket === null) return false;
+      const wait = deps.incompleteWait;
+      if (wait && wait.waitMs > 0 && event.type === 'user.speech' && event.final && holdsReply(result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE) !== null) return false;
+      earlyFrames = actionsToFrames([...lines]);
+      earlySent = sendFrames(deps, entry, earlyFrames, result.decision);
+      entry.frames.write('log', { holdLine: { turn: result.session.turnIndex } });
+      return true;
+    };
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
-    const run = await continuationOf(entry).run(entry.session, event, entry.opts, arrival, words);
+    const run = await continuationOf(entry).run(entry.session, event, { ...entry.opts, early }, arrival, words);
     if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
@@ -1834,7 +1849,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // and is never said when they do: the next final prompt continues this one.
     const held = await holdReply(deps, entry, event, run, promptAtMs);
     const said = held !== 'speech' && held !== 'prompt';
-    const frames = said ? actionsToFrames(run.result.actions) : [];
+    // The lines the channel said before the turn ended (a hold line and those before it) are not said again.
+    const frames = said ? actionsToFrames(run.result.actions.slice(run.early ?? 0)) : [];
+    const sentEarly: OutboundFrame[] = earlySent !== null ? await earlySent : [];
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
@@ -1852,7 +1869,7 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     }
     if (ending && deps.store.durable && entry.socket === null && !sent.some((f) => f.type === 'end') && frames.some((f) => f.type === 'end')) unsent = frames;
     // Lines a carrier that reports its playback may cut short, said again if it does (RESAY_CUT_LINES).
-    watchPlayback(deps, entry, frames, run.result.decision, sent, false);
+    watchPlayback(deps, entry, [...earlyFrames, ...frames], run.result.decision, [...sentEarly, ...sent], false);
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
     if (service && pending) queueService(deps, entry, service, pending);
     // A prompt restarts the wait - including the silence turn's own re-ask, which is how the

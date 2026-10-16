@@ -1626,12 +1626,21 @@ export interface GeneratedLine {
 
 /** One generated span of a framed line (prompts.yaml's `generate.<span>`). */
 export interface GeneratedSpan {
-  /** The slot whose content the span is worded from; its exact value fills the span whenever the span is not generated. */
+  /**
+   * The slot whose content the span is worded from; its exact value fills the span whenever the span is
+   * not generated. `answer` (KB_ANSWER_SOURCE) on a knowledge form's answer line: the approved passage the
+   * knowledge completion resolved for the caller, worded for their question on a topic marked `risk: low`.
+   */
   readonly from: string;
   /** What the span must say, told to the model. */
   readonly goal: string;
   /** The most words the span may use. */
   readonly words: number;
+  /**
+   * A span `from: answer` whose `words` the app does not set: its budget is its passage's own word count,
+   * so a long passage's answer is never cut to fit a short budget (`words` is then unused). Absent on every other span.
+   */
+  readonly sizedToPassage?: true;
   /**
    * `to-caller`: the span speaks to the caller about their own message (prompts.yaml's `speaks:
    * to-caller`): the model and the drift judge are told the line is spoken to the person who left the
@@ -1692,6 +1701,12 @@ export interface GeneratedWording {
    * Never sent to a model: it is not part of the style.
    */
   readonly model?: RenderModelChoice;
+  /**
+   * The topic slots whose question the caller's words are kept for (SlotState.heard): each the `slot` of a
+   * form's `answers` whose answer line words its answer (a span `from: answer`). Absent for every other
+   * app, so its sessions are as they were.
+   */
+  readonly answerSlots?: readonly string[];
 }
 
 /**

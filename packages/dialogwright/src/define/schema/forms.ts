@@ -80,7 +80,7 @@ const form = z
       .optional()
       .describe(
         'The form says an answer from the knowledge base, and its completion is the engine\'s: the answer resolved through the gate for the topic in `slot`, ' +
-          'said word for word with the topic\'s account line where it has one, or the unavailable line and a person offered, once per call. ' +
+          'said word for word with the topic\'s account line where it has one (or, where the answer line frames its {answer} as a span `from: answer` and the topic is `risk: low`, the approved passage worded for the caller\'s question, the account line after it), or the unavailable line and a person offered, once per call. ' +
           'A form with `answers` has no "complete" hook.',
       ),
     calls: unique(identifier(), 'action')

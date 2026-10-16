@@ -45,6 +45,13 @@ export interface SlotState {
    * slot, and gone when the slot is emptied.
    */
   by?: 'caller-id';
+  /**
+   * The caller's words the value was heard in: kept only for a topic slot whose form's answer line words
+   * its answer for the caller's question (App.generated.answerSlots), and never from words said at a
+   * question whose answer is sensitive. Absent on every other slot (so a session of every other app is as
+   * it was), and gone when the slot is emptied.
+   */
+  heard?: string;
 }
 
 export interface HistoryEntry {

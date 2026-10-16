@@ -9,13 +9,14 @@ import type { App, GeneratedLine, RenderChannel, RenderSituation } from '../core
 import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
-import { localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { checkGenerated, checkSpan, cleanGenerated, cleanSpan, decisionQuestionOf, sameWords, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { generatesLines, identifierVarsFrom, isFramed, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
+import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
+import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { answerSpanOf, generatesLines, identifierVarsFrom, isFramed, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import type { KbSource } from '../core/lifecycle';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -66,7 +67,27 @@ export interface RenderedTurn {
   audit: AuditDraft[];
   /** The decision model's usage on the checks it was asked (the collected content screened, the drift check); null when none was asked. */
   driftUsage: JevUsage | null;
+  /**
+   * How many of `actions`, from the first, went to the caller before the turn ended (RenderInput.early:
+   * the lines before a knowledge answer still being worded, and the hold line); 0 on every other turn.
+   */
+  early: number;
+  /** What was said of the turn's knowledge answer, on a turn whose answer line words its answer (KbSource.said); absent otherwise. */
+  kbSaid?: 'passage' | 'worded';
 }
+
+/** The hold line's words when the app has no `kb_hold` of its own. */
+export const DEFAULT_HOLD_TEXT = 'One moment while I gather that information.';
+/** The line said before a knowledge answer whose wording runs past its line's budget, where the app has it. */
+export const KB_HOLD_PROMPT = 'kb_hold';
+
+/**
+ * Hands a channel lines to say before the turn has ended: the turn's lines before a knowledge answer still
+ * being worded, and the hold line after them, with the turn's result so far (its decision and session).
+ * True when the channel said them (they are then not said again at the turn's end); false where it cannot,
+ * and they go with the turn's other lines.
+ */
+export type EarlyLines = (actions: readonly Action[], result: TurnResult) => boolean;
 
 export interface RenderInput {
   /** The session as the turn found it. */
@@ -81,6 +102,8 @@ export interface RenderInput {
   thresholds: Thresholds;
   /** The run's recorded clips (RunOptions.render): a framed line keeps its frame's clips when a span is worded. */
   clips?: RenderContext | null;
+  /** A channel that can say lines before the turn has ended (RunOptions.early): the hold line goes to it as soon as it is due. */
+  early?: EarlyLines;
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
@@ -164,6 +187,62 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
       return { name, content, act, conflicts };
     }),
   };
+}
+
+/** A knowledge answer to word on this turn: its span, the passage and its record, and its act; or why it is not tried. */
+type AnswerPlan = { name: string; passage: string; kb: KbSource | null } & ({ act: SpanAct } | { skipped: RenderSkip });
+
+/**
+ * A form's answer line framed with a span worded from the answer (`from: answer`), on this turn: its act,
+ * or why the approved passage is said word for word. It is worded only for a passage of the app's kb/
+ * folder, fresh, on a topic marked `risk: low`, said as the knowledge completion gave it (the passage, then
+ * the topic's account line), with the caller's question kept; and held as every generated line is (said
+ * exactly, the call's group, `when`, the screen, a goal in the call's locale). Its act is the span's goal,
+ * its sentence, the passage (its content: the only facts it may state), the caller's question (quoted),
+ * its budget (the passage's own word count, unless the span sets `words`), the style, the channel and the
+ * language: never the account line, a record, another passage or the transcript.
+ */
+function planAnswer(app: App, input: RenderInput, line: GeneratedLine, name: string, said: SaidLine, group: 'generated' | 'fixed'): AnswerPlan {
+  const { before, result, event } = input;
+  const after = result.session;
+  const span = line.spans![name]!;
+  const answerVar = said.vars[KB_ANSWER_LINE_VAR] ?? '';
+  const kb = app.knowledge?.kb;
+  const record = result.kb;
+  const passage = kb !== undefined && record !== null && Object.hasOwn(kb.passages, record.passageId) ? kb.passages[record.passageId]! : undefined;
+  const base = { name, passage: passage?.answer ?? answerVar, kb: record };
+  const account = said.vars[KB_ACCOUNT_VAR] ?? '';
+  // The passage of the app's own kb/, fresh, said as the completion gave it: anything else is said as it came.
+  if (passage === undefined || record === null || record.fresh !== true || answerVar !== (account === '' ? passage.answer : `${passage.answer} ${account}`)) return { ...base, skipped: 'knowledge' };
+  if (kb!.topics[record.topic]?.risk !== 'low') return { ...base, skipped: 'regulated' };
+  if (said.exact === true) return { ...base, skipped: 'exact' };
+  if (group === 'fixed') return { ...base, skipped: 'share' };
+  const situations = situationsOf(before, after, result, said.promptId);
+  const channel = channelOf(after);
+  if (line.channels !== undefined && !line.channels.includes(channel)) return { ...base, skipped: 'when' };
+  if (line.situations !== undefined && !line.situations.some((s) => situations.includes(s))) return { ...base, skipped: 'when' };
+  const words = wordsOf(event);
+  if (words !== null && (result.screen === null || result.screen.fired || result.screen.error !== null || result.quarantined)) return { ...base, skipped: 'screen' };
+  const locale = after.locale;
+  const defaultLocale = app.locales?.default;
+  const localized = locale !== undefined && defaultLocale !== undefined && locale !== defaultLocale;
+  const goal = localized ? app.generated!.localeSpanGoals?.[locale]?.[said.promptId]?.[name] : span.goal;
+  if (goal === undefined) return { ...base, skipped: 'locale' };
+  const question = said.vars[KB_QUESTION_VAR];
+  if (question === undefined || question.trim() === '') return { ...base, skipped: 'no-question' };
+  const template = localePromptEntry(app, said.promptId, locale).entry.text;
+  const style = app.generated!.style;
+  const act: SpanAct = {
+    kind: 'span',
+    goal,
+    sentence: spanSentence(template, name),
+    content: [{ name: KB_ANSWER_LINE_VAR, value: passage.answer }],
+    channel,
+    language: locale ?? defaultLocale ?? 'en-US',
+    style: { persona: style.persona, words: span.sizedToPassage === true ? wordCount(passage.answer) : span.words, avoid: [...style.avoid] },
+    answer: { question },
+  };
+  return { ...base, act };
 }
 
 /**
@@ -254,6 +333,13 @@ function raceDeadline<T>(p: Promise<T>, deadline: Promise<'late'>): Promise<T | 
  * place of its fixed line only when every check passed within the turn's budget; otherwise its fixed
  * line is said and the audit records `render_fallback`. Null for an app that generates nothing, or a
  * turn that says none of its generated lines: the turn is exactly as it was.
+ *
+ * A knowledge answer worded for the caller's question (a form's answer line framed `from: answer`, on a
+ * topic marked `risk: low`) has longer: its wording and checks may take up to the renderer's answer limit
+ * (RENDER_ANSWER_TIMEOUT_MS). When it is not done by the line's own budgets (the wording's and the
+ * checks'), the hold line (`kb_hold`, else DEFAULT_HOLD_TEXT) is put before it, and handed with the lines
+ * before it to the channel to say at once (`early`), where the channel can; the answer, or the passage
+ * word for word if it is still not ready or a check fails, follows when it is.
  */
 export async function renderTurn(input: RenderInput): Promise<RenderedTurn | null> {
   const { result, renderer } = input;
@@ -266,6 +352,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const identifiers = identifierVarsFrom(app.slots, identityOf(app).factorSlots);
   const planned: { index: number; said: SaidLine; plan: ReturnType<typeof planLine> }[] = [];
   const framed: { index: number; said: SaidLine; plan: ReturnType<typeof planFramed> }[] = [];
+  const answers: { index: number; said: SaidLine; plan: AnswerPlan }[] = [];
   // Whether the turn has said an acknowledgement before the line at hand: an ack of the decision's, or a line of the engine's own.
   let acked = false;
   result.actions.forEach((a, index) => {
@@ -275,11 +362,14 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (said === undefined || said.role === 'acknowledge') acked = true;
     if (said === undefined || !Object.hasOwn(generated.lines, said.promptId)) return;
     const line = generated.lines[said.promptId]!;
+    // A knowledge answer worded for the caller's question: its own plan, and its own, longer limit.
+    const answer = answerSpanOf(line);
+    if (answer !== null) answers.push({ index, said, plan: planAnswer(app, input, line, answer.name, said, group) });
     // A framed line: only its spans are worded, each spliced into its fixed text.
-    if (isFramed(line)) framed.push({ index, said, plan: planFramed(app, input, line, said, group, identifiers) });
+    else if (isFramed(line)) framed.push({ index, said, plan: planFramed(app, input, line, said, group, identifiers) });
     else planned.push({ index, said, plan: planLine(app, input, line, said, group, identifiers, wasAcked) });
   });
-  if (planned.length === 0 && framed.length === 0 && !start) return null;
+  if (planned.length === 0 && framed.length === 0 && answers.length === 0 && !start) return null;
 
   const t0 = performance.now();
   const channel = channelOf(result.session);
@@ -287,6 +377,8 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // before, the drift check after), so a slow wording never starves the checks of their time.
   const budget = (renderer.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS)[channel];
   const checkBudget = (renderer.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[channel];
+  // A knowledge answer's own limit, its wording and checks together: never less than a line's.
+  const answerLimit = Math.max((renderer.answerTimeoutMs ?? DEFAULT_RENDER_ANSWER_TIMEOUT_MS)[channel], budget + checkBudget);
   const abort = new AbortController();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const after = (ms: number): Promise<'late'> => new Promise((resolve) => {
@@ -306,8 +398,8 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     };
   };
   // A line's (or a span's) checks share their budget: each is given what is left of it.
-  const checker = () => {
-    let checkLeft = checkBudget;
+  const checker = (initial: number = checkBudget) => {
+    let checkLeft = initial;
     const check = async <T,>(p: Promise<T>): Promise<T | 'late'> => {
       const began = performance.now();
       const got = await raceDeadline(p, after(Math.max(0, checkLeft)));
@@ -393,11 +485,49 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     }
     return { said: text, gen };
   };
-  const timed = async (act: RenderAct, run: () => Promise<Attempt>): Promise<{ got: Attempt; ms: number }> => {
+  // A knowledge answer: the caller's question screened again (their words, kept from the turn they asked
+  // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
+  // (checkAnswer), and asked of the drift judge whether it says only what the passage says for the
+  // question; its checks have the line's budget, or what is left of the answer's limit where that is more.
+  const attemptAnswer = async (promptId: string, span: string, act: SpanAct): Promise<Attempt> => {
+    const flagged = await screened([{ name: 'question', value: act.answer!.question }], checker());
+    if (flagged !== null) return flagged;
+    let gen: Generation;
+    try {
+      const left = Math.max(1, answerLimit - checkBudget - (performance.now() - t0));
+      const wording = await raceDeadline(renderer.client.generate({ promptId, span, act, key: spanKey(promptId, span, act) }, abort.signal), after(left));
+      if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
+      gen = wording;
+    } catch (e) {
+      return requestFailed(e);
+    }
+    const text = cleanAnswer(gen.text, act);
+    const passage = act.content.map((c) => c.value).join(' ');
+    // The passage back word for word: said as the passage, with nothing more asked.
+    if (sameWords(text, passage)) return { unchanged: true, gen };
+    const failed = checkAnswer(text, act);
+    if (failed !== null) return { fallback: failed, refused: text, gen };
+    const c = checker(Math.max(checkBudget, answerLimit - (performance.now() - t0)));
+    try {
+      const r = await c.check(drift.ask({ state: renderAnswerDriftState(act, text) as unknown as JsonValue, questions: renderAnswerDriftQuestion(), timeoutMs: c.left(), signal: abort.signal }));
+      if (r === 'late') return { fallback: 'timeout', refused: text, gen };
+      used(r.usage);
+      const a = r.answers[ANSWER_DRIFT_QUESTION_ID];
+      if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
+      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen };
+    } catch {
+      return { fallback: 'drift-error', refused: text, gen };
+    }
+    return { said: text, gen };
+  };
+  const timed = async (act: RenderAct, run: () => Promise<Attempt>, by: Promise<'late'> = deadline): Promise<{ got: Attempt; ms: number }> => {
     const began = performance.now();
-    const got = await raceDeadline(run(), deadline);
+    const got = await raceDeadline(run(), by);
     return { got: got === 'late' ? ({ fallback: 'timeout', usage: requestUsage(act) } as Attempt) : got, ms: performance.now() - began };
   };
+  // The answers start with the rest, and have till their own limit.
+  const answerDeadline = answers.some((a) => 'act' in a.plan) ? after(answerLimit) : deadline;
+  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act), answerDeadline) : null));
   const [settled, settledSpans] = await Promise.all([
     Promise.all(planned.map(async (p) => {
       if (!('act' in p.plan)) return null;
@@ -409,14 +539,16 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       return Promise.all(f.plan.spans.map(async (sp) => ('act' in sp ? timed(sp.act, () => attemptSpan(f.said.promptId, sp.name, sp.act, sp.conflicts)) : null)));
     })),
   ]);
-  for (const t of timers) clearTimeout(t);
-  abort.abort();
 
   const actions = [...result.actions];
   const lines: RenderLine[] = [];
   const audit: AuditDraft[] = [];
   let usage: RenderUsage | null = null;
   let model: string | undefined;
+  const pay = (paid: RenderUsage | undefined): void => {
+    if (paid === undefined) return;
+    usage = { inputTokens: (usage?.inputTokens ?? 0) + paid.inputTokens, outputTokens: (usage?.outputTokens ?? 0) + paid.outputTokens, ...((usage?.estimated ?? false) || paid.estimated === true ? { estimated: true } : {}) };
+  };
   planned.forEach((p, i) => {
     const base = { index: p.index, promptId: p.said.promptId, fixed: promptText(app, p.said.promptId, { ...p.said.vars }, result.session.locale), act: p.said.role };
     if (!('act' in p.plan)) {
@@ -427,9 +559,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const gen = 'gen' in got ? got.gen : undefined;
     // What the line was paid for: its generation's usage, or a request the turn stopped waiting for (estimated).
     const paid: RenderUsage | undefined = gen !== undefined ? { ...gen.usage } : 'usage' in got ? got.usage : undefined;
-    if (paid !== undefined) {
-      usage = { inputTokens: (usage?.inputTokens ?? 0) + paid.inputTokens, outputTokens: (usage?.outputTokens ?? 0) + paid.outputTokens, ...((usage?.estimated ?? false) || paid.estimated === true ? { estimated: true } : {}) };
-    }
+    pay(paid);
     if (gen !== undefined) model = gen.model;
     const meta = { situations: [...p.plan.act.situations], ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
@@ -471,9 +601,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       const { got, ms } = settledSpans[i]![j]!;
       const gen = 'gen' in got ? got.gen : undefined;
       const paid: RenderUsage | undefined = gen !== undefined ? { ...gen.usage } : 'usage' in got ? got.usage : undefined;
-      if (paid !== undefined) {
-        usage = { inputTokens: (usage?.inputTokens ?? 0) + paid.inputTokens, outputTokens: (usage?.outputTokens ?? 0) + paid.outputTokens, ...((usage?.estimated ?? false) || paid.estimated === true ? { estimated: true } : {}) };
-      }
+      pay(paid);
       if (gen !== undefined) model = gen.model;
       const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
       if ('said' in got) {
@@ -495,8 +623,72 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       actions[f.index] = promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded);
     }
   });
+
+  // A knowledge answer not yet worded when the line's budgets have run out: the hold line goes before it,
+  // and, with the lines before it, to the caller at once where the channel can say them before the turn ends.
+  let hold: RenderHold | undefined;
+  let early = 0;
+  const pending = answers.filter((_, i) => answering[i] !== null);
+  if (pending.length > 0) {
+    const done = await Promise.race([Promise.all(answering).then(() => true as const), deadline.then(() => false as const)]);
+    if (!done) {
+      const at = Math.min(...pending.map((a) => a.index));
+      const locale = result.session.locale;
+      const own = Object.hasOwn(app.prompts.manifest, KB_HOLD_PROMPT);
+      const line = own ? promptSay(app, KB_HOLD_PROMPT, {}, false, input.clips ?? null, locale) : sayAction([{ text: DEFAULT_HOLD_TEXT }], false, lineLang(app, locale));
+      const before = actions.slice(0, at);
+      // Only lines said as their fixed text go early (a wording's checks are all done by now, but a line
+      // said before its turn's record is written keeps nothing back: a span the records mask, say).
+      const fixedBefore = [...lines, ...spanLines].every((l) => l.index >= at || l.mode === 'fixed') && before.every((a) => a.type === 'say');
+      const sent = fixedBefore && input.early !== undefined ? input.early([...before, line], { ...result, actions: [...before, line] }) : false;
+      actions.splice(at, 0, line);
+      hold = { index: at, promptId: own ? KB_HOLD_PROMPT : null, atMs: performance.now() - t0, early: sent };
+      if (sent) early = at + 1;
+    }
+  }
+  const settledAnswers = await Promise.all(answering);
+  for (const t of timers) clearTimeout(t);
+  abort.abort();
+  // The lines after the hold line moved one on.
+  const shift = (index: number): number => (hold !== undefined && index >= hold.index ? index + 1 : index);
+  let kbSaid: RenderedTurn['kbSaid'];
+  const answerLines: RenderLine[] = [];
+  answers.forEach((a, i) => {
+    const promptId = a.said.promptId;
+    const index = shift(a.index);
+    const situations = situationsOf(input.before, result.session, result, promptId);
+    const kb = a.plan.kb;
+    const base = { index, promptId, span: a.plan.name, fixed: a.plan.passage, act: a.said.role, ...(kb !== null ? { answer: { passageId: kb.passageId, topic: kb.topic } } : {}) };
+    kbSaid ??= 'passage';
+    if (!('act' in a.plan)) {
+      answerLines.push({ ...base, mode: 'fixed', situations, skipped: a.plan.skipped });
+      return;
+    }
+    const { got, ms } = settledAnswers[i]!;
+    const gen = 'gen' in got ? got.gen : undefined;
+    const paid: RenderUsage | undefined = gen !== undefined ? { ...gen.usage } : 'usage' in got ? got.usage : undefined;
+    pay(paid);
+    if (gen !== undefined) model = gen.model;
+    const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
+    if ('said' in got) {
+      const was = actions[index] as Say;
+      actions[index] = promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said });
+      answerLines.push({ ...base, mode: 'generated', said: got.said, ...meta });
+      kbSaid = 'worded';
+      // The record of what was said: a wording of this approved passage, by its id, version and approval.
+      if (kb !== null) audit.push({ type: 'kb_worded', detail: { prompt: promptId, passageId: kb.passageId, version: kb.version, ...(kb.approvalHash !== undefined ? { approvalHash: kb.approvalHash } : {}) } });
+      return;
+    }
+    if ('unchanged' in got) {
+      answerLines.push({ ...base, mode: 'fixed', unchanged: true, ...meta });
+      return;
+    }
+    answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
+    audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: a.plan.name, reason: got.fallback } });
+  });
   // In the order the lines were said.
-  lines.push(...spanLines);
+  const said = [...lines, ...spanLines].map((l) => ({ ...l, index: shift(l.index) }));
+  lines.splice(0, lines.length, ...said, ...answerLines);
   lines.sort((a, b) => a.index - b.index);
   if (start) audit.unshift({ type: 'render_group', detail: { group, share } });
   const price = renderer.price ?? DEFAULT_RENDER_PRICE;
@@ -508,8 +700,9 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     lines,
     ...(spent !== null ? { usage: { ...spent, costUsd: (spent.inputTokens * price.input + spent.outputTokens * price.output) / 1_000_000 } } : {}),
     ms: performance.now() - t0,
+    ...(hold !== undefined ? { hold } : {}),
   };
-  return { actions, record, audit, driftUsage: checkUsage };
+  return { actions, record, audit, driftUsage: checkUsage, early, ...(kbSaid !== undefined ? { kbSaid } : {}) };
 }
 
 /**

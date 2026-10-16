@@ -5,6 +5,7 @@ import { exactClipId, isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPaus
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
+import { KB_ACCOUNT_VAR, KB_ANSWER_SOURCE } from '../render/config';
 
 export interface PromptEntry {
   text: string;
@@ -84,7 +85,10 @@ export function framedVars(app: App, id: string, vars: Record<string, string>, s
   if (framed === undefined) return vars;
   const out = { ...vars };
   for (const [name, span] of Object.entries(framed)) {
-    const value = Object.hasOwn(spans, name) ? spans[name] : vars[span.from];
+    // A knowledge answer's wording (a span `from: answer`) stands for the passage alone: the topic's
+    // account line, the caller's own data, is said after it as it is after the passage.
+    const account = span.from === KB_ANSWER_SOURCE ? (vars[KB_ACCOUNT_VAR] ?? '') : '';
+    const value = Object.hasOwn(spans, name) ? (account === '' ? spans[name] : `${spans[name]} ${account}`) : vars[span.from];
     if (value === undefined) delete out[name];
     else out[name] = value;
   }

@@ -1,6 +1,6 @@
 import type { RenderModelChoice } from '../core/app/types';
 import { actMessage, instructionsOf } from './prompt';
-import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
+import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
@@ -20,6 +20,11 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_T
  * - RENDER_CHECK_TIMEOUT_VOICE_MS and RENDER_CHECK_TIMEOUT_CHAT_MS: how long the decision model's checks of a
  *   line may take together (the collected content screened again, the drift check); default 500 and 1000.
  *   RENDER_CHECK_TIMEOUT_MS sets both at once, and a channel's own setting wins over it.
+ * - RENDER_ANSWER_TIMEOUT_VOICE_MS and RENDER_ANSWER_TIMEOUT_CHAT_MS: how long a knowledge answer worded
+ *   for the caller's question (a span `from: answer`) may take, its wording and its checks together
+ *   (default 4000 on a call, 6000 in a chat; never less than the line's two budgets together). Past the
+ *   line's budgets the caller hears the hold line first; past this, the passage word for word.
+ *   RENDER_ANSWER_TIMEOUT_MS sets both at once, and a channel's own setting wins over it.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
  *   million tokens, for the cost in the trace and Insights; default the default model's.
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
@@ -310,12 +315,13 @@ function perChannel(env: Env, base: string, defaults: { readonly voice: number; 
   return { voice: one('voice'), chat: one('chat') };
 }
 
-/** RENDER_SHARE, the wording's and the checks' budgets per channel, and the price, with their defaults. */
-export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
+/** RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their defaults. */
+export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
     checkTimeoutMs: perChannel(env, 'RENDER_CHECK_TIMEOUT', DEFAULT_RENDER_CHECK_TIMEOUT_MS),
+    answerTimeoutMs: perChannel(env, 'RENDER_ANSWER_TIMEOUT', DEFAULT_RENDER_ANSWER_TIMEOUT_MS),
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', DEFAULT_RENDER_PRICE.input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', DEFAULT_RENDER_PRICE.output) },
   };
 }

@@ -2,6 +2,7 @@ import type { SessionEvent } from '../channel/events';
 import type { Session } from '../core/session';
 import type { AuditEntry } from '../audit/types';
 import { generatedSaid } from '../render/said';
+import type { EarlyLines } from '../render/turn';
 import { runTurn, whenChained, type AuditSink, type RunOptions, type TurnRun } from '../run/turn';
 import { sayText, type Action } from '../channel/actions';
 import { appOf } from '../core/app/registry';
@@ -64,9 +65,10 @@ export async function runChatTurnActions(d: ChatTurnDeps, entry: ChatTurnEntry, 
  * returned it (its decision, its actions, the session after it), in order. What runChatTurn and
  * runChatTurnActions read, and what a chat reads that needs each turn's decision (to scrub its log).
  */
-export async function runChatTurnRuns(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string): Promise<TurnRun[]> {
+export async function runChatTurnRuns(d: ChatTurnDeps, entry: ChatTurnEntry, event: SessionEvent, now: () => number, handoffTo: string, early?: EarlyLines): Promise<TurnRun[]> {
   entry.lastActivityMs = now();
-  const r = await (d.runTurn ?? runTurn)(entry.session, event, entry.opts);
+  // `early`: a chat that shows lines before its turn ends (a knowledge answer's hold line); its run says how many it showed (TurnRun.early).
+  const r = await (d.runTurn ?? runTurn)(entry.session, event, early !== undefined ? { ...entry.opts, early } : entry.opts);
   const out: TurnRun[] = [r];
   entry.session = r.result.session;
   // Kept on the session's own entry whether or not the console is on: the handoff summary reads it.

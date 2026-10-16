@@ -49,7 +49,8 @@ const span = z
     from: identifier()
       .optional()
       .describe(
-        'The slot whose content the span is worded from (the message, the note): the caller\'s words, collected. The model is sent only this content, quoted, with the span\'s goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. Required in prompts.yaml; a locale gives a span only its goal.',
+        'The slot whose content the span is worded from (the message, the note): the caller\'s words, collected. The model is sent only this content, quoted, with the span\'s goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. ' +
+          '`answer` on a form\'s knowledge answer line (forms.yaml\'s answers.answer, default kb_answer), as its {answer} span: the approved passage the knowledge completion resolved for the caller, worded for their question, only on a topic kb/topics.yaml marks `risk: low` (the passage is said word for word on every other topic, and whenever a check fails or the drift judge refuses). Required in prompts.yaml; a locale gives a span only its goal.',
       ),
     goal: text().describe('What the span must say, for the model that words it ("Summarize the caller\'s message in one sentence, in their own terms."). In a locale\'s prompts.yaml: the span is generated in that locale only where its goal is given there.'),
     words: z
@@ -57,7 +58,7 @@ const span = z
       .min(3, { error: 'must be at least 3' })
       .max(100, { error: 'must be at most 100' })
       .optional()
-      .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}.`),
+      .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}; for a span \`from: answer\`, its passage's own word count, so a long passage's answer is never cut to fit a short budget.`),
     speaks: z
       .enum(SPAN_PERSPECTIVES)
       .optional()

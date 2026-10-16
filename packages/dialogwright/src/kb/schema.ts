@@ -104,7 +104,7 @@ const topic = z
     title: text().describe('The topic in a few words, as a caller would recognise it ("Opening hours"). Retrieval reads it, and the topic question offers it.'),
     keywords: unique(text(), 'keyword').optional().describe('Words and phrases that name the topic exactly (codes, product names). Retrieval matches them as phrases.'),
     asks: unique(text(), 'question').optional().describe('Example questions a caller asks about the topic, in their words. Retrieval reads them, and the paraphrase tests start from them.'),
-    risk: z.enum(['regulated', 'low']).default('regulated').describe('regulated: only an approved passage is ever said. low: a later release may let an app answer the long tail in generated wording grounded in approved passages. Default regulated.'),
+    risk: z.enum(['regulated', 'low']).default('regulated').describe('regulated: only an approved passage is ever said, word for word. low: where the form\'s answer line words its answer (prompts.yaml generate: { answer: { from: answer, goal } }), a model may word the approved passage for the caller\'s question, held to it by the checks and the drift judge, and the passage is said whenever one fails. Which topics are low risk is the app designer\'s call. Default regulated.'),
     accountLine: accountLine.optional(),
   })
   .describe('One topic of the knowledge base.');

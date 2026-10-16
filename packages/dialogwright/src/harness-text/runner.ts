@@ -21,6 +21,7 @@ import { sayText, type Action } from '../channel/actions';
 import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
 import { carryScrub } from '../core/recording';
+import { RenderClientError, type RenderClient } from '../render/types';
 export { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { runTurn, nowOf, type RunOptions, type TurnRun } from '../run/turn';
 import { demoTools } from '../core/tools';
@@ -536,6 +537,13 @@ export interface Scenario {
   steps: ScenarioStep[];
   expect: ScenarioExpectation;
   /**
+   * How long each of the call's generated lines takes to word, ms, before the renderer answers (a fake, or
+   * a cassette replayed): a slow model, for a knowledge answer's hold line (render/turn.ts), as a call
+   * against RENDER_TIMEOUT_MS, RENDER_CHECK_TIMEOUT_MS and RENDER_ANSWER_TIMEOUT_MS has it. Without it, the
+   * renderer answers at once, as it always has. Nothing for a run without a renderer.
+   */
+  renderDelayMs?: number;
+  /**
    * Under a real model (`--client recorded` or `jev`), `decidedGate` and `verdict` may differ from
    * the stub baseline without failing the run: the same decision reached by a different gate (the
    * diff still prints it, marked allowed). The scenario's own expectation and every other baseline
@@ -614,7 +622,9 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   // with its own clock or environment runs every turn on them.
   const at = scenario.now === undefined ? undefined : Date.parse(scenario.now);
   const today = scenario.todayIso ?? (at !== undefined ? dateAt(at) : undefined);
-  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}) };
+  // A slow renderer, where the call says so (renderDelayMs).
+  const renderer = opts.renderer && scenario.renderDelayMs !== undefined && scenario.renderDelayMs > 0 ? { ...opts.renderer, client: slowRenderClient(opts.renderer.client, scenario.renderDelayMs) } : undefined;
+  const o = { ...opts, client, tools: opts.tools ?? demoTools(), ...(at !== undefined ? { now: () => at } : {}), ...(today !== undefined ? { todayIso: today } : {}), ...(scenario.env !== undefined ? { env: { ...scenario.env } } : {}), ...(renderer !== undefined ? { renderer } : {}) };
   const runs: TurnRun[] = [];
   const stepOf: number[] = [];
   let session = startSession(scenario.id, nowOf(o)(), scenario.as);
@@ -663,6 +673,26 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
   const outcome = outcomeOf(scenario.id, last.result, runs.flatMap((r) => r.result.gateEvents));
   const mismatches = checkExpectation(outcome, scenario.expect, spokenText(last.result), last.result.actions.find((a) => a.type === 'transfer'));
   return { outcome, runs, stepOf, pass: mismatches.length === 0, mismatches };
+}
+
+/**
+ * `client` answering each line `ms` later (a scripted call's renderDelayMs): the line's request waits, and
+ * is given up as a request on a call is (its signal aborted) when the turn stops waiting for it.
+ */
+export function slowRenderClient(client: RenderClient, ms: number): RenderClient {
+  return {
+    model: client.model,
+    async generate(req, signal) {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, ms);
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new RenderClientError('aborted'));
+        });
+      });
+      return client.generate(req, signal);
+    },
+  };
 }
 
 /** Everything the caller hears this turn, ack phrases included. */
@@ -716,6 +746,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).now === undefined || (typeof (s as Scenario).now === 'string' && Number.isFinite(Date.parse((s as Scenario).now!)))) &&
     ((s as Scenario).todayIso === undefined || (typeof (s as Scenario).todayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test((s as Scenario).todayIso!))) &&
     ((s as Scenario).env === undefined || isStringMap((s as Scenario).env)) &&
+    ((s as Scenario).renderDelayMs === undefined || (Number.isInteger((s as Scenario).renderDelayMs) && (s as Scenario).renderDelayMs! >= 0 && (s as Scenario).renderDelayMs! <= 30_000)) &&
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null)
   );
 }
@@ -727,7 +758,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       const [gapProblem] = scenarioGapProblems(s);
       if (gapProblem !== undefined) throw new Error(`scenarios ${file}: ${gapProblem.message}`);

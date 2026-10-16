@@ -19,6 +19,7 @@ import { whenChained, type RunOptions, type TurnRun } from '../../run/turn';
 import { framesMaskWords, redactCollected, redactSent, summaryTexts, turnScrubber } from '../../trace/redact';
 import type { App } from '../../core/app/types';
 import { runChatTurnRuns, type ChatTurnDeps, type ChatTurnEntry } from '../chatTurn';
+import type { EarlyLines } from '../../render/turn';
 import type { ChatSettings } from '../config';
 import type { ObservedCalls } from '../dashboard/observer';
 import type { FrameSink } from '../frameLog';
@@ -317,10 +318,21 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
    * session finished if it ended. `before` is sent ahead of the turn's lines, read once the turn has
    * run (the opening turn's ready names the language the turn chose).
    */
-  const turn = async (e: ChatEntry, event: SessionEvent, before: (e: ChatEntry) => ServerMessage[] = () => []): Promise<void> => {
+  const turn = async (e: ChatEntry, event: SessionEvent, ahead?: (e: ChatEntry) => ServerMessage[]): Promise<void> => {
+    const before = ahead ?? ((): ServerMessage[] => []);
+    // A knowledge answer still being worded when its line's budget ran out (render/turn.ts): the lines
+    // before it and the hold line are shown now, and the answer when it is ready. Not on a turn that sends
+    // something ahead of its lines (the opening, a sign-in), which is read only once the turn has run.
+    const early: EarlyLines | undefined = ahead !== undefined ? undefined : (lines, result) => {
+      if (e.socket === null) return false;
+      const app = appOf(result.session);
+      const scrub = turnScrubber(result.session, result.decision, 'length', app, []);
+      for (const m of actionsToChatMessages(lines, defaultLocaleOf(app), { slots: false })) sendTo(e, m, scrub);
+      return true;
+    };
     let runs: TurnRun[];
     try {
-      runs = await runChatTurnRuns(deps, e, event, now, HANDOFF_TO);
+      runs = await runChatTurnRuns(deps, e, event, now, HANDOFF_TO, early);
     } catch (err) {
       log(`chat ${e.id}: turn failed: ${describeError(err)}`);
       // The client is told first, whatever the log can take.
@@ -342,7 +354,8 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       // Built from the session after the turn and its decision, as the voice frame log's is.
       const scrub = turnScrubber(r.result.session, r.result.decision, 'length', app, summaryTexts(r.record.render, app));
       // The collected slots go with a transfer only where the app's handoff data says (handoff.data.chat: send).
-      for (const m of actionsToChatMessages(r.result.actions, defaultLocaleOf(app), { slots: app.handoff?.data?.chat === 'send' })) {
+      // The lines shown before the turn ended (a hold line and those before it) are not shown again.
+      for (const m of actionsToChatMessages(r.result.actions.slice(r.early ?? 0), defaultLocaleOf(app), { slots: app.handoff?.data?.chat === 'send' })) {
         sendTo(e, m, scrub);
         last = m.type;
       }
