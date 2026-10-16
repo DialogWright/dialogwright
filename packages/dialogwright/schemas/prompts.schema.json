@@ -110,7 +110,7 @@
                   "description": "What the span must say, for the model that words it (\"Summarize the caller's message in one sentence, in their own terms.\"). In a locale's prompts.yaml: the span is generated in that locale only where its goal is given there."
                 },
                 "words": {
-                  "description": "The most words the span may use; a longer one is not said (the exact content is). Default 25; for a span `from: answer`, its passage's own word count, so a long passage's answer is never cut to fit a short budget.",
+                  "description": "The most words the span may use; a longer one is not said (the exact content is). Default 25; for a span `from: answer`, the passage's word count and a quarter more (ten more at least), so a long passage's answer is never cut to fit a short budget.",
                   "type": "integer",
                   "minimum": 3,
                   "maximum": 100

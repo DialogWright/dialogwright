@@ -21,8 +21,21 @@ export const FRAMED_GOAL = 'Said as written, but for its generated spans.';
 export const KB_ANSWER_SOURCE = 'answer';
 
 /**
+ * The word budget of a knowledge answer's span the app does not size (`words` unset): room above its
+ * passage, so a faithful wording for the caller's question that takes a few more words than the
+ * passage (a word of lead-in, the question's own terms) is not cut back to the passage. A quarter more
+ * than the passage, and at least ten more (the maintainer's decision, 2026-10-16: give long answers
+ * the room their summary needs). What the wording may say is held by the checks and the judge, not by
+ * this number.
+ */
+export function answerWordBudget(passageWords: number): number {
+  return Math.max(passageWords + 10, Math.ceil(passageWords * 1.25));
+}
+
+/**
  * A framed line's spans (prompts.yaml's `generate`) as the engine holds them, each with its word budget;
- * a span `from: answer` with no `words` of its own is sized to its passage (GeneratedSpan.sizedToPassage).
+ * a span `from: answer` with no `words` of its own is sized to its passage (GeneratedSpan.sizedToPassage,
+ * answerWordBudget).
  */
 function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
   if (p.generate === undefined) return undefined;

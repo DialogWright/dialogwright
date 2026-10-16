@@ -107,7 +107,7 @@ These lines say a knowledge base's approved passage, and may word it for the cal
 
 | Line | Span | Goal | Words | Topics whose answer may be worded |
 | --- | --- | --- | --- | --- |
-| `coverage_answer` | `{answer}` | Answer the member's question from their plan's passage, in a sentence or two. | the passage's own word count | `sports_injury` (Sports injuries), `prescriptions` (Prescriptions), `travel` (Accidents while traveling), `filing_deadline` (Deadline to file a claim) |
+| `coverage_answer` | `{answer}` | Answer the member's question from their plan's passage, in a sentence or two. | the passage's word count and a quarter more (ten more at least) | `sports_injury` (Sports injuries), `prescriptions` (Prescriptions), `travel` (Accidents while traveling), `filing_deadline` (Deadline to file a claim) |
 
 No line is marked prescribed (`prescribed: true`).
 

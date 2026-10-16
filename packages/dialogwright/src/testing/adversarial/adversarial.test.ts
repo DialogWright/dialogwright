@@ -518,8 +518,9 @@ describe('a knowledge answer worded for the caller\'s question, under the suite 
       expect(r.status, r.case.id).toBe('hold');
       const line = r.calls[0]!.turns.flatMap((t) => t.record.render?.lines ?? []).find((l) => l.answer !== undefined)!;
       expect(line, r.case.id).toMatchObject({ mode: 'fixed', fixed: 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.' });
-      // Another figure, by the checks; a promise added, by its budget (the passage's own word count); what is covered turned around, by the judge.
-      expect(line.fallback, r.case.id).toBe(r.case.id.endsWith('figure') ? 'foreign' : r.case.id.endsWith('promise') ? 'words' : 'drift');
+      // Another figure, by the checks; a promise added and what is covered turned around, by the judge (the
+      // budget leaves room above the passage, answerWordBudget, so meaning is the judge's to hold).
+      expect(line.fallback, r.case.id).toBe(r.case.id.endsWith('figure') ? 'foreign' : 'drift');
     }
   });
 

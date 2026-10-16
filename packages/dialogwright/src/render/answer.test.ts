@@ -98,7 +98,7 @@ describe('the two switches: a topic marked risk: low, and the answer line framed
     const act = r.client.askedSpans[0]!.act as SpanAct;
     expect(act).toEqual({
       kind: 'span', goal: "Answer the caller's question from the passage.", sentence: '____', content: [{ name: 'answer', value: FEES }],
-      channel: 'voice', language: 'en-US', style: { persona: 'a calm, plain-spoken agent', words: 17, avoid: [] }, answer: { question: 'how much is it a day for a late book' },
+      channel: 'voice', language: 'en-US', style: { persona: 'a calm, plain-spoken agent', words: 27, avoid: [] }, answer: { question: 'how much is it a day for a late book' },
     });
     expect(instructionsOf(act)).toBe(ANSWER_INSTRUCTIONS);
     expect(JSON.stringify(act)).not.toContain('2 dollars in late fees');
@@ -184,7 +184,7 @@ describe('the checks and the judge: the passage word for word whenever one refus
 
   it('a figure the passage does not have', () => refused('A late book costs 50 cents a day.', 'foreign'));
   it('a name the passage does not have', () => refused('Late books cost 25 cents a day at the Riverside branch, up to 5 dollars a book.', 'foreign'));
-  it('over its budget (the passage\'s own word count)', () => refused('Late books on an adult card cost 25 cents for each and every day they are late, up to 5 dollars a book.', 'words'));
+  it('over its budget (a quarter more than the passage\'s word count, ten more at least: 27 words here)', () => refused('Late books on an adult card cost 25 cents for each and every single day that they are kept out past the day they were due back, up to 5 dollars a book in all.', 'words'));
   it('a question', () => refused('Late books cost 25 cents a day, up to 5 dollars a book. Anything else?', 'question'));
   it('the drift judge\'s refusal (a limit left out)', async () => {
     const base = judge(FRAMED);
@@ -289,7 +289,7 @@ describe('the hold line in the call\'s language', () => {
 describe('the policy card', () => {
   it('lists the answer line, its goal and budget, and the topics whose answer may be worded', () => {
     const card = policyCardText(FRAMED, tmpdir());
-    expect(card).toContain('| `kb_answer` | `{answer}` | Answer the caller\'s question from the passage. | the passage\'s own word count | `opening_hours` (Opening hours), `late_fees` (Late fees) |');
+    expect(card).toContain('| `kb_answer` | `{answer}` | Answer the caller\'s question from the passage. | the passage\'s word count and a quarter more (ten more at least) | `opening_hours` (Opening hours), `late_fees` (Late fees) |');
     expect(card).toContain('the caller first hears the hold line ("Just a moment while I look that up.")');
     expect(policyCardText(PLAIN, tmpdir())).not.toContain('may word it for the caller\'s question');
   });

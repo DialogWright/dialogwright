@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=../../packages/dialogwright/schemas/style.schema.json
 # How the one generated span (a coverage answer worded from its approved passage, on the topics
 # kb/topics.yaml marks risk: low) sounds: told to the model, and the phrases to avoid checked on every
-# wording before anyone hears it. The span's word budget is its passage's own word count (prompts.yaml
-# sets none), so a long passage's answer is never cut to fit.
+# wording before anyone hears it. The span's word budget is the passage's word count and a quarter
+# more, ten more at least (prompts.yaml sets none), so a long passage's answer is never cut to fit.
 # The model that words it, as the secretary's (the fastest under the call budget in its bake-off of
 # 2026-10-14); the environment's RENDER_PROVIDER overrides it. Harbor's own bake-off is the maintainer's
 # step (DESIGN.md "Recordings").

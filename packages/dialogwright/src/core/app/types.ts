@@ -1637,8 +1637,9 @@ export interface GeneratedSpan {
   /** The most words the span may use. */
   readonly words: number;
   /**
-   * A span `from: answer` whose `words` the app does not set: its budget is its passage's own word count,
-   * so a long passage's answer is never cut to fit a short budget (`words` is then unused). Absent on every other span.
+   * A span `from: answer` whose `words` the app does not set: its budget is sized to its passage
+   * (answerWordBudget: a quarter more than its word count, ten more at least), so a long passage's answer
+   * is never cut to fit a short budget (`words` is then unused). Absent on every other span.
    */
   readonly sizedToPassage?: true;
   /**

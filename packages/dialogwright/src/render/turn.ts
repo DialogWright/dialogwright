@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { answerSpanOf, generatesLines, identifierVarsFrom, isFramed, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
+import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
@@ -213,7 +213,7 @@ type AnswerPlan = { name: string; passage: string; kb: KbSource | null } & ({ ac
  * the topic's account line), with the caller's question kept; and held as every generated line is (said
  * exactly, the call's group, `when`, the screen, a goal in the call's locale). Its act is the span's goal,
  * its sentence, the passage (its content: the only facts it may state), the caller's question (quoted),
- * its budget (the passage's own word count, unless the span sets `words`), the style, the channel and the
+ * its budget (room above the passage's word count, answerWordBudget, unless the span sets `words`), the style, the channel and the
  * language: never the account line, a record, another passage or the transcript.
  */
 function planAnswer(app: App, input: RenderInput, line: GeneratedLine, name: string, said: SaidLine, group: 'generated' | 'fixed'): AnswerPlan {
@@ -253,7 +253,7 @@ function planAnswer(app: App, input: RenderInput, line: GeneratedLine, name: str
     content: [{ name: KB_ANSWER_LINE_VAR, value: passage.answer }],
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: span.sizedToPassage === true ? wordCount(passage.answer) : span.words, avoid: [...style.avoid] },
+    style: { persona: style.persona, words: span.sizedToPassage === true ? answerWordBudget(wordCount(passage.answer)) : span.words, avoid: [...style.avoid] },
     answer: { question },
   };
   return { ...base, act };

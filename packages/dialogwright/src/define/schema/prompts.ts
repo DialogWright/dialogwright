@@ -58,7 +58,7 @@ const span = z
       .min(3, { error: 'must be at least 3' })
       .max(100, { error: 'must be at most 100' })
       .optional()
-      .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}; for a span \`from: answer\`, its passage's own word count, so a long passage's answer is never cut to fit a short budget.`),
+      .describe(`The most words the span may use; a longer one is not said (the exact content is). Default ${DEFAULT_SPAN_WORDS}; for a span \`from: answer\`, the passage's word count and a quarter more (ten more at least), so a long passage's answer is never cut to fit a short budget.`),
     speaks: z
       .enum(SPAN_PERSPECTIVES)
       .optional()

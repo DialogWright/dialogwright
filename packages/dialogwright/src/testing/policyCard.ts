@@ -531,7 +531,7 @@ function answerWordingSection(app: App, lines: readonly string[], refuseAt: numb
   ];
   for (const id of lines) {
     const answer = answerSpanOf(g.lines[id])!;
-    const words = answer.span.sizedToPassage === true ? "the passage's own word count" : String(answer.span.words);
+    const words = answer.span.sizedToPassage === true ? "the passage's word count and a quarter more (ten more at least)" : String(answer.span.words);
     const which = low.length === 0 ? 'none (no topic is marked `risk: low`: every answer is said word for word)' : low.map((t) => `${code(t.id)} (${t.title})`).join(', ');
     out.push(`| ${code(id)} | ${code(`{${answer.name}}`)} | ${cell(answer.span.goal)} | ${words} | ${cell(which)} |`);
   }
