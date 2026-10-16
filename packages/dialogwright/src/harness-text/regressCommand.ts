@@ -10,13 +10,13 @@ import { main as regressMain } from './regress';
  * `pnpm --filter <app> regress`) runs it: the App the folder's module exports (app.ts, src/app.ts,
  * index.ts or src/index.ts, as `policy:matrix` finds it) is registered, the working directory becomes
  * the folder (so the run reads the app's own `.env`, as `pnpm --filter` would), and the options go to
- * the run as they are (`--client`, `--scenario`, `--corpus`, `--adversarial`, `--update`, `--threshold`,
+ * the run as they are (`--client`, `--scenario`, `--corpus`, `--adversarial`, `--questions`, `--update`, `--threshold`,
  * `--screen`, `--json`). With no folder, the folder it is run in, or the nearest above it with an app.yaml.
  * Importing the module runs it: never run this on a folder whose code you would not run.
  */
 
 export const REGRESS_USAGE = [
-  'usage: dialogwright regress [dir] [--client stub|heuristic|jev|record|recorded] [--scenario <id>]... [--corpus <id>]... [--adversarial <id>]... [--update] [--threshold NAME=value]... [--screen inline|separate] [--json]',
+  'usage: dialogwright regress [dir] [--client stub|heuristic|jev|record|recorded] [--scenario <id>]... [--corpus <id>]... [--adversarial <id>]... [--questions] [--update] [--threshold NAME=value]... [--screen inline|separate] [--json]',
   '  dir: the app folder (one with app.yaml); with none, the folder it is run in, or the nearest above it with an app.yaml',
 ].join('\n');
 

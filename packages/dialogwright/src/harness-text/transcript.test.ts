@@ -5,7 +5,8 @@ import { defaultCorpusFile, scenariosDir } from '../run/fixtures';
 import { useTestkit } from '../testing/apps';
 import { REGRESS_TODAY } from './baseline';
 import { loadScenarios, runCorpusEntry, runScenario, type RunOptions } from './runner';
-import { corpusTranscript, describeStep, modelAnswerLines, scenarioTranscript } from './transcript';
+import { barName, corpusTranscript, describeStep, modelAnswerLines, questionLines, scenarioTranscript } from './transcript';
+import { DEFAULT_THRESHOLDS, withOverrides } from '../core/thresholds';
 import { JevClientError } from '../jev/types';
 import { join } from 'node:path';
 import { registerApp, resetAppsForTest } from '../core/app/registry';
@@ -91,6 +92,59 @@ describe('the regression transcript', () => {
     const failing = { ...options(), client: { ask: async () => { throw new JevClientError('cassette miss abc where is my parcel'); } } };
     const r = await runCorpusEntry(entry, failing);
     expect(modelAnswerLines(r.run)).toEqual(['  model answers: none (cassette miss abc where is my parcel)']);
+  });
+
+  it("a scripted call's model answers under each turn, with `answers`; none without", async () => {
+    const scenario = loadScenarios(scenariosDir()).find((s) => s.id === 'track-other-customers-parcel')!;
+    const run = await runScenario(scenario, options());
+    expect(scenarioTranscript(scenario, run).some((l) => l.includes('model answers'))).toBe(false);
+    const lines = scenarioTranscript(scenario, run, { answers: true });
+    // Under the first step's turn, after its gate lines: every question the turn asked, indented as the turn's details.
+    const step = lines.indexOf('  1. say "where is parcel 7201"');
+    const answers = lines.indexOf('          model answers (stub:fixture)', step);
+    expect(answers).toBeGreaterThan(step);
+    expect(lines.slice(answers + 1).find((l) => l.trimStart().startsWith('intent '))).toMatch(/^ {13}intent +choice {2}track_parcel \d\.\d\d/);
+    // One block per turn that asked the model, none for the call's start (the greeting asks nothing).
+    expect(lines.filter((l) => l === '          model answers (stub:fixture)').length).toBeGreaterThan(1);
+    expect(lines.slice(0, step).some((l) => l.includes('model answers'))).toBe(false);
+  });
+
+  it('`questions`: each question in its words once, then the turn\'s gates with their bars named, and the one that decided', async () => {
+    const entry = loadCorpus(defaultCorpusFile()).find((e) => e.id === 'tk-01')!;
+    const r = await runCorpusEntry(entry, options());
+    const seen = new Map<string, string>();
+    const lines = questionLines(r.run, '  ', DEFAULT_THRESHOLDS, seen);
+    expect(lines[0]).toBe('  questions');
+    expect(lines.find((l) => l.startsWith('     intent  '))).toMatch(/^ {5}intent {2}Read asr\.text\. What is the caller asking/);
+    expect(lines).toContain('        track_parcel: Asks where a parcel is, whether it has been delivered, or about a parcel by its number or by what is in it');
+    expect(lines.find((l) => l.startsWith('     wantsHuman  '))).toBe('     wantsHuman  Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?');
+    const gates = lines.indexOf('  gates  (each reading, the bar it was held to, and what it led to; <== decided the turn)');
+    expect(gates).toBeGreaterThan(0);
+    const rows = lines.slice(gates + 1);
+    expect(rows.find((l) => l.trimStart().startsWith('addressedToSystem '))).toMatch(/ \d\.\d\d {2}bar 0\.65 GATE_ADDRESSED +pass {2}pass$/);
+    expect(rows.find((l) => l.trimStart().startsWith('intent '))).toMatch(/bar 0\.40 INTENT_EXPLICIT +pass {2}route:track_parcel {2}<==$/);
+    expect(rows.find((l) => l.trimStart().startsWith('rephrasingLastTurn '))).toMatch(/bar {4}- +info {2}info$/);
+    // The same questions again in this transcript: named on one line.
+    const again = questionLines(r.run, '  ', DEFAULT_THRESHOLDS, seen);
+    expect(again[1]).toMatch(/^ {5}as above: intent, intentTentative, addressedToSystem, /);
+    expect(again.some((l) => l.includes('Read asr.text'))).toBe(false);
+  });
+
+  it("a gate row's bar is named by the threshold whose value it is in the run; a row with none, or an app's own, by its number alone", () => {
+    const row = (gate: string, threshold: number | null) => ({ gate, value: 0.5, threshold, passed: true, outcome: 'pass', decided: false });
+    const t = DEFAULT_THRESHOLDS;
+    expect(barName(row('wantsHuman', 0.7), t)).toBe('GATE_WANTS_HUMAN');
+    expect(barName(row('intent', t.INTENT_SWITCH), t)).toBe('INTENT_SWITCH');
+    expect(barName(row('opening:addressedToSystem', t.GATE_ADDRESSED), t)).toBe('GATE_ADDRESSED');
+    expect(barName(row('slot:accountId', t.SLOT_CHOICE_CONFIRM), t)).toBe('SLOT_CHOICE_CONFIRM');
+    expect(barName(row('slot:accountId', t.SLOT_DETECT), t)).toBe('SLOT_DETECT');
+    // Two thresholds of a gate at the same value: both.
+    expect(barName(row('confirmation', 0.7), t)).toBe('CONFIRM_YES/CONFIRM_NO');
+    // An override moves the name with the value.
+    expect(barName(row('wantsHuman', 0.55), withOverrides({ GATE_WANTS_HUMAN: 0.55 }))).toBe('GATE_WANTS_HUMAN');
+    expect(barName(row('wantsHuman', 0.55), t)).toBe('');
+    expect(barName(row('rephrasingLastTurn', null), t)).toBe('');
+    expect(barName(row('priorityIntent', 0.9), { ...t, URGENT_BAR: 0.9 })).toBe('URGENT_BAR');
   });
 
   it('a step as the scenario file writes it', () => {

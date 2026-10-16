@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import {
   defineApp, describeDay, handoff, kbAnswerTool, localeOf, replyShape as r,
-  type Ack, type AppCode, type Completion, type CompletionContext, type EntryContext, type Party, type Principal, type Session, type ToolDef, type VerifyOutcome,
+  type Ack, type AppCode, type Completion, type CompletionContext, type Party, type Principal, type Session, type ToolDef, type VerifyOutcome,
 } from 'dialogwright';
 import {
   AGENT_OF_RECORD, BROKERS, CLAIMS, DOCUMENT_CODES, FIRST_NEW_CLAIM, MEMBERS, SERVICES, USAGE,
@@ -446,18 +446,17 @@ export const code: AppCode = {
       complete: completeClaimStatus,
     },
     // A form that answers from the knowledge base has no `complete` of its own (the engine's
-    // knowledge completion says the answer), but AppCode's form hooks type it as required: the
-    // cast says this form's hooks are the two forms.yaml lists (DESIGN.md, Gaps).
+    // knowledge completion says the answer): its hooks are the two forms.yaml lists.
     coverage: {
       // Needs level 1: the answer is the member's own plan's, so a caller verifies first.
-      entry: (s: Session) => ({ tool: 'getCoverage', params: { memberId: memberIdOf(s) } }),
+      entry: (s) => ({ tool: 'getCoverage', params: { memberId: memberIdOf(s) } }),
       // A broker names no member here: the gate's scope rule refuses the answer, and the broker hears
       // that the line answers coverage for the member themselves (DESIGN.md, Gaps).
-      principalEntry: (c: EntryContext) => {
+      principalEntry: (c) => {
         const { decision } = c.callTool({ tool: 'searchPolicy', params: { memberId: '', topic: '' }, purpose: 'entry-check' });
         return decision.verdict === 'ALLOW' ? null : { kind: 'refused', acks: [...c.acks, { promptId: 'coverage_broker', vars: {} }] };
       },
-    } as unknown as AppCode['forms'][string],
+    },
     report_claim: {
       // Needs level 2 (the purpose in policy.yaml): the code is keyed before the form's questions.
       entry: (s) => ({ tool: 'getCoverage', params: { memberId: memberIdOf(s) }, purpose: 'report_claim' }),

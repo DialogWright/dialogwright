@@ -37,10 +37,11 @@ export class Systems {
 }
 
 /**
- * The account the caller verified as, read from the session: the factor slot's value. The factors
- * are collected by the engine before any tool that needs level 1, so by then it is there.
+ * The account a call is made for: the verified customer's own (the principal's id), so a tool's
+ * account param is always the proven one, and a caller who signed in on the chat, who has no factor
+ * slot, has theirs; before that, the factor slot's value (the account a step-up is asked for).
  */
-const accountIdOf = (s: Session): string => s.slots.accountId?.value ?? '';
+export const accountIdOf = (s: Session): string => (s.principal.kind === 'customer' ? s.principal.id : s.slots.accountId?.value ?? '');
 
 /**
  * The accounts a principal may see, for the gate's `scope` rule (`scope: { param: accountId }` in

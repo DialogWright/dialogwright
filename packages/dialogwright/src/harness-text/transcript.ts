@@ -6,6 +6,8 @@ import { redactSent } from '../trace/redact';
 import { appOf } from '../core/app/registry';
 import { WEB_VISITOR, spokenText, type Scenario, type ScenarioRun, type ScenarioStep, type TurnRun } from './runner';
 import { rankProbabilities, type Answer, type Question } from '../jev/types';
+import type { GateRow } from '../core/gates';
+import { DEFAULT_THRESHOLDS, type Thresholds } from '../core/thresholds';
 
 /**
  * A readable account of one scripted call or one corpus line, turn by turn, for `regress --scenario
@@ -116,9 +118,12 @@ function serviceTurn(run: TurnRun): string | null {
 /**
  * A scripted call, step by step, then what it expected and whether it got it. Keypad steps run one
  * turn per key; only the keys that did something (said a line, asked the gate) and the last are shown.
+ * With `detail`, each turn shown is followed by what the model answered and the questions and their
+ * bars (turnDetailLines).
  */
-export function scenarioTranscript(scenario: Scenario, run: ScenarioRun): string[] {
+export function scenarioTranscript(scenario: Scenario, run: ScenarioRun, detail: TurnDetail = {}): string[] {
   const out = [`scenario ${scenario.id}  (${channelOf(scenario)})`];
+  const seen = new Map<string, string>();
   const byStep = new Map<number, TurnRun[]>();
   run.runs.forEach((r, i) => {
     const step = run.stepOf[i] ?? -1;
@@ -137,7 +142,7 @@ export function scenarioTranscript(scenario: Scenario, run: ScenarioRun): string
     for (const t of shown) {
       const service = serviceTurn(t);
       if (service) out.push(`       ${service}`);
-      out.push(...turnLines(t, '       '));
+      out.push(...turnLines(t, '       '), ...turnDetailLines(t, '          ', detail, seen));
     }
   }
   const expect = Object.entries(scenario.expect).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
@@ -214,6 +219,117 @@ export function modelAnswerLines(run: TurnRun, indent = '  '): string[] {
       lines.push(`${indent}follow-up (${followUp.followUp.reason}, ${followUp.response.source})`);
       for (const [id, a] of Object.entries(followUp.response.answers)) if (followUp.questions[id] !== undefined) lines.push(`${indent}   ${id.padEnd(width)}  ${answerCell(followUp.questions[id], a)}`);
     }
+  }
+  return lines;
+}
+
+/**
+ * What a transcript adds under each turn (`regress --scenario`, `--corpus` and `--adversarial`):
+ * `answers`, the model's answers to every question (modelAnswerLines), shown against a model or its
+ * cassette; `questions` (`--questions`), each question's text and the bar each reading was held to
+ * (questionLines), with the run's `thresholds`, by which a bar is named.
+ */
+export interface TurnDetail {
+  readonly answers?: boolean;
+  readonly questions?: boolean;
+  readonly thresholds?: Thresholds;
+}
+
+/** The lines `detail` asks for under one turn; `seen` keeps the questions already written out in this transcript. */
+export function turnDetailLines(run: TurnRun, indent: string, detail: TurnDetail, seen: Map<string, string> = new Map()): string[] {
+  return [
+    ...(detail.answers === true ? modelAnswerLines(run, indent) : []),
+    ...(detail.questions === true ? questionLines(run, indent, detail.thresholds ?? DEFAULT_THRESHOLDS, seen) : []),
+  ];
+}
+
+/**
+ * The thresholds a gate row's bar may be, by the row's gate (core/gates.ts and core/turn.ts): the
+ * one whose value in the run is the row's bar names it. A row whose gate is not here, or whose bar
+ * is none of its names' values (an app's own threshold), is shown with its number alone.
+ */
+const BAR_NAMES: Readonly<Record<string, readonly string[]>> = {
+  addressedToSystem: ['GATE_ADDRESSED'],
+  intelligible: ['GATE_INTELLIGIBLE'],
+  utteranceComplete: ['GATE_COMPLETE'],
+  wantsHuman: ['GATE_WANTS_HUMAN'],
+  frustration: ['GATE_FRUSTRATION_HIGH'],
+  confirmation: ['CONFIRM_YES', 'CONFIRM_NO'],
+  menuNumber: ['MENU_NUMBER'],
+  intentTentative: ['INTENT_TENTATIVE'],
+  intentChange: ['INTENT_CHANGE'],
+  changeSlot: ['SLOT_CHANGE'],
+  secondIntent: ['INTENT_SECOND'],
+  intent: ['INTENT_EXPLICIT', 'INTENT_SWITCH'],
+  intentMargin: ['GATE_INTENT_MARGIN'],
+  screen: ['SCREEN_FIRE'],
+};
+
+/** The name of a row's bar: its gate's threshold whose value the bar is (`A/B` when two are equal), or '' when none is. */
+export function barName(row: GateRow, thresholds: Thresholds): string {
+  if (row.threshold === null) return '';
+  const gate = row.gate.replace(/^opening:/, '');
+  // A slot's row: SLOT_DETECT for a detected slot, SLOT_CHOICE_CONFIRM for a picked one (core/turn.ts slotThreshold).
+  // A priority intent's: PRIORITY_INTENT, or the threshold of the app's own the intent names.
+  const names = gate.startsWith('slot:') ? ['SLOT_DETECT', 'SLOT_CHOICE_CONFIRM']
+    : gate === 'priorityIntent' ? ['PRIORITY_INTENT', ...Object.keys(thresholds).filter((n) => !Object.hasOwn(DEFAULT_THRESHOLDS, n))]
+      : BAR_NAMES[gate] ?? [];
+  return names.filter((n) => thresholds[n] === row.threshold).join('/');
+}
+
+/** A question's text: its instructions, then a choice's options, a score's levels, or a yes-or-no's two readings, each on its own line. */
+function questionText(q: Question, indent: string): string[] {
+  const lines: string[] = [];
+  if (q.type === 'choice') {
+    const described = Object.entries(q.criteria).filter(([, d]) => d !== null);
+    const bare = Object.entries(q.criteria).filter(([, d]) => d === null).map(([label]) => label);
+    for (const [label, d] of described) lines.push(`${indent}${label}: ${d}`);
+    if (bare.length > 0) lines.push(`${indent}${described.length > 0 ? 'and ' : ''}${bare.join(', ')}`);
+  } else if (q.type === 'score') {
+    for (const l of q.levels) lines.push(`${indent}${l.label}: ${l.description}`);
+  } else {
+    if (q.criteria?.true !== undefined) lines.push(`${indent}yes: ${q.criteria.true}`);
+    if (q.criteria?.false !== undefined) lines.push(`${indent}no: ${q.criteria.false}`);
+  }
+  return lines;
+}
+
+/**
+ * `--questions`: under a turn, every question its request asked (and its second request's, when it
+ * made one), each with its text as the model was sent it, those already written out in this
+ * transcript with the same text named on one line (`as above: ...`); then the turn's gates, each
+ * reading with the bar it was held to and that bar's name in core/thresholds.ts (what `--threshold
+ * NAME=value` moves), whether it passed, what it led to, and `<==` on the one that decided the turn.
+ */
+export function questionLines(run: TurnRun, indent: string, thresholds: Thresholds, seen: Map<string, string> = new Map()): string[] {
+  const lines: string[] = [];
+  const asked: Array<[string, Question]> = [...Object.entries(run.questions ?? {}), ...Object.entries(run.followUp?.questions ?? {})];
+  if (asked.length > 0) {
+    lines.push(`${indent}questions`);
+    const same: string[] = [];
+    for (const [id, q] of asked) {
+      const key = JSON.stringify(q);
+      if (seen.get(id) === key) {
+        same.push(id);
+        continue;
+      }
+      seen.set(id, key);
+      lines.push(`${indent}   ${id}  ${q.instructions}`, ...questionText(q, `${indent}      `));
+    }
+    if (same.length > 0) lines.push(`${indent}   as above: ${same.join(', ')}`);
+  }
+  const rows = run.record.gates;
+  if (rows.length > 0) {
+    const width = Math.max(...rows.map((r) => r.gate.length), 4);
+    const names = rows.map((r) => barName(r, thresholds));
+    const nameWidth = Math.max(...names.map((n) => n.length), 0);
+    lines.push(`${indent}gates  (each reading, the bar it was held to, and what it led to; <== decided the turn)`);
+    rows.forEach((r, i) => {
+      const value = r.value === null ? '   -' : p2(r.value).padStart(4);
+      const bar = r.threshold === null ? `bar    -${' '.repeat(nameWidth + 1)}` : `bar ${p2(r.threshold).padStart(4)} ${names[i]!.padEnd(nameWidth)}`;
+      const result = r.threshold === null ? 'info' : r.passed ? 'pass' : 'FAIL';
+      lines.push(`${indent}   ${r.gate.padEnd(width)}  ${value}  ${bar}  ${result}  ${r.outcome}${r.decided ? '  <==' : ''}`);
+    });
   }
   return lines;
 }

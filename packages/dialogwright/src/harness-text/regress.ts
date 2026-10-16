@@ -12,7 +12,7 @@ import type { TraceRecord } from '../trace/types';
 import { loadScenarios, runCorpusEntry, runScenario, unanswerableSteps, type RunOptions, type Scenario } from './runner';
 import type { CorpusEntry } from '../jev/corpus';
 import { closest } from '../define/problems';
-import { corpusTranscript, modelAnswerLines, scenarioTranscript } from './transcript';
+import { corpusTranscript, modelAnswerLines, questionLines, scenarioTranscript, type TurnDetail } from './transcript';
 import type { ScenarioOutcome } from './baseline';
 import type { Outcome } from './runner';
 import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
@@ -56,6 +56,9 @@ async function run(argv?: readonly string[]): Promise<void> {
       // A transcript of the adversarial suite's cases whose ids start with this, turn by turn, with
       // their properties' verdict (testing/adversarial), whether or not app.yaml turns the suite on.
       adversarial: { type: 'string', multiple: true, default: [] },
+      // With --scenario, --corpus or --adversarial: under each turn, every question the model was
+      // asked, in its words, and each gate's reading against its bar, named (transcript.ts questionLines).
+      questions: { type: 'boolean', default: false },
       // For an app that generates lines: `fixed` says every line word for word (render/harness.ts).
       render: { type: 'string' },
     },
@@ -98,6 +101,11 @@ async function run(argv?: readonly string[]): Promise<void> {
     return;
   }
   const json = args.json === true;
+  if (args.questions === true && (json || picked.scenarios.length + picked.corpus.length + cases.length === 0)) {
+    console.error('--questions prints under the turns of a transcript: give it --scenario <id>, --corpus <id> or --adversarial <id>, without --json');
+    process.exitCode = 1;
+    return;
+  }
   if (json && (picked.scenarios.length > 0) === (picked.corpus.length > 0)) {
     console.error('--json prints one baseline file\'s entries: give it --corpus <id> (corpus.json) or --scenario <id> (scenarios.json), not both');
     process.exitCode = 1;
@@ -131,13 +139,16 @@ async function run(argv?: readonly string[]): Promise<void> {
     process.exitCode = await outcomesJson(picked, corpus, scenarioDefs, opts);
     return;
   }
+  // Under each turn of a transcript: against a model or its cassette, what it answered; with
+  // --questions, the questions in their words and each reading's bar.
+  const detail: TurnDetail = { answers: REAL_MODEL_KINDS.has(kind), questions: args.questions === true, thresholds: opts.thresholds };
   if (picked.scenarios.length + picked.corpus.length > 0) {
-    process.exitCode = await transcripts(picked, corpus, scenarioDefs, opts, readBaseline(), kind);
+    process.exitCode = await transcripts(picked, corpus, scenarioDefs, opts, readBaseline(), kind, detail);
     if (cases.length === 0) return;
   }
   if (cases.length > 0) {
     const report = await adversarialRun(kind, opts.client, thresholds, screen, corpus, scenarioDefs, cases, opts.renderer ?? undefined);
-    for (const r of report.results) console.log([...adversarialTranscript(r), ''].join('\n'));
+    for (const r of report.results) console.log([...adversarialTranscript(r, detail), ''].join('\n'));
     if (report.results.some((r) => r.status === 'fail')) process.exitCode = 1;
     return;
   }
@@ -306,8 +317,8 @@ function pick<T extends { id: string }>(what: string, ids: readonly string[], al
 }
 
 /**
- * `--scenario <id>` and `--corpus <id>`: each one's transcript, then whether its outcome is the
- * baseline's. Exit 1 when a scripted call misses what it expects, or an outcome is not the baseline's.
+ * `--scenario <id>` and `--corpus <id>`: each one's transcript (with `detail` under each turn), then
+ * whether its outcome is the baseline's. Exit 1 when a scripted call misses what it expects, or an outcome is not the baseline's.
  */
 async function transcripts(
   picked: { scenarios: readonly string[]; corpus: readonly string[] },
@@ -316,6 +327,7 @@ async function transcripts(
   opts: RunOptions,
   expected: ReturnType<typeof readBaseline>,
   kind: string,
+  detail: TurnDetail = {},
 ): Promise<number> {
   const entries = pick('corpus line', picked.corpus, corpus);
   const calls = pick('scenario', picked.scenarios, scenarios);
@@ -340,7 +352,8 @@ async function transcripts(
     const r = await runCorpusEntry(entry, opts);
     for (const l of corpusTranscript(entry, r)) console.log(l);
     // Against a model or its cassette, what it answered, so a line that read otherwise shows why.
-    if (REAL_MODEL_KINDS.has(kind)) for (const l of [...modelAnswerLines(r.setup), ...modelAnswerLines(r.run)]) console.log(l);
+    if (detail.answers === true) for (const l of [...modelAnswerLines(r.setup), ...modelAnswerLines(r.run)]) console.log(l);
+    if (detail.questions === true) for (const l of questionLines(r.run, '  ', opts.thresholds)) console.log(l);
     const had = expected.corpus[entry.id];
     against('line', had !== undefined, had ? diff('corpus', { [entry.id]: had }, { [entry.id]: r.outcome }, new Set(), gaps) : { lines: [], allowed: [] });
     if (had) nowMatching({ [entry.id]: had }, { [entry.id]: r.outcome }, gaps);
@@ -348,7 +361,7 @@ async function transcripts(
   }
   for (const scenario of calls) {
     const r = await runScenario(scenario, opts);
-    for (const l of scenarioTranscript(scenario, r)) console.log(l);
+    for (const l of scenarioTranscript(scenario, r, detail)) console.log(l);
     const drift = new Set(REAL_MODEL_KINDS.has(kind) && scenario.cosmeticDrift === true ? [scenario.id] : []);
     const actual: ScenarioOutcome = { ...r.outcome, pass: r.pass, mismatches: r.mismatches };
     const had = expected.scenarios[scenario.id];

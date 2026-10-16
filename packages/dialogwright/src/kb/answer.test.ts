@@ -6,7 +6,7 @@ import type { KbSource } from '../core/lifecycle';
 import { newSession } from '../core/session';
 import { resolve, type TurnResult } from '../core/turn';
 import { checkApp } from '../define/check';
-import { isAppDefinitionError } from '../define/defineApp';
+import { isAppDefinitionError, type FormHooks } from '../define/defineApp';
 import { formatProblem } from '../define/problems';
 import { ANONYMOUS } from '../gate/principal';
 import { spokenText } from '../prompts/render';
@@ -337,5 +337,13 @@ describe('check: a folder\'s knowledge answers', () => {
     expect(await lines('kb-c7', { 'forms.yaml': (t) => APP_EDITS['forms.yaml']!(t).replace('answers: { slot: libraryTopic }', 'answers: { slot: libraryTopic }\n    hooks: [complete]') })).toEqual([
       expect.stringContaining('this form answers from the knowledge base, so its completion is the engine\'s, and it has a "complete" hook too  ->  delete "complete" from hooks'),
     ]);
+  });
+
+  it('a form that answers may have hooks of its own and no complete: FormHooks types it so, with no cast', async () => {
+    const dir = folder('library-kb-entry', { 'forms.yaml': (t) => APP_EDITS['forms.yaml']!(t).replace('answers: { slot: libraryTopic }', 'answers: { slot: libraryTopic }\n    hooks: [entry]') });
+    // An entry call before the topic is asked (an answer's read that needs a level would step up here).
+    const hooks: FormHooks = { entry: () => ({ tool: 'getFees', params: { topic: '' } }) };
+    const code = codeFor(dir);
+    expect((await checkApp(dir, { code: { ...code, forms: { ...code.forms, ask_library: hooks } }, todayIso: TODAY })).map(formatProblem)).toEqual([]);
   });
 });
