@@ -215,21 +215,102 @@ Who approved: every passage's approval names Compliance Review (owner Benefits C
 | A future loss date "asked again" | The date slot with `range: past` never resolves a day to come; the gate's bound refuses a write | The slot asks again (its retry line); the gate's `loss_date_future` line is said only to a write the code sends with such a day, which the dialog never does | none |
 | A miss at the description's question | With `commands: ignore` (the default for a `text` slot without `pick`) whatever is said there is the description | No miss line in the corpus for `lossDescription` (corpus.md asks for one for every slot) | none |
 
+**Corpus lines the real model reads otherwise** (`knownGap`, from the first recording, jev-1.13.0, 2026-10-16; each reason in `fixtures/corpus.jsonl` carries the numbers). A stub run still holds each to its label. A line marked "reworded" should read as labelled on the next recording, and lose its tag then.
+
+| Line | What the caller says | What the caller hears instead | Whose |
+|---|---|---|---|
+| cs-14 | "claim" | "you'd like to check on a claim. Is that right?": one more yes or no | the model's (a single word) |
+| cp-07 | "help" | "you'd like to hear what I can do. Is that right?": one more yes or no | the model's (a single word) |
+| sel-10 | "the most recent one", at the claim question | the claim question again | reworded (claimSelect's instructions) |
+| lt-04 | "i got hurt", at the kind-of-loss question | the description question is skipped; the claim is filed with "i got hurt" as the description | reworded (lossDescription's instructions) |
+| cr-06 | "yes, but it was on friday", at the summary | the summary again, with Friday, rightly; but the words are added to the description, which the caller never hears | reworded (lossDescription's `text.changed`); the engine's question (Recordings) |
+| cr-09 | "wait, how long do i have to file a claim", at the summary | the summary again, the question unanswered; nothing is filed without a yes | the engine's `intentChange` (Recordings) |
+| db-04 | "eight twenty one eighty four", at the date of birth | "Please say your date of birth, including the year" (a try on the factor's ladder; the keypad works) | the engine's birthdate questions (Recordings) |
+| cp-06 | "am i talking to a real person" | put through to a person, not told what the line is | the owner's to say which is right (Recordings) |
+| ot-02 | "do you sell car insurance" | "you'd like to check your coverage. Is that right?"; a no goes back to the open question | reworded (coverage and other criteria) |
+| ot-07 | "can i add my spouse to the plan" | the coverage form: the member ID and date of birth, then a coverage question the line cannot answer | reworded (coverage and other criteria) |
+
 ## Baseline edits
 
-The first baseline was made once (`regress --update`: `recorded 173 corpus outcomes and 76 scenario outcomes`) and read entry by entry against this worksheet: the next prompt, the gate's action and verdict, the slots, the level. Findings were fixed in the app or the scripted calls' expectations before it (a repeat request ends at `decision: replay`; a declined frustration offer goes back to the open question). Since then there has been no hand edit: the document lines' wording changed after the baseline, but the baseline holds line ids, not words, and the one scripted call that names the words was updated.
+The first baseline was made once (`regress --update`: `recorded 173 corpus outcomes and 76 scenario outcomes`) and read entry by entry against this worksheet: the next prompt, the gate's action and verdict, the slots, the level. Findings were fixed in the app or the scripted calls' expectations before it (a repeat request ends at `decision: replay`; a declined frustration offer goes back to the open question). Until the first recording there was no hand edit: the document lines' wording changed after the baseline, but the baseline holds line ids, not words, and the one scripted call that names the words was updated. The edits since are below, each written from `regress --corpus <id> --json` (never `--update`).
 
 | Entry | Field | Before -> after | Why |
 |---|---|---|---|
 | every entry naming the first member (76 corpus, 47 scenario) | `slots.memberId`, a member ID said | the earlier Harbor's number -> `42716358` (`4271 6358` grouped, spoken digit by digit likewise), in the data, the corpus, the scripted calls and the baseline together | the earlier Harbor's member number is tied to a real person, so it may not appear in the public repository; an invented value for an invented one, the outcomes unchanged (`regress`: no changes) |
+| corpus `cs-13` ("i got a letter about my claim and i don't understand it") | `promptId`, `acks`, `form`, `gate` | `confirm_intent_explicit`, `[]`, null, null -> `ask_memberId`, `["ack_intent"]`, `claim_status`, `listClaims:STEP_UP` | first recording, bucket 1: the label's `tentative: true` was wrong. The caller is plainly asking about their claim (claim_status 0.96, intentTentative 0.03), and the claim's status is where a letter about it is explained; the flag is dropped, so the stub routes it as the model does. cv-18 and rc-09 still test the tentative path |
+| corpus `rc-02` ("i want to report an accident") | `slots.lossType` | null -> `accident_injury` | first recording, bucket 1: the kind of loss was said and not labelled (lossType accident_injury 0.78). On an accident insurer's line "an accident" is an accident injury (the option's `means`), and the summary reads it back; labelled `lossType: accident_injury` |
 
 ## Recordings
 
-Not yet recorded: step 9 is the owner's. The command, at the repository root, with the key in `apps/harbor/.env` (`pnpm configure --app harbor --mode model` writes it):
+The command, the owner's to run at the repository root, with the key in `apps/harbor/.env` (`pnpm configure --app harbor --mode model` writes it):
 
 ```sh
 pnpm --filter @dialogwright/example-harbor regress --client record --threshold JEV_TIMEOUT_MS=15000
 ```
+
+### Recording 1: jev-1.13.0, 2026-10-16
+
+`fixtures/recorded/jev-1.13.0.jsonl`, 433 requests, $0.0727. The adversarial suite: `53/53 cases hold, 20 not run` (18 are the stub's fooled-perception cases, not run under a model by design; 2 have no text to replace): no finding.
+
+Before triage (the replay, as recorded):
+
+```text
+corpus     161/173 outcomes match expected
+scenarios   74/76 pass expectation,  73/76 match expected
+to triage: 12 untagged corpus differences, 2 failing scripted calls, 1 passing scripted call that differs from the baseline, 0 cassette misses
+```
+
+After the fixes that change no request, before the rewording (the replay of the same recording):
+
+```text
+corpus     163/173 outcomes match expected
+scenarios   74/76 pass expectation,  73/76 match expected
+known gaps  10/10 drifted (allowed)
+to triage: 0 untagged corpus differences, 2 failing scripted calls, 1 passing scripted call that differs from the baseline, 2 cassette misses
+```
+
+The 2 misses are identity-three-fails' later turns, after its opener changed (bucket 3, below): a call's later requests carry its history, so they were never recorded. After the rewording every request changed, as expected (`299 cassette misses`), until the next recording. The stub regression: `no changes`, `173/173`, `76/76`, `adversarial 71/71 cases hold, 2 not run`.
+
+**Bucket 1, the label was wrong** (labels fixed, baseline edited by hand, logged under Baseline edits):
+
+- cs-13 "i got a letter about my claim and i don't understand it": labelled `tentative`; the model reads a plain claim_status request (0.96, intentTentative 0.03) and routes it. The flag is dropped.
+- rc-02 "i want to report an accident": the model fills the kind of loss, accident_injury 0.78, which the label left out. Labelled.
+
+**Bucket 2, the model misread a borderline line** (tagged `knownGap`; the table under Gaps has each one's caller impact): cs-14, cp-07, sel-10, lt-04, cr-06, cr-09, db-04, cp-06, ot-02, ot-07.
+
+**Bucket 3, a scripted call broke on an incidental step:**
+
+- identity-three-fails opened with "claim" (claim_status 0.50, none 0.34, so the request was checked with a yes or no), and its member ID and dates of birth were then said to that question: three answers that were not a yes or no, and a person for `max-attempts`, never reaching verification. The call tests three failed verifications, so its opener is now "claim status" (cs-08's words, read claim_status 1.00); its expectation is unchanged and the stub's outcome did not move. Its later turns miss until the next recording (a keypad "1" opener was tried and missed sooner).
+
+**Scripted calls for the owner to decide** (not tagged: a scripted call's `knownGap` is the owner's acceptance):
+
+| Call | What the caller says | What the model reads | What the caller hears | Safe? |
+|---|---|---|---|---|
+| report-aside-at-summary (failing) | "wait, how long do i have to file a claim", at the read-back | intent coverage 1.00, but intentChange answering 0.78 (adding 0.17): taken as the read-back's answer, unanswered (numbers from cr-09, the same words in the same place) | the summary again, word for word, and not the 180-day answer; the claim is filed only on a yes | I judge it safe (nothing is done without a yes), but the question is lost. If accepted, its outcome is `{"acks":[],"decidedGate":"confirmation","verdict":"confirm_unanswered","gate":"getCoverage:ALLOW"}` |
+| report-yes-but-friday (passing, differs) | "yes, but it was on friday", at the read-back | the date corrected rightly (lossDateWeekday friday 1.00, changeSlot lossDate 0.95), but lossDescriptionChanged 0.71 (numbers from cr-06) | the summary again with Friday, September 11; the description becomes "got hurt. yes, but it was on friday", which the caller never hears (a stand-in) and would be filed | I judge it safe for the caller (a yes is still needed, the date is right), but the filed description carries the correction's words. Reworded for the next recording (`text.changed`); if it still shows, its outcome is the `slots` above |
+
+Both may read otherwise after the rewording, so the owner decides on the next recording's numbers.
+
+**For the owner:**
+
+| Entry | What the caller says | What the model reads (numbers) | What the caller hears | Whose fix | Candidate |
+|---|---|---|---|---|---|
+| report-aside-at-summary, cr-09 | a question about the task in hand, at its read-back | coverage 1.00, intentChange answering 0.78 | the read-back again, the question unanswered | the engine's (`intentChange`'s answering criterion takes "anything that is not a request for a different task"; a question about the same task is read as an answer) | a knowledge intent read at INTENT_ROUTE or more at a read-back answered as an aside whatever intentChange says, or the criterion's wording |
+| report-yes-but-friday, cr-06 | a yes with a correction of another value, at the read-back | lossDescriptionChanged 0.71 beside changeSlot lossDate 0.95 | nothing wrong is heard; the description silently gains the correction's words | the engine's (the text type's `changed` question says "The caller was read back {what}", untrue when the summary says the slot by its stand-in, as the type does by default; and the words are added even when the turn's change is another slot's) | the default `changed` question worded for a stand-in, or no addition when a changeSlot reading explains the turn. The app now says its own (`text.changed`) |
+| cp-06 | "am i talking to a real person" | wantsHuman 0.94, intent agent 0.59 over capabilities 0.41 | put through to a person | the owner's: a label the paragraph does not settle (capabilities' criteria name "whether it is a robot or a person", but the caller may be asking for one) | label it `agent` (bucket 1, a baseline edit) if being put through is right; otherwise it stays tagged |
+| db-04 | "eight twenty one eighty four" | dobDay 1 0.32 against 21 0.29, dobYear eighty four 0.25 | the date of birth asked again, with the year | the engine's (the birthdate type's month, day and year questions on a run of numbers) | none needed now: one try, and the keypad |
+| adversarial off-scope/open/unanswerable/correct/en (a model reading, fails nothing) | "what was the score of the game last night", at the greeting | ignored as not said to the line (the run prints no numbers) | nothing; the no-input timer asks again | the engine's (`addressedToSystem`) | none: listed as step 9 asks |
+| the rewording below | | | | one re-record | |
+
+**The rewording, all at once** (every request changes; the stub regression is unchanged):
+
+- `intents.yaml`, `other`: from "A request the insurance line does not handle" to the same with examples (buying insurance or another kind of insurance, changing or cancelling a plan, adding or removing someone on a plan, a bill or a payment, changing contact details): ot-02 and ot-07 read as coverage (0.54, 0.63) because the criterion named nothing the line does not handle.
+- `intents.yaml`, `coverage`: adds "Asking to buy, change or cancel insurance, or to add someone to a plan, is not" (ot-02, ot-07).
+- `slots.yaml`, `claimSelect`'s instructions: a claim may be named "by when it was beside the others (the latest one, the older one)" (sel-10: none 0.60, claim_4702 0.34 for "the most recent one").
+- `slots.yaml`, `lossDescription`'s instructions: "only the kind of claim with nothing more about what happened (I got hurt, I had an accident, I was in the hospital), is not" (lt-04: lossDescriptionGiven 0.61 for "i got hurt" at the kind-of-loss question).
+- `slots.yaml`, `lossDescription`'s `text.changed` (new): the read-back's own question, saying that the kind of claim and the date were read back and the description was not, and asking whether the caller adds something new about what happened besides agreeing or correcting the kind of claim or the date (cr-06, report-yes-but-friday: 0.71).
+
+**A re-record is needed**: one, for the rewording above, with the same command; it records identity-three-fails' new opener too. The first cost $0.07. Then `pnpm --filter @dialogwright/example-harbor cassette:trim`, the replay and the app's tests, and the new recording triaged the same way: each `knownGap now matches` tag removed (expected for sel-10, lt-04, cr-06, ot-02, ot-07 if the rewording works), any line the new wording made borderline tagged, and the two calls above brought back to the owner with the new numbers.
 
 ## Skill trial notes
 
@@ -252,6 +333,17 @@ Each place the skill, the guide, patterns.md, options.md or the framework was un
 15. **The corpus's `offer_transfer` context**: seeded through `testing.offerTransferForm` (here the coverage form), a yes there ends at `handoff_frustrated`, while the guide (12.5) says a yes to the knowledge base's unavailable offer is a `live-agent` handoff. Which offer the seed makes is not said; I kept the lines (ft-01, ft-02) and note it here.
 16. **The docs index.** The root CLAUDE.md says to keep `docs/README.md` accurate when something is added; the skill's final checklist does not mention it. I added the app there.
 17. **The app map draws a form's entry call under its summary** (report_claim's `getCoverage` appears as called after the read-back): `calls` has no way to say which call is the entry. Cosmetic.
+
+The triage of the first recording (step 9 and triage.md):
+
+18. **A bucket-3 fix to a spoken step is not free.** triage.md suggests opening a call that reached its form through a borderline opener "with one of the form's plain corpus lines", and its order puts scripted calls' steps among the fixes that change no request, each checked for `0 misses`. But a call's later requests carry what was said before, so every later turn of identity-three-fails missed once "claim" became "claim status" (2 misses), and a keypad opener ("1") missed from its first spoken turn. Only the stub can check such a fix; the guide could say that changing a step (spoken or keyed) re-keys the call's later turns and waits for the re-record, and that the `0 misses` check holds for labels, tags and code only.
+19. **`--scenario <id>` prints no readings.** Under `--client recorded`, `--corpus <id>` shows every question's answer, but `--scenario <id>` shows the turns and the diff, no numbers (nor does `--json`, nor `--adversarial <id>` for a "model reading" case). For the two scripted calls I quoted the corpus lines with the same words in the same place (cr-06, cr-09); triage.md implies the call's numbers are there.
+20. **The question itself is not printed.** "After a live call" step 4 says the whole question is printed by `regress --client recorded --corpus <id>`; it prints the questions' ids and answers only. The text type's `changed` question is in docs/slots/text.md, but the engine's own (`intentChange`, `wantsHuman`) are only in `core/questions.ts`, which an app author should not need to open. Nor are the bars printed: to say which threshold a reading missed I read `core/thresholds.ts`.
+21. **A passing scripted call that differs has no bucket.** The summary counts it ("1 passing scripted call that differs from the baseline"), but triage.md's buckets cover corpus lines and failing calls; its only allowances are `cosmeticDrift` (the gate and verdict alone) and a `knownGap` the owner accepts. The guide could say that such a call goes to the owner like a failing one (report-yes-but-friday: the slots differ).
+22. **The `model reading, adversarial` line** is in step 9 ("list it for the owner") but not in triage.md's table of what the run prints.
+23. **A slot difference's `knownGap` outcome carries the whole `slots` object**, since the pin is laid over the baseline's outcome a field at a time; the examples show only flat fields.
+24. **When to commit the cassette.** Step 9 says to commit it with the triage; triage.md does not say when. Committed before the rewording it replays as triaged (2 misses, from bucket 3); after the rewording it misses everywhere until the re-record. I committed the cassette, the labels, the tags and the scripted call first, then the rewording on its own, so the first commit is the triage checked on the recording.
+25. **What worked**: the three buckets fitted every entry; bucket 1's "the stub's `~` lines are exactly the ones you meant" held to the field (cs-13 and rc-02 showed the model's own diff on the stub), so the hand edits were mechanical; `knownGap` tags on the corpus took the untagged count from 12 to 0 with no miss.
 
 ## Final checklist
 

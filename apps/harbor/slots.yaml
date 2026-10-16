@@ -36,7 +36,7 @@ claimSelect:
   missReason: no_claim
   keypad: 4
   text:
-    instructions: "Read asr.text and node.promptJustPlayed. Which claim does the caller mean? They may name it by number, by the service it was for (an emergency room visit may be called the ER), or by its date. Choose none only when they name no claim."
+    instructions: "Read asr.text and node.promptJustPlayed. Which claim does the caller mean? They may name it by number, by the service it was for (an emergency room visit may be called the ER), by its date, or by when it was beside the others (the latest one, the older one). Choose none only when they name no claim."
     none: Names no claim
 
 # What the member asks their coverage about, as one topic of the knowledge base (kb/topics.yaml).
@@ -82,7 +82,11 @@ lossDate:
 lossDescription:
   type: text
   what: a short description of what happened to them, such as an injury and how it happened, an illness or diagnosis, or why they were in the hospital
-  instructions: Count it even when it comes with a request to file a claim. A request alone, or a kind of claim with nothing about what happened, is not.
+  instructions: Count it even when it comes with a request to file a claim. A request alone, or only the kind of claim with nothing more about what happened (I got hurt, I had an accident, I was in the hospital), is not.
+  text:
+    # The summary says the description by its stand-in ("I have your description"), never its words,
+    # so this question says so (the type's own presumes the words were read back).
+    changed: "Read asr.text and node.promptJustPlayed. The caller was asked to confirm a claim before it is filed: the kind of claim and the date were read back, and their description of what happened was not, only that we have it. Besides agreeing, disagreeing or correcting the kind of claim or the date, does the caller add something new about what happened to them? Agreeing alone (yes, that's right, sounds good, thanks) is no."
   maxLength: 500
   say: your description
   redact: length

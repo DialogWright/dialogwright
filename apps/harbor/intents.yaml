@@ -13,7 +13,7 @@ intents:
   # What the member's plan covers: answered from the approved passages of their own plan's
   # certificate (kb/), word for word. Level 1 (the member ID and date of birth).
   coverage:
-    criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim. An injury or a treatment named in a question about what the plan pays is a coverage question
+    criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim. An injury or a treatment named in a question about what the plan pays is a coverage question. Asking to buy, change or cancel insurance, or to add someone to a plan, is not
     label: check your coverage
     kind: form
 
@@ -47,7 +47,7 @@ intents:
     label: finish up
     kind: control
   other:
-    criteria: A request the insurance line does not handle
+    criteria: A request the insurance line does not handle, such as buying insurance or another kind of insurance, changing or cancelling a plan, adding or removing someone on a plan, a bill or a payment, or changing contact details
     label: something else
     kind: control
   none:
