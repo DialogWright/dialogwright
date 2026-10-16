@@ -41,7 +41,7 @@ prompts:
     text: Let's try the keypad. For a claim's status, press 1. For coverage questions, press 2. To report a new claim, press 3. To speak with someone, press 0.
     interruptible: true
   capabilities:
-    text: I'm Harbor Mutual's automated assistant. I can tell you the status of a claim, answer questions about what your plan covers, and take a report of a new claim.
+    text: I'm an automated assistant, but you can talk to me naturally. I can tell you the status of a claim, answer questions about what your plan covers, and take a report of a new claim.
     interruptible: true
   no_input:
     text: I didn't hear anything.

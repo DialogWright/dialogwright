@@ -59,9 +59,16 @@ function alwaysOn(app: App): QuestionMap {
       type: 'noul',
       instructions: 'Read asr.text. Has the caller finished their thought, rather than trailing off or being cut short?',
     },
+    // Asking whether one is talking to a person is not asking for one (the maintainer's decision,
+    // 2026-10-16, Harbor findings item 6): the model is told what the caller is talking to, and what
+    // the question is for, not a procedure for the words.
     wantsHuman: {
       type: 'noul',
-      instructions: 'Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?',
+      instructions: `Read asr.text. The caller is talking to ${w?.addressee ?? NEUTRAL_WORDING.addressee}, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?`,
+      criteria: {
+        true: 'The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative',
+        false: 'The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else',
+      },
     },
     rephrasingLastTurn: {
       type: 'noul',

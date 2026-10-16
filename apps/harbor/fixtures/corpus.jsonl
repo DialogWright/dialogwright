@@ -131,9 +131,10 @@
 {"id": "cp-03", "text": "what are my options", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-04", "text": "how does this work", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-05", "text": "what can i do here", "intent": "capabilities", "context": "no_form"}
-{"id": "cp-06", "text": "am i talking to a real person", "intent": "capabilities", "context": "no_form", "knownGap": {"reason": "\"am i talking to a real person\": wantsHuman 0.94 (GATE_WANTS_HUMAN, 0.7), intent agent 0.59 over capabilities 0.41, so the caller is put through to a person instead of hearing what the line is; whether that is the truth is the owner's to say", "outcome": {"decision": "handoff", "promptId": "handoff_live_agent", "acks": [], "reason": "live-agent", "decidedGate": "wantsHuman", "verdict": "handoff"}}}
+{"id": "cp-06", "text": "am i talking to a real person", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-07", "text": "help", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-08", "text": "what can you help me with", "intent": "capabilities", "context": "no_form"}
+{"id": "cp-09", "text": "is this a real person or a machine", "intent": "capabilities", "context": "no_form"}
 {"id": "dn-01", "text": "no, that's all", "intent": "done", "context": "anything_else"}
 {"id": "dn-02", "text": "no thanks", "intent": "done", "context": "anything_else"}
 {"id": "dn-03", "text": "i'm all set", "intent": "done", "context": "anything_else"}

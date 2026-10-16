@@ -117,7 +117,7 @@ describe('the regression transcript', () => {
     expect(lines[0]).toBe('  questions');
     expect(lines.find((l) => l.startsWith('     intent  '))).toMatch(/^ {5}intent {2}Read asr\.text\. What is the caller asking/);
     expect(lines).toContain('        track_parcel: Asks where a parcel is, whether it has been delivered, or about a parcel by its number or by what is in it');
-    expect(lines.find((l) => l.startsWith('     wantsHuman  '))).toBe('     wantsHuman  Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?');
+    expect(lines.find((l) => l.startsWith('     wantsHuman  '))).toBe('     wantsHuman  Read asr.text. The caller is talking to the parcel delivery line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?');
     const gates = lines.indexOf('  gates  (each reading, the bar it was held to, and what it led to; <== decided the turn)');
     expect(gates).toBeGreaterThan(0);
     const rows = lines.slice(gates + 1);

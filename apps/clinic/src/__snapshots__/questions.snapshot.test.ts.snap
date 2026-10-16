@@ -393,7 +393,11 @@ exports[`the questions the model sees, on the clinic > pins every question at th
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -533,7 +537,11 @@ exports[`the questions the model sees, on the clinic > pins every question in bi
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -727,7 +735,11 @@ exports[`the questions the model sees, on the clinic > pins every question in bi
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -971,7 +983,11 @@ exports[`the questions the model sees, on the clinic > pins every question in ca
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -1215,7 +1231,11 @@ exports[`the questions the model sees, on the clinic > pins every question in co
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -1581,7 +1601,11 @@ exports[`the questions the model sees, on the clinic > pins every question in re
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -1947,7 +1971,11 @@ exports[`the questions the model sees, on the clinic > pins every question in sc
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -2538,7 +2566,11 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -2923,7 +2955,11 @@ exports[`the questions the model sees, on the clinic > pins every question outsi
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -3295,7 +3331,11 @@ exports[`the questions the model sees, on the clinic > pins every question with 
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }
@@ -3664,7 +3704,11 @@ exports[`the questions the model sees, on the clinic > pins every question with 
     "type": "noul",
   },
   "wantsHuman": {
-    "instructions": "Read asr.text. Does the caller explicitly ask to talk to a person, an agent, a representative, or an operator?",
+    "criteria": {
+      "false": "The caller asks for something else, or for nothing. Asking whether they are talking to a person, a robot or a machine asks what this service is, not to talk to someone else",
+      "true": "The caller asks to talk to a person or to be put through to one, even in a single word such as agent or representative",
+    },
+    "instructions": "Read asr.text. The caller is talking to the clinic phone line, which is automated. Does the caller ask to talk to a person instead, such as an agent, a representative, or an operator?",
     "type": "noul",
   },
 }

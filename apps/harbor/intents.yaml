@@ -33,7 +33,7 @@ intents:
 
   # The engine's own control intents. agent and repeat_prompt are required.
   agent:
-    criteria: Asks to speak with a person, a representative, a specialist, or an operator
+    criteria: Asks to speak with a person, a representative, a specialist, or an operator. Asking whether they are talking to a person or a robot is asking what the line is, not asking for a person
     label: speak with someone
     kind: control
   repeat_prompt:

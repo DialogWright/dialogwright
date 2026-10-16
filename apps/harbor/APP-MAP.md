@@ -11,7 +11,7 @@
 | `claim_status` | form | check on a claim | opens the form, which asks for claim |
 | `coverage` | form | check your coverage | opens the form, which asks for coverage topic |
 | `report_claim` | form | report a new claim | opens the form, which asks for kind of loss, date of loss, what happened |
-| `capabilities` | informational | hear what I can do | says "I'm Harbor Mutual's automated assistant. I can tell you the status of a claim, answer q..." and goes back to the question |
+| `capabilities` | informational | hear what I can do | says "I'm an automated assistant, but you can talk to me naturally. I can tell you the status..." and goes back to the question |
 | `agent` | control | speak with someone | handled by the engine |
 | `repeat_prompt` | control | hear that again | handled by the engine |
 | `done` | control | finish up | handled by the engine |
