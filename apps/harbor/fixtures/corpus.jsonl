@@ -43,6 +43,7 @@
 {"id": "cv-17", "text": "benefits question", "intent": "coverage", "context": "no_form"}
 {"id": "cv-18", "text": "i was wondering if maybe physical therapy might be included", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "physical_therapy"}, "tentative": true}
 {"id": "cv-19", "text": "how much does the plan pay for physical therapy", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "physical_therapy"}}
+{"id": "cv-20", "text": "do you pay for prescriptions", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "prescriptions"}}
 {"id": "tp-01", "text": "physical therapy", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "physical_therapy"}}
 {"id": "tp-02", "text": "what about ambulance rides", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "ambulance"}}
 {"id": "tp-03", "text": "the emergency room", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "emergency_room"}}

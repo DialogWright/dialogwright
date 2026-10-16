@@ -38,5 +38,6 @@ describe('the fixtures', () => {
     const expected = readBaseline();
     expect(actual.scenarios).toEqual(expected.scenarios);
     expect(actual.corpus).toEqual(expected.corpus);
-  });
+    // Two scripted calls word a coverage answer slowly (renderDelayMs), to hear the hold line: a few seconds.
+  }, 30_000);
 });

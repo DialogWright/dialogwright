@@ -255,8 +255,20 @@ prompts:
   disambiguate_coverageTopic:
     text: Is that about {a}, or {b}?
     interruptible: true
+  # The approved passage for the member's plan, said word for word; on a topic kb/topics.yaml marks
+  # risk: low, worded for the member's question (the span {answer}, from the passage), held to the
+  # passage by the checks and the drift judge, and the passage said whenever one fails. The usage line
+  # (the member's own data) is said after either, word for word.
   coverage_answer:
     text: "{answer}"
+    interruptible: false
+    generate:
+      answer:
+        from: answer
+        goal: Answer the member's question from their plan's passage, in a sentence or two.
+  # Said before an answer whose wording is not ready within a line's budget; the answer follows.
+  kb_hold:
+    text: One moment while I gather that information.
     interruptible: false
   coverage_unavailable:
     text: That part of the plan information is being updated, so I can't answer it right now.

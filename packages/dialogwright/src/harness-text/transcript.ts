@@ -92,6 +92,9 @@ function turnLines(run: TurnRun, indent: string): string[] {
     const how = l.mode === 'generated' ? 'generated' : l.unchanged === true ? 'fixed, said unchanged (the wording was the words themselves)' : l.fallback !== undefined ? `fixed, fell back (${l.fallback})` : `fixed (${l.skipped ?? 'not tried'})`;
     lines.push(`${indent}   line   ${l.promptId}: ${how}${l.mode === 'generated' ? `; fixed ${JSON.stringify(l.fixed)}` : ''}${l.refused !== undefined ? `; refused ${JSON.stringify(l.refused)}` : ''}`);
   }
+  // A knowledge answer whose wording ran past its line's budget: the hold line said before it.
+  const hold = run.record.render?.hold;
+  if (hold !== undefined) lines.push(`${indent}   hold   ${hold.promptId ?? 'the engine\'s words'}, before the answer still being worded`);
   // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.
   const transfer = run.result.actions.find((a) => a.type === 'transfer');
   if (transfer?.type === 'transfer' && transfer.target !== undefined) lines.push(`${indent}   transfer ${transferLine(run, transfer)}`);

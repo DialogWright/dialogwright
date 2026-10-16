@@ -86,5 +86,24 @@
       "decision": "prompt",
       "promptId": "ask_intent"
     }
+  },
+  {
+    "id": "member-chat-answer-hold-line",
+    "as": "web",
+    "renderDelayMs": 3500,
+    "steps": [
+      {
+        "signIn": "42716358"
+      },
+      {
+        "say": "do you pay for prescriptions"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "One moment while I gather that information. Prescriptions aren't covered by this plan."
+    }
   }
 ]

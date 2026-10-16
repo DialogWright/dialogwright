@@ -4,6 +4,15 @@
 # the model's request (and sends the topic's passages back for review: an approval covers the
 # title). The account line is the member's own usage, read through getUsage and said after the
 # answer when the gate allows it.
+#
+# risk: every topic is regulated (the default: its approved passage said word for word) but four,
+# marked low (2026-10-16, DESIGN.md "Knowledge"): sports injuries, prescriptions, travel and the
+# filing deadline, whose answers describe what the plan does (which activities, where, what it does
+# not cover, how long a member has) rather than a benefit's dollar amount. On those the coverage
+# answer line (prompts.yaml's coverage_answer) words the approved passage for the member's question,
+# held to it by the checks and the drift judge, and the passage is said whenever one fails. The
+# approvals cover the passages and their sources, not a topic's risk: marking one low sends nothing
+# back for review.
 physical_therapy:
   title: Physical therapy after an accident
   keywords: [physical therapy, pt, rehab, rehabilitation, therapist, physical therapist]
@@ -80,6 +89,7 @@ sports_injury:
     - Are sports injuries covered?
     - Is my kid covered if he gets hurt playing football at school?
     - Am I covered if I'm hurt playing in a league?
+  risk: low
 pre_existing:
   title: Pre-existing conditions
   keywords: [pre-existing, preexisting, existing condition, before my coverage]
@@ -94,6 +104,7 @@ prescriptions:
     - Are prescriptions covered?
     - Does my plan pay for medicine after an accident?
     - Do you cover pills from the pharmacy?
+  risk: low
 travel:
   title: Accidents while traveling
   keywords: [travel, traveling, abroad, europe, overseas, outside the us, vacation]
@@ -101,6 +112,7 @@ travel:
     - Am I covered if I get hurt in Europe?
     - Does my plan cover accidents abroad?
     - Am I covered on vacation outside the US?
+  risk: low
 filing_deadline:
   title: Deadline to file a claim
   keywords: [deadline, time limit, too late, file a claim, filing, how long do i have, how long to file, deadline to file]
@@ -108,3 +120,4 @@ filing_deadline:
     - How long do I have to file a claim?
     - Is there a deadline to file a claim?
     - Is it too late to file for an old accident?
+  risk: low

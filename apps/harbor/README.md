@@ -5,7 +5,7 @@ The member line and chat of a fictional accident insurer, built with DialogWrigh
 What a caller can do:
 
 - **Check on a claim** (`claim_status`): the member verifies with their member ID and date of birth, then keys a six-digit code texted to the phone on file (said by its last four only; a code said aloud is never taken: a new one is texted). They name the claim by its four-digit number, what it was for, or its date; a member with one claim is not asked which. The status is said in fixed lines (`getClaim`), and the gate refuses a claim that is not theirs (`scope`).
-- **Ask what their plan covers** (`coverage`): after the member ID and date of birth, the answer from their own plan's certificate, word for word: a passage a person approved (see "The knowledge base" below). For physical therapy and follow-up visits it adds how many the member has used this year (`getUsage`, a gated read).
+- **Ask what their plan covers** (`coverage`): after the member ID and date of birth, the answer from their own plan's certificate: a passage a person approved (see "The knowledge base" below), said word for word, or, on the four topics marked `risk: low` (sports injuries, prescriptions, travel, the filing deadline), worded for the member's question from that passage, held to it by the checks and the drift judge, with the passage said whenever one fails. For physical therapy and follow-up visits it adds how many the member has used this year (`getUsage`, a gated read).
 - **Report a new claim** (`report_claim`): after the code, the kind of loss (an accident injury, a hospital stay or a covered diagnosis), the day it happened and what happened in their own words; the line reads the claim back, and a yes files it (`createClaim`, a confirmed write). The gate refuses a loss date after today and sends one outside the member's coverage to a claims specialist (`dateInRange` against the member's coverage window). The claims intake service then triages the claim (`triageClaim`): the member hears only the documents Harbor has approved lines for, how soon an adjuster will call and whether it is fast-tracked, and is texted a link to upload them (`sendUploadLink`).
 - **Hear what the line can do** (`capabilities`), and **ask for a person** at any time (`agent`): at the start, on the keypad, while verifying, at the code prompt, inside a form, while describing what happened, at the read-back.
 
@@ -27,6 +27,8 @@ pnpm kb:index apps/harbor                                                       
 
 A passage is approved only by a person, at their own terminal: `pnpm kb:review apps/harbor` or `pnpm kb:approve <id...> --by "<your name>"`.
 
+Four topics are marked `risk: low` in `kb/topics.yaml` (sports injuries, prescriptions, travel, the filing deadline): their passage may be worded for the member's question by the model `style.yaml` names, through `coverage_answer`'s span `from: answer`; every other topic's passage is said word for word. A wording is said only when the checks and the drift judge pass it; otherwise the passage is. When the wording takes longer than a line's budget, the member first hears `kb_hold` ("One moment while I gather that information."). The policy card lists the line, its goal and the four topics.
+
 ## The folder
 
 ```
@@ -34,6 +36,7 @@ app.yaml        who the app is and how it presents itself
 intents.yaml    what a caller can ask for, and the keypad menu
 forms.yaml      each form's slots, its summary prompt and the hooks it has
 prompts.yaml    every line a caller can hear
+style.yaml      how the one generated span (a low-risk coverage answer) sounds, and the model that words it
 policy.yaml     what the agent may do, action by action: the level and the rules the gate runs before each
 identity.yaml   how a caller proves who they are: the factors, the one-time code, the brokers, the chat sign-in
 slots.yaml      every slot, in the order the engine works through them

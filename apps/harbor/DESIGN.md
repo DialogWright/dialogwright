@@ -178,6 +178,19 @@ Who approved: every passage's approval names Compliance Review (owner Benefits C
 
 **The corpus and scripted calls** for the knowledge form were written at step 5 with the rest, since every passage was already approved (step 6b's "after the person approves").
 
+**Answers worded for the member's question** (the maintainer's decision of 2026-10-16, [docs/designs/2026-10-16-kb-summaries.md](../../docs/designs/2026-10-16-kb-summaries.md)). Both switches are set: `coverage_answer` frames its `{answer}` as a span worded from the answer (`generate: { answer: { from: answer, goal: "Answer the member's question from their plan's passage, in a sentence or two." } }`, no `words`, so its budget is the passage's own word count), and four topics are marked `risk: low` in `kb/topics.yaml`. Every other topic is regulated (the default), and its passage is said word for word, as before. The four, chosen by the builder:
+
+| Topic | Why it may be worded | What the judge must hold |
+|---|---|---|
+| `sports_injury` | it describes which activities are covered (amateur sports, school and league play) and which are not (playing professionally): a member's question names one activity ("my kid playing football at school"), and the answer is yes or no for it | the professional exclusion, where the question could be professional play |
+| `prescriptions` | it says what the plan does not cover and where such costs usually are: no benefit amount | the "not covered" itself |
+| `travel` | it describes where the plan covers accidents (anywhere) and the currency paid: a member asks about one place | "in US dollars" kept as a fact, never a promise of an amount |
+| `filing_deadline` | how long a member has to file, and what happens after: the design's own example of an answer an insurer may not regulate, a deadline rather than a dollar term | the 180 days, and that payment after them is not guaranteed |
+
+Left regulated: every topic whose answer is a benefit's dollar amount or a limit on one (physical therapy, emergency room, ambulance, hospital stay, fractures, imaging, urgent care, follow-up visits, dental injury), and pre-existing conditions (an exclusion with two twelve-month terms, which a wording could easily shift). The account line (the member's usage, on physical therapy and follow-up visits, both regulated) would stay word for word after a wording anyway. The approvals cover the passages and their sources, not a topic's risk: `pnpm kb:status apps/harbor` showed all 29 passages approved and fresh after the change.
+
+The model that words them is the secretary's (style.yaml `model: openrouter, google/gemini-3.1-flash-lite-preview`); the hold line is `kb_hold` ("One moment while I gather that information."), said before an answer whose wording is not ready within a line's budget. On the stubs, the fake renderer words an answer from the passage's sentences that bear on the question and every sentence with a figure, a name or a limit (`prescriptions` asked as "do you pay for prescriptions" is said as its first sentence; the other three, as asked in the corpus, come back whole and are said unchanged); the real wording is measured on the next recording (Recordings).
+
 ## What goes to a person
 
 | When | Reason | Line |
@@ -243,6 +256,7 @@ The first baseline was made once (`regress --update`: `recorded 173 corpus outco
 | every corpus and scenario entry with `slots` (174 corpus, 75 scenario) | `slots` | `"clientId": null` added after `dob` | the new slot `clientId` (asked of brokers only): every outcome lists every slot, so each gains the key, null; a script checked that each entry differed from its fresh outcome by that key alone, and wrote only those |
 | corpus `br-06` ("does margaret's plan cover physical therapy", as priya) | `promptId`, `acks`, `form`, `slots`, `gate` | `anything_else`, `[ack_intent, coverage_broker]`, null, `searchPolicy:BLOCK` -> `ask_clientId`, `[ack_intent]`, `coverage` (topic physical_therapy kept), null | the decision on findings item 5: a broker is asked which client, then answered for that member's plan |
 | scenario `broker-coverage` | its steps, expectation and outcome | the `coverage_broker` refusal -> Margaret's member ID said at the client question, and the answer for her plan (`isClient` ALLOW, `searchPolicy` ALLOW, `getUsage` ALLOW with `used` withheld: no usage line) | the same decision; `broker-coverage-client-up-front` and `broker-coverage-not-a-client` are new |
+| corpus `cv-20` ("do you pay for prescriptions"), scenarios `coverage-answer-worded`, `coverage-answer-hold-line`, `member-chat-answer-hold-line` | new entries | none -> the stub's outcome (`regress --update` after a run whose only differences were these four, each `new`; the rest `no changes`) | answers worded for the question (2026-10-16, Knowledge): a prescriptions answer worded (the passage's first sentence, said generated), and the same with the renderer slow (`renderDelayMs` 2200 on the phone, 3500 in a chat), so the hold line is said first; each outcome read against the decision before it was added (the next prompt `anything_else`, `searchPolicy` ALLOW) |
 
 ## Recordings
 
@@ -361,6 +375,24 @@ Every app recorded again after the maintainer's decisions of 2026-10-16 (a quest
 - **Dates of birth as runs of numbers** (findings item 7, measured): of the ten lines (db-04, db-09 to db-17), six are heard (a month name, "nineteen", "the twenty first of", slashes, or "it's ... nineteen eighty four") and four are not, each tagged with its numbers:
   - db-04 "eight twenty one eighty four", db-10 "eight two one eight four", db-17 "oh eight two one eighty four": no date heard (the month read as january or october, the day as 1), so the caller is asked again and may key it;
   - db-13 "zero eight two one one nine eight four": heard as **January 1, 1984**, so verification fails and uses one of the three tries. A run of single digits is where the birthdate type misreads; a candidate for the maintainer (the type's month and day questions on a run of digits, or keying offered first after a miss).
+
+### Answers worded for the question (2026-10-16, on the branch `kb-answers`, before the next recording)
+
+**The policy read back, read as a change in what the agent may do** (`policy.matrix`, `POLICY.md`, `APP-MAP.md`, regenerated with `pnpm policy:matrix`, `pnpm policy:card` and `pnpm app:diagram`):
+
+- `POLICY.md` gains "Lines a model words": `coverage_answer` may have its passage worded for the member's question on `sports_injury`, `prescriptions`, `travel` and `filing_deadline` only, with its goal and its budget (the passage's own word count); what the model is sent (the goal, the sentence, the passage, the question) and never sent (the usage line, a record, another passage, the transcript); the checks, the judge at 0.5, the passage word for word on any failure, and the hold line. Its header now names `prompts.yaml` and `forms.yaml` among what it is read from. Nothing the agent may do changed: no action, rule, scope, withholding or record; what changed is how four answers may be said, and the card says so.
+- `policy.matrix` and `APP-MAP.md`: unchanged (no action, rule or form changed; the map draws no line's wording).
+
+**A re-record is needed for Harbor**, the maintainer's step: a turn that says a `risk: low` answer now asks the decision model to screen the member's question again and to judge the wording (`renderAnswerDrift`), and the render model to word it, none of which the cassettes hold; and the four new entries' turns are new requests. Until then Harbor's recorded replay misses on them (each such answer is said word for word: the screen's miss is a `content-flagged` fallback, the render's a `cassette-miss`), so it must not run in CI before the recording. The commands, at the repository root:
+
+```sh
+# the render model, recording the answers' wordings (and the decision model's turns with them)
+pnpm --filter @dialogwright/example-harbor regress --client record --threshold JEV_TIMEOUT_MS=15000
+# then the replay that CI runs
+pnpm --filter @dialogwright/example-harbor regress --client recorded
+# the render model compared, from the recording
+pnpm render:bakeoff apps/harbor --models openrouter:google/gemini-3.1-flash-lite-preview --replay
+```
 
 ## Skill trial notes
 

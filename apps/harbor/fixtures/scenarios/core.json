@@ -566,6 +566,47 @@
     }
   },
   {
+    "id": "coverage-answer-worded",
+    "steps": [
+      {
+        "say": "do you pay for prescriptions"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "Thanks, Jordan. Prescriptions aren't covered by this plan. Is there anything else"
+    }
+  },
+  {
+    "id": "coverage-answer-hold-line",
+    "renderDelayMs": 2200,
+    "steps": [
+      {
+        "say": "do you pay for prescriptions"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "Thanks, Jordan. One moment while I gather that information. Prescriptions aren't covered by this plan."
+    }
+  },
+  {
     "id": "coverage-then-claim-steps-up",
     "steps": [
       {

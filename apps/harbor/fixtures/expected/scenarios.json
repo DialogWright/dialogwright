@@ -982,6 +982,62 @@
     "pass": true,
     "mismatches": []
   },
+  "coverage-answer-worded": {
+    "id": "coverage-answer-worded",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-answer-hold-line": {
+    "id": "coverage-answer-hold-line",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "coverage-then-claim-steps-up": {
     "id": "coverage-then-claim-steps-up",
     "decision": "prompt",
@@ -2098,6 +2154,34 @@
     "queued": [],
     "principalLevel": 0,
     "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-answer-hold-line": {
+    "id": "member-chat-answer-hold-line",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW",
     "pass": true,
     "mismatches": []
   }

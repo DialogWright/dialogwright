@@ -1,6 +1,6 @@
 # Policy card: Harbor Mutual
 
-*Generated from `policy.yaml` and `identity.yaml` by `pnpm policy:card`: do not edit it by hand. Change the files, write the card again, and review the diff. A test fails when this page and the files disagree.*
+*Generated from `policy.yaml` and `identity.yaml`, and the lines a model words from `prompts.yaml` and `forms.yaml`, by `pnpm policy:card`: do not edit it by hand. Change the files, write the card again, and review the diff. A test fails when this page and the files disagree.*
 
 | File | Config hash |
 | --- | --- |
@@ -100,6 +100,16 @@ The slots these values come from are recorded by their own redact setting (slots
 
 - Hidden there but for the year in it at most (`••/••/1985`), in a side effect's request too: date of birth (`dob`).
 - By its length there, and by its stand-in in its lines and a handoff's data; but, the caller's own words, shown as said on the live console while the call is in progress, a side effect's request there among them: what happened (`lossDescription`).
+
+## Lines a model words
+
+These lines say a knowledge base's approved passage, and may word it for the caller's question, on the topics marked `risk: low` in kb/topics.yaml only: on every other topic the passage is said word for word, as it always is. The model is sent the span's goal, its sentence (the line's own fixed words, the answer a gap), the approved passage as it would be said (the only facts it may state) and the caller's question in their own words (quoted, and screened again for an injection first): never the topic's account line (the caller's own data, said after the answer word for word, as after the passage), a record, another passage or the transcript. Each wording is checked by code before anyone hears it, for its data and shape: it names no number, amount, date or capitalized word the passage does not (the caller's question is no source of facts); it asks nothing; it copies no four words running of the line's own fixed words; and it keeps to its word budget (the passage's own word count, unless the span sets one) and avoids the phrases style.yaml lists. What it means is the drift judge's: the decision model, given the wording heard in its sentence, its goal, the passage and the question, refuses one that says anything other than what the passage says for that question (anything added, anything changed or turned around, or a condition, a limit or an exclusion that bears on the answer left out), at 0.5 or above (style.yaml's `judge.refuseAt`). The passage is said word for word whenever a check fails, the judge refuses, the model errs, or the wording and its checks are not done within RENDER_ANSWER_TIMEOUT_MS (4 s on a call and 6 s in a chat by default); once they run past a line's own budgets, the caller first hears the hold line ("One moment while I gather that information."). The knowledge record keeps the passage's id, version and approval and says whether the passage or a wording of it was said, and the audit's `kb_worded` row names the passage whose wording was. Every other line is said word for word.
+
+| Line | Span | Goal | Words | Topics whose answer may be worded |
+| --- | --- | --- | --- | --- |
+| `coverage_answer` | `{answer}` | Answer the member's question from their plan's passage, in a sentence or two. | the passage's own word count | `sports_injury` (Sports injuries), `prescriptions` (Prescriptions), `travel` (Accidents while traveling), `filing_deadline` (Deadline to file a claim) |
+
+No line is marked prescribed (`prescribed: true`).
 
 ## Actions
 
