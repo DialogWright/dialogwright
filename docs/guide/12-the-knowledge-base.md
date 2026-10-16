@@ -2,7 +2,7 @@
 
 [Contents](README.md) · Previous: [11. Walkthroughs](11-walkthroughs.md) · Next: [13. Channels](13-channels.md)
 
-A knowledge base is for the questions callers ask that no form handles: when are you open, what happens if I return a book late, how do I renew my card. Its answers are short passages that people approved, chosen by what the caller means, and spoken word for word. No model writes them and none changes them: the model only picks which topic the caller asked about, and code finds the one approved passage for this caller and this day.
+A knowledge base is for the questions callers ask that no form handles: when are you open, what happens if I return a book late, how do I renew my card. Its answers are short passages that people approved, chosen by what the caller means, and spoken word for word. No model writes them: the model only picks which topic the caller asked about, and code finds the one approved passage for this caller and this day. Where the app marks a topic `risk: low` and frames its answer line to word the answer, a model may word that approved passage for the caller's question, held to it by checks and a judge, with the passage said whenever one fails ([12.13](#1213-answers-worded-for-the-callers-question)); every other answer is said word for word.
 
 This section is the whole of it, in the order you meet it: the folder, how a call uses it, the three places an answer is said from, approval and staleness, building one from documents, tuning retrieval, testing and what is recorded. The examples are one small knowledge base, Example Town Library's, whose files are the ones the engine's own tests build. [The topic slot's page](../slots/topic.md) has the question the model is asked. Two example apps have one to read whole: [the clinic](../../apps/clinic/README.md#the-knowledge-base), the smallest (five topics from one visitor page, found by keywords alone), and [the utility](../../apps/utility/README.md#the-knowledge-base) (twelve topics from a website and two PDFs, found by meaning, with an account line).
 
@@ -238,7 +238,7 @@ Four steps, and only the second is a model's: nominate, select, resolve, speak.
 1. **Nominate.** Before a turn is planned, the engine runs the app's retriever once on what the caller said, in their language and for today, and gets back up to `cap` topics, best first, each with a score and how it was found (`keyword`, `dense` or `app`). This is the turn's one asynchronous step, since the questions are built before the model is asked.
 2. **Select.** The topic slot asks the model one question over those topics and "none": which does the caller ask about? The model answers with a probability for each. Code reads them: a topic is chosen when it reaches the threshold, two that cannot be told apart make the slot ask which one was meant, and "none" or a weak answer chooses nothing.
 3. **Resolve.** The form's completion reads the answer through the gate, with the topic and, where the policy says whose record it is, the caller's id. The tool finds the one passage in force: for this topic, for this caller's facts, on today's date, in the call's language, approved and not stale.
-4. **Speak.** The passage's answer is said word for word through the `kb_answer` line, followed by the topic's account line when it has one and the caller's own data allows it. When there is no passage to say, the caller hears the `kb_unavailable` line and is offered a person, once per call.
+4. **Speak.** The passage's answer is said word for word through the `kb_answer` line, followed by the topic's account line when it has one and the caller's own data allows it (on a topic marked `risk: low` whose answer line words its answer, a wording of the passage for the caller's question may be said in its place, [12.13](#1213-answers-worded-for-the-callers-question)). When there is no passage to say, the caller hears the `kb_unavailable` line and is offered a person, once per call.
 
 **When retrieval runs.** Only on a turn where all of these hold: the app has a knowledge base, the turn has the caller's words (speech or text, not after the call has ended or while a downstream service's answer is awaited), and a topic slot is among the slots the turn asks. A turn that is none of these is exactly the turn it was without a knowledge base: no retrieval, no extra question, the same request to the model. An app with no `kb/` folder is unchanged byte for byte.
 
@@ -289,7 +289,7 @@ prompts:
     interruptible: false
 ```
 
-`kb_answer` says `{answer}` and nothing else: the passage's text, then the account line after a space. `answer` must be among `app.yaml`'s `prompts.dataVars`, because a line that carries a passage is spoken whole. `kb_unavailable` has no variable. A form may name its own two lines (`answers: { answer, unavailable }`).
+`kb_answer` says `{answer}` and nothing else: the passage's text, then the account line after a space. `answer` must be among `app.yaml`'s `prompts.dataVars`, because a line that carries a passage is spoken whole. `kb_unavailable` has no variable. A form may name its own two lines (`answers: { answer, unavailable }`). An answer line framed to word its answer for the caller's question has a third, optional line, `kb_hold`, said while a slow wording is finished ([12.13](#1213-answers-worded-for-the-callers-question)).
 
 ### 12.5 Answers through the gate
 
@@ -539,5 +539,38 @@ An app that keeps a retriever of its own and later moves to the engine's hybrid 
 - **The trace** has `retrieval` on each turn retrieval ran: the retriever's id (`hybrid:potion-base-8M`, `keyword`, or your own), the SHA-256 of the index it read, the topics it nominated each with score and `via`, and `failed` (with `message` for an error) when it nominated nothing because it did not answer as asked. The turn's timing has `retrieveMs`.
 - **The second request** of a turn a question interrupted a task on is `followUp` in its trace record: why it was made (`aside-topic`), the slot, its questions and answers, where they came from, and the error when it failed (the turn went on without it). Its tokens and cost are in the turn's `usage`, its time is `timing.followUpMs` (folded into the regression's ask latency and the console's Health latency, as the time the caller waited on the model that turn), a cassette keys it by its own state and question (recorded and replayed like any request; a miss on it is a cassette miss), and the console's call detail notes it beside the turn's own. `kb:gaps` reads its topic question as the turn's.
 - **The knowledge record** is on the turn that answered (`kb` in the trace, `TurnOut.kb`) and on the console's source card: the passage, its version, the facts it answered for (`applies`, only those it depends on), its language, the source document and section, the days it is in force, who approved it and when, the first 12 hex characters of both hashes, and `fresh`. A passage that was withheld has its record with `fresh: false`. It is never part of what the model is asked.
-- **The audit** has a `kb_answer` row for each answer: the passage's id, its version, whether it was fresh, its language and the short hashes. It holds nothing of the caller's.
+- **The audit** has a `kb_answer` row for each answer: the passage's id, its version, whether it was fresh, its language and the short hashes. It holds nothing of the caller's. Where a wording of the passage was said ([12.13](#1213-answers-worded-for-the-callers-question)), a `kb_worded` row follows, naming the passage, its version and its approval's short hash; a wording that fell back has the generated wording's `render_fallback` row instead.
+- **What was said of it**, on a turn whose answer line words its answer: the knowledge record's `said` (`passage` or `worded`), shown on the console's source card, and the trace's render line for the answer, with the wording beside the approved passage it stands for (`fixed`), the passage's id, and why the passage was said where it was (the topic regulated, a check or the judge, too slow).
 - **The configuration hashes** include every file of `kb/` that is read (kb.yaml, topics, passages, sources and the locale files), so a call is tied to the exact knowledge it ran under. Drafts, rejected drafts, the approvals log and the index are not in them; the index's own hash is in the retrieval record.
+
+### 12.13 Answers worded for the caller's question
+
+A passage is written once for every caller who asks about its topic, so it answers the topic, not the question, and it is as long as its fullest case. On the topics you choose, a model may word the approved passage for the question the caller asked: "does it cover the ambulance if I hurt myself skiing?" hears the yes first, and only what bears on it. Two switches, both required; with either off, the passage is said word for word, as always.
+
+1. **The topic allows it.** In `kb/topics.yaml`, `risk: low` (the default is `regulated`). Which topics are low risk is your call, never the framework's: a topic whose answer describes what is done (where a plan applies, which activities, a deadline) is a candidate; one whose answer is a regulated term (a benefit's amount, an exclusion with conditions) may well not be. `risk` is not part of what an approval covers, so marking a topic low sends nothing back for review.
+2. **The answer line asks for it.** The form's answer line frames its `{answer}` as a span worded from the answer:
+
+```yaml
+# prompts.yaml
+prompts:
+  kb_answer:
+    text: '{answer}'
+    interruptible: false
+    generate:
+      answer:
+        from: answer        # the approved passage, as resolved for this caller
+        goal: Answer the caller's question from the passage, in a sentence or two.
+  kb_hold:                  # optional: said before an answer whose wording is slow
+    text: One moment while I gather that information.
+    interruptible: false
+```
+
+`from: answer` names the passage the knowledge completion resolved for this caller, rather than a slot. `pnpm check` holds it to a form's answer line (`answers.answer`, default `kb_answer`), as the line's `{answer}` itself, never prescribed, and warns where no topic is `risk: low`. The span's `words` defaults to the passage's own word count, so a long passage's answer is never cut to fit a short budget; set it to ask for something shorter. The topic's account line (the caller's own data) is never sent to a model: it is said after the wording word for word, as it is after the passage.
+
+**What the model is given**: the goal, the sentence the answer is said in (the line's own words, the answer a gap), the approved passage as it would be said (the only facts there are) and the caller's question in their own words (the words the topic was heard in, kept on the topic slot, never words said at a sensitive question, and screened again for an injection before they are sent). Nothing else: no record, no other passage, no transcript. An informational intent's passage ([12.6](#126-informational-passages)) has no question kept, and is said word for word.
+
+**What holds it to the passage**: the checks of [16.6](16-generated-wording.md#166-the-checks-the-judge-and-the-fallback), with the passage as what it was given (no figure and no capitalized name the passage does not have, the caller's question being no source of facts; no question; the budget; style.yaml's `avoid`), then the drift judge, which is given the goal, the passage, the question and the wording heard in its line, and refuses one that says anything other than what the passage says for that question: anything added, anything changed or turned around, or a condition, a limit or an exclusion that bears on the answer left out.
+
+**The fallback is the passage**, word for word, whenever a check fails, the judge refuses, the model errs, or the wording and its checks are not done within `RENDER_ANSWER_TIMEOUT_MS` (4 s on a call and 6 s in a chat by default, [14.12](14-running-it.md#1412-the-options)). When they run past a line's own budgets (the wording's and the checks'), the caller first hears the hold line, `kb_hold` (or, where the app has none, the engine's "One moment while I gather that information."), and then the answer, or the passage. The hold line is said only in a language the app gives it in: a locale's own `kb_hold`, or the engine's words for a call in English. In a language with neither, no hold line is said and the answer has only a line's budget, so the caller never waits in silence (`pnpm check` warns of such a language).
+
+What is recorded is in [12.12](#1212-what-is-recorded); the policy card lists each answer line that may be worded, its goal and the topics marked low. Harbor Mutual is the worked example ([its worksheet](../../apps/harbor/DESIGN.md), "Knowledge"); the design and the maintainer's decision are [docs/designs/2026-10-16-kb-summaries.md](../designs/2026-10-16-kb-summaries.md).

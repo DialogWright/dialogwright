@@ -1170,6 +1170,39 @@ getFees: {
 - **Paraphrases and a recall test.** `fixtures/kb/paraphrases.yaml` (each topic id with eight or more things callers say in other words, and `none:`), and a test that holds the retriever's recall to it ([12.11](../../../docs/guide/12-the-knowledge-base.md#1211-testing)). Choose retrieval's `floor` and `cap` with `pnpm kb:bakeoff --sweep`, never by recording.
 - **Never.** Never write an `approval` or a hash by hand, never run `pnpm kb:approve`, never put a `{variable}` or a brace in an answer, never use a model key. See step 6b.
 
+## A knowledge answer worded for the caller's question
+
+**When:** the paragraph (or the owner) says some answers may be put in the agent's own words for what the caller asked ("short answers, to the point"), and names, or lets you choose, the topics where that is safe: ones whose passage describes what is done (where, which activities, a deadline), not a regulated term (a benefit's amount, an exclusion's conditions). Every other topic stays word for word. Never choose it for a paragraph that says answers are "word for word" or "never made up" without saying which may be worded: ask, or leave every topic regulated. The guide's [12.13](../../../docs/guide/12-the-knowledge-base.md#1213-answers-worded-for-the-callers-question) is the whole of it; Harbor Mutual (`apps/harbor`) is the example.
+
+```yaml
+# kb/topics.yaml: the topics the owner allows, and only those
+travel:
+  title: Accidents while traveling
+  keywords: [travel, abroad, overseas]
+  risk: low
+```
+
+```yaml
+# prompts.yaml: the form's answer line, its {answer} worded from the passage
+coverage_answer:
+  text: "{answer}"
+  interruptible: false
+  generate:
+    answer:
+      from: answer
+      goal: Answer the member's question from their plan's passage, in a sentence or two.
+kb_hold:
+  text: One moment while I gather that information.
+  interruptible: false
+```
+
+- **Both switches.** `risk: low` on the topic and the span on the answer line; with either missing every answer is the passage word for word. `pnpm check` warns of an answer line that words its answer where no topic is low, and refuses `from: answer` on any line but a form's answer line, or as a span other than `{answer}`, or on a prescribed line. Marking a topic low sends no passage back for review (an approval covers the passage and its source).
+- **style.yaml** names the model (`model: { provider: openrouter, id: <vendor/model> }`), its persona and its `avoid`, as for any generated line. The span's budget is the passage's own word count unless it sets `words`.
+- **The account line** (the caller's own data) is never sent to the model: it is said after the wording word for word.
+- **The corpus and scripted calls.** A line that asks a low-risk topic's question, and a scripted call that reaches it; on the stubs the fake renderer keeps the passage's sentences that bear on the question (and every sentence with a figure, a name or a limit), so a question that bears on one sentence of a two-sentence passage shows a worded answer, and one the whole passage answers is said unchanged. `renderDelayMs` on a scripted call (2200 on a call, 3500 in a chat) makes the renderer slow enough to hear the hold line first; the app's fixtures test then needs a longer timeout.
+- **The judge's cases.** Labelled wordings of the app's passages (faithful: shorter, focused, other words; unfaithful: a wrong figure, a dropped exclusion, a condition turned around, a limit made unlimited, an added promise, the other plan's figure) in `fixtures/judge/answers.jsonl` (`speaks: answer`), measured by the owner with `pnpm render:judge-eval --cases <file>` (recording needs the decision model's key: never yours to run).
+- **Recording** the answers' wordings is the owner's step (`regress --client record`), as for any generated line.
+
 ## Keypad entry
 
 **When:** a value callers may find easier to key than to say (an account number, a date of birth, a choice by number), and a menu for callers the model cannot understand.
