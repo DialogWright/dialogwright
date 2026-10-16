@@ -103,7 +103,7 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "gate": "searchPolicy:ALLOW",
-      "text": "One moment while I gather that information. Prescriptions aren't covered by this plan."
+      "text": "Sure, I can help you check coverage. One moment while I gather that information."
     }
   }
 ]

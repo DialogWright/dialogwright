@@ -582,7 +582,7 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "gate": "searchPolicy:ALLOW",
-      "text": "Thanks, Jordan. Prescriptions aren't covered by this plan. Is there anything else"
+      "text": "Thanks, Jordan."
     }
   },
   {
@@ -603,7 +603,7 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "gate": "searchPolicy:ALLOW",
-      "text": "Thanks, Jordan. One moment while I gather that information. Prescriptions aren't covered by this plan."
+      "text": "Thanks, Jordan. One moment while I gather that information."
     }
   },
   {
