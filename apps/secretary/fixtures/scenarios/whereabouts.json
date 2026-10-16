@@ -1,0 +1,460 @@
+[
+  {
+    "id": "status-out-of-office-offers-a-message",
+    "steps": [
+      {
+        "say": "is Sam available"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "sam"
+      },
+      "gate": "personStatus:ALLOW",
+      "text": "Sam Okafor is out of the office until Monday. Now, let's see about a message. Would you like to leave one?"
+    }
+  },
+  {
+    "id": "status-in-training-offers-a-message",
+    "steps": [
+      {
+        "say": "what's Jordan's schedule this week"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "jordan"
+      },
+      "gate": "personStatus:ALLOW",
+      "text": "Jordan Lee is in training today. Now, let's see about a message. Would you like to leave one?"
+    }
+  },
+  {
+    "id": "status-the-team-offers-a-message",
+    "steps": [
+      {
+        "say": "is anyone in the office"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "anyone"
+      },
+      "text": "I can only check on Riley, Sam or Jordan by name. Now, let's see about a message. Would you like to leave one?"
+    }
+  },
+  {
+    "id": "status-person-asked-for",
+    "steps": [
+      {
+        "say": "is someone in today"
+      },
+      {
+        "say": "Sam Okafor"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "sam"
+      },
+      "gate": "personStatus:ALLOW",
+      "text": "Sam Okafor is out of the office until Monday."
+    }
+  },
+  {
+    "id": "talk-to-a-person-by-name-hears-their-status",
+    "steps": [
+      {
+        "say": "can I talk to Sam"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "sam"
+      },
+      "text": "Sam Okafor is out of the office until Monday. Now, let's see about a message. Would you like to leave one?"
+    }
+  },
+  {
+    "id": "talk-to-a-person-by-name-in-training",
+    "steps": [
+      {
+        "say": "I'd like to speak with Jordan Lee please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_leaveMessage",
+      "form": "offer_message",
+      "slots": {
+        "recipient": "jordan"
+      },
+      "text": "Jordan Lee is in training today."
+    }
+  },
+  {
+    "id": "available-put-through",
+    "steps": [
+      {
+        "say": "is Riley in today"
+      },
+      {
+        "say": "put me through please"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "put-through",
+      "form": "reach_person",
+      "slots": {
+        "recipient": "riley"
+      },
+      "text": "One moment while I put you through.",
+      "transfer": {
+        "target": "RILEY_LINE"
+      }
+    }
+  },
+  {
+    "id": "put-through-to-a-person-by-name",
+    "steps": [
+      {
+        "say": "could you put me through to Riley"
+      },
+      {
+        "say": "yes, connect me"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "put-through",
+      "slots": {
+        "recipient": "riley"
+      },
+      "text": "One moment while I put you through.",
+      "transfer": {
+        "target": "RILEY_LINE"
+      }
+    }
+  },
+  {
+    "id": "available-put-through-said-plainly",
+    "steps": [
+      {
+        "say": "is Riley around"
+      },
+      {
+        "say": "I'll talk to her"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "put-through",
+      "transfer": {
+        "target": "RILEY_LINE"
+      }
+    }
+  },
+  {
+    "id": "available-takes-a-message",
+    "steps": [
+      {
+        "say": "is Riley in today"
+      },
+      {
+        "say": "I'll just leave a message"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "riley"
+      },
+      "text": "Now, let's leave a message. And who's calling, please?"
+    }
+  },
+  {
+    "id": "available-message-delivered",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "is Riley around"
+      },
+      {
+        "say": "a message is fine"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "yes, pass it on"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "text": "Your message is on its way to Riley Moreno.",
+      "gate": "leaveMessage:ALLOW",
+      "slots": {
+        "recipient": "riley"
+      }
+    }
+  },
+  {
+    "id": "available-neither",
+    "steps": [
+      {
+        "say": "is Riley busy right now"
+      },
+      {
+        "say": "no thanks, never mind"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "form": null,
+      "text": "No problem. Is there anything else I can help with?"
+    }
+  },
+  {
+    "id": "available-neither-then-done",
+    "steps": [
+      {
+        "say": "where is Riley"
+      },
+      {
+        "say": "neither, I'll call back later"
+      },
+      {
+        "say": "that's all I needed, thanks"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  },
+  {
+    "id": "out-of-office-message-delivered",
+    "callerNumber": "+15555550142",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "okay, I'll leave one"
+      },
+      {
+        "say": "it's Alex Rivera"
+      },
+      {
+        "say": "yes, that's fine"
+      },
+      {
+        "say": "the logo files are ready for review"
+      },
+      {
+        "say": "yes, pass it on"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "message_taken",
+      "text": "Your message is on its way to Sam Okafor.",
+      "gate": "leaveMessage:ALLOW",
+      "slots": {
+        "recipient": "sam"
+      }
+    }
+  },
+  {
+    "id": "out-of-office-declines-a-message",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "no thanks, that's okay"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "form": null,
+      "text": "No problem. Is there anything else I can help with?"
+    }
+  },
+  {
+    "id": "in-training-declines-a-message",
+    "steps": [
+      {
+        "say": "is Jordan on holiday"
+      },
+      {
+        "say": "no, I'll call back on Monday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "form": null
+    }
+  },
+  {
+    "id": "in-training-not-now-then-hours",
+    "steps": [
+      {
+        "say": "I'd like to speak with Jordan Lee please"
+      },
+      {
+        "say": "not right now"
+      },
+      {
+        "say": "what are your hours"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "The studio is open weekdays, nine to five."
+    }
+  },
+  {
+    "id": "the-team-message",
+    "steps": [
+      {
+        "say": "is anyone in the office"
+      },
+      {
+        "say": "yes please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "anyone"
+      }
+    }
+  },
+  {
+    "id": "put-through-on-the-keypad",
+    "steps": [
+      {
+        "say": "is Riley in today"
+      },
+      {
+        "say": "hmm, I'm not sure"
+      },
+      {
+        "say": "hmm, I'm not sure"
+      },
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "put-through",
+      "transfer": {
+        "target": "RILEY_LINE"
+      }
+    }
+  },
+  {
+    "id": "message-offer-on-the-keypad",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "sam"
+      }
+    }
+  },
+  {
+    "id": "message-offer-declined-on-the-keypad",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "form": null
+    }
+  },
+  {
+    "id": "message-offer-never-answered-goes-to-the-main-line",
+    "steps": [
+      {
+        "say": "when will Sam be back"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "say": "I'm not sure yet"
+      },
+      {
+        "say": "I'm not sure yet"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "max-attempts",
+      "transfer": {
+        "target": "STUDIO_MAIN_LINE"
+      }
+    }
+  }
+]

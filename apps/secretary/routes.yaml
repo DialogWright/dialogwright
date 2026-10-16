@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/routes.schema.json
+# What follows a status said (the whereabouts form) and the offer after it: ordered rules, the first
+# whose conditions all hold taken, an else last. What the caller says still decides every other turn.
+afterForm:
+  # The status the whereabouts form read (src/app.ts keeps it in the facts): someone available is
+  # offered to be put through or to leave a message; anyone else (out of the office, in training, in a
+  # meeting, the team, a status the line could not read) a message.
+  whereabouts:
+    - when: { fact: presence, is: available }
+      then: form
+      form: reach_person
+    - else: { then: form, form: offer_message }
+
+  # Put through is the form's own handoff (src/app.ts); a message goes on to the message form, the
+  # person kept; neither, "anything else?".
+  reach_person:
+    - when: { slot: reachHow, is: message }
+      then: form
+      form: take_message
+    - else: { say: no_problem, then: anything-else }
+
+  # A yes goes on to the message form, the person kept; a no, "anything else?".
+  offer_message:
+    - when: { slot: leaveMessage, is: leave }
+      then: form
+      form: take_message
+    - else: { say: no_problem, then: anything-else }

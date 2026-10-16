@@ -1,10 +1,16 @@
 # Example Front Desk: design worksheet
 
-Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding assistant (Claude Opus 5.5) on 2026-10-13, from the paragraph below. The business name, "Example Front Desk", was given with the paragraph. Revised on 2026-10-14, once the framework covered what the first build found (Gaps): the paragraph's "in short" restored with a frame for the exact words (`exactText`), and the message kept out of every record (`redact: length-summarized`).
+Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding assistant (Claude Opus 5.5) on 2026-10-13, from the paragraph below. The business name, "Example Front Desk", was given with the paragraph. Revised on 2026-10-14, once the framework covered what the first build found (Gaps): the paragraph's "in short" restored with a frame for the exact words (`exactText`), and the message kept out of every record (`redact: length-summarized`). Revised again on 2026-10-16, at the maintainer's word (below): a caller asking about a person hears that person's status and is offered what fits it ("Is someone in, and what fits their status", below).
 
 ## The paragraph
 
 > Example Front Desk answers the phone for a small design studio when no one can pick up. Callers can leave a message for one of three people: Riley Moreno, Sam Okafor or Jordan Lee, or for "anyone" if they don't mind who. The desk takes the caller's name, a number to call back (offering the number they're calling from), and the message itself, in their own words. Before saying goodbye it reads the message back the way a good receptionist would, briefly: "Thanks, I'll make sure Riley gets your message: Alex Rivera called and said, in short, the logo files are ready for review." Only the summary of what the caller said is worded by the model; the rest of that sentence is fixed, and if the caller says that's not right, it reads back their exact words instead and lets them say it again. Every other line is said word for word. A caller who says it's urgent, or asks for a person, is transferred to the studio's main line. Callers can also ask for the studio's hours (weekdays nine to five) and its address (an invented street). Nobody needs to verify who they are; the desk never says anything about the people's schedules or whereabouts.
+
+The last clause is superseded by the maintainer's revision of 2026-10-16:
+
+> I like the idea where Sam has set his status to out of office or in training or something like that, or maybe he is available and the offer is to leave him a message or transfer.
+
+So a caller who asks about Riley, Sam or Jordan (whether they are in, or to talk to one of them) hears the status that person set in the studio's calendar, in a fixed line per status, and is offered what fits it: someone available, to be put through to their own line or to leave a message; anyone else, a message.
 
 ## Intents
 
@@ -14,8 +20,8 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | `urgent` | form (priority, no slots: straight to a person) | reach the studio now | "it's urgent", "urgent", "this is an emergency, I need to reach someone now", "it can't wait, I need someone right now", "the print shop needs sign-off within the hour, it's urgent" |
 | `studio_hours` | informational | the hours | "what are your hours", "hours", "when are you open", "what time do you close", "which days do you work" |
 | `studio_address` | informational | the address | "what's your address", "address", "where are you located", "how do I find the studio", "what street are you on" |
-| `whereabouts` | informational | whether someone is in, where they are, their schedule (never answered) | "is Riley in today", "when will Sam be back", "is Jordan on holiday", "where is Riley", "is Sam available" |
-| `agent` | control | a person, at any time | "can I talk to a person", "operator", "representative", "a person", "put me through to someone please" |
+| `whereabouts` | form (since 2026-10-16; was informational) | whether someone is in, where they are, their schedule, or to talk to one of them by name: their status, then an offer | "is Riley in today", "when will Sam be back", "is Jordan on holiday", "where is Riley", "is Sam available", "can I talk to Sam", "could you put me through to Riley", "I'd like to speak with Jordan Lee please", "is anyone in the office", "is someone in today" |
+| `agent` | control | a person, at any time, without naming one of the three | "can I talk to a person", "operator", "representative", "a person", "put me through to someone please" |
 | `repeat_prompt` | control | hear it again (word for word) | "can you repeat that", "pardon", "say that again", "can you read that back word for word", "read me the whole message" |
 | `done` | control | finished | "that's all I needed, thanks", "goodbye", "no, I'm good", "that's it, bye", "no thanks" |
 | `other`, `none` | control | anything else; no request | "do you sell gift cards", "do you repair laptops", "I'm calling to sell you advertising space"; "hello", "um" |
@@ -29,6 +35,9 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | `take_message` | a number to call back | `phone` | `digits`: length 10, `callerNumber` (offers the number calling) | yes | by its last four (the type's default) |
 | `take_message` | the message, in the caller's words | `message` | `text`: `say: null`, `redact: length-summarized`, maxLength 500 | no | by its length in every record; sent whole to the render model only for the read-back's span (see "What is recorded") |
 | `urgent` | nothing | | | | |
+| `whereabouts` | who the caller asks about | `recipient` (the message's own slot, so a message that follows keeps the person) | `choice`, as above | no | no |
+| `reach_person` (internal) | someone available: put through, a message, or neither | `reachHow` | `choice`: through, message, neither | yes (1, 2, 3, after two misses) | no |
+| `offer_message` (internal) | anyone else: a message? | `leaveMessage` | `choice`: leave, decline | yes (1, 2, after two misses) | no |
 
 ## Decisions
 
@@ -51,21 +60,22 @@ Built with the create-app skill (`.claude/skills/create-app/`) by an AI coding a
 | 13 | Half-understood callers, corrections at the read-back, silence after "anything else?" | The paragraph is silent: the defaults. |
 | 13e | A message said in two breaths, with a pause | The paragraph is silent; a message is the long answer on this line. `voice.continueWithinMs: 900` (default 300): a caller who talks over the read-back within 900 ms is taken as still talking, and the two parts are joined. `maxLength: 500` (the text type's default). A known limit: see "Known limits". |
 | 13b | Nice-to-have details; a caller who cannot answer | Every detail is needed for the message: the engine's ladder (three tries, then the main line). |
-| 13c | Anything before the request, after identity or after a form? | No routes. The paragraph names the studio's hours as an answer, not as a rule for the line ("when no one can pick up" is any time the line rings). |
+| 13c | Anything before the request, after identity or after a form? | Before the request and after identity, nothing: the paragraph names the studio's hours as an answer, not as a rule for the line ("when no one can pick up" is any time the line rings). After a form, since 2026-10-16: routes.yaml's `afterForm` decides what follows a status (`whereabouts`: `{ fact: presence, is: available }` to `reach_person`, else `offer_message`) and what follows each offer (a message to `take_message`, the person kept; else "No problem." and "anything else?"). |
 | 13d | More than one language? | No. |
 | 14 | The phone line itself? | Nothing. |
 | A | Generated wording (the skill's rule: only where the paragraph asks) | The read-back's summary only: a framed line ([A framed line](../../.claude/skills/create-app/patterns.md#summarizing-what-the-caller-said-a-framed-line-generate)). `confirm_take_message` with `generate: { summary: { from: message, goal, words: 20, speaks: to-caller, names: [recipient] } }`, `summarizesConfirmed: true`, `when: { situations: [first-ask] }`, its `text` saying "gets your message, in short: {summary}" and its `exactText` "gets your message, as you said it: {summary}", the caller's name and number in a sentence of their own; the form's `summary: { onNo: read-back }` with `read_back_exact`. No `wording: generative` and no `mode: generative` anywhere. |
 | A2 | The caller's words in the records | Kept out, deliberately: the message slot is `redact: length-summarized` (guide 16.3, 16.5), the app's demo of that setting. The words are kept in the session for the call and sent whole to the render model only for the span; every caller's words, on every turn, are kept by their length in the trace, on the console and in the frame log (no frame-log replay; `kb:gaps` finds no caller questions); the audit and a handoff get the message by its length. |
-| B | Where a transfer goes | "transferred to the studio's main line": app.yaml's `transfer: { default: env.STUDIO_MAIN_LINE }`, every handoff (urgent, a person, max attempts) to the one line ([Where a transfer goes](../../.claude/skills/create-app/patterns.md#where-a-transfer-goes-and-what-goes-with-it-transfer)). The variable is in `.env.example` with a 555 number. |
-| C | Schedules and whereabouts | "the desk never says anything about the people's schedules or whereabouts": no tool reads a schedule, no line names one, and an informational intent, `whereabouts`, answers such a question with a fixed refusal and an offer to take a message (`no_whereabouts`). The span is worded from the caller's own words only, so it cannot carry anything the studio knows. |
+| B | Where a transfer goes | "transferred to the studio's main line": app.yaml's `transfer: { default: env.STUDIO_MAIN_LINE }`, every handoff (urgent, a person, max attempts) to the one line ([Where a transfer goes](../../.claude/skills/create-app/patterns.md#where-a-transfer-goes-and-what-goes-with-it-transfer)). Since 2026-10-16 one exception: a caller put through to someone available (the reason `put-through`) goes to that person's own line, a target per person, `when: [{ reason: put-through }, { slot: recipient, is: <person> }]` to `env.RILEY_LINE`, `env.SAM_LINE`, `env.JORDAN_LINE`. Each variable is in `.env.example` with a 555 number. |
+| C | Schedules and whereabouts | Was: "the desk never says anything about the people's schedules or whereabouts" (a fixed refusal, `no_whereabouts`). Since 2026-10-16, the maintainer's revision: the status each person set in the studio's calendar is read by a tool (`personStatus`, through the gate, level 0, held by `oneOf` to the three people) and said in a fixed line per status, chosen by the code from the tool's checked reply (`status_available`, `status_out_of_office` with the day an out-of-office note gives, `status_out_of_office_no_day`, `status_in_training`, `status_in_a_meeting`). A model never words or guesses a status: the decision model only picks whom the caller asks about. The span is still worded from the caller's own words only, so it cannot carry anything the studio knows. What the line says of a person is their status today and, out of the office, the day they are back: no place, no reason, no schedule. |
 
 ## Actions
 
 | Tool | Reads | Writes | Params (exactly what it sends: `params` in code) | Level | Rules, in order |
 |---|---|---|---|---|---|
 | `leaveMessage` | nothing | a message in the studio's inbox (a stub, in memory), idempotent by `ctx.idempotencyKey` | `recipient, caller, phone, message` | 0 | `identity`, `confirmed: [recipient, caller, phone, message]` |
+| `personStatus` | one person's status today, from the studio's calendar (a stub, `src/data.ts`) | nothing | `person` | 0 | `identity`, `oneOf: { field: person, values: [riley, sam, jordan], reason: not-on-the-calendar }` |
 
-Its reply is `{ ref }`, checked with `replyShape.object({ ref: replyShape.code() })`: no line says it, but the audit records it with the write.
+`leaveMessage`'s reply is `{ ref }`, checked with `replyShape.object({ ref: replyShape.code() })`: no line says it, but the audit records it with the write. `personStatus`'s reply is `{ status, back }`, checked in its closed forms, `replyShape.object({ status: replyShape.oneOf(STATUSES), back: replyShape.nullable(replyShape.oneOf(WEEKDAYS)) })`: the status picks the line and the day is said in it. It is called fail-soft (`ctx.callTool(call, { failSoft: true })`): a refusal, a tool that throws or a reply that fails its check is no status, and the caller hears "I can't check whether {recipient} is in right now." and the offer of a message, not a person (the adversarial suite's `hostile-reply/personStatus` cases hold on it).
 
 ## What is recorded
 
@@ -75,6 +85,7 @@ Its reply is `{ ref }`, checked with `replyShape.object({ ref: replyShape.code()
 | `caller` | `caller`: a name, no redact | `length` | a person's name, in their own words |
 | `phone` | `phone`: digits, `last4` | the slot's | an identifier |
 | `message` | `message`: text, `length-summarized` | the slot's (by its length; no `audit` line, which `pnpm check` would refuse as a duplicate) | the caller's own words: the inbox gets them, the records do not |
+| `person` (`personStatus`) | not a slot (the code sends the `recipient` slot's value) | `keep` | one of three keys |
 
 In short, the records keep every turn's words and the message by their length; the caller's name as given (the `caller` slot has no redact: it is whole in the trace's slot state, on the console, in the read-back's values and in the handoff data; only the action's param is by its length, in the audit), the number by its last four.
 
@@ -85,6 +96,17 @@ What `length-summarized` costs, accepted: no caller's words are in the trace, th
 | Action | Anonymous | Subject, level 1 | Subject, level 2 | Delegate |
 |---|---|---|---|---|
 | `leaveMessage` | allowed, with exactly the values read back and confirmed | (none: no subjects) | (none) | (none) |
+| `personStatus` | allowed for `riley`, `sam` or `jordan`; refused for anything else (`not-on-the-calendar`) and for no value | (none) | (none) | (none) |
+
+### The policy read back (2026-10-16)
+
+`pnpm policy:matrix`, `policy:card` and `app:diagram` were run again after the status was added, and each diff read as a change in what the agent may do:
+
+- **`policy.matrix`**: one new action, nothing else changed. `personStatus · level 0 · identity, oneOf(person: riley, sam, jordan)`: for every kind of caller (anonymous, either subject level, the unlisted role, the roleless party, the other party), a call for one of the three people (`params aPerson`, Sam) is `ALLOW`, a call for the team (`params theTeam`, `anyone`) is `BLOCK not-on-the-calendar`, and a call with no person is `BLOCK value-missing`. So the agent may now read a status, for anyone who calls, verified or not, but only one of the three people's, and nothing it reads is written anywhere. `leaveMessage`'s rows are unchanged. The test's policy matrix names the two calls (`calls.personStatus`).
+- **`POLICY.md`**: policy.yaml's hash; the new action's row ("Read whether Riley, Sam or Jordan is in, from the studio's calendar": any caller may ask; the person must be one of `riley`, `sam` or `jordan`, any other refused `not-on-the-calendar`, a missing value refused), its line in the diagram by level, the record of its one param (`person`, "as it is"), and the new prescribed line `handoff_put_through`. "Lines a model words" is unchanged: the read-back's span is still the only generated part, and no status line is generated.
+- **`APP-MAP.md`**: `whereabouts` is a form (was an informational answer drawn to `no_whereabouts`), asking `recipient` and calling `personStatus` with its two rules; the two internal forms after it, `reach_person` and `offer_message`, each "after a route"; the routes after each of the three forms; and the transfer targets, `RILEY_LINE`, `SAM_LINE` and `JORDAN_LINE` on `put-through` and the person, before the default `STUDIO_MAIN_LINE`. `reach_person`'s own handoff is drawn as "its complete hook decides what follows, in code" (Gaps).
+
+In short: a caller may now learn one of the three people's status today and, if they are available, be put through to their own line. The message, its confirmation and what is recorded of it are as they were.
 
 ## Verification (identity.yaml)
 
@@ -108,7 +130,22 @@ None.
 |---|---|
 | `studio_hours` | "The studio is open weekdays, nine to five." |
 | `studio_address` | "The studio is at 418 Juniper Lane, Suite 2, in Example City." |
-| `whereabouts` | "I'm not able to say where anyone is or when they're in, but I'm happy to take a message for them." |
+
+`whereabouts` is no longer an informational answer (since 2026-10-16): it is a form whose answer is a status line, below.
+
+## Is someone in, and what fits their status (2026-10-16)
+
+| Status (the calendar's) | The fixed line, chosen by code | Then (routes.yaml) |
+|---|---|---|
+| `available` | "{recipient} is available." | `reach_person`: "Now, let's put you through or take a message. Which would you like?" Put through: "One moment while I put you through." to that person's own line (`put-through`); a message: the message form, the person kept ("Now, let's leave a message. And who's calling, please?"); neither: "No problem. Is there anything else I can help with?" |
+| `out_of_office`, with a day | "{recipient} is out of the office until {back}." | `offer_message`: "Now, let's see about a message. Would you like to leave one?" Yes: the message form, the person kept; no: "No problem. Is there anything else I can help with?" |
+| `out_of_office`, no day | "{recipient} is out of the office." | the same |
+| `in_training` | "{recipient} is in training today." | the same |
+| `in_a_meeting` | "{recipient} is in a meeting right now." | the same |
+| the team (anyone): no calendar, no call | "I can only check on Riley, Sam or Jordan by name." | the same (a message for the team) |
+| no status (refused, failed, or a reply that fails its check) | "I can't check whether {recipient} is in right now." | the same |
+
+The fixture calendar (`src/data.ts`): Riley available, Sam out of the office until Monday, Jordan in training. `in_a_meeting` and an out-of-office note with no day are in no one's calendar today; `src/app.test.ts` holds their lines.
 
 ## What goes to a person
 
@@ -118,8 +155,10 @@ None.
 | The caller says it is urgent, at any time but at the message's own question (a priority intent) | `urgent` | `handoff_urgent` |
 | A detail not given after three tries | `max-attempts` | `handoff_max_attempts` |
 | The inbox's reply fails its check | `result-unchecked` | `handoff_result_unchecked` ("I couldn't confirm your message was passed on, so let me put you through to the studio's main line.") |
+| Someone available, and the caller asks to be put through (by voice, or 1 on the keypad) | `put-through` | `handoff_put_through` ("One moment while I put you through."), prescribed |
+| An offer after a status not answered after three tries | `max-attempts` | `handoff_max_attempts` |
 
-All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`).
+All go to `STUDIO_MAIN_LINE` (app.yaml's `transfer.default`), but `put-through`, which goes to the person's own line (`RILEY_LINE`, `SAM_LINE`, `JORDAN_LINE`). A status read never goes to a person: it is fail-soft (above), so `handoff_result_unchecked` keeps its message wording.
 
 At "Go ahead with your message." the turn is the message, whole (the engine's default for a `text` slot without `pick`, `commands: ignore`; live findings item 29, the maintainer's decision of 2026-10-14, which this app follows): "hold on, it's really urgent, the website is down" or "can I just talk to a real person" said there is read back as the message, and a no lets the caller say it again or ask for someone. `commands: { listen: [urgent, agent] }` on the message slot would put those through instead; the owner chose the default, written out in slots.yaml (`commands: ignore`), since `pnpm check` warns of a text slot that says nothing there in an app with a priority intent.
 
@@ -133,18 +172,26 @@ At "Go ahead with your message." the turn is the message, whole (the engine's de
 - **The summary only the first time** (`when: { situations: [first-ask] }`): every later reading is the exact words, so a caller who has heard the gist and said no is never given another paraphrase.
 - **Prescribed lines**: the handoff lines and `message_taken` are `prescribed: true` (the skill's rule where the paragraph does not say what is regulated). No other line is generated anyway; marking them keeps them fixed if a form is ever switched to generated wording.
 - **A message that mentions a deadline** is still a message; a caller who says the matter is urgent is `urgent` (the criteria say so). Whether the real model draws that line well is for the recording to show.
-- **The whereabouts refusal** is an informational intent rather than leaving such a question to `other`, so the line says plainly that it will not say, and offers a message.
+- **The whereabouts refusal** (until 2026-10-16) was an informational intent rather than leaving such a question to `other`, so the line said plainly that it would not say, and offered a message. Superseded by the status and its offer (above).
 - **The hours are an answer, not a route**: the line takes messages at any hour (no `hours` in app.yaml).
 - **The address**: "418 Juniper Lane, Suite 2, in Example City", invented.
 - **The keypad menu**: 1 a message, 2 the hours, 3 the address, 0 the main line (`fromGreeting` not set: the menu is offered after two misses, the default).
 - **The adversarial suite** is on, as the scaffold sets it.
 - **Urgent's own bar, `URGENT_SURE: 0.4`** (app.yaml's `thresholds`, intents.yaml's `priority.threshold`; the engine's bar for a priority intent is 0.8). Missing an urgent caller costs more than putting through one who did not need it: both reach the studio's main line. Chosen on recording 2, where "wait, it's for Sam, and it's urgent" at the read-back read urgent 0.43 against take_message 0.50 and the urgency was lost; checked on that recording, it changed no other line.
 - **The span's checks are the engine's data and shape checks, and the drift judge for its meaning** (since generated wording made simple, 2026-10-14: the check levels and the grammar checks are gone): code holds the span to its values, its word budget, one sentence and no four words of its own sentence copied, and the drift judge, given the span heard in its sentence, decides whether it is faithful (a clause with a "no" or a condition left out, who does what to whom), refusing at style.yaml's `judge.refuseAt` (0.5, the default).
-- **"Yes please" after the whereabouts line** ("... happy to take a message for them. How can I help you today?") is a request for a message: `take_message`'s criteria say so ("or says yes right after the line offers to take a message"). The caller is then asked who it is for, though they named someone in the question: the question was about whereabouts, and nothing of it is kept.
+- **"Yes please" after the whereabouts line** (until 2026-10-16: "... happy to take a message for them. How can I help you today?") was a request for a message: `take_message`'s criteria said so. The caller was then asked who it was for, though they had named someone. Since the status and its offer, "yes please" answers the offer's own question (`leaveMessage`), and the message form keeps the person.
 - **A quote, a meeting or a price** ("can I get a quote for a website", "can you book me a meeting with Riley", "how much do you charge for a logo") is something only the studio's people can do, so the desk takes it as a message (`take_message`'s criteria: "or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on"). A request nobody at the studio handles ("do you sell gift cards", "do you repair laptops") stays `other`.
 - **`nomatch_open`** says what the desk can do, with no "Sorry, I didn't catch that": it is said both for words not understood and for a request understood and not handled (`other`), and must be true of both.
 - **"I'm not sure who it should go to"** is labelled `anyone` (the team): a caller who does not know who should get it does not mind who does. The line that misses the recipient question is "hmm, let me think".
 - **The ending** is "Your message is on its way to {recipient}." and then the goodbye: "Thanks for calling Example Front Desk. Goodbye." on a call, the chat's own `goodbye_chat` in a chat, so neither says thanks twice and a chat is never thanked for "calling".
+- **The status and its offer (2026-10-16).** Built from the engine's building blocks, no engine change: `whereabouts` is a form intent with the one slot `recipient`; its `complete` hook reads the status through the gate (fail-soft), keeps it in the facts (`presence`) and answers `said` with the status line in place of the request's "Sure, I can help you ..."; routes.yaml's `afterForm.whereabouts` then enters an internal form by the status, `reach_person` (`reachHow`: through, message, neither) or `offer_message` (`leaveMessage`: leave, decline); `reach_person`'s hook hands off for `put-through`, and `afterForm` of each offer enters `take_message`, keeping `recipient` (the slots both forms list are kept), or says "No problem." and asks "anything else?". The two answers are `choice` slots, not yes-or-no reads of a summary, so "no thanks" is an answer the form takes, not a correction.
+- **One `recipient` slot for both** (the message and the person asked about), so a message after a status keeps the person with no code. Its criteria now say both ("The message is for Sam Okafor, or Sam, or the caller asks about them"; the question "Who does the caller say the message is for, or ask about?"), and its question is "Who's it for, Riley Moreno, Sam Okafor, Jordan Lee, or anyone at the studio?" (was "Who's the message for, ..."), which reads right in both forms. The site's excerpt of slots.yaml (`site/index.html`) follows the criteria.
+- **The team** has no calendar: "is anyone in the office" calls no tool, says "I can only check on Riley, Sam or Jordan by name." and offers a message for the team. The gate's `oneOf` refuses `anyone` too, should the code ever ask.
+- **A request to talk to one of the three by name is `whereabouts`**, not a request for a person: "can I talk to Sam" hears Sam's status first, and is put through only if Sam is available. `whereabouts`' criteria say so, and `agent`'s now say "without naming Riley, Sam or Jordan". The engine's `wantsHuman` question is asked before the intent and cannot be told this (Gaps); on the stub the line is labelled as the app means it.
+- **The greeting and `nomatch_open`** say "check whether they're in", and the greeting no longer says "No one can pick up right now": with Riley available and put through, it would not be true.
+- **`take_message`'s criteria** no longer say "or agrees (yes, sure, okay, please) right after the line offers to take a message": the offer is now `offer_message`'s own question, answered by its slot, and a yes read as a new request for a message there could set the person aside. "yes please" and "sure, okay" moved from the opening (`tm-11`, `tm-12`, each a known gap at `no_form`) to the offer (`lm-01`, `lm-02`).
+- **The offers on the keypad**: `keypad: true` on both choices, offered after two misses (`ask_reachHow_dtmf`: 1 put through, 2 a message, 3 neither; `ask_leaveMessage_dtmf`: 1 yes, 2 no). The menu gains no key: a status needs a name.
+- **Who is put through, and to where**: only to someone the calendar says is available, to their own line, by a transfer target per person on the `put-through` reason and the `recipient` slot. Each number is a setting; like the main line, it must ring that person, never a number that forwards back to this desk.
 - **`exactText` has no "Thanks!"**: it is often said right after `read_back_exact`, now "Sorry, let me read it back word for word." (it was "Here it is exactly as I took it down.", which "as you said it" would have repeated); with a generated summary (`text`) the line is said on its own, and keeps the paragraph's "Thanks".
 
 ## Gaps
@@ -169,6 +216,16 @@ Found while revising (2026-10-14), for the maintainer, and closed the same day b
 | A span could leave out a clause with a negation ("..., no changes needed" summarized as "the brochure proofs are back from the printer") and pass, the `negation` check holding only a clause restated | Left to the drift check | Left to the drift judge (since generated wording made simple, 2026-10-14, the `omitted` and `negation` checks are gone: a clause left out, with a "no" or not, is the drift judge's; on the stub, the fake renderer keeps the whole message when a later clause has a "no", so `ms-02` and `ms-07` are said unchanged). A plain clause left out (`ms-04`, `ms-08`, under "Known limits") is the drift judge's too |
 
 No `FAIL adversarial` case and no `screened` finding on the stub: the suite holds 27/27 (injection 9, off-scope 8, hostile-reply 2, wording 8).
+
+Found while building the status and its offer (2026-10-16), for the maintainer. Each is worked around in the app; nothing in `packages/dialogwright` was changed.
+
+| What | The framework | What the app does |
+|---|---|---|
+| A form entered by a route or a `next` is always bridged into with `bridge_next` ("Now, let's {label}.") | No way for a form to say its own entering line, or none, so an offer after a status hears a bridge between the status and the question | The internal forms' labels are worded as the offer's lead-in ("Now, let's put you through or take a message. Which would you like?", "Now, let's see about a message. Would you like to leave one?"), and their questions are short. A form's own entering line (or `bridge: none`) would let the status be followed by the offer alone ("Sam Okafor is out of the office until Monday. Would you like to leave a message?") |
+| One question line per slot (`ask_<slot>`), whatever form asks it | A slot shared by two forms (here `recipient`, so a message after a status keeps the person) has one question for both | `ask_recipient` is worded for both ("Who's it for, ...?"). It is asked in `whereabouts` only when the caller names no one ("is someone in today") |
+| The engine's `wantsHuman` question is asked before the intent, of every turn, and cannot be told that a named person is the app's own request | "can I talk to Sam" may read as a request for a person ("The caller asks to talk to a person or to be put through to one"), and go to the main line before `whereabouts` is read | Labelled as the app means it (`whereabouts`, no `wantsHuman` answer: `wh-09` to `wh-11`); whether the real model reads it so is for the recording (below). Either end is safe: the main line rings a person. An app option naming the people a caller may ask for by name, told to the question as context, would let the app say so |
+| The app map draws a form whose `complete` hook hands off as "Completes without calling an action" | `reach_person`'s put-through handoff is not drawn | Nothing; it is in "What goes to a person", the transfer targets on the map, and the scripted calls |
+| The stub answers by a line's words alone, across every context | "a message for Sam please" (`tm-04`, labelled at the opening) cannot also be the offer's yes | The scripted call `whereabouts-then-a-message` says "yes, a message for Sam please" (`lm-08`) at the offer |
 
 ## Baseline edits
 
@@ -207,6 +264,26 @@ After recording 2 (2026-10-14), edited by hand from `--json`:
 |---|---|---|---|
 | corpus `tm-14` "call me back as soon as possible", scripted call `message-call-me-back-soon` | `slots.message` | none -> the words | relabelled `messageGiven`: the model takes the words as the message (0.60), and they are one |
 | scripted call `message-for-anyone` | steps, `slots.caller` | "my name is Casey Brooks" -> "it's Alex Rivera"; `casey brooks` -> `alex rivera` | the message is "just say Alex called": a caller named Casey leaving it made no sense, and the model did not take it as a message there |
+
+### The status and its offer (2026-10-16)
+
+Edited by hand, each entry from `regress --corpus <id> --json` / `--scenario <id> --json`, read turn by turn, never `--update`:
+
+| Entry | Field | Before -> after | Why |
+|---|---|---|---|
+| every corpus line and scripted call | `slots` | `+ reachHow: null, leaveMessage: null` | two new slots (the answers to the offers), which every entry lists; no other field of these entries changed |
+| corpus `wh-01`, `wh-05`, `wh-08` (Riley) | `promptId`, `acks`, `verdict`, `form`, `slots.recipient`, `gate` | `ask_intent`, `no_whereabouts`, `inform`, none -> `ask_reachHow`, `status_available` and `bridge_next`, `route`, `reach_person`, `riley`, `personStatus:ALLOW` | the status, then put through or a message; each line now labels the person it names |
+| corpus `wh-02` (Sam), `wh-04`, `wh-07` (Jordan) | the same | -> `ask_leaveMessage`, `status_out_of_office` / `status_in_training` and `bridge_next`, `route`, `offer_message`, the person, `personStatus:ALLOW` | the status, then a message |
+| corpus `wh-03` ("is anyone in the office") | `promptId`, `acks`, `verdict`, `form`, `slots.recipient` | -> `ask_leaveMessage`, `status_team` and `bridge_next`, `route`, `offer_message`, `anyone` | the team has no calendar: no call, a message for the team |
+| corpus `wh-06` ("is Sam available") | `decision`, `promptId`, `acks`, `reason`, `decidedGate`, `verdict`, `form`, `slots.recipient`, `gate` | `handoff`, `handoff_live_agent`, none, `live-agent`, `wantsHuman`, `handoff` -> `prompt`, `ask_leaveMessage`, `status_out_of_office` and `bridge_next`, none, `intent`, `route`, `offer_message`, `sam`, `personStatus:ALLOW` | relabelled: its `wantsHuman` answer and its `knownGap` are gone. Asking whether Sam is available is asking about Sam, and the line now answers it; the recording of 2026-10-16 read wantsHuman 0.41 (under its bar 0.7) and whereabouts 0.98, which is this outcome |
+| corpus `tm-11` "yes please", `tm-12` "sure, okay" | removed | -> `lm-01`, `lm-02` | the words answer the offer of a message, now `offer_message`'s own question (`leaveMessage: leave`), not a request at the opening; their known gaps (seeded at the opening, where nothing was offered) go with them |
+| corpus `wh-09` to `wh-14`, `rh-01` to `rh-08`, `lm-01` to `lm-08` | new | | the person named up front ("can I talk to Sam", "could you put me through to Riley", "I'd like to speak with Jordan Lee please", "is Riley around"), no one named ("is someone in today") and the name given then; each answer to each offer (put through, a message, neither; yes, no), and a miss for each |
+| scripted call `whereabouts-never-said` | removed | -> `whereabouts-available-is-offered-through-or-a-message` (new) | "is Riley in today" now hears Riley's status and the offer: the old name said the opposite |
+| scripted call `whereabouts-then-a-message` | step 2; `acks`, `decidedGate`, `verdict`, `gate` | "a message for Sam please" -> "yes, a message for Sam please"; `ack_intent`, `intent`, `route`, none -> `bridge_next`, none, `proceed`, `personStatus:ALLOW` | the second step answers the offer now (the stub answers a line's words alone, Gaps); the same end, `ask_caller` in `take_message` for Sam |
+| scripted call `whereabouts-then-yes` | step 1, expectation; `promptId`, `acks`, `decidedGate`, `verdict`, `slots.recipient`, `gate` | "is Riley in today" -> "is Jordan on holiday"; `ask_recipient`, `ack_intent`, `intent`, `route`, none -> `ask_caller`, `bridge_next`, none, `proceed`, `jordan`, `personStatus:ALLOW` | Riley is available, so the offer is not a yes or no; Jordan is in training, and "yes please" to the offer goes to the message form with Jordan set |
+| scripted call `whereabouts-then-sure` | expectation, `knownGap`; the same fields | `ask_recipient` (known gap `confirm_intent_explicit`) -> `ask_caller`, Sam set | "sure, okay" answers the offer as its slot: the check of the request (its known gap, recordings 3 to 5) no longer applies |
+| scripted call `off-scope-hears-what-the-desk-does` | its expectation's text | "... or Jordan, or tell you ..." -> "... or Jordan, check whether they're in, or tell you ..." | `nomatch_open` says what the desk does, now this too; the baseline entry is unchanged |
+| 23 scripted calls in `whereabouts.json` | new | | each status (available, out of the office, in training, the team, a person asked for), the person named up front, put through (said three ways, and on the keypad, to `RILEY_LINE`), a message taken and delivered (after available, and after out of the office), neither, no, "not right now" then the hours, the team's message, the offer on the keypad (yes, no) and never answered (the main line) |
 
 ## Known limits
 
@@ -297,18 +374,27 @@ Recorded again after the wants-a-person question was reworded (the caller is tol
 - **wh-06 "is Sam available"** now reads wantsHuman 0.41 (0.84 before) and whereabouts 0.98: the caller hears where Sam is and may leave a message, rather than being put through to the main line. Tagged (`knownGap`) and brought to the maintainer: either end is safe; the label stays a person until the maintainer says otherwise.
 - **ur-05**'s tag came off (`knownGap now matches`).
 
+### The status and its offer: what to record (2026-10-16)
+
+- **For the owner: record again, the whole app** (the same command as before, README.md). The status and its offer change what every request asks: `whereabouts`' and `agent`'s criteria and `take_message`'s, the `recipient` slot's question and criteria, two new slots (`reachHow`, `leaveMessage`), and the greeting and `nomatch_open`. So `--client recorded` misses on every turn until the owner records again (replayed today: `to triage: 157 untagged corpus differences, 73 failing scripted calls, 0 passing scripted calls that differ from the baseline, 285 cassette misses`). No new line is generated and the span's own requests are unchanged, but a replay reaches a read-back only once the decision model's answers before it are recorded again. After it, watch:
+  - `wh-09` "can I talk to Sam", `wh-10` "could you put me through to Riley", `wh-11` "I'd like to speak with Jordan Lee please": whether `wantsHuman` reads them over its bar (0.7) and sends them to the main line before `whereabouts` is read (Gaps). A known gap if it does, and safe; the maintainer's to decide.
+  - every `wh-*` line: that `recipient` fills with the person named (its criteria now say "or the caller asks about them").
+  - `rh-*` and `lm-*`: the offers' answers, and above all that "yes please", "a message is fine" and "I'll just leave a message" at an offer are read as the slot's answer, not as a new request for `take_message` (which would set the person aside and ask "Who's it for" again).
+  - `lm-04` "no thanks, that's okay" and `rh-06` "no thanks, never mind" at an offer: read as the slot's no, or as `done` (the call ends with the goodbye): either is safe.
+  - `whereabouts-then-sure`, whose known gap is gone: "sure, okay" at the offer.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
 - [x] Every decision has its answer, each option it led to is built, and each option's pattern's **Test** calls are scripted (the callback offer accepted, declined, declined then nothing, another number, withheld, keyed, the chat; a read-back answered yes, no, no then the message again, a recipient and a number corrected; urgent at the start, mid-form and at the read-back with a correction).
 - [x] Every intent has at least eight corpus lines (terse ones, and for forms, over-answering ones and a correction) and at least one scripted call.
 - [x] Every slot has at least five answers in the corpus, the summary seven.
-- [x] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); no bounds; no custom rule.
+- [x] Every action has a policy entry; `policy.matrix` is written with `pnpm policy:matrix`, read, and tested (`expectPolicyMatrix`, `policyInvariants`); no bounds; no custom rule. Since 2026-10-16, two actions: the status read is read back too (below, "The policy read back").
 - [x] Scripted calls cover the form, the anonymous caller (the only principal), each handoff (a person on request at the start, inside the form, at the read-back and on the keypad menu; urgent; max attempts), keypad entry (the number, and the menu's keys) and each informational answer (spoken, and the hours and the address by key). No identity, so no step-up, verification or delegate calls.
 - [x] No `identity.yaml`: the paragraph says nobody verifies.
 - [x] The policy read back (`policy.matrix`, `POLICY.md`, `APP-MAP.md`) matches "Who may do what", and the card matches the paragraph: one action at level 0, confirmed; the span listed as the only generated part, with its goal, its content and its budget; the prescribed lines.
 - [x] Every tool lists its `params`, every param has a row under "What is recorded", and the card's table says the same; what `length-summarized` costs is written down, and the caller's name, kept as given, is said so.
-- [x] No tool decides who may do what; every line a caller hears is in `prompts.yaml`.
+- [x] No tool decides who may do what; every line a caller hears is in `prompts.yaml`; every status line is fixed text chosen by code from the calendar's checked reply.
 - [x] Every tool whose reply a call is made from or the audit records checks it (`check`); app.yaml says `testing: { adversarial: on }`, and the regression prints `adversarial 27/27 cases hold` with no `FAIL adversarial`.
 - [x] No knowledge base.
 - [x] Nothing private or real: invented names and street, 555 numbers, `example.com` addresses.

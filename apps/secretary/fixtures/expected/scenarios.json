@@ -14,7 +14,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -37,7 +39,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -60,7 +64,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -83,7 +89,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -106,7 +114,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -114,26 +124,29 @@
     "pass": true,
     "mismatches": []
   },
-  "whereabouts-never-said": {
-    "id": "whereabouts-never-said",
+  "whereabouts-available-is-offered-through-or-a-message": {
+    "id": "whereabouts-available-is-offered-through-or-a-message",
     "decision": "prompt",
-    "promptId": "ask_intent",
+    "promptId": "ask_reachHow",
     "acks": [
-      "no_whereabouts"
+      "status_available",
+      "bridge_next"
     ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "inform",
-    "form": null,
+    "verdict": "route",
+    "form": "reach_person",
     "slots": {
-      "recipient": null,
+      "recipient": "riley",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null,
+    "gate": "personStatus:ALLOW",
     "pass": true,
     "mismatches": []
   },
@@ -142,21 +155,23 @@
     "decision": "prompt",
     "promptId": "ask_caller",
     "acks": [
-      "ack_intent"
+      "bridge_next"
     ],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "route",
+    "decidedGate": null,
+    "verdict": "proceed",
     "form": "take_message",
     "slots": {
       "recipient": "sam",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null,
+    "gate": "personStatus:ALLOW",
     "pass": true,
     "mismatches": []
   },
@@ -175,7 +190,9 @@
       "recipient": "riley",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -196,7 +213,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -217,7 +236,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -228,46 +249,50 @@
   "whereabouts-then-yes": {
     "id": "whereabouts-then-yes",
     "decision": "prompt",
-    "promptId": "ask_recipient",
+    "promptId": "ask_caller",
     "acks": [
-      "ack_intent"
+      "bridge_next"
     ],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "route",
+    "decidedGate": null,
+    "verdict": "proceed",
     "form": "take_message",
     "slots": {
-      "recipient": null,
+      "recipient": "jordan",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null,
+    "gate": "personStatus:ALLOW",
     "pass": true,
     "mismatches": []
   },
   "whereabouts-then-sure": {
     "id": "whereabouts-then-sure",
     "decision": "prompt",
-    "promptId": "ask_recipient",
+    "promptId": "ask_caller",
     "acks": [
-      "ack_intent"
+      "bridge_next"
     ],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "route",
+    "decidedGate": null,
+    "verdict": "proceed",
     "form": "take_message",
     "slots": {
-      "recipient": null,
+      "recipient": "sam",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null,
+    "gate": "personStatus:ALLOW",
     "pass": true,
     "mismatches": []
   },
@@ -286,7 +311,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -309,7 +336,9 @@
       "recipient": "riley",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -330,7 +359,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -351,7 +382,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -372,7 +405,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -393,7 +428,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -414,7 +451,9 @@
       "recipient": "riley",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -435,7 +474,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -456,7 +497,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -477,7 +520,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -498,7 +543,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com"
+      "message": "I'm calling about the invoice for the spring campaign, it went to the wrong address, could someone send it again to accounts at example dot com",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -519,7 +566,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the project is complete and I just need him to give his approval"
+      "message": "the project is complete and I just need him to give his approval",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -540,7 +589,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -561,7 +612,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -582,7 +635,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review. yes but tell her it's moved to Thursday"
+      "message": "the logo files are ready for review. yes but tell her it's moved to Thursday",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -605,7 +660,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the brochure proofs are back from the printer and look great, no changes needed"
+      "message": "the brochure proofs are back from the printer and look great, no changes needed",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -626,7 +683,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready, but the colours are still not quite right"
+      "message": "the logo files are ready, but the colours are still not quite right",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -647,7 +706,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready, but the colours are still not quite right"
+      "message": "the logo files are ready, but the colours are still not quite right",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -668,7 +729,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -689,7 +752,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -710,7 +775,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550177",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -731,7 +798,9 @@
       "recipient": "anyone",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "just say Alex called"
+      "message": "just say Alex called",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -752,7 +821,9 @@
       "recipient": "anyone",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -775,7 +846,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on five five five five five five zero one four two"
+      "message": "hi, it's Alex Rivera for Riley Moreno, the logo files are ready for review, call me back on five five five five five five zero one four two",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -798,7 +871,9 @@
       "recipient": "jordan",
       "caller": "alex rivera",
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -819,7 +894,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "tell Riley the logo files are ready for review"
+      "message": "tell Riley the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -840,7 +917,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -861,7 +940,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550166",
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -882,7 +963,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550199",
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -903,7 +986,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -924,7 +1009,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -945,7 +1032,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550123",
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -966,7 +1055,9 @@
       "recipient": "sam",
       "caller": "alex rivera",
       "phone": "5555550177",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -987,7 +1078,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1008,7 +1101,9 @@
       "recipient": "anyone",
       "caller": null,
       "phone": null,
-      "message": null
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1029,7 +1124,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1050,7 +1147,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready, but the colours are still not quite right"
+      "message": "the logo files are ready, but the colours are still not quite right",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1071,7 +1170,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "the logo files are ready for review"
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1094,7 +1195,9 @@
       "recipient": "sam",
       "caller": null,
       "phone": null,
-      "message": "it's not urgent, but could Sam call me back about the brochure"
+      "message": "it's not urgent, but could Sam call me back about the brochure",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1117,7 +1220,9 @@
       "recipient": null,
       "caller": null,
       "phone": null,
-      "message": "call me back as soon as possible"
+      "message": "call me back as soon as possible",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1138,7 +1243,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "it's not urgent, but the invoice needs a look this week"
+      "message": "it's not urgent, but the invoice needs a look this week",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1159,7 +1266,9 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "please call me back as soon as possible about the proofs"
+      "message": "please call me back as soon as possible about the proofs",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
@@ -1180,11 +1289,553 @@
       "recipient": "riley",
       "caller": "alex rivera",
       "phone": "5555550142",
-      "message": "hold on, it's really urgent, the website is down"
+      "message": "hold on, it's really urgent, the website is down",
+      "reachHow": null,
+      "leaveMessage": null
     },
     "queued": [],
     "principalLevel": 0,
     "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "status-out-of-office-offers-a-message": {
+    "id": "status-out-of-office-offers-a-message",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_out_of_office",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "status-in-training-offers-a-message": {
+    "id": "status-in-training-offers-a-message",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_in_training",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "status-the-team-offers-a-message": {
+    "id": "status-the-team-offers-a-message",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_team",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "status-person-asked-for": {
+    "id": "status-person-asked-for",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_out_of_office",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "talk-to-a-person-by-name-hears-their-status": {
+    "id": "talk-to-a-person-by-name-hears-their-status",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_out_of_office",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "talk-to-a-person-by-name-in-training": {
+    "id": "talk-to-a-person-by-name-in-training",
+    "decision": "prompt",
+    "promptId": "ask_leaveMessage",
+    "acks": [
+      "status_in_training",
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "jordan",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-put-through": {
+    "id": "available-put-through",
+    "decision": "handoff",
+    "promptId": "handoff_put_through",
+    "acks": [],
+    "reason": "put-through",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reach_person",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": "through",
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "put-through-to-a-person-by-name": {
+    "id": "put-through-to-a-person-by-name",
+    "decision": "handoff",
+    "promptId": "handoff_put_through",
+    "acks": [],
+    "reason": "put-through",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reach_person",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": "through",
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-put-through-said-plainly": {
+    "id": "available-put-through-said-plainly",
+    "decision": "handoff",
+    "promptId": "handoff_put_through",
+    "acks": [],
+    "reason": "put-through",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "reach_person",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": "through",
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-takes-a-message": {
+    "id": "available-takes-a-message",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-message-delivered": {
+    "id": "available-message-delivered",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "riley",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-neither": {
+    "id": "available-neither",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "no_problem"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "available-neither-then-done": {
+    "id": "available-neither-then-done",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "out-of-office-message-delivered": {
+    "id": "out-of-office-message-delivered",
+    "decision": "complete",
+    "promptId": "message_taken",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": "alex rivera",
+      "phone": "5555550142",
+      "message": "the logo files are ready for review",
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "leaveMessage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "out-of-office-declines-a-message": {
+    "id": "out-of-office-declines-a-message",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "no_problem"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "in-training-declines-a-message": {
+    "id": "in-training-declines-a-message",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "no_problem"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "in-training-not-now-then-hours": {
+    "id": "in-training-not-now-then-hours",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "studio_hours"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "the-team-message": {
+    "id": "the-team-message",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "take_message",
+    "slots": {
+      "recipient": "anyone",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "put-through-on-the-keypad": {
+    "id": "put-through-on-the-keypad",
+    "decision": "handoff",
+    "promptId": "handoff_put_through",
+    "acks": [],
+    "reason": "put-through",
+    "decidedGate": null,
+    "verdict": null,
+    "form": "reach_person",
+    "slots": {
+      "recipient": "riley",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": "through",
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "message-offer-on-the-keypad": {
+    "id": "message-offer-on-the-keypad",
+    "decision": "prompt",
+    "promptId": "ask_caller",
+    "acks": [
+      "bridge_next"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "take_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "message-offer-declined-on-the-keypad": {
+    "id": "message-offer-declined-on-the-keypad",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "no_problem"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "recipient": null,
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "message-offer-never-answered-goes-to-the-main-line": {
+    "id": "message-offer-never-answered-goes-to-the-main-line",
+    "decision": "handoff",
+    "promptId": "handoff_max_attempts",
+    "acks": [],
+    "reason": "max-attempts",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "offer_message",
+    "slots": {
+      "recipient": "sam",
+      "caller": null,
+      "phone": null,
+      "message": null,
+      "reachHow": null,
+      "leaveMessage": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "personStatus:ALLOW",
     "pass": true,
     "mismatches": []
   }

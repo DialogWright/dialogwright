@@ -30,5 +30,10 @@ leaveMessage · level 0 · identity, confirmed(recipient, caller, phone, message
                  fields exact, confirmed match          ALLOW
                  fields extra|missing                   BLOCK confirmation
 
+personStatus · level 0 · identity, oneOf(person: riley, sam, jordan)
+  every caller   fields exact|extra, params aPerson  ALLOW
+                 fields exact|extra, params theTeam  BLOCK not-on-the-calendar
+                 fields missing                      BLOCK value-missing
+
 (unlisted) · not in the policy
   every caller   BLOCK unknown-tool

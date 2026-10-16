@@ -24,3 +24,35 @@ forms:
     summaryPromptId: null
     hooks: [complete]
     calls: []
+
+  # Whether someone is in: who (the person, the message's own slot, so a message that follows keeps
+  # them), then the complete hook reads their status through the gate and says it in a fixed line per
+  # status (src/app.ts). What follows is routes.yaml's (afterForm.whereabouts): someone available goes
+  # on to reach_person, anyone else to offer_message.
+  whereabouts:
+    slots: [recipient]
+    summaryPromptId: null
+    hooks: [complete]
+    calls: [personStatus]
+
+  # Someone available: put through to them (the complete hook hands off with the reason put-through, to
+  # their own line: app.yaml's transfer targets), or a message for them (routes.yaml's
+  # afterForm.reach_person enters take_message, the person kept), or neither ("anything else?").
+  reach_person:
+    internal: true
+    label: put you through or take a message
+    slots: [recipient, reachHow]
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []
+
+  # Anyone not available (or the team, or a status the line could not read): a message for them? A yes
+  # enters take_message with the person kept (routes.yaml's afterForm.offer_message); a no, "anything
+  # else?".
+  offer_message:
+    internal: true
+    label: see about a message
+    slots: [recipient, leaveMessage]
+    summaryPromptId: null
+    hooks: [complete]
+    calls: []
