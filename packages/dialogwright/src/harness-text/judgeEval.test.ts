@@ -274,7 +274,7 @@ describe('answer cases (speaks: answer; a knowledge answer worded for the caller
       answerCase('passage', 'faithful', PASSAGE),
     ]));
     const act = actOf(cases[0]!);
-    expect(act).toMatchObject({ sentence: '____', content: [{ name: 'answer', value: PASSAGE }], answer: { question: 'how much is a late book' }, style: { words: 22 } });
+    expect(act).toMatchObject({ sentence: '____', content: [{ name: 'answer', value: PASSAGE }], answer: { question: 'how much is a late book' }, style: { words: 32 } }); // the passage's 22 words and room above them, as a call sends (answerWordBudget)
     expect(Object.keys(judgeRequest(cases[0]!).questions)).toEqual(['renderAnswerDrift']);
     const asked: string[] = [];
     const judge: JevClient = {
