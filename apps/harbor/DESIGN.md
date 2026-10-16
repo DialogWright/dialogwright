@@ -418,6 +418,13 @@ The maintainer's decision on findings item 7 ("Recorded"): the birthdate type re
 
 **A re-record is needed for Harbor**, the maintainer's step: the seven new lines and the two new calls are requests the cassette does not hold (the replay: `to triage: 7 untagged corpus differences, 2 failing scripted calls, 0 passing scripted calls that differ from the baseline, 10 cassette misses`, every one of them a new line or call; each falls to `system_slow_dtmf_hint` on its miss). Until then Harbor's recorded replay must not run in CI.
 
+### Recording 5: jev-1.13.0, 2026-10-16, dates of birth said as numbers
+
+After the birthdate type learned to read a date said only in numbers (the keypad's way) and to ask with an example when it cannot: 480 requests, $0.0847, the generated lines replayed (`--render recorded`). Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- The ten lines measured in Recording 3 now: db-04, db-13 and db-17 verify as August 21, 1984 from their digits (db-13 had been heard as January 1, 1984); db-10 ("eight two one eight four", which the keypad would not split that way) hears the example line.
+- The new lines (db-18 to db-24) and both new calls hold on the real model, but for one: db-22 "august two one eighty four" names a month, so the model reads it (august 0.91, day 21 0.62), and it reads the year as "two one eighty four" 0.49; the caller is asked again. Tagged (bucket 2), safe.
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
