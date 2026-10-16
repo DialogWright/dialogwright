@@ -290,12 +290,14 @@
   "cs-13": {
     "id": "cs-13",
     "decision": "prompt",
-    "promptId": "confirm_intent_explicit",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",
-    "form": null,
+    "form": "claim_status",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -307,7 +309,7 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "listClaims:STEP_UP"
   },
   "cs-14": {
     "id": "cs-14",
@@ -1303,7 +1305,7 @@
       "dob": null,
       "claimSelect": null,
       "coverageTopic": null,
-      "lossType": null,
+      "lossType": "accident_injury",
       "lossDate": null,
       "lossDescription": null
     },

@@ -276,7 +276,7 @@
     "id": "identity-three-fails",
     "steps": [
       {
-        "say": "claim"
+        "say": "claim status"
       },
       {
         "say": "four two seven one six three five eight"

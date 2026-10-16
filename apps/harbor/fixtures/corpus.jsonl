@@ -10,8 +10,8 @@
 {"id": "cs-10", "text": "has claim 4655 been paid", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4655"}}
 {"id": "cs-11", "text": "i'm calling for my friend luis, can you look up claim 4720", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4720"}, "tags": ["polite_attack"]}
 {"id": "cs-12", "text": "check my claim please", "intent": "claim_status", "context": "no_form"}
-{"id": "cs-13", "text": "i got a letter about my claim and i don't understand it", "intent": "claim_status", "context": "no_form", "tentative": true}
-{"id": "cs-14", "text": "claim", "intent": "claim_status", "context": "no_form"}
+{"id": "cs-13", "text": "i got a letter about my claim and i don't understand it", "intent": "claim_status", "context": "no_form"}
+{"id": "cs-14", "text": "claim", "intent": "claim_status", "context": "no_form", "knownGap": {"reason": "a single word: claim_status 0.50, none 0.34, report_claim 0.13 (under INTENT_IMPLICIT, 0.6), so the request is checked first; the caller hears \"you'd like to check on a claim. Is that right?\", one more yes or no", "outcome": {"promptId": "confirm_intent_explicit", "acks": [], "form": null, "gate": null}}}
 {"id": "cs-15", "text": "my member id is four two seven one six three five eight and i'm checking on claim 4702", "intent": "claim_status", "context": "no_form", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true, "claimSelectChoice": "claim_4702"}}
 {"id": "cs-16", "text": "did you get the claim for my physical therapy", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4655"}}
 {"id": "sel-01", "text": "the one for the emergency room", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}}
@@ -23,7 +23,7 @@
 {"id": "sel-07", "text": "the one from august third", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4655"}}
 {"id": "sel-08", "text": "claim 4711", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4711"}}
 {"id": "sel-09", "text": "four seven two zero", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4720"}}
-{"id": "sel-10", "text": "the most recent one", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}}
+{"id": "sel-10", "text": "the most recent one", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}, "knownGap": {"reason": "\"the most recent one\": claimSelectChoice none 0.60, claim_4702 0.34, claim_4655 0.06, so no claim is chosen; the caller is asked again for the claim's number or what it was for (the slot's instructions name a claim's number, service and date, not which is latest: reworded for the next recording)", "outcome": {"promptId": "ask_claimSelect_retry", "acks": [], "form": "claim_status", "gate": null}}}
 {"id": "cv-01", "text": "is physical therapy covered", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "physical_therapy"}}
 {"id": "cv-02", "text": "does my plan pay for an ambulance", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "ambulance"}}
 {"id": "cv-03", "text": "i broke my arm skiing, does that pay anything", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "fracture"}}
@@ -52,7 +52,7 @@
 {"id": "tp-07", "text": "no, i meant my tooth", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "dental_injury"}}
 {"id": "tp-08", "text": "follow up visits", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "follow_up"}}
 {"id": "rc-01", "text": "i need to file a claim", "intent": "report_claim", "context": "no_form"}
-{"id": "rc-02", "text": "i want to report an accident", "intent": "report_claim", "context": "no_form"}
+{"id": "rc-02", "text": "i want to report an accident", "intent": "report_claim", "context": "no_form", "labels": {"lossType": "accident_injury"}}
 {"id": "rc-03", "text": "report a claim", "intent": "report_claim", "context": "no_form"}
 {"id": "rc-04", "text": "new claim", "intent": "report_claim", "context": "no_form"}
 {"id": "rc-05", "text": "i broke my wrist yesterday and need to file a claim", "intent": "report_claim", "context": "no_form", "labels": {"lossType": "accident_injury", "lossDateMode": "relative_day", "lossDateRelative": "yesterday", "lossDescriptionGiven": true}}
@@ -66,7 +66,7 @@
 {"id": "lt-01", "text": "an accident injury", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "accident_injury"}}
 {"id": "lt-02", "text": "a hospital stay", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "hospital_stay"}}
 {"id": "lt-03", "text": "diagnosis", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "diagnosis"}}
-{"id": "lt-04", "text": "i got hurt", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "accident_injury"}}
+{"id": "lt-04", "text": "i got hurt", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "accident_injury"}, "knownGap": {"reason": "\"i got hurt\" at the kind-of-loss question: lossType accident_injury 0.86, and lossDescriptionGiven 0.61 on the 0.6 bar (SLOT_DETECT), so the words are also the description and its question is skipped; the read-back says \"I have your description\" and the claim is filed with \"i got hurt\" as its description (the description's instructions reworded for the next recording)", "outcome": {"slots": {"memberId": "42716358", "dob": "1984-08-21", "claimSelect": null, "coverageTopic": null, "lossType": "accident_injury", "lossDate": null, "lossDescription": "i got hurt"}}}}
 {"id": "lt-05", "text": "i'm not sure what kind it is", "intent": "none", "context": "report_claim", "prompted": "lossType"}
 {"id": "lt-06", "text": "no, it was a hospital stay", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "hospital_stay"}}
 {"id": "lt-07", "text": "they admitted me overnight", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "hospital_stay"}}
@@ -90,10 +90,10 @@
 {"id": "cr-03", "text": "no", "intent": "none", "context": "confirm_report_claim", "confirm": "no"}
 {"id": "cr-04", "text": "no, the date is wrong", "intent": "none", "context": "confirm_report_claim", "confirm": "no", "changeSlot": "lossDate"}
 {"id": "cr-05", "text": "no, it was a hospital stay actually", "intent": "none", "context": "confirm_report_claim", "confirm": "no", "labels": {"lossType": "hospital_stay"}}
-{"id": "cr-06", "text": "yes, but it was on friday", "intent": "none", "context": "confirm_report_claim", "confirm": "yes", "labels": {"lossDateMode": "weekday", "lossDateWeekday": "friday"}}
+{"id": "cr-06", "text": "yes, but it was on friday", "intent": "none", "context": "confirm_report_claim", "confirm": "yes", "labels": {"lossDateMode": "weekday", "lossDateWeekday": "friday"}, "knownGap": {"reason": "\"yes, but it was on friday\" at the summary: the date is corrected (changeSlot lossDate 0.95, lossDateWeekday friday 1.00), but lossDescriptionChanged reads 0.71 (SUMMARY_WORDS_CHANGED, 0.6), so the words are added after the description; the caller hears the summary again with Friday and never the description (said by its stand-in), and the claim would be filed with \"... yes, but it was on friday\" in it (the engine's changed question presumes the words were read back; the slot's text.changed reworded for the next recording; scripted: report-yes-but-friday)", "outcome": {"slots": {"memberId": "42716358", "dob": "1984-08-21", "claimSelect": null, "coverageTopic": null, "lossType": "accident_injury", "lossDate": "2026-09-11", "lossDescription": "I slipped on the ice and hurt my wrist. yes, but it was on friday"}}}}
 {"id": "cr-07", "text": "that's right, go ahead", "intent": "none", "context": "confirm_report_claim", "confirm": "yes"}
 {"id": "cr-08", "text": "actually i want to talk to a person", "intent": "agent", "context": "confirm_report_claim"}
-{"id": "cr-09", "text": "wait, how long do i have to file a claim", "intent": "coverage", "context": "confirm_report_claim", "change": "adding", "labels": {"coverageTopicTopic": "filing_deadline"}}
+{"id": "cr-09", "text": "wait, how long do i have to file a claim", "intent": "coverage", "context": "confirm_report_claim", "change": "adding", "labels": {"coverageTopicTopic": "filing_deadline"}, "knownGap": {"reason": "a coverage question at the summary: intent coverage 1.00, but intentChange reads answering 0.78 (adding 0.17), so the turn is taken as the summary's and unanswered; the caller hears the summary again, their question not answered, and nothing is filed without a yes (the engine's intentChange question; scripted: report-aside-at-summary)", "outcome": {"acks": [], "decidedGate": "confirmation", "verdict": "confirm_unanswered", "gate": null}}}
 {"id": "id-01", "text": "my member id is four two seven one six three five eight", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true}}
 {"id": "id-02", "text": "four two seven one six three five eight", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true}}
 {"id": "id-03", "text": "42716358", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "42716358", "memberIdComplete": true}}
@@ -104,7 +104,7 @@
 {"id": "db-01", "text": "august twenty first nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "nineteen eighty four"}}
 {"id": "db-02", "text": "november twenty second nineteen forty eight", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "november", "dobDay": "22", "dobYear": "nineteen forty eight"}}
 {"id": "db-03", "text": "july ninth nineteen ninety one", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "july", "dobDay": "9", "dobYear": "nineteen ninety one"}}
-{"id": "db-04", "text": "eight twenty one eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}}
+{"id": "db-04", "text": "eight twenty one eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}, "knownGap": {"reason": "a date of birth said as a run of numbers: dobGiven 0.83 and dobMonth august 0.68, but dobDay 1 0.32 against 21 0.29 and dobYear eighty four 0.25, so no date is heard; the caller hears \"Please say your date of birth, including the year\" (a try on the factor's ladder) and may key it", "outcome": {"promptId": "ask_dob_retry", "acks": [], "slots": {"memberId": "42716358", "dob": null, "claimSelect": null, "coverageTopic": null, "lossType": null, "lossDate": null, "lossDescription": null}, "principalLevel": 0, "gate": null}}}
 {"id": "db-05", "text": "august twenty first", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21"}}
 {"id": "db-06", "text": "nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobYear": "nineteen eighty four"}}
 {"id": "db-07", "text": "january first nineteen ninety", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "january", "dobDay": "1", "dobYear": "nineteen ninety"}}
@@ -131,8 +131,8 @@
 {"id": "cp-03", "text": "what are my options", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-04", "text": "how does this work", "intent": "capabilities", "context": "no_form"}
 {"id": "cp-05", "text": "what can i do here", "intent": "capabilities", "context": "no_form"}
-{"id": "cp-06", "text": "am i talking to a real person", "intent": "capabilities", "context": "no_form"}
-{"id": "cp-07", "text": "help", "intent": "capabilities", "context": "no_form"}
+{"id": "cp-06", "text": "am i talking to a real person", "intent": "capabilities", "context": "no_form", "knownGap": {"reason": "\"am i talking to a real person\": wantsHuman 0.94 (GATE_WANTS_HUMAN, 0.7), intent agent 0.59 over capabilities 0.41, so the caller is put through to a person instead of hearing what the line is; whether that is the truth is the owner's to say", "outcome": {"decision": "handoff", "promptId": "handoff_live_agent", "acks": [], "reason": "live-agent", "decidedGate": "wantsHuman", "verdict": "handoff"}}}
+{"id": "cp-07", "text": "help", "intent": "capabilities", "context": "no_form", "knownGap": {"reason": "a single word: capabilities 0.56, none 0.36 (under INTENT_IMPLICIT, 0.6), so the request is checked first; the caller hears \"you'd like to hear what I can do. Is that right?\", one more yes or no", "outcome": {"promptId": "confirm_intent_explicit", "acks": [], "verdict": "route"}}}
 {"id": "cp-08", "text": "what can you help me with", "intent": "capabilities", "context": "no_form"}
 {"id": "dn-01", "text": "no, that's all", "intent": "done", "context": "anything_else"}
 {"id": "dn-02", "text": "no thanks", "intent": "done", "context": "anything_else"}
@@ -143,12 +143,12 @@
 {"id": "dn-07", "text": "i don't need anything else", "intent": "done", "context": "anything_else"}
 {"id": "dn-08", "text": "never mind, that's all", "intent": "done", "context": "no_form"}
 {"id": "ot-01", "text": "can i change my address", "intent": "other", "context": "no_form"}
-{"id": "ot-02", "text": "do you sell car insurance", "intent": "other", "context": "no_form"}
+{"id": "ot-02", "text": "do you sell car insurance", "intent": "other", "context": "no_form", "knownGap": {"reason": "\"do you sell car insurance\": coverage 0.54, capabilities 0.36, other 0.10, so the caller is asked \"you'd like to check your coverage. Is that right?\"; a no goes back to the open question (the other intent's criteria name nothing the line does not handle: reworded for the next recording)", "outcome": {"promptId": "confirm_intent_explicit", "verdict": "route"}}}
 {"id": "ot-03", "text": "i need a new insurance card", "intent": "other", "context": "no_form"}
 {"id": "ot-04", "text": "how do i cancel my policy", "intent": "other", "context": "no_form"}
 {"id": "ot-05", "text": "what are your office hours", "intent": "other", "context": "no_form"}
 {"id": "ot-06", "text": "i want to update my bank details", "intent": "other", "context": "no_form"}
-{"id": "ot-07", "text": "can i add my spouse to the plan", "intent": "other", "context": "no_form"}
+{"id": "ot-07", "text": "can i add my spouse to the plan", "intent": "other", "context": "no_form", "knownGap": {"reason": "\"can i add my spouse to the plan\": coverage 0.63, other 0.37 (INTENT_IMPLICIT, 0.6), so the coverage form opens: the caller gives their member ID and date of birth, then is asked a coverage question the line cannot answer (the coverage and other criteria reworded for the next recording)", "outcome": {"promptId": "ask_memberId", "acks": ["ack_intent"], "verdict": "route", "form": "coverage", "gate": "getCoverage:STEP_UP"}}}
 {"id": "ot-08", "text": "who is my broker", "intent": "other", "context": "no_form"}
 {"id": "ns-01", "text": "hello", "intent": "none", "context": "no_form"}
 {"id": "ns-02", "text": "honey, where did you put the keys", "intent": "none", "context": "no_form", "answers": {"addressedToSystem": {"noul": 0.15}}, "tags": ["side_speech"]}
