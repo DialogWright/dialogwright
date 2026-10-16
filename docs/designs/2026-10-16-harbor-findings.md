@@ -74,3 +74,11 @@ Every decision above is built and green on the stub; the recordings are made nex
 6. **Dates of birth as numbers** (item 7). Harbor's db-09 to db-17, labelled with the true date, tagged `dob_as_numbers`; the birthdate type unchanged.
 
 What the recordings must make again: every app's (clinic, utility, secretary, Harbor) and the engine fixtures' that are recorded (the message fixture's decision-model cassette, which the render bake-off's tests replay), since items 2 and 3 change requests every app sends. Until then those replays miss, as expected.
+
+## Recorded (2026-10-16)
+
+Every app and the two fixtures with a decision-model cassette (message, recognized) were recorded again after these changes, the generated lines replayed from their render cassettes (`regress --client record --render recorded`, added for this: it records the decision model and asks no render model). About $0.35 in all; each cassette trimmed to what a run asks for. Every replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- The aside (item 1) holds on the real model: Harbor's report-aside-at-summary passes.
+- The wants-a-person wording (item 6): the clinic's ag-02 ("Agent", one word) and lc-05 now read as their labels, tags off; the secretary's wh-06 "is Sam available" reads wantsHuman 0.41 (0.84 before), so the caller hears where Sam is rather than being put through: tagged, for the maintainer.
+- Item 7, measured: of Harbor's ten dates of birth said as runs of numbers, six are heard and four are not; three are asked again, and one ("zero eight two one one nine eight four") is heard as January 1, 1984, so verification fails and uses a try. A run of single digits is where the birthdate type misreads.

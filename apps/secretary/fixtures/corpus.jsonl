@@ -70,7 +70,7 @@
 {"id":"ur-02","text":"urgent","intent":"urgent","context":"no_form"}
 {"id":"ur-03","text":"this is an emergency, I need to reach someone now","intent":"urgent","context":"no_form"}
 {"id":"ur-04","text":"it can't wait, I need someone right now","intent":"urgent","context":"no_form"}
-{"id":"ur-05","text":"the print shop needs sign-off within the hour, it's urgent","intent":"urgent","context":"no_form","knownGap":{"reason":"recording 6 (2026-10-14): at the opening, urgent 0.57 against take_message 0.41, so the priority gate takes it rather than the intent gate: the same handoff to the main line by another gate","outcome":{"decidedGate":"priorityIntent"}}}
+{"id":"ur-05","text":"the print shop needs sign-off within the hour, it's urgent","intent":"urgent","context":"no_form"}
 {"id":"ur-06","text":"actually this is urgent, can I talk to someone now","intent":"urgent","context":"take_message","prompted":"caller","change":"replacing","answers":{"wantsHuman":{"noul":0.95}}}
 {"id":"ur-07","text":"hold on, it's really urgent, the website is down","intent":"urgent","context":"take_message","prompted":"message","change":"replacing","labels":{"messageGiven":true}}
 {"id":"ur-08","text":"wait, it's for Sam, and it's urgent","intent":"urgent","context":"confirm_take_message","change":"replacing","labels":{"recipient":"sam"},"knownGap":{"reason":"recording 2 (2026-10-14), after urgent's criteria were reworded: take_message 0.50, urgent 0.43 (recording 1: 0.64 / 0.21). With urgent's own bar, URGENT_SURE 0.4 (app.yaml), the priority gate acts and the call goes to the main line with Sam as the recipient: the same handoff by another gate","outcome":{"decidedGate":"priorityIntent"}}}
@@ -95,7 +95,7 @@
 {"id":"wh-03","text":"is anyone in the office","intent":"whereabouts","context":"no_form"}
 {"id":"wh-04","text":"is Jordan on holiday","intent":"whereabouts","context":"no_form"}
 {"id":"wh-05","text":"where is Riley","intent":"whereabouts","context":"no_form"}
-{"id":"wh-06","text":"is Sam available","intent":"whereabouts","context":"no_form","answers":{"wantsHuman":{"noul":0.9}}}
+{"id":"wh-06","text":"is Sam available","intent":"whereabouts","context":"no_form","answers":{"wantsHuman":{"noul":0.9}},"knownGap":{"reason":"\"is Sam available\" after the wantsHuman question was reworded (2026-10-16: the caller is told they are talking to an automated service, and asked whether they ask for a person instead): wantsHuman 0.41 (bar 0.7), whereabouts 0.98, so the caller hears where Sam is and is offered to leave a message, rather than being put through to the main line (wantsHuman 0.84 before); for the maintainer: either is safe","outcome":{"decision":"prompt","promptId":"ask_intent","acks":["no_whereabouts"],"reason":null,"decidedGate":"intent","verdict":"inform"}}}
 {"id":"wh-07","text":"what's Jordan's schedule this week","intent":"whereabouts","context":"no_form"}
 {"id":"wh-08","text":"is Riley busy right now","intent":"whereabouts","context":"no_form"}
 {"id":"ag-01","text":"can I talk to a person","intent":"agent","context":"no_form"}

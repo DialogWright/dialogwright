@@ -43,3 +43,4 @@ jobs:
       - run: pnpm --filter @dialogwright/example-utility regress --client recorded
       - run: pnpm --filter @dialogwright/example-secretary regress
       - run: pnpm --filter @dialogwright/example-harbor regress
+      - run: pnpm --filter @dialogwright/example-harbor regress --client recorded

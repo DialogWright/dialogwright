@@ -290,6 +290,13 @@ After recording 2 (2026-10-14), edited by hand from `--json`:
   - The reworded question: messages that are requests now read as messages, "please call me back as soon as possible about the proofs" 0.97, the invoice message 0.96, "please don't send the final files until we've signed off on the colours" 0.97, "just say Alex called" 0.78 and 0.60; and what is not a message stays out, "hmm, what should I say" 0.02, "I'd rather not say what it's about" 0.02 (both are taken as the message at the message's own question all the same, item 29, and read back).
   - `message-for-anyone` passes. `tm-17`'s known gap removed (the run said it now matches). `ur-05` "the print shop needs sign-off within the hour, it's urgent" at the opening: urgent 0.57, take_message 0.41, so the priority gate takes it rather than the intent gate, the same handoff: tagged.
 
+### Recording after the engine's decisions (2026-10-16)
+
+Recorded again after the wants-a-person question was reworded (the caller is told the service is automated; asking whether one talks to a person is not asking for one) and the text type's changed question; generated lines replayed from their cassette (`--render recorded`). 309 requests, $0.0472; trimmed to 231 answers. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- **wh-06 "is Sam available"** now reads wantsHuman 0.41 (0.84 before) and whereabouts 0.98: the caller hears where Sam is and may leave a message, rather than being put through to the main line. Tagged (`knownGap`) and brought to the maintainer: either end is safe; the label stays a person until the maintainer says otherwise.
+- **ur-05**'s tag came off (`knownGap now matches`).
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.

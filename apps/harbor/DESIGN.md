@@ -351,6 +351,17 @@ The findings ([docs/designs/2026-10-16-harbor-findings.md](../../docs/designs/20
 
 **A re-record is needed** for every app (the engine's `wantsHuman` and text `changed` questions changed every request), Harbor's with the same command as before. Until then the recorded replay misses, as expected.
 
+### Recording 3: jev-1.13.0, 2026-10-16, after the engine's decisions
+
+Every app recorded again after the maintainer's decisions of 2026-10-16 (a question at a read-back answered as an aside; the wants-a-person question reworded; the text type's changed question; frustration limited to the claim forms; a client named by a broker), with the render cassettes replayed (`--render recorded`). Harbor: 458 requests, $0.0807; trimmed to the 324 answers a run asks for. The replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`, and it now runs in CI.
+
+- **report-aside-at-summary passes**: the filing deadline asked at the claim's read-back is answered, then the read-back asked again (the aside, findings item 1).
+- **cp-06 and cp-09** ("am i talking to a real person", "is this a real person or a machine") hear that the line is automated and what it can do.
+- **lt-07 and db-04** keep their tags, their pinned slots given `clientId` (the broker's new slot).
+- **Dates of birth as runs of numbers** (findings item 7, measured): of the ten lines (db-04, db-09 to db-17), six are heard (a month name, "nineteen", "the twenty first of", slashes, or "it's ... nineteen eighty four") and four are not, each tagged with its numbers:
+  - db-04 "eight twenty one eighty four", db-10 "eight two one eight four", db-17 "oh eight two one eighty four": no date heard (the month read as january or october, the day as 1), so the caller is asked again and may key it;
+  - db-13 "zero eight two one one nine eight four": heard as **January 1, 1984**, so verification fails and uses one of the three tries. A run of single digits is where the birthdate type misreads; a candidate for the maintainer (the type's month and day questions on a run of digits, or keying offered first after a miss).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
