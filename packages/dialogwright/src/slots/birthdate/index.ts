@@ -20,11 +20,15 @@ const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 /** The prompt that asks for the year alone: `yearPrompt`, or ask_<slot>_year. */
 export const yearPromptOf = (id: string, o: Pick<BirthdateOptions, 'yearPrompt'>): string => o.yearPrompt ?? `ask_${id}_year`;
 
+/** The line that asks again, with an example, for a date said in numbers that could not be read: ask_<slot>_example. */
+export const examplePromptOf = (id: string): string => `ask_${id}_example`;
+
 /** The lines a birthdate slot may lead to, beyond ask_<slot> and ask_<slot>_retry. */
 function promptsOf(id: string, o: BirthdateOptions): SlotPrompt[] {
   const prompts: SlotPrompt[] = [{ id: yearPromptOf(id, o), why: 'the caller gave the month and day of their birth without the year (the partialPromptId)' }];
   if (o.wholePrompt !== undefined) prompts.push({ id: o.wholePrompt, why: 'a month or a day of the birth date was not heard (the fill\'s retryPromptId)' });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the date of birth on the keypad, as eight digits, after spoken answers missed' });
+  if (o.numbersExample) prompts.push({ id: examplePromptOf(id), why: 'a date said only in numbers gave no date: it asks again with an example of a date said in a way that is understood (the fill\'s retryPromptId, reason numbers_unclear)' });
   prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }
@@ -53,7 +57,7 @@ export const birthdateType: SlotType<BirthdateOptions> = defineSlotType<Birthdat
       questionIds: [ids.given, ids.month, ids.day, ids.year],
       prompts: promptsOf(id, o),
       questions: birthdateQuestions(id, o),
-      fill: birthdateFill(o, ids, display),
+      fill: birthdateFill(o, ids, display, examplePromptOf(id)),
       ...(o.keypad ? { dtmf: { length: 8, parse: birthdateKeys(o, display) } } : {}),
       display,
     };

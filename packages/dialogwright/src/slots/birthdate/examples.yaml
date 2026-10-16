@@ -5,7 +5,7 @@
 # here (on 2026-09-18, the kit's today), and the type's docs page shows them.
 
 - name: account holder
-  about: The defaults, with the keypad on (MMDDYYYY; DDMMYYYY in Spanish). A month and day without the year are held, and the year is asked for alone (ask_dob_year); a month or a day missing is "no_year", and the generic retry asks again.
+  about: The defaults, with the keypad on (MMDDYYYY; DDMMYYYY in Spanish). A month and day without the year are held, and the year is asked for alone (ask_dob_year); a month or a day missing is "no_year", and the generic retry asks again. A date said only in numbers at its question is read from the digits as the keypad reads them, whatever month the model guessed; a run of numbers the digits cannot read one way is asked again with an example (ask_dob_example).
   slot: dob
   config:
     keypad: true
@@ -76,6 +76,38 @@
         dobDay: { choice: { "2": 0.9, none: 0.1 } }
         dobYear: { choice: { twenty thirty: 0.9, none: 0.1 } }
       expect: { kind: invalid, reason: future, raw: "2030-10-02" }
+    - text: zero eight two one one nine eight four
+      answers:
+        dobGiven: { noul: 0.9 }
+        dobMonth: { choice: { january: 0.75, august: 0.04, none: 0.21 } }
+        dobDay: { choice: { "1": 0.58, "21": 0.05, none: 0.37 } }
+        dobYear: { choice: { one nine eight four: 0.56, none: 0.44 } }
+      context: { prompted: true }
+      expect: { kind: filled, value: "1984-08-21", display: "August 21st, 1984", confirm: none }
+    - text: eight twenty one eighty four
+      answers:
+        dobGiven: { noul: 0.83 }
+        dobMonth: { choice: { august: 0.68, none: 0.32 } }
+        dobDay: { choice: { "1": 0.32, "21": 0.29, none: 0.39 } }
+        dobYear: { choice: { eighty four: 0.25, none: 0.75 } }
+      context: { prompted: true }
+      expect: { kind: filled, value: "1984-08-21", display: "August 21st, 1984" }
+    - text: eight two one eight four
+      answers:
+        dobGiven: { noul: 0.82 }
+        dobMonth: { choice: { january: 0.7, august: 0.04, none: 0.26 } }
+        dobDay: { choice: { "1": 0.6, "21": 0.03, none: 0.37 } }
+        dobYear: { choice: { none: 0.8, eight four: 0.2 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: numbers_unclear, retryPromptId: ask_dob_example }
+    - text: dos uno cero ocho uno nueve ocho cuatro
+      answers:
+        dobGiven: { noul: 0.9 }
+        dobMonth: { choice: { february: 0.6, none: 0.4 } }
+        dobDay: { choice: { "1": 0.5, none: 0.5 } }
+        dobYear: { choice: { none: 0.9 } }
+      context: { locale: es, prompted: true }
+      expect: { kind: filled, value: "1984-08-21", display: "21 de agosto de 1984" }
   keypad:
     - digits: "06141975"
       expect: { value: "1975-06-14", display: "June 14th, 1975" }

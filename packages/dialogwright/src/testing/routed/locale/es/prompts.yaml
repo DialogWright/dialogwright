@@ -145,6 +145,9 @@ prompts:
   ask_dob_year:
     text: "¿Y el año en que nació?"
     interruptible: true
+  ask_dob_example:
+    text: "Perdón, no entendí la fecha. Puede decirla así: veintiuno de agosto de mil novecientos ochenta y cuatro, o marcar los ocho dígitos: día, mes y año."
+    interruptible: true
   identity_verified:
     text: "Gracias, {first}. Ya está verificado."
     interruptible: false

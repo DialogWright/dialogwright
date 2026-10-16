@@ -15,6 +15,9 @@
   ask_dob_year:
     text: And the year you were born?
     interruptible: true
+  ask_dob_example:
+    text: Sorry, I didn't catch that date. You can say it like August twenty-first, nineteen eighty-four.
+    interruptible: true
   identity_verified:
     text: Thank you, {first}. You're verified.
     interruptible: false

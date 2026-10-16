@@ -116,6 +116,8 @@ describe('the clinic folder: slots.yaml', () => {
     expect(lib.type).toBe('birthdate');
     expect(lib.config).toEqual({
       keypad: true,
+      readNumbers: true,
+      numbersExample: true,
       notThisDate: 'an appointment date',
       text: {
         givenFalse: "No birth date. An appointment date, a date they want to be seen on, or someone else's birth date is not the caller's date of birth",
@@ -129,7 +131,7 @@ describe('the clinic folder: slots.yaml', () => {
     expect(lib.handoff).toBeUndefined();
     expect(lib.dtmf?.length).toBe(8);
     expect(lib.questionIds).toEqual(['dobGiven', 'dobMonth', 'dobDay', 'dobYear']);
-    expect(lib.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_dtmf']);
+    expect(lib.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_dtmf', 'ask_dob_example']);
   });
 
   it('configures the day as the hand-written slot was: ahead, spans of days narrowed with date_narrow_window, this or next, by confidence, keyed, its seven questions word for word and its ids', () => {
