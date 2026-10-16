@@ -1,6 +1,6 @@
 # Knowledge-base answers in generated wording
 
-Date: 2026-10-16. Status: **a proposal for the maintainer's decision; nothing built.** It changes a rule in CLAUDE.md, so it is decided before anything is built.
+Date: 2026-10-16. Status: **decided (the maintainer, 2026-10-16); building.** It changes a rule in CLAUDE.md; the maintainer approved the change.
 
 ## The problem
 
@@ -78,3 +78,12 @@ Proposed: "A knowledge base's answers are approved passages, said word for word,
 2. Both switches (the topic's `risk: low` and the line's `generate`), or one.
 3. Worded for the question, or only shortened (the same answer for every caller, a shorter one).
 4. Which of Harbor's topics would be the first low-risk ones.
+
+## Decided (the maintainer, 2026-10-16)
+
+- **Yes**, with both switches: a topic marked `risk: low`, and the answer line generated from the answer. `regulated`, the default, keeps today's behaviour.
+- **Worded for the caller's question**, from the approved passage: only what the passage says for that question.
+- **The checks as proposed**, and the passage word for word whenever one fails.
+- **Room for long passages.** A longer passage needs more words and more time to summarize. The span's word budget is sized to the passage, so a long passage's answer is never cut to fit a short budget, and the wording is given time to finish. When it runs past the call's normal budget for a line, the caller first hears a hold line ("One moment while I gather that information."), then the answer (or the passage word for word, if it is still not ready by the longer limit or a check fails).
+- **A few of Harbor's topics** are marked low risk first, chosen by the builder and listed in Harbor's worksheet.
+- **CLAUDE.md** takes the proposed rule.
