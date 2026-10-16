@@ -11,9 +11,9 @@ The business name, Harbor Mutual, was given with the paragraph. The app is a reb
 | Intent id | Kind | What the caller wants | Example phrasings |
 |---|---|---|---|
 | `claim_status` | form | the status of a claim already filed | "what's the status of my claim", "has my claim been paid yet", "claim status", "claim", "can you check on claim 4702", "i'm calling about the claim for my er visit" |
-| `coverage` | form (knowledge) | what their plan covers, from their own plan's certificate | "is physical therapy covered", "does my plan pay for an ambulance", "coverage", "benefits question", "i broke my arm skiing, does that pay anything", "how long do i have to file a claim" |
+| `coverage` | form (knowledge) | what their plan covers, from their own plan's certificate; a broker, what a client's plan covers | "is physical therapy covered", "does my plan pay for an ambulance", "coverage", "benefits question", "i broke my arm skiing, does that pay anything", "how long do i have to file a claim" |
 | `report_claim` | form | report a new accident injury, hospital stay or diagnosis | "i need to file a claim", "new claim", "file a claim", "i broke my wrist yesterday and need to file a claim", "i slipped on the ice last saturday and hurt my back" |
-| `capabilities` | informational | what the line can do | "what can you do", "are you a robot", "what are my options", "help", "how does this work" |
+| `capabilities` | informational | what the line is and can do (asking whether it is a person is this, not a request for one: the maintainer's decision, 2026-10-16) | "what can you do", "are you a robot", "am i talking to a real person", "what are my options", "help", "how does this work" |
 | `agent` | control | a person, at any time | "a person", "representative", "operator", "agent", "can i speak to someone", "let me speak to a specialist" |
 | `repeat_prompt` | control | the last line again | "can you repeat that", "say that again", "come again", "repeat", "what did you say" |
 | `done` | control | nothing more | "no, that's all", "no thanks", "i'm all set", "nothing else", "goodbye" |
@@ -27,6 +27,7 @@ The business name, Harbor Mutual, was given with the paragraph. The app is a reb
 | (identity, level 1) | date of birth | `dob` | `birthdate`: `notThisDate` the date of an accident or claim | yes (MMDDYYYY) | `mask` (the year only) |
 | (identity, level 2) | the one-time code | none: identity.yaml's `otp`, 6 digits | keyed only | yes | never recorded |
 | `claim_status` | which claim | `claimSelect` | `record`: from the facts' `claims` (listClaims), key `number`, `\d{4}`, labelPrefix `claim_`, a spoken four-digit number offered too; one claim filled by `onEntry` | yes (4 keys) | no (a claim number) |
+| `coverage` (brokers only) | which client | `clientId` | `digits`: noun member ID, length 8, group 4+4, `askedOf: [broker]` | no (chat only) | `last4` (the default) |
 | `coverage` | the coverage question | `coverageTopic` | `topic`: kb.yaml's cap (8) | no | no |
 | `report_claim` | the kind of loss | `lossType` | `choice`: accident_injury, hospital_stay, diagnosis, in keypad order | yes (1, 2, 3) | no |
 | `report_claim` | when it happened | `lossDate` | `date`: range past (a day to come never resolves), context and exclude sentences | yes (MMDD) | no |
@@ -55,7 +56,7 @@ The business name, Harbor Mutual, was given with the paragraph. The app is a reb
 | 13c | Routes? | None: no hours, notices or groups in the paragraph. |
 | 13d | More than one language? | No: en-US only. |
 | 14 | The phone line itself? | No. |
-| (not in the worksheet) | A member who sounds frustrated about a claim is offered a person | The engine's frustration ladder (`ack_frustration`, `offer_transfer`, `handoff_frustrated`), which needs no option; it holds on every form, not only claims (Gaps). Scripted: frustration-offered-a-person, frustration-offer-accepted, frustration-offer-declined. |
+| (not in the worksheet) | A member who sounds frustrated about a claim is offered a person | The engine's frustration ladder (`ack_frustration`, `offer_transfer`, `handoff_frustrated`), limited to the claim forms by app.yaml's `frustration: { forms: [claim_status, report_claim] }` (since 2026-10-16): in them, in a coverage question set aside from one, and at the opening question when the words ask about a claim; a frustrated coverage question alone is not answered for its tone (fr-04). Scripted: frustration-offered-a-person, frustration-offer-accepted, frustration-offer-declined. |
 | (not in the worksheet) | The claims intake service | A tool, `triageClaim`, whose reply is held by `check` (replyShape) to the approved document codes, a yes or no for fast-track and a whole number of days from 1 to 30, called `failSoft` from the report's completion: a reply that fails, or no reply, is "an adjuster will be in touch". Its `fields` rule says exactly what it is sent. The lines say only the approved document lines (`doc_<code>`), the days and the fast-track line. See the skill trial notes for why not a `ServiceDef`. |
 
 ## Actions
@@ -67,6 +68,7 @@ The business name, Harbor Mutual, was given with the paragraph. The app is a reb
 | `verifyCode` | the code (the engine's verifier) | nothing | none | 1 | `identity`, `attempts` |
 | `getCoverage` | the member's plan and coverage dates | nothing | `memberId` | 1 | `identity`, `scope(memberId)` |
 | `searchPolicy` | the knowledge base, for the member's plan (`kbAnswerTool`) | nothing | `memberId, topic` | 1 | `identity`, `scope(memberId)` |
+| `isClient` | nothing (a form's check: the gate answers, no tool runs) | nothing | `clientId` | 0 | `identity`, `scope(clientId)` |
 | `getUsage` | the member's use of a benefit this year | nothing | `memberId, topic` | 1 | `identity`, `scope(memberId)` |
 | `listClaims` | the member's claims | nothing | `memberId` | 2 | `identity`, `scope(memberId)` |
 | `getClaim` | one claim | nothing | `claim` | 2 | `identity`, `scope(record claim)` |
@@ -85,6 +87,7 @@ Every tool whose reply a line says, or a call is made from, has a `check`: the v
 | `lossDescription` | `lossDescription`: `length` | the slot's | the member's own words: never kept as said |
 | `claim` | not a slot (the claim number the slot or the write gave) | `keep` | a four-digit claim number, no secret; the specialist reads it back |
 | `topic` | not a slot (the topic id) | `keep` | which topic was answered |
+| `clientId` | `clientId`: `last4` | the slot's | a member ID a broker names |
 | `lossType` | `lossType`: a choice, no redact | `keep` | one of three |
 | `lossDate` | `lossDate`: a date, no redact | `keep` | a day |
 
@@ -94,7 +97,8 @@ The policy card's "What is recorded" table says the same (read at step 7).
 
 | Action | Anonymous | Member, level 1 | Member, level 2 | Broker `service_rep` | Broker `office_admin` |
 |---|---|---|---|---|---|
-| `getCoverage`, `searchPolicy`, `getUsage` | after verifying to level 1 | allowed, own | allowed, own | allowed for their office's clients only; the dialog names no client, so a broker's coverage question is answered with `coverage_broker` (Gaps) | the same |
+| `getCoverage`, `searchPolicy`, `getUsage` | after verifying to level 1 | allowed, own | allowed, own | `searchPolicy` for their office's clients only: the form asks which client (`clientId`), and the answer is that member's plan's; `getUsage` allowed with `used` withheld (no usage line); `getCoverage` never called for a broker (no entry call) | the same |
+| `isClient` | refused (no scope) | own member ID only (never asked: a member has no client slot) | the same | their office's clients only (`coverage_not_client` otherwise) | the same |
 | `listClaims` | after verifying to level 2 | after the code | allowed, own | their office's clients | their office's clients |
 | `getClaim` | after verifying to level 2 | after the code | allowed, own claims | their office's clients' claims, diagnosis and statement withheld | the same |
 | `createClaim` | after verifying to level 2 | after the code | allowed: read back and confirmed; a loss after today refused; outside the coverage dates a person | refused (`claim_blocked_role`) | a person, a claims specialist (`broker-filing`) |
@@ -132,7 +136,7 @@ The earlier Harbor held these in a rule of its own (R4: a loss date that is not 
 
 | Intent | The fixed line |
 |---|---|
-| `capabilities` | "I'm Harbor Mutual's automated assistant. I can tell you the status of a claim, answer questions about what your plan covers, and take a report of a new claim." |
+| `capabilities` | "I'm an automated assistant, but you can talk to me naturally. I can tell you the status of a claim, answer questions about what your plan covers, and take a report of a new claim." (since 2026-10-16: it says first what the line is, in the maintainer's words, since "am i talking to a real person" is answered here) |
 
 ## Knowledge
 
@@ -194,8 +198,8 @@ Who approved: every passage's approval names Compliance Review (owner Benefits C
 - **The upload link is texted only when the intake service answered**: with no triage there are no documents to name, and the member hears that an adjuster will be in touch. A reply with any code Harbor has no approved line for fails its check whole (the earlier Harbor dropped such codes and kept the rest): the stricter reading of "we never repeat anything that service says except the documents we have approved wording for".
 - **The intake service is sent the description** (`fields: [claim, lossType, lossDate, lossDescription]`), as in the earlier Harbor: it triages from it.
 - **The usage line** after physical therapy and follow-up visits only (the topics that count visits), as in the earlier Harbor.
-- **A broker's coverage question** is answered with `coverage_broker` ("I answer coverage questions for members themselves, ..."): the paragraph names no coverage task for brokers, the earlier Harbor offered them claim status only, and the form has no way to ask which client (Gaps).
-- **The lines** are the earlier Harbor's, word for word, where the line still exists. Changed: the document lines are worded for a member and a broker alike ("The discharge summary ..." for "your discharge summary ..."); the intake result is said as lines of their own (`intake_documents_texted`, then each `doc_<code>`, then `intake_adjuster`) rather than one line with a `{documents}` list built in code; a claim waiting on a document says it by its approved line (the claims system's `missing` is now a document code, not free text); the broker's status lines are lines of their own (`claim_status_*_broker`) rather than a `{whose}` variable; `offer_transfer` ends "or keep going" (the knowledge base's unavailable offer uses it too). New: `coverage_broker`, `handoff_coverage`, `handoff_result_unchecked`, `claim_upload`, `claim_upload_broker`. The chat greetings: the earlier `greeting_member_chat` is `greeting_chat`, `greeting_member_chat_signed_in` is `greeting_chat_signed_in`, and the earlier broker greeting is `greeting_chat_delegate`.
+- **A broker's coverage question** (since 2026-10-16, the maintainer's decision): the broker is asked which client (`clientId`, asked of brokers only), the gate checks at once that the office is the member's agent of record (`isClient`, a form's check; `coverage_not_client` otherwise), and the answer is that member's plan's, word for word (`answers.subject`). The usage line is left out for a broker (`redact: broker: getUsage: [used]`): it says the member had the treatment, and it speaks to the member ("You've used ..."). The coverage lines that said "your" to a member now read for either (`ask_coverageTopic` "What's your coverage question?", its retry and `coverage_unavailable` say "the plan information"; the intent's label is "check coverage"), and the broker greeting names the coverage task. `coverage_broker` is gone.
+- **The lines** are the earlier Harbor's, word for word, where the line still exists. Changed: the document lines are worded for a member and a broker alike ("The discharge summary ..." for "your discharge summary ..."); the intake result is said as lines of their own (`intake_documents_texted`, then each `doc_<code>`, then `intake_adjuster`) rather than one line with a `{documents}` list built in code; a claim waiting on a document says it by its approved line (the claims system's `missing` is now a document code, not free text); the broker's status lines are lines of their own (`claim_status_*_broker`) rather than a `{whose}` variable; `offer_transfer` ends "or keep going" (the knowledge base's unavailable offer uses it too). New: `coverage_broker` (removed 2026-10-16, when brokers' coverage questions were answered), `handoff_coverage`, `handoff_result_unchecked`, `claim_upload`, `claim_upload_broker`. The chat greetings: the earlier `greeting_member_chat` is `greeting_chat`, `greeting_member_chat_signed_in` is `greeting_chat_signed_in`, and the earlier broker greeting is `greeting_chat_delegate`.
 - **A fourth member**, Sam Porter (72046185, coverage 2025-06-01 to 2026-05-31, claim 4690), so the policy matrix has a member out of every caller's scope (the earlier data had none: each member was the subject or a client of the one office) and the end of a coverage window is tested.
 - **Claim 4720's missing document** is the discharge summary (the earlier data said "the urgent care visit notes", free text).
 - **The phones** are +1 555 555 0101 to 0104.
@@ -206,29 +210,22 @@ Who approved: every passage's approval names Compliance Review (owner Benefits C
 
 | What | The framework | What I did | Cost |
 |---|---|---|---|
-| A member who sounds frustrated "about a claim" is offered a person | The frustration ladder is the engine's, on every turn of every form; nothing scopes it to one task | Took the engine's ladder; it offers a person on any task | none |
+| ~~A member who sounds frustrated "about a claim" is offered a person~~ | Closed 2026-10-16: app.yaml's `frustration.forms` | The claim forms | none |
 | Brokers sign in through "the broker portal", members through "the member portal": two portals on one chat | One web chat per app takes tokens from one identity provider (`CHAT_JWKS_URL`, `CHAT_ISSUER`); `principals.fromClaims` reads a token's claims | `fromClaims` takes a token naming `broker_id` as that broker, any other as a member (`sub`): it assumes both portals sign in through one identity provider. Two providers would need two apps or a host file | the assumption, written here |
-| A broker's coverage question about a client | A form asks every slot it lists of every caller (no slot for brokers only); a delegate's facts have no member | The coverage form's `principalEntry` asks the gate about `searchPolicy` with no member named; on its `scope` refusal the broker hears `coverage_broker` | brokers get no coverage answers |
+| ~~A broker's coverage question about a client~~ | Closed 2026-10-16: a slot's `askedOf` and forms.yaml `answers.subject` | `clientId` asked of brokers, the `isClient` check, the answer for that member | none |
 | A knowledge form that needs identity | The engine's knowledge completion turns a `STEP_UP` into a person (`c.refusal`), so the form verifies first with an `entry` call at the answer's level; `AppCode.forms` typed `complete` as required, though an answering form has none (since fixed: `FormHooks` makes it optional, forms.yaml's schema still requiring it of a form that neither answers nor goes on) | `entry` (getCoverage, level 1) and `principalEntry` on the coverage form, the cast `as unknown as AppCode['forms'][string]` since removed | ten minutes |
 | A claim named by what it was for before the caller is verified ("the claim for my ER visit") | The record slot matches labels over the records in the facts, loaded by the entry call after verification; at the opening there are none, only a number said | Let it ask: the member names it again after the code (cs-04 and cs-16 at the opening; a number said up front is kept) | one more question |
 | The intake service's triage | The guide and patterns document a tool with a `check`; a downstream service (`ServiceDef`, `onServiceResult`, `testing.serviceAnswers`) exists in the API and the testkit but has no guide section or pattern | A tool, `triageClaim`, checked by `replyShape`, called `failSoft` from the completion | it runs inside the filing turn: a slow service delays the line, where a service would answer on a turn of its own |
 | A future loss date "asked again" | The date slot with `range: past` never resolves a day to come; the gate's bound refuses a write | The slot asks again (its retry line); the gate's `loss_date_future` line is said only to a write the code sends with such a day, which the dialog never does | none |
 | A miss at the description's question | With `commands: ignore` (the default for a `text` slot without `pick`) whatever is said there is the description | No miss line in the corpus for `lossDescription` (corpus.md asks for one for every slot) | none |
 
-**Corpus lines the real model reads otherwise** (`knownGap`, from the first recording, jev-1.13.0, 2026-10-16; each reason in `fixtures/corpus.jsonl` carries the numbers). A stub run still holds each to its label. A line marked "reworded" should read as labelled on the next recording, and lose its tag then.
+**Corpus lines the real model reads otherwise** (`knownGap`, as tagged now: the first two recordings, jev-1.13.0, 2026-10-16, with the tags the second recording and the 2026-10-16 decisions took off removed; each reason in `fixtures/corpus.jsonl` carries the numbers). A stub run still holds each to its label. A line marked "reworded" should read as labelled on the next recording, and lose its tag then.
 
 | Line | What the caller says | What the caller hears instead | Whose |
 |---|---|---|---|
 | cs-14 | "claim" | "you'd like to check on a claim. Is that right?": one more yes or no | the model's (a single word) |
-| cp-07 | "help" | "you'd like to hear what I can do. Is that right?": one more yes or no | the model's (a single word) |
-| sel-10 | "the most recent one", at the claim question | the claim question again | reworded (claimSelect's instructions) |
-| lt-04 | "i got hurt", at the kind-of-loss question | the description question is skipped; the claim is filed with "i got hurt" as the description | reworded (lossDescription's instructions) |
-| cr-06 | "yes, but it was on friday", at the summary | the summary again, with Friday, rightly; but the words are added to the description, which the caller never hears | reworded (lossDescription's `text.changed`); the engine's question (Recordings) |
-| cr-09 | "wait, how long do i have to file a claim", at the summary | the summary again, the question unanswered; nothing is filed without a yes | the engine's `intentChange` (Recordings) |
 | db-04 | "eight twenty one eighty four", at the date of birth | "Please say your date of birth, including the year" (a try on the factor's ladder; the keypad works) | the engine's birthdate questions (Recordings) |
-| cp-06 | "am i talking to a real person" | put through to a person, not told what the line is | the owner's to say which is right (Recordings) |
-| ot-02 | "do you sell car insurance" | "you'd like to check your coverage. Is that right?"; a no goes back to the open question | reworded (coverage and other criteria) |
-| ot-07 | "can i add my spouse to the plan" | the coverage form: the member ID and date of birth, then a coverage question the line cannot answer | reworded (coverage and other criteria) |
+| lt-07 | "they admitted me overnight", at the kind-of-loss question | the description question is skipped (the words kept as the description too); the date is asked next, nothing filed without a yes | the model's (Recording 2) |
 
 ## Baseline edits
 
@@ -239,6 +236,13 @@ The first baseline was made once (`regress --update`: `recorded 173 corpus outco
 | every entry naming the first member (76 corpus, 47 scenario) | `slots.memberId`, a member ID said | the earlier Harbor's number -> `42716358` (`4271 6358` grouped, spoken digit by digit likewise), in the data, the corpus, the scripted calls and the baseline together | the earlier Harbor's member number is tied to a real person, so it may not appear in the public repository; an invented value for an invented one, the outcomes unchanged (`regress`: no changes) |
 | corpus `cs-13` ("i got a letter about my claim and i don't understand it") | `promptId`, `acks`, `form`, `gate` | `confirm_intent_explicit`, `[]`, null, null -> `ask_memberId`, `["ack_intent"]`, `claim_status`, `listClaims:STEP_UP` | first recording, bucket 1: the label's `tentative: true` was wrong. The caller is plainly asking about their claim (claim_status 0.96, intentTentative 0.03), and the claim's status is where a letter about it is explained; the flag is dropped, so the stub routes it as the model does. cv-18 and rc-09 still test the tentative path |
 | corpus `rc-02` ("i want to report an accident") | `slots.lossType` | null -> `accident_injury` | first recording, bucket 1: the kind of loss was said and not labelled (lossType accident_injury 0.78). On an accident insurer's line "an accident" is an accident injury (the option's `means`), and the summary reads it back; labelled `lossType: accident_injury` |
+
+| corpus `cr-09` | the line (not the baseline) | `change: adding` and its `knownGap` dropped | the maintainer's decision of 2026-10-16 (findings item 1): a question at the read-back is answered as an aside whatever intentChange reads, so the line is labelled as the model reads it (answering) and the stub takes the new path; its baseline outcome is unchanged (the 180-day answer, then the read-back) |
+| corpus `cp-06` | the line (not the baseline) | its `knownGap` dropped | the decision on findings item 6: asking whether one is talking to a person is the capabilities intent; its baseline already held that outcome (the capabilities line), so no edit |
+| corpus `cp-09`, `fr-04`, `br-09` to `br-12`, `db-09` to `db-17` | new entries | none -> the stub's outcome, from `regress --corpus <id> --json` | new lines for the 2026-10-16 decisions (below), each outcome read against what the decision says before it was added |
+| every corpus and scenario entry with `slots` (174 corpus, 75 scenario) | `slots` | `"clientId": null` added after `dob` | the new slot `clientId` (asked of brokers only): every outcome lists every slot, so each gains the key, null; a script checked that each entry differed from its fresh outcome by that key alone, and wrote only those |
+| corpus `br-06` ("does margaret's plan cover physical therapy", as priya) | `promptId`, `acks`, `form`, `slots`, `gate` | `anything_else`, `[ack_intent, coverage_broker]`, null, `searchPolicy:BLOCK` -> `ask_clientId`, `[ack_intent]`, `coverage` (topic physical_therapy kept), null | the decision on findings item 5: a broker is asked which client, then answered for that member's plan |
+| scenario `broker-coverage` | its steps, expectation and outcome | the `coverage_broker` refusal -> Margaret's member ID said at the client question, and the answer for her plan (`isClient` ALLOW, `searchPolicy` ALLOW, `getUsage` ALLOW with `used` withheld: no usage line) | the same decision; `broker-coverage-client-up-front` and `broker-coverage-not-a-client` are new |
 
 ## Recordings
 
@@ -326,6 +330,26 @@ What changed:
 - **Still tagged, as before:** cs-14, cr-09, db-04, cp-06.
 - **Still failing, for the owner:** report-aside-at-summary (the engine's intentChange gap above, numbers unchanged). It is not tagged: whether its end is acceptable is the owner's to say. Until then the recorded replay is not in CI (a failing call would turn it red); once the owner decides, add `pnpm --filter @dialogwright/example-harbor regress --client recorded` after the stub step.
 - **cp-06 still waits for the owner's label** ("am i talking to a real person": put through to a person, or told what the line is).
+
+### The maintainer's decisions of 2026-10-16 (built on the branch `engine-decisions`, before the next recording)
+
+The findings ([docs/designs/2026-10-16-harbor-findings.md](../../docs/designs/2026-10-16-harbor-findings.md)) were decided; what each changed here:
+
+- **Item 1, a question at the read-back.** The engine now answers a knowledge or informational question at a summary, read at `INTENT_ROUTE` or more, as an aside whatever intentChange reads (app.yaml `questionAtSummary`, default `aside`; Harbor keeps the default). cr-09 loses its tag and its `change: adding`; report-aside-at-summary is expected to pass on the next recording.
+- **Item 6, "am I talking to a real person".** The engine's `wantsHuman` question now says the caller is talking to an automated line and that asking whether one is talking to a person is not asking for one. Harbor: the capabilities line begins "I'm an automated assistant, but you can talk to me naturally."; the agent intent's criteria say the same; cp-06 loses its tag; cp-09 ("is this a real person or a machine") is new.
+- **Item 2, the text type's `changed` question.** The default now says how the summary said the words (by the stand-in here) and that correcting another detail is no change to them: what Harbor's own `text.changed` said, so it is removed. The next recording measures the default on cr-06 and report-yes-but-friday.
+- **Item 3, frustration about a claim.** `frustration: { forms: [claim_status, report_claim] }` in app.yaml; fr-04 (a frustrated coverage question at the opening) is not answered for its tone. The three frustration calls are unchanged.
+- **Item 5, a broker's coverage question.** `clientId` (asked of brokers only), the `isClient` check, `answers.subject: clientId`, `getUsage`'s `used` withheld from brokers, `coverage_broker` gone, the coverage lines worded for either caller.
+- **Item 7, dates of birth as numbers.** db-09 to db-17, labelled with the true date (August 21st, 1984), in several shapes ("oh eight twenty one nineteen eighty four", "eight two one eight four", "august twenty first eighty four", "zero eight two one one nine eight four", "eight slash twenty one slash eighty four", ...), tagged `dob_as_numbers`. The birthdate type is unchanged: the next recording measures them (db-04 keeps its tag until then).
+
+**The policy read back, read as a change in what the agent may do** (`policy.matrix`, `POLICY.md`, `APP-MAP.md`, regenerated with `pnpm policy:matrix`, `pnpm policy:card` and `pnpm app:diagram`):
+
+- A new action, `isClient` (a form's check: the gate answers, nothing runs), at level 0 with `identity` and `scope(clientId)`. The matrix: a broker of either role (and an unlisted or roleless broker, as the scope rule reads only the office) is allowed for an in-scope member and refused (`scope`) for any other; a member is allowed only for their own member ID (and is never asked for a client, so never sends one); anonymous callers and other parties are refused. It is level 0 so that it never starts a verification: the scope rule alone refuses anyone whose scope does not hold the member. No caller gains anything here that `searchPolicy` did not already allow: `searchPolicy`'s rows are unchanged (a broker in scope was already allowed by the gate); what changed is that the dialog now names the client, so a broker's coverage question reaches it.
+- `getUsage`'s `used` is withheld from brokers (POLICY.md "What is withheld"): a broker hears the coverage answer without how many of the benefit the member used. Nothing else is withheld or released.
+- POLICY.md's "What is recorded" gains `clientId` by its last four; the roles table lists the new check among what every role may do.
+- APP-MAP.md: the coverage form asks for the client's member ID of brokers only, then the topic, and checks `isClient`; the intent's label is "check coverage"; the capabilities line is the new one.
+
+**A re-record is needed** for every app (the engine's `wantsHuman` and text `changed` questions changed every request), Harbor's with the same command as before. Until then the recorded replay misses, as expected.
 
 ## Skill trial notes
 
