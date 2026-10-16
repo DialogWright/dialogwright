@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: dental-plus-2026
+topic: dental_injury
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.8 Dental injury" }
+answer: Dental work for teeth injured in a covered accident pays 200 dollars per tooth.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 564826c7e3b6f19cd85262fc4671cd79ad3871c27c8dd9ad0e2ade7d12c475cf
+  hash: d3868a50a97dd74217cdae2f194629a83a4dae13cf09db9f49d81ce2a4128ab0

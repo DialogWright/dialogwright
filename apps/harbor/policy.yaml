@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/policy.schema.json
+# Harbor Mutual's action policy: the whole of what the agent may do, action by action. Policy is data
+# here and never lives in a tool; the gate decides, before every call, from this file. Every tool in
+# src/app.ts needs an action here, and every action not listed is refused. Compliance owns this file.
+#
+# `level` is the identity level the action needs (0 anonymous, 1 the member ID and date of birth
+# matched, 2 those and the code texted to the phone on file). `rules` run in the order written and
+# the first that fails decides. Each fails closed: a missing param, an unknown claim, or an action
+# not listed is a refusal.
+actions:
+  # Checks the member ID and date of birth. Anyone may try it, and the gate counts the failed tries.
+  verifyMember:
+    say: check the member ID and date of birth
+    level: 0
+    rules: [attempts]
+  # Texts a one-time code to the phone on file. The code is what raises a caller to level 2, so
+  # sending it needs level 1; the engine keeps it for the member themselves (never a broker).
+  sendCode:
+    say: text a one-time code
+    level: 1
+    rules:
+      - identity
+      - scope: { param: memberId }
+  verifyCode:
+    say: check the one-time code
+    level: 1
+    rules: [identity, attempts]
+
+  # The member's plan and coverage dates: the entry call of the coverage and report forms.
+  getCoverage:
+    say: read the member's coverage
+    level: 1
+    rules:
+      - identity
+      - scope: { param: memberId }
+  # The answer from the member's own plan certificate (kb/): the passage for their plan, read from
+  # the system of record, never from what the caller said.
+  searchPolicy:
+    say: answer from the member's plan
+    level: 1
+    rules:
+      - identity
+      - scope: { param: memberId }
+  # The member's own use of a benefit this year ("You've used 4 of them this year"): it says they had
+  # the treatment, so it is an action of its own; the coverage answer is said without it when the
+  # gate refuses it.
+  getUsage:
+    say: read the member's use of a benefit
+    level: 1
+    rules:
+      - identity
+      - scope: { param: memberId }
+
+  # The member's claims, and one claim: checking on a claim needs the code.
+  listClaims:
+    say: list the member's claims
+    level: 2
+    rules:
+      - identity
+      - scope: { param: memberId }
+  getClaim:
+    say: read a claim
+    level: 2
+    rules:
+      - identity
+      - scope: { record: claim }
+
+  # Files a claim, once the member said yes to it read back. A broker's service rep may not file;
+  # an office admin may, through a claims specialist, not the agent. The loss date may not be after
+  # today or not a date (refused), and a date outside the member's coverage goes to a specialist.
+  createClaim:
+    say: file a claim
+    level: 2
+    rules:
+      - identity
+      - role: { service_rep: refuse, office_admin: person, reason: broker-filing }
+      - scope: { param: memberId }
+      - confirmed: [memberId, lossType, lossDate, lossDescription]
+      - dateInRange:
+          field: lossDate
+          notAfter: today
+          within: coverageWindow(memberId)
+          reasons: { outOfRange: loss-date-future, outsideWindow: coverage }
+          verdicts: { outsideWindow: NEEDS_HUMAN }
+  # Hands a filed claim to the claims intake service, which triages it: exactly these fields and no
+  # others go to it.
+  triageClaim:
+    say: hand a filed claim to the claims intake service
+    level: 2
+    rules:
+      - identity
+      - scope: { record: claim }
+      - fields: [claim, lossType, lossDate, lossDescription]
+  # Texts the link to upload a filed claim's documents, to the phone on file of the claim's member.
+  sendUploadLink:
+    say: text a link to upload documents
+    level: 2
+    rules:
+      - identity
+      - scope: { record: claim }
+
+# Reporting a claim needs level 2 from the start: the code is keyed before the form's questions.
+purposes:
+  report_claim: { level: 2 }
+
+# The built-in rules' lines in Harbor's terms, for the console, the audit and the policy card.
+wording:
+  scope:
+    subject:
+      record: The claim is on the caller's own membership
+      param: The record is the caller's own
+    delegate:
+      record: The claim is for a client of the caller's office
+      param: The member is a client of the caller's office
+  recordOwner: claim owner
+  subject: member
+  role:
+    person: "role {role} may file, with a specialist"
+    refuse: "role {role} may file: no"
+
+# What a broker does not see of a claim: the member's diagnosis, and their own words about what
+# happened. The claims system returns the claim as it shows it to anyone (src/app.ts declares these
+# fields); the engine sets them to null for a broker before any line, the session, the trace, the
+# console or the audit reads it. A member sees all of their own claim.
+redact:
+  broker:
+    getClaim: [diagnosis, statement]
+    listClaims: [diagnosis, statement]
+    createClaim: [diagnosis, statement]
+
+# How each value an action is sent is recorded, where it is not a slot with a redact setting: the
+# member ID by its last four, the date of birth hidden and the member's own words by their length,
+# as their slots say (slots.yaml). The claim number, the topic, the kind of loss and its day are
+# recorded as they are: a four-digit claim number is no secret, and the rest are choices and days.
+audit:
+  claim: keep
+  topic: keep
+  lossType: keep
+  lossDate: keep

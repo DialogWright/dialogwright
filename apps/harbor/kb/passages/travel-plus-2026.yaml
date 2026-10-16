@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: travel-plus-2026
+topic: travel
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "2.3 Territory" }
+answer: Your plan covers accidents anywhere in the world, and benefits are paid in US dollars.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 1fb200fdbd908f4c375f47c609330fe4ceca9fc0c1c2d42a9f18d940a904b7f9
+  hash: 01e4838fb9749fff61b5b86ccdbcbd82c306139423a2df2f8aeb3dcddff0747b

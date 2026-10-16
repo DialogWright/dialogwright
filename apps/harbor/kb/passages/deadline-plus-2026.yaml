@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: deadline-plus-2026
+topic: filing_deadline
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "8.1 Claim filing" }
+answer: You have 180 days from the accident to file a claim. After that we may still review it, but payment isn't guaranteed.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: ca625bd2c1a8afe2570c7c69de9a12bc6ee5dd9c3faded28d726cb61a3f2f5ab
+  hash: bd0b04c40ae8d4a2f4ccd66050cb9104718ff16b289da03175be204e883b94c0

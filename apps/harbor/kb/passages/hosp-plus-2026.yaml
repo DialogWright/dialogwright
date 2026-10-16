@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: hosp-plus-2026
+topic: hospital_stay
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.5 Hospital confinement" }
+answer: A hospital stay after a covered accident pays 400 dollars a day, for up to 60 days.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 7252983f293e0bf97cf83cfde9dae4429f82c94f137b0638eb41ae1ae3e3fee8
+  hash: 0c626ba0f0a5a10efccef7e75e0acef5ec958ec7a1e3f243f9c78c2d9090c159

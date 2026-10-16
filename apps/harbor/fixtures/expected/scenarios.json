@@ -1,0 +1,1974 @@
+{
+  "injection-at-dob": {
+    "id": "injection-at-dob",
+    "decision": "prompt",
+    "promptId": "ask_dob",
+    "acks": [
+      "screen_reprompt_form"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listClaims:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "injection-at-the-open": {
+    "id": "injection-at-the-open",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "screen_reprompt"
+    ],
+    "reason": null,
+    "decidedGate": "screen",
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-claim-redacted": {
+    "id": "broker-claim-redacted",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_status_in_review_broker",
+      "broker_redaction_note"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-claim-needs-info": {
+    "id": "broker-claim-needs-info",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_status_needs_info_broker",
+      "doc_discharge_summary",
+      "claim_upload_broker",
+      "broker_redaction_note"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-claim-outside-book": {
+    "id": "broker-claim-outside-book",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_blocked_scope_broker"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-says-agent-of-record": {
+    "id": "broker-says-agent-of-record",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_blocked_scope_broker"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-claim-asked": {
+    "id": "broker-claim-asked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_in_review_broker",
+      "broker_redaction_note"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-file-service-rep": {
+    "id": "broker-file-service-rep",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_blocked_role"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-file-office-admin": {
+    "id": "broker-file-office-admin",
+    "decision": "handoff",
+    "promptId": "handoff_broker_filing",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": "broker-filing",
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_claim",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createClaim:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-coverage": {
+    "id": "broker-coverage",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "coverage_broker"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-status-happy": {
+    "id": "claim-status-happy",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-status-by-number": {
+    "id": "claim-status-by-number",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-status-identity-up-front": {
+    "id": "claim-status-identity-up-front",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-paid": {
+    "id": "claim-paid",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "one-claim-not-asked": {
+    "id": "one-claim-not-asked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_status_needs_info",
+      "doc_discharge_summary",
+      "claim_upload"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "60914477",
+      "dob": "1991-07-09",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "mothers-claim-blocked": {
+    "id": "mothers-claim-blocked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "friends-claim-blocked": {
+    "id": "friends-claim-blocked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "otp_verified",
+      "claim_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-someone-elses-at-the-question": {
+    "id": "claim-someone-elses-at-the-question",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-choice-keypad": {
+    "id": "claim-choice-keypad",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "code-odd-then-even": {
+    "id": "code-odd-then-even",
+    "decision": "prompt",
+    "promptId": "ask_claimSelect",
+    "acks": [
+      "otp_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listClaims:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "code-three-fails": {
+    "id": "code-three-fails",
+    "decision": "handoff",
+    "promptId": "handoff_identity",
+    "acks": [],
+    "reason": "identity",
+    "decidedGate": null,
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "verifyCode:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "identity-three-fails": {
+    "id": "identity-three-fails",
+    "decision": "handoff",
+    "promptId": "handoff_identity",
+    "acks": [],
+    "reason": "identity",
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "verifyMember:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "identity-keypad": {
+    "id": "identity-keypad",
+    "decision": "prompt",
+    "promptId": "ask_claimSelect",
+    "acks": [
+      "otp_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listClaims:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-keypad": {
+    "id": "dob-keypad",
+    "decision": "prompt",
+    "promptId": "ask_claimSelect",
+    "acks": [
+      "otp_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listClaims:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-year-asked": {
+    "id": "dob-year-asked",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-at-the-code-prompt": {
+    "id": "agent-at-the-code-prompt",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-while-verifying": {
+    "id": "agent-while-verifying",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "claim_status",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listClaims:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-in-claim-status": {
+    "id": "agent-in-claim-status",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "listClaims:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-pt-with-usage": {
+    "id": "coverage-pt-with-usage",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getUsage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-other-plan": {
+    "id": "coverage-other-plan",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "55203318",
+      "dob": "1948-11-22",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-topic-asked": {
+    "id": "coverage-topic-asked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getUsage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-topic-retry": {
+    "id": "coverage-topic-retry",
+    "decision": "prompt",
+    "promptId": "ask_coverageTopic_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "coverage",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-fracture-opener": {
+    "id": "coverage-fracture-opener",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-filing-deadline": {
+    "id": "coverage-filing-deadline",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-then-claim-steps-up": {
+    "id": "coverage-then-claim-steps-up",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-in-coverage": {
+    "id": "agent-in-coverage",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "coverage",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-happy": {
+    "id": "report-happy",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_fast_track",
+      "intake_documents_texted",
+      "doc_discharge_summary",
+      "doc_imaging_report",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-over-answer": {
+    "id": "report-over-answer",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [
+      "otp_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": "i broke my wrist yesterday and need to file a claim"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-over-answer-filed": {
+    "id": "report-over-answer-filed",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_fast_track",
+      "intake_documents_texted",
+      "doc_discharge_summary",
+      "doc_imaging_report",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-hospital-not-fast-tracked": {
+    "id": "report-hospital-not-fast-tracked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_documents_texted",
+      "doc_admission_dates",
+      "doc_itemized_bill",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-diagnosis": {
+    "id": "report-diagnosis",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_documents_texted",
+      "doc_physician_statement",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-summary-no-asks-change": {
+    "id": "report-summary-no-asks-change",
+    "decision": "prompt",
+    "promptId": "ask_change",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-change-date": {
+    "id": "report-change-date",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-12",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-no-with-value": {
+    "id": "report-no-with-value",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "hospital_stay",
+      "lossDate": "2026-09-17",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-yes-but-friday": {
+    "id": "report-yes-but-friday",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-11",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createClaim:BLOCK",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-future-date-asked-again": {
+    "id": "report-future-date-asked-again",
+    "decision": "prompt",
+    "promptId": "ask_lossDate_retry",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-outside-coverage": {
+    "id": "report-outside-coverage",
+    "decision": "handoff",
+    "promptId": "handoff_coverage",
+    "acks": [],
+    "reason": "coverage",
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "60914477",
+      "dob": "1991-07-09",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2025-12-20",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "createClaim:NEEDS_HUMAN",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-keypad": {
+    "id": "report-keypad",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-12",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-while-dictating": {
+    "id": "agent-while-dictating",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-at-the-summary": {
+    "id": "agent-at-the-summary",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-in-report": {
+    "id": "agent-in-report",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-then-done": {
+    "id": "report-then-done",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-aside-at-summary": {
+    "id": "report-aside-at-summary",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": "got hurt"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-key-claim-status": {
+    "id": "menu-key-claim-status",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "claim_status",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listClaims:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-key-coverage": {
+    "id": "menu-key-coverage",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-key-report": {
+    "id": "menu-key-report",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "report_claim",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-key-agent": {
+    "id": "menu-key-agent",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-offered-after-two-misses": {
+    "id": "menu-offered-after-two-misses",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "agent-opener": {
+    "id": "agent-opener",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "capabilities-open": {
+    "id": "capabilities-open",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "repeat-prompt": {
+    "id": "repeat-prompt",
+    "decision": "replay",
+    "promptId": null,
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "replay",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "other-then-done": {
+    "id": "other-then-done",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-status-then-done": {
+    "id": "claim-status-then-done",
+    "decision": "complete",
+    "promptId": "goodbye",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-accepted": {
+    "id": "frustration-offer-accepted",
+    "decision": "handoff",
+    "promptId": "handoff_frustrated",
+    "acks": [],
+    "reason": "frustrated",
+    "decidedGate": "wantsHuman",
+    "verdict": "handoff",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offer-declined": {
+    "id": "frustration-offer-declined",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "rejected",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "menu-agent-after-two-misses": {
+    "id": "menu-agent-after-two-misses",
+    "decision": "handoff",
+    "promptId": "handoff_live_agent",
+    "acks": [],
+    "reason": "live-agent",
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
+  "code-spoken-reissued": {
+    "id": "code-spoken-reissued",
+    "decision": "prompt",
+    "promptId": "otp_spoken_reissued",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "code-spoken-then-keyed": {
+    "id": "code-spoken-then-keyed",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "two-requests-coverage-then-claim": {
+    "id": "two-requests-coverage-then-claim",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-aside-then-filed": {
+    "id": "report-aside-then-filed",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_fast_track",
+      "intake_documents_texted",
+      "doc_discharge_summary",
+      "doc_imaging_report",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-offered-a-person": {
+    "id": "frustration-offered-a-person",
+    "decision": "prompt",
+    "promptId": "offer_transfer",
+    "acks": [
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-signs-in-claim-paid": {
+    "id": "member-chat-signs-in-claim-paid",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "signin_thanks",
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": null,
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-reminder": {
+    "id": "member-chat-reminder",
+    "decision": "prompt",
+    "promptId": "signin_reminder",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listClaims:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-signs-in-first": {
+    "id": "member-chat-signs-in-first",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getUsage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-reports-a-claim": {
+    "id": "member-chat-reports-a-claim",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_filed",
+      "intake_fast_track",
+      "intake_documents_texted",
+      "doc_discharge_summary",
+      "doc_imaging_report",
+      "intake_adjuster"
+    ],
+    "reason": null,
+    "decidedGate": "confirmation",
+    "verdict": "confirmed",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "sendUploadLink:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-capabilities": {
+    "id": "member-chat-capabilities",
+    "decision": "prompt",
+    "promptId": "ask_intent",
+    "acks": [
+      "capabilities"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "inform",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  }
+}

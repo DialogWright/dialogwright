@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: preex-plus-2026
+topic: pre_existing
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "6.1 Pre-existing condition limitation" }
+answer: A condition you were treated for in the 12 months before your coverage started isn't covered during your first 12 months on the plan.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: dc9a4d354e3f7004769d5b75e8c6db74f50dfc06695406d87bd66f8e679e0961
+  hash: 50533bbd055c29d76770ee82b86bb9021965b74885d5d26c36f7795cab2237d5

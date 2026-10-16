@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/forms.schema.json
+# Each form: its slots in the order they are asked, the prompt that reads them back for a yes
+# (`null` for a form with no summary), and the hooks it has. The hooks are TypeScript in
+# src/app.ts (code.forms.<id>); this list must name exactly the ones the code writes. `calls` lists the
+# actions the hooks call through the gate (the app map draws them, and check reports an action no
+# form reaches; the identity tools are the engine's own).
+forms:
+  # A claim already filed. The entry call lists the member's claims and needs level 2, so a caller
+  # not yet verified gives the member ID and date of birth and keys the code before anything else.
+  # A member with one claim is not asked which (onEntry fills it). A broker names the claim
+  # (principalEntry lets the form ask), and the gate's scope rule decides whether it is one of their
+  # office's clients'; the diagnosis and the member's statement are withheld from a broker.
+  claim_status:
+    slots: [claimSelect]
+    summaryPromptId: null
+    hooks: [entry, onEntry, principalEntry, complete]
+    calls: [listClaims, getClaim]
+
+  # What the member's plan covers. The entry call reads the member's coverage (level 1, so a caller
+  # not yet verified gives the member ID and date of birth first); the topic slot asks which of the
+  # topics retrieval nominates the caller means, and the engine's knowledge completion says the
+  # approved passage for the member's own plan through searchPolicy, word for word, with how many of
+  # the benefit they used this year where the topic has that line (getUsage). A broker is told the
+  # line answers coverage for the member themselves (principalEntry, on the gate's answer).
+  coverage:
+    slots: [coverageTopic]
+    summaryPromptId: null
+    hooks: [entry, principalEntry]
+    calls: [getCoverage, searchPolicy, getUsage]
+    answers: { slot: coverageTopic, answer: coverage_answer, unavailable: coverage_unavailable }
+
+  # A new claim. The entry call needs level 2 (the purpose in policy.yaml), so the code is keyed
+  # before the questions. The summary reads the kind of loss and the day back (and that the
+  # description was taken); a yes files the claim (a confirmed write, held to the member's coverage
+  # dates), then the claims intake service triages it, and the member hears the documents in the
+  # approved lines and is texted the link to upload them. A broker hears the role rule's answer
+  # before any question: a service rep may not file, an office admin's filing goes to a specialist.
+  report_claim:
+    slots: [lossType, lossDate, lossDescription]
+    summaryPromptId: confirm_report
+    hooks: [entry, principalEntry, confirmedParams, complete]
+    calls: [getCoverage, createClaim, triageClaim, sendUploadLink]

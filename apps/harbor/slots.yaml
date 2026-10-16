@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/slots.schema.json
+# Every slot the app has, in the order the engine works through them: outside a form it fills slots
+# in this order, says their acknowledgements in it, and the model's turn state and a transfer list
+# the slots in it too. Each is a library type configured here (docs/slots/README.md).
+
+# The identity factors (identity.yaml): the member ID and the date of birth.
+memberId:
+  type: digits
+  # Eight digits, said back in two groups of four, keyable, recorded and handed on by the last four.
+  noun: member ID
+  length: 8
+  group: [4, 4]
+  keypad: true
+dob:
+  type: birthdate
+  # Month, day and year: a month and day alone ask for the year (ask_dob_year). Keyable as MMDDYYYY,
+  # recorded by its year only. The date of loss is the date this is not.
+  keypad: true
+  notThisDate: the date of an accident or claim
+
+# Which of the member's own claims (claim_status): one of the records listClaims returned (the
+# facts' `claims` list), by number, by the service it was for or by its date; or a four-digit number
+# the caller says that is not on their list (whether they may hear about it is the gate's call, not
+# this slot's). A year said right after a month is a date, not a claim number. Keyable as four digits.
+claimSelect:
+  type: record
+  from: claims
+  key: number
+  keyPattern: '\d{4}'
+  labelPrefix: claim_
+  label: "Claim {number}, the {service} on {serviceDate|day}"
+  spoken:
+    digits: 4
+    label: "Claim number {key}, as the caller said it"
+    skipYearAfterMonth: true
+  missReason: no_claim
+  keypad: 4
+  text:
+    instructions: "Read asr.text and node.promptJustPlayed. Which claim does the caller mean? They may name it by number, by the service it was for (an emergency room visit may be called the ER), or by its date. Choose none only when they name no claim."
+    none: Names no claim
+
+# What the member asks their coverage about, as one topic of the knowledge base (kb/topics.yaml).
+# Retrieval nominates at most eight topics for the caller's words (kb.yaml's cap); the question
+# offers only those, and a turn that nominates none asks nothing.
+coverageTopic:
+  type: topic
+  text:
+    instructions: "Read asr.text. Which topic's answer tells the caller what they want to know? When they name an injury and the activity that caused it, choose the injury's topic if they ask what it pays, and the activity's topic only if they ask whether the activity is covered."
+    none: Asks about none of these, or asks nothing about coverage
+
+# The kind of loss a new claim is for, in keypad order (1, 2, 3).
+lossType:
+  type: choice
+  keypad: true
+  text:
+    instructions: "Read asr.text alone, not the slots already collected. What kind of claim do these words name?"
+    none: Names no kind of claim
+  options:
+    accident_injury:
+      say: an accident injury
+      means: "An injury from an accident, such as a fall, a sports injury, a car accident, a cut, a sprain or a broken bone"
+    hospital_stay:
+      say: a hospital stay
+      means: "Being admitted to a hospital or staying overnight for an injury or other reason that is not a covered diagnosis, including for symptoms such as chest pain when no diagnosis is named"
+    diagnosis:
+      say: a covered diagnosis
+      means: "A diagnosis the caller names, of a covered illness such as cancer, a heart attack or a stroke, even if it led to a hospital stay"
+
+# When the loss happened: a day already gone (range: past never gives a day to come, so a future
+# date is asked again), keyable as MMDD. The date of birth is the date this is not.
+lossDate:
+  type: date
+  range: past
+  keypad: true
+  context: The caller is saying when an accident, injury, hospital stay or diagnosis happened.
+  exclude: "The caller's date of birth, or a date answering a question about it, is not when it happened."
+
+# The member's own account of what happened: the value is their words, the summary reads it back by
+# the stand-in, and the records keep its length only. The paragraph says anyone may ask for a person
+# at any time, so a request for one said here is acted on (commands: listen: [agent]); every other
+# turn at its question is the description, whole.
+lossDescription:
+  type: text
+  what: a short description of what happened to them, such as an injury and how it happened, an illness or diagnosis, or why they were in the hospital
+  instructions: Count it even when it comes with a request to file a claim. A request alone, or a kind of claim with nothing about what happened, is not.
+  maxLength: 500
+  say: your description
+  redact: length
+  commands:
+    listen: [agent]

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/app.schema.json
+# Harbor Mutual: who the app is and how it presents itself. Members call the member line (or sign in
+# to the member portal's chat) to check on a claim, ask what their plan covers, or report a new
+# claim; brokers sign in to the chat through the broker portal for their office's clients. The
+# dialog is in intents.yaml, forms.yaml, prompts.yaml and policy.yaml, and what runs is in
+# src/app.ts. See README.md and DESIGN.md.
+id: harbor
+locale: en-US
+
+# The app as the operator console names it.
+brand:
+  name: Harbor Mutual
+  mark: HM
+  key: harbor
+
+# What the operator console and the policy card show: each form and slot in words.
+console:
+  formLabels:
+    claim_status: Claim status
+    coverage: Coverage question
+    report_claim: Report a claim
+  slotLabels:
+    memberId: Member ID
+    dob: Date of birth
+    claimSelect: Claim
+    coverageTopic: Coverage topic
+    lossType: Kind of loss
+    lossDate: Date of loss
+    lossDescription: What happened
+
+# The phone line's speech settings: words a caller says first, which the recognizer should expect.
+voice:
+  hints: [claim, coverage, covered, report, accident, injury, hospital, diagnosis, member ID, physical therapy, agent]
+
+# What a transfer hands the person who takes the call: the values the caller never confirmed are
+# named (the skill's default for a new app), and the member ID goes by its last four, so the
+# specialist can find the member (an identity factor is left out unless named here).
+handoff:
+  data:
+    unconfirmed: mark
+    send:
+      memberId: masked
+
+# The engine's own model questions need to know whom the caller is addressing.
+wording:
+  addressee: the Harbor Mutual member line
+
+# A knowledge-base answer is said whole through kb_answer's {answer}: a passage a person approved.
+prompts:
+  dataVars: [answer]
+
+# The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.
+fixtures:
+  dir: fixtures
+
+# The adversarial suite (dialogwright/testing adversarialSuite) runs with the regression: announced
+# injections, relationships claimed and not proven, off-scope requests, codes said aloud or never
+# sent, and hostile replies from every tool, generated from this app and checked by properties over
+# each run, never by lines. A case that fails is a finding: fix the app (a tool's reply check, the
+# policy) or the engine; never loosen it. With a recording, a case not yet recorded is listed as such.
+testing:
+  adversarial: on

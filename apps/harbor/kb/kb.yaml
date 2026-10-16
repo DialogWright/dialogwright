@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-settings.schema.json
+# Harbor's knowledge base: approved answers about what a member's plan covers, each a passage drawn
+# from the member's plan certificate for its plan year (kb/sources) and approved by a person.
+# searchPolicy (kbAnswerTool, src/app.ts) resolves the passage for the member's plan, read from the
+# member's record (never from what the caller said), and the day; the answer is said word for word.
+# The passages, topics, sources and approvals were carried over from the earlier Harbor unchanged
+# (DESIGN.md, "Knowledge").
+action: searchPolicy
+applies:
+  plan: [advantage, advantage_plus]
+localeFallback: none
+# Topics are found by their words and by their meaning (the engine's hybrid retrieval with the
+# static embedder potion-base-8M, its vectors in kb/.index/potion-base-8M.json, written by pnpm
+# kb:index). The cap and the floor were chosen offline with pnpm kb:bakeoff --sweep on
+# fixtures/kb/paraphrases.yaml (DESIGN.md, "Knowledge"): at cap 8 and floor 0.35, 96 percent of
+# 112 paraphrases nominate their topic, and a line about nothing nominates about one topic.
+retrieval:
+  cap: 8
+  embedder: potion-base-8M
+  floor: 0.35

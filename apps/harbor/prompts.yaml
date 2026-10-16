@@ -1,0 +1,334 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/prompts.schema.json
+# Every line a caller can hear, word for word. The agent says exactly these and never composes its
+# own: the paragraph asks for no generated wording. Braces are filled in by the engine
+# ({intentLabel}, {first}, {phoneLast4}) or by the code ({claim}, {days}); `interruptible` says
+# whether a caller may talk over it. `pnpm check` lists any line the engine needs that is missing
+# here; the lines only the code names (the claim status lines, the refusals, the intake lines) the
+# regression finds.
+prompts:
+  # The opening lines and the engine's own lines
+  greeting:
+    text: Thanks for calling Harbor Mutual. You're speaking with our automated assistant. I can check on a claim, answer questions about your coverage, or help you report a new claim. How can I help?
+    interruptible: true
+  greeting_chat:
+    text: Hi, I'm Harbor Mutual's automated assistant. I can check on a claim, answer questions about your coverage, or help you report a new claim. What can I help with?
+    interruptible: true
+  greeting_chat_signed_in:
+    text: Hi {first}, I'm Harbor Mutual's automated assistant. I can check on a claim, answer questions about your coverage, or help you report a new claim. What can I help with?
+    interruptible: true
+  greeting_chat_delegate:
+    text: Hi {first}, I'm Harbor Mutual's automated assistant for broker offices. I can check the status of a client's claim. What do you need?
+    interruptible: true
+  signin_required:
+    text: To do that, I need you to sign in first. Use the Sign in button below, and I'll pick up right where we left off.
+    interruptible: false
+  signin_reminder:
+    text: You can sign in with the button below, or ask me something else.
+    interruptible: true
+  signin_thanks:
+    text: Thanks, {first}. You're signed in.
+    interruptible: false
+  signin_ready:
+    text: What can I help you with?
+    interruptible: true
+  ask_intent:
+    text: How can I help you today?
+    interruptible: true
+  nomatch_open:
+    text: Sorry, I didn't catch that. You can ask about a claim, your coverage, or reporting a new claim.
+    interruptible: true
+  nomatch_dtmf_menu:
+    text: Let's try the keypad. For a claim's status, press 1. For coverage questions, press 2. To report a new claim, press 3. To speak with someone, press 0.
+    interruptible: true
+  capabilities:
+    text: I'm Harbor Mutual's automated assistant. I can tell you the status of a claim, answer questions about what your plan covers, and take a report of a new claim.
+    interruptible: true
+  no_input:
+    text: I didn't hear anything.
+    interruptible: false
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    interruptible: false
+  confirm_intent_explicit:
+    text: Just to check, you'd like to {intentLabel}. Is that right?
+    interruptible: false
+  disambiguate_intent:
+    text: Would you like to {a}, or {b}?
+    interruptible: true
+  ack_intent_then:
+    text: Sure, I can help you {a}, and then {b}.
+    interruptible: false
+  ack_queued:
+    text: Sure, I'll help with that next.
+    interruptible: false
+  bridge_next:
+    text: Now, for your other request.
+    interruptible: false
+  ack_frustration:
+    text: I'm sorry this is taking a while.
+    interruptible: false
+  offer_transfer:
+    text: Would you like me to connect you with a member services specialist, or keep going?
+    interruptible: true
+  ack_declined:
+    text: Okay, let's keep going.
+    interruptible: false
+  system_slow_dtmf_hint:
+    text: Sorry, I'm having trouble on my end. Please say that again, or use your keypad.
+    interruptible: true
+  system_slow_chat:
+    text: Sorry, I'm having trouble on my end. Please send that again.
+    interruptible: true
+  ask_change:
+    text: What would you like to change?
+    interruptible: true
+  confirm_dtmf:
+    text: To file the claim, press 1. To change something, press 2.
+    interruptible: false
+  anything_else:
+    text: Is there anything else I can help with?
+    interruptible: true
+  goodbye:
+    text: Thanks for calling Harbor Mutual. Goodbye.
+    interruptible: false
+  goodbye_chat:
+    text: Thanks for chatting with Harbor Mutual. Goodbye.
+    interruptible: false
+  screen_reprompt:
+    text: I can help with claims, coverage, or reporting a new claim.
+    interruptible: true
+  screen_reprompt_form:
+    text: Let's keep going.
+    interruptible: true
+
+  # Handoffs: to a member services specialist, or a claims specialist, by reason
+  handoff_live_agent:
+    text: Connecting you with a member services specialist now.
+    interruptible: false
+  handoff_frustrated:
+    text: I'm sorry for the trouble. Connecting you with a member services specialist now.
+    interruptible: false
+  handoff_max_attempts:
+    text: Let me connect you with a member services specialist who can help.
+    interruptible: false
+  handoff_system_failure:
+    text: I'm having trouble on my end. Connecting you with a specialist now.
+    interruptible: false
+  handoff_identity:
+    text: I wasn't able to verify your identity, so I'm connecting you with a specialist who can help.
+    interruptible: false
+  handoff_needs_human:
+    text: This one needs a specialist. Connecting you now.
+    interruptible: false
+  handoff_broker_filing:
+    text: Claims for a client are filed with a specialist, so I'm connecting you with one now.
+    interruptible: false
+  handoff_coverage:
+    text: A claims specialist needs to look at the date of this one. Connecting you now.
+    interruptible: false
+  handoff_result_unchecked:
+    text: I couldn't confirm that went through, so I'm connecting you with a specialist.
+    interruptible: false
+  handoff_security:
+    text: I'm going to connect you with a member services specialist.
+    interruptible: false
+
+  # The identity factors (identity.yaml), the one-time code, and the engine's identity lines
+  ask_memberId:
+    text: First I need to verify your identity. What's your member ID? It's the eight digits on your card.
+    interruptible: true
+  ask_memberId_retry:
+    text: Please say the eight digits of your member ID, one at a time.
+    interruptible: true
+  ask_memberId_dtmf:
+    text: Please enter your eight-digit member ID on your keypad.
+    interruptible: true
+  ask_dob:
+    text: And what's your date of birth?
+    interruptible: true
+  ask_dob_retry:
+    text: Please say your date of birth, including the year.
+    interruptible: true
+  ask_dob_dtmf:
+    text: Please enter your date of birth as eight digits, two for the month, two for the day, and four for the year.
+    interruptible: true
+  ask_dob_year:
+    text: And what year were you born?
+    interruptible: true
+  identity_verified:
+    text: Thanks, {first}.
+    interruptible: false
+  identity_failed:
+    text: I couldn't match that member ID and date of birth. Let's try again.
+    interruptible: false
+  ask_otp:
+    text: For your security I need one more check. I've texted a six-digit code to the phone ending in {phoneLast4}. Please enter it on your keypad.
+    interruptible: true
+  ask_otp_spoken:
+    text: For your security, please enter the code on your keypad instead of saying it.
+    interruptible: true
+  otp_spoken_reissued:
+    text: For your security, I can't accept a code said out loud, so I've texted you a new one. Please enter the new code on your keypad.
+    interruptible: true
+  otp_failed:
+    text: That code didn't match. Please enter it again on your keypad.
+    interruptible: true
+  otp_verified:
+    text: Thank you, you're verified.
+    interruptible: false
+
+  # Checking on a claim: which one, and its status, in a member's words or a broker's
+  ask_claimSelect:
+    text: Which claim are you asking about? You can say the claim number, or what it was for.
+    interruptible: true
+  ask_claimSelect_retry:
+    text: Please say the four-digit claim number, or what the claim was for.
+    interruptible: true
+  ask_claimSelect_dtmf:
+    text: Please enter the four-digit claim number on your keypad.
+    interruptible: true
+  disambiguate_claimSelect:
+    text: Did you mean claim {a}, or claim {b}?
+    interruptible: true
+  claim_status_received:
+    text: Your claim {claim}, for the {service} on {serviceDate}, was received {receivedDate}. We usually decide claims like this within {days} business days.
+    interruptible: true
+  claim_status_in_review:
+    text: Your claim {claim}, for the {service} on {serviceDate}, was received {receivedDate} and is in review. We usually decide claims like this within {days} business days.
+    interruptible: true
+  claim_status_approved:
+    text: Your claim {claim}, for the {service} on {serviceDate}, has been approved for {amount} dollars. Payment usually follows within five business days.
+    interruptible: true
+  claim_status_approved_no_amount:
+    text: Your claim {claim}, for the {service} on {serviceDate}, has been approved. Payment usually follows within five business days.
+    interruptible: true
+  claim_status_paid:
+    text: Your claim {claim}, for the {service} on {serviceDate}, was paid {amount} dollars.
+    interruptible: true
+  claim_status_needs_info:
+    text: "Your claim {claim}, for the {service} on {serviceDate}, is waiting on this document:"
+    interruptible: true
+  claim_upload:
+    text: You can upload it from the link we texted.
+    interruptible: true
+  claim_status_received_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, was received {receivedDate}. We usually decide claims like this within {days} business days."
+    interruptible: true
+  claim_status_in_review_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, was received {receivedDate} and is in review. We usually decide claims like this within {days} business days."
+    interruptible: true
+  claim_status_approved_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, has been approved for {amount} dollars. Payment usually follows within five business days."
+    interruptible: true
+  claim_status_approved_no_amount_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, has been approved. Payment usually follows within five business days."
+    interruptible: true
+  claim_status_paid_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, was paid {amount} dollars."
+    interruptible: true
+  claim_status_needs_info_broker:
+    text: "{member}'s claim {claim}, for the {service} on {serviceDate}, is waiting on this document:"
+    interruptible: true
+  claim_upload_broker:
+    text: The member can upload it from the link we texted them.
+    interruptible: true
+  broker_redaction_note:
+    text: Medical details are withheld for your role.
+    interruptible: true
+  claim_blocked_scope:
+    text: I don't see that claim on your policy, and I can only share claims on your own policy. If it's someone else's claim, they can call us, or a specialist can help with authorization forms.
+    interruptible: true
+  claim_blocked_scope_broker:
+    text: I don't see that claim for a client your office represents, so I can't share it.
+    interruptible: true
+  claim_blocked_role:
+    text: Your role can't file claims. An office admin at your agency can file one with a specialist.
+    interruptible: true
+
+  # Coverage questions: the topic, and the approved answer from the member's own plan certificate
+  ask_coverageTopic:
+    text: What would you like to know about your coverage?
+    interruptible: true
+  ask_coverageTopic_retry:
+    text: I can't answer that from your policy information. I can answer questions like whether physical therapy, hospital stays, or fractures are covered. What would you like to know?
+    interruptible: true
+  disambiguate_coverageTopic:
+    text: Is that about {a}, or {b}?
+    interruptible: true
+  coverage_answer:
+    text: "{answer}"
+    interruptible: false
+  coverage_unavailable:
+    text: That part of your policy is being updated, so I can't answer it right now.
+    interruptible: false
+  coverage_broker:
+    text: I answer coverage questions for members themselves, so I can't answer one for a client here. I can check the status of a client's claim.
+    interruptible: true
+
+  # Reporting a claim: the kind of loss, the day, what happened, the read-back, and what follows
+  ask_lossType:
+    text: What kind of claim is this, an accident injury, a hospital stay, or a covered diagnosis?
+    interruptible: true
+  ask_lossType_retry:
+    text: Is it an accident injury, a hospital stay, or a covered diagnosis?
+    interruptible: true
+  ask_lossType_dtmf:
+    text: For an accident injury, press 1. For a hospital stay, press 2. For a covered diagnosis, press 3.
+    interruptible: true
+  ask_lossDate:
+    text: What date did it happen?
+    interruptible: true
+  ask_lossDate_retry:
+    text: Please tell me the date it happened, like last Saturday, or September twelfth.
+    interruptible: true
+  ask_lossDate_dtmf:
+    text: Please enter the date as four digits, two for the month and two for the day.
+    interruptible: true
+  loss_date_future:
+    text: That date is in the future.
+    interruptible: true
+  ask_lossDescription:
+    text: In a sentence or two, tell me what happened.
+    interruptible: true
+  ask_lossDescription_retry:
+    text: Please describe what happened, for example how you were hurt.
+    interruptible: true
+  confirm_report:
+    text: Let me make sure I have this right. You're reporting {lossType} on {lossDate}, and I have your description. Shall I file the claim?
+    interruptible: true
+  claim_filed:
+    text: Your claim is filed. Your claim number is {claim}.
+    interruptible: false
+  intake_fast_track:
+    text: "Good news: this claim qualifies for fast-track review."
+    interruptible: false
+  intake_documents_texted:
+    text: I've texted you a link to upload your documents. We'll need the following.
+    interruptible: false
+  intake_documents:
+    text: We'll need the following documents.
+    interruptible: false
+  doc_discharge_summary:
+    text: The discharge summary from the emergency room or urgent care.
+    interruptible: false
+  doc_imaging_report:
+    text: Any X-ray or imaging reports.
+    interruptible: false
+  doc_admission_dates:
+    text: The hospital admission and discharge dates.
+    interruptible: false
+  doc_itemized_bill:
+    text: The itemized hospital bill.
+    interruptible: false
+  doc_physician_statement:
+    text: A statement from the diagnosing physician.
+    interruptible: false
+  doc_loss_description:
+    text: A description of what happened.
+    interruptible: false
+  intake_adjuster:
+    text: An adjuster will contact you within {days} business days.
+    interruptible: false
+  intake_unavailable:
+    text: An adjuster will be in touch with next steps.
+    interruptible: false

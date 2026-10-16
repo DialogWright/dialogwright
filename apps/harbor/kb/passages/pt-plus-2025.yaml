@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: pt-plus-2025
+topic: physical_therapy
+version: "2025.1"
+applies: { plan: advantage_plus }
+effective: { from: 2025-01-01, to: 2025-12-31 }
+source: { document: accident-advantage-plus-certificate-2025, section: "4.3 Outpatient rehabilitation" }
+answer: Physical therapy after a covered accident is covered for up to 8 visits a year, at 50 dollars a visit.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2024-12-10
+  sourceHash: 214403e594e48cbe9ff0ceb41ec12a26ee533a9e19935f839a0fa86df59c80d8
+  hash: 37322e29dc0da5184c6225ec93fec212d6ae994b31efc8b392e6763815daf11a

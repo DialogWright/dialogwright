@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../packages/dialogwright/schemas/kb-topics.schema.json
+# The topics members ask about their coverage. Retrieval reads each topic's title, keywords and
+# example questions, and the coverage-topic question offers each title, so a changed title changes
+# the model's request (and sends the topic's passages back for review: an approval covers the
+# title). The account line is the member's own usage, read through getUsage and said after the
+# answer when the gate allows it.
+physical_therapy:
+  title: Physical therapy after an accident
+  keywords: [physical therapy, pt, rehab, rehabilitation, therapist, physical therapist]
+  asks:
+    - Is physical therapy covered?
+    - How many therapy visits do I get after an accident?
+    - What does my plan pay for rehab after an injury?
+  accountLine:
+    text: "You've used {used} of them this year."
+    from: getUsage
+emergency_room:
+  title: Emergency room visit
+  keywords: [emergency room, er, emergency, e r]
+  asks:
+    - Does my plan cover the emergency room?
+    - What do I get for an ER visit after an accident?
+    - Is a trip to the emergency room after an accident covered?
+ambulance:
+  title: Ambulance
+  keywords: [ambulance, paramedic, ems]
+  asks:
+    - Does my plan pay for an ambulance?
+    - Is an ambulance ride to the hospital covered?
+    - What about a helicopter or air ambulance?
+hospital_stay:
+  title: Hospital stay
+  keywords: [hospital, admitted, admission, inpatient, hospital stay, stayed in the hospital, stayed overnight, overnight]
+  asks:
+    - What do I get for a hospital stay?
+    - How much do you pay for each day I'm in the hospital?
+    - How many days in the hospital does my plan cover?
+fracture:
+  title: Fractures
+  keywords: [broke, broken, fracture, fractured, bone, cast]
+  asks:
+    - What does my plan pay if I break a bone?
+    - I broke my arm, does that pay anything?
+    - How much is the benefit for a fracture?
+imaging:
+  title: X-rays and imaging
+  keywords: [x-ray, xray, mri, ct, scan, imaging]
+  asks:
+    - How much do you pay for an x-ray?
+    - Is an MRI covered?
+    - Are scans after an accident covered?
+urgent_care:
+  title: Urgent care
+  keywords: [urgent care, walk-in, clinic, stitches, cut]
+  asks:
+    - Is urgent care covered?
+    - Do you cover stitches at an urgent care clinic?
+    - What does a walk-in clinic visit pay?
+follow_up:
+  title: Follow-up doctor visits
+  keywords: [follow-up, follow up, checkup, doctor visit, appointment]
+  asks:
+    - How many follow-up visits do I get?
+    - Are visits back to my doctor after an accident covered?
+    - What do you pay for a checkup after the accident?
+  accountLine:
+    text: "You've used {used} of them this year."
+    from: getUsage
+dental_injury:
+  title: Dental injury from an accident
+  keywords: [tooth, teeth, dental, dentist]
+  asks:
+    - I chipped a tooth, is that covered?
+    - Does my plan pay for a tooth damaged in an accident?
+    - What do you pay for dental work after an injury?
+sports_injury:
+  title: Sports injuries
+  keywords: [sports, skiing, ski, football, soccer, basketball, playing, game, school, league, practice]
+  asks:
+    - Are sports injuries covered?
+    - Is my kid covered if he gets hurt playing football at school?
+    - Am I covered if I'm hurt playing in a league?
+pre_existing:
+  title: Pre-existing conditions
+  keywords: [pre-existing, preexisting, existing condition, before my coverage]
+  asks:
+    - Does my plan cover a pre-existing condition?
+    - Is an injury I had before my coverage started covered?
+    - Are conditions I was treated for before I joined excluded?
+prescriptions:
+  title: Prescriptions
+  keywords: [prescription, medication, medicine, pharmacy, pills]
+  asks:
+    - Are prescriptions covered?
+    - Does my plan pay for medicine after an accident?
+    - Do you cover pills from the pharmacy?
+travel:
+  title: Accidents while traveling
+  keywords: [travel, traveling, abroad, europe, overseas, outside the us, vacation]
+  asks:
+    - Am I covered if I get hurt in Europe?
+    - Does my plan cover accidents abroad?
+    - Am I covered on vacation outside the US?
+filing_deadline:
+  title: Deadline to file a claim
+  keywords: [deadline, time limit, too late, file a claim, filing, how long do i have, how long to file, deadline to file]
+  asks:
+    - How long do I have to file a claim?
+    - Is there a deadline to file a claim?
+    - Is it too late to file for an old accident?

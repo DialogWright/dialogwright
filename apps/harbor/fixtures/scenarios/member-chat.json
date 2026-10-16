@@ -1,0 +1,90 @@
+[
+  {
+    "id": "member-chat-signs-in-claim-paid",
+    "as": "web",
+    "steps": [
+      {
+        "say": "has claim 4655 been paid"
+      },
+      {
+        "signIn": "42716358"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "was paid 300 dollars"
+    }
+  },
+  {
+    "id": "member-chat-reminder",
+    "as": "web",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "42716358"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "signin_reminder",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "member-chat-signs-in-first",
+    "as": "web",
+    "steps": [
+      {
+        "signIn": "42716358"
+      },
+      {
+        "say": "is physical therapy covered"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getUsage:ALLOW",
+      "text": "You've used 4 of them this year."
+    }
+  },
+  {
+    "id": "member-chat-reports-a-claim",
+    "as": "web",
+    "steps": [
+      {
+        "signIn": "42716358"
+      },
+      {
+        "say": "i fell off a ladder on september twelfth and broke my ankle, i need to put in a claim"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "sendUploadLink:ALLOW",
+      "text": "I've texted you a link to upload your documents."
+    }
+  },
+  {
+    "id": "member-chat-capabilities",
+    "as": "web",
+    "steps": [
+      {
+        "say": "what can you do"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent"
+    }
+  }
+]

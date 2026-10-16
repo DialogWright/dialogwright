@@ -1,0 +1,142 @@
+# Paraphrases of Harbor Mutual's knowledge base topics (kb/topics.yaml): what members say about each
+# topic in words other than its title, keywords and example questions, which retrieval never sees,
+# and, under none, what callers say that no topic answers. pnpm kb:bakeoff reads it:
+#
+#   pnpm kb:bakeoff apps/harbor --paraphrases apps/harbor/fixtures/kb/paraphrases.yaml --sweep
+#
+# and src/kb.test.ts holds the default retriever's recall on it.
+physical_therapy:
+  - Will my plan pay for the exercises a specialist gives me after I hurt my knee?
+  - I need sessions to get my shoulder moving again after the crash, is that included?
+  - How many therapy appointments do I get for my back after the fall?
+  - Does Harbor pay for recovery sessions to strengthen my leg?
+  - Am I covered for treatment to regain movement in my arm?
+  - What do you pay per visit for getting my mobility back after an injury?
+  - Is recovery therapy for a sprained ankle part of my benefits?
+  - How much do I get for the sessions with someone who helps me walk again?
+emergency_room:
+  - I went to the ER last night, what does that pay?
+  - My son was rushed to the hospital's urgent entrance after he fell, is that covered?
+  - Do you pay for a trip to the casualty department?
+  - What's the benefit if I end up in the emergency department after an accident?
+  - I had to go to the hospital right away when I cut my hand, how much will I get?
+  - Is a visit to the trauma center after a car wreck covered?
+  - What do you give me for going straight to the hospital after I got hurt?
+  - How much does my plan pay when I'm seen in the emergency department?
+ambulance:
+  - They took me to the hospital in an emergency vehicle, will you pay for the ride?
+  - Is the medevac helicopter covered?
+  - What do you pay if I need to be driven to the hospital by the rescue squad?
+  - Does my policy cover being transported after the crash?
+  - How much for the air transport to the trauma center?
+  - My wife needed an emergency ride to the hospital, is that included?
+  - Are rescue transports paid for?
+  - What's the benefit for the ride in the back of the emergency van?
+hospital_stay:
+  - I had to spend four nights in the hospital after the accident, how much do I get?
+  - What do you pay per day when someone is kept in a ward?
+  - How many days of being an inpatient will my plan cover?
+  - My daughter was kept at the hospital for a week, what does that pay?
+  - Is there a daily benefit for being confined to the hospital?
+  - What's the payout if I'm kept in for several days?
+  - How long will you pay me for if I'm laid up in a hospital bed?
+  - Do I get money for each night I stay at the medical center?
+fracture:
+  - I cracked my wrist falling off a ladder, what does that pay?
+  - What's the benefit if I snap my collarbone?
+  - My kid busted his arm at the playground, how much do we get?
+  - Do you pay more for a hip that breaks than a finger?
+  - Is a fractured rib paid by your plan?
+  - How much will I get for a broken leg from a fall?
+  - What's the most you pay when a bone breaks in an accident?
+  - I think my ankle is broken, what does my coverage give me for that?
+imaging:
+  - They did a scan of my head after the fall, is that covered?
+  - Does my plan pay for the pictures of my bones they took?
+  - What's the benefit for an ultrasound after an injury?
+  - Do you cover radiology after an accident?
+  - Is the magnetic resonance test for my knee paid?
+  - They took films of my wrist at the clinic, what does that pay?
+  - How much do you pay for diagnostic pictures after a fall?
+  - Will you pay for the CAT scan they did at the hospital?
+urgent_care:
+  - I went to a walk-in place to get my finger sewn up, is that covered?
+  - What do you pay for a visit to an after-hours clinic?
+  - Is a minor injury center visit covered after I sprained my wrist?
+  - What's the benefit if I go to the quick care place instead of the hospital?
+  - My son got stitches at the urgent clinic down the street, how much do we get?
+  - Do you pay for an immediate care center after an accident?
+  - How much is paid for a same-day clinic visit for a cut?
+  - Does my plan cover the express care visit I had for my burn?
+follow_up:
+  - How many times can I go back to my doctor after the accident?
+  - Are the repeat visits to check on my healing paid for?
+  - What do you pay for going back to see the physician afterward?
+  - Is a second appointment with my doctor to look at my stitches covered?
+  - How many after-care visits does my plan allow?
+  - Do I get anything for the visits where the doctor checks on my recovery?
+  - What's the benefit for seeing the doctor again a week later?
+  - Will you pay for the visits to remove my cast and check the bone?
+dental_injury:
+  - I chipped my front tooth when I fell, is that covered?
+  - Does my plan pay to fix a knocked-out tooth?
+  - My son lost a tooth playing hockey, what do we get?
+  - What do you pay for a crown after an accident cracked my tooth?
+  - Is mouth injury repair covered?
+  - I broke a tooth in a car accident, how much will you pay?
+  - Do you cover fixing teeth after a fall?
+  - What's the benefit for an orthodontist after my face hit the dashboard?
+sports_injury:
+  - My daughter got hurt at volleyball, is she covered?
+  - I pulled a muscle at the gym, does the plan cover that?
+  - Are injuries from a weekend hockey game included?
+  - Is my son covered if he gets hurt in a high school match?
+  - I play rugby on Saturdays, would an injury be covered?
+  - What if I get hurt running a marathon?
+  - Does coverage include injuries from tennis?
+  - Are athletes who get paid to compete covered?
+pre_existing:
+  - I had a bad back before I joined, will you cover it?
+  - My knee was already injured last year, is that excluded?
+  - Do you pay for something I was treated for before I signed up?
+  - I had shoulder problems before my plan started, am I covered now?
+  - Is there a waiting period for old injuries?
+  - Will an injury I had treated before enrolling be paid?
+  - What happens if my condition started before I bought the policy?
+  - Are earlier health problems excluded for a while?
+prescriptions:
+  - Does my plan pay for the painkillers the doctor gave me?
+  - Are the drugs I got after the accident reimbursed?
+  - Will you cover the antibiotics I need for my wound?
+  - Is the cost of my meds after the fall covered?
+  - Do you pay for drugstore costs after an injury?
+  - What about the pain pills from the emergency room?
+  - Can I get money back for the ointment and tablets I bought?
+  - Is the cost of the drugs I'm taking for my injury paid?
+travel:
+  - Am I covered if I get hurt in Mexico?
+  - What if I have an accident on a trip to Canada?
+  - Does my plan work when I'm in another country?
+  - I'm going to Japan next month, would an injury there be paid?
+  - Are accidents on holiday in Italy covered?
+  - Will you pay if I'm injured on a cruise?
+  - Does coverage follow me when I leave the country?
+  - If I break my leg skiing in the Alps, does that count?
+filing_deadline:
+  - How long after an injury can I still send in a claim?
+  - Is there a cutoff for submitting a claim?
+  - My accident was eight months ago, can I still claim?
+  - When do I have to get my claim in by?
+  - Can I still claim for something that happened last spring?
+  - How many days do I get to report an accident?
+  - Is it too late to claim for an injury from last year?
+  - What's the time frame for sending you a claim?
+none:
+  - What's my member ID?
+  - Can I change my address?
+  - I'd like to talk to someone about my bill
+  - How do I cancel my policy?
+  - Where is your office located?
+  - Can you send me a new insurance card?
+  - Who is my broker?
+  - What is the weather like today?

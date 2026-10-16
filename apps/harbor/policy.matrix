@@ -1,0 +1,218 @@
+# policy.matrix: what the gate of "harbor" decides, for every action and every kind of caller.
+# Written by `pnpm policy:matrix` from the compiled policy (policy.yaml, identity.yaml) and the
+# app's policy matrix (TestingHooks.policyMatrix); a test fails when it differs. Never edit it by
+# hand: a difference here is a change in what the agent may do, to be reviewed as the policy is.
+#
+# Under each action (its level and its rules as the file writes them), a row per kind of caller.
+# A row with one verdict holds for every call that caller can make; otherwise its lines split it
+# by what the call carries, a|b meaning either value. "as <caller>" repeats that caller's verdicts.
+#
+# callers
+#   anonymous               no one proven (level 0)
+#   subject@1               member, level 1 (one of the app's subjects)
+#   subject@2               member, level 2 (one of the app's subjects)
+#   delegate:service_rep    broker, role service_rep, level 2
+#   delegate:office_admin   broker, role office_admin, level 2
+#   delegate:service_rep@1  broker, role service_rep, level 1 (a delegate below level 2)
+#   unlisted-role           broker, role assistant, level 2 (a role the policy does not name)
+#   roleless                broker with no role, level 2
+#   other-party             visitor, level 2 (neither a subject nor of a delegate kind)
+# what a call carries
+#   purpose     none; entry-check, retry-check (the lifecycle's probes); a form's purpose
+#   subject     own; inScope (a subject the delegates act for); outOfScope; unknown; empty
+#   fields      exact; extra (one field more); missing (one field less: the subject's own when it is the only one)
+#   confirmed   none; match (the caller confirmed exactly these values); mismatch
+#   attempts    0; 3 (the maximum)
+#   params      the policy matrix's named sets of values for the action
+# verdicts: ALLOW; BLOCK <reason>; STEP_UP to <level>; NEEDS_HUMAN <reason>
+
+purposes: report_claim needs level 2
+
+verifyMember · level 0 · attempts(3)
+  anonymous               attempts 0  ALLOW
+                          attempts 3  NEEDS_HUMAN attempts
+  subject@1               as anonymous
+  subject@2               as anonymous
+  delegate:service_rep    BLOCK not-subject
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  as delegate:service_rep
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             as delegate:service_rep
+
+sendCode · level 1 · identity, scope(memberId)
+  anonymous               purpose none|entry-check|retry-check  STEP_UP to 1
+                          purpose report_claim                  STEP_UP to 2
+  subject@1               purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                          purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                          purpose report_claim                                                            STEP_UP to 2
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    BLOCK not-subject
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  as delegate:service_rep
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             as delegate:service_rep
+
+verifyCode · level 1 · identity, attempts(3)
+  anonymous               purpose none|entry-check|retry-check  STEP_UP to 1
+                          purpose report_claim                  STEP_UP to 2
+  subject@1               purpose none|entry-check|retry-check, attempts 0  ALLOW
+                          purpose none|entry-check|retry-check, attempts 3  NEEDS_HUMAN attempts
+                          purpose report_claim                              STEP_UP to 2
+  subject@2               attempts 0  ALLOW
+                          attempts 3  NEEDS_HUMAN attempts
+  delegate:service_rep    BLOCK not-subject
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  as delegate:service_rep
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             as delegate:service_rep
+
+getCoverage · level 1 · identity, scope(memberId)
+  anonymous               purpose none|entry-check|retry-check  STEP_UP to 1
+                          purpose report_claim                  STEP_UP to 2
+  subject@1               purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                          purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                          purpose report_claim                                                            STEP_UP to 2
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                          purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                          purpose report_claim                                                        BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+searchPolicy · level 1 · identity, scope(memberId)
+  anonymous               purpose none|entry-check|retry-check  STEP_UP to 1
+                          purpose report_claim                  STEP_UP to 2
+  subject@1               purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                          purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                          purpose report_claim                                                            STEP_UP to 2
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                          purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                          purpose report_claim                                                        BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+getUsage · level 1 · identity, scope(memberId)
+  anonymous               purpose none|entry-check|retry-check  STEP_UP to 1
+                          purpose report_claim                  STEP_UP to 2
+  subject@1               purpose none|entry-check|retry-check, subject own, fields exact|extra           ALLOW
+                          purpose none|entry-check|retry-check, subject own, fields missing               BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope|outOfScope|unknown|empty  BLOCK scope
+                          purpose report_claim                                                            STEP_UP to 2
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  purpose none|entry-check|retry-check, subject own|outOfScope|unknown|empty  BLOCK scope
+                          purpose none|entry-check|retry-check, subject inScope, fields exact|extra   ALLOW
+                          purpose none|entry-check|retry-check, subject inScope, fields missing       BLOCK scope
+                          purpose report_claim                                                        BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+listClaims · level 2 · identity, scope(memberId)
+  anonymous               STEP_UP to 2
+  subject@1               as anonymous
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+getClaim · level 2 · identity, scope(record claim)
+  anonymous               STEP_UP to 2
+  subject@1               as anonymous
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+createClaim · level 2 · identity, role(service_rep refuse, office_admin person; reason broker-filing), scope(memberId), confirmed(memberId, lossType, lossDate, lossDescription), dateInRange(lossDate)
+  anonymous               STEP_UP to 2
+  subject@1               as anonymous
+  subject@2               subject own, fields exact, confirmed none|mismatch                 BLOCK confirmation
+                          subject own, fields exact, confirmed match, params covered         ALLOW
+                          subject own, fields exact, confirmed match, params beforeCoverage  NEEDS_HUMAN coverage
+                          subject own, fields exact, confirmed match, params tomorrow        BLOCK loss-date-future
+                          subject own, fields extra|missing                                  BLOCK confirmation
+                          subject inScope|outOfScope|unknown|empty                           BLOCK scope
+  delegate:service_rep    BLOCK role
+  delegate:office_admin   NEEDS_HUMAN broker-filing
+  delegate:service_rep@1  BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             as delegate:service_rep
+
+triageClaim · level 2 · identity, scope(record claim), fields(claim, lossType, lossDate, lossDescription)
+  anonymous               STEP_UP to 2
+  subject@1               as anonymous
+  subject@2               subject own, fields exact|missing         ALLOW
+                          subject own, fields extra                 BLOCK minimization
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty   BLOCK scope
+                          subject inScope, fields exact|missing  ALLOW
+                          subject inScope, fields extra          BLOCK minimization
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+sendUploadLink · level 2 · identity, scope(record claim)
+  anonymous               STEP_UP to 2
+  subject@1               as anonymous
+  subject@2               subject own, fields exact|extra           ALLOW
+                          subject own, fields missing               BLOCK scope
+                          subject inScope|outOfScope|unknown|empty  BLOCK scope
+  delegate:service_rep    subject own|outOfScope|unknown|empty  BLOCK scope
+                          subject inScope, fields exact|extra   ALLOW
+                          subject inScope, fields missing       BLOCK scope
+  delegate:office_admin   as delegate:service_rep
+  delegate:service_rep@1  BLOCK identity
+  unlisted-role           as delegate:service_rep
+  roleless                as delegate:service_rep
+  other-party             BLOCK scope
+
+(unlisted) · not in the policy
+  every caller            BLOCK unknown-tool

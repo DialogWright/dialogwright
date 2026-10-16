@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: sports-adv-2026
+topic: sports_injury
+version: "2026.1"
+applies: { plan: advantage }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-certificate-2026, section: "5.2 Recreational and sports activity" }
+answer: Injuries from amateur sports are covered, including school and league play. Injuries while playing sports professionally are not covered.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 794df36ab2ce0fa37f53368622673307c99b931879333871d6b99f3e0388ec34
+  hash: f5abe17c559709c232141b85420f59fb94fd4d290daba41784574da9880cb357

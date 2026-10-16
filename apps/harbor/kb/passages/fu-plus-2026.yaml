@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: fu-plus-2026
+topic: follow_up
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "4.1 Follow-up treatment" }
+answer: Follow-up doctor visits after a covered accident are covered for up to 6 visits a year, at 75 dollars each.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 1ebe3e4cb426016d2e09f64e75b4c2cbea1678f2337db5ef3237e767553ecc0e
+  hash: ac6835a41037cf2dac5af61b8c6f8ed27def27a7d180804b3518a21d8c713305

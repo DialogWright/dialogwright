@@ -1,0 +1,1522 @@
+[
+  {
+    "id": "claim-status-happy",
+    "steps": [
+      {
+        "say": "what's the status of my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the one for the emergency room"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4702"
+    }
+  },
+  {
+    "id": "claim-status-by-number",
+    "steps": [
+      {
+        "say": "can you check on claim 4702"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "is in review"
+    }
+  },
+  {
+    "id": "claim-status-identity-up-front",
+    "steps": [
+      {
+        "say": "my member id is four two seven one six three five eight and i'm checking on claim 4702"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4702"
+    }
+  },
+  {
+    "id": "claim-paid",
+    "steps": [
+      {
+        "say": "has claim 4655 been paid"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:ALLOW",
+      "text": "was paid 300 dollars"
+    }
+  },
+  {
+    "id": "one-claim-not-asked",
+    "steps": [
+      {
+        "say": "what's the status of my claim"
+      },
+      {
+        "say": "six zero nine one four four seven seven"
+      },
+      {
+        "say": "july ninth nineteen ninety one"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:ALLOW",
+      "text": "The discharge summary from the emergency room or urgent care."
+    }
+  },
+  {
+    "id": "mothers-claim-blocked",
+    "steps": [
+      {
+        "say": "i'm also handling my mother's claim, it's 4711, can you check the status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:BLOCK",
+      "text": "I can only share claims on your own policy"
+    }
+  },
+  {
+    "id": "friends-claim-blocked",
+    "steps": [
+      {
+        "say": "i'm calling for my friend luis, can you look up claim 4720"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:BLOCK"
+    }
+  },
+  {
+    "id": "claim-someone-elses-at-the-question",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "claim 4711"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:BLOCK"
+    }
+  },
+  {
+    "id": "claim-choice-keypad",
+    "steps": [
+      {
+        "say": "i want to check on a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i'm not sure which one"
+      },
+      {
+        "say": "i'm not sure which one"
+      },
+      {
+        "dtmf": "4655"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4655"
+    }
+  },
+  {
+    "id": "code-odd-then-even",
+    "steps": [
+      {
+        "say": "check my claim please"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123457"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_claimSelect",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "code-three-fails",
+    "steps": [
+      {
+        "say": "where is my claim at"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123457"
+      },
+      {
+        "dtmf": "123457"
+      },
+      {
+        "dtmf": "123457"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "identity-three-fails",
+    "steps": [
+      {
+        "say": "claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "january first nineteen ninety"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "january first nineteen ninety"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "january first nineteen ninety"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "identity",
+      "principalLevel": 0
+    }
+  },
+  {
+    "id": "identity-keypad",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "i don't have my card with me"
+      },
+      {
+        "say": "i don't have my card with me"
+      },
+      {
+        "dtmf": "42716358"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_claimSelect",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "dob-keypad",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "i'd rather not say"
+      },
+      {
+        "say": "i'd rather not say"
+      },
+      {
+        "dtmf": "08211984"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_claimSelect",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "dob-year-asked",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first"
+      },
+      {
+        "say": "nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_otp",
+      "principalLevel": 1
+    }
+  },
+  {
+    "id": "agent-at-the-code-prompt",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "i want to talk to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "agent-while-verifying",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "i need a person, not a machine"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "agent-in-claim-status",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "can i talk to a real person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent",
+      "form": "claim_status"
+    }
+  },
+  {
+    "id": "coverage-pt-with-usage",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "getUsage:ALLOW",
+      "text": "up to 10 visits a year, at 60 dollars a visit. You've used 4 of them this year."
+    }
+  },
+  {
+    "id": "coverage-other-plan",
+    "steps": [
+      {
+        "say": "does my plan pay for an ambulance"
+      },
+      {
+        "say": "five five two zero three three one eight"
+      },
+      {
+        "say": "november twenty second nineteen forty eight"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "dollars"
+    }
+  },
+  {
+    "id": "coverage-topic-asked",
+    "steps": [
+      {
+        "say": "i have a question about my coverage"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "physical therapy"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getUsage:ALLOW"
+    }
+  },
+  {
+    "id": "coverage-topic-retry",
+    "steps": [
+      {
+        "say": "coverage"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "i just want to know what i'm covered for"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_coverageTopic_retry"
+    }
+  },
+  {
+    "id": "coverage-fracture-opener",
+    "steps": [
+      {
+        "say": "i broke my arm skiing, does that pay anything"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "Fracture benefits"
+    }
+  },
+  {
+    "id": "coverage-filing-deadline",
+    "steps": [
+      {
+        "say": "how long do i have to file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "180 days"
+    }
+  },
+  {
+    "id": "coverage-then-claim-steps-up",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "check my claim please"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the physical therapy one"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4655"
+    }
+  },
+  {
+    "id": "agent-in-coverage",
+    "steps": [
+      {
+        "say": "coverage"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "just get me a human please"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "report-happy",
+    "steps": [
+      {
+        "say": "i need to file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "september twelfth"
+      },
+      {
+        "say": "i slipped on the ice and hurt my wrist"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "sendUploadLink:ALLOW",
+      "text": "Your claim number is 4730"
+    }
+  },
+  {
+    "id": "report-over-answer",
+    "steps": [
+      {
+        "say": "i broke my wrist yesterday and need to file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "form": "report_claim",
+      "slots": {
+        "lossType": "accident_injury",
+        "lossDate": "2026-09-17"
+      }
+    }
+  },
+  {
+    "id": "report-over-answer-filed",
+    "steps": [
+      {
+        "say": "i fell off a ladder on september twelfth and broke my ankle, i need to put in a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "yes, file it"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "sendUploadLink:ALLOW",
+      "text": "fast-track"
+    }
+  },
+  {
+    "id": "report-hospital-not-fast-tracked",
+    "steps": [
+      {
+        "say": "i want to report a hospital stay"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "last saturday"
+      },
+      {
+        "say": "i was in a car accident and they kept me overnight"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "sendUploadLink:ALLOW",
+      "text": "The itemized hospital bill."
+    }
+  },
+  {
+    "id": "report-diagnosis",
+    "steps": [
+      {
+        "say": "i was diagnosed with cancer and need to make a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "on the tenth"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "A statement from the diagnosing physician."
+    }
+  },
+  {
+    "id": "report-summary-no-asks-change",
+    "steps": [
+      {
+        "say": "new claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "no"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_change"
+    }
+  },
+  {
+    "id": "report-change-date",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "no, the date is wrong"
+      },
+      {
+        "say": "september twelfth"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "slots": {
+        "lossDate": "2026-09-12"
+      }
+    }
+  },
+  {
+    "id": "report-no-with-value",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "no, it was a hospital stay actually"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "slots": {
+        "lossType": "hospital_stay"
+      }
+    }
+  },
+  {
+    "id": "report-yes-but-friday",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "yes, but it was on friday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "slots": {
+        "lossDate": "2026-09-11"
+      }
+    }
+  },
+  {
+    "id": "report-future-date-asked-again",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "tomorrow"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_lossDate_retry"
+    }
+  },
+  {
+    "id": "report-outside-coverage",
+    "steps": [
+      {
+        "say": "i need to file a claim"
+      },
+      {
+        "say": "six zero nine one four four seven seven"
+      },
+      {
+        "say": "july ninth nineteen ninety one"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "december twentieth"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "yes"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "coverage",
+      "gate": "createClaim:NEEDS_HUMAN"
+    }
+  },
+  {
+    "id": "report-keypad",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i'm not sure what kind it is"
+      },
+      {
+        "say": "i'm not sure what kind it is"
+      },
+      {
+        "dtmf": "1"
+      },
+      {
+        "say": "i don't remember exactly"
+      },
+      {
+        "say": "i don't remember exactly"
+      },
+      {
+        "dtmf": "0912"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_lossDescription",
+      "slots": {
+        "lossType": "accident_injury",
+        "lossDate": "2026-09-12"
+      }
+    }
+  },
+  {
+    "id": "agent-while-dictating",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "can i talk to someone instead"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "agent-at-the-summary",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "actually i want to talk to a person"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "agent-in-report",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "let me speak to a specialist"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "report-then-done",
+    "steps": [
+      {
+        "say": "i need to file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "september twelfth"
+      },
+      {
+        "say": "i slipped on the ice and hurt my wrist"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "no, that's all"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  },
+  {
+    "id": "report-aside-at-summary",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "wait, how long do i have to file a claim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "text": "180 days"
+    }
+  },
+  {
+    "id": "menu-key-claim-status",
+    "steps": [
+      {
+        "dtmf": "1"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId"
+    }
+  },
+  {
+    "id": "menu-key-coverage",
+    "steps": [
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId"
+    }
+  },
+  {
+    "id": "menu-key-report",
+    "steps": [
+      {
+        "dtmf": "3"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId"
+    }
+  },
+  {
+    "id": "menu-key-agent",
+    "steps": [
+      {
+        "dtmf": "0"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "menu-offered-after-two-misses",
+    "steps": [
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "dtmf": "2"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_memberId"
+    }
+  },
+  {
+    "id": "agent-opener",
+    "steps": [
+      {
+        "say": "representative"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "capabilities-open",
+    "steps": [
+      {
+        "say": "what can you do"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "text": "I can tell you the status of a claim"
+    }
+  },
+  {
+    "id": "repeat-prompt",
+    "steps": [
+      {
+        "say": "can you repeat that"
+      }
+    ],
+    "expect": {
+      "decision": "replay"
+    }
+  },
+  {
+    "id": "other-then-done",
+    "steps": [
+      {
+        "say": "can i change my address"
+      },
+      {
+        "say": "never mind, that's all"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  },
+  {
+    "id": "claim-status-then-done",
+    "steps": [
+      {
+        "say": "has claim 4655 been paid"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "no thanks"
+      }
+    ],
+    "expect": {
+      "decision": "complete",
+      "promptId": "goodbye"
+    }
+  },
+  {
+    "id": "frustration-offer-accepted",
+    "steps": [
+      {
+        "say": "this is ridiculous, i just want to know about my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i already told you, the er one"
+      },
+      {
+        "say": "yes please, put me through"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "frustrated"
+    }
+  },
+  {
+    "id": "frustration-offer-declined",
+    "steps": [
+      {
+        "say": "this is ridiculous, i just want to know about my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i already told you, the er one"
+      },
+      {
+        "say": "no, let's keep going"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_intent",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "menu-agent-after-two-misses",
+    "steps": [
+      {
+        "silence": true
+      },
+      {
+        "silence": true
+      },
+      {
+        "dtmf": "0"
+      }
+    ],
+    "expect": {
+      "decision": "handoff",
+      "reason": "live-agent"
+    }
+  },
+  {
+    "id": "code-spoken-reissued",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "it's one two three four five six"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "otp_spoken_reissued"
+    }
+  },
+  {
+    "id": "code-spoken-then-keyed",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "it's one two three four five six"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the physical therapy one"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:ALLOW"
+    }
+  },
+  {
+    "id": "two-requests-coverage-then-claim",
+    "steps": [
+      {
+        "say": "is physical therapy covered, and also what's the status of my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the one for the emergency room"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4702"
+    }
+  },
+  {
+    "id": "report-aside-then-filed",
+    "steps": [
+      {
+        "say": "file a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "yesterday"
+      },
+      {
+        "say": "got hurt"
+      },
+      {
+        "say": "wait, how long do i have to file a claim"
+      },
+      {
+        "say": "that's right, go ahead"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "sendUploadLink:ALLOW"
+    }
+  },
+  {
+    "id": "frustration-offered-a-person",
+    "steps": [
+      {
+        "say": "this is ridiculous, i just want to know about my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i already told you, the er one"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "offer_transfer"
+    }
+  }
+]

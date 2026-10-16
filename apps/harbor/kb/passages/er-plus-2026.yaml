@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: er-plus-2026
+topic: emergency_room
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.1 Emergency treatment" }
+answer: An emergency room visit for a covered accident pays a benefit of 250 dollars.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 4eba952767b07ff0d2fbc85588af6d55975e7acf85239542dd98b51608a79822
+  hash: dae7d0bd32e66bbeb24bc6810eebf61db742cf07b9e23921fb8bcaeab7a3deb0

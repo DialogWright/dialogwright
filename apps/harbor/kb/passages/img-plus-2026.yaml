@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: img-plus-2026
+topic: imaging
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.7 Diagnostic imaging" }
+answer: X-rays and other imaging after a covered accident pay 200 dollars per accident.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 1a004d60997a307d7559a0348dc5d20a2c056fbfc0b0abde5bd8abe8ce45df8a
+  hash: f9759a8046a83df7777e9ecf2a6980b2b080308d8b876b34e7d796798dbd50c1

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: frac-plus-2026
+topic: fracture
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.6 Fracture schedule" }
+answer: Fracture benefits depend on which bone was broken, up to 5,000 dollars per accident.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 17eafce23042db6952617da6ffd9053c7aba5a8db356195cfd4f16cf289768bb
+  hash: b324407d1b7d1a08031c3fd5161711f75820682fa55c29283c3ac9dea7159d88

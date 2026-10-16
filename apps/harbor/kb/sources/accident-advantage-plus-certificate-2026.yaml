@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-source.schema.json
+# The Accident Advantage Plus Certificate of Coverage, plan year 2026: the sections Harbor's answers are drawn from.
+document: Accident Advantage Plus Certificate of Coverage
+sections:
+  "2.3 Territory":
+    text: Covered accidents are insured worldwide, without territorial limitation. Benefits are payable in United States dollars.
+  "3.1 Emergency treatment":
+    text: "A visit to a hospital emergency room for treatment of a covered accident is payable at $250 per accident."
+  "3.2 Ambulance services":
+    text: "Ground ambulance transport to a hospital following a covered accident is payable at $400 per accident, and air ambulance transport is payable at $1,500 per accident."
+  "3.3 Urgent care treatment":
+    text: "A visit to an urgent care clinic for treatment of a covered accident is payable at $125 per accident."
+  "3.5 Hospital confinement":
+    text: "Confinement in a hospital as an inpatient following a covered accident is payable at $400 per day, up to 60 days per accident."
+  "3.6 Fracture schedule":
+    text: "A bone fracture resulting from a covered accident is payable by bone under the fracture schedule, up to $5,000 per accident."
+  "3.7 Diagnostic imaging":
+    text: "X-rays and other diagnostic imaging performed for a covered accident are payable at $200 per accident."
+  "3.8 Dental injury":
+    text: "Repair of sound, natural teeth injured in a covered accident is payable at $200 per tooth."
+  "4.1 Follow-up treatment":
+    text: "Follow-up physician visits related to a covered accident are payable for up to 6 visits per calendar year at $75 per visit."
+  "4.3 Outpatient rehabilitation":
+    text: "Outpatient physical therapy following a covered accident is payable for up to 10 visits per calendar year at $60 per visit."
+  "5.2 Recreational and sports activity":
+    text: Injuries sustained while participating in amateur sports, including school and league play, are covered. Injuries sustained while playing sports professionally are excluded.
+  "6.1 Pre-existing condition limitation":
+    text: A condition for which the insured received treatment in the 12 months before the coverage effective date is excluded during the first 12 months of coverage.
+  "7.4 Exclusions":
+    text: Prescription drugs and medications are not covered under this certificate. Such expenses are typically covered under the insured's major medical plan.
+  "8.1 Claim filing":
+    text: Written notice of claim must be provided within 180 days after the date of the covered accident. Claims submitted after that period may be reviewed at the Company's discretion, and payment is not guaranteed.

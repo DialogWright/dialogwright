@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+id: uc-plus-2026
+topic: urgent_care
+version: "2026.1"
+applies: { plan: advantage_plus }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-plus-certificate-2026, section: "3.3 Urgent care treatment" }
+answer: An urgent care visit for a covered accident pays 125 dollars.
+# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+approval:
+  owner: Benefits Content
+  approvedBy: Compliance Review
+  on: 2025-12-10
+  sourceHash: 2f6a5380a47b7451c4d6919d97c61f37da048ec37690ea3200cf58aa4bda600d
+  hash: bc828702d50d3168cc2267ca4bf6f9d6b93cc5843d5a1ca9282f1c719e68bb37

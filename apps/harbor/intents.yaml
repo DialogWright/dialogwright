@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../packages/dialogwright/schemas/intents.schema.json
+# What a caller can ask for, in the order the decision model is offered them, and the keypad menu.
+# Each criteria line is sent to the model as written: a change re-keys the recorded cassette
+# (fixtures/recorded). Each label is said in acknowledgements ("Sure, I can help you {label}").
+intents:
+  # A claim already filed: its status, whether it was paid, or one claim by its number or by what it
+  # was for. Level 2 (the member ID and date of birth, then the code), asked before the claim.
+  claim_status:
+    criteria: Asks about a claim that was already filed, such as its status, whether it was paid, or a specific claim by its number or by what it was for, including a claim for someone else. A caller who names a claim number or a claim they filed is asking about it, whatever else they add
+    label: check on a claim
+    kind: form
+
+  # What the member's plan covers: answered from the approved passages of their own plan's
+  # certificate (kb/), word for word. Level 1 (the member ID and date of birth).
+  coverage:
+    criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim. An injury or a treatment named in a question about what the plan pays is a coverage question
+    label: check your coverage
+    kind: form
+
+  # A new claim: the kind of loss, the day it happened and what happened, read back and filed on a
+  # yes. Level 2, asked before the form's questions.
+  report_claim:
+    criteria: Wants to report a new accident, injury, hospital stay or diagnosis, or to file a new claim. A caller who says what happened to them, such as an injury and when it happened, and wants it paid or filed, is reporting a claim, however many details they add in the same breath
+    label: report a new claim
+    kind: form
+
+  # What the line can do: one fixed line, then the open question again.
+  capabilities:
+    criteria: Asks what the system can do, what it is (including whether it is a robot or a person), what the options are, or how to use it
+    label: hear what I can do
+    kind: informational
+    promptId: capabilities
+
+  # The engine's own control intents. agent and repeat_prompt are required.
+  agent:
+    criteria: Asks to speak with a person, a representative, a specialist, or an operator
+    label: speak with someone
+    kind: control
+  repeat_prompt:
+    criteria: Asks the system to repeat what it just said
+    label: hear that again
+    kind: control
+  # The caller is finished: the call ends with the goodbye. The line asks "anything else?" when a
+  # form is done (anything_else), and this is how "no, that's all" is understood.
+  done:
+    criteria: Says they are finished and need nothing more, as in no thanks, that's all, I'm all set, nothing else, I don't need anything else, or goodbye, including a bare no when just asked whether there is anything else
+    label: finish up
+    kind: control
+  other:
+    criteria: A request the insurance line does not handle
+    label: something else
+    kind: control
+  none:
+    criteria: No request is expressed; the caller is only answering a question or saying something incidental
+    label: nothing
+    kind: control
+
+# The keypad menu, as the paragraph gives it: 1 for a claim's status, 2 for coverage, 3 to report a
+# claim, 0 for a person. Callers can use the keypad from the greeting on, not only once the menu has
+# been offered (menuListens: greeting): the paragraph says callers can use it, not when.
+menuListens: greeting
+menu:
+  - digit: "1"
+    intent: claim_status
+  - digit: "2"
+    intent: coverage
+  - digit: "3"
+    intent: report_claim
+  - digit: "0"
+    intent: agent
