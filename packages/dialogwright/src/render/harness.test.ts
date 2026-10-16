@@ -42,7 +42,20 @@ describe('harnessRenderer', () => {
     expect(harnessRenderer('jev', messageApp, '/rec', { env }).renderer!.client).toBeInstanceOf(ModelRenderClient);
     expect(harnessRenderer('record', messageApp, '/rec', { env: {} })).toEqual({ renderer: null, header: ['generated lines said fixed (RENDER_PROVIDER unset)'] });
     expect(harnessRenderer('stub', messageApp, '/rec', { env, render: 'fixed' })).toEqual({ renderer: null, header: ['generated lines said fixed (--render fixed)'] });
-    expect(() => harnessRenderer('stub', messageApp, '/rec', { render: 'fancy' })).toThrow('--render must be fixed');
+    expect(() => harnessRenderer('stub', messageApp, '/rec', { render: 'fancy' })).toThrow('--render must be fixed or recorded');
+  });
+
+  it('--render recorded replays the render cassette while the decision model is recorded, with no render key', () => {
+    const r = harnessRenderer('record', messageApp, '/rec', { env: {}, render: 'recorded' });
+    expect(r.renderer!.client).toBeInstanceOf(RenderCassette);
+    expect((r.renderer!.client as RenderCassette).path).toBe('/rec/render/claude-haiku-5-5.jsonl');
+    expect(r.header.at(-1)).toBe('render cassette /rec/render/claude-haiku-5-5.jsonl (--render recorded)');
+    // Even with a render key set, nothing reaches the render model.
+    const keyed = harnessRenderer('record', messageApp, '/rec', { env: { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real' }, render: 'recorded' });
+    expect(keyed.renderer!.client).toBeInstanceOf(RenderCassette);
+    expect(keyed.renderer!.client).not.toBeInstanceOf(ModelRenderClient);
+    // On the stubs the fake renderer stays: a stub run asks no model of any kind.
+    expect(harnessRenderer('stub', messageApp, '/rec', { env: {}, render: 'recorded' }).renderer!.client).not.toBeInstanceOf(RenderCassette);
   });
 });
 

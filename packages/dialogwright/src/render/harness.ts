@@ -15,15 +15,26 @@ import type { RenderFallback, Renderer } from './types';
  * (style.yaml's `model`; with neither, Anthropic's default model), replayed, every check run again on
  * every line; `record` and `jev`, the model itself, `record` appending to the cassette (the
  * maintainer's step, with the author's own key; with the app's own model and its key unset, its
- * lines are said fixed, and the header says why). `--render fixed` says every line fixed. Null for an
+ * lines are said fixed, and the header says why). `--render fixed` says every line fixed; `--render
+ * recorded` replays the render cassette on any client but the stubs, so the decision model can be
+ * recorded again without asking the render model. Null for an
  * app that generates no line: the run is exactly as before.
  */
 export function harnessRenderer(kind: string, app: App, recordedDir: string, opts: { render?: string; env?: Record<string, string | undefined> } = {}): { renderer: Renderer | null; header: string[] } {
   if (!generatesLines(app)) return { renderer: null, header: [] };
   const env = opts.env ?? process.env;
   if (opts.render === 'fixed') return { renderer: null, header: ['generated lines said fixed (--render fixed)'] };
-  if (opts.render !== undefined && opts.render !== 'fixed') throw new Error(`--render must be fixed, got "${opts.render}"`);
+  if (opts.render !== undefined && opts.render !== 'fixed' && opts.render !== 'recorded') throw new Error(`--render must be fixed or recorded, got "${opts.render}"`);
   const settings = renderSettings(env);
+  // `--render recorded` replays the render cassette whatever the client: a recording of the decision
+  // model after a change to its questions words the lines as they were recorded, with no render key
+  // and no render model asked (a line the cassette does not hold is a miss, as on a recorded run).
+  if (opts.render === 'recorded' && kind !== 'stub' && kind !== 'heuristic') {
+    const p = replayedRenderProvider(app, env);
+    const client = new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'replay', model: p.model });
+    client.preload();
+    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path} (--render recorded)`] };
+  }
   if (kind === 'stub' || kind === 'heuristic') {
     return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
   }

@@ -59,7 +59,8 @@ async function run(argv?: readonly string[]): Promise<void> {
       // With --scenario, --corpus or --adversarial: under each turn, every question the model was
       // asked, in its words, and each gate's reading against its bar, named (transcript.ts questionLines).
       questions: { type: 'boolean', default: false },
-      // For an app that generates lines: `fixed` says every line word for word (render/harness.ts).
+      // For an app that generates lines: `fixed` says every line word for word; `recorded` replays the
+      // render cassette while the decision model is recorded (render/harness.ts).
       render: { type: 'string' },
     },
   });
