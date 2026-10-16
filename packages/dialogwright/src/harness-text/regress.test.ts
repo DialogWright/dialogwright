@@ -106,7 +106,7 @@ describe('regress --questions', () => {
     expect(plain.stdout).not.toContain('questions');
     const r = regress(['--corpus', 'tk-01', '--scenario', 'track-other-customers-parcel', '--questions']);
     expect(r.code, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/\n {5}wantsHuman {2}Read asr\.text\. Does the caller explicitly ask/);
+    expect(r.stdout).toMatch(/\n {5}wantsHuman {2}Read asr\.text\. The caller is talking to the parcel delivery line, which is automated\. Does the caller ask to talk to a person instead/);
     expect(r.stdout).toMatch(/\n {13}intent +\d\.\d\d {2}bar 0\.40 INTENT_EXPLICIT +pass {2}route:track_parcel {2}<==\n/);
     expect(r.stdout).toMatch(/\n {13}as above: /);
   });
