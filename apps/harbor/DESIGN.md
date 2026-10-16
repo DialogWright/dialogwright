@@ -394,6 +394,18 @@ pnpm --filter @dialogwright/example-harbor regress --client recorded
 pnpm render:bakeoff apps/harbor --models openrouter:google/gemini-3.1-flash-lite-preview --replay
 ```
 
+### Recording 4: jev-1.13.0 and gemini-3.1-flash-lite-preview, 2026-10-16, answers worded
+
+The first recording with worded answers (the decision model and the render model, OpenRouter): 466 requests, $0.0824 for the decision model; the render model's seven wordings cost well under a cent. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- **Generated lines**: 7 tried; 1 said as a new wording, 4 came back as the passage's own words (said as the passage), 2 refused by the judge (drift), so the passage was said. Wording latency p50 about 1 s, p95 3.5 to 4.4 s: the hold line is for exactly that tail.
+- **What it said**, beside the passage: the filing deadline, "You have 180 days from the accident to file a claim. We may still review it after that, but payment is not guaranteed." (passage: "...After that we may still review it, but payment isn't guaranteed."); prescriptions, "Prescriptions aren't covered by this plan; they're usually covered by your medical insurance." The one the judge refused turned "usually covered by your medical insurance" into advice to check with one's provider.
+- **Harbor's passages are short** (one or two spoken sentences), so there is little to summarize: worded answers show their value on longer passages, which Harbor does not have. New passages are drafts a person approves (kb:review, kb:approve): the maintainer's.
+
+**The judge on Harbor's 28 labelled answer cases** (`pnpm render:judge-eval --cases apps/harbor/fixtures/judge/answers.jsonl`, recorded into `fixtures/judge/recorded/`): Jev answers in 120 ms at p50 (177 ms p95). With the data checks, it catches 14 of the 16 unfaithful wordings (88%) and refuses 1 of the 12 faithful (8%) at the engine's 0.5. The two it lets by are exclusions dropped on low-risk topics: sports injuries 0.45 and prescriptions 0.35. On the four low-risk topics alone, no faithful wording scores above 0.27 and no unfaithful one below 0.35, so Harbor sets `judge.refuseAt: 0.3` (style.yaml): every unfaithful wording on a low-risk topic refused, no faithful one, on these cases. A small set: more cases (and a dropped exclusion on each low-risk topic) before a real line goes live.
+
+**The word budget**: the passage's word count and a quarter more (ten more at least). At the passage's exact count, two faithful rewordings one word longer fell back; with the room, the data checks refuse no faithful case, and the two added promises the exact count used to catch are caught by the judge (0.97, 0.96).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.

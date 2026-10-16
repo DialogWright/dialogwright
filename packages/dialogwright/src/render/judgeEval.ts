@@ -5,6 +5,7 @@ import { CASSETTE_MISS } from '../jev/cassette';
 import { stubAnswerDrift, stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
 import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
+import { answerWordBudget } from './config';
 import { spanSentence } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
 
@@ -112,7 +113,7 @@ export function actOf(c: JudgeCase): SpanAct {
       content: [{ name: 'answer', value: c.content }],
       channel: 'voice',
       language: 'en-US',
-      style: { persona: 'a plain-spoken agent', words: c.words ?? wordCount(c.content), avoid: [] },
+      style: { persona: 'a plain-spoken agent', words: c.words ?? answerWordBudget(wordCount(c.content)), avoid: [] },
       answer: { question: c.question ?? '' },
     };
   }
@@ -335,7 +336,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
       ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']
       : []),
     ...(all.some((r) => r.case.speaks === 'answer')
-      ? ['Answer cases (speaks: answer): a knowledge answer worded for the caller\'s question from its approved passage (`content`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, the passage\'s own word count unless the case sets one, avoid, a figure or a name the passage does not have); stub: stubAnswerDrift; judge: the decision model asked renderAnswerDriftQuestion with the state a call sends (the goal, the wording heard in its line, the passage and the question).', '']
+      ? ['Answer cases (speaks: answer): a knowledge answer worded for the caller\'s question from its approved passage (`content`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, the passage\'s word count and a quarter more (ten more at least) unless the case sets one, avoid, a figure or a name the passage does not have); stub: stubAnswerDrift; judge: the decision model asked renderAnswerDriftQuestion with the state a call sends (the goal, the wording heard in its line, the passage and the question).', '']
       : []),
     'data checks: checkSpan as a call runs it, the checks of a span\'s data and shape (empty, format, question, conflict, the word budget, avoid, foreign figures and names). stub: the stub regression\'s judge, a simple test double. judge: the decision model asked renderSpanDriftQuestion with the state a call sends, the span heard in a representative sentence (spoken to the caller, the secretary demo\'s read-back; in the caller\'s terms, the message fixture\'s). together: the data checks and the judge, as a call runs them.',
     '',
