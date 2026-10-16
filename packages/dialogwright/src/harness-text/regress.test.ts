@@ -83,6 +83,12 @@ describe('regress against a cassette', () => {
     expect(last).toContain(`, ${misses} cassette misses`);
   });
 
+  it("shows a scripted call's model answers under each of its turns", () => {
+    const run = regress(['--client', 'recorded', '--scenario', 'track-other-customers-parcel']);
+    expect(run.stdout).toContain('  1. say "where is parcel 7201"');
+    expect(run.stdout).toMatch(/\n {10}model answers: none \(cassette miss/);
+  });
+
   it('a stub run reads no settings file, shows no model answers and prints no triage line', () => {
     const file = settings('JEV_MODEL=example-testkit-model\n');
     const run = regress([], file);
@@ -90,6 +96,32 @@ describe('regress against a cassette', () => {
     expect(run.stderr).not.toContain('settings from');
     expect(run.stdout).not.toContain('to triage');
     expect(regress(['--corpus', 'tk-01'], file).stdout).not.toContain('model answers');
+    expect(regress(['--scenario', 'track-other-customers-parcel'], file).stdout).not.toContain('model answers');
+  });
+});
+
+describe('regress --questions', () => {
+  it("prints each question's words and each reading's bar under a transcript's turns; the transcript alone without it", () => {
+    const plain = regress(['--corpus', 'tk-01']);
+    expect(plain.stdout).not.toContain('questions');
+    const r = regress(['--corpus', 'tk-01', '--scenario', 'track-other-customers-parcel', '--questions']);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/\n {5}wantsHuman {2}Read asr\.text\. Does the caller explicitly ask/);
+    expect(r.stdout).toMatch(/\n {13}intent +\d\.\d\d {2}bar 0\.40 INTENT_EXPLICIT +pass {2}route:track_parcel {2}<==\n/);
+    expect(r.stdout).toMatch(/\n {13}as above: /);
+  });
+
+  it('moves a bar named with --threshold', () => {
+    const r = regress(['--corpus', 'tk-01', '--questions', '--threshold', 'GATE_ADDRESSED=0.55']);
+    expect(r.stdout).toMatch(/\n {5}addressedToSystem +\d\.\d\d {2}bar 0\.55 GATE_ADDRESSED +pass/);
+  });
+
+  it('is refused on a whole run and with --json', () => {
+    for (const args of [['--questions'], ['--questions', '--corpus', 'tk-01', '--json']]) {
+      const r = regress(args);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('--questions prints under the turns of a transcript');
+    }
   });
 });
 
@@ -108,12 +140,19 @@ describe('regress with the adversarial suite (app.yaml testing.adversarial)', ()
     expect(run.stdout).toContain('no changes');
     expect(run.stdout).toMatch(/\nadversarial (\d+)\/\1 cases hold, \d+ not run {2}\(injection \d+\/\d+, relationship \d+\/\d+, off-scope \d+\/\d+, spoken-code \d+\/\d+, hostile-reply \d+\/\d+\)\n/);
     expect(run.stdout).not.toContain('FAIL');
+    // Each case not run, by its id, with why, under the count.
+    const count = Number(/ cases hold, (\d+) not run/.exec(run.stdout)![1]);
+    const notRun = run.stdout.split('\n').filter((l) => l.startsWith('  not run: '));
+    expect(notRun).toHaveLength(count);
+    expect(notRun).toContain('  not run: hostile-reply/verifyCode/field: the replies of verifyCode hold no text to replace');
   });
 
   it('against a recording that has none of its answers, lists its cases as not yet recorded, failing none', () => {
     const run = regress(['--client', 'recorded'], settings(''), ON);
     expect(run.stdout).toMatch(/\nadversarial \d+\/\d+ cases hold, \d+ not yet recorded/);
     expect(run.stdout).toContain("not yet recorded (they are recorded with the app's next --client record): injection/open/ignore-instructions/correct/en");
+    // The cases not run that share a reason: on one line, counted, with their ids.
+    expect(run.stdout).toMatch(/\n {2}not run, \d+ cases: a fooled perception is the stub's: a model reads the words itself: injection\/open\/ignore-instructions\/fooled\/en, /);
     expect(run.stdout).not.toContain('FAIL adversarial');
   });
 
@@ -123,6 +162,11 @@ describe('regress with the adversarial suite (app.yaml testing.adversarial)', ()
     expect(run.stdout).toContain('adversarial injection/open/ignore-instructions/correct/en');
     expect(run.stdout).toContain('screen: quarantined');
     expect(run.stdout).toMatch(/\n {2}hold\n/);
+    // With --questions, each turn's questions and bars; against a cassette, the model's answers too.
+    const asked = regress(['--adversarial', 'injection/open/ignore-instructions/correct', '--questions']);
+    expect(asked.stdout).toMatch(/\n {7}questions\n {10}intent {2}Read asr\.text\./);
+    expect(asked.stdout).toMatch(/\n {10}screen +\d\.\d\d {2}bar 0\.50 SCREEN_FIRE +FAIL {2}quarantine {2}<==\n/);
+    expect(regress(['--client', 'recorded', '--adversarial', 'injection/open/ignore-instructions/correct']).stdout).toMatch(/\n {7}model answers: none \(cassette miss/);
     const wrong = regress(['--adversarial', 'injection/opne']);
     expect(wrong.code).toBe(1);
     expect(wrong.stderr).toContain('no adversarial case "injection/opne"; did you mean');

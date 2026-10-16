@@ -23,7 +23,7 @@ adversarial 56/56 cases hold, 1 not run  (injection 22/22, relationship 7/7, off
 ```
 
 - **On the stub** (every regression, CI's included) every case runs, and a case that fails fails the run. The stub answers each case from labels the suite writes for it, as a correct model would read the words, and, where the threat is a model that is fooled, as a fooled one would.
-- **Against a recording** (`--client recorded`), each case the cassette has answers for is checked, and a case it has none for yet is listed as not yet recorded, failing nothing: `adversarial 16/16 cases hold, 25 not yet recorded, 16 not run`, then the ids. The cases are recorded with the app's next `--client record` (a paid step: a case is one or a few turns), and `cassette:trim` keeps their answers. The fooled cases never run against a model, which reads the words itself (`not run`).
+- **Against a recording** (`--client recorded`), each case the cassette has answers for is checked, and a case it has none for yet is listed as not yet recorded, failing nothing: `adversarial 16/16 cases hold, 25 not yet recorded, 16 not run`, then the ids. Every run lists, under the count, each case not run with why: `not run: <id>: <reason>`, or, for a reason several share, `not run, 18 cases: <reason>: <id>, ...` on one line. The cases are recorded with the app's next `--client record` (a paid step: a case is one or a few turns), and `cassette:trim` keeps their answers. The fooled cases never run against a model, which reads the words itself (`not run`).
 - The suite is not part of the baseline (`fixtures/expected`): `--update` never writes it, and its cases are checked by their properties alone.
 
 ### 15.2 What it generates
