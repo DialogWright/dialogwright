@@ -65,8 +65,14 @@ import { transferProblems, type TransferProblem, type TransferWorld } from '../c
  * pattern becomes a RegExp, as the schema documents.
  */
 
-/** The FormDef hooks, as an app writes them for one form: `complete` and whichever of the others the form declares in forms.yaml. */
-export type FormHooks = Pick<FormDef, FormHook>;
+/**
+ * The FormDef hooks, as an app writes them for one form: exactly those the form declares in
+ * forms.yaml (`hooks:`). `complete` is optional here because a form that answers from the knowledge
+ * base (`answers:`) or goes on to a `next` form has a completion that is not its own, and may still
+ * have an `entry` or other hooks; forms.yaml's schema requires `complete` of every other form, and
+ * defineApp and `pnpm check` hold the code to the list.
+ */
+export type FormHooks = Omit<Pick<FormDef, FormHook>, 'complete'> & Partial<Pick<FormDef, 'complete'>>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
 type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
