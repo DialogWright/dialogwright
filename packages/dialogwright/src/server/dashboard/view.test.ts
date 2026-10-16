@@ -412,6 +412,17 @@ describe('stages, gate, source, audit and handoff', () => {
     });
     expect(reduce([started, turnEvent({ kb: { ...kb, fresh: false } })]).source?.fresh).toBe(false);
     expect(reduce([started, turnEvent({})]).source).toBeNull();
+    // A turn whose answer line words its answer: the card says whether the passage or a wording of it was said.
+    expect(reduce([started, turnEvent({ kb: { ...kb, said: 'worded' } })]).source?.said).toBe('worded');
+    expect(reduce([started, turnEvent({ kb: { ...kb, said: 'passage' } })]).source?.said).toBe('passage');
+  });
+
+  it('shows a knowledge answer worded from its passage with the passage beside it, by id, and why it was said word for word', () => {
+    expect(wordingOf({ lines: [{ promptId: 'kb_answer', span: 'answer', answer: { passageId: 'terms-2026', topic: 'terms' }, mode: 'generated', fixed: 'The terms are three years.' }] })).toEqual([
+      { promptId: 'kb_answer', span: 'answer', passageId: 'terms-2026', mode: 'generated', fixed: 'The terms are three years.' },
+    ]);
+    expect(wordingOf({ lines: [{ promptId: 'kb_answer', span: 'answer', mode: 'fixed', fixed: 'x', skipped: 'regulated' }] })[0]!.why).toBe('the topic is regulated: the approved passage, word for word');
+    expect(wordingOf({ lines: [{ promptId: 'kb_answer', span: 'answer', mode: 'fixed', fixed: 'x', skipped: 'no-question' }] })[0]!.why).toBe("no question of the caller's to word it for");
   });
 
   it('shows a withheld, unapproved passage with no applies, locale or digests as nulls and an empty list', () => {

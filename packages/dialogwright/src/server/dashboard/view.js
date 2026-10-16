@@ -89,6 +89,7 @@ const WORDING_WHY = {
   frame: "copied the line's own words",
   exact: 'asked for word for word', share: 'this call is in the fixed group', when: 'not generated in this situation', locale: 'no goal in this language', screen: 'the words were flagged or unread', identifier: 'names an identifier', knowledge: 'a knowledge base answer, word for word',
   'no-content': 'nothing to summarize',
+  regulated: 'the topic is regulated: the approved passage, word for word', 'no-question': "no question of the caller's to word it for",
 };
 
 /**
@@ -100,6 +101,8 @@ export function wordingOf(render) {
   return render.lines.map((l) => ({
     promptId: l.promptId,
     ...(l.span !== undefined ? { span: l.span } : {}),
+    // A knowledge answer worded from its passage: the passage it stands for, by id.
+    ...(l.answer !== undefined ? { passageId: l.answer.passageId } : {}),
     mode: l.mode,
     fixed: l.fixed,
     ...(l.mode === 'generated' ? {} : { why: l.unchanged === true ? 'said unchanged: the wording was the words themselves' : l.fallback !== undefined ? `fell back: ${WORDING_WHY[l.fallback] ?? l.fallback}` : WORDING_WHY[l.skipped] ?? 'not tried' }),
@@ -578,6 +581,8 @@ function sourceOf(kb) {
     effective: kb.effectiveFrom, effectiveTo: kb.effectiveTo ?? null,
     approved: kb.approvedOn ?? null, approvedBy: kb.approvedBy ?? null, fresh: kb.fresh,
     applies, locale: kb.locale ?? null, sourceHash: kb.sourceHash ?? null, approvalHash: kb.approvalHash ?? null,
+    // Only on a turn whose answer line words its answer, so every other card is as it was.
+    ...(kb.said !== undefined ? { said: kb.said } : {}),
   };
 }
 

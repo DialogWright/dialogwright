@@ -1,6 +1,6 @@
 import type { Generation, RenderClient, RenderRequest, SpanAct, SpeechAct } from './types';
 import { isSpanAct, RenderClientError } from './types';
-import { wordCount } from './checks';
+import { isFigureWord, wordCount } from './checks';
 
 /**
  * A render client that asks no model (tests, the stub regression, the adversarial suite): it words a
@@ -94,7 +94,7 @@ export function fakeSpanWording(act: SpanAct): string {
 const COMMON = new Set(['a', 'an', 'the', 'and', 'or', 'is', 'are', 'was', 'be', 'it', 'its', "it's", 'that', 'this', 'do', 'does', 'did', 'you', 'your', 'i', 'my', 'me', 'we', 'our', 'us',
   'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with', 'from', 'about', 'what', 'how', 'can', 'will', 'would', 'if', 'any', 'have', 'has', 'get', 'pay', 'plan', 'covered', 'cover', 'covers']);
 
-/** A sentence a careful answer keeps whatever was asked: one with a figure, a name past its first word, or a word that limits or turns it. */
+/** A sentence a careful answer keeps whatever was asked: one with a digit, or a word that limits or turns it (a figure word or a name past its first word, too: fakeAnswerWording). */
 const KEEPS = /\d|\b(?:no|not|never|unless|until|except|only|up to|but|isn't|aren't|won't|doesn't|don't|can't)\b|n['\u2019]t\b/i;
 
 /**
@@ -109,7 +109,8 @@ export function fakeAnswerWording(act: SpanAct): string {
   const asked = new Set((act.answer?.question ?? '').toLowerCase().match(/[\p{L}\p{N}']+/gu)?.filter((w) => !COMMON.has(w)) ?? []);
   const sentences = passage.split(/(?<=[.!])\s+/).filter((x) => x !== '');
   const named = (x: string): boolean => /\s\p{Lu}/u.test(x.slice(1));
-  const kept = sentences.filter((x) => KEEPS.test(x) || named(x) || (x.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).some((w) => asked.has(w)));
+  const tokens = (x: string): string[] => x.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+  const kept = sentences.filter((x) => KEEPS.test(x) || named(x) || tokens(x).some((w) => isFigureWord(w) || asked.has(w)));
   return (kept.length === 0 ? sentences : kept).join(' ');
 }
 

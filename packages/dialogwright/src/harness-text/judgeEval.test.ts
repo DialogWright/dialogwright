@@ -251,3 +251,45 @@ describe('render:judge-eval', () => {
     expect(err[0]).toContain('usage: dialogwright render:judge-eval');
   });
 });
+
+describe('answer cases (speaks: answer; a knowledge answer worded for the caller\'s question)', () => {
+  const PASSAGE = 'Late books cost 25 cents a day, up to 5 dollars a book. There are no late fees on a junior card.';
+  const answerCase = (id: string, expected: 'faithful' | 'unfaithful', span: string, more: Record<string, unknown> = {}) => ({ id, family: 'answer-test', expected, speaks: 'answer', content: PASSAGE, question: 'how much is a late book', span, note: 'a test', ...more });
+  const file = (cases: unknown[]): string => {
+    const path = join(tempDir(), 'answers.jsonl');
+    writeFileSync(path, cases.map((c) => JSON.stringify(c)).join('\n'));
+    return path;
+  };
+
+  it('need a question, and only they have one', () => {
+    expect(() => loadJudgeCases(file([{ ...answerCase('a', 'faithful', 'x'), question: undefined }]))).toThrow('an answer case (speaks: answer) has a question, and only an answer case does');
+    expect(() => loadJudgeCases(file([{ id: 'b', family: 'x', expected: 'faithful', speaks: 'as-caller', content: 'call me', span: 'call me', question: 'q', note: 'n' }]))).toThrow('an answer case (speaks: answer) has a question');
+  });
+
+  it('send the judge what a call sends for a knowledge answer, and are read by checkAnswer and the stub\'s answer judge', async () => {
+    const cases = loadJudgeCases(file([
+      answerCase('focused', 'faithful', 'A late book costs 25 cents a day, up to 5 dollars a book.'),
+      answerCase('unlimited', 'unfaithful', 'A late book costs 25 cents a day, with no limit.'),
+      answerCase('figure', 'unfaithful', 'A late book costs 50 cents a day.'),
+      answerCase('passage', 'faithful', PASSAGE),
+    ]));
+    const act = actOf(cases[0]!);
+    expect(act).toMatchObject({ sentence: '____', content: [{ name: 'answer', value: PASSAGE }], answer: { question: 'how much is a late book' }, style: { words: 22 } });
+    expect(Object.keys(judgeRequest(cases[0]!).questions)).toEqual(['renderAnswerDrift']);
+    const asked: string[] = [];
+    const judge: JevClient = {
+      async ask(req) {
+        const said = (req.state as { answer: { said: string } }).answer.said;
+        asked.push(said);
+        return { answers: { renderAnswerDrift: { type: 'noul', noul: said.includes('no limit') ? 0.9 : 0.1 } }, model: 'jev-1.13.0', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 1, source: 'jev' };
+      },
+    };
+    const results = await evaluateCases(cases, judge);
+    expect(results.map((r) => [r.case.id, r.checks, r.stub, 'p' in r.judge ? r.judge.p : null])).toEqual([
+      ['focused', null, false, 0.1],
+      ['unlimited', null, true, 0.9],
+      ['figure', 'foreign', true, 0.1],
+      ['passage', 'unchanged', false, 0.1],
+    ]);
+  });
+});

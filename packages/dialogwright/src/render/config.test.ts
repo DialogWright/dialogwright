@@ -463,3 +463,53 @@ describe('the gap a span\'s sentence marks its place with (live findings item 25
     expect(problems({ confirm_f: framed('{caller} left this message: {summary}.') })).toEqual([]);
   });
 });
+
+describe('a knowledge answer worded for the caller\'s question (from: answer; the maintainer\'s decision, 2026-10-16)', () => {
+  const answering = (more: Partial<FormsYaml['forms'][string]> = {}): FormsYaml['forms'] => ({ ask_kb: { slots: ['topic'], summaryPromptId: null, answers: { slot: 'topic' }, ...more } as FormsYaml['forms'][string] });
+  const framedAnswer = (span: Record<string, unknown> = {}): PromptYaml => line('{answer}', { interruptible: false, generate: { answer: { from: 'answer', goal: 'Answer the caller\'s question from the passage.', ...span } } as PromptYaml['generate'] });
+  const problems = (prompts: Record<string, PromptYaml>, forms: FormsYaml['forms'] = answering()) => generatedWordingProblems({ prompts, forms, localePrompts: {}, identifierVars: new Set(), slots: ['topic'] }).map((p) => `${p.path.join('.')}: ${p.message}`);
+
+  it('is a framed line whose answer span is sized to its passage unless it sets words, and the form\'s topic slot keeps the question', () => {
+    const g = generatedWordingOf({ prompts: { kb_answer: framedAnswer(), kb_unavailable: line('None.') }, forms: answering(), style: null, localePrompts: {} })!;
+    expect(g.lines.kb_answer!.spans).toEqual({ answer: { from: 'answer', goal: 'Answer the caller\'s question from the passage.', words: 25, sizedToPassage: true } });
+    expect(g.answerSlots).toEqual(['topic']);
+    const set = generatedWordingOf({ prompts: { kb_answer: framedAnswer({ words: 40 }) }, forms: answering(), style: null, localePrompts: {} })!;
+    expect(set.lines.kb_answer!.spans!.answer).toEqual({ from: 'answer', goal: 'Answer the caller\'s question from the passage.', words: 40 });
+    // A form whose answer line is another (answers.answer), framed there.
+    const named = generatedWordingOf({ prompts: { cover: framedAnswer() }, forms: answering({ answers: { slot: 'topic', answer: 'cover' } }), style: null, localePrompts: {} })!;
+    expect(named.answerSlots).toEqual(['topic']);
+    // Every other app keeps no question: no answerSlots.
+    expect(generatedWordingOf({ prompts: { thanks: line('Thanks.', { mode: 'generative', goal: 'Thank them.' }) }, forms: answering(), style: null, localePrompts: {} })).not.toHaveProperty('answerSlots');
+  });
+
+  it('check holds it as written on a form\'s answer line', () => {
+    expect(problems({ kb_answer: framedAnswer() })).toEqual([]);
+  });
+
+  it('check refuses it on a line that is no form\'s answer line, as a span not named {answer}, with speaks or names, and prescribed', () => {
+    expect(problems({ other: line('Here: {answer}', { generate: { answer: { from: 'answer', goal: 'g' } } }) })).toEqual([
+      expect.stringMatching(/^prompts\.other\.generate\.answer\.from: the span "answer" is worded from the answer \(from: answer\), but "other" is no form's answer line/),
+    ]);
+    expect(problems({ kb_answer: line('{summary}', { generate: { summary: { from: 'answer', goal: 'g' } } }) })).toEqual([
+      expect.stringMatching(/^prompts\.kb_answer\.generate\.summary: the span "summary" is worded from the answer \(from: answer\), but a knowledge answer's span is the line's \{answer\} itself/),
+    ]);
+    expect(problems({ kb_answer: framedAnswer({ speaks: 'to-caller', names: ['topic'] }) })).toEqual([
+      expect.stringMatching(/^prompts\.kb_answer\.generate\.answer\.speaks: .*does not apply/),
+      expect.stringMatching(/^prompts\.kb_answer\.generate\.answer\.names: .*does not apply/),
+    ]);
+    expect(problems({ kb_answer: { ...framedAnswer(), prescribed: true } })).toEqual([
+      expect.stringMatching(/^prompts\.kb_answer\.generate: the line "kb_answer" is prescribed \(prescribed: true\)/),
+    ]);
+    // A line that says {answer} generated whole stays refused, as before.
+    expect(problems({ kb_answer: line('{answer}', { mode: 'generative', goal: 'Say it.' }) })).toEqual([
+      expect.stringMatching(/^prompts\.kb_answer\.mode: the line "kb_answer" says a knowledge base's answer/),
+    ]);
+  });
+
+  it('check warns, never refuses, where no topic is marked risk: low: every answer is said word for word', () => {
+    const warn = (kbTopics?: Record<string, { risk: 'regulated' | 'low' }>) => generatedWordingWarnings({ prompts: { kb_answer: framedAnswer() }, forms: answering(), localePrompts: {}, ...(kbTopics !== undefined ? { kbTopics } : {}) }).map((w) => w.message);
+    expect(warn({ hours: { risk: 'regulated' }, fees: { risk: 'regulated' } })).toEqual([expect.stringContaining('no topic in kb/topics.yaml is marked risk: low, so every answer is said word for word')]);
+    expect(warn()).toEqual([expect.stringContaining('the app has no knowledge base')]);
+    expect(warn({ hours: { risk: 'low' }, fees: { risk: 'regulated' } })).toEqual([]);
+  });
+});

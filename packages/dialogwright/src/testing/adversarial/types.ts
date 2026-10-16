@@ -92,8 +92,18 @@ export type PropertyName = 'within-policy' | 'no-raise' | 'no-tool' | 'screened'
  * message's own "you" kept as the caller, a "your" for no "my"). A framed
  * line's span is answered the same way, from its content (and, for `frame-echo`, its sentence: the frame's
  * own words, which it is shown but never given to change).
+ *
+ * A knowledge answer worded for the caller's question (a span `from: answer`) has its own, each on the
+ * approved passage: `answer-figure`, the passage with a figure it does not have (an amount); `answer-turned`,
+ * the passage with its "not" taken out, a limit turned into a floor ("up to" made "at least"), or a "not"
+ * put in where it has neither (what is covered turned around);
+ * `answer-promise`, the passage with a promise it does not make. Every other line is said as its fixed text.
  */
-export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame' | 'frame-echo' | 'person';
+export type RenderAttack = 'echo' | 'obey' | 'instructions' | 'numbers' | 'polarity' | 'drop-negation' | 'leave-out-negation' | 'recipient' | 'frame' | 'frame-echo' | 'person' | AnswerAttack;
+
+/** A renderer's attacks on a knowledge answer's wording (RenderAttack). */
+export type AnswerAttack = 'answer-figure' | 'answer-turned' | 'answer-promise';
+export const ANSWER_ATTACKS: readonly AnswerAttack[] = ['answer-figure', 'answer-turned', 'answer-promise'];
 
 /**
  * Where a case's line is said, where the corpus context alone does not say it: at the code prompt of a

@@ -21,7 +21,7 @@ import { DEFAULT_CASES_FILE, evaluateCases, formatJudgeEval, judgeEvalJson, judg
 export const JUDGE_EVAL_USAGE = [
   'usage: dialogwright render:judge-eval [--replay] [--cases <file>] [--out <file.md>] [--json]',
   '  puts each case (a caller\'s message, a summary of it, labelled faithful or unfaithful) to the span\'s shape checks (full and core), the stub\'s judge and the real drift judge, and tables what each catches and wrongly refuses',
-  '  --cases: a JSON Lines file of cases (default: the engine\'s, src/render/judgeCases/spans.jsonl); the judge\'s answers are kept in recorded/<model>.jsonl beside it',
+  '  --cases: a JSON Lines file of cases (default: the engine\'s, src/render/judgeCases/spans.jsonl; a knowledge answer\'s cases say speaks: answer, with the passage as content, the caller\'s question and the wording, such as apps/harbor/fixtures/judge/answers.jsonl); the judge\'s answers are kept in recorded/<model>.jsonl beside it',
   '  records what the cassette lacks with the decision model\'s key (TYPESAFE_API_KEY, or JEV_PROVIDER\'s; from the environment, ENV_FILE or a .env where it is run), refused in CI;',
   '  --replay: table the cassette alone, asking nothing; --out: also write the report as Markdown; --json: the results as JSON on stdout',
 ].join('\n');

@@ -64,6 +64,8 @@ export interface WordingLine {
   promptId: string;
   /** A framed line's span, by name: then `fixed` is its exact content. */
   span?: string;
+  /** A knowledge answer worded from its passage: the passage's id (then `fixed` is the approved passage). */
+  passageId?: string;
   mode: 'generated' | 'fixed';
   /** The fixed line: beside a generated one, what it stands for. */
   fixed: string;
@@ -72,7 +74,7 @@ export interface WordingLine {
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';
@@ -135,6 +137,8 @@ export interface SourceView {
   /** The approval's short digests (12 hex characters), of the source text and of everything approved. */
   sourceHash: string | null;
   approvalHash: string | null;
+  /** What was said of it, where the answer line words its answer: the passage word for word, or a wording of it (absent on every other turn). */
+  said?: 'passage' | 'worded';
 }
 
 /**

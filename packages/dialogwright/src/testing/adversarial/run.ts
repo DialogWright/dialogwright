@@ -21,12 +21,16 @@ import {
 } from '../../harness-text/runner';
 import { HOSTILE_MARKERS, HOSTILE_PLAIN, HOSTILE_VALUES, hostileAnswer, hostileRun, saysHostile, textPaths, type HostileValue, type ValuePath } from './hostile';
 import { seatSeed } from './seed';
-import type { AdversarialCase, AdversarialSuite, OutcomeClass, PropertyName, RenderAttack } from './types';
+import { ANSWER_ATTACKS, type AdversarialCase, type AdversarialSuite, type AnswerAttack, type OutcomeClass, type PropertyName, type RenderAttack } from './types';
+
+/** Whether a renderer's attack is on a knowledge answer's wording (AnswerAttack). */
+const isAnswerAttack = (attack: RenderAttack | undefined): attack is AnswerAttack => attack !== undefined && (ANSWER_ATTACKS as readonly string[]).includes(attack);
 import { TO_CALLER_ATTACKS } from './generate';
 import { FakeRenderClient } from '../../render/fake';
 import { cleanGenerated, cleanSpan, sameWords } from '../../render/checks';
 import { noulAnswer } from '../../jev/distributions';
 import { SPAN_GAP, type Renderer, type SpanAct, type SpeechAct } from '../../render/types';
+import { cleanAnswer } from '../../render/checks';
 
 /**
  * How the suite is run: the regression's thresholds, date and screen mode, what reads the callers'
@@ -364,7 +368,7 @@ function check(app: App, c: AdversarialCase, k: Checked): { violations: string[]
     }
   }
   if (has('frame-kept')) out.push(...frameViolations(app, attack));
-  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'leave-out-negation' || c.render === 'recipient' || c.render === 'frame' || c.render === 'frame-echo' || c.render === 'person')) {
+  if (has('render-held') && (c.render === 'polarity' || c.render === 'drop-negation' || c.render === 'leave-out-negation' || c.render === 'recipient' || c.render === 'frame' || c.render === 'frame-echo' || c.render === 'person' || isAnswerAttack(c.render))) {
     // A one-word change in meaning: no line may be said other than as its fixed text.
     for (const [i, t] of attack.entries()) {
       for (const l of t.record.render?.lines ?? []) if (l.mode === 'generated' && l.said !== l.fixed) out.push(`render-held: on turn ${i + 1}, ${l.promptId} said what the renderer changed: ${JSON.stringify(l.said)}`);
@@ -485,8 +489,9 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, judge
     return text;
   };
   const eachSpan = (act: SpanAct): string | undefined => {
-    const text = wordSpan(act);
-    if (text !== undefined && !sameWords(text, act.content.map((c) => c.value).join(' '))) refused.add(cleanSpan(text));
+    const text = act.answer !== undefined ? wordAnswer(act) : isAnswerAttack(attack) ? act.content.map((c) => c.value).join(' ') : wordSpan(act);
+    // Registered as the turn cleans it: a span's closing stop taken off, a knowledge answer's kept where its line ends on it.
+    if (text !== undefined && !sameWords(text, act.content.map((c) => c.value).join(' '))) refused.add(act.answer !== undefined ? cleanAnswer(text, act) : cleanSpan(text));
     return text;
   };
   const wordLine = (act: SpeechAct): string => {
@@ -519,8 +524,22 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, judge
       return `Also, ${content.map((c) => c.value.replace(/[.!?]+$/, '')).join(', and ')}. ${fixed}`;
     }
     // A span's attacks only: a line worded whole is said as its fixed text.
-    if (attack === 'frame' || attack === 'frame-echo' || attack === 'leave-out-negation' || attack === 'person') return act.fixed;
+    if (attack === 'frame' || attack === 'frame-echo' || attack === 'leave-out-negation' || attack === 'person' || isAnswerAttack(attack)) return act.fixed;
     return `${RENDER_ATTACKS[attack]} ${act.fixed}`;
+  };
+  // A knowledge answer's wording, from its approved passage: the attack's change, else what a span's attack makes of it.
+  const wordAnswer = (act: SpanAct): string | undefined => {
+    const passage = act.content.map((c) => c.value).join(' ');
+    // Another figure in place of the passage's first (25 cents made 26), else an amount added.
+    if (attack === 'answer-figure') return /\d/.test(passage) ? passage.replace(/\d+/, (d) => String(Number(d) + 1)) : `${passage.replace(/[.!]+$/, '')}, and it pays 500 dollars on top.`;
+    if (attack === 'answer-promise') return `${passage.replace(/[.!]+$/, '')}, and we guarantee your claim will be paid.`;
+    if (attack === 'answer-turned') {
+      const turned = passage.replace(/\b(are|is|does|do|was|were|can|will)\s+not\b/i, '$1').replace(/\b(are|is|does|do|was|were|ca|wo)n['\u2019]t\b/i, (_m, v: string) => (v.toLowerCase() === 'ca' ? 'can' : v.toLowerCase() === 'wo' ? 'will' : v));
+      if (turned !== passage) return turned;
+      // A limit turned into a floor ("up to 5 dollars", "at least 5 dollars"), else a "not" put in.
+      return /\bup to\b/i.test(passage) ? passage.replace(/\bup to\b/i, 'at least') : passage.replace(/\b(are|is|pays?|covers?|costs?|includes?)\b/i, (v) => `${v} not`);
+    }
+    return wordSpan(act);
   };
   // A framed line's span, answered from its content (and, for `frame-echo`, the sentence it is shown).
   const wordSpan = (act: SpanAct): string | undefined => {
@@ -548,6 +567,8 @@ function hostileRenderer(attack: RenderAttack, base: Renderer | undefined, judge
       const a = Object.values(TO_CALLER_ATTACKS).find((x) => x.content === content.trim());
       return a === undefined ? undefined : a.said.split('{name}').join(act.names?.[0]?.value ?? 'he');
     }
+    // An answer's attack on a span that is not an answer: its content, word for word.
+    if (isAnswerAttack(attack)) return content;
     return `${RENDER_ATTACKS[attack]} ${content}`;
   };
   // A judge the run names (its renderer's `drift`) is the judge under test, used as it is; else the run's own, refusing what the attack registered.
@@ -638,6 +659,8 @@ interface CleanCall {
   readonly missed: boolean;
   /** Whether the call said a line the app generates (a hostile renderer runs over such calls). */
   readonly worded: boolean;
+  /** Whether the call worded a knowledge answer (a span from the answer, tried): an answer's attacks run over such calls. */
+  readonly wordsAnswer: boolean;
 }
 
 /** Each scripted call run once with clean replies: what it ran, how it ended, and what each tool and service answered. */
@@ -651,6 +674,7 @@ async function cleanCalls(app: App, opts: AdversarialRunOptions, client: JevClie
     out.push({
       scenario, answered, missed: firstMiss(call.turns) >= 0,
       worded: call.turns.some((t) => (t.record.render?.lines ?? []).some((l) => l.skipped === undefined)),
+      wordsAnswer: call.turns.some((t) => (t.record.render?.lines ?? []).some((l) => l.answer !== undefined && l.skipped === undefined)),
       clean: {
         ran: new Set(call.ran.map((r) => r.call.tool)),
         level: maxLevel(start, call.turns),
@@ -716,8 +740,10 @@ async function runHostileCase(app: App, c: AdversarialCase, opts: AdversarialRun
  * renderer, and policy holds.
  */
 async function runRenderCase(app: App, c: AdversarialCase, opts: AdversarialRunOptions, client: JevClient, calls: readonly CleanCall[]): Promise<CaseResult> {
-  const reaching = calls.filter((cc) => cc.worded).slice(0, opts.callsPerTarget ?? 2);
-  if (reaching.length === 0) return { case: c, status: 'not-run', violations: [], note: opts.renderer === undefined ? 'the run words no line (no renderer)' : 'no scripted call says a generated line', calls: [] };
+  // A knowledge answer's attacks run over the calls that word one; every other over the calls that word any line.
+  const answers = isAnswerAttack(c.render);
+  const reaching = calls.filter((cc) => (answers ? cc.wordsAnswer : cc.worded)).slice(0, opts.callsPerTarget ?? 2);
+  if (reaching.length === 0) return { case: c, status: 'not-run', violations: [], note: opts.renderer === undefined ? 'the run words no line (no renderer)' : answers ? 'no scripted call words a knowledge answer (a topic marked risk: low, asked through the answer line)' : 'no scripted call says a generated line', calls: [] };
   const violations: string[] = [];
   const ran: CaseCall[] = [];
   let pending = false;

@@ -27,6 +27,11 @@ import { CASSETTE_MISS } from '../../jev/cassette';
 import { JevClientError, type JevClient } from '../../jev/types';
 import type { GateDecision } from '../../gate/types';
 import { HeuristicStubClient } from '../../jev/heuristicStub';
+import { APP_EDITS, cleanScratch, codeFor, folder } from '../../kb/__fixtures__/libraryKbApp';
+import { defineApp } from '../../define/defineApp';
+import { fixedRetriever } from '../retrievers';
+import type { CorpusEntry } from '../../jev/corpus';
+import type { Scenario } from '../../harness-text/runner';
 
 /**
  * The adversarial suite over the engine's own apps (the testkit and the fixtures under src/testing),
@@ -483,5 +488,46 @@ describe('generated wording under the suite (the wording family, on the message 
     const caught = await runAdversarialSuite({ ...suite, cases }, { ...opts, renderer: { client: new FakeRenderClient(), drift: blind } });
     expect(caught.results[0]!.status).toBe('fail');
     expect(caught.results[0]!.violations.some((v) => v.includes('render-held:') && v.includes('ask_caller said what the renderer wrote'))).toBe(true);
+  });
+});
+
+describe('a knowledge answer worded for the caller\'s question, under the suite (the maintainer\'s decision, 2026-10-16)', () => {
+  const QUESTION = 'how much for a late book';
+  const dir = folder('library-kb-adversarial', {
+    'prompts.yaml': (t) => APP_EDITS['prompts.yaml']!(t).replace("  kb_answer:\n    text: '{answer}'\n    interruptible: false\n", "  kb_answer:\n    text: '{answer}'\n    interruptible: false\n    generate:\n      answer:\n        from: answer\n        goal: Answer the caller's question from the passage.\n"),
+    'kb/topics.yaml': (t) => t.replace('    from: getFees\n', '    from: getFees\n  risk: low\n'),
+  });
+  const app = defineApp(dir, { ...codeFor(dir), knowledge: { retriever: fixedRetriever({ [QUESTION]: ['late_fees'] }) } });
+  const corpus: CorpusEntry[] = [{ id: 'kb-01', text: QUESTION, intent: 'ask_library', context: 'no_form', labels: { libraryTopicTopic: 'late_fees' } } as CorpusEntry];
+  const scenarios: Scenario[] = [{ id: 'late-fees-worded', steps: [{ say: QUESTION }], expect: { decision: 'prompt', promptId: 'anything_else' } }];
+  afterAll(cleanScratch);
+
+  const answerRun = async (drift?: JevClient): Promise<AdversarialReport> => {
+    resetAppsForTest();
+    registerApp(app);
+    const suite = adversarialSuite(app, { corpus });
+    const cases = suite.cases.filter((c) => c.id.startsWith('wording/answer/'));
+    expect(cases.map((c) => c.id)).toEqual(['wording/answer/figure', 'wording/answer/turned', 'wording/answer/promise']);
+    return runAdversarialSuite({ ...suite, cases }, { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-10-03', perceiver: { stub: true, corpus }, scenarios, renderer: { client: new FakeRenderClient(), ...(drift !== undefined ? { drift } : {}) } });
+  };
+
+  it('a hostile wording of the passage (a figure added, what is covered turned around, a promise) is never said: the passage is, word for word, the account line after it', async () => {
+    const report = await answerRun();
+    expect(failing(report)).toEqual([]);
+    for (const r of report.results) {
+      expect(r.status, r.case.id).toBe('hold');
+      const line = r.calls[0]!.turns.flatMap((t) => t.record.render?.lines ?? []).find((l) => l.answer !== undefined)!;
+      expect(line, r.case.id).toMatchObject({ mode: 'fixed', fixed: 'Late books on an adult card cost 25 cents a day, up to 5 dollars a book.' });
+      // Another figure, by the checks; a promise added, by its budget (the passage's own word count); what is covered turned around, by the judge.
+      expect(line.fallback, r.case.id).toBe(r.case.id.endsWith('figure') ? 'foreign' : r.case.id.endsWith('promise') ? 'words' : 'drift');
+    }
+  });
+
+  it('render-held catches a wording said from a hostile renderer: here, a judge that passes everything lets the turned answer by', async () => {
+    const blind: JevClient = { ask: async () => ({ answers: { renderAnswerDrift: { type: 'noul', noul: 0.01 }, manipulation: { type: 'noul', noul: 0.01 } }, model: 'blind', usage: { inputTokens: 0, outputTokens: 0, estimated: true }, latencyMs: 0, source: 'stub:heuristic' }) };
+    const report = await answerRun(blind);
+    const turned = report.results.find((r) => r.case.id === 'wording/answer/turned')!;
+    expect(turned.status).toBe('fail');
+    expect(turned.violations.some((v) => v.includes('render-held:') && v.includes('kb_answer said what the renderer changed'))).toBe(true);
   });
 });

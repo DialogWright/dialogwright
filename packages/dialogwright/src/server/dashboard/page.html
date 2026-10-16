@@ -761,7 +761,7 @@
     // A framed line's span is named after its line ({summary}), its exact content beside a generated one.
     const named = (w) => (w.span !== undefined ? `${esc(w.promptId)} {${esc(w.span)}}` : esc(w.promptId));
     return (l.wording ?? []).map((w) => w.mode === 'generated'
-      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}</span>`
+      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.passageId !== undefined ? `approved passage ${esc(w.passageId)}` : w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}</span>`
       : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${named(w)}</span>${esc(w.why ?? '')}</span>`).join('');
   }
 
@@ -984,7 +984,8 @@
       + `<div class="meta">§ ${esc(s.section)} · <b>version ${esc(s.version)}</b> · <span class="mono" style="color:var(--faint)">${esc(s.passageId)}</span></div>`
       + (s.applies?.length || s.locale ? `<div class="meta">${[...(s.applies ?? []).map((a) => `<b>${esc(a)}</b>`), ...(s.locale ? [`locale ${esc(s.locale)}`] : [])].join(' · ')}</div>` : '')
       + `<div class="meta">Effective ${esc(s.effective)} to ${s.effectiveTo ? esc(s.effectiveTo) : 'present'} · ${s.approved ? `Approved${s.approvedBy ? ` by ${esc(s.approvedBy)}` : ''} on ${esc(s.approved)}` : 'Not approved'}</div>`
-      + (s.sourceHash || s.approvalHash ? `<div class="meta mono" style="color:var(--faint)">${[...(s.sourceHash ? [`source ${esc(s.sourceHash)}`] : []), ...(s.approvalHash ? [`approval ${esc(s.approvalHash)}`] : [])].join(' · ')}</div>` : '');
+      + (s.sourceHash || s.approvalHash ? `<div class="meta mono" style="color:var(--faint)">${[...(s.sourceHash ? [`source ${esc(s.sourceHash)}`] : []), ...(s.approvalHash ? [`approval ${esc(s.approvalHash)}`] : [])].join(' · ')}</div>` : '')
+      + (s.said ? `<div class="meta">${s.said === 'worded' ? 'Said in other words for the caller\'s question (its wording beside the passage under the line)' : 'Said word for word'}</div>` : '');
   }
 
   function handoffHtml(h) {
