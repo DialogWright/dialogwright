@@ -361,6 +361,58 @@
     "pass": true,
     "mismatches": []
   },
+  "dob-numbers-example": {
+    "id": "dob-numbers-example",
+    "decision": "prompt",
+    "promptId": "ask_dob_example",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "listClaims:STEP_UP",
+    "pass": true,
+    "mismatches": []
+  },
+  "dob-numbers-example-then-said": {
+    "id": "dob-numbers-example-then-said",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "claim-status-by-number": {
     "id": "claim-status-by-number",
     "decision": "prompt",

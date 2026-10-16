@@ -650,7 +650,7 @@ All five are library slots, configured in `apps/clinic/slots.yaml` with the clin
 | A choice from a list, with close names asked about (`disambiguate`), a hedged name read back, help lines for "I don't know the name", and a one-digit keypad | `choice`: the provider |
 | A value no list holds: detected, picked as a span, turned into digits and checked, keyed as eight digits, recorded and handed over by its last four | `digits`: the clinic's billing ID (`accountId`) |
 | A date from parts (mode, month, day, weekday, a span of days), resolved against today; a span is a partial with a prompt and variables; keypad MMDD | `date`: the appointment day |
-| A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY | `birthdate` |
+| A date of birth: month and day without the year is a partial (`ask_dob_year`), masked to the year, keypad MMDDYYYY; one said only in numbers is read from its digits as the keypad reads them, and asked again with an example (`ask_dob_example`) when they read no one day | `birthdate` |
 | The caller's own name, picked from word spans with every provider's name left out of the candidates; no keypad | `name` |
 
 The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/testing/oracles/`, and used only by the clinic's grid tests (`src/shadow.test.ts`), which compare each library slot with its oracle over large grids of answers. The oracles are not app code, and a test fails if any non-test file imports one.

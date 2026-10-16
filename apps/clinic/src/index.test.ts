@@ -30,6 +30,8 @@ function reachablePromptIds(): string[] {
     if (spec.partialPromptId) ids.add(spec.partialPromptId);
     if (spec.spokenConfirm === 'by-confidence') ids.add(`ack_${spec.id}`);
   }
+  // A date of birth said in numbers that the digits cannot read asks again with an example.
+  ids.add('ask_dob_example');
   // The provider: two close names asked about, and the two help lines.
   for (const id of ['disambiguate_provider', 'ask_provider_name', 'provider_list']) ids.add(id);
   for (const form of Object.values(clinicApp.forms)) if (form.summaryPromptId) ids.add(form.summaryPromptId);
@@ -61,7 +63,7 @@ describe('the clinic app', () => {
     for (const id of reachable) expect(Object.hasOwn(manifest, id), id).toBe(true);
     // A member ID is read back at the summary, so its implicit readback is never said.
     expect(Object.keys(manifest).filter((id) => !reachable.includes(id))).toEqual(['ack_memberId']);
-    expect(Object.keys(manifest)).toHaveLength(73);
+    expect(Object.keys(manifest)).toHaveLength(74);
     expect(manifest.greeting!.text).toBe('Thanks for calling Example Family Practice. How can I help you today?');
   });
 });

@@ -83,7 +83,7 @@
     }
   },
   {
-    "id": "whereabouts-never-said",
+    "id": "whereabouts-available-is-offered-through-or-a-message",
     "steps": [
       {
         "say": "is Riley in today"
@@ -91,8 +91,13 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_intent",
-      "text": "I'm not able to say where anyone is or when they're in, but I'm happy to take a message for them."
+      "promptId": "ask_reachHow",
+      "form": "reach_person",
+      "slots": {
+        "recipient": "riley"
+      },
+      "gate": "personStatus:ALLOW",
+      "text": "Riley Moreno is available. Now, let's put you through or take a message. Which would you like?"
     }
   },
   {
@@ -102,7 +107,7 @@
         "say": "when will Sam be back"
       },
       {
-        "say": "a message for Sam please"
+        "say": "yes, a message for Sam please"
       }
     ],
     "expect": {
@@ -168,7 +173,7 @@
     "id": "whereabouts-then-yes",
     "steps": [
       {
-        "say": "is Riley in today"
+        "say": "is Jordan on holiday"
       },
       {
         "say": "yes please"
@@ -176,8 +181,12 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_recipient",
-      "form": "take_message"
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "jordan"
+      },
+      "text": "Now, let's leave a message. And who's calling, please?"
     }
   },
   {
@@ -192,12 +201,12 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_recipient",
-      "form": "take_message"
-    },
-    "knownGap": {
-      "reason": "recordings 3 and 4 (2026-10-14): \"sure, okay\" after the offer of a message reads take_message 0.59, then 0.55 (none 0.41, 0.45), so the caller is asked \"do you want to leave a message? Yes or no.\" first: one more yes, and safe. The maintainer accepted the check as the expected turn under a real model",
-      "outcome": { "promptId": "confirm_intent_explicit", "acks": [], "form": null }
+      "promptId": "ask_caller",
+      "form": "take_message",
+      "slots": {
+        "recipient": "sam"
+      },
+      "text": "Now, let's leave a message. And who's calling, please?"
     }
   },
   {
@@ -240,7 +249,7 @@
     "expect": {
       "decision": "prompt",
       "promptId": "nomatch_open",
-      "text": "I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What would you like?"
+      "text": "I can take a message for Riley, Sam or Jordan, check whether they're in, or tell you our hours or our address. What would you like?"
     }
   }
 ]

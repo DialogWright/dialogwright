@@ -2,25 +2,26 @@
 # Every slot the app has, in the order the engine works through them. Each is a library type
 # configured here (docs/slots/README.md lists the types and their options).
 
-# Who the message is for: one of the three people, or anyone at the studio. The model picks a key from
-# this list; `say` is how the line names it.
+# Who the message is for, or who the caller asks about (whether they are in, to be put through): one of
+# the three people, or anyone at the studio. One slot for both, so a message that follows the question
+# keeps the person. The model picks a key from this list; `say` is how the line names it.
 recipient:
   type: choice
   options:
     riley:
       say: Riley Moreno
-      means: The message is for Riley Moreno, or Riley
+      means: The message is for Riley Moreno, or Riley, or the caller asks about them
     sam:
       say: Sam Okafor
-      means: The message is for Sam Okafor, or Sam
+      means: The message is for Sam Okafor, or Sam, or the caller asks about them
     jordan:
       say: Jordan Lee
-      means: The message is for Jordan Lee, or Jordan
+      means: The message is for Jordan Lee, or Jordan, or the caller asks about them
     anyone:
       say: the team
-      means: The caller does not mind who gets the message, as in anyone, whoever is around, the team or the studio
+      means: The caller does not mind who, or asks about no one in particular, as in anyone, whoever is around, the team or the studio
   text:
-    instructions: Read asr.text. Who does the caller say the message is for?
+    instructions: Read asr.text. Who does the caller say the message is for, or ask about?
 
 # The caller's own name, as said.
 caller:
@@ -61,3 +62,36 @@ message:
   # read-back follows, and a no lets the caller say it again. `commands: { listen: [urgent, agent] }`
   # would put those through instead.
   commands: ignore
+
+# Someone available: the line said so, and asks whether to put the caller through or take a message
+# (reach_person). On the keypad: 1 put through, 2 a message, 3 neither.
+reachHow:
+  type: choice
+  options:
+    through:
+      say: put you through
+      means: Wants to be put through to the person now, as in put me through, connect me, I'll talk to them, yes please put me through
+    message:
+      say: take a message
+      means: Wants to leave a message instead, as in I'll leave a message, just take a message, a message is fine
+    neither:
+      say: neither
+      means: Wants neither, as in no thanks, never mind, I'll call back later
+  keypad: true
+  text:
+    instructions: Read asr.text. The line said the person is available and asked whether to put the caller through or take a message. Which does the caller choose?
+
+# Anyone not available: the line said so, and asks whether the caller would like to leave a message
+# (offer_message). On the keypad: 1 yes, 2 no.
+leaveMessage:
+  type: choice
+  options:
+    leave:
+      say: leave a message
+      means: Agrees to leave a message, as in yes, yes please, sure, okay, I'll leave one
+    decline:
+      say: no message
+      means: Declines to leave a message, as in no, no thanks, not now, I'll call back later
+  keypad: true
+  text:
+    instructions: Read asr.text. The line asked whether the caller would like to leave a message. Do they agree or decline?

@@ -82,6 +82,14 @@ export const birthdateOptions = z
       .boolean()
       .default(false)
       .describe('Whether the caller can key the date on the keypad as eight digits, month, day and year (MMDDYYYY), or in a day-first locale (Spanish) day, month and year (DDMMYYYY). Needs an ask_<slot>_dtmf line.'),
+    readNumbers: z
+      .boolean()
+      .default(true)
+      .describe('Whether a date of birth said only in numbers, at the slot\'s own question, is read from its digits the way the keypad reads them ("oh eight two one nineteen eighty four", "eight twenty one eighty four", "08/21/1984"), in place of the model\'s month and day: a run the digits read one way only, a real day from `minYear` to yesterday, is the value (or a month and day alone, the partial) once the model judges a birth date is stated; any other run of numbers is not read (see `numbersExample`). A turn with a word that is not a number (a month name, "the", "first") or a year alone is the model\'s, as before. false: the model reads every turn.'),
+    numbersExample: z
+      .boolean()
+      .default(true)
+      .describe('Whether a date said only in numbers that gives no date (a run the digits cannot read one way, or, with `readNumbers: false`, one the model hears no date in) is asked again with an example of a date said in a way that is understood: the outcome is invalid, reason numbers_unclear, and the re-ask is ask_<slot>_example, which the app words (and, with `keypad`, may offer the keypad in). false: the slot\'s generic retry asks again. Needs an ask_<slot>_example line.'),
     yearPrompt: identifier()
       .optional()
       .describe('The prompt that asks for the year alone once a month and day are heard without it (the slot\'s partialPromptId). Default: ask_<slot>_year.'),

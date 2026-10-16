@@ -12,10 +12,10 @@
 prompts:
   # The opening lines and the engine's own lines
   greeting:
-    text: Thanks for calling Example Front Desk. No one can pick up right now, but I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. How can I help?
+    text: Thanks for calling Example Front Desk. I can take a message for Riley, Sam or Jordan, check whether they're in, or tell you our hours or our address. How can I help?
     interruptible: true
   greeting_chat:
-    text: Hi, this is Example Front Desk. I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What can I help with?
+    text: Hi, this is Example Front Desk. I can take a message for Riley, Sam or Jordan, check whether they're in, or tell you our hours or our address. What can I help with?
     interruptible: true
   ask_intent:
     text: How can I help you today?
@@ -23,7 +23,7 @@ prompts:
   # Said both when the words were not understood and when they were a request the desk does not
   # handle, so it says what the desk can do rather than "I didn't catch that".
   nomatch_open:
-    text: I can take a message for Riley, Sam or Jordan, or tell you our hours or our address. What would you like?
+    text: I can take a message for Riley, Sam or Jordan, check whether they're in, or tell you our hours or our address. What would you like?
     interruptible: true
   nomatch_dtmf_menu:
     text: Let's try the keypad. To leave a message press 1. For our hours press 2. For our address press 3. To reach the studio's main line press 0.
@@ -83,8 +83,8 @@ prompts:
     text: Let's keep going.
     interruptible: true
 
-  # Every handoff goes to the studio's main line (app.yaml's transfer). Prescribed: always said exactly
-  # as written.
+  # Every handoff goes to the studio's main line (app.yaml's transfer), but a caller put through to
+  # someone available, who goes to that person's own line. Prescribed: always said exactly as written.
   handoff_live_agent:
     text: One moment while I put you through to the studio's main line.
     interruptible: false
@@ -113,6 +113,11 @@ prompts:
     text: Let me put you through to the studio's main line.
     interruptible: false
     prescribed: true
+  # Someone available, and the caller asked to be put through: to that person's own line.
+  handoff_put_through:
+    text: One moment while I put you through.
+    interruptible: false
+    prescribed: true
   # The inbox's reply did not pass its check: the message may have gone, so a person takes it from here.
   handoff_result_unchecked:
     text: I couldn't confirm your message was passed on, so let me put you through to the studio's main line.
@@ -126,13 +131,64 @@ prompts:
   studio_address:
     text: The studio is at 418 Juniper Lane, Suite 2, in Example City.
     interruptible: false
-  no_whereabouts:
-    text: I'm not able to say where anyone is or when they're in, but I'm happy to take a message for them.
+
+  # Whether someone is in (the whereabouts form): one fixed line per status, chosen by the code from
+  # the calendar's checked reply (src/app.ts), never worded by a model. {recipient} is the person's
+  # name, {back} the day an out-of-office note gives.
+  status_available:
+    text: "{recipient} is available."
+    interruptible: false
+  status_out_of_office:
+    text: "{recipient} is out of the office until {back}."
+    interruptible: false
+  status_out_of_office_no_day:
+    text: "{recipient} is out of the office."
+    interruptible: false
+  status_in_training:
+    text: "{recipient} is in training today."
+    interruptible: false
+  status_in_a_meeting:
+    text: "{recipient} is in a meeting right now."
+    interruptible: false
+  # The team (anyone) is no one's calendar; a status the line could not read is no status.
+  status_team:
+    text: I can only check on Riley, Sam or Jordan by name.
+    interruptible: false
+  status_unknown:
+    text: I can't check whether {recipient} is in right now.
     interruptible: false
 
-  # The message: who it is for, who it is from, the number to call back, and the message itself.
+  # What follows the status (routes.yaml). Someone available: put through, or a message
+  # (reach_person, bridged into as "Now, let's put you through or take a message.").
+  ask_reachHow:
+    text: Which would you like?
+    interruptible: true
+  ask_reachHow_retry:
+    text: Sorry, shall I put you through, or take a message?
+    interruptible: true
+  ask_reachHow_dtmf:
+    text: To be put through, press 1. To leave a message, press 2. For neither, press 3.
+    interruptible: true
+  # Anyone else: a message (offer_message, bridged into as "Now, let's see about a message.").
+  ask_leaveMessage:
+    text: Would you like to leave one?
+    interruptible: true
+  ask_leaveMessage_retry:
+    text: Sorry, would you like to leave a message? Yes or no.
+    interruptible: true
+  ask_leaveMessage_dtmf:
+    text: To leave a message, press 1. If not, press 2.
+    interruptible: true
+  # Neither, or no message: said before "Is there anything else I can help with?".
+  no_problem:
+    text: No problem.
+    interruptible: false
+
+  # The message: who it is for, who it is from, the number to call back, and the message itself. The
+  # person's question is the whereabouts form's too (one slot, so a message that follows keeps them),
+  # so it asks "Who's it for", not "Who's the message for".
   ask_recipient:
-    text: Who's the message for, Riley Moreno, Sam Okafor, Jordan Lee, or anyone at the studio?
+    text: Who's it for, Riley Moreno, Sam Okafor, Jordan Lee, or anyone at the studio?
     interruptible: true
   ask_recipient_retry:
     text: Sorry, is it for Riley, Sam, Jordan, or anyone at the studio?

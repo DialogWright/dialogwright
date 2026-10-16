@@ -140,10 +140,13 @@ prompts:
     text: "Perdón, ¿cuál es su fecha de nacimiento? Por ejemplo, catorce de junio de mil novecientos setenta y cinco."
     interruptible: true
   ask_dob_dtmf:
-    text: "Por favor marque su fecha de nacimiento: dos dígitos para el mes, dos para el día, y cuatro para el año."
+    text: "Por favor marque su fecha de nacimiento: dos dígitos para el día, dos para el mes, y cuatro para el año."
     interruptible: true
   ask_dob_year:
     text: "¿Y el año en que nació?"
+    interruptible: true
+  ask_dob_example:
+    text: "Perdón, no entendí la fecha. Puede decirla así: veintiuno de agosto de mil novecientos ochenta y cuatro, o marcar los ocho dígitos: día, mes y año."
     interruptible: true
   identity_verified:
     text: "Gracias, {first}. Ya está verificado."

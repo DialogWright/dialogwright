@@ -32,6 +32,9 @@ prompts:
   ask_dob_year:
     text: And what year?
     interruptible: true
+  ask_dob_example:
+    text: Sorry, I didn't catch that date. You can say it like August twenty-first, nineteen eighty-four, or key in the eight digits.
+    interruptible: true
   ask_dob_dtmf:
     text: "Please enter your date of birth on the keypad: two digits for the month, two for the day, and four for the year."
     interruptible: false

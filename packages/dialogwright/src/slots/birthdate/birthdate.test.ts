@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { MONTHS } from '../../core/extract/date';
-import type { SlotPartial, SlotSpec } from '../../core/slots/types';
+import type { SlotContext, SlotPartial, SlotSpec } from '../../core/slots/types';
 import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import type { ChoiceAnswer } from '../../jev/types';
 import { formatProblem } from '../../define/problems';
@@ -84,20 +84,22 @@ describe('a birthdate slot built from the defaults', () => {
     expect(dob.dtmf?.length).toBe(8);
   });
 
-  it('declares the year line and the keypad line, and the whole-date line when it has one', () => {
+  it('declares the year line, the keypad line and the example line, and the whole-date line when it has one', () => {
     expect(dob.prompts).toEqual([
       { id: 'ask_dob_year', why: 'the caller gave the month and day of their birth without the year (the partialPromptId)' },
       { id: 'ask_dob_dtmf', why: 'it asks for the date of birth on the keypad, as eight digits, after spoken answers missed' },
+      { id: 'ask_dob_example', why: 'a date said only in numbers gave no date: it asks again with an example of a date said in a way that is understood (the fill\'s retryPromptId, reason numbers_unclear)' },
     ]);
     const spoken = defineSlot('born', { type: 'birthdate', wholePrompt: 'ask_born_again', yearPrompt: 'ask_born_when' });
-    expect(spoken.prompts!.map((p) => p.id)).toEqual(['ask_born_when', 'ask_born_again']);
+    expect(spoken.prompts!.map((p) => p.id)).toEqual(['ask_born_when', 'ask_born_again', 'ask_born_example']);
+    expect(defineSlot('born', { type: 'birthdate', numbersExample: false }).prompts!.map((p) => p.id)).toEqual(['ask_born_year']);
     expect(spoken.partialPromptId).toBe('ask_born_when');
     expect(spoken.dtmf).toBeUndefined();
   });
 
   it('carries its type and its parsed options, defaults applied', () => {
     expect(dob.type).toBe('birthdate');
-    expect(dob.config).toEqual({ keypad: true, minYear: 1900, redact: 'mask', handoff: 'display', confirm: 'summary' });
+    expect(dob.config).toEqual({ keypad: true, readNumbers: true, numbersExample: true, minYear: 1900, redact: 'mask', handoff: 'display', confirm: 'summary' });
     expect(Object.isFrozen(dob.config)).toBe(true);
   });
 });
@@ -160,6 +162,152 @@ describe('fill', () => {
     expect(dob.fill(heard('june', '14', 'seventy five', T.SLOT_CHOICE_CONFIRM), testSlotContext('')).kind).toBe('filled');
     expect(dob.fill(heard('june', '14', 'seventy five', T.SLOT_CHOICE_CONFIRM - 0.01), testSlotContext('')).kind).toBe('absent');
     expect(dob.fill(heard('june', '14', 'seventy five'), testSlotContext('', { thresholds: { ...T, SLOT_CHOICE_CONFIRM: 0.95 } })).kind).toBe('absent');
+  });
+});
+
+describe('a date said in numbers', () => {
+  // Asked for the date of birth (prompted), on the kit's today, 2026-09-18. The model's answers are
+  // a birth date stated (0.9) and nothing else, so what fills is the digits' reading alone.
+  const asked = (text: string, over: Partial<SlotContext> = {}) => testSlotContext(text, { prompted: true, ...over });
+  const stated = (given = 0.9) => ({ dobGiven: noul(given), dobMonth: choice({ none: 1 }), dobDay: choice({ none: 1 }), dobYear: choice({ none: 1 }) });
+  const filled = (iso: string) => expect.objectContaining({ kind: 'filled', value: iso });
+  const UNCLEAR = { kind: 'invalid', reason: 'numbers_unclear', raw: '', retryPromptId: 'ask_dob_example' };
+
+  it('reads eight digits as the keypad does, month, day and year, with "oh", "o" and "zero" as 0 and "double" said', () => {
+    for (const said of ['zero eight two one one nine eight four', 'oh eight two one one nine eight four', 'o eight two one one nine eight four', 'oh eight two one one nine double eight']) {
+      const want = said.endsWith('double eight') ? '1988-08-21' : '1984-08-21';
+      expect(dob.fill(stated(), asked(said)), said).toEqual({ kind: 'filled', value: want, display: want === '1984-08-21' ? 'August 21st, 1984' : 'August 21st, 1988', confidence: 0.9, confirm: 'none' });
+    }
+  });
+
+  it('reads six digits as month, day and two of the year, in the latest century that puts the day before today', () => {
+    expect(dob.fill(stated(), asked('oh eight two one eight four'))).toEqual(filled('1984-08-21'));
+    expect(dob.fill(stated(), asked('oh one oh five two six'))).toEqual(filled('2026-01-05'));
+    expect(dob.fill(stated(), asked('one oh two six two six'))).toEqual(filled('1926-10-26'));
+    expect(dob.fill(stated(), asked('oh nine one eight two six'))).toEqual(filled('1926-09-18'));
+  });
+
+  it('reads numbers said in groups, each a month, a day or a year', () => {
+    for (const said of [
+      'eight twenty one nineteen eighty four', 'eight twenty one eighty four', 'oh eight twenty one nineteen eighty four', 'oh eight two one eighty four',
+      'oh eight two one nineteen eighty four', 'eight twenty one one nine eight four', 'eight twenty one eight four',
+    ]) {
+      expect(dob.fill(stated(), asked(said)), said).toEqual(filled('1984-08-21'));
+    }
+    expect(dob.fill(stated(), asked('three nine sixty two'))).toEqual(filled('1962-03-09'));
+    expect(dob.fill(stated(), asked('seven two sixty five'))).toEqual(filled('1965-07-02'));
+    expect(dob.fill(stated(), asked('twelve thirty one nineteen oh five'))).toEqual(filled('1905-12-31'));
+    expect(dob.fill(stated(), asked('eight twenty one two thousand and one'))).toEqual(filled('2001-08-21'));
+    expect(dob.fill(stated(), asked('one one two thousand'))).toEqual(filled('2000-01-01'));
+    expect(dob.fill(stated(), asked('ten five twenty twenty'))).toEqual(filled('2020-10-05'));
+  });
+
+  it('reads numbers written as digits, each written number a group of its own, or eight or six digits as keyed', () => {
+    for (const said of ['08/21/1984', '8/21/84', '8-21-1984', '08211984', '082184', '0 8 2 1 1 9 8 4']) expect(dob.fill(stated(), asked(said)), said).toEqual(filled('1984-08-21'));
+  });
+
+  it('holds a month and a day said in numbers without the year as the partial', () => {
+    expect(dob.fill(stated(), asked('eight twenty one'))).toEqual({ kind: 'window', window: { kind: 'dob', month: 8, day: 21 }, confidence: 0.9 });
+    expect(dob.fill(stated(), asked('oh two two nine'))).toEqual({ kind: 'window', window: { kind: 'dob', month: 2, day: 29 }, confidence: 0.9 });
+  });
+
+  it('takes its reading over the model\'s month and day, which guesses months from runs of digits', () => {
+    // Harbor's db-13, as recorded: january 0.75, the 1st 0.58, the year 0.56.
+    const misread = { dobGiven: noul(0.9), dobMonth: chose('january', 0.75), dobDay: chose('1', 0.58), dobYear: chose('one nine eight four', 0.56) };
+    expect(dob.fill(misread, testSlotContext('zero eight two one one nine eight four'))).toEqual(filled('1984-01-01'));
+    expect(dob.fill(misread, asked('zero eight two one one nine eight four'))).toEqual(filled('1984-08-21'));
+    // where the model heard the same day, its outcome stands as it always has (its confidence the least of its parts)
+    expect(dob.fill(heard('june', '14', 'seventy five', 0.8, 0.95), asked('six fourteen seventy five'))).toEqual({ kind: 'filled', value: '1975-06-14', display: 'June 14th, 1975', confidence: 0.8, confirm: 'none' });
+    expect(dob.fill(heard('june', '14', 'none', 0.8, 0.95), asked('six fourteen'))).toEqual({ kind: 'window', window: { kind: 'dob', month: 6, day: 14 }, confidence: 0.8 });
+    expect(dob.fill(heard('june', '4', 'none', 0.8, 0.95), asked('six fourteen'))).toEqual({ kind: 'window', window: { kind: 'dob', month: 6, day: 14 }, confidence: 0.95 });
+    // a whole date said in numbers replaces a month and day pending
+    expect(dob.fill(stated(), asked('oh eight two one eight four', { window: PENDING }))).toEqual(filled('1984-08-21'));
+  });
+
+  it('checks the day as the keypad does: a real day, a leap day only in a leap year, from minYear to yesterday', () => {
+    expect(dob.fill(stated(), asked('oh two two nine nineteen ninety six'))).toEqual(filled('1996-02-29'));
+    expect(dob.fill(stated(), asked('oh two two nine two thousand'))).toEqual(filled('2000-02-29'));
+    for (const said of [
+      'oh two two nine nineteen ninety seven', 'oh two two nine one nine oh oh', 'oh two three oh nineteen ninety', 'one three oh one nineteen ninety',
+      'oh six one four eighteen ninety nine', 'oh nine one eight two oh two six', 'one two three one two oh three oh', 'oh oh one four nineteen seventy five', 'oh six three two nineteen seventy five',
+    ]) {
+      expect(dob.fill(stated(), asked(said)), said).toEqual(UNCLEAR);
+    }
+    expect(dob.fill(stated(), asked('oh nine one seven two oh two six'))).toEqual(filled('2026-09-17'));
+    const later = defineSlot('dob', { type: 'birthdate', minYear: 1950 });
+    expect(later.fill(stated(), asked('oh six one four nineteen forty nine'))).toMatchObject({ kind: 'invalid', reason: 'numbers_unclear' });
+    // two digits of the year stand for 1949 (2049 is not yet), before minYear
+    expect(later.fill(stated(), asked('oh six one four four nine'))).toMatchObject({ kind: 'invalid', reason: 'numbers_unclear' });
+    expect(later.fill(stated(), asked('oh six one four five oh'))).toEqual(filled('1950-06-14'));
+  });
+
+  it('reads nothing it could read two ways, or that splits a run of digits where the keypad would not, and asks again with the example', () => {
+    for (const said of [
+      'eight two one eight four', // five digits in a run: 8/21/84, or 8/2/1984 with a nine missed
+      'one two nineteen eighty four', // January 2nd, or December 19th, 1984
+      'eight two one eighty four', // a run of three split one and two
+      'eight oh five nineteen ninety', // the same
+      'eight twenty one nineteen hundred eighty four', // "hundred" outside a year said with a thousand
+      'eight and twenty one eighty four', // a joiner between two numbers
+      'nine nine nine', // three digits that make no date
+      'four two seven one six three five eight', // eight digits that make no date
+      'five five five one two three four five six seven', // a number too long to be a date
+    ]) {
+      expect(dob.fill(stated(), asked(said)), said).toEqual(UNCLEAR);
+    }
+  });
+
+  it('asks again with the example when the model hears no birth date stated, whatever the digits read', () => {
+    expect(dob.fill(stated(T.SLOT_DETECT), asked('oh eight two one eight four'))).toEqual({ kind: 'filled', value: '1984-08-21', display: 'August 21st, 1984', confidence: T.SLOT_DETECT, confirm: 'none' });
+    expect(dob.fill(stated(T.SLOT_DETECT - 0.01), asked('oh eight two one eight four'))).toEqual(UNCLEAR);
+    expect(dob.fill({}, asked('oh eight two one eight four'))).toEqual(UNCLEAR);
+  });
+
+  it('is not this path: a word that is not a number, a month name, a year alone, two digits, or a turn the slot did not ask for', () => {
+    const model = { dobGiven: noul(0.9), dobMonth: chose('august', 0.9), dobDay: chose('21', 0.9), dobYear: chose('eighty four', 0.9) };
+    for (const said of ['august twenty one eighty four', 'the twenty first of august eighty four', "it's eight twenty one eighty four", 'eight slash twenty one slash eighty four', 'eight twenty first eighty four']) {
+      expect(dob.fill(stated(), asked(said)), said).toEqual({ kind: 'absent' });
+      expect(dob.fill(model, asked(said)), said).toEqual(filled('1984-08-21'));
+    }
+    // a year alone (the year asked for once a month and day are on hand, or said with none) is the model's
+    const year = { dobGiven: noul(0.9), dobMonth: choice({ none: 1 }), dobDay: choice({ none: 1 }), dobYear: chose('nineteen eighty four', 0.9) };
+    for (const said of ['nineteen eighty four', 'one nine eight four', 'two thousand one', '1984']) {
+      expect(dob.fill(year, asked(said)), said).toEqual({ kind: 'invalid', reason: 'no_year', raw: '' });
+    }
+    expect(dob.fill(year, asked('nineteen eighty four', { window: PENDING }))).toEqual(filled('1984-06-14'));
+    expect(dob.fill(heard('none', 'none', 'seventy five'), asked('seventy five', { window: PENDING }))).toEqual(filled('1975-06-14'));
+    // two digits, and a turn the slot did not ask for
+    expect(dob.fill(stated(), asked('twenty one'))).toEqual({ kind: 'absent' });
+    expect(dob.fill(stated(), testSlotContext('eight two one eight four'))).toEqual({ kind: 'absent' });
+  });
+
+  it('reads the day first in Spanish, as the keypad takes it there, with Spanish number words', () => {
+    const es = (text: string) => asked(text, { locale: 'es' });
+    expect(dob.fill(stated(), es('dos uno cero ocho uno nueve ocho cuatro'))).toEqual({ kind: 'filled', value: '1984-08-21', display: '21 de agosto de 1984', confidence: 0.9, confirm: 'none' });
+    expect(dob.fill(stated(), es('veintiuno ocho mil novecientos ochenta y cuatro'))).toEqual(filled('1984-08-21'));
+    expect(dob.fill(stated(), es('veintiuno ocho ochenta y cuatro'))).toEqual(filled('1984-08-21'));
+    expect(dob.fill(stated(), es('veintiuno ocho dos mil uno'))).toEqual(filled('2001-08-21'));
+    expect(dob.fill(stated(), es('21/08/1984'))).toEqual(filled('1984-08-21'));
+    expect(dob.fill(stated(), asked('08/21/1984', { locale: 'es' }))).toEqual(UNCLEAR);
+    expect(dob.fill(stated(), es('veintiuno de agosto de mil novecientos ochenta y cuatro'))).toEqual({ kind: 'absent' });
+  });
+
+  it('readNumbers: false leaves every turn to the model, and the example still answers a run it hears no date in', () => {
+    const modelOnly = defineSlot('dob', { type: 'birthdate', readNumbers: false });
+    const misread = { dobGiven: noul(0.9), dobMonth: chose('january', 0.75), dobDay: chose('1', 0.58), dobYear: chose('one nine eight four', 0.56) };
+    expect(modelOnly.fill(misread, asked('zero eight two one one nine eight four'))).toEqual(filled('1984-01-01'));
+    expect(modelOnly.fill(stated(), asked('oh eight two one eight four'))).toEqual(UNCLEAR);
+    expect(modelOnly.fill(heard('august', '21', 'none'), asked('eight twenty one'))).toMatchObject({ kind: 'window' });
+  });
+
+  it('numbersExample: false asks again with the generic retry; with both off, the model\'s outcome is as before', () => {
+    const noExample = defineSlot('dob', { type: 'birthdate', numbersExample: false });
+    expect(noExample.fill(stated(), asked('eight two one eight four'))).toEqual({ kind: 'invalid', reason: 'numbers_unclear', raw: '' });
+    expect(noExample.fill(stated(), asked('oh eight two one eight four'))).toEqual(filled('1984-08-21'));
+    const neither = defineSlot('dob', { type: 'birthdate', readNumbers: false, numbersExample: false });
+    expect(neither.fill(stated(), asked('eight two one eight four'))).toEqual({ kind: 'absent' });
+    expect(neither.fill(heard('august', 'none', 'none'), asked('eight two one eight four'))).toEqual({ kind: 'invalid', reason: 'no_year', raw: '' });
+    expect(neither.fill({}, asked('eight two one eight four'))).toEqual({ kind: 'absent' });
   });
 });
 
@@ -295,6 +443,8 @@ describe('the testkit\'s date of birth, written as configuration', () => {
   it('declares what the hand-written slot did', () => {
     expect(dobBirthdateSlot.config).toEqual({
       keypad: true,
+      readNumbers: true,
+      numbersExample: true,
       wholePrompt: 'ask_dob_whole',
       handoff: 'verified',
       minYear: 1900,
@@ -310,7 +460,7 @@ describe('the testkit\'s date of birth, written as configuration', () => {
         yearNone: "No span of asr.text is the year of the caller's birth",
       },
     });
-    expect(dobBirthdateSlot.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_whole', 'ask_dob_dtmf']);
+    expect(dobBirthdateSlot.prompts!.map((p) => p.id)).toEqual(['ask_dob_year', 'ask_dob_whole', 'ask_dob_dtmf', 'ask_dob_example']);
   });
 
   const ids = { given: 'dobGiven', month: 'dobMonth', day: 'dobDay', year: 'dobYear' };
@@ -334,7 +484,7 @@ describe('the docs', () => {
   it('the docs page names every option and every text part', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/birthdate.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(birthdateType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['askedOf', 'attempts', 'confirm', 'handoff', 'ids', 'keypad', 'listen', 'minYear', 'notThisDate', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'redact', 'text', 'wholePrompt', 'yearPrompt']);
+    expect(options.sort()).toEqual(['askedOf', 'attempts', 'confirm', 'handoff', 'ids', 'keypad', 'listen', 'minYear', 'notThisDate', 'numbersExample', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'readNumbers', 'redact', 'text', 'wholePrompt', 'yearPrompt']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
     for (const part of ['given', 'givenTrue', 'givenFalse', 'month', 'monthHint', 'day', 'dayHint', 'year', 'yearAsked', 'yearNone']) expect(readme, part).toContain(`\`text.${part}\``);
   });

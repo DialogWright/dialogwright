@@ -4,16 +4,12 @@ import type { AnswerMap } from '../../jev/types';
 import { isChoice, noulValue } from '../../jev/types';
 import { dayFirst } from '../parts/locale';
 import { meetsThreshold } from '../parts/thresholds';
+import { isDateInNumbers, isoOf, numberPiecesOf, readNumbers } from './numbers';
 import type { BirthdateOptions } from './options';
 import { birthdatePartialOf, type BirthdatePartial } from './partial';
 import type { BirthdateIds } from './questions';
 
-/** The calendar day as an ISO date, or null when there is no such day (February 30th). */
-export function isoOf(y: number, m: number, d: number): string | null {
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
-  return dt.toISOString().slice(0, 10);
-}
+export { isoOf } from './numbers';
 
 /** The label the model chose and its probability; "none" at 0 for an answer that is not a choice. */
 function pick(answers: AnswerMap, id: string): { label: string; p: number } {
@@ -32,8 +28,48 @@ function pick(answers: AnswerMap, id: string): { label: string; p: number } {
  * asked for (`yearPrompt`). A year before `minYear`, or no such day: invalid, "impossible". Today or
  * later: invalid, "future" (raw is the ISO date, so the engine can tell the day was heard). Otherwise
  * filled with the ISO date, its confidence the least of the parts heard, never read back on its own.
+ *
+ * A date said only in numbers at the slot's own question (numbers.ts: not a year alone, three digits
+ * or more): with `readNumbers`, the digits decide, not the model's month and day. Read one way only,
+ * and the model judges a birth date stated (SLOT_DETECT): filled with that day (or the partial, for a
+ * month and a day), its confidence the yes-or-no's (the model's outcome, its confidence the least of
+ * its parts, where it heard the same). Otherwise, and with `readNumbers: false` where
+ * the model hears no date in it: invalid, "numbers_unclear", re-asked with `ask_<slot>_example`
+ * (`numbersExample`) or the generic retry; with neither option, the model's outcome as before.
  */
 export function birthdateFill(
+  o: BirthdateOptions,
+  ids: BirthdateIds,
+  display: (value: string, locale?: string) => string,
+  examplePrompt: string,
+): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
+  const example = o.numbersExample ? examplePrompt : null;
+  const unclear: SlotOutcome = { kind: 'invalid', reason: 'numbers_unclear', raw: '', ...(example !== null ? { retryPromptId: example } : {}) };
+  const byModel = modelFill(o, ids, display);
+  return (answers, ctx) => {
+    const turn = ctx.prompted && (o.readNumbers || o.numbersExample) ? numberPiecesOf(ctx.text, ctx.locale) : null;
+    if (turn === null || !isDateInNumbers(turn, { minYear: o.minYear, todayIso: ctx.todayIso })) return byModel(answers, ctx);
+    if (!o.readNumbers) {
+      const heard = byModel(answers, ctx);
+      return heard.kind === 'filled' || heard.kind === 'window' ? heard : unclear;
+    }
+    const given = noulValue(answers, ids.given);
+    const reading = readNumbers(turn, { minYear: o.minYear, todayIso: ctx.todayIso, ...(ctx.locale !== undefined ? { locale: ctx.locale } : {}) });
+    if (reading === null || !meetsThreshold(ctx.thresholds, 'SLOT_DETECT', given)) return unclear;
+    // Where the model heard the same day (or month and day), its outcome stands as it always has, its
+    // confidence the least of the parts it heard; the digits decide only where the two differ.
+    const heard = byModel(answers, ctx);
+    if (reading.kind === 'monthDay') {
+      const same = heard.kind === 'window' && birthdatePartialOf(heard.window)?.month === reading.month && birthdatePartialOf(heard.window)?.day === reading.day;
+      return same ? heard : { kind: 'window', window: { kind: 'dob', month: reading.month, day: reading.day } satisfies BirthdatePartial, confidence: given };
+    }
+    if (heard.kind === 'filled' && heard.value === reading.iso) return heard;
+    return { kind: 'filled', value: reading.iso, display: display(reading.iso, ctx.locale), confidence: given, confirm: 'none' };
+  };
+}
+
+/** The fill from the model's four answers alone: every turn but a date said in numbers (above). */
+function modelFill(
   o: BirthdateOptions,
   ids: BirthdateIds,
   display: (value: string, locale?: string) => string,

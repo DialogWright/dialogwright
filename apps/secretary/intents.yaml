@@ -5,7 +5,7 @@
 intents:
   # The one task: a message for one of the three people, or for anyone (forms.yaml).
   take_message:
-    criteria: Wants to leave a message for Riley Moreno, Sam Okafor, Jordan Lee or anyone at the studio, or wants someone to call them back, or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on, or agrees (yes, sure, okay, please) right after the line offers to take a message. A caller who says who it is for and what to pass on is leaving a message, however many details they add in the same breath, such as their name or their number. A message that only mentions a deadline, or asks for a call back soon, is still a message; a caller who says the matter itself is urgent is urgent's
+    criteria: Wants to leave a message for Riley Moreno, Sam Okafor, Jordan Lee or anyone at the studio, or wants someone to call them back, or wants something only the studio's people can do (a quote, a meeting, a price), which a message passes on. A caller who says who it is for and what to pass on is leaving a message, however many details they add in the same breath, such as their name or their number. A message that only mentions a deadline, or asks for a call back soon, is still a message; a caller who says the matter itself is urgent is urgent's
     label: leave a message
     kind: form
 
@@ -30,16 +30,18 @@ intents:
     label: hear the studio's address
     kind: informational
     promptId: studio_address
-  # The desk never says where anyone is or when they are in: asked, it says so, and offers a message.
+  # Whether someone is in (forms.yaml): the line reads the person's status from the studio's calendar
+  # and says it in a fixed line, then offers what fits it (routes.yaml): someone available, to be put
+  # through or to leave a message; anyone else, a message. Asking to talk to one of the three by name is
+  # this request too: the caller hears whether they are in before being put through.
   whereabouts:
-    criteria: Asks whether Riley, Sam, Jordan or anyone is in, available, away, on holiday or busy, where they are, when they will be back, or what their schedule is
-    label: ask where someone is
-    kind: informational
-    promptId: no_whereabouts
+    criteria: Asks whether Riley, Sam, Jordan or anyone is in, available, away, on holiday or busy, where they are, when they will be back, or what their schedule is, or asks to talk to or be put through to Riley, Sam or Jordan by name
+    label: find out whether someone's in
+    kind: form
 
   # The engine's own control intents. agent and repeat_prompt are required.
   agent:
-    criteria: Asks to speak with a person, a representative, or an operator
+    criteria: Asks to speak with a person, a representative, or an operator, without naming Riley, Sam or Jordan
     label: speak with someone
     kind: control
   repeat_prompt:

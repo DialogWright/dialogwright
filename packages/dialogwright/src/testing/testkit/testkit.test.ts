@@ -71,9 +71,11 @@ function reachablePromptIds(): string[] {
     if (spec.spokenConfirm === 'by-confidence') ids.add(`ack_${spec.id}`);
     if (spec.spokenConfirm === 'always') ids.add(`confirm_${spec.id}`);
   }
-  // A slot that can answer with two candidates asks which (SlotOutcome 'disambiguate'); a dob missing a part asks again whole.
+  // A slot that can answer with two candidates asks which (SlotOutcome 'disambiguate'); a dob missing a part asks again whole,
+  // and one said in numbers that the digits cannot read asks again with an example.
   ids.add('disambiguate_parcelSelect');
   ids.add('ask_dob_whole');
+  ids.add('ask_dob_example');
   for (const form of Object.values(app.forms)) if (form.summaryPromptId) ids.add(form.summaryPromptId);
   for (const def of Object.values(app.intents)) if (def.promptId) ids.add(def.promptId);
   for (const status of ['in_transit', 'out_for_delivery', 'delivered', 'held']) ids.add(`parcel_status_${status}`);

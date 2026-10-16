@@ -127,6 +127,10 @@
     "text": "And what year were you born?",
     "interruptible": true
   },
+  "ask_dob_example": {
+    "text": "Sorry, I didn't catch that date. You can say it like August twenty-first, nineteen eighty-four, or key in the eight digits.",
+    "interruptible": true
+  },
   "identity_verified": {
     "text": "Thanks, {first}.",
     "interruptible": true
