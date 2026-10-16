@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-source.schema.json
+# The Accident Advantage Plus Member Guide, plan year 2026: the plan explained for members in plain words, the fuller
+# answers on claim filing, travel, sports and prescriptions are drawn from (an invented document, as the
+# certificates are, consistent with them).
+document: Accident Advantage Plus Member Guide
+sections:
+  "1 Filing a claim":
+    text: "You have 180 days from the date of your accident to tell us about a claim. You can file it in the member portal, in the Harbor Mutual app, or by calling member services. You'll need the date of the accident, a short description of what happened, and the bills or a statement from the doctor who treated you. Claims sent after 180 days may still be reviewed, but payment isn't guaranteed, so it's best to file as soon as you can, even if you don't have every document yet. You can send the rest later."
+  "2 Coverage when you travel":
+    text: "Your plan covers accidents anywhere in the world, with no territorial limit. If you're hurt while you're traveling, get the care you need and keep the itemized bills and any report from the doctor or hospital that treated you. Bills in another currency are fine; benefits are paid in US dollars. You can file the claim when you get home, as long as it's within 180 days of the accident."
+  "3 Sports and recreation":
+    text: "Injuries from amateur sports and recreation are covered, including school teams, club and league play, pickup games and fitness classes. Injuries while playing a sport professionally, meaning you're paid to play or compete, are not covered. Coaching or refereeing for pay is not playing professionally, so an injury while doing either is covered like any other accident."
+  "4 Prescriptions":
+    text: "Prescription drugs and medications aren't covered by this plan, even when they're prescribed for an injury from a covered accident. They're usually covered by your major medical plan, so give the pharmacy that plan's card. The visits, treatment and services this plan does cover are still paid as scheduled, whatever your medical plan pays."

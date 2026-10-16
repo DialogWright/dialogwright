@@ -9,6 +9,8 @@ action: searchPolicy
 applies:
   plan: [advantage, advantage_plus]
 localeFallback: none
+# The member guide's fuller answers (2026-10-16) run to about 450 characters; the default is 300.
+maxAnswerChars: 600
 # Topics are found by their words and by their meaning (the engine's hybrid retrieval with the
 # static embedder potion-base-8M, its vectors in kb/.index/potion-base-8M.json, written by pnpm
 # kb:index). The cap and the floor were chosen offline with pnpm kb:bakeoff --sweep on

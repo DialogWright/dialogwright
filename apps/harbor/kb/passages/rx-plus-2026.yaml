@@ -1,12 +1,14 @@
 # yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
 id: rx-plus-2026
 topic: prescriptions
-version: "2026.1"
+version: "2026.2"
 applies: { plan: advantage_plus }
 effective: { from: 2026-01-01 }
-source: { document: accident-advantage-plus-certificate-2026, section: "7.4 Exclusions" }
-answer: Prescriptions aren't covered by this plan. They're usually covered by your medical insurance.
-# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+source: { document: accident-advantage-plus-member-guide-2026, section: "4 Prescriptions" }
+answer: "Prescription drugs and medications aren't covered by this plan, even when they're prescribed for an injury from a covered accident. They're usually covered by your major medical plan, so give the pharmacy that plan's card. The visits, treatment and services this plan does cover are still paid as scheduled, whatever your medical plan pays."
+# Version 2026.2 (2026-10-16): the fuller answer from the member guide, drafted by an AI coding assistant
+# (Claude) for a person to read against its source and approve; the approval below is the earlier
+# version's, so the passage is withheld until then.
 approval:
   owner: Benefits Content
   approvedBy: Compliance Review

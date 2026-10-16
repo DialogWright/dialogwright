@@ -1,12 +1,14 @@
 # yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
 id: sports-adv-2026
 topic: sports_injury
-version: "2026.1"
+version: "2026.2"
 applies: { plan: advantage }
 effective: { from: 2026-01-01 }
-source: { document: accident-advantage-certificate-2026, section: "5.2 Recreational and sports activity" }
-answer: Injuries from amateur sports are covered, including school and league play. Injuries while playing sports professionally are not covered.
-# Carried over from the earlier Harbor, whose approval covered the source text only: see kb/approvals.jsonl.
+source: { document: accident-advantage-member-guide-2026, section: "3 Sports and recreation" }
+answer: "Injuries from amateur sports and recreation are covered, including school teams, club and league play, pickup games and fitness classes. Injuries while playing a sport professionally, meaning you're paid to play or compete, are not covered. Coaching or refereeing for pay is not playing professionally, so an injury while doing either is covered like any other accident."
+# Version 2026.2 (2026-10-16): the fuller answer from the member guide, drafted by an AI coding assistant
+# (Claude) for a person to read against its source and approve; the approval below is the earlier
+# version's, so the passage is withheld until then.
 approval:
   owner: Benefits Content
   approvedBy: Compliance Review
