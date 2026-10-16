@@ -292,6 +292,13 @@ Edited by hand, each entry from `regress --corpus <id> --json` / `--scenario <id
 - **What the stub shows of the span** (since generated wording made simple, 2026-10-14; the fake renderer gives a message's first clause, its "I" and "my" said as "you" and "your", and the whole message when a later clause has a "no"): of 31 spans tried, 9 said generated (a first person turned to the caller counts as a wording: `ms-04` "you're calling about the invoice ...", `ms-11` "... and you just need him to give his approval", `ms-06` and `ms-09` their "we've" and "me" said to the caller), 20 said unchanged with the exact-words frame (one-clause messages with no first person, and `ms-02` and `ms-07`, whose later clause has a "no"), 2 fell back, both `drift`: `tm-08` (the one-breath message whose first clause is "hi") and its call. Two spans pass on the stub though they leave out what matters, the stub's test-double judge passing them: `ms-04` summarized as "you're calling about the invoice for the spring campaign" (the request to send it again left out) and `ms-08` as "it's not urgent" (the invoice needing a look this week left out). On a recording, only the real model and the real drift judge decide these: watch both.
 - **The lines the first recording should watch** (each is a reading the stub takes from its label, and only the real model shows): the urgent and message boundary (`ur-*`, `tm-13`, `tm-14`, `ms-08`, `ms-09`: "it's not urgent, but ...", "call me back as soon as possible"); "yes please" and "sure, okay" after the whereabouts line (`tm-11`, `tm-12`); a quote, a meeting and a price as messages, and the truly off-scope requests as `other` (`tm-15` to `tm-17`, `ot-*`); "I'm not sure who it should go to" as `anyone` (`rc-05`); "read it back" at "What should I change?" (`rp-09`); the whole one-breath message (`tm-08`); and every span the render model words and the drift check judges, above all a message with a negation or a second clause ("no changes needed", "please don't send ...", "it's not urgent, but ...", "..., could someone send it again ...": `ms-02`, `ms-04`, `ms-06`, `ms-07`, `ms-08`), and whether a one-clause message comes back unchanged (the exact-words frame) or reworded (the "in short" frame).
 
+### After the status recording (2026-10-16)
+
+| Entry | Field | Before -> after | Why |
+|---|---|---|---|
+| corpus `wh-13` "is someone in today" | `recipient` label, `promptId`, `acks`, `form`, `slots` | no person -> `anyone` (the team): `status_team` and the message offer | the model reads it as asking about anyone (recipient anyone 0.94), which is right: the team's answer and a message (bucket 1, from `regress --corpus wh-13 --json`) |
+| corpus `wh-15` "can you check if they're in today" | new | the person asked for (`ask_recipient`) | the unnamed opener for `status-person-asked-for`, whose old opener ("is someone in today") now reads as the team (bucket 3) |
+
 ## Recordings
 
 - **Recording 1, 2026-10-14, decision model `jev-1.13.0` (TypeSafe), render model `claude-haiku-5-5` (Anthropic, thinking off)**, by the maintainer: corpus 111/128, scripted calls 42/52 pass; `to triage: 17 untagged corpus differences, 10 failing scripted calls, 3 passing scripted calls that differ from the baseline, 0 cassette misses`. Spans: 27 tried, 3 said generated, 2 unchanged, 22 fell back (person 19, words 2, negation 1).
@@ -382,6 +389,17 @@ Recorded again after the wants-a-person question was reworded (the caller is tol
   - `rh-*` and `lm-*`: the offers' answers, and above all that "yes please", "a message is fine" and "I'll just leave a message" at an offer are read as the slot's answer, not as a new request for `take_message` (which would set the person aside and ask "Who's it for" again).
   - `lm-04` "no thanks, that's okay" and `rh-06` "no thanks, never mind" at an offer: read as the slot's no, or as `done` (the call ends with the goodbye): either is safe.
   - `whereabouts-then-sure`, whose known gap is gone: "sure, okay" at the offer.
+
+### Recording of the status and its offer (2026-10-16)
+
+The decision model and the render model recorded (Jev, and Gemini 3.1 Flash-Lite through OpenRouter): 383 requests, $0.0585, then once more after the triage (384, $0.0587); trimmed to the 283 answers a run asks for. First replay: `3 untagged corpus differences, 1 failing scripted call`; after the triage: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- **wh-13** "is someone in today": recipient anyone 0.94, so the team's answer and a message; relabelled (bucket 1).
+- **status-person-asked-for**: its opener was wh-13's words; now "can you check if they're in today" (wh-15), which names no one (bucket 3).
+- **tm-17** "how much do you charge for a logo": intent other 0.64 over take_message 0.36, so the caller hears what the desk can do (take a message or check whether someone is in) rather than a message straight away; tagged (bucket 2), safe.
+- **sm-04**: its pinned slots gained the two new slots (`reachHow`, `leaveMessage`).
+- **The watch items held**: "can I talk to Sam", "could you put me through to Riley" and "I'd like to speak with Jordan Lee please" reach the status and its offer (wantsHuman did not take them to the main line); the answers to an offer ("yes please", "a message is fine") are read as the offer's.
+- Generated lines: 39 tried, 18 said generated, 18 unchanged, 3 fell back (drift).
 
 ## Final checklist
 

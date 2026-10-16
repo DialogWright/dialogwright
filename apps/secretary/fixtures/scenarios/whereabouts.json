@@ -56,7 +56,7 @@
     "id": "status-person-asked-for",
     "steps": [
       {
-        "say": "is someone in today"
+        "say": "can you check if they're in today"
       },
       {
         "say": "Sam Okafor"
