@@ -256,6 +256,36 @@ describe('room for a long passage: the hold line, then the answer, within its ow
   });
 });
 
+describe('the hold line in the call\'s language', () => {
+  // The answer line's span given a goal in Spanish too, so a Spanish call words the opening hours' Spanish passage.
+  const spanish = (withHold: boolean) => (t: string): string => APP_EDITS['locale/es/prompts.yaml']!(t).replace(
+    "  kb_answer:\n    text: '{answer}'\n    interruptible: false\n",
+    `  kb_answer:\n    text: '{answer}'\n    interruptible: false\n    generate:\n      answer:\n        goal: Responder la pregunta con el pasaje.\n${withHold ? '  kb_hold:\n    text: Un momento, por favor.\n    interruptible: false\n' : ''}`,
+  );
+  const ES = libraryKbApp('library-kb-es', { 'prompts.yaml': framed, 'locale/es/prompts.yaml': spanish(false) });
+  const ES_HOLD = libraryKbApp('library-kb-es-hold', { 'prompts.yaml': framed, 'locale/es/prompts.yaml': spanish(true) });
+  const inSpanish = (app: App): Turn => {
+    const c = call(app, { locale: 'es' });
+    const event = speechEvent('¿a qué hora abren?', true, 'es');
+    const result = resolve(c.last.session, event, { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice({ opening_hours: 0.92, none: 0.08 }) }, { ...c.t, knowledge: { nominated: nominated('opening_hours') } });
+    return { before: c.last.session, event, result: { ...result, screen: { value: 0.02, fired: false, error: null } } };
+  };
+  const slowly = () => renderer({ delayMs: 150, eachSpan: () => 'Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4.' }, { timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 1000, chat: 1000 } });
+
+  it('a locale\'s own kb_hold is said in it', async () => {
+    const out = await rendered(ES_HOLD, inSpanish(ES_HOLD), slowly());
+    expect(out.record.hold).toMatchObject({ promptId: 'kb_hold' });
+    expect(said(out)).toContain('Un momento, por favor.');
+  });
+
+  it('in a language the app gives no hold line, none is said, and the answer has only a line\'s budget: the passage word for word', async () => {
+    const out = await rendered(ES, inSpanish(ES), slowly());
+    expect(out.record.hold).toBeUndefined();
+    expect(said(out)).not.toContain('moment');
+    expect(answerLine(out)).toMatchObject({ mode: 'fixed', fallback: 'timeout', fixed: 'Abrimos de lunes a viernes de 9 de la mañana a 8 de la noche, y los sábados de 10 a 4. Los domingos cerramos.' });
+  });
+});
+
 describe('the policy card', () => {
   it('lists the answer line, its goal and budget, and the topics whose answer may be worded', () => {
     const card = policyCardText(FRAMED, tmpdir());

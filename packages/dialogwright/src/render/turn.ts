@@ -76,6 +76,20 @@ export interface RenderedTurn {
   kbSaid?: 'passage' | 'worded';
 }
 
+/**
+ * The hold line in the call's language: the app's `kb_hold` in that language (a locale's own, or the
+ * default locale's prompts.yaml for a call in it); else, for a call in English, the engine's words
+ * (DEFAULT_HOLD_TEXT); else none, so a call in a language the app gives no hold line never hears one in
+ * another (its answer then has a line's budget, as any line, rather than a silence while it is worded).
+ */
+function holdLineOf(app: App, locale: string | undefined, clips: RenderContext | null): { line: Say; own: boolean } | null {
+  const inDefault = locale === undefined || app.locales === undefined || locale === app.locales.default;
+  const own = Object.hasOwn(app.prompts.manifest, KB_HOLD_PROMPT) && (inDefault || localePromptEntry(app, KB_HOLD_PROMPT, locale).localized);
+  if (own) return { line: promptSay(app, KB_HOLD_PROMPT, {}, false, clips, locale), own: true };
+  const language = (inDefault ? app.locales?.default : locale) ?? 'en-US';
+  return /^en(?:-|_|$)/i.test(language) ? { line: sayAction([{ text: DEFAULT_HOLD_TEXT }], false, lineLang(app, locale)), own: false } : null;
+}
+
 /** The hold line's words when the app has no `kb_hold` of its own. */
 export const DEFAULT_HOLD_TEXT = 'One moment while I gather that information.';
 /** The line said before a knowledge answer whose wording runs past its line's budget, where the app has it. */
@@ -377,8 +391,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // before, the drift check after), so a slow wording never starves the checks of their time.
   const budget = (renderer.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS)[channel];
   const checkBudget = (renderer.checkTimeoutMs ?? DEFAULT_RENDER_CHECK_TIMEOUT_MS)[channel];
-  // A knowledge answer's own limit, its wording and checks together: never less than a line's.
-  const answerLimit = Math.max((renderer.answerTimeoutMs ?? DEFAULT_RENDER_ANSWER_TIMEOUT_MS)[channel], budget + checkBudget);
+  // The hold line in the call's language, or none where the app gives it none there (holdLineOf).
+  const holdLine = answers.some((a) => 'act' in a.plan) ? holdLineOf(app, result.session.locale, input.clips ?? null) : null;
+  // A knowledge answer's own limit, its wording and checks together: never less than a line's; and no
+  // longer than a line's where there is no hold line to say while it is worded (the caller would wait in silence).
+  const answerLimit = holdLine === null ? budget + checkBudget : Math.max((renderer.answerTimeoutMs ?? DEFAULT_RENDER_ANSWER_TIMEOUT_MS)[channel], budget + checkBudget);
   const abort = new AbortController();
   const timers: ReturnType<typeof setTimeout>[] = [];
   const after = (ms: number): Promise<'late'> => new Promise((resolve) => {
@@ -629,13 +646,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   let hold: RenderHold | undefined;
   let early = 0;
   const pending = answers.filter((_, i) => answering[i] !== null);
-  if (pending.length > 0) {
+  if (pending.length > 0 && holdLine !== null) {
     const done = await Promise.race([Promise.all(answering).then(() => true as const), deadline.then(() => false as const)]);
     if (!done) {
       const at = Math.min(...pending.map((a) => a.index));
-      const locale = result.session.locale;
-      const own = Object.hasOwn(app.prompts.manifest, KB_HOLD_PROMPT);
-      const line = own ? promptSay(app, KB_HOLD_PROMPT, {}, false, input.clips ?? null, locale) : sayAction([{ text: DEFAULT_HOLD_TEXT }], false, lineLang(app, locale));
+      const { line, own } = holdLine;
       const before = actions.slice(0, at);
       // Only lines said as their fixed text go early (a wording's checks are all done by now, but a line
       // said before its turn's record is written keeps nothing back: a span the records mask, say).

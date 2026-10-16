@@ -512,4 +512,14 @@ describe('a knowledge answer worded for the caller\'s question (from: answer; th
     expect(warn()).toEqual([expect.stringContaining('the app has no knowledge base')]);
     expect(warn({ hours: { risk: 'low' }, fees: { risk: 'regulated' } })).toEqual([]);
   });
+
+  it('check warns of a language an answer is worded in with no hold line: the app\'s kb_hold there, or the engine\'s English words', () => {
+    const topics = { hours: { risk: 'low' as const } };
+    const warn = (prompts: Record<string, PromptYaml>, localePrompts: Record<string, Record<string, PromptYaml>>, defaultLocale = 'en-US') => generatedWordingWarnings({ prompts, forms: answering(), localePrompts, defaultLocale, kbTopics: topics }).map((w) => `${w.file}: ${w.message}`);
+    const esFramed = { kb_answer: line('{answer}', { generate: { answer: { goal: 'Responder.' } } as PromptYaml['generate'] }) };
+    expect(warn({ kb_answer: framedAnswer() }, {})).toEqual([]);
+    expect(warn({ kb_answer: framedAnswer() }, { es: esFramed })).toEqual([expect.stringMatching(/^locale\/es\/prompts\.yaml: the line "kb_answer" words its answer in es, which has no kb_hold of its own/)]);
+    expect(warn({ kb_answer: framedAnswer(), kb_hold: line('Hold on.') }, { es: { ...esFramed, kb_hold: line('Un momento.') } })).toEqual([]);
+    expect(warn({ kb_answer: framedAnswer() }, {}, 'es-MX')).toEqual([expect.stringMatching(/^prompts\.yaml: the line "kb_answer" words its answer, and prompts\.yaml \(es-MX\) has no kb_hold/)]);
+  });
 });

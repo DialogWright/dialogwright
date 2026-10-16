@@ -564,6 +564,17 @@ export function generatedWordingWarnings(input: {
   const out: WordingWarning[] = [];
   // An answer line that words its answer (from: answer) is worded only on a topic marked risk: low.
   const low = Object.values(input.kbTopics ?? {}).filter((t) => t.risk === 'low').length;
+  // A hold line in each language an answer is worded in: the app's kb_hold, or the engine's words in English only.
+  for (const [id, line] of Object.entries(generated)) {
+    const answer = answerSpanOf(line);
+    if (answer === null) continue;
+    const held = Object.hasOwn(input.prompts, 'kb_hold');
+    if (!held && !speaksToCallerIn(input.defaultLocale)) out.push({ file: 'prompts.yaml', path: ['prompts', id, 'generate', answer.name], message: `the line "${id}" words its answer, and prompts.yaml (${input.defaultLocale}) has no kb_hold, whose words the engine has in English only: no hold line is said while a slow wording is finished, and the answer has only a line's budget`, fix: 'add "kb_hold:" to prompts.yaml, such as "One moment while I gather that information." in the app\'s language, with interruptible: false', atKey: true });
+    for (const [locale, prompts] of Object.entries(input.localePrompts)) {
+      if (prompts[id]?.generate?.[answer.name] === undefined || Object.hasOwn(prompts, 'kb_hold')) continue;
+      out.push({ file: `locale/${locale}/prompts.yaml`, path: ['prompts', id, 'generate', answer.name], message: `the line "${id}" words its answer in ${locale}, which has no kb_hold of its own: no hold line is said there while a slow wording is finished, and the answer has only a line's budget`, fix: `add "kb_hold:" to locale/${locale}/prompts.yaml, in ${locale}, with interruptible: false`, atKey: true });
+    }
+  }
   for (const [id, line] of Object.entries(generated)) {
     const answer = answerSpanOf(line);
     if (answer === null || low > 0) continue;
