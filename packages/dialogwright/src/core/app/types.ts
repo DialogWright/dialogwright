@@ -94,6 +94,13 @@ export type UnsureIntent = 'confirm' | 'no-match';
 export type ChangeSlotWithValue = 'set-aside' | 'decides';
 
 /**
+ * What a question for the knowledge base or an informational intent, asked at a form's summary, gets
+ * when the model reads the turn as answering the summary (App.questionAtSummary): `aside`, the
+ * question is answered and the summary asked again; `summary`, the turn is the summary's.
+ */
+export type QuestionAtSummary = 'aside' | 'summary';
+
+/**
  * What a silence turn (the no-input wait run out) does right after the engine asked whether there is
  * anything else (the `anything_else` line, said when a form is done and the call goes on), for
  * App.anythingElseSilence: `repeat`, "anything else?" again; `opener`, the opening question
@@ -1319,6 +1326,17 @@ export interface App {
    * not new and sets nothing aside. Without it, `set-aside`.
    */
   changeSlotWithValue?: ChangeSlotWithValue;
+  /**
+   * At a form's summary, what a question gets when the intent read is a form that answers from the
+   * knowledge base as an aside (FormDef.aside) or an informational intent, at INTENT_ROUTE or more,
+   * and the model reads the turn as answering the summary (intentChange `answering`, or a change it
+   * could not act on). `aside`: the question is answered as an aside (the knowledge answer, or the
+   * informational line, through the gate as always), nothing is written, and the summary is asked
+   * again. `summary`: the turn is the summary's, as intentChange reads it (a question about the task
+   * in hand is then unanswered, and the summary asked again). Without it, `aside` (the maintainer's
+   * decision, 2026-10-16, Harbor findings item 1).
+   */
+  questionAtSummary?: QuestionAtSummary;
   /**
    * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
    * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"

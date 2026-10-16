@@ -1,4 +1,4 @@
-import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 
@@ -108,6 +108,11 @@ export function priorityIntentsOf(app: App): Intent[] {
 /** What the change question's reading does beside a new value at a summary: the app's (App.changeSlotWithValue), else `set-aside`. */
 export function changeSlotWithValueOf(app: App): ChangeSlotWithValue {
   return app.changeSlotWithValue ?? 'set-aside';
+}
+
+/** What a question asked at a form's summary that the model reads as answering it gets: the app's (App.questionAtSummary), else `aside`. */
+export function questionAtSummaryOf(app: App): QuestionAtSummary {
+  return app.questionAtSummary ?? 'aside';
 }
 
 /** What a silence turn right after "anything else?" does: the app's (App.anythingElseSilence), else `repeat`. */

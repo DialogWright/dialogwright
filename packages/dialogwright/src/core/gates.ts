@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, unsureOf } from './app/lookup';
+import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -393,6 +393,19 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     }
     // An unrecognized change label decides nothing; carry on with the form.
     else { routeVerdict = { kind: 'proceed' }; outcome = 'proceed'; }
+    // A question at a form's summary (App.questionAtSummary, `aside` by default; Harbor findings item 1):
+    // a form that answers as an aside, or an informational intent, read at INTENT_ROUTE or more, where
+    // the ladder above left the turn to the summary (the model read it as answering the read-back, or
+    // as a change it could not act on). The caller asked something about the task before saying yes,
+    // so it is answered, nothing is written, and the summary is asked again (turn.ts resumes on it).
+    if (routeVerdict.kind === 'proceed' && pending?.target === 'form' && questionAtSummaryOf(app) === 'aside' && atLeast(top.p, t.INTENT_ROUTE)) {
+      if (other !== null && isAside(other)) {
+        routeVerdict = { kind: 'route', intent: other, confirm: tentative ? 'explicit' : 'none', aside: true }; outcome = tentative ? 'aside_tentative' : 'aside_at_summary';
+      } else if (informs !== undefined) {
+        // An informational line writes nothing and asks nothing, so a hedged question is answered too.
+        routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform_at_summary';
+      }
+    }
     // At a dictation the request is acted on only where the slot lists its intent; else the turn is words.
     const acted = intentActedOn(routeVerdict, label);
     if (acted !== null && !heeds(acted)) { routeVerdict = { kind: 'proceed' }; outcome = 'dictation'; }

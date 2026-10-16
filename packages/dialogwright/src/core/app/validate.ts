@@ -32,6 +32,9 @@ const UNSURE_VALUES: readonly string[] = ['confirm', 'no-match'];
 /** What the change question's reading may do beside a new value at a summary (App.changeSlotWithValue). */
 const CHANGE_SLOT_WITH_VALUE: readonly string[] = ['set-aside', 'decides'];
 
+/** What a question asked at a form's summary may get (App.questionAtSummary). */
+const QUESTION_AT_SUMMARY: readonly string[] = ['aside', 'summary'];
+
 /** What a silence turn right after "anything else?" may do (App.anythingElseSilence). */
 const ANYTHING_ELSE_SILENCE: readonly string[] = ['repeat', 'opener', 'goodbye'];
 
@@ -168,6 +171,7 @@ export function validateApp(app: App): void {
   }
   if (app.unsureIntent !== undefined && !UNSURE_VALUES.includes(app.unsureIntent)) fail(`unsureIntent "${app.unsureIntent}" is not "confirm" or "no-match"`);
   if (app.changeSlotWithValue !== undefined && !CHANGE_SLOT_WITH_VALUE.includes(app.changeSlotWithValue)) fail(`changeSlotWithValue "${app.changeSlotWithValue}" is not "set-aside" or "decides"`);
+  if (app.questionAtSummary !== undefined && !QUESTION_AT_SUMMARY.includes(app.questionAtSummary)) fail(`questionAtSummary "${app.questionAtSummary}" is not "aside" or "summary"`);
   if (app.anythingElseSilence !== undefined && !ANYTHING_ELSE_SILENCE.includes(app.anythingElseSilence)) fail(`anythingElseSilence "${app.anythingElseSilence}" is not "repeat", "opener" or "goodbye"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);

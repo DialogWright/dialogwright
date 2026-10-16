@@ -1,8 +1,21 @@
 # What rebuilding Harbor found
 
-Date: 2026-10-16. Status: **findings for the maintainer's decision; the engine is unchanged by them.** Source: Harbor Mutual (`apps/harbor`), rebuilt from its paragraph with the create-app skill, then recorded twice against Jev ([its worksheet](../../apps/harbor/DESIGN.md): the gaps, the recordings and the skill trial notes).
+Date: 2026-10-16. Status: **decided by the maintainer, 2026-10-16** (below, "Decided"); built on the branch `engine-decisions` ("As built"). Source: Harbor Mutual (`apps/harbor`), rebuilt from its paragraph with the create-app skill, then recorded twice against Jev ([its worksheet](../../apps/harbor/DESIGN.md): the gaps, the recordings and the skill trial notes).
 
 Fixed on the way, so not decided here: the skill's and the guide's notes (the trial notes the skill and guide could answer), and the tools' diagnostics (which adversarial cases were not run, a scripted call's readings, a question's text and bar, the identity scaffold's id helper, a knowledge form's `entry` without `complete`).
+
+## Decided (2026-10-16)
+
+The maintainer's decisions on the items below:
+
+1. **Item 1, option A, on by default.** At a form's summary, when the turn's intent is a knowledge intent (a form that answers as an aside) or an informational intent, read at `INTENT_ROUTE` or more, the engine answers it (the knowledge completion or the informational line, through the gate as usual) and asks the read-back again, whatever `intentChange` says; nothing is written. An app may turn it off (an app.yaml option, default on). Harbor's `report-aside-at-summary` and cr-09 are the cases.
+2. **Item 6, the wants-a-person label.** Asking whether one is talking to a person (a robot, a machine) is not asking for one. The engine's `wantsHuman` question is worded so (the goal and the context, no procedure). In Harbor such a question is the `capabilities` intent, whose line begins by saying what the line is ("I'm an automated assistant, but you can talk to me naturally"), then what it can do; cp-06 is labelled `capabilities`, its knownGap removed. The rewording changes a request every app sends, so every app records again.
+3. **Item 2, option A.** The text type's default `changed` question is worded to be true whether the read-back said the slot whole or by its stand-in. Harbor's own `text.changed` stays unless the default now does its job.
+4. **Item 3.** An option naming the forms in which a frustrated caller is offered a person; default every form (today's behaviour). Harbor names its claim forms.
+5. **Item 5.** A slot asked only of some callers (a kind of principal, or a role), designed minimally and generally. Harbor asks a broker on its coverage form which client the question is about, and answers from that member's plan through the gate's scope rule (the broker's office must be agent of record).
+6. **Item 7.** Corpus lines for dates of birth said as runs of numbers, in several shapes, labelled with the true date, so the recording measures them; the birthdate type is not changed now.
+
+Item 4 (two portals, one chat) was not decided: the claim stays until an adopter has two providers.
 
 ## For a decision
 

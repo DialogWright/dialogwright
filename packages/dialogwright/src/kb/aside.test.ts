@@ -224,6 +224,64 @@ describe('the aside, further', () => {
   });
 });
 
+describe('a question at the summary the model reads as answering it (app.yaml questionAtSummary)', () => {
+  /** Harbor's reading of "wait, how long do i have to file a claim" at its read-back: the intent sure, intentChange answering. */
+  const ANSWERING = (topic: string | null, p = 1): AnswerMap => ({
+    intent: choice(p === 1 ? { ask_library: 1 } : { ask_library: p, none: 1 - p }),
+    intentChange: choice({ answering: 0.78, adding: 0.17, replacing: 0.05 }),
+    confirmsYes: noul(0.05), confirmsNo: noul(0.05),
+    ...(topic !== null ? { libraryTopicTopic: choice({ [topic]: 0.92, none: 0.08 }) } : {}),
+  });
+
+  it('aside (the default): the question is answered, nothing is written, and the summary asked again; a yes then completes the task', () => {
+    const c = call(APP);
+    atSummary(c);
+    const r = say(c, 'wait, what are the late fees', ANSWERING('late_fees'), nominated('late_fees'));
+    expect(heard(c)).toBe(`${LATE_FEES} You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?`);
+    expect(r.rows.find((row) => row.gate === 'intent')?.outcome).toBe('aside_at_summary:ask_library');
+    expect(calls(r).some((call) => call.startsWith('renewLoan'))).toBe(false);
+    expect(r.session.pendingConfirmation).toMatchObject({ target: 'form', form: 'renew_loan', attempts: 0 });
+    const done = say(c, 'yes', YES);
+    expect(calls(done)).toEqual([expect.stringMatching(/^renewLoan\(book=clockwork_garden\) ALLOW/)]);
+  });
+
+  it('read under INTENT_ROUTE, the turn is the summary\'s, as before', () => {
+    const c = call(APP);
+    atSummary(c);
+    const r = say(c, 'wait, what are the late fees', ANSWERING('late_fees', 0.65), nominated('late_fees'));
+    expect(heard(c)).not.toContain(LATE_FEES);
+    expect(r.rows.find((row) => row.gate === 'intent')?.outcome).toBe('summary_confirm_unanswered:ask_library');
+  });
+
+  it('at a slot\'s question (no summary), an answering reading is still the form\'s', () => {
+    const c = call(APP);
+    renewing(c);
+    const r = say(c, 'which ones do I have', ANSWERING(null));
+    expect(r.session.form).toBe('renew_loan');
+    expect(r.session.completed).toEqual([]);
+  });
+
+  it('an informational intent at the summary: its answer, then the summary asked again', () => {
+    const c = call(APP);
+    atSummary(c);
+    const r = say(c, 'hang on, when are you open', { intent: choice({ hours: 0.75, none: 0.25 }), intentChange: choice({ answering: 0.8, adding: 0.15, replacing: 0.05 }), confirmsYes: noul(0.05), confirmsNo: noul(0.05) });
+    expect(r.rows.find((row) => row.gate === 'intent')?.outcome).toBe('inform_at_summary:hours');
+    expect(heard(c)).toMatch(/You'd like to renew The Clockwork Garden for two more weeks\. Shall I do that\?$/);
+    expect(heard(c)).not.toBe("You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?");
+    expect(r.session.pendingConfirmation).toMatchObject({ target: 'form', form: 'renew_loan' });
+  });
+
+  it('summary: the turn is the summary\'s, as intentChange reads it (the question unanswered)', () => {
+    const SUMMARY = libraryKbApp('library-aside-summary', { 'app.yaml': (t) => `${APP_EDITS['app.yaml']!(t)}\nquestionAtSummary: summary\n` });
+    expect(SUMMARY.questionAtSummary).toBe('summary');
+    const c = call(SUMMARY);
+    atSummary(c);
+    const r = say(c, 'wait, what are the late fees', ANSWERING('late_fees'), nominated('late_fees'));
+    expect(heard(c)).toBe("You'd like to renew The Clockwork Garden for two more weeks. Shall I do that?");
+    expect(r.rows.find((row) => row.gate === 'intent')?.outcome).toBe('summary_confirm_unanswered:ask_library');
+  });
+});
+
 describe('a handoff during an aside names the task set aside', () => {
   // A transfer chosen on the form: the renewal desk for a caller renewing a book, the main line otherwise.
   const DESK = libraryKbApp('library-aside-desk', {
