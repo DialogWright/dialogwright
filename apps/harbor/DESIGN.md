@@ -312,6 +312,21 @@ Both may read otherwise after the rewording, so the owner decides on the next re
 
 **A re-record is needed**: one, for the rewording above, with the same command; it records identity-three-fails' new opener too. The first cost $0.07. Then `pnpm --filter @dialogwright/example-harbor cassette:trim`, the replay and the app's tests, and the new recording triaged the same way: each `knownGap now matches` tag removed (expected for sel-10, lt-04, cr-06, ot-02, ot-07 if the rewording works), any line the new wording made borderline tagged, and the two calls above brought back to the owner with the new numbers.
 
+### Recording 2: jev-1.13.0, 2026-10-16, after the rewording
+
+Recorded with the same command (436 requests, $0.0744), then trimmed (`cassette:trim`: 607 answers, kept the 304 a regression run asks for). The replay:
+
+- before the tags were brought up to date: `to triage: 1 untagged corpus difference, 1 failing scripted call, 0 passing scripted calls that differ from the baseline, 0 cassette misses`, corpus 168/173, scenarios 75/76;
+- after: `to triage: 0 untagged corpus differences, 1 failing scripted call, 0 passing scripted calls that differ from the baseline, 0 cassette misses`; adversarial `53/53 cases hold, 20 not run` (18 the stub's fooled-perception cases, which a model does not run; 2 with no text to replace).
+
+What changed:
+
+- **The rewording worked for six lines**, whose tags came off (`knownGap now matches`): sel-10 ("the most recent one"), lt-04 ("i got hurt"), cr-06 ("yes, but it was on friday": the description no longer gains the words), cp-07 ("help"), ot-02 ("do you sell car insurance"), ot-07 ("can i add my spouse to the plan"). report-yes-but-friday now matches its baseline.
+- **One new borderline line, tagged** (bucket 2): lt-07, "they admitted me overnight" at the kind-of-loss question: lossType hospital_stay 1.00 and lossDescriptionGiven 0.65 (bar 0.6), so the words are kept as the description too and its question is skipped; the caller is asked the date next, and nothing is filed without a yes.
+- **Still tagged, as before:** cs-14, cr-09, db-04, cp-06.
+- **Still failing, for the owner:** report-aside-at-summary (the engine's intentChange gap above, numbers unchanged). It is not tagged: whether its end is acceptable is the owner's to say. Until then the recorded replay is not in CI (a failing call would turn it red); once the owner decides, add `pnpm --filter @dialogwright/example-harbor regress --client recorded` after the stub step.
+- **cp-06 still waits for the owner's label** ("am i talking to a real person": put through to a person, or told what the line is).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
