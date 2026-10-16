@@ -67,7 +67,7 @@ The secretary's first live call: four messages at "Go ahead with your message." 
 
 Recorded again, the same requests read 0.96 to 0.97, "just say Alex called" 0.60 and 0.78, and what is not a message ("hmm, what should I say", "I'd rather not say what it's about") 0.02.
 
-- **Read the whole question.** What the model is sent is the engine's template and the app's words together: a slot type's question ([docs/slots/text.md, "The question"](../slots/text.md#the-question)) with the slot's `what` and `instructions`, an intent's criteria, the gates' own questions. `regress --client recorded --corpus <id>` prints each question a line was asked and its answer; the console's perception rows name them by id. Read them for two rules that pull apart.
+- **Read the whole question.** What the model is sent is the engine's template and the app's words together: a slot type's question ([docs/slots/text.md, "The question"](../slots/text.md#the-question)) with the slot's `what` and `instructions`, an intent's criteria, the gates' own questions. `regress --client recorded --corpus <id>` prints the id of each question a line was asked and its answer, not the question's words; the console's perception rows name them by id. Read them for two rules that pull apart.
 - **Word it for what you mean, not the rare case you fear.** "A request alone is not a message" guarded against one caller in a hundred and turned away the ninety-nine. Say the common case plainly and the exception narrowly ("only asking to give it, without saying it").
 - **Then the threshold, if at all.** A bar moved for one app's quirk moves it for every line it reads ([5, Thresholds](05-writing-a-slot.md#thresholds)): measure a change across the app's recording, never on one call.
 
@@ -75,7 +75,7 @@ Recorded again, the same requests read 0.96 to 0.97, "just say Alex called" 0.60
 
 Every request carries the questions' words, so a change to a slot's `what` or `instructions`, an intent's criteria, the app's wording or the engine's template changes every request that asks it, and the recording misses on each until it is made again. Plan it:
 
-1. **Fix first what sends nothing new**, checked on the recording you have: code, policy, a flag, a scripted call's silences, a label, a tag ([the triage page's order of the fixes](../../.claude/skills/create-app/triage.md#the-order-of-the-fixes)).
+1. **Fix first what sends nothing new**, checked on the recording you have: code, policy, a flag, a label, a tag ([the triage page's order of the fixes](../../.claude/skills/create-app/triage.md#the-order-of-the-fixes)). A changed step of a scripted call, even a silence, changes what its later turns are sent, so they miss until the next recording.
 2. **Reword everything at once**, on a branch. The stub regression stays green (the stub reads labels, not questions); the replay misses, as it should.
 3. **Record on the branch.** Recording calls a paid API with the owner's key: it is the owner's step (`pnpm --filter <app> regress --client record`, the command the app's README gives), never an assistant's or CI's.
 4. **Triage** the new recording (17.6), then `cassette:trim`, and commit the cassette with the triage.

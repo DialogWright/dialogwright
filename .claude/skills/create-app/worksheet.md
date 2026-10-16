@@ -177,6 +177,6 @@ Filled in once the owner has recorded the app (step 9 of the create-app skill, a
 - [ ] Nothing private or real: invented names and streets, 555 numbers, `example.com` addresses.
 - [ ] `pnpm check` ok (with a knowledge base awaiting approval, its approval findings are the only ones left, and the worksheet says so); `pnpm verify` green; every app's regression (this one's, the clinic's and every other under apps/) and the testkit's say `no changes`.
 - [ ] The baseline was made once with `regress --update`, read entry by entry, and every later edit is under "Baseline edits".
-- [ ] `.github/workflows/ci.yml` runs this app's regression; `pnpm-lock.yaml` is committed.
+- [ ] `.github/workflows/ci.yml` runs this app's regression; `pnpm-lock.yaml` is committed; `docs/README.md` lists the app beside the other example apps.
 - [ ] `README.md` says what the app does and how it is built, and keeps the scaffold's recording steps; `CLAUDE.md` still matches the folder.
 - [ ] The gaps above are written up.
