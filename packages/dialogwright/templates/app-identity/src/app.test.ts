@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import { ANONYMOUS, checkApp, formatProblem } from 'dialogwright';
+import { ANONYMOUS, checkApp, formatProblem, type Principal, type Session } from 'dialogwright';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
-import { APP_DIR, Systems, TOOLS, app, code, scopeOf } from './app';
+import { APP_DIR, Systems, TOOLS, accountIdOf, app, code, scopeOf } from './app';
 
 describe('the app folder', () => {
   it('passes dialogwright check: the folder, the code and the corpus agree', async () => {
@@ -66,6 +66,15 @@ describe('identity', () => {
   it('lets a verified customer name their own account, and no one else any account (the scope rule)', () => {
     expect(scopeOf({ kind: 'customer', level: 1, id: '55501234', first: 'Avery' })).toEqual(['55501234']);
     expect(scopeOf(ANONYMOUS)).toEqual([]);
+  });
+
+  it("names the verified customer's own account in every call, and the factor slot's before verification", () => {
+    const session = (principal: Principal, slot: string | null) => ({ principal, slots: { accountId: { value: slot } } }) as unknown as Session;
+    // A customer signed in on the chat has no factor slot: the principal's id is the account.
+    expect(accountIdOf(session({ kind: 'customer', level: 1, id: '55501234', first: 'Avery' }, null))).toBe('55501234');
+    expect(accountIdOf(session({ kind: 'customer', level: 1, id: '55501234', first: 'Avery' }, '55505678'))).toBe('55501234');
+    expect(accountIdOf(session(ANONYMOUS, '55505678'))).toBe('55505678');
+    expect(accountIdOf(session(ANONYMOUS, null))).toBe('');
   });
 
   it('verifies only when both factors match one account', async () => {
