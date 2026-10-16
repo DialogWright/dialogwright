@@ -7,9 +7,9 @@ A caller can:
 - **leave a message** for Riley Moreno, Sam Okafor or Jordan Lee, or for anyone at the studio: their name, a number to call back (on a phone call the line offers the number they are calling from), and the message in their own words. The desk reads it back briefly, to the caller, as a receptionist would ("Thanks! I'll make sure Sam Okafor gets your message, in short: the project is complete and you need Sam's approval. I have you as Alex Rivera, on 555 555 0142. Shall I pass it on?"), and a yes delivers it to the studio's inbox (a stub) and ends the call;
 - **say it's urgent, or ask for a person**, at any point but while giving the message itself, and be put through to the studio's main line. At "Go ahead with your message." whatever the caller says is the message (the engine's default for a message slot, live findings item 29): "it's urgent, the website is down" said there is read back as the message, and the caller can say no;
 - **ask for the hours** (weekdays, nine to five) **or the address** (an invented street), by voice or on the keypad;
-- **ask whether someone is in**: the desk never says where anyone is or when they are in, and offers to take a message instead.
+- **ask whether Riley, Sam or Jordan is in, or ask to talk to one of them**: the desk reads their status from the studio's calendar (a stub, `src/data.ts`) and says it in a fixed line per status ("Sam Okafor is out of the office until Monday.", "Jordan Lee is in training today.", "Riley Moreno is available."), chosen by code from the calendar's checked reply, never by a model. It then offers what fits: someone available, to be put through to their own line or to leave a message; anyone else, a message (a yes goes to the message form with the person already set, a no to "anything else?"). Asked about the team, it says it checks people by name, and offers a message.
 
-Nobody verifies who they are: the one action is at level 0, held only to what the caller said yes to.
+Nobody verifies who they are: both actions (a message delivered, a status read) are at level 0, the message held to what the caller said yes to, the status read only for the three people.
 
 ## The read-back: one generated span in a fixed line
 
@@ -54,19 +54,20 @@ The action's params are recorded as policy.yaml and the slots say: the person as
 ## The folder
 
 ```
-app.yaml        who the app is, the handoff data, where a transfer goes (STUDIO_MAIN_LINE)
+app.yaml        who the app is, the handoff data, where a transfer goes (STUDIO_MAIN_LINE; a person's own line when put through to them)
 intents.yaml    the message, urgent (must never wait), the hours, the address, "is Riley in?", and the keypad menu
-forms.yaml      the message form (with its read-back) and the urgent form (straight to a person)
-slots.yaml      recipient (a choice), caller (a name), phone (digits, offering the caller's number), message (text, as said, kept by its length in every record)
-prompts.yaml    every line a caller can hear: all fixed, but the span inside the read-back
+forms.yaml      the message form (with its read-back), the urgent form (straight to a person), and "is someone in?" with its two offers
+routes.yaml     what follows a status: put through or a message for someone available, a message for anyone else
+slots.yaml      recipient (a choice), caller (a name), phone (digits, offering the caller's number), message (text, as said, kept by its length in every record), and the answers to the two offers (choices)
+prompts.yaml    every line a caller can hear: all fixed, but the span inside the read-back; a status line per status
 style.yaml      how the span sounds: a persona and phrases to avoid
-policy.yaml     the one action, a message delivered, held to what the caller said yes to
+policy.yaml     the two actions: a message delivered, held to what the caller said yes to; a person's status read, for the three people only
 policy.matrix   what the gate decides, for every kind of caller (generated)
 POLICY.md       the policy card: the policy, the generated span and the prescribed lines in plain English (generated)
 APP-MAP.md      the app map: intents, forms, slots, actions and where a handoff goes, as diagrams (generated)
 DESIGN.md       the design worksheet: the paragraph, every choice and every gap found
-src/app.ts      the tool (a stub inbox) and the form hooks, joined to the folder by defineApp
-src/data.ts     the fixture data behind the stub (each person's inbox, at example.com)
+src/app.ts      the tools (a stub inbox, a stub calendar) and the form hooks, joined to the folder by defineApp
+src/data.ts     the fixture data behind the stubs (each person's inbox, at example.com, and their status today)
 fixtures/       the corpus, the scripted calls and the stub baseline
 ```
 
@@ -85,7 +86,7 @@ A scripted call's transcript shows each line the caller hears, and under the rea
 
 To try the web chat and the console on this computer, `pnpm configure --app secretary` (choose "on this computer"; it asks for the studio's main line, `STUDIO_MAIN_LINE`, where every handoff goes: a 555 number such as +15555550100 is fine on a laptop, or give it as `--number STUDIO_MAIN_LINE=+15555550100`), then `pnpm start --app secretary`.
 
-On a real line, `STUDIO_MAIN_LINE` must ring a person: never the number that forwards to this desk when no one picks up, or an urgent caller is put straight back to the desk.
+On a real line, `STUDIO_MAIN_LINE` must ring a person: never the number that forwards to this desk when no one picks up, or an urgent caller is put straight back to the desk. The same holds for each person's own line (`RILEY_LINE`, `SAM_LINE`, `JORDAN_LINE`).
 
 ## Commands
 
@@ -101,8 +102,8 @@ The regression also runs the adversarial suite (app.yaml's `testing: { adversari
 
 ## The fixtures and the baseline
 
-- `fixtures/corpus.jsonl`: 128 labelled lines, at least eight for every intent and five for every slot, four or more for the read-back, and the answers to the offer of the caller's number.
-- `fixtures/scenarios/`: 55 scripted calls, each with the outcome it expects. `messages.json`: the read-back summarized, accepted, refused (the exact words), refused twice ("What should I change?") and the message said again or read back there, corrected (the message said again), repeated, the recipient and the number corrected, "anyone" (and "I'm not sure who"), the callback offer accepted, declined, answered with another number, a withheld number, keys, the chat, and the boundary with urgent ("it's not urgent, but ...", "call me back as soon as possible"). `handoffs.json`: urgent at the start and at the read-back with a correction; a person asked for at the start, at the caller's name, at the read-back and on the keypad menu (urgent said at the message's own question is the message: `messages.json`'s `message-urgent-in-the-message`). `answers.json`: the hours and the address spoken and keyed, "is Riley in?" (then "yes please" to the offer of a message), a quote or a meeting taken as a message, a request the desk does not handle, an answer mid-message, and a caller who is done.
+- `fixtures/corpus.jsonl`: 157 labelled lines, at least eight for every intent and five for every slot, four or more for the read-back, the answers to the offer of the caller's number, and the answers to the two offers after a status.
+- `fixtures/scenarios/`: 77 scripted calls, each with the outcome it expects. `messages.json`: the read-back summarized, accepted, refused (the exact words), refused twice ("What should I change?") and the message said again or read back there, corrected (the message said again), repeated, the recipient and the number corrected, "anyone" (and "I'm not sure who"), the callback offer accepted, declined, answered with another number, a withheld number, keys, the chat, and the boundary with urgent ("it's not urgent, but ...", "call me back as soon as possible"). `handoffs.json`: urgent at the start and at the read-back with a correction; a person asked for at the start, at the caller's name, at the read-back and on the keypad menu (urgent said at the message's own question is the message: `messages.json`'s `message-urgent-in-the-message`). `answers.json`: the hours and the address spoken and keyed, "is Riley in?" (then a message after a status), a quote or a meeting taken as a message, a request the desk does not handle, an answer mid-message, and a caller who is done. `whereabouts.json`: each status (available, out of the office, in training, the team), the person named up front ("can I talk to Sam") or asked for, and each answer to each offer: put through (by voice and on the keypad), a message (taken and delivered), neither or no, and an offer never answered.
 - `fixtures/expected/`: the stub's outcome for every line and call, made once and reviewed (DESIGN.md, "Baseline edits"). Never regenerate it: a changed output is a finding to explain.
 
 ## Recording against the real models
@@ -136,4 +137,4 @@ On the engine's message fixture, Gemini 2.5 Flash-Lite through OpenRouter was th
 
 ## Running it
 
-`pnpm --filter @dialogwright/example-secretary serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN`, `HANDOFF_NUMBER` and `STUDIO_MAIN_LINE` (the studio's main line, where every handoff goes; a 555 number is fine for local use; see `.env.example`), and runs on the stub client unless `JEV_CLIENT` says otherwise. With `RENDER_PROVIDER` and its key set, the read-back's summary is generated; without, the read-back is the exact-words frame with the message word for word. The server says at start that its frame log and trace keep no caller words. At the repository root, `pnpm configure --app secretary` writes this folder's `.env`, `pnpm diagnose --app secretary` says what is missing, and `pnpm start --app secretary` runs the server with it.
+`pnpm --filter @dialogwright/example-secretary serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN`, `HANDOFF_NUMBER`, `STUDIO_MAIN_LINE` (the studio's main line, where every handoff goes) and `RILEY_LINE`, `SAM_LINE` and `JORDAN_LINE` (each person's own line, for a caller put through to them; 555 numbers are fine for local use; see `.env.example`), and runs on the stub client unless `JEV_CLIENT` says otherwise. With `RENDER_PROVIDER` and its key set, the read-back's summary is generated; without, the read-back is the exact-words frame with the message word for word. The server says at start that its frame log and trace keep no caller words. At the repository root, `pnpm configure --app secretary` writes this folder's `.env`, `pnpm diagnose --app secretary` says what is missing, and `pnpm start --app secretary` runs the server with it.

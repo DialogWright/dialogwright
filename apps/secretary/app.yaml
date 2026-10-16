@@ -2,7 +2,9 @@
 # Example Front Desk: the phone answered for a small, fictional design studio when no one can pick
 # up. It takes a message for one of three people (or for anyone), with a name and a callback number,
 # and reads the message back the way a receptionist would: the line fixed, and only a short summary of
-# the caller's own words generated (prompts.yaml's confirm_take_message). Every other line is said word
+# the caller's own words generated (prompts.yaml's confirm_take_message). Asked whether one of the three
+# is in, it says their status from the studio's calendar in a fixed line, and offers what fits it: put
+# through or a message for someone available, a message for anyone else. Every other line is said word
 # for word. The dialog is in intents.yaml, forms.yaml, prompts.yaml and policy.yaml, and what runs is
 # in src/app.ts. All names, numbers and the address are made up (the 555 range). See README.md.
 id: secretary
@@ -19,11 +21,16 @@ console:
   formLabels:
     take_message: Take a message
     urgent: Urgent, to the main line
+    whereabouts: Is someone in
+    reach_person: Put through or a message
+    offer_message: Offer a message
   slotLabels:
     recipient: Recipient
     caller: Caller
     phone: Callback number
     message: Message
+    reachHow: Put through or a message
+    leaveMessage: Leave a message
 
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
 # continueWithinMs: a caller who pauses between two sentences of a message and talks over the line's
@@ -54,9 +61,18 @@ handoff:
     unconfirmed: mark
 
 # Every handoff goes to the studio's main line: a caller who says it is urgent, one who asks for a
-# person, and one the line could not help. The number is a setting (STUDIO_MAIN_LINE in .env), never
-# in this file.
+# person, and one the line could not help. But a caller put through to someone available (the reason
+# put-through, from the reach_person form) goes to that person's own line, chosen by the person asked
+# about. The numbers are settings (STUDIO_MAIN_LINE, RILEY_LINE, SAM_LINE and JORDAN_LINE in .env),
+# never in this file.
 transfer:
+  targets:
+    - when: [{ reason: put-through }, { slot: recipient, is: riley }]
+      to: env.RILEY_LINE
+    - when: [{ reason: put-through }, { slot: recipient, is: sam }]
+      to: env.SAM_LINE
+    - when: [{ reason: put-through }, { slot: recipient, is: jordan }]
+      to: env.JORDAN_LINE
   default: env.STUDIO_MAIN_LINE
 
 # The regression fixtures (corpus, scenarios, baseline, cassette), relative to this folder.

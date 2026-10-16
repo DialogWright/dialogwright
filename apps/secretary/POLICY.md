@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `dbf707447217d14d5718c65f09d67764e3e3145b0e729f051cffef139c105ecd` |
+| `policy.yaml` | `12d50f3b16b7ada4dbf90f2cf693215cb89bbe69fcbc9a6e22792917c0f8b24e` |
 | `identity.yaml` | none: this app verifies no one |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -39,6 +39,7 @@ What the record of a call keeps of each value the action is sent, where the acti
 | Deliver a message to the studio's inbox (`leaveMessage`) | caller (`caller`) | by its length only |
 | Deliver a message to the studio's inbox (`leaveMessage`) | phone (`phone`) | by its last four characters |
 | Deliver a message to the studio's inbox (`leaveMessage`) | message (`message`) | by its length only |
+| Read whether Riley, Sam or Jordan is in, from the studio's calendar (`personStatus`) | person (`person`) | as it is |
 
 The slots these values come from are recorded by their own redact setting (slots.yaml) wherever a call's slots are: the trace's slots, the variables of the lines that say them (a read-back among them), a handoff's data and the console. Where that is not what the table says:
 
@@ -68,6 +69,7 @@ Prescribed lines (`prescribed: true`): always said word for word, never generate
 | `handoff_live_agent` | One moment while I put you through to the studio's main line. |
 | `handoff_max_attempts` | Let me put you through to the studio's main line to help with that. |
 | `handoff_needs_human` | This one needs a person. Let me put you through to the studio's main line. |
+| `handoff_put_through` | One moment while I put you through. |
 | `handoff_result_unchecked` | I couldn't confirm your message was passed on, so let me put you through to the studio's main line. |
 | `handoff_security` | Let me put you through to the studio's main line. |
 | `handoff_system_failure` | I'm having trouble right now. Let me put you through to the studio's main line. |
@@ -81,6 +83,7 @@ One row per action the agent may take. Anything else is refused.
 | Action | Level | The gate checks, in order |
 | --- | --- | --- |
 | **Deliver a message to the studio's inbox**<br/>`leaveMessage` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: recipient, caller, phone and message (the read-back is generated and may summarize message; the values confirmed and sent are the ones kept, word for word, and the caller may ask to hear them so) |
+| **Read whether Riley, Sam or Jordan is in, from the studio's calendar**<br/>`personStatus` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. person must be one of `riley`, `sam` or `jordan`: any other is refused (`not-on-the-calendar`), and a missing value is refused |
 
 ### Actions by level, with their rules and what each role gets
 
@@ -88,5 +91,6 @@ One row per action the agent may take. Anything else is refused.
 flowchart LR
   subgraph lv0["Level 0: anonymous"]
     a_leaveMessage["Deliver a message to the studio's inbox<br/>identity · confirmed"]
+    a_personStatus["Read whether Riley, Sam or Jordan is in, from the studio's calendar<br/>identity · oneOf person"]
   end
 ```

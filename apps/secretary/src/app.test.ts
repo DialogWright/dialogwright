@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { checkApp, formatProblem, type ToolCall, type ToolDef } from 'dialogwright';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
-import { APP_DIR, Systems, TOOLS, app, code } from './app';
+import { APP_DIR, Systems, TOOLS, app, code, statusLine } from './app';
 
 describe('the app folder', () => {
   it('passes dialogwright check: the folder, the code and the corpus agree', async () => {
@@ -19,6 +19,8 @@ describe('the app folder', () => {
     expect(Object.keys(app.intents)).toEqual(['take_message', 'urgent', 'studio_hours', 'studio_address', 'whereabouts', 'agent', 'repeat_prompt', 'done', 'other', 'none']);
     expect(app.intents.take_message!.kind).toBe('form');
     expect(app.intents.urgent!.priority).toBeTruthy();
+    // Whether someone is in is a form now: the person, then their status and an offer (routes.yaml).
+    expect(app.intents.whereabouts!.kind).toBe('form');
   });
 
   it('understands a caller who is done: "done" ends the call with the goodbye (the scripted call done-after-a-request-it-cannot-handle)', () => {
@@ -78,5 +80,41 @@ describe('the read-back and the inbox', () => {
     expect(again.ref).toBe(first.ref);
     expect(sys.inbox).toEqual([{ ref: 'M101', inbox: 'sam@example.com', recipient: 'sam', caller: 'Alex Rivera', phone: '5555550142', message: 'the logo files are ready for review' }]);
     expect(run('k-2').ref).toBe('M102');
+  });
+});
+
+describe('a person\'s status', () => {
+  const read = (sys: Systems, person: string) => (TOOLS.personStatus as ToolDef).run({ tool: 'personStatus', params: { person } }, sys, {} as unknown as Parameters<ToolDef['run']>[2]);
+
+  it('reads each person\'s status from the calendar, and its reply passes the tool\'s check', () => {
+    const sys = new Systems();
+    expect(read(sys, 'riley').value).toEqual({ status: 'available', back: null });
+    expect(read(sys, 'sam').value).toEqual({ status: 'out_of_office', back: 'Monday' });
+    expect(read(sys, 'jordan').value).toEqual({ status: 'in_training', back: null });
+    for (const person of ['riley', 'sam', 'jordan']) expect(TOOLS.personStatus!.check!(read(sys, person).value)).toBe(true);
+    // The team has no calendar (and the gate refuses it before the tool runs: policy.yaml's oneOf).
+    expect(() => read(sys, 'anyone')).toThrow();
+  });
+
+  it('checks the calendar\'s reply against the closed lists: a status or a day it does not list is never used', () => {
+    const check = TOOLS.personStatus!.check!;
+    expect(check({ status: 'in_a_meeting', back: null })).toBe(true);
+    expect(check({ status: 'on a beach, call his mobile', back: null })).toBe(false);
+    expect(check({ status: 'out_of_office', back: 'next week' })).toBe(false);
+    expect(check({ status: 'available' })).toBe(false);
+  });
+
+  it('says each status in its own fixed line, chosen by code, the day only where the note gives one', () => {
+    expect(statusLine({ status: 'available', back: null }, 'Riley Moreno')).toEqual({ promptId: 'status_available', vars: { recipient: 'Riley Moreno' } });
+    expect(statusLine({ status: 'out_of_office', back: 'Monday' }, 'Sam Okafor')).toEqual({ promptId: 'status_out_of_office', vars: { recipient: 'Sam Okafor', back: 'Monday' } });
+    expect(statusLine({ status: 'out_of_office', back: null }, 'Sam Okafor')).toEqual({ promptId: 'status_out_of_office_no_day', vars: { recipient: 'Sam Okafor' } });
+    expect(statusLine({ status: 'in_training', back: null }, 'Jordan Lee')).toEqual({ promptId: 'status_in_training', vars: { recipient: 'Jordan Lee' } });
+    expect(statusLine({ status: 'in_a_meeting', back: null }, 'Jordan Lee')).toEqual({ promptId: 'status_in_a_meeting', vars: { recipient: 'Jordan Lee' } });
+    for (const id of ['status_available', 'status_out_of_office', 'status_out_of_office_no_day', 'status_in_training', 'status_in_a_meeting', 'status_team', 'status_unknown']) expect(app.prompts.manifest[id]).toBeDefined();
+  });
+
+  it('generates no status line: each is said word for word', () => {
+    const generated = Object.keys(app.generated?.lines ?? {});
+    expect(generated.filter((id) => id.startsWith('status_'))).toEqual([]);
   });
 });
