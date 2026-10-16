@@ -27,6 +27,49 @@
     }
   },
   {
+    "id": "dob-numbers-example",
+    "steps": [
+      {
+        "say": "what's the status of my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "eight two one eight four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_dob_example",
+      "principalLevel": 0,
+      "text": "You can say it like August twenty-first, nineteen eighty-four"
+    }
+  },
+  {
+    "id": "dob-numbers-example-then-said",
+    "steps": [
+      {
+        "say": "what's the status of my claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "eight two one eight four"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_otp",
+      "principalLevel": 1,
+      "gate": "sendCode:ALLOW"
+    }
+  },
+  {
     "id": "claim-status-by-number",
     "steps": [
       {

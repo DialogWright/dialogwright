@@ -2760,17 +2760,15 @@
   "db-10": {
     "id": "db-10",
     "decision": "prompt",
-    "promptId": "ask_otp",
-    "acks": [
-      "identity_verified"
-    ],
+    "promptId": "ask_dob_example",
+    "acks": [],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
     "form": "claim_status",
     "slots": {
       "memberId": "42716358",
-      "dob": "1984-08-21",
+      "dob": null,
       "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
@@ -2779,8 +2777,8 @@
       "lossDescription": null
     },
     "queued": [],
-    "principalLevel": 1,
-    "gate": "sendCode:ALLOW"
+    "principalLevel": 0,
+    "gate": null
   },
   "db-11": {
     "id": "db-11",
@@ -2956,6 +2954,173 @@
     "queued": [],
     "principalLevel": 1,
     "gate": "sendCode:ALLOW"
+  },
+  "db-18": {
+    "id": "db-18",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW"
+  },
+  "db-19": {
+    "id": "db-19",
+    "decision": "prompt",
+    "promptId": "ask_dob_example",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "db-20": {
+    "id": "db-20",
+    "decision": "prompt",
+    "promptId": "ask_dob_example",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "db-21": {
+    "id": "db-21",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW"
+  },
+  "db-22": {
+    "id": "db-22",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW"
+  },
+  "db-23": {
+    "id": "db-23",
+    "decision": "prompt",
+    "promptId": "ask_dob_year",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "db-24": {
+    "id": "db-24",
+    "decision": "prompt",
+    "promptId": "ask_dob_example",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
   },
   "ag-01": {
     "id": "ag-01",
