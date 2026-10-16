@@ -121,7 +121,7 @@ export function applySlotWording(input: WordingInput): WordingResult {
   const env = AS_BUILT.get(spec);
   const built = env === undefined ? type.build(id, spec.config, Object.freeze(wording)) : type.build(id, spec.config, Object.freeze(wording), env);
   // Where the slot listens, and what it offers, where and the answers it takes, are not the type's to build: they are carried over from the slot as built.
-  const worded: LibrarySlotSpec = { ...built, type: spec.type, config: spec.config, wording: Object.freeze(wording), ...(spec.listen !== undefined ? { listen: spec.listen } : {}), ...(spec.offer !== undefined ? { offer: spec.offer } : {}), ...(spec.offerAt !== undefined ? { offerAt: spec.offerAt } : {}), ...(spec.offerAnswers !== undefined ? { offerAnswers: spec.offerAnswers } : {}) };
+  const worded: LibrarySlotSpec = { ...built, type: spec.type, config: spec.config, wording: Object.freeze(wording), ...(spec.listen !== undefined ? { listen: spec.listen } : {}), ...(spec.offer !== undefined ? { offer: spec.offer } : {}), ...(spec.offerAt !== undefined ? { offerAt: spec.offerAt } : {}), ...(spec.offerAnswers !== undefined ? { offerAnswers: spec.offerAnswers } : {}), ...(spec.askedOf !== undefined ? { askedOf: spec.askedOf } : {}) };
   if (!BUILT.has(spec)) BUILT.set(spec, new Map());
   BUILT.get(spec)!.set(key, { type, spec: markBuilt(worded, env) });
   return { ok: true, spec: worded };

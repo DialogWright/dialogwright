@@ -20,14 +20,22 @@ forms:
   # not yet verified gives the member ID and date of birth first); the topic slot asks which of the
   # topics retrieval nominates the caller means, and the engine's knowledge completion says the
   # approved passage for the member's own plan through searchPolicy, word for word, with how many of
-  # the benefit they used this year where the topic has that line (getUsage). A broker is told the
-  # line answers coverage for the member themselves (principalEntry, on the gate's answer).
+  # the benefit they used this year where the topic has that line (getUsage). A broker makes no entry
+  # call (principalEntry lets the form go on) and is asked which client the question is about
+  # (clientId, asked of brokers only); the gate checks the office is that member's agent of record as
+  # soon as it is said (isClient), and the answer is that member's plan's (answers.subject). A broker
+  # is not told a member's use of a benefit (policy.yaml redact), so the usage line is left out.
   coverage:
-    slots: [coverageTopic]
+    slots: [clientId, coverageTopic]
     summaryPromptId: null
     hooks: [entry, principalEntry]
     calls: [getCoverage, searchPolicy, getUsage]
-    answers: { slot: coverageTopic, answer: coverage_answer, unavailable: coverage_unavailable }
+    answers: { slot: coverageTopic, answer: coverage_answer, unavailable: coverage_unavailable, subject: clientId }
+    checks:
+      - action: isClient
+        with: [clientId]
+        on:
+          scope: { say: coverage_not_client, then: anything-else }
 
   # A new claim. The entry call needs level 2 (the purpose in policy.yaml), so the code is keyed
   # before the questions. The summary reads the kind of loss and the day back (and that the

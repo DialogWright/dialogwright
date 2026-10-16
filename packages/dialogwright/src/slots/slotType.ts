@@ -1,5 +1,5 @@
 import type { SlotType } from './types';
-import { ATTEMPTS_OPTION, LISTEN_OPTION, OFFER_ANSWERS_OPTION, OFFER_AT_OPTION, OFFER_OPTION, ON_MAX_ATTEMPTS_OPTION } from '../define/schema/slots';
+import { ASKED_OF_OPTION, ATTEMPTS_OPTION, LISTEN_OPTION, OFFER_ANSWERS_OPTION, OFFER_AT_OPTION, OFFER_OPTION, ON_MAX_ATTEMPTS_OPTION } from '../define/schema/slots';
 
 /** A type's name: what an app writes after `type:`. */
 export const SLOT_TYPE_NAME = /^[a-z][a-z0-9-]*$/;
@@ -31,7 +31,7 @@ export function defineSlotType<O, W = unknown>(def: SlotType<O, W>): SlotType<O,
   if (!refusesUnknownKeys(def, OFFER_ANSWERS_OPTION)) {
     throw new Error(`the "${def.type}" type has an option "${OFFER_ANSWERS_OPTION}", which every slot takes beside its type's options (SlotSpec.offerAnswers): give the option another name`);
   }
-  for (const option of [ATTEMPTS_OPTION, ON_MAX_ATTEMPTS_OPTION]) {
+  for (const option of [ASKED_OF_OPTION, ATTEMPTS_OPTION, ON_MAX_ATTEMPTS_OPTION]) {
     if (!refusesUnknownKeys(def, option)) {
       throw new Error(`the "${def.type}" type has an option "${option}", which every slot takes beside its type's options (SlotSpec.${option}): give the option another name`);
     }

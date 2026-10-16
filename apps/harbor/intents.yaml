@@ -14,7 +14,7 @@ intents:
   # certificate (kb/), word for word. Level 1 (the member ID and date of birth).
   coverage:
     criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim. An injury or a treatment named in a question about what the plan pays is a coverage question. Asking to buy, change or cancel insurance, or to add someone to a plan, is not
-    label: check your coverage
+    label: check coverage
     kind: form
 
   # A new claim: the kind of loss, the day it happened and what happened, read back and filed on a

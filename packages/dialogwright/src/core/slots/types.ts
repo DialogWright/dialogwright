@@ -280,6 +280,13 @@ export interface SlotSpec {
    */
   offerAnswers?: OfferAnswers;
   /**
+   * The callers the slot is asked of (slots.yaml `askedOf`): principal kinds (the app's subject kind, a
+   * delegate kind) or a delegate kind and one of its roles (`broker.office_admin`). For any other
+   * caller the slot is not part of its forms (core/app/lookup.ts askedOfCaller): not asked, its question
+   * not sent, and the form completes without it. Absent: every caller.
+   */
+  askedOf?: readonly string[];
+  /**
    * How many failed answers the slot takes before `onMaxAttempts` runs (1 to 10): the failures before
    * the last but one re-ask, the last but one is the keypad rung (where the slot has `dtmf` and the
    * channel a keypad, else another re-ask), the last runs `onMaxAttempts`. Absent: the engine's

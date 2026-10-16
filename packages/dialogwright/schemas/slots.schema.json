@@ -201,6 +201,15 @@
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
+          },
           "attempts": {
             "type": "integer",
             "minimum": 1,
@@ -545,6 +554,15 @@
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
+          },
           "attempts": {
             "type": "integer",
             "minimum": 1,
@@ -844,6 +862,15 @@
             ],
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
+          },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
           },
           "attempts": {
             "type": "integer",
@@ -1161,6 +1188,15 @@
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
+          },
           "attempts": {
             "type": "integer",
             "minimum": 1,
@@ -1385,6 +1421,15 @@
             ],
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
+          },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
           },
           "attempts": {
             "type": "integer",
@@ -1619,6 +1664,15 @@
             ],
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
+          },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
           },
           "attempts": {
             "type": "integer",
@@ -1990,6 +2044,15 @@
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
           },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
+          },
           "attempts": {
             "type": "integer",
             "minimum": 1,
@@ -2180,6 +2243,15 @@
             ],
             "default": "yes-no-or-value",
             "description": "What a slot with offer: facts takes at its proposal. \"yes-no-or-value\" (the default): a yes, a no, or a value of the caller's own, which fills the slot as said. \"yes-no\": a yes or a no only. A value said at the proposal is not taken, and with no clear yes it is a no (the slot's question is then asked); on the keypad 1 is yes and 2 is no. Use yes-no where the line asks only a yes or no question (\"Are you calling about the account ending in 1234?\"). Needs offer: facts."
+          },
+          "askedOf": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)?$"
+            },
+            "description": "The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller."
           },
           "attempts": {
             "type": "integer",

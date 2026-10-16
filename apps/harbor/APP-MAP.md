@@ -9,7 +9,7 @@
 | Intent | Kind | Said as | What happens |
 | --- | --- | --- | --- |
 | `claim_status` | form | check on a claim | opens the form, which asks for claim |
-| `coverage` | form | check your coverage | opens the form, which asks for coverage topic |
+| `coverage` | form | check coverage | opens the form, which asks for member ID (of broker only), coverage topic |
 | `report_claim` | form | report a new claim | opens the form, which asks for kind of loss, date of loss, what happened |
 | `capabilities` | informational | hear what I can do | says "I'm an automated assistant, but you can talk to me naturally. I can tell you the status..." and goes back to the question |
 | `agent` | control | speak with someone | handled by the engine |
@@ -25,7 +25,7 @@ flowchart LR
   menu("Keypad menu")
   i_claim_status["check on a claim<br/>form claim_status"]
   menu -->|"press 1, from the greeting"| i_claim_status
-  i_coverage["check your coverage<br/>form coverage"]
+  i_coverage["check coverage<br/>form coverage"]
   menu -->|"press 2, from the greeting"| i_coverage
   i_report_claim["report a new claim<br/>form report_claim"]
   menu -->|"press 3, from the greeting"| i_report_claim
@@ -65,11 +65,16 @@ Intent `coverage` to its slots, the summary, the action and its rules.
 
 ```mermaid
 flowchart LR
-  intent("Intent<br/>coverage<br/>check your coverage")
+  intent("Intent<br/>coverage<br/>check coverage")
   subgraph slots["Slots, in the order they are asked (a caller may give them in any order)"]
+    s_clientId["clientId<br/>type: digits<br/>asked of broker only"]
     s_coverageTopic["coverageTopic<br/>type: topic"]
   end
   intent --> slots
+  c_isClient{{"Check<br/>check that a member is a client of the caller's office<br/>level 0: anonymous<br/>scope: say coverage_not_client, anything-else"}}
+  s_clientId -.->|"checked"| c_isClient
+  r_isClient(["Rules, in order<br/>1. identity<br/>2. scope"])
+  c_isClient --> r_isClient
   a_getCoverage["Read the member's coverage<br/>level 1: verified"]
   slots -->|"calls"| a_getCoverage
   r_getCoverage(["Rules, in order<br/>1. identity<br/>2. scope"])

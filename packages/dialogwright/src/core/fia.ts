@@ -1,7 +1,7 @@
 import { isAnonymous } from '../gate/types';
 import type { AnswerMap } from '../jev/types';
 import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } from './slots/types';
-import { formOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
+import { askedOfCaller, formOf, formSlotsFor, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
@@ -121,10 +121,11 @@ export function activeSlots(session: Session): SlotSpec[] {
   const factorSlots = listeningFactors(session);
   const collectsIdentity = isAnonymous(session.principal) && !session.caps.signIn;
   if (session.form) {
-    const form = formOf(app, session.form).slots.map((id) => slotSpecOf(app, id));
+    // A slot asked only of some callers (SlotSpec.askedOf) is not asked of anyone else, nor listened for.
+    const form = formSlotsFor(app, session.form, session.principal).map((id) => slotSpecOf(app, id));
     return collectsIdentity ? [...factorSlots.map((id) => slotSpecOf(app, id)), ...form.filter((spec) => !identityOf(app).factorSlots.includes(spec.id))] : form;
   }
-  return Object.values(app.slots).filter((spec) => (identityOf(app).factorSlots.includes(spec.id) ? collectsIdentity && factorSlots.includes(spec.id) : listenOf(app, spec.id) !== 'form'));
+  return Object.values(app.slots).filter((spec) => (identityOf(app).factorSlots.includes(spec.id) ? collectsIdentity && factorSlots.includes(spec.id) : listenOf(app, spec.id) !== 'form' && askedOfCaller(spec, session.principal)));
 }
 
 /**

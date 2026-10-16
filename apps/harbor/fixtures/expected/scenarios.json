@@ -13,6 +13,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -39,6 +40,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -67,6 +69,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -97,6 +100,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -124,6 +128,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -151,6 +156,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -178,6 +184,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -205,6 +212,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -231,6 +239,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -248,16 +257,16 @@
     "decision": "prompt",
     "promptId": "anything_else",
     "acks": [
-      "ack_intent",
-      "coverage_broker"
+      "coverage_answer"
     ],
     "reason": null,
-    "decidedGate": "intent",
-    "verdict": "route",
+    "decidedGate": null,
+    "verdict": "proceed",
     "form": null,
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -266,7 +275,62 @@
     },
     "queued": [],
     "principalLevel": 2,
-    "gate": "searchPolicy:BLOCK",
+    "gate": "getUsage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-coverage-client-up-front": {
+    "id": "broker-coverage-client-up-front",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "broker-coverage-not-a-client": {
+    "id": "broker-coverage-not-a-client",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "coverage_not_client"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "isClient:BLOCK",
     "pass": true,
     "mismatches": []
   },
@@ -284,6 +348,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -311,6 +376,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -338,6 +404,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -365,6 +432,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -394,6 +462,7 @@
     "slots": {
       "memberId": "60914477",
       "dob": "1991-07-09",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -421,6 +490,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -448,6 +518,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -474,6 +545,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -500,6 +572,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -526,6 +599,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -550,6 +624,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -574,6 +649,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -600,6 +676,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -626,6 +703,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -652,6 +730,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -676,6 +755,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -700,6 +780,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -724,6 +805,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -751,6 +833,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -778,6 +861,7 @@
     "slots": {
       "memberId": "55203318",
       "dob": "1948-11-22",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -804,6 +888,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -828,6 +913,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -855,6 +941,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -882,6 +969,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -908,6 +996,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -932,6 +1021,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -963,6 +1053,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -989,6 +1080,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1020,6 +1112,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1050,6 +1143,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1079,6 +1173,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1103,6 +1198,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1127,6 +1223,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1151,6 +1248,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "hospital_stay",
@@ -1175,6 +1273,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1199,6 +1298,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1223,6 +1323,7 @@
     "slots": {
       "memberId": "60914477",
       "dob": "1991-07-09",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1247,6 +1348,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1271,6 +1373,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1295,6 +1398,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1319,6 +1423,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1343,6 +1448,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1369,6 +1475,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": "accident_injury",
@@ -1395,6 +1502,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1421,6 +1529,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1447,6 +1556,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1471,6 +1581,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1497,6 +1608,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1521,6 +1633,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1547,6 +1660,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1571,6 +1685,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1595,6 +1710,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1619,6 +1735,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1643,6 +1760,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1667,6 +1785,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1691,6 +1810,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1715,6 +1835,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1741,6 +1862,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1767,6 +1889,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1798,6 +1921,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1824,6 +1948,7 @@
     "slots": {
       "memberId": "42716358",
       "dob": "1984-08-21",
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1851,6 +1976,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1875,6 +2001,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1902,6 +2029,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1933,6 +2061,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,
@@ -1959,6 +2088,7 @@
     "slots": {
       "memberId": null,
       "dob": null,
+      "clientId": null,
       "claimSelect": null,
       "coverageTopic": null,
       "lossType": null,

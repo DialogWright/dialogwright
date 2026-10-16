@@ -57,21 +57,28 @@ function isKbSource(v: unknown): v is KbSource {
   return isObject(v) && typeof v.passageId === 'string' && typeof v.topic === 'string' && typeof v.version === 'string' && typeof v.fresh === 'boolean';
 }
 
-/** The id of the session's caller when they are one of the app's subjects; '' for anyone else (the scope rule refuses them). */
-function subjectIdOf(app: App, s: Session): string {
+/**
+ * The id of the subject a knowledge read is about: the session's caller when they are one of the app's
+ * subjects; for anyone else who is not anonymous (a delegate), the value of the slot that names the
+ * subject (KbCompletionOptions.subject), if any; '' otherwise (the scope rule refuses them).
+ */
+function subjectIdOf(app: App, s: Session, subjectSlot?: SlotId): string {
   if (!app.identity || isAnonymous(s.principal)) return '';
-  return s.principal.kind === app.identity.subjectKind ? s.principal.id : '';
+  if (s.principal.kind === app.identity.subjectKind) return s.principal.id;
+  return subjectSlot !== undefined ? (s.slots[subjectSlot]?.value ?? '') : '';
 }
 
 /**
  * The params a knowledge read through `tool` carries: the subject's id under the param the tool's
  * scope rule names (PolicyTables.subjects), when the app verifies callers and the rule names one by
- * id, then the topic. The gate decides what they may read; the tool reads the facts from its systems.
+ * id, then the topic. For a caller who is not a subject, the subject is the one `subjectSlot` names
+ * (forms.yaml `answers.subject`). The gate decides what they may read; the tool reads the facts from
+ * its systems.
  */
-export function kbCallParams(app: App, s: Session, tool: ToolName, topic: string): Record<string, string> {
+export function kbCallParams(app: App, s: Session, tool: ToolName, topic: string, subjectSlot?: SlotId): Record<string, string> {
   const params: Record<string, string> = {};
   const subject = Object.hasOwn(app.policy.subjects, tool) ? app.policy.subjects[tool] : undefined;
-  if (app.identity && subject !== undefined && subject.via !== 'record') params[subject.param] = subjectIdOf(app, s);
+  if (app.identity && subject !== undefined && subject.via !== 'record') params[subject.param] = subjectIdOf(app, s, subjectSlot);
   params[KB_TOPIC_PARAM] = topic;
   return params;
 }
@@ -122,6 +129,13 @@ export interface KbCompletionOptions {
   readonly answer?: string;
   /** The line said when there is no answer to give. Default KB_UNAVAILABLE_PROMPT (`kb_unavailable`). */
   readonly unavailable?: string;
+  /**
+   * The form's slot that names the subject the answer is about, for a caller who is not a subject (a
+   * delegate, asked it by the slot's askedOf): its value is the subject param of the reads (kbCallParams),
+   * and the gate's scope rule decides. A subject is always answered about themselves. Without it, a
+   * caller who is not a subject is answered about no one.
+   */
+  readonly subject?: SlotId;
 }
 
 /** The action a knowledge completion resolves through: its own `via`, else the knowledge base's. */
@@ -172,7 +186,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     // An app that names no action and has no knowledge base of its own has nothing to read the answer through.
     if (tool === null) return unavailableCompletion(c, unavailablePrompt);
     const topic = s.slots[opts.slot]?.value ?? '';
-    const params = kbCallParams(app, s, tool, topic);
+    const params = kbCallParams(app, s, tool, topic, opts.subject);
     const { decision, value } = c.callTool({ tool, params });
     if (decision.verdict !== 'ALLOW') return c.refusal(decision);
     const result = readKbAnswer(value);
@@ -183,7 +197,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     let answer = result.answer;
     const line = accountLineOf(app.knowledge, result.source.topic, locale, defaultLocale);
     if (line !== null) {
-      const read = c.callTool({ tool: line.from, params: kbCallParams(app, s, line.from, result.source.topic) });
+      const read = c.callTool({ tool: line.from, params: kbCallParams(app, s, line.from, result.source.topic, opts.subject) });
       const filled = read.decision.verdict === 'ALLOW' ? fillAccountLine(line.text, read.value) : null;
       if (filled !== null) answer = `${answer} ${filled}`;
     }

@@ -30,8 +30,10 @@ describe('the app folder', () => {
     expect(app.prompts.manifest.goodbye).toBeDefined();
   });
 
-  it('has an action in policy.yaml for every tool, and no other', () => {
-    expect(Object.keys(app.policy.toolLevel).sort()).toEqual(Object.keys(code.tools).sort());
+  it('has an action in policy.yaml for every tool, and no other but the forms\' checks (which run no tool)', () => {
+    const checks = new Set(Object.values(app.forms).flatMap((f) => (f.checks ?? []).map((c) => c.action)));
+    expect([...checks]).toEqual(['isClient']);
+    expect(Object.keys(app.policy.toolLevel).filter((t) => !checks.has(t)).sort()).toEqual(Object.keys(code.tools).sort());
   });
 });
 

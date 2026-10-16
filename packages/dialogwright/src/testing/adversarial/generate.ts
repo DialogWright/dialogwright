@@ -1,6 +1,6 @@
 import type { App, FormId, Intent, PolicyMatrix, SlotId } from '../../core/app/types';
 import { defaultAppId, getApp } from '../../core/app/registry';
-import { codeLengthOf, formOf, gateOf, hasCode, identityOf, slotSpecOf } from '../../core/app/lookup';
+import { codeLengthOf, formOf, formSlotsFor, gateOf, hasCode, identityOf, slotSpecOf } from '../../core/app/lookup';
 import { appTurnContext } from '../../core/turn';
 import { ensureEntry, newTurnOut } from '../../core/lifecycle';
 import { newSession, setForm } from '../../core/session';
@@ -242,8 +242,11 @@ function injections(b: Builder, shape: Shape, lang: string, t: LanguageTemplates
 function appAnswer(shape: Shape, p: Point): CorpusEntry | null {
   const form = typeof p.context === 'string' && Object.hasOwn(shape.app.forms, p.context) ? p.context : null;
   if (form === null) return null;
-  const asked = p.prompted ?? formOf(shape.app, form).slots[0];
-  return shape.corpus.find((e) => e.context === form && (e.prompted ?? formOf(shape.app, form).slots[0]) === asked && e.intent === noIntent(shape.app)
+  // The form's first slot asked of the seeded caller (SlotSpec.askedOf): a slot asked only of others is never their prompt.
+  const caller = shape.app.testing?.seed?.caller();
+  const first = (caller === undefined ? formOf(shape.app, form).slots : formSlotsFor(shape.app, form, caller))[0];
+  const asked = p.prompted ?? first;
+  return shape.corpus.find((e) => e.context === form && (e.prompted ?? first) === asked && e.intent === noIntent(shape.app)
     && e.confirm === undefined && e.change === undefined && e.as === undefined && (e.slots !== undefined || e.labels !== undefined)) ?? null;
 }
 

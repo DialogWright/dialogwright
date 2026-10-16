@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `policy.yaml` | `821ae647c806830e341aa7c65791c249b5fe0f08c8f9592f5fd17769c321efdc` |
+| `policy.yaml` | `eeead42923cb2cc5f59569f771e73ba234f5901f3fd808b187595fd0658fdfe6` |
 | `identity.yaml` | `221ca97b4ad23adb7467b5a3d822d758b684eb9f78af3f612ac10ee031f72c8a` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
@@ -55,7 +55,7 @@ What each role may do. In the actions that have a role rule, a role the rule doe
 | --- | --- | --- | --- |
 | service rep (`service_rep`) | none | none | file a claim |
 | office admin (`office_admin`) | none | file a claim | none |
-| every role, and a party with no role | read the member's coverage<br/>answer from the member's plan<br/>read the member's use of a benefit<br/>list the member's claims<br/>read a claim<br/>hand a filed claim to the claims intake service<br/>text a link to upload documents | none | check the member ID and date of birth<br/>text a one-time code<br/>check the one-time code |
+| every role, and a party with no role | read the member's coverage<br/>answer from the member's plan<br/>check that a member is a client of the caller's office<br/>read the member's use of a benefit<br/>list the member's claims<br/>read a claim<br/>hand a filed claim to the claims intake service<br/>text a link to upload documents | none | check the member ID and date of birth<br/>text a one-time code<br/>check the one-time code |
 
 ## What is withheld
 
@@ -66,6 +66,7 @@ A party who acts for members does not see every field of what some actions retur
 | broker, any role | Read a claim (`getClaim`) | `diagnosis`, `statement` |
 | broker, any role | List the member's claims (`listClaims`) | `diagnosis`, `statement` |
 | broker, any role | File a claim (`createClaim`) | `diagnosis`, `statement` |
+| broker, any role | Read the member's use of a benefit (`getUsage`) | `used` |
 
 ## What is recorded
 
@@ -80,6 +81,7 @@ What the record of a call keeps of each value the action is sent, where the acti
 | Read the member's coverage (`getCoverage`) | member ID (`memberId`) | by its last four characters |
 | Answer from the member's plan (`searchPolicy`) | member ID (`memberId`) | by its last four characters |
 | Answer from the member's plan (`searchPolicy`) | topic (`topic`) | as it is |
+| Check that a member is a client of the caller's office (`isClient`) | member ID (`clientId`) | by its last four characters |
 | Read the member's use of a benefit (`getUsage`) | member ID (`memberId`) | by its last four characters |
 | Read the member's use of a benefit (`getUsage`) | topic (`topic`) | as it is |
 | List the member's claims (`listClaims`) | member ID (`memberId`) | by its last four characters |
@@ -110,6 +112,7 @@ One row per action the agent may take. Anything else is refused.
 | **Check the one-time code**<br/>`verifyCode` | 1 verified | 1. only a member, or a caller not yet verified, may use it (any other party is refused)<br/>2. the caller must be at 'verified' or above<br/>3. the identity check has not already failed 3 times (after that a person takes the call) |
 | **Read the member's coverage**<br/>`getCoverage` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the member ID must be the caller's own, or one they act for |
 | **Answer from the member's plan**<br/>`searchPolicy` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the member ID must be the caller's own, or one they act for |
+| **Check that a member is a client of the caller's office**<br/>`isClient`<br/>a form's check: the gate answers, nothing runs | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the member ID must be the caller's own, or one they act for |
 | **Read the member's use of a benefit**<br/>`getUsage` | 1 verified | 1. the caller must be at 'verified' or above<br/>2. the member ID must be the caller's own, or one they act for |
 | **List the member's claims**<br/>`listClaims` | 2 confirmed by code | 1. the caller must be at 'confirmed by code' or above<br/>2. the member ID must be the caller's own, or one they act for |
 | **Read a claim**<br/>`getClaim` | 2 confirmed by code | 1. the caller must be at 'confirmed by code' or above<br/>2. the claim must belong to the caller, or to someone they act for |
@@ -123,6 +126,7 @@ One row per action the agent may take. Anything else is refused.
 flowchart LR
   subgraph lv0["Level 0: anonymous"]
     a_verifyMember["Check the member ID and date of birth<br/>attempts"]
+    a_isClient["Check that a member is a client of the caller's office<br/>identity · scope"]
   end
   subgraph lv1["Level 1: verified"]
     a_sendCode["Text a one-time code<br/>identity · scope"]

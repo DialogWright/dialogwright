@@ -304,7 +304,7 @@ forms:
     answers: { slot: subject }
 ```
 
-`answers` takes `slot` (the form's topic slot), and optionally `via` (the resolving action, default kb.yaml's `action`), `answer` and `unavailable` (the two lines), and `midTask` (below). The intent is an ordinary form intent:
+`answers` takes `slot` (the form's topic slot), and optionally `via` (the resolving action, default kb.yaml's `action`), `answer` and `unavailable` (the two lines), `subject` (below) and `midTask` (below). The intent is an ordinary form intent:
 
 ```yaml
 # intents.yaml
@@ -314,6 +314,25 @@ intents:
     label: answer a question
     kind: form
 ```
+
+**About whom: `subject`.** A subject is answered about themselves: the resolving action, and an account line's tool, are sent the caller's own id under the param their `scope` rule names. A delegate (someone acting for subjects, identity.yaml's `delegates`) names whom they ask about: give the form a slot for it, asked of delegates only ([`askedOf`](05-writing-a-slot.md#a-slot-asked-only-of-some-callers-askedof)), and name it as the subject. Its value is then the subject param of both reads, and the gate's scope rule decides whether this delegate may read that subject's answer; a check on the slot (`checks:`, an action with `check: true` and the same `scope` rule) refuses at once, before the topic is asked. A field a delegate may not see (policy.yaml `redact`, such as the count an account line says) leaves the account line out. Without `subject`, a caller who is not a subject is answered about no one (the scope rule refuses):
+
+```yaml
+# forms.yaml
+forms:
+  coverage:
+    slots: [clientId, coverageTopic]     # clientId: askedOf: [broker]
+    summaryPromptId: null
+    hooks: [entry, principalEntry]       # principalEntry: () => null, so a broker makes no entry call of a member's own
+    answers: { slot: coverageTopic, subject: clientId }
+    checks:
+      - action: isClient                 # check: true, rules: [identity, scope: { param: clientId }]
+        with: [clientId]
+        on:
+          scope: { say: coverage_not_client, then: anything-else }
+```
+
+`pnpm check` refuses a `subject` that is not one of the form's slots, is its topic slot, or is in an app without identity.yaml.
 
 **In the middle of a task: an aside (`midTask`).** A caller at "Shall I make that change?" who asks "actually, what are your hours?" wants the hours and then the change. So a form with `answers:` is an aside by default (`midTask: aside`): asked for while another form is open, whether the model reads the turn as replacing the task or adding to it, the task is set aside exactly as it stands, the answer is said, and the task resumes where it was. Its question is asked again, or its summary or confirmation, with no attempt counted:
 

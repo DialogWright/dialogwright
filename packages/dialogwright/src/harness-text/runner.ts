@@ -11,7 +11,7 @@ import { JevClientError, type JevClient } from '../jev/types';
 import { promptText, spokenText as decisionText } from '../prompts/render';
 import { prompt, type Decision } from '../core/decision';
 import { appOf, defaultAppId, getApp } from '../core/app/registry';
-import { formOf, identityOf } from '../core/app/lookup';
+import { askedOfCaller, formOf, identityOf } from '../core/app/lookup';
 import { delegateProblem, subjectProblem } from '../core/app/principals';
 import type { App, Refused, SlotId } from '../core/app/types';
 import { serviceResultEvent, keyEvents, signedInEvent, silenceEvent, speechEvent, startEvent, textEvent, withCallData, withCalledNumber, withCallerAttestation, withCallerNumber, withCallerWithheld, type SessionEvent } from '../channel/events';
@@ -170,6 +170,8 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const stopAt = identity ? formOf(app, form).slots[0] : entry.prompted ?? missingSlots(session)[0];
   for (const id of formOf(app, form).slots) {
     if (!confirming && id === stopAt) break;
+    // A slot not asked of the seeded caller (SlotSpec.askedOf) is no part of their form.
+    if (!askedOfCaller(app.slots[id], session.principal)) continue;
     // In a confirm_ context every slot is seeded unconfirmed: the summary is what confirms them, not this
     // placeholder fill.
     fillPlaceholder(seed, session, id, !confirming);

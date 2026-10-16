@@ -264,6 +264,22 @@ describe('the pieces', () => {
     expect(kbCallParams(testkitApp, own, 'getParcel', 'returns')).toEqual({ topic: 'returns' });
   });
 
+  it('names the subject a delegate asks about by the form\'s subject slot (forms.yaml answers.subject); a subject is always answered about themselves', () => {
+    registerTestkit();
+    const staff = newSession('kb-delegate', 0, VOICE_RELAY, { kind: 'agent', level: 2, id: 'S-1', first: 'Sam', role: 'clerk' }, testkitApp.id);
+    staff.slots.missingNote = { ...staff.slots.missingNote!, value: '55509876' };
+    expect(kbCallParams(testkitApp, staff, 'getAccount', 'returns', 'missingNote')).toEqual({ accountId: '55509876', topic: 'returns' });
+    // Without the slot named, a delegate is answered about no one, as before.
+    expect(kbCallParams(testkitApp, staff, 'getAccount', 'returns')).toEqual({ accountId: '', topic: 'returns' });
+    // A subject's own id, whatever the slot holds; and an anonymous caller none.
+    const own = newSession('kb-subject-slot', 0, VOICE_RELAY, customerPrincipal(CUSTOMERS[0]!, 1), testkitApp.id);
+    own.slots.missingNote = { ...own.slots.missingNote!, value: '55509876' };
+    expect(kbCallParams(testkitApp, own, 'getAccount', 'returns', 'missingNote')).toEqual({ accountId: '55501234', topic: 'returns' });
+    const anon = newSession('kb-anon-slot', 0, VOICE_RELAY, ANONYMOUS, testkitApp.id);
+    anon.slots.missingNote = { ...anon.slots.missingNote!, value: '55509876' };
+    expect(kbCallParams(testkitApp, anon, 'getAccount', 'returns', 'missingNote')).toEqual({ accountId: '', topic: 'returns' });
+  });
+
   it('gives a knowledge read the topic alone for an app that verifies no one', () => {
     const c = call(APP);
     expect(kbCallParams(APP, c.last.session, 'findPassage', 'late_fees')).toEqual({ topic: 'late_fees' });
@@ -308,6 +324,12 @@ describe('check: a folder\'s knowledge answers', () => {
       'forms.yaml:18:33  forms.ask_library.answers.via  form "ask_library" reads its answer through "lookUp", which has no action in policy.yaml: every read the knowledge base makes goes through the gate  ->  add "lookUp:" under actions in policy.yaml, with its level and rules',
       'forms.yaml:18:33  forms.ask_library.answers.via  form "ask_library" reads its answer through "lookUp", which is not a tool in the code  ->  add it to app.ts (code.tools.lookUp) (kbAnswerTool() resolves a passage of kb/)',
     ]);
+  });
+
+  it('a subject slot (answers.subject) that is not a slot of the form, is its topic slot, or is in an app that verifies no one', async () => {
+    const subject = (slot: string) => async (id: string): Promise<string[]> => (await lines(id, { 'forms.yaml': (t) => APP_EDITS['forms.yaml']!(t).replace('answers: { slot: libraryTopic }', `answers: { slot: libraryTopic, subject: ${slot} }`) })).filter((l) => l.includes('answers.subject'));
+    expect(await subject('book')('kb-c9')).toEqual([expect.stringContaining('form "ask_library" names the subject in the slot "book", which is not one of its slots')]);
+    expect(await subject('libraryTopic')('kb-c10')).toEqual([expect.stringContaining('form "ask_library" names the subject in its topic slot "libraryTopic"')]);
   });
 
   it('a calls list that leaves out the action the answer is read through, or an account line\'s tool', async () => {

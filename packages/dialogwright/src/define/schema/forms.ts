@@ -61,6 +61,12 @@ const form = z
           .describe('The gated action that resolves the answer (a tool in the code, with an action in policy.yaml, returning an answer or why there is none). Default: kb/kb.yaml\'s action.'),
         answer: identifier().optional().describe('The prompt the answer is said through; its text says {answer}. Default: kb_answer.'),
         unavailable: identifier().optional().describe('The prompt said when there is no answer to give, before a person is offered. Default: kb_unavailable.'),
+        subject: identifier()
+          .optional()
+          .describe(
+            'A slot of this form that names the subject the answer is about, for a caller who is not one of the app\'s subjects (a delegate acting for them, asked it with the slot\'s askedOf): its value goes to the resolving action and an account line\'s tool as the subject param, and the gate\'s scope rule decides whether this caller may read that subject\'s answer. A subject is always answered about themselves. ' +
+              'Default: none, and a caller who is not a subject is answered about no one (the scope rule refuses).',
+          ),
         midTask: z
           .enum(['aside', 'task'])
           .optional()

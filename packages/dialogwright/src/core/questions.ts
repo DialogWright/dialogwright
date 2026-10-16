@@ -1,7 +1,8 @@
 import type { QuestionMap } from '../jev/types';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { formIntents, intentCriteria } from './app/intents';
-import { formOf, slotSpecOf } from './app/lookup';
+import { formSlotsFor, slotSpecOf } from './app/lookup';
+import type { Principal } from '../gate/types';
 import { appOf } from './app/registry';
 import type { App, FormId, SlotId } from './app/types';
 import { activeSlots, questionCtx } from './fia';
@@ -182,8 +183,9 @@ function noForm(app: App): QuestionMap {
  * pinned only so the wire order, and any option-order bias in the model's answer, stay stable
  * across runs. Without the app's own, the form's slots in its order, each named by its id.
  */
-function changeSlotCriteria(app: App, form: FormId): Record<string, string> {
-  const slots = formOf(app, form).slots;
+function changeSlotCriteria(app: App, form: FormId, principal: Principal): Record<string, string> {
+  // Only the slots asked of this caller (SlotSpec.askedOf): a slot they were never asked is no detail to change.
+  const slots = formSlotsFor(app, form, principal);
   const own = app.wording?.changeSlot;
   const criteria: Record<string, string> = {};
   if (own?.order) {
@@ -203,9 +205,9 @@ function neutralChangeText(id: SlotId): string {
  * disjoint from value-giving answers (naming a detail, not giving its new value) and limited to
  * the slots on the current form. Asked only while the summary is pending.
  */
-function formConfirmation(app: App, form: FormId): QuestionMap {
+function formConfirmation(app: App, form: FormId, principal: Principal): QuestionMap {
   const own = app.wording?.changeSlot;
-  const criteria = changeSlotCriteria(app, form);
+  const criteria = changeSlotCriteria(app, form, principal);
   criteria.none = own?.none ?? NEUTRAL_WORDING.changeSlot.none;
   return {
     changeSlot: {
@@ -293,7 +295,7 @@ export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap 
   if (session.form) Object.assign(q, inForm());
   if (!session.form) Object.assign(q, noForm(app));
   if (session.pendingConfirmation) Object.assign(q, confirmation(app));
-  if (session.pendingConfirmation?.target === 'form') Object.assign(q, formConfirmation(app, session.pendingConfirmation.form));
+  if (session.pendingConfirmation?.target === 'form') Object.assign(q, formConfirmation(app, session.pendingConfirmation.form, session.principal));
   if (session.menuActive) Object.assign(q, menu(app));
   if (callerMatchAsked(session)) Object.assign(q, callerMatch());
   // The app's own, last, and only where it has any: an app without them asks exactly the above.

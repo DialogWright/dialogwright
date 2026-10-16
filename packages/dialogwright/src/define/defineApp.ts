@@ -670,6 +670,28 @@ export function crossLink(
       else inTs(['slots', id, 'dictation', 'listen'], message, fix);
     });
   }
+  // The callers a slot is asked of (SlotSpec.askedOf): kinds and kind.role pairs identity.yaml has,
+  // never on an identity factor (every caller proves who they are the same way).
+  {
+    const principals = config.identity?.principals;
+    const kinds = principals === undefined ? [] : [principals.subject, ...Object.keys(principals.delegates ?? {})];
+    const pairs = Object.entries(principals?.delegates ?? {}).flatMap(([kind, d]) => (d.roles ?? []).map((role) => `${kind}.${role}`));
+    const known = [...kinds, ...pairs];
+    const factorIds: readonly string[] = config.identity?.levels[1].factors ?? [];
+    for (const [id, spec] of Object.entries(linked.slots)) {
+      const askedOf = spec?.askedOf;
+      if (askedOf === undefined) continue;
+      const where = (path: DataPath, message: string, fix: string): void => {
+        if (linked.library.has(id)) yaml(SLOTS_FILE, [id, 'askedOf', ...path], message, fix);
+        else inTs(['slots', id, 'askedOf'], message, fix);
+      };
+      if (!config.identity) { where([], `the slot "${id}" is asked only of some callers (askedOf), but the app has no identity.yaml, so every caller is anonymous and none is asked it`, 'add identity.yaml with the kinds of caller, or delete "askedOf"'); continue; }
+      if (factorIds.includes(id)) { where([], `the slot "${id}" is an identity factor, which every caller is asked the same way, so it cannot be asked only of some (askedOf)`, 'delete "askedOf"'); continue; }
+      askedOf.forEach((entry, i) => {
+        if (!known.includes(entry)) where([i], `the slot "${id}" is asked of "${entry}", which is not a kind identity.yaml names (${kinds.map((k) => `"${k}"`).join(', ')}) or one of a delegate kind's roles`, `${renameHint(entry, known)}name a kind, or a delegate kind and one of its roles joined by a dot (${pairs[0] ?? 'broker.office_admin'})`);
+      });
+    }
+  }
   // A slot that proposes a value from the facts (SlotSpec.offer `facts`): never an identity factor
   // (a proposal is no proof), never beside the caller's number's offer on one slot, and only with
   // the code that proposes (code.facts.offers). What feeds the facts is the app's: the call-start
@@ -1240,8 +1262,8 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.summary?.onNo === 'read-back') def.summaryOnNo = 'read-back';
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
-    const { slot, via, answer, unavailable } = form.answers;
-    def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}) });
+    const { slot, via, answer, unavailable, subject } = form.answers;
+    def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}), ...(subject !== undefined ? { subject } : {}) });
     // An aside to the task in hand, unless the form says it is a task like any other.
     if (form.answers.midTask !== 'task') def.aside = { slot };
   }

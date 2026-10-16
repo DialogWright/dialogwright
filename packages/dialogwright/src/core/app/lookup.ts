@@ -1,6 +1,7 @@
 import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
+import type { Principal } from '../../gate/types';
 
 /** An app's form by id; an id the app does not define is a bug, named in the error. */
 export function formOf(app: App, id: FormId): FormDef {
@@ -113,6 +114,25 @@ export function changeSlotWithValueOf(app: App): ChangeSlotWithValue {
 /** What a question asked at a form's summary that the model reads as answering it gets: the app's (App.questionAtSummary), else `aside`. */
 export function questionAtSummaryOf(app: App): QuestionAtSummary {
   return app.questionAtSummary ?? 'aside';
+}
+
+/**
+ * Whether `spec` is asked of `principal` (SlotSpec.askedOf): every caller when the slot names none;
+ * else a party whose kind is listed, or whose kind and role are (`broker.office_admin`). Never an
+ * anonymous caller of a slot that names any.
+ */
+export function askedOfCaller(spec: Pick<SlotSpec, 'askedOf'> | undefined, principal: Principal): boolean {
+  const kinds = spec?.askedOf;
+  if (kinds === undefined) return true;
+  if (principal.kind === 'anonymous') return false;
+  const role = 'role' in principal ? principal.role : undefined;
+  return kinds.includes(principal.kind) || (role !== undefined && kinds.includes(`${principal.kind}.${role}`));
+}
+
+/** The slots of `form` asked of `principal` (askedOfCaller), in the form's order: the form's slots for that caller. */
+export function formSlotsFor(app: App, form: FormId, principal: Principal): readonly SlotId[] {
+  const slots = formOf(app, form).slots;
+  return slots.some((id) => app.slots[id]?.askedOf !== undefined) ? slots.filter((id) => askedOfCaller(app.slots[id], principal)) : slots;
 }
 
 /**

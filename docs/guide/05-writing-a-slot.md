@@ -553,6 +553,26 @@ A `_noinput` line is the whole turn ("Sorry, I didn't hear anything. What's your
 
 Testing it: a corpus line with the slot `prompted` and no label for it is a miss; a scripted call says it as many times as the slot's attempts, then expects the outcome (a `form` outcome's next question, a skipped slot's next, or the end line). The engine's own fixture is `packages/dialogwright/src/testing/screened`: a town it cannot make out goes to the office's call (`then: form`), whose call time is skipped after two tries.
 
+### A slot asked only of some callers: `askedOf`
+
+Some questions are for some callers only. A broker asking what a client's plan covers has to say which client; a member asking about their own plan does not. `askedOf` lists the callers a slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind), or a delegate kind and one of its roles joined by a dot (`broker.office_admin`):
+
+```yaml
+# slots.yaml
+clientId:
+  type: digits
+  noun: member ID
+  length: 8
+  group: [4, 4]
+  askedOf: [broker]
+```
+
+For any other caller the slot is no part of its forms: it is not asked, its question is not sent to the model (inside a form or outside one), the change question at a summary does not offer it, and the form completes without it. A caller not yet verified is anonymous, which may not be listed, so a slot that names any kind is asked of no one until they have proven who they are or signed in. It changes nothing for an app whose slots name none (decided 2026-10-16, Harbor findings item 5).
+
+What the slot's value is for is the app's: a form that answers from the knowledge base reads its answer about the subject that slot names, for a caller who is not one (forms.yaml `answers.subject`, [12.5](12-the-knowledge-base.md#125-answers-through-the-gate)); a form's check (`checks:`) sends it to the gate as soon as it is said, so a delegate hears at once that a member is not one they act for; a hook reads it from the session. The gate decides, as always: the slot only lets the caller say whom they mean.
+
+`pnpm check` refuses a kind or a role identity.yaml does not have, `askedOf` in an app without identity.yaml, and `askedOf` on an identity factor (every caller proves who they are the same way). The app map says whom each such slot is asked of. Testing it: a delegate's corpus line at the opening question (`as`), and scripted calls signed in as each kind, the slot asked of one and not of the other.
+
 ### Thresholds
 
 Compare the model's numbers against `ctx.thresholds`, by name, never against a number written in the slot. Thresholds can then be overridden for a run (`--threshold SLOT_DETECT=0.7`) and tuned by the sweep, and every slot moves together. The slot thresholds (their defaults are in `core/thresholds.ts`):

@@ -3,7 +3,7 @@ import { z, type ZodIssue } from 'zod';
 import { clashMessage, declaredQuestionIdClashes } from '../core/questionIds';
 import { closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from '../define/problems';
 import type { JsonSchema } from '../define/schema/json';
-import { ATTEMPTS_DESCRIPTION, ATTEMPTS_OPTION, ON_MAX_ATTEMPTS_DESCRIPTION, ON_MAX_ATTEMPTS_OPTION, slotAttemptsSchema, slotOnMaxAttemptsSchema, LISTEN_DESCRIPTION, LISTEN_OPTION, OFFER_ANSWERS_DESCRIPTION, OFFER_ANSWERS_OPTION, OFFER_AT_DESCRIPTION, OFFER_AT_OPTION, OFFER_DESCRIPTION, OFFER_OPTION, slotListenSchema, slotOfferAnswersSchema, slotOfferAtSchema, slotOfferSchema } from '../define/schema/slots';
+import { ASKED_OF_DESCRIPTION, ASKED_OF_OPTION, slotAskedOfSchema, ATTEMPTS_DESCRIPTION, ATTEMPTS_OPTION, ON_MAX_ATTEMPTS_DESCRIPTION, ON_MAX_ATTEMPTS_OPTION, slotAttemptsSchema, slotOnMaxAttemptsSchema, LISTEN_DESCRIPTION, LISTEN_OPTION, OFFER_ANSWERS_DESCRIPTION, OFFER_ANSWERS_OPTION, OFFER_AT_DESCRIPTION, OFFER_AT_OPTION, OFFER_DESCRIPTION, OFFER_OPTION, slotListenSchema, slotOfferAnswersSchema, slotOfferAtSchema, slotOfferSchema } from '../define/schema/slots';
 import { OFFER_ANSWERS_VALUES, SLOT_LISTEN_VALUES, SLOT_OFFER_AT_VALUES } from '../core/slots/types';
 import { parseOnMaxAttempts } from '../define/schema/outcome';
 import { BUILT_IN_SLOT_TYPES } from './registry';
@@ -125,22 +125,24 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
     );
   }
   const type = types[name]!;
-  // `listen`, `offer`, `offerAt`, `offerAnswers`, `attempts` and `onMaxAttempts` are every slot's, read here beside `type`; the rest are the type's own options.
-  const { type: _type, [LISTEN_OPTION]: listen, [OFFER_OPTION]: offer, [OFFER_AT_OPTION]: offerAt, [OFFER_ANSWERS_OPTION]: offerAnswers, [ATTEMPTS_OPTION]: attempts, [ON_MAX_ATTEMPTS_OPTION]: onMaxAttempts, ...rest } = config;
+  // `listen`, `offer`, `offerAt`, `offerAnswers`, `askedOf`, `attempts` and `onMaxAttempts` are every slot's, read here beside `type`; the rest are the type's own options.
+  const { type: _type, [LISTEN_OPTION]: listen, [OFFER_OPTION]: offer, [OFFER_AT_OPTION]: offerAt, [OFFER_ANSWERS_OPTION]: offerAnswers, [ASKED_OF_OPTION]: askedOf, [ATTEMPTS_OPTION]: attempts, [ON_MAX_ATTEMPTS_OPTION]: onMaxAttempts, ...rest } = config;
   const parsed = type.options.safeParse(rest);
   const heard = listen === undefined ? null : slotListenSchema.safeParse(listen);
   const offered = offer === undefined ? null : slotOfferSchema.safeParse(offer);
   const offeredAt = offerAt === undefined ? null : slotOfferAtSchema.safeParse(offerAt);
   const answered = offerAnswers === undefined ? null : slotOfferAnswersSchema.safeParse(offerAnswers);
+  const askedAs = askedOf === undefined ? null : slotAskedOfSchema.safeParse(askedOf);
   const tried = attempts === undefined ? null : slotAttemptsSchema.safeParse(attempts);
   const after = onMaxAttempts === undefined ? null : parseOnMaxAttempts(onMaxAttempts);
-  if (!parsed.success || heard?.success === false || offered?.success === false || offeredAt?.success === false || answered?.success === false || tried?.success === false || after?.success === false) {
+  if (!parsed.success || heard?.success === false || offered?.success === false || offeredAt?.success === false || answered?.success === false || askedAs?.success === false || tried?.success === false || after?.success === false) {
     const raw = [
       ...(parsed.success ? [] : parsed.error.issues),
       ...(heard === null || heard.success ? [] : heard.error.issues.map((issue) => ({ ...issue, path: [LISTEN_OPTION, ...issue.path] }))),
       ...(offered === null || offered.success ? [] : offered.error.issues.map((issue) => ({ ...issue, path: [OFFER_OPTION, ...issue.path] }))),
       ...(offeredAt === null || offeredAt.success ? [] : offeredAt.error.issues.map((issue) => ({ ...issue, path: [OFFER_AT_OPTION, ...issue.path] }))),
       ...(answered === null || answered.success ? [] : answered.error.issues.map((issue) => ({ ...issue, path: [OFFER_ANSWERS_OPTION, ...issue.path] }))),
+      ...(askedAs === null || askedAs.success ? [] : askedAs.error.issues.map((issue) => ({ ...issue, path: [ASKED_OF_OPTION, ...issue.path] }))),
       ...(tried === null || tried.success ? [] : tried.error.issues.map((issue) => ({ ...issue, path: [ATTEMPTS_OPTION, ...issue.path] }))),
       ...(after === null || after.success ? [] : after.error.issues.map((issue) => ({ ...issue, path: [ON_MAX_ATTEMPTS_OPTION, ...issue.path] }))),
     ];
@@ -164,7 +166,7 @@ export function buildSlot(id: string, config: unknown, options: BuildSlotOptions
   });
   if (clashes.length > 0) return { ok: false, problems: clashes };
 
-  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data), ...(heard?.success ? { listen: heard.data } : {}), ...(offered?.success ? { offer: offered.data } : {}), ...(offeredAt?.success ? { offerAt: offeredAt.data } : {}), ...(answered?.success ? { offerAnswers: answered.data } : {}), ...(tried?.success ? { attempts: tried.data } : {}), ...(after?.success ? { onMaxAttempts: after.data } : {}) }, env);
+  const spec: LibrarySlotSpec = markBuilt({ ...built, type: name, config: Object.freeze(parsed.data), ...(heard?.success ? { listen: heard.data } : {}), ...(offered?.success ? { offer: offered.data } : {}), ...(offeredAt?.success ? { offerAt: offeredAt.data } : {}), ...(answered?.success ? { offerAnswers: answered.data } : {}), ...(askedAs?.success ? { askedOf: Object.freeze([...askedAs.data]) } : {}), ...(tried?.success ? { attempts: tried.data } : {}), ...(after?.success ? { onMaxAttempts: after.data } : {}) }, env);
   if (options.wording === undefined || Object.keys(options.wording).length === 0) return { ok: true, spec };
   return applySlotWording({ spec, types, raw: options.wording, ...(options.wordingSources ? { sources: options.wordingSources } : {}) });
 }
@@ -194,6 +196,7 @@ function schemaOf(type: SlotType<any, any>): JsonSchema {
     [OFFER_OPTION]: { type: 'string', enum: ['facts'], description: OFFER_DESCRIPTION },
     [OFFER_AT_OPTION]: { type: 'string', enum: [...SLOT_OFFER_AT_VALUES], default: 'slot', description: OFFER_AT_DESCRIPTION },
     [OFFER_ANSWERS_OPTION]: { type: 'string', enum: [...OFFER_ANSWERS_VALUES], default: 'yes-no-or-value', description: OFFER_ANSWERS_DESCRIPTION },
+    [ASKED_OF_OPTION]: { ...jsonOf(slotAskedOfSchema), description: ASKED_OF_DESCRIPTION },
     [ATTEMPTS_OPTION]: { ...jsonOf(slotAttemptsSchema), default: 3, description: ATTEMPTS_DESCRIPTION },
     [ON_MAX_ATTEMPTS_OPTION]: { ...jsonOf(slotOnMaxAttemptsSchema), default: 'handoff', description: ON_MAX_ATTEMPTS_DESCRIPTION },
   };

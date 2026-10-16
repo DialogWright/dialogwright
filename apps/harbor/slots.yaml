@@ -18,6 +18,18 @@ dob:
   keypad: true
   notThisDate: the date of an accident or claim
 
+# Which client a broker's coverage question is about: the client's member ID, asked of a broker only
+# (askedOf; a member asks about their own plan and is never asked it). The answer is that member's
+# plan's (forms.yaml answers.subject), and the gate decides whether the broker's office is the
+# member's agent of record (policy.yaml isClient, then searchPolicy's scope rule). Recorded and
+# handed on by its last four, as the member ID is.
+clientId:
+  type: digits
+  noun: member ID
+  length: 8
+  group: [4, 4]
+  askedOf: [broker]
+
 # Which of the member's own claims (claim_status): one of the records listClaims returned (the
 # facts' `claims` list), by number, by the service it was for or by its date; or a four-digit number
 # the caller says that is not on their list (whether they may hear about it is the gate's call, not

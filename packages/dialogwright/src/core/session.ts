@@ -3,7 +3,7 @@ import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
-import { formOf, isCarried } from './app/lookup';
+import { formOf, formSlotsFor, isCarried } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
 import type { App } from './app/types';
 import type { GateVerdict, Principal, ToolCall } from '../gate/types';
@@ -662,7 +662,8 @@ export function closeForm(session: Session, keep: readonly SlotId[] = []): Sessi
 }
 
 export function requiredSlots(session: Session): readonly SlotId[] {
-  return session.form ? formOf(appOf(session), session.form).slots : [];
+  // A slot asked only of some callers (SlotSpec.askedOf) is no part of the form for anyone else.
+  return session.form ? formSlotsFor(appOf(session), session.form, session.principal) : [];
 }
 
 /** The open form's slots still to ask: empty, and not declined (SlotState.declined). */

@@ -110,13 +110,48 @@
     "steps": [
       {
         "say": "does margaret's plan cover physical therapy"
+      },
+      {
+        "say": "five five two zero three three one eight"
       }
     ],
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
-      "gate": "searchPolicy:BLOCK",
-      "text": "I answer coverage questions for members themselves"
+      "gate": "getUsage:ALLOW",
+      "text": "Physical therapy after a covered accident is covered for up to 6 visits a year, at 40 dollars a visit. Is there anything else"
+    }
+  },
+  {
+    "id": "broker-coverage-client-up-front",
+    "as": "dana",
+    "steps": [
+      {
+        "say": "is the emergency room covered for member six zero nine one four four seven seven"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "An emergency room visit for a covered accident pays a benefit of 150 dollars."
+    }
+  },
+  {
+    "id": "broker-coverage-not-a-client",
+    "as": "dana",
+    "steps": [
+      {
+        "say": "what does my client's plan pay for an ambulance"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "text": "I don't see that member as a client your office represents"
     }
   }
 ]

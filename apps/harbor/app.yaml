@@ -23,6 +23,7 @@ console:
     memberId: Member ID
     dob: Date of birth
     claimSelect: Claim
+    clientId: Client's member ID
     coverageTopic: Coverage topic
     lossType: Kind of loss
     lossDate: Date of loss
@@ -40,6 +41,7 @@ handoff:
     unconfirmed: mark
     send:
       memberId: masked
+      clientId: masked
 
 # The paragraph: "a member who sounds frustrated about a claim is offered" a person. So the
 # frustration ladder (the acknowledgement, a person offered, then a person) runs in the claim forms

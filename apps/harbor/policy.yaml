@@ -41,6 +41,18 @@ actions:
     rules:
       - identity
       - scope: { param: memberId }
+  # A broker's client, named for a coverage question (forms.yaml coverage's check): whether the
+  # broker's office is that member's agent of record. No tool runs; the gate only answers. Only a
+  # broker is asked for a client (signed in, at level 2); the scope rule refuses anyone whose scope
+  # does not hold the member, an anonymous caller (no scope) and a member (their own only) alike, so
+  # it asks no level of its own and never starts a verification.
+  isClient:
+    say: check that a member is a client of the caller's office
+    check: true
+    level: 0
+    rules:
+      - identity
+      - scope: { param: clientId }
   # The member's own use of a benefit this year ("You've used 4 of them this year"): it says they had
   # the treatment, so it is an action of its own; the coverage answer is said without it when the
   # gate refuses it.
@@ -119,7 +131,7 @@ wording:
     refuse: "role {role} may file: no"
 
 # What a broker does not see of a claim: the member's diagnosis, and their own words about what
-# happened. The claims system returns the claim as it shows it to anyone (src/app.ts declares these
+# happened; nor a member's use of a benefit. The claims system returns the claim as it shows it to anyone (src/app.ts declares these
 # fields); the engine sets them to null for a broker before any line, the session, the trace, the
 # console or the audit reads it. A member sees all of their own claim.
 redact:
@@ -127,6 +139,9 @@ redact:
     getClaim: [diagnosis, statement]
     listClaims: [diagnosis, statement]
     createClaim: [diagnosis, statement]
+    # Nor how many of a benefit a client used this year: it says they had the treatment, and the
+    # account line says it to the member ("You've used ..."). The coverage answer is said without it.
+    getUsage: [used]
 
 # How each value an action is sent is recorded, where it is not a slot with a redact setting: the
 # member ID by its last four, the date of birth hidden and the member's own words by their length,

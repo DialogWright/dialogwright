@@ -73,9 +73,10 @@ const DANGLING = 'classDef dangling stroke:#d00,stroke-width:2px,stroke-dasharra
 
 /** A slot as a node says it: its id and its type (a library type's name, or "code" for a slot the app writes). */
 function slotLines(app: App, slot: string): string[] {
-  const spec = Object.hasOwn(app.slots, slot) ? (app.slots[slot] as { type?: unknown }) : undefined;
+  const spec = Object.hasOwn(app.slots, slot) ? (app.slots[slot] as { type?: unknown; askedOf?: readonly string[] }) : undefined;
   const type = spec === undefined ? 'missing' : typeof spec.type === 'string' ? spec.type : 'code';
-  return [slot, `type: ${type}`];
+  // A slot asked only of some callers (SlotSpec.askedOf) says whom.
+  return [slot, `type: ${type}`, ...(spec?.askedOf !== undefined ? [`asked of ${spec.askedOf.join(', ')} only`] : [])];
 }
 
 /**
@@ -264,7 +265,7 @@ function intentsTable(app: App): string[] {
     let then: string;
     if (intent.kind === 'form') {
       const form = app.forms[id];
-      then = form ? `opens the form, which asks for ${form.slots.map((s) => slotNoun(app, s)).join(', ') || 'nothing'}${form.next !== undefined ? `, then goes on to ${formWords(app, form.next)} (${form.next})` : ''}` : 'no form: dangling';
+      then = form ? `opens the form, which asks for ${form.slots.map((s) => `${slotNoun(app, s)}${app.slots[s]?.askedOf !== undefined ? ` (of ${app.slots[s]!.askedOf!.join(', ')} only)` : ''}`).join(', ') || 'nothing'}${form.next !== undefined ? `, then goes on to ${formWords(app, form.next)} (${form.next})` : ''}` : 'no form: dangling';
     } else if (intent.kind === 'informational' && intent.passage !== undefined) {
       // The passage's words change through review (kb/passages), not here: the map names it.
       const known = app.knowledge?.kb !== undefined && Object.hasOwn(app.knowledge.kb.passages, intent.passage);

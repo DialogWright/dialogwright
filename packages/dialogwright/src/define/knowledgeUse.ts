@@ -113,6 +113,17 @@ export function knowledgeUseProblems(config: LoadedConfig, locate: Locate, input
     if (!form.slots.includes(answers.slot)) {
       at('forms.yaml', [...base, 'slot'], `form "${id}" answers the topic in the slot "${answers.slot}", which is not one of its slots`, `${rename(answers.slot, form.slots)}add "${answers.slot}" to forms.${id}.slots (a topic slot in slots.yaml)`);
     }
+    // The slot that names the subject for a caller who is not one (answers.subject): one of the form's
+    // slots, not its topic, in an app that verifies callers.
+    if (answers.subject !== undefined) {
+      if (!form.slots.includes(answers.subject)) {
+        at('forms.yaml', [...base, 'subject'], `form "${id}" names the subject in the slot "${answers.subject}", which is not one of its slots`, `${rename(answers.subject, form.slots)}add "${answers.subject}" to forms.${id}.slots`);
+      } else if (answers.subject === answers.slot) {
+        at('forms.yaml', [...base, 'subject'], `form "${id}" names the subject in its topic slot "${answers.slot}"`, 'name the slot that holds whom the answer is about, or delete "subject"');
+      } else if (!config.identity) {
+        at('forms.yaml', [...base, 'subject'], `form "${id}" names the subject in the slot "${answers.subject}", but the app has no identity.yaml, so no read is about a subject`, 'delete "subject"');
+      }
+    }
     const via = answers.via ?? kb?.settings.action;
     if (via === undefined) {
       at('forms.yaml', base, `form "${id}" answers from the knowledge base, but names no action to read the answer through, and the app has no knowledge base whose action it could use`, `${addKb}, or add "via: <the gated tool that resolves the answer>"`);

@@ -71,6 +71,22 @@ export const OFFER_ANSWERS_DESCRIPTION =
 /** `offerAnswers:` on one slot: `yes-no-or-value` or `yes-no`, or absent for the default (`yes-no-or-value`). */
 export const slotOfferAnswersSchema = z.enum(OFFER_ANSWERS_VALUES as readonly [OfferAnswers, ...OfferAnswers[]]).describe(OFFER_ANSWERS_DESCRIPTION);
 
+/** The option every library slot takes beside its type's own (SlotSpec.askedOf). A slot type may not have an option of this name. */
+export const ASKED_OF_OPTION = 'askedOf';
+
+/** What `askedOf:` means, as the JSON Schema, the slot pages and an editor say it. */
+export const ASKED_OF_DESCRIPTION =
+  'The callers the slot is asked of: principal kinds as identity.yaml names them (the subject kind, or a delegate kind such as broker), or a delegate kind and one of its roles (broker.office_admin). ' +
+  'For any other caller the slot is not part of its forms: its question is not sent, it is not asked, and its form completes without it (a caller not yet verified is no kind listed but anonymous, which may not be listed). ' +
+  'Use it for what only some callers need to say, such as which client a delegate is asking about. Never on an identity factor; pnpm check refuses a kind or a role identity.yaml does not have. Default: every caller.';
+
+/** `askedOf:` on one slot: the kinds and kind.role pairs, at least one. */
+export const slotAskedOfSchema = z
+  .array(z.string().regex(/^[a-z][a-z0-9_]*(\.[A-Za-z][A-Za-z0-9_-]*)?$/, { error: 'must be a kind, or a kind and a role joined by a dot (broker.office_admin)' }))
+  .min(1, { error: 'must name at least one kind' })
+  .refine((list) => new Set(list).size === list.length, { error: 'names a kind twice' })
+  .describe(ASKED_OF_DESCRIPTION);
+
 /** The options every slot takes for how often it is asked and what follows when it runs out (SlotSpec.attempts, SlotSpec.onMaxAttempts; ./outcome.ts). A slot type may not have an option of either name. */
 export const ATTEMPTS_OPTION = 'attempts';
 export const ON_MAX_ATTEMPTS_OPTION = 'onMaxAttempts';

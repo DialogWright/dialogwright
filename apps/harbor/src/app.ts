@@ -450,12 +450,10 @@ export const code: AppCode = {
     coverage: {
       // Needs level 1: the answer is the member's own plan's, so a caller verifies first.
       entry: (s) => ({ tool: 'getCoverage', params: { memberId: memberIdOf(s) } }),
-      // A broker names no member here: the gate's scope rule refuses the answer, and the broker hears
-      // that the line answers coverage for the member themselves (DESIGN.md, Gaps).
-      principalEntry: (c) => {
-        const { decision } = c.callTool({ tool: 'searchPolicy', params: { memberId: '', topic: '' }, purpose: 'entry-check' });
-        return decision.verdict === 'ALLOW' ? null : { kind: 'refused', acks: [...c.acks, { promptId: 'coverage_broker', vars: {} }] };
-      },
+      // A broker makes no entry call of a member's own: the form asks which client (clientId, asked of
+      // brokers only), the gate checks the office is that member's agent of record (forms.yaml's
+      // isClient check), and the answer is read for that member (answers.subject).
+      principalEntry: () => null,
     },
     report_claim: {
       // Needs level 2 (the purpose in policy.yaml): the code is keyed before the form's questions.

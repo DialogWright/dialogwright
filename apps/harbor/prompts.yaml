@@ -17,7 +17,7 @@ prompts:
     text: Hi {first}, I'm Harbor Mutual's automated assistant. I can check on a claim, answer questions about your coverage, or help you report a new claim. What can I help with?
     interruptible: true
   greeting_chat_delegate:
-    text: Hi {first}, I'm Harbor Mutual's automated assistant for broker offices. I can check the status of a client's claim. What do you need?
+    text: Hi {first}, I'm Harbor Mutual's automated assistant for broker offices. I can check the status of a client's claim, or answer a question about what a client's plan covers. What do you need?
     interruptible: true
   signin_required:
     text: To do that, I need you to sign in first. Use the Sign in button below, and I'll pick up right where we left off.
@@ -247,10 +247,10 @@ prompts:
 
   # Coverage questions: the topic, and the approved answer from the member's own plan certificate
   ask_coverageTopic:
-    text: What would you like to know about your coverage?
+    text: What's your coverage question?
     interruptible: true
   ask_coverageTopic_retry:
-    text: I can't answer that from your policy information. I can answer questions like whether physical therapy, hospital stays, or fractures are covered. What would you like to know?
+    text: I can't answer that from the plan information. I can answer questions like whether physical therapy, hospital stays, or fractures are covered. What would you like to know?
     interruptible: true
   disambiguate_coverageTopic:
     text: Is that about {a}, or {b}?
@@ -259,10 +259,16 @@ prompts:
     text: "{answer}"
     interruptible: false
   coverage_unavailable:
-    text: That part of your policy is being updated, so I can't answer it right now.
+    text: That part of the plan information is being updated, so I can't answer it right now.
     interruptible: false
-  coverage_broker:
-    text: I answer coverage questions for members themselves, so I can't answer one for a client here. I can check the status of a client's claim.
+  ask_clientId:
+    text: Which client is this about? Please give me their eight-digit member ID.
+    interruptible: true
+  ask_clientId_retry:
+    text: Please give the eight digits of your client's member ID.
+    interruptible: true
+  coverage_not_client:
+    text: I don't see that member as a client your office represents, so I can't answer for their plan.
     interruptible: true
 
   # Reporting a claim: the kind of loss, the day, what happened, the read-back, and what follows
