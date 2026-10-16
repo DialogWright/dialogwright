@@ -109,6 +109,15 @@
 {"id": "db-06", "text": "nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobYear": "nineteen eighty four"}}
 {"id": "db-07", "text": "january first nineteen ninety", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "january", "dobDay": "1", "dobYear": "nineteen ninety"}}
 {"id": "db-08", "text": "i'd rather not say", "intent": "none", "context": "claim_status", "prompted": "dob"}
+{"id": "db-09", "text": "oh eight twenty one nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "nineteen eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-10", "text": "eight two one eight four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eight four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-11", "text": "august twenty first eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-12", "text": "eight twenty one nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "nineteen eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-13", "text": "zero eight two one one nine eight four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "one nine eight four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-14", "text": "the twenty first of august eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-15", "text": "eight slash twenty one slash eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-16", "text": "it's eight twenty one, nineteen eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "nineteen eighty four"}, "tags": ["dob_as_numbers"]}
+{"id": "db-17", "text": "oh eight two one eighty four", "intent": "none", "context": "claim_status", "prompted": "dob", "labels": {"dobGiven": true, "dobMonth": "august", "dobDay": "21", "dobYear": "eighty four"}, "tags": ["dob_as_numbers"]}
 {"id": "ag-01", "text": "i want to talk to a person", "intent": "agent", "context": "no_form"}
 {"id": "ag-02", "text": "agent", "intent": "agent", "context": "no_form"}
 {"id": "ag-03", "text": "representative", "intent": "agent", "context": "no_form"}
