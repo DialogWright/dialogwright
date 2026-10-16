@@ -76,17 +76,16 @@ lossDate:
   exclude: "The caller's date of birth, or a date answering a question about it, is not when it happened."
 
 # The member's own account of what happened: the value is their words, the summary reads it back by
-# the stand-in, and the records keep its length only. The paragraph says anyone may ask for a person
-# at any time, so a request for one said here is acted on (commands: listen: [agent]); every other
-# turn at its question is the description, whole.
+# the stand-in, and the records keep its length only. The type's own `changed` question at the
+# summary says the words were not read back, only named, and that correcting another detail is no
+# change to them (since 2026-10-16), which Harbor's own question used to say, so Harbor has none of
+# its own. The paragraph says anyone may ask for a person at any time, so a request for one said
+# here is acted on (commands: listen: [agent]); every other turn at its question is the
+# description, whole.
 lossDescription:
   type: text
   what: a short description of what happened to them, such as an injury and how it happened, an illness or diagnosis, or why they were in the hospital
   instructions: Count it even when it comes with a request to file a claim. A request alone, or only the kind of claim with nothing more about what happened (I got hurt, I had an accident, I was in the hospital), is not.
-  text:
-    # The summary says the description by its stand-in ("I have your description"), never its words,
-    # so this question says so (the type's own presumes the words were read back).
-    changed: "Read asr.text and node.promptJustPlayed. The caller was asked to confirm a claim before it is filed: the kind of claim and the date were read back, and their description of what happened was not, only that we have it. Besides agreeing, disagreeing or correcting the kind of claim or the date, does the caller add something new about what happened to them? Agreeing alone (yes, that's right, sounds good, thanks) is no."
   maxLength: 500
   say: your description
   redact: length

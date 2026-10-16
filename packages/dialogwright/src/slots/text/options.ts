@@ -26,9 +26,9 @@ export const TEXT_PARTS = textParts('text', {
     about: 'With `pick`: what the pick question\'s "none" label means, which keeps the whole words; {what} is pick.what.',
   },
   changed: {
-    template: 'Read asr.text and node.promptJustPlayed. The caller was read back {what} and asked to confirm it. Besides agreeing or disagreeing, does the caller add to or change {what}? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.',
-    vars: ['what'],
-    about: 'Without `pick`, asked only at the read-back of a form\'s summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it.',
+    template: 'Read asr.text and node.promptJustPlayed. The caller was read back a summary of their request and asked to confirm it{heard}. Besides agreeing, disagreeing or correcting another detail of the summary, does the caller add to or change {what}? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.',
+    vars: ['what', 'heard'],
+    about: 'Without `pick`, asked only at the read-back of a form\'s summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it. {heard} says how the summary said the words, which the engine knows: said by the stand-in (`say`), that {what} was not read back, only named by it; said whole (`say: null`), that it was read back as they said it.',
   },
 });
 

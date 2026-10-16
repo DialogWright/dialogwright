@@ -1924,7 +1924,7 @@
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
               },
               "changed": {
-                "description": "Without `pick`, asked only at the read-back of a form's summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it.",
+                "description": "Without `pick`, asked only at the read-back of a form's summary that holds the slot, once it has words: the yes-or-no question that asks whether the caller, besides agreeing, gives new or changed words for it. {heard} says how the summary said the words, which the engine knows: said by the stand-in (`say`), that {what} was not read back, only named by it; said whole (`say: null`), that it was read back as they said it.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

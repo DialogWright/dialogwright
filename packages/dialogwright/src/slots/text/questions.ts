@@ -43,7 +43,12 @@ export function textQuestions(slot: string, o: TextOptions): (ctx: SlotContext) 
   if (!o.pick) {
     // At a form's summary, with words on file: whether the caller, besides agreeing, adds to or changes them.
     const changedId = changedIdOf(slot, o);
-    const changed = TEXT_PARTS.render('changed', o.text, { what: o.what ?? WORDS_GIVEN });
+    // How the summary said the words, which the engine knows from the display (textDisplay): by the
+    // stand-in, so the caller never heard them, or whole (Harbor findings item 2; the maintainer's
+    // decision, 2026-10-16). Either way, correcting another detail of the summary is no change to them.
+    const what = o.what ?? WORDS_GIVEN;
+    const heard = o.say === null ? `, with ${what} read back as they said it` : `; ${what} was not read back, only named ("${o.say}")`;
+    const changed = TEXT_PARTS.render('changed', o.text, { what, heard });
     return (ctx) => (changeableAtSummary(o, ctx)
       ? { [id]: { type: 'noul', instructions }, [changedId]: { type: 'noul', instructions: changed } }
       : { [id]: { type: 'noul', instructions } });

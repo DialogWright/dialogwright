@@ -660,7 +660,9 @@ describe('numbers and case: the value written by code, the words read back', () 
 describe('at a form\'s summary: a yes with new or changed words (the `changed` question, live findings item 28)', () => {
   const MESSAGE = 'the logo files are ready for review';
   const atSummary = (text: string, over: Partial<SlotContext> = {}): SlotContext => ({ ...testSlotContext(text), current: MESSAGE, prompted: false, summary: true, ...over });
-  const CHANGED = 'Read asr.text and node.promptJustPlayed. The caller was read back a note for the courier and asked to confirm it. Besides agreeing or disagreeing, does the caller add to or change a note for the courier? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.';
+  // The words said by the stand-in (the type's default), so the question says they were not read back
+  // (Harbor findings item 2; the maintainer's decision, 2026-10-16).
+  const CHANGED = 'Read asr.text and node.promptJustPlayed. The caller was read back a summary of their request and asked to confirm it; a note for the courier was not read back, only named ("your description"). Besides agreeing, disagreeing or correcting another detail of the summary, does the caller add to or change a note for the courier? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.';
 
   it('is asked only at the read-back of a form\'s summary that holds the slot, once it has words, and never with pick', () => {
     expect(note.questions(atSummary('yes'))).toEqual({ noteGiven: expect.anything(), noteChanged: { type: 'noul', instructions: CHANGED } });
@@ -673,6 +675,9 @@ describe('at a form\'s summary: a yes with new or changed words (the `changed` q
     // Its words and id, as the app's; a slot whose question is its own words names its words plainly.
     const own = defineSlot('note', { type: 'text', text: { given: 'Read asr.text. Is there a note?', changed: 'Does the caller change the note?' }, ids: { changed: 'noteEdited' } });
     expect(own.questions(atSummary('yes'))).toMatchObject({ noteEdited: { type: 'noul', instructions: 'Does the caller change the note?' } });
+    // Said whole (say: null), the question says the words were read back as said.
+    const whole = defineSlot('note', { type: 'text', what: 'a note for the courier', say: null, redact: 'none' });
+    expect(whole.questions(atSummary('yes')).noteChanged?.instructions).toBe('Read asr.text and node.promptJustPlayed. The caller was read back a summary of their request and asked to confirm it, with a note for the courier read back as they said it. Besides agreeing, disagreeing or correcting another detail of the summary, does the caller add to or change a note for the courier? Agreeing alone (yes, that\'s right, sounds good, thanks) is no.');
     const plain = defineSlot('note', { type: 'text', text: { given: 'Read asr.text. Is there a note?' } });
     expect(plain.questions(atSummary('yes')).noteChanged?.instructions).toContain('add to or change the words they gave?');
   });
