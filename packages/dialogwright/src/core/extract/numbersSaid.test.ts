@@ -13,8 +13,8 @@ describe('numbersSaid', () => {
   });
 
   it('a run that reads as more digits gives none, but a shorter run split off by a word still does', () => {
-    expect(four('three one eight seven four zero two six')).toEqual([]);
-    expect(four('three one eight seven four zero two six and four seven one one')).toEqual(['4711']);
+    expect(four('four two seven one six three five eight')).toEqual([]);
+    expect(four('four two seven one six three five eight and four seven one one')).toEqual(['4711']);
   });
 
   it('runs first in the order said, then numbers written as digits on their own, each once', () => {

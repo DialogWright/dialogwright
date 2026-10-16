@@ -297,7 +297,7 @@ function recordGrid(shadow: SlotSpec, o: { id: string; prefix: string; records: 
   const lists: readonly (readonly unknown[])[] = [[], o.records, [...o.records, o.records[0], { number: o.said, item: 'something said', day: '2026-09-01', service: 'something said', serviceDate: '2026-09-01' }]];
   const texts = [
     '', 'the first one', `number ${o.said}`, 'four four one two', 'it was march twenty twenty five, number four four one two', 'march 2025',
-    'three one eight seven four zero two six', '7101, 4412 and 5550', 'the twelfth, nineteen ninety', 'one two three',
+    'four two seven one six three five eight', '7101, 4412 and 5550', 'the twelfth, nineteen ninety', 'one two three',
   ];
   for (const records of lists) for (const text of texts) for (const prompted of [false, true]) shadow.questions(testSlotContext(text, { records, prompted }));
   const labels = [...(o.records as { number: string }[]).map((r) => `${o.prefix}${r.number}`), `${o.prefix}4412`, `${o.prefix}710`, `other_${(o.records[0] as { number: string }).number}`, 'none'];
@@ -382,7 +382,7 @@ describe('the testkit\'s parcel, written as configuration', () => {
   });
 
   it('the stub reads the numbers said with the slot\'s own reader, which says what the hand-written one did', () => {
-    for (const text of ['four four one two', 'not 7101 but 4412', 'three one eight seven four zero two six', 'march twenty twenty five', '47 11, 5550', 'one two three four five six seven eight and nine nine nine nine']) {
+    for (const text of ['four four one two', 'not 7101 but 4412', 'four two seven one six three five eight', 'march twenty twenty five', '47 11, 5550', 'one two three four five six seven eight and nine nine nine nine']) {
       expect(numbersSaid(text, { digits: 4 }), text).toEqual(spokenParcelNumbers(text));
     }
   });
