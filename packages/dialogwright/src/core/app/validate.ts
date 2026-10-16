@@ -100,6 +100,7 @@ export function validateApp(app: App): void {
   }
   for (const slot of app.identity?.factorSlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`identity factor slot "${slot}" is not a slot`);
   for (const slot of app.carrySlots ?? []) if (!Object.hasOwn(app.slots, slot)) fail(`carried slot "${slot}" is not a slot`);
+  for (const form of app.frustration?.forms ?? []) if (!Object.hasOwn(app.forms, form)) fail(`frustration names the form "${form}", which is not a form`);
   // A frame for the exact words (prompts.yaml's exactText) only on a framed line (App.generated's spans):
   // on any other it would replace the line's text, a generated line's fallback included. Every locale's too.
   for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { exactText?: string }>>][]) {

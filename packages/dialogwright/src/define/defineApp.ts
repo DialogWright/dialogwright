@@ -855,6 +855,9 @@ export function crossLink(
   // app.yaml: what the console and the clip generator name, which nothing else would notice is wrong
   const formIds = Object.keys(forms);
   const shown = app.console;
+  app.frustration?.forms?.forEach((id, i) => {
+    if (!has(forms, id)) yaml('app.yaml', ['frustration', 'forms', i], `frustration names the form "${id}", but forms.yaml has no form "${id}"`, `${renameHint(id, formIds)}delete it`);
+  });
   for (const id of Object.keys(shown?.formLabels ?? {})) {
     if (!has(forms, id)) yaml('app.yaml', ['console', 'formLabels', id], `form "${id}" has a label, but forms.yaml has no form "${id}"`, `${renameHint(id, formIds)}delete the label`, true);
   }
@@ -1072,6 +1075,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'questionAtSummary', a.questionAtSummary);
+  put(app, 'frustration', a.frustration === undefined ? undefined : { ...(a.frustration.forms !== undefined ? { forms: [...a.frustration.forms] } : {}) });
   put(app, 'anythingElseSilence', a.anythingElseSilence);
   put(app, 'thresholds', a.thresholds);
   put(app, 'callerState', code.callerState);

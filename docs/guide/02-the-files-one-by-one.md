@@ -76,6 +76,12 @@ prompts:
   ```yaml
   questionAtSummary: summary   # a question at the read-back is the read-back's, as the model reads it
   ```
+- `frustration` says where a frustrated caller is answered. The engine asks the model on every turn how frustrated the caller sounds (`frustration`, acted on at `GATE_FRUSTRATION_HIGH`, 0.6): the first frustrated turn adds `ack_frustration` to the reply, the second offers a person in place of the question (`offer_transfer`: a yes goes to a person with `handoff_frustrated`, a no back to the question), and the next goes to a person with `handoff_frustrated`. By default that runs on every turn of the call (but at a `text` slot's question taken whole). `forms` limits it to the forms named: the ladder runs while one of them is open or set aside for an aside, and, with no form open, on a turn whose intent read is one of them ("this is ridiculous, I just want to know about my claim" at the opening question); on every other turn the caller's tone is neither counted nor answered, and the debug table's frustration row says `not_listed`. A person is still the caller's for the asking everywhere. `pnpm check` refuses a form that is not in forms.yaml. It changes no request the model is sent (decided 2026-10-16).
+
+  ```yaml
+  frustration:
+    forms: [claim_status, report_claim]   # "a member who sounds frustrated about a claim is offered a person"
+  ```
 - `anythingElseSilence` says what a caller who says nothing after "Is there anything else I can help with?" (the `anything_else` line, said when a form is done and the call goes on) hears when the no-input wait runs out. `repeat`, the default: "I didn't hear anything." (`no_input`) and "anything else?" again, the question they were asked. `opener`: `no_input` and the opening question (`ask_intent`), as the engine did before this option. `goodbye`: `no_input` and the goodbye, ending the call as the `done` intent does, for an app that takes a caller with nothing more to say as one who has finished. With `repeat` and `opener`, a further silence walks the intent ladder as it does at the opening (the keypad menu, then a person). Only the first silence after the line changes; silence after the opening question is never affected. Every line it uses is one each app already has, so `pnpm check` asks for nothing more, and refuses a value it does not know.
 
   ```yaml

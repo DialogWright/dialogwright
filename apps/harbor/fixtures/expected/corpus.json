@@ -3700,6 +3700,30 @@
     "principalLevel": 0,
     "gate": "listClaims:STEP_UP"
   },
+  "fr-04": {
+    "id": "fr-04",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "claimSelect": null,
+      "coverageTopic": "physical_therapy",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
   "br-01": {
     "id": "br-01",
     "decision": "prompt",

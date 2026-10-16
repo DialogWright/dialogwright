@@ -1338,6 +1338,14 @@ export interface App {
    */
   questionAtSummary?: QuestionAtSummary;
   /**
+   * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
+   * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is
+   * open or set aside for an aside (Session.parked), or, with no form open, on a turn whose intent read
+   * is one of them. On every other turn the caller's tone is neither counted nor answered. Without it,
+   * every turn (Harbor findings item 3; the maintainer's decision, 2026-10-16).
+   */
+  frustration?: { readonly forms?: readonly FormId[] };
+  /**
    * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
    * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"
    * again, the question they were asked; `opener`, the `no_input` line and the opening question

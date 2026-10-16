@@ -41,6 +41,13 @@ handoff:
     send:
       memberId: masked
 
+# The paragraph: "a member who sounds frustrated about a claim is offered" a person. So the
+# frustration ladder (the acknowledgement, a person offered, then a person) runs in the claim forms
+# only, and in a coverage question set aside from one; on a coverage question alone, or at the
+# opening question, the caller's tone is not answered (a person is still theirs for the asking).
+frustration:
+  forms: [claim_status, report_claim]
+
 # The engine's own model questions need to know whom the caller is addressing.
 wording:
   addressee: the Harbor Mutual member line

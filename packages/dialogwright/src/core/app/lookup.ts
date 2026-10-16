@@ -115,6 +115,17 @@ export function questionAtSummaryOf(app: App): QuestionAtSummary {
   return app.questionAtSummary ?? 'aside';
 }
 
+/**
+ * Whether the frustration ladder runs on this turn (App.frustration): on every turn, unless the app
+ * names forms, and then only when `form` (the form open, or with none open the intent the turn reads)
+ * or `parked` (the form set aside for an aside, Session.parked) is one of them.
+ */
+export function frustrationHeardIn(app: App, form: FormId | null, parked: FormId | null): boolean {
+  const forms = app.frustration?.forms;
+  if (forms === undefined) return true;
+  return (form !== null && forms.includes(form)) || (parked !== null && forms.includes(parked));
+}
+
 /** What a silence turn right after "anything else?" does: the app's (App.anythingElseSilence), else `repeat`. */
 export function anythingElseSilenceOf(app: App): AnythingElseSilence {
   return app.anythingElseSilence ?? 'repeat';

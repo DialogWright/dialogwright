@@ -939,6 +939,22 @@
         "summary"
       ]
     },
+    "frustration": {
+      "description": "Where the frustration ladder runs. Default: on every turn, in every form and outside one.",
+      "type": "object",
+      "properties": {
+        "forms": {
+          "description": "The forms in which a frustrated caller is answered: the acknowledgement (ack_frustration), then a person offered (offer_transfer), then a person (handoff_frustrated), while one of them is open or set aside for an aside, or, with no form open, on a turn whose intent is one of them (\"this is ridiculous, I just want to know about my claim\"). On every other turn the caller's tone is neither counted nor answered (a person is still theirs for the asking). Default: every turn.",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "anythingElseSilence": {
       "description": "What a caller who says nothing after \"anything else?\" (the anything_else line, said when a form is done) hears when the no-input wait runs out. \"repeat\": the no_input line and \"anything else?\" again. \"opener\": the no_input line and the opening question (ask_intent). \"goodbye\": the no_input line and the goodbye, ending the call as done does. With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default \"repeat\".",
       "type": "string",

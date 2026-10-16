@@ -465,6 +465,13 @@ describe('defineApp: what app.yaml shows and the clips name, and what the confir
     ]);
   });
 
+  it('frustration names forms that exist, and a known one is kept on the app', () => {
+    const wrong = app((t) => `${t}\nfrustration:\n  forms: [renew_lone]\n`);
+    expect(problems(libraryCode, wrong)).toEqual([expect.stringMatching(/^app\.yaml:\d+:\d+ {2}frustration\.forms\[0\] {2}frustration names the form "renew_lone", but forms\.yaml has no form "renew_lone" {2}-> {2}rename it to "renew_loan", or delete it$/)]);
+    const right = app((t) => `${t}\nfrustration:\n  forms: [renew_loan]\n`);
+    expect(defineApp(right, libraryCode).frustration).toEqual({ forms: ['renew_loan'] });
+  });
+
   it('a voice tag names a vocabulary clip, a clip id is used once, and a clip plays for a variable some line has', () => {
     const dir = app((t) =>
       t.replace(

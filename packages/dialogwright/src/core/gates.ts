@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { changeSlotWithValueOf, formOf, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
+import { changeSlotWithValueOf, formOf, frustrationHeardIn, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -230,7 +230,12 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     const high = isScore(f) ? (f.probabilities.high ?? 0) : 0;
     // At a dictation the caller's tone is the words' own (an annoyed message is still a message): the
     // turn is neither counted nor answered for it, and the row says so.
-    const frustrated = atLeast(high, t.GATE_FRUSTRATION_HIGH) && dictation === null;
+    // Outside the forms the app names for it (App.frustration), the tone is not answered either: the
+    // form open, the one set aside for an aside, or with none open the one the words ask for (the
+    // intent read), "this is ridiculous, I just want to know about my claim" at the opening question.
+    const [asked] = session.form === null && isChoice(answers.intent) ? rankProbabilities(answers.intent.probabilities) : [];
+    const heard = frustrationHeardIn(app, session.form ?? asked?.label ?? null, session.parked?.form ?? null);
+    const frustrated = atLeast(high, t.GATE_FRUSTRATION_HIGH) && dictation === null && heard;
     // The caller answering the offer is not counted again, however crossly they answer it.
     const atOffer = session.pendingConfirmation?.target === 'transfer';
     const count = frustrated && !atOffer ? session.frustratedTurns + 1 : session.frustratedTurns;
@@ -239,7 +244,8 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
         : count === 2 && !session.transferDeclined ? 'offer'
           : 'handoff';
     const unheard = dictation !== null && atLeast(high, t.GATE_FRUSTRATION_HIGH);
-    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: unheard ? 'dictation' : rung, decided: false };
+    const unlisted = !heard && dictation === null && atLeast(high, t.GATE_FRUSTRATION_HIGH);
+    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: unheard ? 'dictation' : unlisted ? 'not_listed' : rung, decided: false };
     if (rung !== 'handoff') rows.push(row);
     // The third rung is a verdict of its own, and `decide` is first-wins, so a verdict an earlier
     // gate already settled has to be answered for rather than quietly swallowing the transfer.

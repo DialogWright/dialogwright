@@ -114,6 +114,42 @@ describe('evaluateGates', () => {
       expect(run(s, angry()).verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
     });
 
+    describe('limited to some forms (App.frustration.forms)', () => {
+      registerApp({ ...testkitApp, id: 'testkit-frustration-forms', frustration: { forms: ['report_missing'] } });
+      const listed = (form: string | null): Session => {
+        const s = newSession('s', 0, VOICE_RELAY, undefined, 'testkit-frustration-forms');
+        return form === null ? s : setForm(s, form);
+      };
+
+      it('runs the ladder while a form it names is open', () => {
+        const s = listed('report_missing');
+        expect(frustrationOf(run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) })).verdict)).toBe('ack');
+        s.frustratedTurns = 2;
+        expect(run(s, angry()).verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
+      });
+
+      it('runs it outside a form on a turn that asks for a form it names', () => {
+        expect(frustrationOf(run(listed(null), angry()).verdict)).toBe('ack');
+      });
+
+      it('answers no tone in another form, nor outside one on a turn that asks for none it names: not counted, and the row says not_listed', () => {
+        for (const form of ['track_parcel', null]) {
+          const s = listed(form);
+          s.frustratedTurns = 2;
+          const r = run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) }));
+          expect(r.verdict.kind).not.toBe('handoff');
+          expect(frustrationOf(r.verdict)).toBeUndefined();
+          expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'not_listed', decided: false });
+        }
+      });
+
+      it('runs it in an aside taken from a form it names (the task set aside)', () => {
+        const s = listed('track_parcel');
+        s.parked = { form: 'report_missing' } as Session['parked'];
+        expect(frustrationOf(run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) })).verdict)).toBe('ack');
+      });
+    });
+
     it('transfers on the third rung even when the words came through garbled', () => {
       // Gate 2 settles a `nomatch` first and `decide` is first-wins, so the rung has to take the
       // verdict off it: a caller this upset for the third time gets a person either way.

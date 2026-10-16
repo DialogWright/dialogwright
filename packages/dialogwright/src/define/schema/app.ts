@@ -572,6 +572,15 @@ export const appSchema = z
         'At a form\'s summary, what a question gets when the intent read (at INTENT_ROUTE, 0.7, or more) is a form that answers from the knowledge base as an aside or an informational intent, and the model reads the turn as answering the summary. ' +
           '"aside": the question is answered (the knowledge answer or the informational line, through the gate as always), nothing is written, and the summary is asked again. "summary": the turn is the summary\'s, as the model read it (the question goes unanswered and the summary is asked again). Default "aside".',
       ),
+    frustration: z
+      .strictObject({
+        forms: unique(identifier(), 'form')
+          .min(1, { error: 'must name at least one form' })
+          .optional()
+          .describe('The forms in which a frustrated caller is answered: the acknowledgement (ack_frustration), then a person offered (offer_transfer), then a person (handoff_frustrated), while one of them is open or set aside for an aside, or, with no form open, on a turn whose intent is one of them ("this is ridiculous, I just want to know about my claim"). On every other turn the caller\'s tone is neither counted nor answered (a person is still theirs for the asking). Default: every turn.'),
+      })
+      .optional()
+      .describe('Where the frustration ladder runs. Default: on every turn, in every form and outside one.'),
     anythingElseSilence: z
       .enum(['repeat', 'opener', 'goodbye'])
       .optional()

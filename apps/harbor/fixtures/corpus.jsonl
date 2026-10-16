@@ -158,6 +158,7 @@
 {"id": "fr-01", "text": "this is ridiculous, i just want to know about my claim", "intent": "claim_status", "context": "no_form", "answers": {"frustration": {"probabilities": {"high": 0.75, "mild": 0.2}}}, "tags": ["frustration"]}
 {"id": "fr-02", "text": "i already told you, the er one", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}, "answers": {"frustration": {"probabilities": {"high": 0.8, "mild": 0.15}}, "rephrasingLastTurn": {"noul": 0.85}}, "tags": ["frustration"]}
 {"id": "fr-03", "text": "ugh, come on, where is my claim", "intent": "claim_status", "context": "no_form", "answers": {"frustration": {"probabilities": {"mild": 0.6, "high": 0.3}}}, "tags": ["frustration_mild"]}
+{"id": "fr-04", "text": "this is ridiculous, does my plan cover physical therapy or not", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "physical_therapy"}, "answers": {"frustration": {"probabilities": {"high": 0.8, "mild": 0.15}}}, "tags": ["frustration"]}
 {"id": "br-01", "text": "what's the status of claim 4711", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4711"}, "as": "priya"}
 {"id": "br-02", "text": "can you check claim 4720 for luis ortega", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4720"}, "as": "dana"}
 {"id": "br-03", "text": "i need to file a claim for margaret hale", "intent": "report_claim", "context": "no_form", "as": "dana"}
