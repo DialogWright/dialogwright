@@ -6,7 +6,7 @@ import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { formLabel, informationOf, intentLabel, isFormIntent, relabelled, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
-import { ackRepeatOf, anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
+import { ackRepeatOf, anythingElseSilenceOf, correctsFormOf, formOf, frustrationMissOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, CheckOutcome, Completion, FormCheck, FormId, Intent, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
 import { maskCallerValue, recordsOf } from '../channel/maskByName';
@@ -191,6 +191,12 @@ interface TurnIO {
   openingRows?: GateRow[];
   /** The forms this turn left or entered by a move (`next`, or an outcome's `then: form`): one entered again goes to a person (moveLoops). */
   moved?: Set<FormId>;
+  /**
+   * The line acknowledges the turn's frustration (the ladder's `ack`, or `ack_only`), and the app takes
+   * such a turn as no miss (App.frustration.miss `ignore`): where it would be one, the question is asked
+   * again as it stands, with nothing counted (caughtFrustration).
+   */
+  caught?: true;
 }
 
 export interface Plan {
@@ -742,7 +748,7 @@ const ACK_SCREEN_FORM: Ack = { promptId: 'screen_reprompt_form', vars: {} };
  * the caller was on: the code, a choice between two (the pair it offered, kept as its options), a
  * slot's question or its keypad rung, the keypad menu, or the intent question.
  */
-function reaskCurrent(s: Session, acks: Ack[]): Decision {
+function reaskCurrent(s: Session, acks: Ack[], intentQuestion = 'ask_intent'): Decision {
   const app = appOf(s);
   const pc = s.pendingConfirmation;
   if (pc) {
@@ -775,7 +781,27 @@ function reaskCurrent(s: Session, acks: Ack[]): Decision {
   // sign-in. After the confirmations: one left open is still the question, and is asked again.
   if (awaitingSignIn(s)) return prompt('signin_reminder', 'intent', {}, acks);
   if (s.menuActive) return { ...prompt('nomatch_dtmf_menu', 'intent', {}, acks, app.menu.map((m) => m.digit)), menu: true };
-  return prompt('ask_intent', 'intent', {}, acks);
+  return prompt(intentQuestion, 'intent', {}, acks);
+}
+
+/**
+ * A turn whose frustration the line acknowledges (TurnIO.caught) where it would otherwise be a miss:
+ * no request heard, no value for the question asked. The frustration was caught, so "Sorry, I didn't
+ * catch that" would be wrong, and the turn is no miss (App.frustration.miss, default `ignore`, the
+ * maintainer's decision, 2026-10-17): the question the caller was on, asked again as it stands
+ * (reaskCurrent: a pending confirmation as it was, the code, a slot's own question, the keypad menu,
+ * or the opening question; "anything else?" where that was the question), the acknowledgement in
+ * front of it (escalate), and no attempt, re-ask or offer counter moves. `slot`: the slot the form
+ * needs next, where the miss would have been charged to it because the question was not a slot's.
+ * Null for every other turn: the miss is the miss.
+ */
+function caughtFrustration(s: Session, io: TurnIO, slot?: SlotId): Decision | null {
+  if (io.caught !== true) return null;
+  if (slot !== undefined && s.pendingConfirmation === null && s.promptedFor !== slot) {
+    const window = s.slots[slot]!.window;
+    return window === null ? askedAgain(s, slot, []) : askSlot(s, slot, window, []);
+  }
+  return reaskCurrent(s, [], s.lastPromptId === 'anything_else' ? 'anything_else' : 'ask_intent');
 }
 
 /**
@@ -1869,8 +1895,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     case 'nomatch':
       // An unintelligible answer to a confirmation is an unanswered confirmation,
       // not a slot nomatch; leaving the confirmation pending would let it go stale.
-      if (s.pendingConfirmation) return { decision: reaskConfirmation(s, io), events: [] };
-      return { decision: failAttempt(s, promptedTarget(s), io), events: [] };
+      if (s.pendingConfirmation) return { decision: caughtFrustration(s, io) ?? reaskConfirmation(s, io), events: [] };
+      return { decision: caughtFrustration(s, io) ?? failAttempt(s, promptedTarget(s), io), events: [] };
     case 'handoff':
       return { decision: handoff(s, verdict.reason), events: [] };
     case 'replay': {
@@ -2068,7 +2094,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           return { decision: continueForm(s, io, [...acks, ...fill.acks, ...move.acks], null), events: fill.events };
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks], acks.length === 0), events: fill.events };
-        return { decision: reaskConfirmation(s, io, acks, acks.length === 0), events: fill.events };
+        return { decision: (acks.length === 0 ? caughtFrustration(s, io) : null) ?? reaskConfirmation(s, io, acks, acks.length === 0), events: fill.events };
       }
       if (pc?.target === 'slot' && pc.offered) {
         // At the caller's number's offer, a number said with no yes or no ("my cell is 555 555 0199")
@@ -2093,11 +2119,12 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const missed = offeredSlotMissed(s, io, pc.slot, fill, acks);
         if (missed) offerSettled(s, io, pc, 'other');
         if (missed) return { decision: missed, events: fill.events };
-        return { decision: reaskConfirmation(s, io, [...acks, ...fill.acks], acks.length === 0 && !fill.progress), events: fill.events };
+        const unanswered = acks.length === 0 && !fill.progress;
+        return { decision: (unanswered ? caughtFrustration(s, io) : null) ?? reaskConfirmation(s, io, [...acks, ...fill.acks], unanswered), events: fill.events };
       }
       // Only a request that actually joined the queue buys the turn: asking for the same thing
       // twice is a turn spent, and must not hold the ladder at zero forever.
-      return { decision: reaskConfirmation(s, io, acks, acks.length === 0), events: [] };
+      return { decision: (acks.length === 0 ? caughtFrustration(s, io) : null) ?? reaskConfirmation(s, io, acks, acks.length === 0), events: [] };
     }
     case 'change_slot': {
       const acks = enqueue(s, verdict.queue);
@@ -2168,7 +2195,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     case 'disambiguate_intent':
       return { decision: prompt('disambiguate_intent', 'intent', { a: intentLabel(io.app, verdict.a, s.locale), b: intentLabel(io.app, verdict.b, s.locale) }, [], [intentLabel(io.app, verdict.a, s.locale), intentLabel(io.app, verdict.b, s.locale)]), events: [] };
     case 'intent_failed':
-      return { decision: failAttempt(s, 'intent', io), events: [] };
+      return { decision: caughtFrustration(s, io) ?? failAttempt(s, 'intent', io), events: [] };
     case 'queue': {
       // The gates only emit queue inside a form; without one there is nothing to add to.
       if (!s.form) return handleVerdict(s, { kind: 'proceed' }, answers, ctx, io);
@@ -2181,7 +2208,11 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // Speech at the code prompt is refused, and nothing it said is filled: the code is keyed or
       // not at all. A code actually said aloud arrives masked (spokenCode.ts) and counts as exposed,
       // so the caller is told a new one has been sent rather than asked to key the old one.
-      if (s.promptedFor === 'otp') return { decision: codeReask(s, io, [], saidCode(ctx.text) ? 'otp_spoken_reissued' : 'ask_otp_spoken'), events: [] };
+      // A code said aloud is a code said, frustrated or not: it is sent again.
+      if (s.promptedFor === 'otp') {
+        const said = saidCode(ctx.text);
+        return { decision: (said ? null : caughtFrustration(s, io)) ?? codeReask(s, io, [], said ? 'otp_spoken_reissued' : 'ask_otp_spoken'), events: [] };
+      }
       // A dictation (gates.ts, SlotSpec.dictation): the turn is the slot's words, whatever its own question read.
       const fill = fillSlots(s, answers, ctx, slotsToFill(s), verdict.dictated !== undefined ? { dictated: verdict.dictated } : {});
       if (!fill.progress) {
@@ -2191,7 +2222,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const target = asked === 'intent' || asked === 'confirm' ? (missingSlots(s)[0] ?? 'intent') : asked;
         const invalid = fill.events.find((e) => e.slot === target && e.outcome.kind === 'invalid')?.outcome;
         const retry = invalid?.kind === 'invalid' ? (invalid.retryPromptId ?? null) : null;
-        return { decision: failAttempt(s, target, io, [], false, retry), events: fill.events };
+        // A value the slot refused is a value given: the miss is the miss, frustrated or not.
+        const caught = invalid === undefined ? caughtFrustration(s, io, target === 'intent' ? undefined : target) : null;
+        return { decision: caught ?? failAttempt(s, target, io, [], false, retry), events: fill.events };
       }
       return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
     }
@@ -2520,7 +2553,7 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
       // A proposal that takes a yes or a no only (`offerAnswers: yes-no`): a value with no clear yes is
       // a no, and the slot takes nothing from the turn; words that answer neither are asked again.
       if (yesNoOffer(io.app, pc)) {
-        if (!valueAtOffer(s, pc, answers, ctx)) return { decision: reaskConfirmation(s, io), events: [] };
+        if (!valueAtOffer(s, pc, answers, ctx)) return { decision: caughtFrustration(s, io) ?? reaskConfirmation(s, io), events: [] };
         s.pendingConfirmation = null;
         offerSettled(s, io, pc, 'no');
         io.kept = pc.slot;
@@ -2529,7 +2562,7 @@ function atGreetingOffer(s: Session, verdict: Verdict, answers: AnswerMap, ctx: 
       // A value of the caller's own with no yes or no ("it's at 7 Birch Lane") answers the question
       // asked: the slot takes it, whatever it listens for, and the open question follows.
       const own = ownAnswer(s, pc, answers, ctx, io);
-      if (s.slots[pc.slot]!.value === null) return { decision: reaskConfirmation(s, io), events: [] };
+      if (s.slots[pc.slot]!.value === null) return { decision: caughtFrustration(s, io) ?? reaskConfirmation(s, io), events: [] };
       s.pendingConfirmation = null;
       offerSettled(s, io, pc, 'other');
       return { decision: prompt(GREET_AFTER_OFFER, 'intent', {}, own.acks), events: own.events };
@@ -2655,7 +2688,7 @@ function atGreetingIdentity(s: Session, verdict: Verdict, answers: AnswerMap, ct
     const target = promptedTarget(s);
     const invalid = fill.events.find((e) => e.slot === target && e.outcome.kind === 'invalid')?.outcome;
     const retry = invalid?.kind === 'invalid' ? (invalid.retryPromptId ?? null) : null;
-    return { decision: failAttempt(s, target, io, [], false, retry), events: fill.events };
+    return { decision: (invalid === undefined ? caughtFrustration(s, io) : null) ?? failAttempt(s, target, io, [], false, retry), events: fill.events };
   }
   if (fill.disambiguate) {
     const d = fill.disambiguate;
@@ -3058,6 +3091,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       // the acknowledgement alone, where the ladder does not run (`ack_only`), never is.
       const rung = frustrationOf(verdict);
       if (rung === 'ack' || rung === 'offer') s.frustratedTurns += 1;
+      // Acknowledged, the frustration was caught: where the turn would be a miss it is not (caughtFrustration).
+      if ((rung === 'ack' || rung === 'ack_only') && frustrationMissOf(io.app) === 'ignore') io.caught = true;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
       const decided = readSummary(s, escalate(s, resolved, rung), io);
       rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined));

@@ -1,4 +1,4 @@
-import type { AckRepeat, AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FrustrationAfter, FrustrationElsewhere, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AckRepeat, AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FrustrationAfter, FrustrationElsewhere, FrustrationMiss, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 import type { Principal } from '../../gate/types';
@@ -162,6 +162,11 @@ export function frustrationAfterOf(app: App): FrustrationAfter {
  */
 export function frustrationElsewhereOf(app: App): FrustrationElsewhere {
   return app.frustration?.elsewhere ?? 'acknowledge';
+}
+
+/** Whether a turn whose frustration is acknowledged, and that would otherwise be a miss, is one (App.frustration.miss): `ignore` unless the app says `count`. */
+export function frustrationMissOf(app: App): FrustrationMiss {
+  return app.frustration?.miss ?? 'ignore';
 }
 
 /**

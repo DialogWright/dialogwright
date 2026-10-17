@@ -475,6 +475,9 @@ describe('defineApp: what app.yaml shows and the clips name, and what the confir
     // Without forms the ladder runs on every turn, so neither has anything to say.
     const alone = app((t) => `${t}\nfrustration:\n  elsewhere: ignore\n`);
     expect(problems(libraryCode, alone)).toEqual([expect.stringMatching(/^app\.yaml:\d+:\d+ {2}frustration\.elsewhere {2}frustration\.elsewhere says what happens beside the forms the ladder runs in, but frustration names no forms \(so it runs on every turn\) {2}-> {2}name the forms \(frustration\.forms\), or delete it$/)]);
+    // Whether an acknowledged turn is a miss holds with or without forms.
+    const miss = app((t) => `${t}\nfrustration:\n  miss: count\n`);
+    expect(defineApp(miss, libraryCode).frustration).toEqual({ miss: 'count' });
   });
 
   it('a voice tag names a vocabulary clip, a clip id is used once, and a clip plays for a variable some line has', () => {

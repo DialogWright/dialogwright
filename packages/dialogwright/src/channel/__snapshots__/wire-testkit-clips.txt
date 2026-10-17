@@ -257,7 +257,7 @@
 1 {"type":"play","source":"https://example.test/audio/intent.track_parcel.mp3","loop":1,"preemptible":false,"interruptible":true}
 1 {"type":"play","source":"https://example.test/audio/ask_accountId.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 2 {"type":"play","source":"https://example.test/audio/ack_frustration.0.mp3","loop":1,"preemptible":false,"interruptible":true}
-2 {"type":"play","source":"https://example.test/audio/ask_accountId_retry.0.mp3","loop":1,"preemptible":false,"interruptible":true}
+2 {"type":"play","source":"https://example.test/audio/ask_accountId.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 3 {"type":"play","source":"https://example.test/audio/offer_transfer.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 4 {"type":"play","source":"https://example.test/audio/handoff_frustrated.0.mp3","loop":1,"preemptible":false,"interruptible":false}
 4 {"type":"end","handoffData":"{\"reasonCode\":\"frustrated\"}"}
@@ -267,7 +267,7 @@
 1 {"type":"play","source":"https://example.test/audio/intent.track_parcel.mp3","loop":1,"preemptible":false,"interruptible":true}
 1 {"type":"play","source":"https://example.test/audio/ask_accountId.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 2 {"type":"play","source":"https://example.test/audio/ack_frustration.0.mp3","loop":1,"preemptible":false,"interruptible":true}
-2 {"type":"play","source":"https://example.test/audio/ask_accountId_retry.0.mp3","loop":1,"preemptible":false,"interruptible":true}
+2 {"type":"play","source":"https://example.test/audio/ask_accountId.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 3 {"type":"play","source":"https://example.test/audio/offer_transfer.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 4 {"type":"play","source":"https://example.test/audio/ask_accountId.0.mp3","loop":1,"preemptible":false,"interruptible":true}
 # side-speech-ignored

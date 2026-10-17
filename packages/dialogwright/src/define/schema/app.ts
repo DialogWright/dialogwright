@@ -586,9 +586,13 @@ export const appSchema = z
           .enum(['acknowledge', 'ignore'])
           .optional()
           .describe('With forms: what a turn read as high frustration gets where the ladder does not run. "acknowledge": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. "ignore": nothing. Mild frustration gets nothing either way. Default "acknowledge".'),
+        miss: z
+          .enum(['ignore', 'count'])
+          .optional()
+          .describe('What a turn whose frustration is acknowledged (ack_frustration: the ladder\'s first rung, or the acknowledgement where the ladder does not run) is when it would otherwise be a miss: no request heard, no value for the question asked ("this is ridiculous"). "ignore": not a miss, since the frustration was caught: the acknowledgement, then the question the caller was on asked again as it stands (the opening question, "anything else?" where that was it, the slot\'s own question, the summary or the offer), never the miss line, and no attempt counted toward the keypad menu or a person. "count": the miss line after the acknowledgement, and the miss counted. A turn that also makes a request or gives a value is the same either way. Default "ignore".'),
       })
       .optional()
-      .describe('Where the frustration ladder runs. Default: on every turn, in every form and outside one.'),
+      .describe('Where the frustration ladder runs, and whether a turn whose frustration is acknowledged is a miss. Default: on every turn, in every form and outside one, and never a miss.'),
     anythingElseSilence: z
       .enum(['repeat', 'opener', 'goodbye'])
       .optional()

@@ -127,6 +127,18 @@ export type FrustrationAfter = 'count' | 'ignore';
 export type FrustrationElsewhere = 'acknowledge' | 'ignore';
 
 /**
+ * What a turn whose frustration the line acknowledges (the ladder's first rung, or the acknowledgement
+ * alone where the ladder does not run) is, when it would otherwise be a miss: no request heard, no value
+ * for the question asked (App.frustration.miss). `ignore`, no miss: the frustration was caught, so the
+ * acknowledgement is followed by the question the caller was on, asked again as it stands (the opening
+ * question, "anything else?" where that was it, a slot's own question, a summary or an offer), and no
+ * attempt is counted toward the keypad menu or a person; `count`, the miss line after the
+ * acknowledgement, and the miss counted (as before 2026-10-17). Default `ignore`, the maintainer's
+ * decision (2026-10-17) for every app.
+ */
+export type FrustrationMiss = 'ignore' | 'count';
+
+/**
  * What a request the call has already acknowledged gets when the caller makes it again, for
  * App.ackIntent: `say`, the acknowledgement (ack_intent) again; `skip`, none, so the form goes
  * straight to its first question or its answer.
@@ -1371,9 +1383,11 @@ export interface App {
    * `after`, whether the ladder also runs with no form open when the call's most recent task was one
    * of them (it completed, was refused or ended) and the turn asks for no other task, until the caller
    * starts one (FrustrationAfter, default `count`); `elsewhere`, what a turn read as high frustration
-   * gets where the ladder does not run (FrustrationElsewhere, default `acknowledge`).
+   * gets where the ladder does not run (FrustrationElsewhere, default `acknowledge`). With or without
+   * `forms`, `miss`: whether a turn whose frustration is acknowledged, and that would otherwise be a miss,
+   * is one (FrustrationMiss, default `ignore`, the maintainer's decision, 2026-10-17).
    */
-  frustration?: { readonly forms?: readonly FormId[]; readonly after?: FrustrationAfter; readonly elsewhere?: FrustrationElsewhere };
+  frustration?: { readonly forms?: readonly FormId[]; readonly after?: FrustrationAfter; readonly elsewhere?: FrustrationElsewhere; readonly miss?: FrustrationMiss };
   /**
    * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
    * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"

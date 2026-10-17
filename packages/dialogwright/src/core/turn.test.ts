@@ -1112,6 +1112,63 @@ describe('frustration escalation', () => {
   });
 
   /**
+   * A turn that is only frustration (no request, no value for the question asked): the acknowledgement
+   * caught it, so it is no miss (App.frustration.miss, default `ignore`, the maintainer's decision,
+   * 2026-10-17): the acknowledgement, then the question the caller was on as it stands, never the miss
+   * line, and no attempt counted. A second such turn still climbs the ladder.
+   */
+  describe('a turn that is only frustration', () => {
+    const NONE = choice({ none: 0.9, other: 0.1 });
+    const FED_UP = 'ugh, this is ridiculous';
+
+    it('at the opening: the acknowledgement, then the open question, with no miss counted', () => {
+      const r = say(started(), FED_UP, { intent: NONE, frustration: HIGH });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', target: 'intent', acks: [ACK_FRUSTRATION] });
+      expect(spokenText(testkitApp, r.decision)).not.toContain("didn't catch");
+      expect(r.session.intentAttempts).toBe(0);
+      expect(r.session.frustratedTurns).toBe(1);
+    });
+
+    it('at the opening, a second time: the offer of a person, as the ladder says', () => {
+      const r = say(say(started(), FED_UP, { intent: NONE, frustration: HIGH }).session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(r.decision).toMatchObject(OFFER);
+      expect(r.session.frustratedTurns).toBe(2);
+    });
+
+    it("at a slot's question: the acknowledgement, then the slot's own question (not its retry), with no attempt used", () => {
+      const at = say(started(), 'where is my parcel', { intent: intent('track_parcel') });
+      expect(at.decision).toMatchObject({ promptId: 'ask_accountId' });
+      const r = say(at.session, FED_UP, { frustration: HIGH, intentChange: ANSWERING });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_accountId', target: 'accountId', acks: [ACK_FRUSTRATION] });
+      expect(r.session.slots.accountId!.attempts).toBe(0);
+      expect(r.session.frustratedTurns).toBe(1);
+      const second = say(r.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      expect(second.decision).toMatchObject(OFFER);
+    });
+
+    it('at the summary: the acknowledgement, then the summary as asked, with its ladder where it was', () => {
+      const r = afterTurns([...HAPPY, { say: FED_UP, over: { frustration: HIGH, intentChange: ANSWERING } }]);
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'confirm_report', target: 'confirm', acks: [ACK_FRUSTRATION] });
+      expect(r.session.pendingConfirmation).toEqual({ target: 'form', form: 'report_missing', attempts: 0 });
+    });
+
+    it('with a value for the question: the acknowledgement, then what the value does, as before', () => {
+      const at = say(started(), 'where is my parcel', { intent: intent('track_parcel') });
+      const r = say(at.session, `ugh, this is ridiculous, it's ${ID_TEXT}`, { frustration: HIGH, intentChange: ANSWERING, ...ID_ANSWERS });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_dob', acks: [ACK_FRUSTRATION] });
+      expect(r.session.slots.accountId!.value).toBe('55501234');
+    });
+
+    it("with frustration.miss: count, the miss line after the acknowledgement, and the miss counted (as before)", () => {
+      const COUNTS = 'testkit-frustration-miss-count';
+      registerApp({ ...testkitApp, id: COUNTS, frustration: { miss: 'count' } });
+      const r = say(started(COUNTS), FED_UP, { intent: NONE, frustration: HIGH });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', acks: [ACK_FRUSTRATION] });
+      expect(r.session.intentAttempts).toBe(1);
+    });
+  });
+
+  /**
    * An app that limits the ladder to some forms (App.frustration.forms, here the missing-parcel
    * report): right after that form it still counts (`after`), and elsewhere a caller this upset
    * hears the acknowledgement alone (`elsewhere`), never counted. Both defaults.
@@ -1132,14 +1189,15 @@ describe('frustration escalation', () => {
       expect(resolve(afterTurns([...HAPPY, 'yes']).session, serviceResultEvent('depot', { searchDays: 2 }), null, tc).session.lastTask).toBeUndefined();
     });
 
-    it('acknowledges frustration at the greeting before the re-ask, and does not count it', () => {
+    it('acknowledges frustration at the greeting before the open question, and counts it neither toward a person nor as a miss', () => {
       const r = say(started(APP), "you know, this is ridiculous, i've called three times", { intent: NONE, frustration: HIGH });
-      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', acks: [ACK_FRUSTRATION] });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
       expect(r.session.frustratedTurns).toBe(0);
+      expect(r.session.intentAttempts).toBe(0);
       const again = say(r.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
-      expect(again.decision).toMatchObject({ acks: [ACK_FRUSTRATION] });
-      expect(again.decision).not.toMatchObject({ promptId: 'offer_transfer' });
+      expect(again.decision).toMatchObject({ promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
       expect(again.session.frustratedTurns).toBe(0);
+      expect(again.session.intentAttempts).toBe(0);
     });
 
     it('counts frustration right after the form: acknowledged, then a person offered', () => {

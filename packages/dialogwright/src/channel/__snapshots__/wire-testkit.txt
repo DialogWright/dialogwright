@@ -186,7 +186,7 @@
 1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 2 {"type":"text","token":"I'm sorry this is taking a while.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
-2 {"type":"text","token":"Please say the eight digits of your account ID, one at a time.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 3 {"type":"text","token":"Would you like me to connect you with a support specialist?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 4 {"type":"text","token":"I'm sorry for the trouble. Connecting you with a support specialist now.","last":true,"lang":"en-US","interruptible":false,"preemptible":false}
 4 {"type":"end","handoffData":"{\"reasonCode\":\"frustrated\"}"}
@@ -195,7 +195,7 @@
 1 {"type":"text","token":"Sure, I can help you track a parcel.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 1 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 2 {"type":"text","token":"I'm sorry this is taking a while.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
-2 {"type":"text","token":"Please say the eight digits of your account ID, one at a time.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
+2 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 3 {"type":"text","token":"Would you like me to connect you with a support specialist?","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 4 {"type":"text","token":"First I need to verify your identity. What's your account ID? It's the eight digits on your delivery notice.","last":true,"lang":"en-US","interruptible":true,"preemptible":false}
 # side-speech-ignored

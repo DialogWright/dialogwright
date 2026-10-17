@@ -935,7 +935,7 @@
   "fr-03": {
     "id": "fr-03",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "ask_intent",
     "acks": [
       "ack_frustration"
     ],
