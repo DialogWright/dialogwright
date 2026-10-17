@@ -480,6 +480,10 @@ The maintainer's live call of 2026-10-17, a Saturday. Two findings:
 
 Both change the requests a recording makes: every turn at the date's question asks the new `lossDateQualifier` question, and a claim question after another reads the list where it read none. Harbor must be recorded again; until then its replay misses those requests.
 
+### Recording 10: jev-1.13.0, 2026-10-17, dates to come and the claim list
+
+After a loss date to come was made refused (the date type's `nearFuture: refuse` and `qualifier` on a past range; the year said for a day not in this year) and the claim list kept for the call, from the maintainer's live call of 2026-10-17 ("next Thursday" had been taken as last Thursday, and "October twenty second" as 2025's; "what about my physical therapy claim" had been asked which claim): 559 requests, $0.1008; trimmed. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`, the new lines and calls among them (ld-09 to ld-14, cs-18, cs-19, and the seven new scripted calls).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
