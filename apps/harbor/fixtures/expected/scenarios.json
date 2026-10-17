@@ -2197,7 +2197,7 @@
   "frustration-at-the-greeting-acknowledged": {
     "id": "frustration-at-the-greeting-acknowledged",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "ask_intent",
     "acks": [
       "ack_frustration"
     ],
@@ -2224,7 +2224,7 @@
   "frustration-at-the-greeting-not-offered": {
     "id": "frustration-at-the-greeting-not-offered",
     "decision": "prompt",
-    "promptId": "nomatch_dtmf_menu",
+    "promptId": "ask_intent",
     "acks": [
       "ack_frustration"
     ],
@@ -2251,7 +2251,7 @@
   "frustration-after-claim-refused-acknowledged": {
     "id": "frustration-after-claim-refused-acknowledged",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "anything_else",
     "acks": [
       "ack_frustration"
     ],
@@ -2303,7 +2303,7 @@
   "frustration-after-claim-then-coverage-not-offered": {
     "id": "frustration-after-claim-then-coverage-not-offered",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "anything_else",
     "acks": [
       "ack_frustration"
     ],

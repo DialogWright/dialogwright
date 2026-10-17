@@ -2159,7 +2159,7 @@
   "fr-05": {
     "id": "fr-05",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "ask_intent",
     "acks": [
       "ack_frustration"
     ],

@@ -1774,7 +1774,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "nomatch_open",
+      "promptId": "ask_intent",
       "text": "I'm sorry this is taking a while."
     }
   },
@@ -1790,7 +1790,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "nomatch_dtmf_menu",
+      "promptId": "ask_intent",
       "text": "I'm sorry this is taking a while."
     }
   },
@@ -1818,7 +1818,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "nomatch_open",
+      "promptId": "anything_else",
       "principalLevel": 2,
       "text": "I'm sorry this is taking a while."
     }
@@ -1884,7 +1884,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "nomatch_open",
+      "promptId": "anything_else",
       "principalLevel": 2,
       "text": "I'm sorry this is taking a while."
     }

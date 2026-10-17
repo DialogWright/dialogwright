@@ -4595,7 +4595,7 @@
   "fr-05": {
     "id": "fr-05",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "ask_intent",
     "acks": [
       "ack_frustration"
     ],
@@ -4620,7 +4620,7 @@
   "fr-06": {
     "id": "fr-06",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "anything_else",
     "acks": [
       "ack_frustration"
     ],
@@ -4645,7 +4645,7 @@
   "fr-07": {
     "id": "fr-07",
     "decision": "prompt",
-    "promptId": "nomatch_open",
+    "promptId": "anything_else",
     "acks": [
       "ack_frustration"
     ],
