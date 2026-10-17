@@ -20,13 +20,13 @@ const ASKED = (topic: Record<string, number>): AnswerMap => ({ intent: choice({ 
 const ANSWER = (topic: Record<string, number>): AnswerMap => ({ intent: choice({ none: 0.95, other: 0.05 }), libraryTopicTopic: choice(topic) });
 
 describe('a question no topic answers, asked with the request (unanswered: retry, the default)', () => {
-  it('is said at once as the slot\'s miss, its retry line, with an attempt counted', () => {
+  it('is said at once as the slot\'s reply to it, its retry line where the app has no not-found line, and not counted (notFound.counts false, the default)', () => {
     const c = call(APP);
     const r = say(c, 'can i bring my dog to the library', ASKED({ unanswered: 0.85, late_fees: 0.1, none: 0.05 }), nominated('late_fees'));
     expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic_retry' });
     expect(heard(c)).toContain('Sorry, what would you like to know about the library?');
     expect(r.session.form).toBe('ask_library');
-    expect(r.session.slots.libraryTopic).toMatchObject({ value: null, attempts: 1 });
+    expect(r.session.slots.libraryTopic).toMatchObject({ value: null, attempts: 0 });
     expect(r.session.slots.libraryTopic!.missed).toBeUndefined();
     // A topic then asked is answered.
     say(c, 'what are the late fees', ANSWER({ late_fees: 0.92, none: 0.08 }), nominated('late_fees'));
@@ -46,22 +46,26 @@ describe('a question no topic answers, asked with the request (unanswered: retry
     expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
   });
 
-  it('at the question itself, unanswered is the miss it always was: the retry line, then the next rung', () => {
+  it('at the question itself, unanswered is the same reply: the retry line, not counted; a caller may ask as often as they like', () => {
     const c = call(APP);
     say(c, 'i have a question', ASKED({ none: 0.9, unanswered: 0.1 }), nominated('late_fees'));
-    const r = say(c, 'can i bring my dog', ANSWER({ unanswered: 0.9, none: 0.1 }), nominated('late_fees'));
-    expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic_retry' });
-    expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 1 });
+    for (let i = 0; i < 4; i++) {
+      const r = say(c, 'can i bring my dog', ANSWER({ unanswered: 0.9, none: 0.1 }), nominated('late_fees'));
+      expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic_retry' });
+      expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 0 });
+    }
   });
 
-  it('after the miss, saying only that they have a question hears the question again, counted; three such tries end with a person', () => {
+  it('after it, saying only that they have a question hears the question again, counted; three such tries end with a person', () => {
     const c = call(APP);
     say(c, 'can i bring my dog to the library', ASKED({ unanswered: 0.85, none: 0.1, late_fees: 0.05 }), nominated('late_fees'));
     expect(c.last.decision).toMatchObject({ promptId: 'ask_libraryTopic_retry' });
     const r = say(c, 'i have a question about the library', ANSWER({ none: 0.95, unanswered: 0.05 }), nominated('late_fees'));
     expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
     expect(heard(c)).toBe('What would you like to know?');
-    expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 2 });
+    expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 1 });
+    say(c, 'i have a question', ANSWER({ none: 0.95, unanswered: 0.05 }), nominated('late_fees'));
+    expect(c.last.session.slots.libraryTopic).toMatchObject({ attempts: 2 });
     const end = say(c, 'i have a question', ANSWER({ none: 0.95, unanswered: 0.05 }), nominated('late_fees'));
     expect(end.decision).toMatchObject({ kind: 'handoff' });
   });

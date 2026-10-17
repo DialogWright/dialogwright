@@ -96,8 +96,10 @@ export type SlotOutcome =
    * `reask`: at the slot's own question, the caller said nothing it asks for (a topic slot's `none`:
    * "I have a question"): counted as a miss, but the question is asked again as it stands, at every
    * rung short of its keypad line and its end, rather than the retry line, which says what went wrong.
+   * `notFound`: a question none of the slot's topics or sections answers (a topic slot's `unanswered`):
+   * the slot's not-found reply (core/turn.ts notFoundReply), counted only where the slot says so.
    */
-  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string; held?: true; reask?: true }
+  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string; held?: true; reask?: true; notFound?: true }
   /** The caller said whether they know the value rather than saying it; play this prompt in place of the question. */
   | { kind: 'help'; promptId: string };
 
@@ -222,6 +224,13 @@ export interface SlotSpec {
    * them, and no turn retrieves for it.
    */
   nominates?: boolean;
+  /**
+   * A topic slot's reply to a question nothing answers (its `notFound` option): whether it counts as a
+   * try on the slot's ladder (`counts`, default false: the knowledge base lacked it, the caller did not
+   * fail), and after how many such replies in a row without it the guide to what can be asked
+   * (kb_guide) is said again (`remind`, default 2). Absent on every other slot.
+   */
+  notFound?: { readonly counts: boolean; readonly remind: number };
   /**
    * Where the slot listens outside a form (SlotListen): `up-front`, `form`, `anywhere` or `call`.
    * Absent: `up-front`. A slot app.yaml carries (App.carrySlots) listens as `call`; an identity

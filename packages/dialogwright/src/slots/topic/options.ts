@@ -92,6 +92,13 @@ export const topicOptions = z
       .enum(UNANSWERED)
       .default('retry')
       .describe('What a question no topic answers leads to when the slot was not asked for (the turn that asks it opens the form, say). `retry` (the default, the maintainer\'s decision of 2026-10-17): the question has an `unanswered` label beside `none`, and a question read as unanswered is the slot\'s miss: when the form comes to the slot (at once, or after the identity it needs) the caller hears `ask_<slot>_retry` (which says nothing answers that, and what can be asked) and an attempt is counted, rather than the question as if nothing had been asked. `ask`: no such label, and the slot\'s question is asked, as before.'),
+    notFound: z
+      .strictObject({
+        counts: z.boolean({ error: 'must be true or false' }).default(false).describe('Whether a question nothing answers counts as a try on the slot\'s ladder (attempts, onMaxAttempts). false (the default, the maintainer\'s decision of 2026-10-17): the knowledge base lacked it, the caller did not fail, so they may ask as often as they like; true: three in a row (attempts) end as any slot\'s misses do. A turn that says nothing about what the caller wants (none) counts either way.'),
+        remind: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(10, { error: 'must be at most 10' }).default(2).describe('After how many not-found replies in a row without it the guide to what can be asked (kb_guide) is said again; it is said the first time a call hears one. Default 2.'),
+      })
+      .default({ counts: false, remind: 2 })
+      .describe('With `unanswered: retry`, the reply to a question none of the topics (or the sections of approved documents) answers: where the app has kb_not_found, that line in turn through its variants, then kb_guide where it is due, then the slot\'s question; else the slot\'s retry line, as before.'),
     confirm: z
       .enum(['summary', 'always'])
       .optional()

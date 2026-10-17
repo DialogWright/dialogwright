@@ -59,7 +59,7 @@ export interface SlotState {
    * other slot (so a session of every other app is as it was), and gone when the slot fills, is asked,
    * is emptied, or another form is entered.
    */
-  missed?: { retry?: string };
+  missed?: { retry?: string; notFound?: true };
 }
 
 export interface HistoryEntry {
@@ -266,6 +266,12 @@ export interface Session {
    * call's language. Absent until the first, so every other session is as it was.
    */
   linesSaid?: Record<string, number>;
+  /**
+   * The replies to a question nothing answers (a topic slot's not-found reply) since the guide to what can
+   * be asked was last said (`row`), and whether it has been said on this call (`guided`); `row` is cleared
+   * when a knowledge answer is said. Absent until the first, so every other session is as it was.
+   */
+  kbNotFound?: { row: number; guided: boolean };
   /**
    * The call's most recent task: the form last closed (completed, refused or ended, closeForm), until
    * an informational answer is said with no form open (the caller started another task). The

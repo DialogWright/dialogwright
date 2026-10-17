@@ -77,7 +77,7 @@ function topicOnly(
     const t = ctx.thresholds;
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '' } : { kind: 'absent' };
     // A question asked that no topic answers (`unanswered: retry`): a miss the form holds to when the slot was not asked for.
-    const unanswered: SlotOutcome = ctx.prompted ? miss : { kind: 'invalid', reason: o.missReason, raw: '', held: true };
+    const unanswered: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '', notFound: true } : { kind: 'invalid', reason: o.missReason, raw: '', held: true, notFound: true };
     // At its own question, `none` (the caller said nothing about what they want to know): the question asked again, counted.
     const nothingAsked = (label: string | undefined): boolean => o.unanswered === 'retry' && ctx.prompted && label === 'none';
     const reask: SlotOutcome = { kind: 'invalid', reason: o.missReason, raw: '', reask: true };

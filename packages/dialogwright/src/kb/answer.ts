@@ -215,6 +215,8 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     const result = readKbAnswer(value);
     if (result.source !== undefined) c.out.kb = result.source;
     if (!('answer' in result)) return unavailableCompletion(c, unavailablePrompt);
+    // An answer said: the not-found replies in a row start again (core/turn.ts notFoundReply).
+    if (s.kbNotFound !== undefined) s.kbNotFound = { ...s.kbNotFound, row: 0 };
     // An answer from sections of approved documents (kb.yaml documents): the line's fixed text is what is
     // said when it cannot be worded (onFail: the not-found line, or the best section's opening), and the
     // sections go beside it, for the wording alone (render/turn.ts).

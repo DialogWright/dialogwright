@@ -2210,6 +2210,29 @@
               "ask"
             ]
           },
+          "notFound": {
+            "default": {
+              "counts": false,
+              "remind": 2
+            },
+            "description": "With `unanswered: retry`, the reply to a question none of the topics (or the sections of approved documents) answers: where the app has kb_not_found, that line in turn through its variants, then kb_guide where it is due, then the slot's question; else the slot's retry line, as before.",
+            "type": "object",
+            "properties": {
+              "counts": {
+                "default": false,
+                "description": "Whether a question nothing answers counts as a try on the slot's ladder (attempts, onMaxAttempts). false (the default, the maintainer's decision of 2026-10-17): the knowledge base lacked it, the caller did not fail, so they may ask as often as they like; true: three in a row (attempts) end as any slot's misses do. A turn that says nothing about what the caller wants (none) counts either way.",
+                "type": "boolean"
+              },
+              "remind": {
+                "default": 2,
+                "description": "After how many not-found replies in a row without it the guide to what can be asked (kb_guide) is said again; it is said the first time a call hears one. Default 2.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              }
+            },
+            "additionalProperties": false
+          },
           "confirm": {
             "description": "\"summary\" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the topic is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",

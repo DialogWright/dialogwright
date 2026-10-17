@@ -745,6 +745,33 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   return prompt(toDtmf ? `ask_${target}_dtmf` : retryLineOf(io.app, target, attempts), target, {}, acks);
 }
 
+/**
+ * A topic slot's reply to a question none of its topics or sections answers (its `unanswered`, held or at
+ * its question): counted as a try on the slot's ladder only where the slot says so (SlotSpec.notFound.counts,
+ * default not: the knowledge base lacked it, the caller did not fail), its end then as any miss's. Where the
+ * app has the not-found line (kb_not_found), it is said in turn through its wordings, then the guide to what
+ * can be asked (kb_guide, where the app has it) the first time on the call and again after `remind` replies
+ * in a row without it, then the slot's question; where it has none, the slot's retry line, as before.
+ */
+function notFoundReply(s: Session, slot: SlotId, io: TurnIO, acks: Ack[], retryPromptId: string | null): Decision {
+  const app = io.app;
+  const notFound = slotSpecOf(app, slot).notFound ?? { counts: false, remind: 2 };
+  if (notFound.counts) {
+    const attempts = ++s.slots[slot]!.attempts;
+    if (rungFor(s, attempts, io.tc.thresholds, attemptsOf(app, slot, io.tc.thresholds)) === 'agent') return slotRunsOut(s, slot, acks, io);
+  }
+  if (!Object.hasOwn(app.prompts.manifest, KB_NOT_FOUND)) return prompt(retryPromptId ?? retryLineOf(app, slot, Math.max(1, s.slots[slot]!.attempts)), slot, {}, acks);
+  const state = s.kbNotFound ?? { row: 0, guided: false };
+  const guide = Object.hasOwn(app.prompts.manifest, KB_GUIDE) && (!state.guided || state.row >= notFound.remind);
+  s.kbNotFound = guide ? { row: 0, guided: true } : { row: state.row + 1, guided: state.guided };
+  const lines: Ack[] = [{ promptId: nextWording(s, KB_NOT_FOUND), vars: {} }, ...(guide ? [{ promptId: KB_GUIDE, vars: {} }] : [])];
+  return askSlot(s, slot, null, [...acks, ...lines]);
+}
+
+/** The not-found line and the guide to what can be asked (notFoundReply), where the app has them. */
+const KB_NOT_FOUND = 'kb_not_found';
+const KB_GUIDE = 'kb_guide';
+
 const ACK_FRUSTRATION: Ack = { promptId: 'ack_frustration', vars: {} };
 const ACK_SCREEN: Ack = { promptId: 'screen_reprompt', vars: {} };
 const ACK_SCREEN_FORM: Ack = { promptId: 'screen_reprompt_form', vars: {} };
@@ -1150,6 +1177,7 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   const missed = ask.window === null ? s.slots[ask.slot]?.missed : undefined;
   if (missed !== undefined) {
     delete s.slots[ask.slot]!.missed;
+    if (missed.notFound === true) return notFoundReply(s, ask.slot, io, said, missed.retry ?? null);
     return failAttempt(s, ask.slot, io, said, false, missed.retry ?? null);
   }
   return askSlot(s, ask.slot, ask.window, said);
@@ -2262,6 +2290,8 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const caught = invalid === undefined ? caughtFrustration(s, io, target === 'intent' ? undefined : target) : null;
         // Nothing the question asks for (`reask`): the question again as it stands, the attempt counted.
         const reask = invalid?.kind === 'invalid' && invalid.reask === true ? 'reask' : false;
+        // A question nothing answers (a topic slot's `unanswered`): its not-found reply.
+        if (caught === null && invalid?.kind === 'invalid' && invalid.notFound === true && target !== 'intent') return { decision: notFoundReply(s, target, io, [], retry), events: fill.events };
         return { decision: caught ?? failAttempt(s, target, io, [], reask, retry), events: fill.events };
       }
       return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };

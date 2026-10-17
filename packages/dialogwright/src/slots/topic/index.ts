@@ -44,6 +44,7 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
       // Never acknowledged: the final summary reads it back, or, with `confirm: always`, its own read-back.
       ...readBackOf(o.confirm ?? 'summary'),
       nominates: true,
+      ...(o.unanswered === 'retry' ? { notFound: { counts: o.notFound.counts, remind: o.notFound.remind } } : {}),
       questionIds: [questionId],
       prompts: promptsOf(id, o),
       thresholds: [o.fillAt],

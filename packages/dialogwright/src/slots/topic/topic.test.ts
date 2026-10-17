@@ -146,8 +146,8 @@ describe('the fill', () => {
 
   it('holds a question no topic answers (unanswered, at fillAt) as a miss when not asked for, and misses it as any when asked', () => {
     const unanswered = { subjectTopic: choice({ unanswered: 0.8, returns: 0.1, none: 0.1 }) };
-    expect(fill(unanswered)).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', held: true });
-    expect(fill(unanswered, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '' });
+    expect(fill(unanswered)).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', held: true, notFound: true });
+    expect(fill(unanswered, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', notFound: true });
     // Not sure enough of it, or none on top: asked nothing, as before.
     expect(fill({ subjectTopic: choice({ unanswered: 0.54, none: 0.33, returns: 0.13 }) })).toEqual({ kind: 'absent' });
     expect(fill({ subjectTopic: choice({ unanswered: 0.55, none: 0.32, returns: 0.13 }) })).toMatchObject({ kind: 'invalid', held: true });
@@ -190,6 +190,12 @@ describe('its options', () => {
     expect(kept.questions(ctx('x', { nominated: [nom('parking')] }))).toEqual({
       helpTopic: { type: 'choice', instructions: 'Which one?', criteria: { parking: 'Is about Parking (parking)', unanswered: 'Something else', none: 'Neither' } },
     });
+  });
+
+  it('say how a question nothing answers is replied to: not counted and the guide again after two, by default; with unanswered: ask, nothing of it', () => {
+    expect(subject.notFound).toEqual({ counts: false, remind: 2 });
+    expect(defineSlot('subject', { type: 'topic', notFound: { counts: true, remind: 3 } }).notFound).toEqual({ counts: true, remind: 3 });
+    expect(defineSlot('subject', { type: 'topic', unanswered: 'ask' }).notFound).toBeUndefined();
   });
 
   it('refuse a criterion with a name or a filter it does not have, and a cap out of range', () => {

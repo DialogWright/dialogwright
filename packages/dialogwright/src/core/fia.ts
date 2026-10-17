@@ -418,7 +418,7 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
       case 'invalid':
         // A miss said before the slot was asked (a question no topic answers, with the request that
         // opened the form): held for when the form comes to the slot (SlotState.missed, continueForm).
-        if (outcome.held === true && slot.value === null) slot.missed = outcome.retryPromptId !== undefined ? { retry: outcome.retryPromptId } : {};
+        if (outcome.held === true && slot.value === null) slot.missed = { ...(outcome.retryPromptId !== undefined ? { retry: outcome.retryPromptId } : {}), ...(outcome.notFound === true ? { notFound: true as const } : {}) };
         break;
     }
   }
