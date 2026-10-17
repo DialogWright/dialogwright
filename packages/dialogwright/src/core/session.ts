@@ -52,6 +52,14 @@ export interface SlotState {
    * it was), and gone when the slot is emptied.
    */
   heard?: string;
+  /**
+   * A miss said before the slot was asked (SlotOutcome invalid `held`: a topic slot's question no topic
+   * answers, asked with the request that opened the form), with the line the slot gave for it: when the
+   * form comes to the slot, the miss is said and counted in place of its question, once. Absent on every
+   * other slot (so a session of every other app is as it was), and gone when the slot fills, is asked,
+   * is emptied, or another form is entered.
+   */
+  missed?: { retry?: string };
 }
 
 export interface HistoryEntry {
@@ -658,6 +666,8 @@ export function setForm(session: Session, form: FormId): Session {
   delete session.checkReadBackNos;
   // And the nos said to its slots' read-backs: a slot carried in is read back afresh.
   for (const slot of Object.values(session.slots)) delete slot.readBackNos;
+  // And a miss held for a slot of the form left (SlotState.missed): the new form hears its own request.
+  for (const slot of Object.values(session.slots)) delete slot.missed;
   // So are its offers (the caller's number, a value from the facts): the new form may offer again.
   delete session.callerOffered;
   return session;

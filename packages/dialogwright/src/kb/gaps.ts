@@ -282,14 +282,18 @@ export function looksLikeQuestion(words: string): boolean {
   return QUESTION_WORDS.includes(first);
 }
 
-/** The topic question of a turn: a choice question whose labels are nominated topics and `none`. Null when the turn asked none. */
-export function topicQuestionOf(t: Turn): { id: string; nominated: string[] } | null {
+/**
+ * The topic question of a turn: a choice question whose labels are nominated topics and `none`, with
+ * `unanswered` too where the slot tells a question no topic answers from one that asks nothing (the
+ * topic slot's `unanswered: retry`). Null when the turn asked none.
+ */
+export function topicQuestionOf(t: Turn): { id: string; nominated: string[]; unanswered: boolean } | null {
   if (t.retrieval === null || t.retrieval.nominated.length === 0) return null;
   const nominated = new Set(t.retrieval.nominated);
   for (const [id, q] of Object.entries(t.questions)) {
     if (q.type !== 'choice' || !q.labels.includes('none')) continue;
-    const topics = q.labels.filter((l) => l !== 'none');
-    if (topics.length > 0 && topics.every((l) => nominated.has(l))) return { id, nominated: t.retrieval.nominated };
+    const topics = q.labels.filter((l) => l !== 'none' && l !== 'unanswered');
+    if (topics.length > 0 && topics.every((l) => nominated.has(l))) return { id, nominated: t.retrieval.nominated, unanswered: q.labels.includes('unanswered') };
   }
   return null;
 }
@@ -366,14 +370,16 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
     // The call went on to ask another slot's question: the words were about something else.
     const movedOn = t.promptedFor !== null && !['intent', 'confirm', 'otp'].includes(t.promptedFor) && !topicSlots.has(t.promptedFor);
     if (t.decision.promptId?.startsWith('disambiguate_')) {
-      const pair = ranked(answer).filter((l) => l !== 'none' && q.nominated.includes(l));
+      const pair = ranked(answer).filter((l) => q.nominated.includes(l));
       const [a, b] = pair.length >= 2 ? pair : q.nominated;
       if (a === undefined || b === undefined) return null;
       return { kind: 'close', topic: a, near: 'nominated', ...base, words: own, other: b };
     }
     const label = answer.choice ?? ranked(answer)[0] ?? null;
     if (label === null || movedOn) return null;
-    if (label === 'none' || (q.nominated.includes(label) && !filledWith(t, label))) {
+    // With an `unanswered` label, `none` is a turn that asked nothing: a gap only where its words still read as a question.
+    const missed = label === 'unanswered' || (label === 'none' && (!q.unanswered || (t.words !== null && looksLikeQuestion(t.words))));
+    if (missed || (q.nominated.includes(label) && !filledWith(t, label))) {
       return { kind: 'none', topic: q.nominated[0]!, near: 'nominated', ...base, words: own };
     }
     return null;

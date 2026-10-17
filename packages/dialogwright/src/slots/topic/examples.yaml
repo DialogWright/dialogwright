@@ -6,7 +6,7 @@
 # The conformance kit runs every utterance here, and the type's docs page shows them.
 
 - name: help desk
-  about: The defaults, on a help desk's four topics. Only a topic the question offered fills, and two the model cannot tell apart are asked about.
+  about: The defaults, on a help desk's four topics. Only a topic the question offered fills, two the model cannot tell apart are asked about, and a question none of them answers, asked with the request, is held as the slot's miss.
   slot: subject
   topics:
     - { id: opening_hours, title: Opening hours, titles: { es: Horario de apertura } }
@@ -61,9 +61,23 @@
       expect: { kind: invalid, reason: no_topic, raw: "" }
     - text: hello there
       expect: { kind: absent }
+    - text: can i bring my dog into the library
+      context:
+        nominated:
+          - { topic: opening_hours, title: Opening hours, score: 1 }
+      answers:
+        subjectTopic: { choice: { unanswered: 0.85, opening_hours: 0.05, none: 0.1 } }
+      expect: { kind: invalid, reason: no_topic, raw: "", held: true }
+    - text: i have a question for you
+      context:
+        nominated:
+          - { topic: opening_hours, title: Opening hours, score: 1 }
+      answers:
+        subjectTopic: { choice: { none: 0.9, unanswered: 0.05, opening_hours: 0.05 } }
+      expect: { kind: absent }
 
 - name: any topic of the knowledge
-  about: Any topic the app's knowledge has fills, not only one offered on that turn; at most two are offered; the model's pick is read alone; the slot keeps its own words, id and miss reason.
+  about: Any topic the app's knowledge has fills, not only one offered on that turn; at most two are offered; the model's pick is read alone; the slot keeps its own words, id and miss reason, and its question from before (no unanswered label, unanswered ask).
   slot: subject
   topics:
     - { id: opening_hours, title: Opening hours, titles: { es: Horario de apertura } }
@@ -76,6 +90,7 @@
     fillAt: SLOT_CHOICE_CONFIRM
     criterion: "The caller wants to know about {title}"
     missReason: no_subject
+    unanswered: ask
     text:
       instructions: Read asr.text. Which subject does the caller ask about?
       none: Names no subject

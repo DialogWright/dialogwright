@@ -262,7 +262,7 @@ prompts:
     text: What's your coverage question?
     interruptible: true
   ask_coverageTopic_retry:
-    text: I can't answer that from the plan information. I can answer questions like whether physical therapy, hospital stays, or fractures are covered. What would you like to know?
+    text: I couldn't find anything in your plan information that answers that. I can tell you about things like physical therapy, hospital stays, or fractures. What would you like to know?
     interruptible: true
   disambiguate_coverageTopic:
     text: Is that about {a}, or {b}?

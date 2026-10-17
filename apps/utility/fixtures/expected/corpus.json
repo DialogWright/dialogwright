@@ -2660,7 +2660,7 @@
   "aq-13": {
     "id": "aq-13",
     "decision": "prompt",
-    "promptId": "ask_subject",
+    "promptId": "ask_subject_retry",
     "acks": [
       "ack_intent"
     ],
@@ -2789,7 +2789,7 @@
   "aq-18": {
     "id": "aq-18",
     "decision": "prompt",
-    "promptId": "ask_subject",
+    "promptId": "ask_subject_retry",
     "acks": [
       "ack_intent"
     ],
@@ -2814,7 +2814,7 @@
   "aq-19": {
     "id": "aq-19",
     "decision": "prompt",
-    "promptId": "ask_subject",
+    "promptId": "ask_subject_retry",
     "acks": [
       "ack_intent"
     ],

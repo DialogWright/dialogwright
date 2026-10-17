@@ -4,7 +4,7 @@
 
 Which of the knowledge base's topics the caller asks about: the opening hours, the returns policy, the late fees. The value is the topic's id, so the app can find the approved passage that answers it; the slot never writes or chooses the answer.
 
-The model does not see every topic. Before the turn is planned, the app's retriever nominates a few topics for the caller's words (`SlotContext.nominated`, best first), and the slot asks one question over those alone: which of these does the caller ask about, or none? A turn that nominates nothing asks nothing, so a call that never asks a general question pays nothing for the knowledge base. The slot opts in to retrieval (`nominates`): while it listens, a turn with words runs the retriever once.
+The model does not see every topic. Before the turn is planned, the app's retriever nominates a few topics for the caller's words (`SlotContext.nominated`, best first), and the slot asks one question over those alone: which of these does the caller ask about, a question none of them answers, or nothing? A turn that nominates nothing asks nothing, so a call that never asks a general question pays nothing for the knowledge base. The slot opts in to retrieval (`nominates`): while it listens, a turn with words runs the retriever once.
 
 Reach for it when the app answers general questions from approved passages. It needs the app's knowledge: a `kb/` folder, whose topics the engine's retriever nominates (by keywords, or hybrid with `retrieval.embedder` in `kb/kb.yaml`) unless the code gives its own (`code.knowledge.retriever`), or, for an app that is not a folder, `App.knowledge` with the topics its retriever nominates. For a fixed list the caller chooses from as part of a task, use `choice`.
 
@@ -20,8 +20,9 @@ A slot of this type is written under its id in slots.yaml, with `type: topic` an
 | `disambiguate` | boolean | `true` | Whether two topics the model cannot tell apart (the top two both topics the slot may fill, the top at SLOT_CHOICE_CONFIRM or above and the second within KB_TOPIC_MARGIN of it) make the slot ask which one (`disambiguate_<slot>`, with {a} and {b}). Off: the slot reads the model's pick alone. |
 | `fillAt` | one of `SLOT_CHOICE_FILL`, `SLOT_CHOICE_CONFIRM` | `SLOT_CHOICE_FILL` | The threshold the model's probability for the topic must reach for the slot to fill. |
 | `missReason` | string | `no_topic` | The reason of the invalid outcome when the slot was asked for and the caller chose no topic (or the model was not sure enough). Not asked for, that is absent. |
+| `unanswered` | one of `retry`, `ask` | `retry` | What a question no topic answers leads to when the slot was not asked for (the turn that asks it opens the form, say). `retry` (the default, the maintainer's decision of 2026-10-17): the question has an `unanswered` label beside `none`, and a question read as unanswered is the slot's miss: when the form comes to the slot (at once, or after the identity it needs) the caller hears `ask_<slot>_retry` (which says nothing answers that, and what can be asked) and an attempt is counted, rather than the question as if nothing had been asked. `ask`: no such label, and the slot's question is asked, as before. |
 | `confirm` | one of `summary`, `always` | unset | "summary" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. "always": the topic is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken. |
-| `text` | map | unset | Text to say to the model in place of a default, word for word, by part: instructions, none. |
+| `text` | map | unset | Text to say to the model in place of a default, word for word, by part: instructions, none, unanswered. |
 | `ids` | map | unset | Question ids in place of the default: `ids.choice` is the question's id (default: the slot's id followed by "Topic"), to keep the id an existing slot used. |
 | `listen` | one of `up-front`, `form`, `anywhere`, `call` | `up-front` | Where the slot listens outside a form. "up-front": asked there, and a value kept only when the turn enters a form that has the slot (values said up front with the request). "form": asked and filled only while a form that has it is open; outside one its question is not sent. "anywhere": a value said outside a form is kept when said on a turn that opens no form, or with the request for a form that has the slot, until a form that has the slot uses it; a turn that opens a form without it keeps nothing for it. "call": as anywhere, and kept for the whole call, across forms (what app.yaml's carrySlots does). An identity factor listens as identity.yaml says, and takes none. Without it, the slot listens as its forms say (forms.yaml listenBeforeEntered): "form" when every form that lists it says false (the default for an internal form), else "up-front". |
 | `offer` | one of `facts` | unset | Propose a value in place of the question. "facts": when the form would ask the slot and the app's facts have a value for it (code.facts.offers; e.g. the street the call-start lookup found for the number calling, or one a form's entry call loaded after identity), the line asks `offer_<slot>` as a yes or no, with the value as `{<slot>}` ("Is this about 22 Alder Street?"), once per slot per form. A yes fills the slot with it, confirmed, and nothing else: never who the caller is or their identity level. A no asks `ask_<slot>` with no attempt counted, and a value said instead fills as said. Needs code.facts.offers, and `offer_<slot>` in every locale. Never on an identity factor, nor beside callerNumber, nor on a slot redacted by its length (its words are never said back). |
@@ -39,6 +40,7 @@ The text the model is sent is made of parts. Each has a default, a template over
 |---|---|---|
 | `text.instructions` | The question that asks which topic the caller asks about, sent to the model in place of the default. | `Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing.` |
 | `text.none` | What the question's "none" label means: the caller asks about none of the topics offered. | `Asks about none of these` |
+| `text.unanswered` | What the question's "unanswered" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers. | `Asks a question none of these answers` |
 
 ### Question ids
 
@@ -60,30 +62,40 @@ A topic slot is built with the app's topics (`topicCatalog`): defineApp gives it
 |---|---|
 | A topic it may fill with, and the model's probability for it reaches `fillAt` | `filled`: the value is the topic's id, the display its title, and no read-back is asked for |
 | Two topics it may fill with, the top at `SLOT_CHOICE_CONFIRM` or above and the second within `KB_TOPIC_MARGIN` of it (with `disambiguate`) | `disambiguate`, between the two |
+| `unanswered` (with `unanswered: retry`, the default) at `fillAt` or above: a question none of the topics offered answers | `invalid` with `missReason` (raw empty); when the slot was not asked for, `held` too (below) |
 | `none`, a label no topic has, a topic it may not fill with, or a probability below the threshold | `invalid` with `missReason` (raw empty) when the slot was asked for, else `absent` |
 | No answer at all (nothing was nominated, so the question was not asked) | the same |
 
 A topic it may fill with is one the question offered on that turn (`accept: nominated`, the default), or any topic of the app's knowledge (`accept: catalog`), which keeps a recorded answer given against another turn's nominations. With `disambiguate` (the default) the slot reads the probabilities of every label, best first; without it, the model's pick alone, at its own probability or, when the pick has none, the answer's confidence.
 
+## A question no topic answers
+
+A caller who asks their question with the request ("can I bring my dog in?") has asked it; one who says only that they have one ("I have a question") has not. With `unanswered: retry` (the default, the maintainer's decision of 2026-10-17) the question tells the two apart: `none` is a turn that asks nothing, and `unanswered` a question none of the topics offered answers. Read as unanswered on a turn the slot was not asked for (the turn that opens the form, say), the miss is held (`SlotState.missed`): when the form comes to the slot, at once or after the identity its entry needs, the caller hears `ask_<slot>_retry` and an attempt is counted, as for a miss at the question itself, rather than `ask_<slot>` as if nothing had been asked. So `ask_<slot>_retry` is said to a question asked that nothing answers: write it to say so, and what the caller can ask ("I couldn't find anything that answers that. I can tell you about ..."). Held to `fillAt`, the bar a topic fills at; under it, the question is asked as before. A turn whose retrieval nominates nothing asks nothing, so it is never read as unanswered.
+
+`unanswered: ask` keeps the question from before: no `unanswered` label, `none` meaning both, and the slot's question asked after a question nothing answered. An app that wrote its own `text.instructions` or `text.none` for the old labels should read them again beside `text.unanswered`, since the defaults of the two change with the option.
+
 When a caller's words name a task the engine confirms first ("can I park there with my pass?", then "yes"), the form fills from the earlier words, and the slot reads the topics nominated for those words on their own turn, kept with the confirmation, never the yes turn's.
 
 ## The question
 
-On the slot `subject`, the question is `subjectTopic`, a choice whose labels are the nominated topics' ids, best first, at most `cap` of them, then `none`. With these nominations for "is the car park open on sundays":
+On the slot `subject`, the question is `subjectTopic`, a choice whose labels are the nominated topics' ids, best first, at most `cap` of them, then `unanswered` and `none`. With these nominations for "is the car park open on sundays":
 
 > - `parking`: Asks about parking
 > - `opening_hours`: Asks about opening hours
-> - `none`: Asks about none of these
+> - `unanswered`: Asks a question none of these answers
+> - `none`: Names none of these and asks no question
 
 and the instructions:
 
-> Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing.
+> Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask a question none of them answers, and none when they name none of them and ask no question (saying only that they have one is none).
+
+With `unanswered: ask`, there is no `unanswered` label, `none` is "Asks about none of these", and the instructions are "Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing."
 
 `criterion` is a template with nothing evaluated but `{title}`, `{topic}` and the filter `lower` (`{title|lower}`); a name or a filter it does not have is a problem when the slot is defined.
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for any slot; with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?"). With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person.
+`ask_<slot>` and `ask_<slot>_retry` as for any slot (the retry said also to a question no topic answers, with `unanswered: retry`); with `disambiguate`, `disambiguate_<slot>` with `{a}` and `{b}`, the two topics' titles ("Do you mean {a} or {b}?"). With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person.
 
 ## Examples
 
@@ -101,7 +113,7 @@ Each configuration below is built and run by the type's tests (the conformance k
 
 #### help desk
 
-The defaults, on a help desk's four topics. Only a topic the question offered fills, and two the model cannot tell apart are asked about.
+The defaults, on a help desk's four topics. Only a topic the question offered fills, two the model cannot tell apart are asked about, and a question none of them answers, asked with the request, is held as the slot's miss.
 
 ```yaml
 subject:
@@ -117,7 +129,7 @@ Built with the knowledge topics:
 | `parking` | Parking | es: Aparcamiento |
 | `late_fees` | Late fees | es: Recargos por retraso |
 
-<details><summary>Starter utterances (7)</summary>
+<details><summary>Starter utterances (9)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
@@ -128,12 +140,14 @@ Built with the knowledge topics:
 | where can i park<br>_nominated parking_ | `subjectTopic`: `returns` 0.9, `none` 0.1 | absent |
 | what about my dog<br>_prompted; nominated nothing_ | none | invalid: reason `no_topic`, raw `` |
 | hello there | none | absent |
+| can i bring my dog into the library<br>_nominated opening_hours_ | `subjectTopic`: `unanswered` 0.85, `opening_hours` 0.05, `none` 0.1 | invalid: reason `no_topic`, raw ``, held `true` |
+| i have a question for you<br>_nominated opening_hours_ | `subjectTopic`: `none` 0.9, `unanswered` 0.05, `opening_hours` 0.05 | absent |
 
 </details>
 
 #### any topic of the knowledge
 
-Any topic the app's knowledge has fills, not only one offered on that turn; at most two are offered; the model's pick is read alone; the slot keeps its own words, id and miss reason.
+Any topic the app's knowledge has fills, not only one offered on that turn; at most two are offered; the model's pick is read alone; the slot keeps its own words, id and miss reason, and its question from before (no unanswered label, unanswered ask).
 
 ```yaml
 subject:
@@ -144,6 +158,7 @@ subject:
   fillAt: SLOT_CHOICE_CONFIRM
   criterion: The caller wants to know about {title}
   missReason: no_subject
+  unanswered: ask
   text:
     instructions: Read asr.text. Which subject does the caller ask about?
     none: Names no subject

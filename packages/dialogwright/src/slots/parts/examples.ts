@@ -51,6 +51,7 @@ const utterance = z.strictObject({
     reason: z.string().optional(),
     raw: z.string().optional(),
     retryPromptId: z.string().optional(),
+    held: z.literal(true).optional(),
     promptId: z.string().optional(),
   }),
 });

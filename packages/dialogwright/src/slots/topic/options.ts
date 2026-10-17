@@ -19,7 +19,24 @@ export const TOPIC_PARTS = textParts('topic', {
     vars: [],
     about: 'What the question\'s "none" label means: the caller asks about none of the topics offered.',
   },
+  unanswered: {
+    template: 'Asks about something none of these answers',
+    vars: [],
+    about: 'What the question\'s "unanswered" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers.',
+  },
 });
+
+/**
+ * With `unanswered: retry`, the question's instructions and its `none` label where `text` gives none:
+ * none is a turn that asks nothing, and a question asked that no topic answers is `unanswered`.
+ */
+export const UNANSWERED_DEFAULTS = {
+  instructions: 'Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask about something none of them answers, and none when they say nothing about what they want to know (saying only that they have a question is none).',
+  none: 'Says nothing about what they want to know',
+} as const;
+
+/** What a question that no topic answers leads to, said on a turn the slot was not asked: its miss line, or its question as before. */
+export const UNANSWERED = ['retry', 'ask'] as const;
 
 /** The question of a `topic` slot: the slot's id followed by `Topic`, unless `ids.choice` says otherwise. */
 export const TOPIC_QUESTIONS = questionParts({ choice: 'which topic the caller asks about' });
@@ -66,6 +83,10 @@ export const topicOptions = z
     missReason: identifier()
       .default(DEFAULT_MISS_REASON)
       .describe('The reason of the invalid outcome when the slot was asked for and the caller chose no topic (or the model was not sure enough). Not asked for, that is absent.'),
+    unanswered: z
+      .enum(UNANSWERED)
+      .default('retry')
+      .describe('What a question no topic answers leads to when the slot was not asked for (the turn that asks it opens the form, say). `retry` (the default, the maintainer\'s decision of 2026-10-17): the question has an `unanswered` label beside `none`, and a question read as unanswered is the slot\'s miss: when the form comes to the slot (at once, or after the identity it needs) the caller hears `ask_<slot>_retry` (which says nothing answers that, and what can be asked) and an attempt is counted, rather than the question as if nothing had been asked. `ask`: no such label, and the slot\'s question is asked, as before.'),
     confirm: z
       .enum(['summary', 'always'])
       .optional()

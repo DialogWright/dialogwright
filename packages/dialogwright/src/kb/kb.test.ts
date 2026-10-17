@@ -526,7 +526,7 @@ describe('a topic slot and the knowledge it reads', () => {
     expect(subject.display('card_renewal', 'es')).toBe('renewing a library card');
     const many = ['opening_hours', 'card_renewal', 'late_fees', 'a', 'b', 'c', 'd', 'e', 'f'].map((topic) => ({ topic, title: topic, score: 1, via: 'keyword' as const }));
     const asked = subject.questions({ ...probeContexts()[0]!, nominated: many }).subjectTopic;
-    expect(asked?.type === 'choice' && Object.keys(asked.criteria)).toEqual(['opening_hours', 'card_renewal', 'late_fees', 'none']);
+    expect(asked?.type === 'choice' && Object.keys(asked.criteria)).toEqual(['opening_hours', 'card_renewal', 'late_fees', 'unanswered', 'none']);
   });
 
   it('check refuses a topic slot in an app without a kb/ folder (it would never ask); with one, the engine\'s retriever nominates when the code gives none', async () => {

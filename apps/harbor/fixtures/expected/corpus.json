@@ -5320,5 +5320,55 @@
     "queued": [],
     "principalLevel": 0,
     "gate": "getCoverage:STEP_UP"
+  },
+  "cv-28": {
+    "id": "cv-28",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "cv-29": {
+    "id": "cv-29",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
   }
 }

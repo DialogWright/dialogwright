@@ -2120,6 +2120,15 @@
       "principalLevel": 2,
       "gate": "getClaim:ALLOW",
       "text": "Your claim 4655"
+    },
+    "knownGap": {
+      "reason": "'what about my physical therapy claim' after claim 4702's status: claim_4655 0.54 against none 0.44, one hundredth under the 0.55 bar (0.52 to 0.54 on each recording of 2026-10-17), so the caller is asked which claim, and says it again",
+      "outcome": {
+        "promptId": "ask_claimSelect",
+        "acks": [],
+        "form": "claim_status",
+        "gate": "listClaims:ALLOW"
+      }
     }
   },
   {
@@ -2201,6 +2210,48 @@
       "promptId": "anything_else",
       "gate": "searchPolicy:ALLOW",
       "text": "A covered accident is"
+    }
+  },
+  {
+    "id": "coverage-unanswered-then-asked",
+    "steps": [
+      {
+        "say": "does my plan cover cosmetic surgery"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "is physical therapy covered"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "getUsage:ALLOW",
+      "text": "Physical therapy after a covered accident"
+    }
+  },
+  {
+    "id": "coverage-unanswered-not-found",
+    "steps": [
+      {
+        "say": "does my plan cover cosmetic surgery"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_coverageTopic_retry",
+      "text": "I couldn't find anything in your plan information"
     }
   }
 ]

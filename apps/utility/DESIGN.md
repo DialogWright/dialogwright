@@ -297,6 +297,8 @@ The sweep: a floor of 0.35 cuts the topics offered on a line about nothing to 0.
 Before approval the app did not build, so these entries could not be checked until a person approved the drafts; after approval (2026-10-04) the regression says `no changes`, as it did in the scratch copy.
 
 Changes that needed no edit: the thirty-day bound moved from the custom rule `first-date-within-30-days` to `dateInRange` (`notAfter: today+30`). The rule that decides `plan-first-date-too-late` is now `dateInRange` (its line reads `firstDate after today+30 2026-10-18`), with the same verdict, reason (`date-range`) and line (`plan_date_outside`); the baseline records the outcome, not the deciding rule, so it did not change. `policy.matrix` was written again for it: the rule list of `setUpPlan` and the custom rules section changed, and no verdict did.
+| corpus `aq-13`, `aq-18`, `aq-19` ("do you install solar panels", "do you sell solar panels", "is my gas bill separate") | `promptId` | `ask_subject` -> `ask_subject_retry` | the topic slot's `unanswered: retry`, the engine's default decided by the maintainer on 2026-10-17: a question none of the topics answers, asked with the request, is the slot's miss, so the caller hears the retry line ("Sorry, I can answer questions about ..."), which says what can be asked, rather than "What would you like to know?" as if they had asked nothing. Each line labelled `subjectTopic: unanswered` (the truth: no topic answers it); recorded, each reads unanswered 1.00. With the label added and before this edit, the stub run printed these three differences alone |
+
 
 ## Final checklist
 

@@ -2201,6 +2201,15 @@
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
           },
+          "unanswered": {
+            "default": "retry",
+            "description": "What a question no topic answers leads to when the slot was not asked for (the turn that asks it opens the form, say). `retry` (the default, the maintainer's decision of 2026-10-17): the question has an `unanswered` label beside `none`, and a question read as unanswered is the slot's miss: when the form comes to the slot (at once, or after the identity it needs) the caller hears `ask_<slot>_retry` (which says nothing answers that, and what can be asked) and an attempt is counted, rather than the question as if nothing had been asked. `ask`: no such label, and the slot's question is asked, as before.",
+            "type": "string",
+            "enum": [
+              "retry",
+              "ask"
+            ]
+          },
           "confirm": {
             "description": "\"summary\" (the default): a topic is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": the topic is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
@@ -2210,7 +2219,7 @@
             ]
           },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none.",
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, unanswered.",
             "type": "object",
             "properties": {
               "instructions": {
@@ -2221,6 +2230,12 @@
               },
               "none": {
                 "description": "What the question's \"none\" label means: the caller asks about none of the topics offered.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "unanswered": {
+                "description": "What the question's \"unanswered\" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

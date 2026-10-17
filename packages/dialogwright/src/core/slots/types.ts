@@ -84,9 +84,11 @@ export type SlotOutcome =
   /**
    * What the caller said cannot be the value. `retryPromptId`, when set, is the re-ask at the open
    * rung in place of the slot's generic `ask_<slot>_retry`, for a reason that generic text would
-   * misdescribe.
+   * misdescribe. `held`: said on a turn the slot was not asked for (a topic slot's question no topic
+   * answers, asked with the request that opened the form): the slot keeps the miss (SlotState.missed),
+   * and when its form next comes to it, the miss is said and counted in place of its question.
    */
-  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string }
+  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string; held?: true }
   /** The caller said whether they know the value rather than saying it; play this prompt in place of the question. */
   | { kind: 'help'; promptId: string };
 

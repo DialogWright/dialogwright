@@ -46,25 +46,36 @@ describe('a topic slot built from the defaults', () => {
     expect(subject.questions(ctx('when do you open', { nominated: [] }))).toEqual({});
   });
 
-  it('offers the nominated topics best first, each by its title in lower case, then none', () => {
+  it('offers the nominated topics best first, each by its title in lower case, then unanswered and none', () => {
     expect(subject.questions(ctx('parking and hours', { nominated: [nom('parking', 3), nom('opening_hours', 2)] }))).toEqual({
       subjectTopic: {
         type: 'choice',
-        instructions: 'Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing.',
-        criteria: { parking: 'Asks about parking', opening_hours: 'Asks about opening hours', none: 'Asks about none of these' },
+        instructions: 'Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask about something none of them answers, and none when they say nothing about what they want to know (saying only that they have a question is none).',
+        criteria: { parking: 'Asks about parking', opening_hours: 'Asks about opening hours', unanswered: 'Asks about something none of these answers', none: 'Says nothing about what they want to know' },
       },
     });
   });
 
-  it('offers each topic once, never one called none, and at most the cap: the knowledge base\'s, else 8', () => {
+  it('with unanswered: ask, offers the topics then none alone, in the words from before', () => {
+    const asks = defineSlot('subject', { type: 'topic', unanswered: 'ask' }, undefined, { catalog: CATALOG });
+    expect(asks.questions(ctx('parking', { nominated: [nom('parking')] }))).toEqual({
+      subjectTopic: {
+        type: 'choice',
+        instructions: 'Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing.',
+        criteria: { parking: 'Asks about parking', none: 'Asks about none of these' },
+      },
+    });
+  });
+
+  it('offers each topic once, never one called none or unanswered, and at most the cap: the knowledge base\'s, else 8', () => {
     const many = Array.from({ length: 12 }, (_, i) => nom(`topic_${i}`, 12 - i));
-    expect(Object.keys(criteriaOf(subject.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual([...many.slice(0, 8).map((n) => n.topic), 'none']);
-    const twice = [nom('parking'), nom('none'), nom('parking'), nom('returns')];
-    expect(Object.keys(criteriaOf(subject.questions(ctx('x', { nominated: twice })), 'subjectTopic'))).toEqual(['parking', 'returns', 'none']);
+    expect(Object.keys(criteriaOf(subject.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual([...many.slice(0, 8).map((n) => n.topic), 'unanswered', 'none']);
+    const twice = [nom('parking'), nom('none'), nom('unanswered'), nom('parking'), nom('returns')];
+    expect(Object.keys(criteriaOf(subject.questions(ctx('x', { nominated: twice })), 'subjectTopic'))).toEqual(['parking', 'returns', 'unanswered', 'none']);
     const capped = defineSlot('subject', { type: 'topic' }, undefined, { catalog: { ...CATALOG, cap: 3 } });
-    expect(Object.keys(criteriaOf(capped.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toHaveLength(4);
+    expect(Object.keys(criteriaOf(capped.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toHaveLength(5);
     const own = defineSlot('subject', { type: 'topic', cap: 2 }, undefined, { catalog: { ...CATALOG, cap: 3 } });
-    expect(Object.keys(criteriaOf(own.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual(['topic_0', 'topic_1', 'none']);
+    expect(Object.keys(criteriaOf(own.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual(['topic_0', 'topic_1', 'unanswered', 'none']);
   });
 
   it('says a topic by its title in lower case, in the locale\'s title when the knowledge gives one, and the value itself for an unknown topic', () => {
@@ -133,6 +144,24 @@ describe('the fill', () => {
     expect(lax.fill({}, c({ prompted: true }))).toEqual({ kind: 'invalid', reason: 'no_subject', raw: '' });
   });
 
+  it('holds a question no topic answers (unanswered, at fillAt) as a miss when not asked for, and misses it as any when asked', () => {
+    const unanswered = { subjectTopic: choice({ unanswered: 0.8, returns: 0.1, none: 0.1 }) };
+    expect(fill(unanswered)).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', held: true });
+    expect(fill(unanswered, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '' });
+    // Not sure enough of it, or none on top: asked nothing, as before.
+    expect(fill({ subjectTopic: choice({ unanswered: 0.54, none: 0.33, returns: 0.13 }) })).toEqual({ kind: 'absent' });
+    expect(fill({ subjectTopic: choice({ unanswered: 0.55, none: 0.32, returns: 0.13 }) })).toMatchObject({ kind: 'invalid', held: true });
+    expect(fill({ subjectTopic: choice({ none: 0.8, unanswered: 0.2 }) })).toEqual({ kind: 'absent' });
+    // Never a value, with accept: catalog too; and without disambiguate, the pick.
+    const any = defineSlot('subject', { type: 'topic', accept: 'catalog' }, undefined, { catalog: CATALOG });
+    expect(any.fill(unanswered, c())).toMatchObject({ kind: 'invalid', held: true });
+    const pick = defineSlot('subject', { type: 'topic', disambiguate: false }, undefined, { catalog: CATALOG });
+    expect(pick.fill({ subjectTopic: { type: 'choice', choice: 'unanswered', probabilities: { unanswered: 0.7 }, confidence: 0.7 } }, c())).toMatchObject({ kind: 'invalid', held: true });
+    // With unanswered: ask, the label is no topic: asked nothing.
+    const asks = defineSlot('subject', { type: 'topic', unanswered: 'ask' }, undefined, { catalog: CATALOG });
+    expect(asks.fill(unanswered, c())).toEqual({ kind: 'absent' });
+  });
+
   it('fills nothing it was not offered when retrieval did not run (no nominations on the context)', () => {
     expect(subject.fill({ subjectTopic: choice({ returns: 0.9, none: 0.1 }) }, ctx('back'))).toEqual({ kind: 'absent' });
   });
@@ -143,12 +172,12 @@ describe('its options', () => {
     const kept = defineSlot('helpTopic', {
       type: 'topic',
       criterion: 'Is about {title} ({topic})',
-      text: { instructions: 'Which one?', none: 'Neither' },
+      text: { instructions: 'Which one?', none: 'Neither', unanswered: 'Something else' },
       ids: { choice: 'helpTopic' },
     });
     expect(kept.questionIds).toEqual(['helpTopic']);
     expect(kept.questions(ctx('x', { nominated: [nom('parking')] }))).toEqual({
-      helpTopic: { type: 'choice', instructions: 'Which one?', criteria: { parking: 'Is about Parking (parking)', none: 'Neither' } },
+      helpTopic: { type: 'choice', instructions: 'Which one?', criteria: { parking: 'Is about Parking (parking)', unanswered: 'Something else', none: 'Neither' } },
     });
   });
 
@@ -187,7 +216,7 @@ describe('its topics, from the app\'s knowledge', () => {
     const slots = defineSlots({ subject: { type: 'topic' } }, {}, undefined, { knowledge: { kb: KB } });
     expect(slots.subject!.display('opening_hours', 'es')).toBe('horario');
     const many = [nom('opening_hours'), nom('parking'), nom('returns'), nom('late_fees')];
-    expect(Object.keys(criteriaOf(slots.subject!.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual(['opening_hours', 'parking', 'returns', 'none']);
+    expect(Object.keys(criteriaOf(slots.subject!.questions(ctx('x', { nominated: many })), 'subjectTopic'))).toEqual(['opening_hours', 'parking', 'returns', 'unanswered', 'none']);
   });
 });
 

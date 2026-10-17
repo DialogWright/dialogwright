@@ -31,9 +31,10 @@ const SAYS = (topic: string, p = 0.92): Record<string, number> => ({ [topic]: p,
 
 /** Eleven calls with one gap each (and four turns that are not gaps): see the expectations below. */
 const SCRIPTS: CallScript[] = [
-  // answered none, twice and then below the fill threshold: late fees
+  // answered none, unanswered, and then below the fill threshold: late fees
   { id: 'C01', day: '2026-10-01', steps: [{ ...ASKS, say: 'how much is the late fee', nominates: ['late_fees'], topic: { none: 0.9, late_fees: 0.1 } }] },
-  { id: 'C02', day: '2026-10-02', steps: [{ ...ASKS, say: 'what do I owe for an overdue book', nominates: ['late_fees'], topic: { none: 0.85, late_fees: 0.15 } }] },
+  // answered as a question no topic answers (the slot's unanswered label)
+  { id: 'C02', day: '2026-10-02', steps: [{ ...ASKS, say: 'what do I owe for an overdue book', nominates: ['late_fees'], topic: { unanswered: 0.85, late_fees: 0.15 } }] },
   { id: 'C03', day: '2026-10-02', steps: [{ ...ASKS, say: 'is there a fine for returning a book late', nominates: ['late_fees'], topic: { late_fees: 0.45, none: 0.35 } }] },
   // nothing nominated: words that are questions, and one that is not
   {
@@ -108,7 +109,7 @@ describe('reading traces', () => {
     const asked = turns[1]!;
     expect(asked.words).toBe('how much is the late fee');
     expect(asked.retrieval).toEqual({ nominated: ['late_fees'], failed: null });
-    expect(topicQuestionOf(asked)).toEqual({ id: 'libraryTopicTopic', nominated: ['late_fees'] });
+    expect(topicQuestionOf(asked)).toEqual({ id: 'libraryTopicTopic', nominated: ['late_fees'], unanswered: true });
     expect(asked.answers.libraryTopicTopic).toMatchObject({ choice: 'none' });
     expect(turnOf({ v: 2 }, 'f', 1)).toBeNull();
   });

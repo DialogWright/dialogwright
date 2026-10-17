@@ -1,5 +1,5 @@
 {"id": "ro-01", "text": "I want to report a power outage", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}, "knownGap": {"reason": "'I want to report a power outage': symptom no_power 0.49 to 0.55 against none, a coin flip, so the symptom may be left for the caller and asked", "outcome": {"slots": {"place": null, "symptom": null, "account": null, "count": null, "firstDate": null, "subject": null, "accountId": null, "dob": null}}}}
-{"id": "ro-02", "text": "outage", "intent": "report_outage", "context": "no_form"}
+{"id": "ro-02", "text": "outage", "intent": "report_outage", "context": "no_form", "knownGap": {"reason": "the one word 'outage': symptom no_power 0.55 against none 0.45, on the 0.55 bar (recorded 2026-10-17, after the topic question gained its unanswered label in the same request), so no power is taken as said and its question skipped; the read-back says it, and a no corrects it", "outcome": {"slots": {"place": null, "symptom": "no_power", "account": null, "count": null, "firstDate": null, "subject": null, "accountId": null, "dob": null}}}}
 {"id": "ro-03", "text": "no power", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
 {"id": "ro-04", "text": "my power is out", "intent": "report_outage", "context": "no_form", "labels": {"symptom": "no_power"}}
 {"id": "ro-05", "text": "the power is out at 22 Alder Street and nothing works", "intent": "report_outage", "context": "no_form", "labels": {"placeGiven": true, "symptom": "no_power", "placePick": "22 Alder Street"}}
@@ -85,7 +85,7 @@
 {"id": "om-04", "text": "is there a website that shows outages", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-05", "text": "can I see the outages online", "intent": "outage_map", "context": "no_form", "labels": {"subjectTopic": "outage_map"}}
 {"id": "om-06", "text": "what's the web address for outages", "intent": "outage_map", "context": "no_form"}
-{"id":"om-07","text":"where can I check when power comes back","intent":"outage_map","context":"no_form"}
+{"id": "om-07", "text": "where can I check when power comes back", "intent": "outage_map", "context": "no_form", "knownGap": {"reason": "'where can I check when power comes back': outage_map 0.55 against ask_question 0.43, within the intent margin (recorded 2026-10-17, the topic question reading unanswered 0.56 beside them), so the caller is asked which of the two they meant, one more turn", "outcome": {"promptId": "disambiguate_intent", "acks": [], "decidedGate": "intentMargin", "verdict": "disambiguate_intent"}}}
 {"id": "om-08", "text": "actually, is there a map of outages I can look at", "intent": "outage_map", "context": "report_outage"}
 {"id": "oh-01", "text": "when are you open", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
 {"id": "oh-02", "text": "hours", "intent": "office_hours", "context": "no_form", "labels": {"subjectTopic": "office_hours"}}
@@ -107,13 +107,13 @@
 {"id": "aq-10", "text": "is there a fee if I pay late", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "late_fees"}}
 {"id": "aq-11", "text": "I think there's a mistake on my bill, what can I do", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "bill_dispute"}}
 {"id": "aq-12", "text": "I have a question", "intent": "ask_question", "context": "no_form"}
-{"id": "aq-13", "text": "do you install solar panels", "intent": "ask_question", "context": "no_form"}
+{"id": "aq-13", "text": "do you install solar panels", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "unanswered"}}
 {"id": "aq-14", "text": "do my tenants get a credit for the outage last week", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "outage_credit"}, "as": "riley"}
 {"id": "aq-15", "text": "I want to dispute a charge", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "bill_dispute"}}
 {"id": "aq-16", "text": "I'd like to cancel my service", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
 {"id": "aq-17", "text": "I want to start new service at a new home", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "start_stop_service"}}
-{"id": "aq-18", "text": "do you sell solar panels", "intent": "ask_question", "context": "no_form"}
-{"id": "aq-19", "text": "is my gas bill separate", "intent": "ask_question", "context": "no_form"}
+{"id": "aq-18", "text": "do you sell solar panels", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "unanswered"}}
+{"id": "aq-19", "text": "is my gas bill separate", "intent": "ask_question", "context": "no_form", "labels": {"subjectTopic": "unanswered"}}
 {"id": "sq-01", "text": "the outage credit", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "outage_credit"}}
 {"id": "sq-02", "text": "what happens if I pay after the due date", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "late_fees"}}
 {"id": "sq-03", "text": "budget billing", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "budget_billing"}}

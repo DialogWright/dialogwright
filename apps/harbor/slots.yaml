@@ -57,8 +57,8 @@ claimSelect:
 coverageTopic:
   type: topic
   text:
-    instructions: "Read asr.text. Which topic's answer tells the caller what they want to know? When they name an injury and the activity that caused it, choose the injury's topic if they ask what it pays, and the activity's topic only if they ask whether the activity is covered."
-    none: Asks about none of these topics
+    instructions: "Read asr.text. Which topic's answer tells the caller what they want to know? When they name an injury and the activity that caused it, choose the injury's topic if they ask what it pays, and the activity's topic only if they ask whether the activity is covered. Choose unanswered when they ask about something none of these answers, and none when they say nothing about what they want to know (saying only that they have a question is none)."
+    none: Says nothing about what they want to know
 
 # The kind of loss a new claim is for, in keypad order (1, 2, 3).
 lossType:

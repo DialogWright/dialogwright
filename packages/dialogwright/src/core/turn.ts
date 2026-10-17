@@ -1142,6 +1142,13 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
     break;
   }
   if (ask.kind === 'complete') return askSummary(s, form, said, io);
+  // A miss the slot held from before it was asked (SlotState.missed: a question no topic answers, asked
+  // with the request): said and counted in its question's place, once, as a miss at the question would be.
+  const missed = ask.window === null ? s.slots[ask.slot]?.missed : undefined;
+  if (missed !== undefined) {
+    delete s.slots[ask.slot]!.missed;
+    return failAttempt(s, ask.slot, io, said, false, missed.retry ?? null);
+  }
   return askSlot(s, ask.slot, ask.window, said);
 }
 

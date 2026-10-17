@@ -386,6 +386,8 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         slot.window = null;
         // A slot the caller declined (SlotState.declined) that they now give a value is filled, no longer declined.
         delete slot.declined;
+        // And a miss it held (SlotState.missed) is answered.
+        delete slot.missed;
         // A topic slot whose answer the app words for the caller's question keeps the words it was heard in.
         if (isNew) keepHeard(session, spec.id, slot, ctx.text);
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
@@ -414,6 +416,9 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         progress = true;
         break;
       case 'invalid':
+        // A miss said before the slot was asked (a question no topic answers, with the request that
+        // opened the form): held for when the form comes to the slot (SlotState.missed, continueForm).
+        if (outcome.held === true && slot.value === null) slot.missed = outcome.retryPromptId !== undefined ? { retry: outcome.retryPromptId } : {};
         break;
     }
   }

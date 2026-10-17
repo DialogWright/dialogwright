@@ -2846,5 +2846,59 @@
     "gate": "searchPolicy:ALLOW",
     "pass": true,
     "mismatches": []
+  },
+  "coverage-unanswered-then-asked": {
+    "id": "coverage-unanswered-then-asked",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getUsage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-unanswered-not-found": {
+    "id": "coverage-unanswered-not-found",
+    "decision": "prompt",
+    "promptId": "ask_coverageTopic_retry",
+    "acks": [
+      "identity_verified"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "coverage",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }
