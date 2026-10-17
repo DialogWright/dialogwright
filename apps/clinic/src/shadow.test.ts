@@ -15,6 +15,16 @@ import { providerSlot } from './testing/oracles/provider';
 const ORACLE_PAIRS: readonly SlotSpec[] = [nameSlot, dobSlot, memberIdSlot, providerSlot, dateSlot];
 
 /**
+ * The clinic with its day as the hand-written slot said it: with no year. Since 2026-10-17 the date
+ * type says the year of a day not in this year ("Friday, January 8, 2027": `sayYear`, on by default),
+ * which the hand-written slot never did, so the oracles are compared with the clinic's day built with
+ * `sayYear: never`, the one option apart; the year is checked on its own (below).
+ */
+const dateConfig = (clinicApp.slots.date as LibrarySlotSpec).config as object;
+const yearlessDate = defineSlot('date', { ...dateConfig, type: 'date', sayYear: 'never' });
+const asHandWritten: App = { ...clinicApp, slots: { ...clinicApp.slots, date: yearlessDate } };
+
+/**
  * The shadow harness over whole runs of the clinic. First the name, the birth date, the member ID, the provider and the day
  * against the hand-written slots they replaced (ORACLE_PAIRS), then every clinic slot shadowed by a copy of itself
  * (the same behavior, so any mismatch is the harness's own), through the full stub regression and
@@ -76,7 +86,7 @@ describe('the shadow harness on the clinic', () => {
 
   it('compares the library slots with the hand-written ones on every call of a full stub run, and nothing changes', async () => {
     const report = createShadowReport();
-    const actual = await run('stub', withShadowSlots(clinicApp, ORACLE_PAIRS, { mode: 'report', report }));
+    const actual = await run('stub', withShadowSlots(asHandWritten, ORACLE_PAIRS, { mode: 'report', report }));
     const expected = readBaseline();
     expect(actual.scenarios).toEqual(expected.scenarios);
     expect(actual.corpus).toEqual(expected.corpus);
@@ -290,15 +300,25 @@ describe('the shadow harness on the clinic', () => {
 
   it('the days agree on branches no run reaches: every mix of parts around the thresholds, with and without a span pending, and the keypad', () => {
     const report = createShadowReport();
-    dateGrid(shadowSlot(dateSlot, clinicApp.slots.date!, { report }));
+    dateGrid(shadowSlot(dateSlot, yearlessDate, { report }));
     expect(report.mismatches).toEqual([]);
     expect(report.calls['date.fill']).toBeGreaterThan(30_000);
     expect(report.calls['date.dtmf.parse']).toBeGreaterThan(1_000);
     expect(report.calls['date.partialVars']).toBeGreaterThan(0);
   });
 
+  it('the clinic\'s day differs from the hand-written one only by the year it says of a day next year', () => {
+    const c = testSlotContext('');
+    const january = { dateMode: choice({ absolute: 0.9, none: 0.1 }), dateMonth: choice({ january: 0.9, none: 0.1 }), dateDay: choice({ '8': 0.9, none: 0.1 }) };
+    expect(clinicApp.slots.date!.fill(january, c)).toMatchObject({ value: '2027-01-08', display: 'Friday, January 8, 2027' });
+    expect(dateSlot.fill(january, c)).toMatchObject({ value: '2027-01-08', display: 'Friday, January 8' });
+    expect(clinicApp.slots.date!.dtmf!.parse('0108', c)).toEqual({ value: '2027-01-08', display: 'Friday, January 8, 2027' });
+    const october = { dateMode: choice({ absolute: 0.9, none: 0.1 }), dateMonth: choice({ october: 0.9, none: 0.1 }), dateDay: choice({ '5': 0.9, none: 0.1 }) };
+    expect(clinicApp.slots.date!.fill(october, c)).toEqual(dateSlot.fill(october, c));
+  });
+
   it('the day\'s grid would find a slot that differs by one option (a day that does not resolve: invalid only when asked)', () => {
-    const off = defineSlot('date', { ...(clinicApp.slots.date as LibrarySlotSpec).config as object, type: 'date', whenUnresolved: 'invalid-if-prompted' });
+    const off = defineSlot('date', { ...dateConfig, type: 'date', sayYear: 'never', whenUnresolved: 'invalid-if-prompted' });
     expect(() => dateGrid(shadowSlot(dateSlot, off))).toThrow(/fill/);
   });
 
@@ -393,7 +413,7 @@ describe('the shadow harness on the clinic', () => {
   it('compares them on every call of a full replay of the recorded calls: no mismatch and no cassette miss', async () => {
     const plain = await run('recorded', clinicApp);
     const report = createShadowReport();
-    const shadowed = await run('recorded', withShadowSlots(clinicApp, ORACLE_PAIRS, { mode: 'report', report }));
+    const shadowed = await run('recorded', withShadowSlots(asHandWritten, ORACLE_PAIRS, { mode: 'report', report }));
     expect(shadowed.records.filter((r) => isCassetteMiss(r))).toEqual([]);
     expect(shadowed.records.length).toBe(plain.records.length);
     expect(shadowed.scenarios).toEqual(plain.scenarios);

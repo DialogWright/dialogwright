@@ -123,7 +123,7 @@ describe('each broken toy fails the check meant to catch it', () => {
     const broken = toy('toy-display', (spec) => ({ display: (v: string) => `"${v}"`, dtmf: spec.dtmf }));
     const f = failures(broken);
     expect([...f.keys()]).toEqual(['display', 'keypad']);
-    expect(f.get('display')).toContain('the fill of "hello" (no locale) carries the display "hello", but display("hello", undefined) is "\\"hello\\""');
+    expect(f.get('display')).toContain('the fill of "hello" (no locale) carries the display "hello", but display("hello", undefined, "2026-09-18") is "\\"hello\\""');
   });
 
   it('a display that formats en-US apart from no locale: display', () => {

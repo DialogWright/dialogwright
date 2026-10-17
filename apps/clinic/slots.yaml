@@ -109,7 +109,8 @@ date:
   # win over a weekday reading (the default). A day is taken at SLOT_CHOICE_CONFIRM and acknowledged
   # (ack_date, "On {date}.") below SLOT_CHOICE_FILL; below SLOT_CHOICE_CONFIRM it is "low_confidence".
   # A day that does not resolve is always "unresolvable", with the mode as raw; a turn that names no
-  # day is absent. Keyable as MMDD. The questions keep the words and ids they were recorded with: all
+  # day is absent. Keyable as MMDD. A day next year is said with its year ("Friday, January 8, 2027": the
+  # type's sayYear default since 2026-10-17). The questions keep the words and ids they were recorded with: all
   # seven questions and the mode's "none" criterion as literals, and dateRelativeDay and
   # dateWeekdayQualifier for the relative-day and qualifier questions.
   range: future

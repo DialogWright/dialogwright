@@ -214,16 +214,30 @@ const WINDOWS_ES: Readonly<Record<string, string>> = {
   next_month: 'el próximo mes',
 };
 
+/** A day as a line says it, with its year or without. */
+function sayDay(iso: string, locale: string | undefined, withYear: boolean): string {
+  const d = new Date(parseIso(iso));
+  const year = withYear ? d.getUTCFullYear() : null;
+  if (isSpanish(locale)) return `${WEEKDAYS_ES[weekdayIndex(iso)]!}, ${d.getUTCDate()} de ${MONTHS_ES[d.getUTCMonth()]!}${year === null ? '' : ` de ${year}`}`;
+  const wd = WEEKDAYS[weekdayIndex(iso)]!;
+  const mo = MONTHS[d.getUTCMonth()]!;
+  return `${cap(wd)}, ${cap(mo)} ${d.getUTCDate()}${year === null ? '' : `, ${year}`}`;
+}
+
 /**
  * Human-readable form for prompts, e.g. "Tuesday, September 22". In Spanish (`locale` es or es-*):
  * "martes, 22 de septiembre". Any other locale, or none, is English.
  */
 export function describeDay(iso: string, locale?: string): string {
-  const d = new Date(parseIso(iso));
-  if (isSpanish(locale)) return `${WEEKDAYS_ES[weekdayIndex(iso)]!}, ${d.getUTCDate()} de ${MONTHS_ES[d.getUTCMonth()]!}`;
-  const wd = WEEKDAYS[weekdayIndex(iso)]!;
-  const mo = MONTHS[d.getUTCMonth()]!;
-  return `${cap(wd)}, ${cap(mo)} ${d.getUTCDate()}`;
+  return sayDay(iso, locale, false);
+}
+
+/**
+ * The same with the year: "Wednesday, October 22, 2025"; in Spanish "miércoles, 22 de octubre de
+ * 2025". For a day that is not in this year, so the caller hears which year is meant.
+ */
+export function describeDayWithYear(iso: string, locale?: string): string {
+  return sayDay(iso, locale, true);
 }
 
 /**

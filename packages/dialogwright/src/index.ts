@@ -190,7 +190,7 @@ export { lineOf } from './prompts/segments';
 export {
   MONTHS, WEEKDAYS, DATE_MODES, RELATIVE_DAYS, WINDOWS, QUALIFIERS,
   parseIso, toIso, addDays, weekdayIndex, snapWeekdayOnOrAfter, resolveDate,
-  describeDay, describeWindow, describeDob, normalizeYear, ordinal,
+  describeDay, describeDayWithYear, describeWindow, describeDob, normalizeYear, ordinal,
 } from './core/extract/date';
 export type { ComponentPick, DateComponents, DateWindow, DateResolution } from './core/extract/date';
 export { spokenToDigits, tokenize } from './core/extract/spokenNumber';

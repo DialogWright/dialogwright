@@ -184,6 +184,13 @@ describe('dates said in Spanish (es, es-*)', () => {
     expect(describeDay('2026-09-22', 'en-US')).toBe('Tuesday, September 22');
   });
 
+  it('says a day with its year as "miércoles, 22 de octubre de 2025", and in English "Wednesday, October 22, 2025"', async () => {
+    const { describeDayWithYear } = await import('./date');
+    expect(describeDayWithYear('2025-10-22', 'es')).toBe('miércoles, 22 de octubre de 2025');
+    expect(describeDayWithYear('2025-10-22')).toBe('Wednesday, October 22, 2025');
+    expect(describeDayWithYear('2025-10-22', 'en-US')).toBe('Wednesday, October 22, 2025');
+  });
+
   it('says a birth date as "22 de noviembre de 1991"', () => {
     expect(describeDob('1991-11-22', 'es')).toBe('22 de noviembre de 1991');
     expect(describeDob('1975-06-01', 'es-US')).toBe('1 de junio de 1975');

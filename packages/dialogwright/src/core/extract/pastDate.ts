@@ -14,9 +14,36 @@ export interface PastDateComponents {
   weekday: ComponentPick;     // monday..sunday | none
   month: ComponentPick;       // january..december | none
   day: ComponentPick;         // 1..31 | none
+  /** "this" or "next" before a weekday (this | next | none), for a slot that asks it; absent, a bare weekday. */
+  weekdayQualifier?: ComponentPick;
 }
 
-export type PastDateResolution = { kind: 'day'; iso: string; confidence: number } | { kind: 'none' };
+/**
+ * The day the components name: a day gone (`day`), a day still to come that the caller named
+ * outright (`future`: "next Thursday", or a month and day a few weeks ahead, under the rules that
+ * read them so), which the caller of the resolver refuses rather than moving into the past, or none.
+ */
+export type PastDateResolution =
+  | { kind: 'day'; iso: string; confidence: number }
+  | { kind: 'future'; iso: string; confidence: number }
+  | { kind: 'none' };
+
+/** How the resolver reads a month and day still to come this year. */
+export interface PastDateRules {
+  /**
+   * A month and day after today but no more than NEAR_FUTURE_DAYS ahead is this year's, a day to
+   * come (`future`), not last year's; further ahead it is last year's as always. Off (the default
+   * here, and what the resolver did before 2026-10-17): last year's, however near.
+   */
+  nearFuture?: boolean;
+}
+
+/**
+ * How far ahead a month and day said for a day gone is still this year's, a day to come, under
+ * `nearFuture`: the mirror of a day ahead (core/extract/date.ts resolveDate), which is next year's
+ * once it is more than this many days gone.
+ */
+export const NEAR_FUTURE_DAYS = 31;
 
 /** How far back a past date may reach; anything older is none. */
 export const MAX_PAST_DAYS = 730;
@@ -55,8 +82,13 @@ function latestDayOfMonth(day: number, todayIso: string): string {
  * separate relative-day option), "September 12th" (this year if not after today, else last year),
  * "on the twelfth" with no month (this month's if not after today, else the latest month before it
  * that has one). Anything more than MAX_PAST_DAYS back is none.
+ *
+ * With a qualifier (`weekdayQualifier`): "next Thursday" is the Thursday of the next week, a day to
+ * come (`future`); "this Thursday" is this week's, a day gone when it is today or before, else a day
+ * to come. With `rules.nearFuture`: "October 22nd" said up to NEAR_FUTURE_DAYS before it is this
+ * year's, a day to come (`future`), not last year's.
  */
-export function resolvePastDate(c: PastDateComponents, todayIso: string): PastDateResolution {
+export function resolvePastDate(c: PastDateComponents, todayIso: string, rules: PastDateRules = {}): PastDateResolution {
   switch (c.mode.choice) {
     case 'relative_day': {
       if (!Object.hasOwn(RELATIVE_DAY_OFFSETS, c.relativeDay.choice)) return { kind: 'none' };
@@ -66,6 +98,15 @@ export function resolvePastDate(c: PastDateComponents, todayIso: string): PastDa
     case 'weekday': {
       const target = WEEKDAYS.indexOf(c.weekday.choice as (typeof WEEKDAYS)[number]);
       if (target < 0) return { kind: 'none' };
+      const qualifier = c.weekdayQualifier?.choice ?? 'none';
+      if (qualifier === 'next' || qualifier === 'this') {
+        // "next Thursday" is in the next week, a day to come; "this Thursday" is this week's (the week
+        // from Monday), a day gone when it is today or before, else a day to come.
+        const monday = addDays(todayIso, -weekdayIndex(todayIso));
+        const iso = addDays(monday, target + (qualifier === 'next' ? 7 : 0));
+        const confidence = minP(c.mode, c.weekday, c.weekdayQualifier!);
+        return iso > todayIso ? { kind: 'future', iso, confidence } : pastDayResult(iso, confidence, todayIso);
+      }
       // Strictly before today: naming today's own weekday means a week back, not zero days back.
       // "today" is asked and resolved separately, as its own relative-day choice.
       const diff = (weekdayIndex(todayIso) - target + 7) % 7;
@@ -80,12 +121,18 @@ export function resolvePastDate(c: PastDateComponents, todayIso: string): PastDa
       if (c.month.choice === 'none') return pastDayResult(latestDayOfMonth(day, todayIso), minP(c.mode, c.day), todayIso);
       if (monthIdx < 0) return { kind: 'none' };
       let year = new Date(parseIso(todayIso)).getUTCFullYear();
+      const confidence = minP(c.mode, c.month, c.day);
+      if (rules.nearFuture && day <= daysInMonth(year, monthIdx)) {
+        // A day still to come this year, a few weeks ahead at most: this year's, which has not happened.
+        const iso = toIso(Date.UTC(year, monthIdx, day));
+        if (iso > todayIso && parseIso(iso) <= parseIso(todayIso) + NEAR_FUTURE_DAYS * DAY_MS) return { kind: 'future', iso, confidence };
+      }
       if (day > daysInMonth(year, monthIdx) || toIso(Date.UTC(year, monthIdx, day)) > todayIso) {
         // Not yet this year (or not a day this year, as February 29th): the caller means last year's.
         year -= 1;
         if (day > daysInMonth(year, monthIdx)) return { kind: 'none' };
       }
-      return pastDayResult(toIso(Date.UTC(year, monthIdx, day)), minP(c.mode, c.month, c.day), todayIso);
+      return pastDayResult(toIso(Date.UTC(year, monthIdx, day)), confidence, todayIso);
     }
 
     default:

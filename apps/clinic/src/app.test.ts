@@ -140,7 +140,8 @@ describe('the clinic folder: slots.yaml', () => {
     const q = dateSlot.questions(testSlotContext('')) as Record<string, { instructions: string; criteria: Record<string, string | null> }>;
     expect(lib.config).toEqual({
       range: 'future', windows: true, qualifier: true, narrowPrompt: 'date_narrow_window', fillAt: 'confirm', whenUnsaid: 'absent', whenUnresolved: 'invalid',
-      confirm: 'by-confidence', readBack: 'below-fill', keypad: true, preferMonthDay: true,
+      // sayYear: the type's default since 2026-10-17, which the hand-written slot never had (a day next year said with its year).
+      confirm: 'by-confidence', readBack: 'below-fill', keypad: true, preferMonthDay: true, sayYear: 'other-year',
       ids: { relative: 'dateRelativeDay', qualifier: 'dateWeekdayQualifier' },
       text: {
         mode: q.dateMode!.instructions, modeNone: q.dateMode!.criteria.none, month: q.dateMonth!.instructions, day: q.dateDay!.instructions, weekday: q.dateWeekday!.instructions,

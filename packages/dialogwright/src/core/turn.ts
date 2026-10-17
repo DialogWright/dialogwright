@@ -838,12 +838,12 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
   s.locale = target;
   if (s.caps.speech) io.prefix.push({ type: 'set_language', ...speechLanguagesOf(io.app, target) });
   // A value already held is said in the new locale too: a fill's display is its slot's display(value,
-  // locale) (the slot conformance kit's `display` check), so it is formatted again in the new one. A
+  // locale, today) (the slot conformance kit's `display` check), so it is formatted again in the new one. A
   // slot shown as said (SlotSpec.displayFrom) keeps the words: they are the caller's in any locale,
   // and display(value) would give the written value in their place.
   const locale = slotLocaleOf(s);
   const formatted = (id: SlotId): boolean => Object.hasOwn(io.app.slots, id) && slotSpecOf(io.app, id).displayFrom !== 'said';
-  const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale);
+  const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale, io.tc.todayIso);
   // A factor filled from the caller-ID match has no display: it is never said, in any language.
   for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && slot.by !== 'caller-id' && formatted(id)) slot.display = shown(id, slot.value);
   const pc = s.pendingConfirmation;
@@ -857,7 +857,7 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
  */
 function inLocaleOf(s: Session, io: TurnIO, fill: FillResult): Pick<FillResult, 'acks' | 'disambiguate'> {
   const locale = slotLocaleOf(s);
-  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => ({ ...c, display: slotSpecOf(io.app, id).display(c.value, locale) });
+  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => ({ ...c, display: slotSpecOf(io.app, id).display(c.value, locale, io.tc.todayIso) });
   return {
     acks: fill.acks.map((a) => ({ ...a, vars: Object.fromEntries(Object.entries(a.vars).map(([k, v]) => [k, Object.hasOwn(io.app.slots, k) ? (s.slots[k]?.display ?? v) : v])) })),
     disambiguate: fill.disambiguate && { ...fill.disambiguate, a: shown(fill.disambiguate.slot, fill.disambiguate.a), b: shown(fill.disambiguate.slot, fill.disambiguate.b) },

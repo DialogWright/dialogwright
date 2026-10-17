@@ -5,7 +5,7 @@ import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
 import type { SlotType } from '../types';
 import { dateDisplay } from './display';
-import { dateFill, dateKeys } from './fill';
+import { dateFill, dateKeys, futurePromptOf, refusesFuture } from './fill';
 import { dateOptions, type DateOptions } from './options';
 import { dateWindowOf } from './partial';
 import { dateQuestions, idsOf, questionIdsOf } from './questions';
@@ -34,6 +34,7 @@ function promptsOf(id: string, o: DateOptions): SlotPrompt[] {
   if (o.windows) prompts.push({ id: narrowPromptOf(id, o), why: 'the caller named a span of days without the day (the partialPromptId), said as {window}', vars: ['window'] });
   if (o.confirm === 'by-confidence') prompts.push({ id: `ack_${id}`, why: 'it acknowledges a day it is less sure of', vars: [id] });
   if (o.keypad) prompts.push({ id: `ask_${id}_dtmf`, why: 'it asks for the day on the keypad, as four digits (month then day; in Spanish day then month), after spoken answers missed' });
+  if (refusesFuture(o)) prompts.push({ id: futurePromptOf(id, o), why: 'the caller named a day that has not happened yet (the fill\'s retryPromptId, reason future): it asks again for a day gone' });
   prompts.push(...readBackPrompts(id, o.confirm));
   return prompts;
 }
@@ -50,7 +51,7 @@ export const dateType: SlotType<DateOptions> = defineSlotType<DateOptions>({
   options: dateOptions,
   build(id, o) {
     const ids = idsOf(id, o);
-    const display = dateDisplay();
+    const display = dateDisplay(o);
     return {
       id,
       ...readBackOf(o.confirm),
@@ -60,7 +61,7 @@ export const dateType: SlotType<DateOptions> = defineSlotType<DateOptions>({
       prompts: promptsOf(id, o),
       thresholds: [o.fillAt === 'fill' ? 'SLOT_CHOICE_FILL' : 'SLOT_CHOICE_CONFIRM'],
       questions: dateQuestions(id, o),
-      fill: dateFill(o, ids, display),
+      fill: dateFill(id, o, ids, display),
       ...(o.keypad ? { dtmf: { length: 4, parse: dateKeys(o, display) } } : {}),
       display,
     };

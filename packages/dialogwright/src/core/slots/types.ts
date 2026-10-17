@@ -310,10 +310,14 @@ export interface SlotSpec {
     parse(digits: string, ctx: SlotContext): SlotCandidate | null;
   };
   /**
-   * The value as it is said, in `locale` (SlotContext.locale) when given. The engine does not call
-   * it: a fill and a keypad parse carry their own display, which a slot formats with ctx.locale.
+   * The value as it is said, in `locale` (SlotContext.locale) when given, on the call's day
+   * `todayIso` (SlotContext.todayIso) when given, for a display that says a value by how it stands to
+   * today (a `date` slot says the year of a day not in this year's); without it, as a slot says a
+   * value with no day to compare it to. A fill and a keypad parse carry their own display, which a
+   * slot formats with ctx.locale and ctx.todayIso; the engine calls it to say a value held again in
+   * another locale, with the turn's day.
    */
-  display(value: string, locale?: string): string;
+  display(value: string, locale?: string, todayIso?: string): string;
   /**
    * How the phone's voice says the value: `digits`, one digit at a time ("0 1 4 2", in groups as the
    * display groups it: "5 5 5 0, 7 7 8 8"), wherever a line says it: its value or display, a value read

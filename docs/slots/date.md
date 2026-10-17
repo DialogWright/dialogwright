@@ -6,7 +6,11 @@ A calendar day, ahead or back: an appointment, a delivery, the day something hap
 
 The model never writes the date. It answers a question about how the caller refers to the day (the mode: a relative day such as "tomorrow", a weekday, a month and a day of the month, or, with `windows`, a span of days such as "next week") and a choice for each part a day can be named by: the relative day, the weekday, the month (one of the twelve, or none), the day of the month (1 to 31, or none), and with their options "this" or "next" before a weekday and the span. The code resolves the parts against today for the slot's `range`, so the value is always a real day in range, and the code, not the model, says which one.
 
-Ahead (`range: future`), "Tuesday" is the next Tuesday, "October fifth" this year's (or next year's once it is more than a month gone), and "the day after tomorrow" two days on. Back (`range: past`), "Tuesday" is the last Tuesday (a week back when today is a Tuesday), "the fifth" the last fifth of a month, "October fifth" the last October fifth, and nothing more than two years back counts.
+Ahead (`range: future`), "Tuesday" is the next Tuesday, "October fifth" this year's (or next year's once it is more than 31 days gone), and "the day after tomorrow" two days on. Back (`range: past`), "Tuesday" is the last Tuesday (a week back when today is a Tuesday), "the fifth" the last fifth of a month, "October fifth" the last October fifth, and nothing more than two years back counts.
+
+Back, a day the caller names that has not happened yet is refused and asked again, never moved into the past. With `nearFuture: refuse` (the default), a month and day after today and at most 31 days ahead is this year's, so it has not happened: "October twenty second" said on October 17th is refused, not taken as last year's. The rule mirrors the one ahead, where a month and day more than 31 days gone is next year's: back, one more than 31 days ahead is last year's ("December fifth" said on September 18th is December 5th of last year). Exactly: on today T, this year's day D is refused when T < D ≤ T + 31 days, and last year's when D > T + 31 days. Only this year's day is weighed, as ahead. With `qualifier`, "next Thursday" is the Thursday of the next week, refused, and "this Thursday" this week's (the week from Monday): taken when it is today or gone, refused when it is still to come. A refused day is `invalid`, reason `future`, and the retry is `futurePrompt` (default `ask_<slot>_future`), in the app's own words; on a turn that did not ask for the day it is no value at all.
+
+The display says the year whenever the day is not in this year (`sayYear: other-year`, the default): "Wednesday, October 22, 2025", so a read-back of last year's day is heard as last year's.
 
 With `windows`, a span of days ("next week", "in December") is held as the slot's partial value and the `narrowPrompt` asks which day in it; a weekday said next is looked for inside the span ("Wednesday" after "December" is the first Wednesday in December), and a span said with a weekday ("Tuesday of next week") is that day at once.
 
@@ -20,8 +24,11 @@ A slot of this type is written under its id in slots.yaml, with `type: date` and
 |---|---|---|---|
 | `range` | one of `future`, `past` | required | Which days the slot takes. "future": today or a day to come (an appointment, a delivery); "tomorrow" and "Monday" are the next ones. "past": today or a day gone, up to two years back (when something happened); "yesterday" and "Monday" are the last ones. |
 | `windows` | boolean | `false` | `range: future` only. Whether the caller may name a span of days ("next week", "in December") rather than a day: the span is held as the partial { kind: window, start, end, label }, the `narrowPrompt` asks which day in it, and a bare weekday said next is looked for inside it. Adds the window question. |
-| `qualifier` | boolean | `false` | `range: future` only. Whether to ask if a weekday is "this" one or "next" one ("next Tuesday" is in the next week). Adds the qualifier question. |
+| `qualifier` | boolean | `false` | Whether to ask if a weekday is "this" one or "next" one. Adds the qualifier question. Ahead (`range: future`), "next Tuesday" is in the next week and "this Tuesday" this week's (next week's once it is gone). Back (`range: past`), "next Tuesday" is a day to come, refused (reason future, re-asked with `futurePrompt`), and "this Tuesday" this week's (the week from Monday) when it is today or gone, else refused the same way. Without it, a weekday is the next one ahead and the last one back, whatever word comes before it. |
 | `narrowPrompt` | string | unset | With `windows`: the prompt that asks which day in a span of days (the slot's partialPromptId), given {window} ("next week", "in December"). Default: `ask_<slot>_narrow.` |
+| `nearFuture` | one of `refuse`, `last-year` | unset | `range: past` only. What a month and day still to come this year is when it is at most 31 days ahead ("October 22nd" said on October 17th). "refuse" (the default): this year's, a day that has not happened, so it is refused (invalid, reason future, re-asked with `futurePrompt` when the caller was asked for the day, else absent), never moved into the past; further ahead it is last year's ("December fifth" said in September). The mirror of `range: future`, where a month and day more than 31 days gone is next year's. "last-year": last year's however near, as before 2026-10-17. |
+| `futurePrompt` | string | unset | `range: past`, when a day to come can be heard (`nearFuture: refuse`, the default, or `qualifier`): the line that asks again for the day after the caller named one that has not happened ("That date hasn't happened yet. What date did it happen?"), the retry at the open rung for reason future. Default: `ask_<slot>_future.` |
+| `sayYear` | one of `other-year`, `never` | `other-year` | Whether the display says the year. "other-year" (the default): when the day is not in this year ("Wednesday, October 22, 2025"; in Spanish "miércoles, 22 de octubre de 2025"), so a caller hears which year a read-back means; a day this year is said without it ("Thursday, September 10"). "never": never, as before 2026-10-17. |
 | `preferMonthDay` | boolean | `true` | Whether a month and a day the model is sure of (SLOT_CHOICE_CONFIRM) win over a weekday reading of the mode: "Monday, September 28" names one day twice, and a weekday reading would land on the next or last Monday instead of the date said. |
 | `fillAt` | one of `fill`, `confirm` | `fill` | How sure the model must be of the day (the least of the parts it read) for it to count. "fill": SLOT_CHOICE_FILL; a day below it is treated as not resolved (`whenUnresolved`). "confirm": SLOT_CHOICE_CONFIRM; a day below it is invalid (reason low_confidence, raw the ISO day), and `readBack` says whether one below SLOT_CHOICE_FILL is acknowledged. |
 | `whenUnsaid` | one of `invalid-if-prompted`, `absent` | `invalid-if-prompted` | What a turn that names no day (the mode question answers none, is below SLOT_CHOICE_CONFIRM, or is not answered at all) gives. "invalid-if-prompted": invalid (reason unresolvable, raw empty) when the caller was asked for the day, so the retry ladder moves on, else absent. "absent": always absent. |
@@ -81,15 +88,16 @@ The slot is always `valueKind: date`: when the caller was asked for another date
 | A span of days, with `windows` | `window`: `{ kind: window, start, end, label }` (ISO days and the span's label), and `narrowPrompt` asks which day |
 | A day below the `fillAt` threshold | `fill`: `whenUnresolved`; `confirm`: `invalid`, reason `low_confidence`, raw the ISO day |
 | A weekday while a span is pending, with no such day left in it | `invalid`, reason `outside_window`, raw the day first resolved |
-| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"), and `confirm`/`readBack` say whether it is acknowledged, or (`confirm: always`) read back for a yes |
+| Back, a day still to come: "next Thursday" or "this Saturday" before it comes (with `qualifier`), a month and day up to 31 days ahead (with `nearFuture: refuse`, the default) | when the caller was asked for the day, `invalid`, reason `future`, raw the ISO day, re-asked with `futurePrompt` (`ask_<slot>_future`); otherwise `absent` |
+| A day | `filled`: the value is the ISO date (2026-09-22), the display says it ("Tuesday, September 22"; with its year when it is not this year's, "Wednesday, October 22, 2025", unless `sayYear: never`), and `confirm`/`readBack` say whether it is acknowledged, or (`confirm: always`) read back for a yes |
 
 The confidence of a fill is the least of the parts the resolver read: the mode and the part it names (and the qualifier, when one is said; the span and the weekday, for a weekday picked out of a span).
 
-The keypad takes four digits that make a real month and day in range, and nothing else.
+The keypad takes four digits that make a real month and day in range, and nothing else; back, with `nearFuture: refuse`, keys of a month and day up to 31 days ahead are no value.
 
 ## The questions
 
-On the slot `visit` with `range: future`, the questions are `visitMode`, `visitRelative`, `visitWeekday`, `visitMonth` and `visitDay`; `qualifier` adds `visitQualifier` and `windows` adds `visitWindow` (with `windows` they are asked in the order mode, month, day, weekday, qualifier, relative, window). Each is made of text parts, and `text.<part>` replaces a part word for word (the defaults are listed under Text parts, after the options table).
+On the slot `visit` with `range: future`, the questions are `visitMode`, `visitRelative`, `visitWeekday`, `visitMonth` and `visitDay`; `qualifier` (ahead or back) adds `visitQualifier` and `windows` adds `visitWindow` (with `windows` they are asked in the order mode, month, day, weekday, qualifier, relative, window). Each is made of text parts, and `text.<part>` replaces a part word for word (the defaults are listed under Text parts, after the options table).
 
 `{context}` is the `context` sentence. `{modes}` says what each mode means for the range:
 
@@ -103,11 +111,11 @@ A correction is the place for a sentence of your own: "When they correct a day, 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. Back, when a day to come can be heard (`nearFuture: refuse`, the default, or `qualifier`), `futurePrompt` (default `ask_<slot>_future`): the retry after a day that has not happened ("That date hasn't happened yet. What date did it happen?"). With `windows`, `narrowPrompt` (default `ask_<slot>_narrow`), given `{window}`. With `confirm: by-confidence`, `ack_<slot>`, given `{<slot>}`. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale.
 
 ## Examples
 
-The starter examples, listed below, are three configurations with starter utterances and keypad keys: the day a parcel was due (back, keyable, a context sentence and a date-of-birth sentence), a delivery day (ahead, the defaults), and a table booking (ahead, with spans of days and "this" or "next", taken at `SLOT_CHOICE_CONFIRM` and acknowledged below `SLOT_CHOICE_FILL`, a day that does not resolve always invalid, keyable). In an app's `slots.yaml`:
+The starter examples, listed below, are four configurations with starter utterances and keypad keys: the day a parcel was due (back, keyable, a context sentence and a date-of-birth sentence, a day a few weeks ahead refused and one further ahead last year's), the day an incident happened (back, with "this" or "next", a day to come refused with the slot's own line), a delivery day (ahead, the defaults), and a table booking (ahead, with spans of days and "this" or "next", taken at `SLOT_CHOICE_CONFIRM` and acknowledged below `SLOT_CHOICE_FILL`, a day that does not resolve always invalid, keyable). In an app's `slots.yaml`:
 
 ```yaml
 booking:
@@ -130,7 +138,7 @@ Each configuration below is built and run by the type's tests (the conformance k
 
 #### parcel due day
 
-A day already gone, the day a parcel was due to arrive, keyable as MMDD. A weekday is the last one, a day of the month without its month the last one too. A turn that names no day, or one that cannot be resolved, is invalid when the caller was asked for the day and absent otherwise (the defaults).
+A day already gone, the day a parcel was due to arrive, keyable as MMDD. A weekday is the last one, a day of the month without its month the last one too. A month and day up to 31 days ahead has not happened, so it is refused and asked again (ask_dueDay_future); further ahead it is last year's, said with its year (the defaults). A turn that names no day, or one that cannot be resolved, is invalid when the caller was asked for the day and absent otherwise (the defaults).
 
 ```yaml
 dueDay:
@@ -141,7 +149,7 @@ dueDay:
   exclude: A date of birth is not the day the parcel was due.
 ```
 
-<details><summary>Starter utterances (7)</summary>
+<details><summary>Starter utterances (9)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
@@ -149,20 +157,48 @@ dueDay:
 | last Saturday | `dueDayMode`: `weekday` 0.9, `none` 0.1<br>`dueDayWeekday`: `saturday` 0.91, `none` 0.09 | filled: value `2026-09-12`, display `Saturday, September 12` |
 | on the twentieth | `dueDayMode`: `absolute` 0.9, `none` 0.1<br>`dueDayMonth`: `none` 0.95<br>`dueDayDay`: `20` 0.9, `none` 0.1 | filled: value `2026-08-20`, display `Thursday, August 20` |
 | Thursday the tenth of September | `dueDayMode`: `weekday` 0.6, `absolute` 0.38, `none` 0.02<br>`dueDayWeekday`: `thursday` 0.95, `none` 0.05<br>`dueDayMonth`: `september` 0.96, `none` 0.04<br>`dueDayDay`: `10` 0.94, `none` 0.06 | filled: value `2026-09-10`, display `Thursday, September 10` |
+| October third<br>_prompted_ | `dueDayMode`: `absolute` 0.92, `none` 0.08<br>`dueDayMonth`: `october` 0.95, `none` 0.05<br>`dueDayDay`: `3` 0.93, `none` 0.07 | invalid: reason `future`, raw `2026-10-03`, retryPromptId `ask_dueDay_future` |
+| December fifth | `dueDayMode`: `absolute` 0.92, `none` 0.08<br>`dueDayMonth`: `december` 0.95, `none` 0.05<br>`dueDayDay`: `5` 0.93, `none` 0.07 | filled: value `2025-12-05`, display `Friday, December 5, 2025`, display in es `viernes, 5 de diciembre de 2025` |
 | I'm not sure<br>_prompted_ | `dueDayMode`: `none` 0.9, `weekday` 0.1 | invalid: reason `unresolvable`, raw `` |
 | February thirtieth<br>_prompted_ | `dueDayMode`: `absolute` 0.9, `none` 0.1<br>`dueDayMonth`: `february` 0.9, `none` 0.1<br>`dueDayDay`: `30` 0.9, `none` 0.1 | invalid: reason `unresolvable`, raw `` |
 | can I change my address | `dueDayMode`: `none` 0.98 | absent |
 
 </details>
 
-<details><summary>Keypad (4)</summary>
+<details><summary>Keypad (5)</summary>
 
 | Keys | Locale | The slot gives |
 |---|---|---|
 | `0912` | any | `2026-09-12`, said `Saturday, September 12` |
-| `0920` | any | `2025-09-20`, said `Saturday, September 20` |
+| `1225` | any | `2025-12-25`, said `Thursday, December 25, 2025` |
+| `0920` | any | no value |
 | `1332` | any | no value |
 | `0230` | any | no value |
+
+</details>
+
+#### incident day
+
+A day already gone, the day something happened, with "this" or "next" before a weekday. "Next Thursday" has not happened, and neither has "this Saturday" on a Friday, so each is refused and asked again with the slot's own line (futurePrompt); "this Thursday" is this week's, a bare weekday the last one.
+
+```yaml
+incident:
+  type: date
+  range: past
+  qualifier: true
+  futurePrompt: ask_incident_not_yet
+  context: The caller is saying the day an incident happened.
+```
+
+<details><summary>Starter utterances (5)</summary>
+
+| The caller says | The model answers | The slot gives |
+|---|---|---|
+| next Thursday<br>_prompted_ | `incidentMode`: `weekday` 0.92, `none` 0.08<br>`incidentWeekday`: `thursday` 0.97, `none` 0.03<br>`incidentQualifier`: `next` 0.9, `none` 0.1 | invalid: reason `future`, raw `2026-09-24`, retryPromptId `ask_incident_not_yet` |
+| this Saturday<br>_prompted_ | `incidentMode`: `weekday` 0.92, `none` 0.08<br>`incidentWeekday`: `saturday` 0.97, `none` 0.03<br>`incidentQualifier`: `this` 0.9, `none` 0.1 | invalid: reason `future`, raw `2026-09-19`, retryPromptId `ask_incident_not_yet` |
+| this Thursday | `incidentMode`: `weekday` 0.92, `none` 0.08<br>`incidentWeekday`: `thursday` 0.97, `none` 0.03<br>`incidentQualifier`: `this` 0.9, `none` 0.1 | filled: value `2026-09-17`, display `Thursday, September 17`, display in es `jueves, 17 de septiembre` |
+| on Thursday | `incidentMode`: `weekday` 0.92, `none` 0.08<br>`incidentWeekday`: `thursday` 0.97, `none` 0.03<br>`incidentQualifier`: `none` 0.95 | filled: value `2026-09-17`, display `Thursday, September 17` |
+| next Thursday, before I was asked | `incidentMode`: `weekday` 0.92, `none` 0.08<br>`incidentWeekday`: `thursday` 0.97, `none` 0.03<br>`incidentQualifier`: `next` 0.9, `none` 0.1 | absent |
 
 </details>
 
@@ -238,7 +274,7 @@ booking:
 | Keys | Locale | The slot gives |
 |---|---|---|
 | `1005` | any | `2026-10-05`, said `Monday, October 5` |
-| `0101` | any | `2027-01-01`, said `Friday, January 1` |
+| `0101` | any | `2027-01-01`, said `Friday, January 1, 2027` |
 | `1305` | any | no value |
 | `0510` | es | `2026-10-05`, said `lunes, 5 de octubre` |
 | `3102` | es | no value |
@@ -252,5 +288,6 @@ booking:
 - A month without a day ahead is a span (the month, from today if it is this month); without `windows` it does not resolve.
 - The partial's `kind` is `window`, and its parts are strings, so the engine never reads it as a day heard.
 - A keyed day counts as confirmed: it is not acknowledged or read back.
-- In a Spanish session (`es`, `es-*`) the display is "martes, 22 de septiembre", the narrow prompt's `{window}` is "la próxima semana" or "en diciembre", the keypad takes the day first, and the default month and day questions end with a sentence telling the model that a date said as numbers gives the day first. Every other locale, and none, is as en-US.
+- The display's year is decided against the call's day: a fill, a keypad value and a value said again in another locale all have it; `display(value, locale)` with no day says no year.
+- In a Spanish session (`es`, `es-*`) the display is "martes, 22 de septiembre" ("miércoles, 22 de octubre de 2025" with the year), the narrow prompt's `{window}` is "la próxima semana" or "en diciembre", the keypad takes the day first, and the default month and day questions end with a sentence telling the model that a date said as numbers gives the day first. Every other locale, and none, is as en-US.
 - Run its checks with `pnpm --filter dialogwright test slots/date`.

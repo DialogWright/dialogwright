@@ -81,10 +81,21 @@ export const dateOptions = z
     qualifier: z
       .boolean()
       .default(false)
-      .describe('`range: future` only. Whether to ask if a weekday is "this" one or "next" one ("next Tuesday" is in the next week). Adds the qualifier question.'),
+      .describe('Whether to ask if a weekday is "this" one or "next" one. Adds the qualifier question. Ahead (`range: future`), "next Tuesday" is in the next week and "this Tuesday" this week\'s (next week\'s once it is gone). Back (`range: past`), "next Tuesday" is a day to come, refused (reason future, re-asked with `futurePrompt`), and "this Tuesday" this week\'s (the week from Monday) when it is today or gone, else refused the same way. Without it, a weekday is the next one ahead and the last one back, whatever word comes before it.'),
     narrowPrompt: identifier()
       .optional()
       .describe('With `windows`: the prompt that asks which day in a span of days (the slot\'s partialPromptId), given {window} ("next week", "in December"). Default: ask_<slot>_narrow.'),
+    nearFuture: z
+      .enum(['refuse', 'last-year'])
+      .optional()
+      .describe('`range: past` only. What a month and day still to come this year is when it is at most 31 days ahead ("October 22nd" said on October 17th). "refuse" (the default): this year\'s, a day that has not happened, so it is refused (invalid, reason future, re-asked with `futurePrompt` when the caller was asked for the day, else absent), never moved into the past; further ahead it is last year\'s ("December fifth" said in September). The mirror of `range: future`, where a month and day more than 31 days gone is next year\'s. "last-year": last year\'s however near, as before 2026-10-17.'),
+    futurePrompt: identifier()
+      .optional()
+      .describe('`range: past`, when a day to come can be heard (`nearFuture: refuse`, the default, or `qualifier`): the line that asks again for the day after the caller named one that has not happened ("That date hasn\'t happened yet. What date did it happen?"), the retry at the open rung for reason future. Default: ask_<slot>_future.'),
+    sayYear: z
+      .enum(['other-year', 'never'])
+      .default('other-year')
+      .describe('Whether the display says the year. "other-year" (the default): when the day is not in this year ("Wednesday, October 22, 2025"; in Spanish "miércoles, 22 de octubre de 2025"), so a caller hears which year a read-back means; a day this year is said without it ("Thursday, September 10"). "never": never, as before 2026-10-17.'),
     preferMonthDay: z
       .boolean()
       .default(true)
@@ -128,7 +139,12 @@ export const dateOptions = z
     };
     if (o.range === 'past') {
       if (o.windows) issue(['windows'], 'windows needs range "future": a day that already happened is one day, never a span', 'delete "windows", or set range: future');
-      if (o.qualifier) issue(['qualifier'], 'qualifier needs range "future": "this" or "next" names a weekday to come', 'delete "qualifier", or set range: future');
+      if (o.futurePrompt !== undefined && o.nearFuture === 'last-year' && !o.qualifier) {
+        issue(['futurePrompt'], '"futurePrompt" is not used, since with nearFuture "last-year" and no qualifier no day to come is heard', 'delete "futurePrompt", or delete nearFuture');
+      }
+    } else {
+      if (o.nearFuture !== undefined) issue(['nearFuture'], 'nearFuture needs range "past": ahead, a day to come is the day wanted', 'delete "nearFuture", or set range: past');
+      if (o.futurePrompt !== undefined) issue(['futurePrompt'], 'futurePrompt needs range "past": ahead, a day to come is never refused', 'delete "futurePrompt", or set range: past');
     }
     if (!o.windows) {
       if (o.narrowPrompt !== undefined) issue(['narrowPrompt'], '"narrowPrompt" is not used, since windows is off and no span of days is held', 'delete "narrowPrompt", or set windows: true');

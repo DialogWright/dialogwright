@@ -70,7 +70,7 @@ Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts`, and export its opt
 | `thresholds` | Thresholds are read by name: with every probability and threshold scaled by one factor, nothing changes |
 | `threshold-names` | Every threshold a fill reads is the engine's or declared in `thresholds`, and every declared one is read |
 | `boundary` | A number exactly at a threshold meets it, as `atLeast` has it: a `>` is caught |
-| `display` | `display(value, locale)` is what every fill, keypad value and candidate carries, and en-US formats as no locale does; the example pins a display in each locale checked, and the slot gives it |
+| `display` | `display(value, locale, todayIso)` (on the context's day) is what every fill, keypad value and candidate carries, and en-US formats as no locale does; the example pins a display in each locale checked, and the slot gives it |
 | `keypad` | The example's keys give its value, and keys of a wrong length give none |
 | `prompts` | Every line an outcome can lead to is declared with the variables it is given |
 | `prompt-vars` | Every declared line uses only variables the engine gives it (`ack_<slot>` gets `{<slot>}`; the keypad ask, a retry and a help line get none), and a `by-confidence` slot that acknowledges a value declares `ack_<slot>` |

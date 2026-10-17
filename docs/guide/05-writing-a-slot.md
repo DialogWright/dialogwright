@@ -673,7 +673,7 @@ interface SlotSpec {
   questions(ctx: SlotContext): QuestionMap;
   fill(answers: AnswerMap, ctx: SlotContext): SlotOutcome;
   dtmf?: { length: number; parse(digits: string, ctx: SlotContext): SlotCandidate | null };
-  display(value: string, locale?: string): string;
+  display(value: string, locale?: string, todayIso?: string): string;
   redact?: 'last4' | 'mask' | 'length';
   handoff?: 'last4' | 'verified';
   valueKind?: 'date';
@@ -840,7 +840,7 @@ Without `readBackNo: 'ask'`, `ask_<slot>_dtmf` is required for `always` even wit
 
 ### display
 
-`display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. The engine does not call it itself: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `bookSlot` and `branchSlot`, both `choice` slots, and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
+`display(value, locale)` is how the line says a value: "55520417" for the card, "Dr. Patel" for a provider, "Tuesday, September 22" for a date ("martes, 22 de septiembre" in a Spanish call). `locale` is the session's (`ctx.locale` in `fill` and `dtmf.parse`), which only an app that declares locales has; format en-US exactly as with no locale. `todayIso` is the call's day (`ctx.todayIso`), for a display that says a value by how it stands to today, as the library's date says the year of a day not in this year's ("Friday, January 8, 2027"); a display that does not need it ignores it. The engine calls it only to say a value held again after a switch of language, with the turn's day: what a line says, what the console shows and what the model sees is the `display` your `fill`, `dtmf.parse` or `disambiguate` candidate returned, stored on the slot. Write one formatter, make it the spec's `display`, and use it in all three, so they agree (the library's `bookSlot` and `branchSlot`, both `choice` slots, and the clinic's date do). The library's card is said digit by digit because app.yaml's `voice.spokenDigits` rule spells `card ` followed by digits for text to speech, so its lines say "card {card}".
 
 ### Your own slot type
 

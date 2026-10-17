@@ -467,9 +467,10 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
   display(r) {
     const spec = attempt(r, 'defineSlot', () => build(r));
     if (!spec) return;
-    const agree = (value: string, shown: string, locale: string | undefined, what: string): void => {
-      const formatted = attempt(r, `display(${JSON.stringify(value)}, ${locale ?? 'no locale'})`, () => spec.display(value, locale));
-      if (formatted !== undefined && formatted !== shown) r.fail(`${what} carries the display ${JSON.stringify(shown)}, but display(${JSON.stringify(value)}, ${JSON.stringify(locale)}) is ${JSON.stringify(formatted)}`);
+    // On the context's day: a display may say a value by how it stands to today (a date's year).
+    const agree = (value: string, shown: string, locale: string | undefined, todayIso: string, what: string): void => {
+      const formatted = attempt(r, `display(${JSON.stringify(value)}, ${locale ?? 'no locale'}, ${todayIso})`, () => spec.display(value, locale, todayIso));
+      if (formatted !== undefined && formatted !== shown) r.fail(`${what} carries the display ${JSON.stringify(shown)}, but display(${JSON.stringify(value)}, ${JSON.stringify(locale)}, ${JSON.stringify(todayIso)}) is ${JSON.stringify(formatted)}`);
     };
     for (const u of r.example.utterances) {
       const locales = [u.context?.locale, ...r.locales.filter((l) => l !== u.context?.locale)];
@@ -477,10 +478,10 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
         const ctx = kitContext(u.text, u.context, locale);
         const o = fillOf(r, spec, answersOf(u.answers), ctx, `utterance ${said(u)} (${locale ?? 'no locale'})`);
         // A slot shown as said (SlotSpec.displayFrom) carries the words, which display(value) cannot give back.
-        if (o?.kind === 'filled' && spec.displayFrom !== 'said') agree(o.value, o.display, locale, `the fill of ${said(u)} (${locale ?? 'no locale'})`);
+        if (o?.kind === 'filled' && spec.displayFrom !== 'said') agree(o.value, o.display, locale, ctx.todayIso, `the fill of ${said(u)} (${locale ?? 'no locale'})`);
         if (o?.kind === 'disambiguate') {
-          agree(o.a.value, o.a.display, locale, `the first candidate for ${said(u)}`);
-          agree(o.b.value, o.b.display, locale, `the second candidate for ${said(u)}`);
+          agree(o.a.value, o.a.display, locale, ctx.todayIso, `the first candidate for ${said(u)}`);
+          agree(o.b.value, o.b.display, locale, ctx.todayIso, `the second candidate for ${said(u)}`);
         }
         if (o?.kind === 'filled' && (locale === undefined || locale === 'en-US')) {
           const plain = attempt(r, 'display without a locale', () => spec.display(o.value));
@@ -509,8 +510,9 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     if (spec.dtmf) {
       for (const k of r.example.keypad ?? []) {
         for (const locale of [undefined, ...r.locales]) {
-          const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)})`, () => spec.dtmf!.parse(k.digits, kitContext('', {}, locale)));
-          if (c) agree(c.value, c.display, locale, `the keys ${JSON.stringify(k.digits)}`);
+          const kc = kitContext('', {}, locale);
+          const c = attempt(r, `dtmf.parse(${JSON.stringify(k.digits)})`, () => spec.dtmf!.parse(k.digits, kc));
+          if (c) agree(c.value, c.display, locale, kc.todayIso, `the keys ${JSON.stringify(k.digits)}`);
         }
       }
     }
@@ -543,7 +545,7 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
       if (k.digits.length !== length) r.fail(`the example's keys ${JSON.stringify(k.digits)} make a value but are not ${length} long, so the engine never collects them`);
       if (c.value !== k.expect.value) r.fail(`the keys ${JSON.stringify(k.digits)} gave ${JSON.stringify(c.value)}, not ${JSON.stringify(k.expect.value)}`);
       if (k.expect.display !== undefined && c.display !== k.expect.display) r.fail(`the keys ${JSON.stringify(k.digits)} display as ${JSON.stringify(c.display)}, not ${JSON.stringify(k.expect.display)}`);
-      const shown = attempt(r, `display(${JSON.stringify(c.value)}${k.locale ? `, ${k.locale}` : ''})`, () => spec.display(c.value, k.locale));
+      const shown = attempt(r, `display(${JSON.stringify(c.value)}${k.locale ? `, ${k.locale}` : ''})`, () => spec.display(c.value, k.locale, ctx.todayIso));
       if (shown !== undefined && shown !== c.display) r.fail(`the keys ${JSON.stringify(k.digits)} carry the display ${JSON.stringify(c.display)}, but display(${JSON.stringify(c.value)}) is ${JSON.stringify(shown)}`);
     }
     const sample = valid.find((k) => k.locale === undefined)?.digits ?? valid[0]?.digits ?? '5'.repeat(Math.max(1, length));

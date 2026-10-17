@@ -5,7 +5,7 @@
 # here on 2026-09-18, a Friday (the kit's today), and the type's docs page shows them.
 
 - name: parcel due day
-  about: A day already gone, the day a parcel was due to arrive, keyable as MMDD. A weekday is the last one, a day of the month without its month the last one too. A turn that names no day, or one that cannot be resolved, is invalid when the caller was asked for the day and absent otherwise (the defaults).
+  about: A day already gone, the day a parcel was due to arrive, keyable as MMDD. A weekday is the last one, a day of the month without its month the last one too. A month and day up to 31 days ahead has not happened, so it is refused and asked again (ask_dueDay_future); further ahead it is last year's, said with its year (the defaults). A turn that names no day, or one that cannot be resolved, is invalid when the caller was asked for the day and absent otherwise (the defaults).
   slot: dueDay
   config:
     range: past
@@ -36,6 +36,19 @@
         dueDayMonth: { choice: { september: 0.96, none: 0.04 } }
         dueDayDay: { choice: { "10": 0.94, none: 0.06 } }
       expect: { kind: filled, value: "2026-09-10", display: "Thursday, September 10" }
+    - text: October third
+      answers:
+        dueDayMode: { choice: { absolute: 0.92, none: 0.08 } }
+        dueDayMonth: { choice: { october: 0.95, none: 0.05 } }
+        dueDayDay: { choice: { "3": 0.93, none: 0.07 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: future, raw: "2026-10-03", retryPromptId: ask_dueDay_future }
+    - text: December fifth
+      answers:
+        dueDayMode: { choice: { absolute: 0.92, none: 0.08 } }
+        dueDayMonth: { choice: { december: 0.95, none: 0.05 } }
+        dueDayDay: { choice: { "5": 0.93, none: 0.07 } }
+      expect: { kind: filled, value: "2025-12-05", display: "Friday, December 5, 2025", displays: { es: "viernes, 5 de diciembre de 2025" } }
     - text: I'm not sure
       answers:
         dueDayMode: { choice: { none: 0.9, weekday: 0.1 } }
@@ -55,12 +68,56 @@
   keypad:
     - digits: "0912"
       expect: { value: "2026-09-12", display: "Saturday, September 12" }
+    - digits: "1225"
+      expect: { value: "2025-12-25", display: "Thursday, December 25, 2025" }
     - digits: "0920"
-      expect: { value: "2025-09-20", display: "Saturday, September 20" }
+      expect: null
     - digits: "1332"
       expect: null
     - digits: "0230"
       expect: null
+
+- name: incident day
+  about: A day already gone, the day something happened, with "this" or "next" before a weekday. "Next Thursday" has not happened, and neither has "this Saturday" on a Friday, so each is refused and asked again with the slot's own line (futurePrompt); "this Thursday" is this week's, a bare weekday the last one.
+  slot: incident
+  config:
+    range: past
+    qualifier: true
+    futurePrompt: ask_incident_not_yet
+    context: The caller is saying the day an incident happened.
+  utterances:
+    - text: next Thursday
+      answers:
+        incidentMode: { choice: { weekday: 0.92, none: 0.08 } }
+        incidentWeekday: { choice: { thursday: 0.97, none: 0.03 } }
+        incidentQualifier: { choice: { next: 0.9, none: 0.1 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: future, raw: "2026-09-24", retryPromptId: ask_incident_not_yet }
+    - text: this Saturday
+      answers:
+        incidentMode: { choice: { weekday: 0.92, none: 0.08 } }
+        incidentWeekday: { choice: { saturday: 0.97, none: 0.03 } }
+        incidentQualifier: { choice: { this: 0.9, none: 0.1 } }
+      context: { prompted: true }
+      expect: { kind: invalid, reason: future, raw: "2026-09-19", retryPromptId: ask_incident_not_yet }
+    - text: this Thursday
+      answers:
+        incidentMode: { choice: { weekday: 0.92, none: 0.08 } }
+        incidentWeekday: { choice: { thursday: 0.97, none: 0.03 } }
+        incidentQualifier: { choice: { this: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: "2026-09-17", display: "Thursday, September 17", displays: { es: "jueves, 17 de septiembre" } }
+    - text: on Thursday
+      answers:
+        incidentMode: { choice: { weekday: 0.92, none: 0.08 } }
+        incidentWeekday: { choice: { thursday: 0.97, none: 0.03 } }
+        incidentQualifier: { choice: { none: 0.95 } }
+      expect: { kind: filled, value: "2026-09-17", display: "Thursday, September 17" }
+    - text: next Thursday, before I was asked
+      answers:
+        incidentMode: { choice: { weekday: 0.92, none: 0.08 } }
+        incidentWeekday: { choice: { thursday: 0.97, none: 0.03 } }
+        incidentQualifier: { choice: { next: 0.9, none: 0.1 } }
+      expect: { kind: absent }
 
 - name: delivery day
   about: A day to come, the day a parcel should be delivered, with the defaults otherwise. "Tuesday" is the next one; a month without a day is a span, which this slot does not hold, so it is not resolved.
@@ -207,7 +264,7 @@
     - digits: "1005"
       expect: { value: "2026-10-05", display: "Monday, October 5" }
     - digits: "0101"
-      expect: { value: "2027-01-01", display: "Friday, January 1" }
+      expect: { value: "2027-01-01", display: "Friday, January 1, 2027" }
     - digits: "1305"
       expect: null
     - digits: "0510"

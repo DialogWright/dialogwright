@@ -1,5 +1,5 @@
 import { MONTHS, resolveDate, type ComponentPick, type DateResolution } from '../../core/extract/date';
-import { resolvePastDate } from '../../core/extract/pastDate';
+import { resolvePastDate, type PastDateResolution } from '../../core/extract/pastDate';
 import type { SlotCandidate, SlotContext, SlotOutcome } from '../../core/slots/types';
 import type { AnswerMap } from '../../jev/types';
 import { isChoice } from '../../jev/types';
@@ -42,10 +42,21 @@ function picksOf(answers: AnswerMap, ids: DateIds, o: DateOptions): Picks {
   };
 }
 
-/** The day (or, ahead, the span of days) the picks name, for the slot's range. */
-function resolve(o: Pick<DateOptions, 'range'>, c: Picks, todayIso: string): DateResolution {
-  return o.range === 'past' ? resolvePastDate(c, todayIso) : resolveDate(c, todayIso);
+/**
+ * The day (or, ahead, the span of days) the picks name, for the slot's range; back, a day still to
+ * come the caller named outright (`future`: "next Thursday" with `qualifier`, a month and day a few
+ * weeks ahead with `nearFuture: refuse`), which the fill refuses.
+ */
+function resolve(o: Pick<DateOptions, 'range' | 'nearFuture'>, c: Picks, todayIso: string): DateResolution | PastDateResolution {
+  return o.range === 'past' ? resolvePastDate(c, todayIso, { nearFuture: (o.nearFuture ?? 'refuse') === 'refuse' }) : resolveDate(c, todayIso);
 }
+
+/** Whether a past slot can hear a day to come and refuse it, and so says its `futurePrompt`. */
+export const refusesFuture = (o: Pick<DateOptions, 'range' | 'nearFuture' | 'qualifier'>): boolean =>
+  o.range === 'past' && ((o.nearFuture ?? 'refuse') === 'refuse' || o.qualifier);
+
+/** The line that asks again after a day to come, back: `futurePrompt`, or ask_<slot>_future. */
+export const futurePromptOf = (id: string, o: Pick<DateOptions, 'futurePrompt'>): string => o.futurePrompt ?? `ask_${id}_future`;
 
 /**
  * A date slot's fill.
@@ -57,17 +68,19 @@ function resolve(o: Pick<DateOptions, 'range'>, c: Picks, todayIso: string): Dat
  *   { kind: window, start, end, label } with `windows`, else not resolved.
  * - A day below the `fillAt` threshold: not resolved ("fill"), or invalid low_confidence with the
  *   day as raw ("confirm").
- * - Past only: a day after today (which the resolver never gives) is invalid "future" when asked,
- *   else absent.
+ * - Past only: a day still to come ("next Thursday" with `qualifier`; with `nearFuture: refuse`, a
+ *   month and day up to 31 days ahead) is invalid "future", re-asked with `futurePrompt`, when asked,
+ *   else absent: never moved into the past.
  * - With `windows` and a span pending, a weekday is narrowed into it (constrainToWindow); one with no
  *   day left in it is invalid outside_window, the day first resolved as raw.
  * - Otherwise filled with the ISO day, its confidence the least of the parts read; `confirm` and
  *   `readBack` say whether it is acknowledged.
  */
 export function dateFill(
+  id: string,
   o: DateOptions,
   ids: DateIds,
-  display: (value: string, locale?: string) => string,
+  display: (value: string, locale?: string, todayIso?: string) => string,
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   return (answers, ctx) => {
     const t = ctx.thresholds;
@@ -94,8 +107,9 @@ export function dateFill(
     } else if (!meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', confidence)) {
       return { kind: 'invalid', reason: 'low_confidence', raw: resolved.iso };
     }
-    if (o.range === 'past' && resolved.iso > ctx.todayIso) {
-      return ctx.prompted ? { kind: 'invalid', reason: 'future', raw: resolved.iso } : { kind: 'absent' };
+    if (o.range === 'past' && (resolved.kind === 'future' || resolved.iso > ctx.todayIso)) {
+      if (!ctx.prompted) return { kind: 'absent' };
+      return { kind: 'invalid', reason: 'future', raw: resolved.iso, ...(refusesFuture(o) ? { retryPromptId: futurePromptOf(id, o) } : {}) };
     }
     let iso = resolved.iso;
     if (o.windows) {
@@ -104,19 +118,19 @@ export function dateFill(
       iso = narrowed;
     }
     const quiet = o.confirm === 'summary' || o.readBack === 'none' || (o.readBack === 'below-fill' && meetsThreshold(t, 'SLOT_CHOICE_FILL', confidence));
-    return { kind: 'filled', value: iso, display: display(iso, ctx.locale), confidence, confirm: quiet ? 'none' : 'implicit' };
+    return { kind: 'filled', value: iso, display: display(iso, ctx.locale, ctx.todayIso), confidence, confirm: quiet ? 'none' : 'implicit' };
   };
 }
 
 /**
  * The keypad: four digits, the month then the day (MMDD), resolved as a spoken month and day are for
  * the range (ahead: this year's, or next year's once it is more than a month gone; back: the last
- * one, up to two years). In a day-first locale (Spanish), the day then the month (DDMM: 2209). Anything
+ * one, up to two years, and with `nearFuture: refuse` no value for one up to 31 days ahead). In a day-first locale (Spanish), the day then the month (DDMM: 2209). Anything
  * else is no value. (The engine collects exactly four keys.)
  */
 export function dateKeys(
-  o: Pick<DateOptions, 'range'>,
-  display: (value: string, locale?: string) => string,
+  o: Pick<DateOptions, 'range' | 'nearFuture'>,
+  display: (value: string, locale?: string, todayIso?: string) => string,
 ): (digits: string, ctx: Pick<SlotContext, 'todayIso' | 'locale'>) => SlotCandidate | null {
   return (digits, ctx) => {
     if (!/^\d{4}$/.test(digits)) return null;
@@ -125,7 +139,7 @@ export function dateKeys(
     const one = (choice: string): ComponentPick => ({ choice, p: 1 });
     const resolved = resolve(o, { ...NONE_PICKS, mode: one('absolute'), month: one(MONTHS[month - 1]!), day: one(String(day)) }, ctx.todayIso);
     if (resolved.kind !== 'day' || (o.range === 'past' && resolved.iso > ctx.todayIso)) return null;
-    return { value: resolved.iso, display: display(resolved.iso, ctx.locale) };
+    return { value: resolved.iso, display: display(resolved.iso, ctx.locale, ctx.todayIso) };
   };
 }
 

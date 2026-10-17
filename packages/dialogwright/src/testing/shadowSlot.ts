@@ -15,8 +15,8 @@ import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } f
  * - `dtmf.parse(digits, ctx)` results;
  * - `partialVars(window, locale)` on every window a fill returns (in the context's locale), and
  *   wherever the engine asks;
- * - `display(value, locale)` on every value a fill or a keypad parse yields (in the context's
- *   locale), and wherever it is asked;
+ * - `display(value, locale, todayIso)` on every value a fill or a keypad parse yields (in the
+ *   context's locale, on its day), and wherever it is asked;
  * - the declared fields, once, when the shadow is made: id, spokenConfirm, redact, handoff, detect,
  *   valueKind, displayFrom, partialPromptId, whether there is a keypad and its length, whether there is a
  *   partialVars. Not the declarations a hand-written spec need not make (questionIds, prompts): the
@@ -111,8 +111,9 @@ export function shadowSlot(legacy: SlotSpec, candidate: SlotSpec, options: Shado
 
   const deep = <T>(a: T, b: T) => isDeepStrictEqual(a, b);
 
-  function compareDisplay(value: string, locale: string | undefined): string {
-    return compare('display', () => `value ${json(value)}${localeSummary(locale)}`, () => legacy.display(value, locale), () => candidate.display(value, locale), deep);
+  function compareDisplay(value: string, locale: string | undefined, todayIso?: string): string {
+    const day = todayIso === undefined ? '' : ` · today ${todayIso}`;
+    return compare('display', () => `value ${json(value)}${localeSummary(locale)}${day}`, () => legacy.display(value, locale, todayIso), () => candidate.display(value, locale, todayIso), deep);
   }
 
   function comparePartialVars(window: SlotPartial, locale: string | undefined): Record<string, string> | undefined {
@@ -126,11 +127,11 @@ export function shadowSlot(legacy: SlotSpec, candidate: SlotSpec, options: Shado
   }
 
   /** The displays and partial variables a fill's outcome leads to, compared too, in the context's locale. */
-  function followOutcome(outcome: SlotOutcome, locale: string | undefined): void {
-    if (outcome.kind === 'filled') compareDisplay(outcome.value, locale);
+  function followOutcome(outcome: SlotOutcome, locale: string | undefined, todayIso: string): void {
+    if (outcome.kind === 'filled') compareDisplay(outcome.value, locale, todayIso);
     if (outcome.kind === 'disambiguate') {
-      compareDisplay(outcome.a.value, locale);
-      compareDisplay(outcome.b.value, locale);
+      compareDisplay(outcome.a.value, locale, todayIso);
+      compareDisplay(outcome.b.value, locale, todayIso);
     }
     if (outcome.kind === 'window') comparePartialVars(outcome.window, locale);
   }
@@ -158,11 +159,11 @@ export function shadowSlot(legacy: SlotSpec, candidate: SlotSpec, options: Shado
         () => candidate.fill(answers, ctx),
         deep,
       );
-      followOutcome(outcome, ctx.locale);
+      followOutcome(outcome, ctx.locale, ctx.todayIso);
       return outcome;
     },
-    display(value, locale) {
-      return compareDisplay(value, locale);
+    display(value, locale, todayIso) {
+      return compareDisplay(value, locale, todayIso);
     },
   };
   const legacyDtmf = legacy.dtmf;
@@ -180,7 +181,7 @@ export function shadowSlot(legacy: SlotSpec, candidate: SlotSpec, options: Shado
           },
           deep,
         );
-        if (parsed !== null) compareDisplay(parsed.value, ctx.locale);
+        if (parsed !== null) compareDisplay(parsed.value, ctx.locale, ctx.todayIso);
         return parsed;
       },
     };

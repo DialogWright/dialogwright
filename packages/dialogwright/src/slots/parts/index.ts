@@ -17,6 +17,6 @@ export { dayFirst, DAY_FIRST_HINT, withDayFirst, wordingFor } from './locale';
 export { numbersSaid } from '../../core/extract/numbersSaid';
 export type { NumbersSaidOptions } from '../../core/extract/numbersSaid';
 export { matchesMask } from '../../core/extract/mask';
-export { describeDay, describeDob, describeWindow, resolveDate, parseIso, toIso, addDays, normalizeYear, ordinal } from '../../core/extract/date';
+export { describeDay, describeDayWithYear, describeDob, describeWindow, resolveDate, parseIso, toIso, addDays, normalizeYear, ordinal } from '../../core/extract/date';
 export { resolvePastDate, pastDayResult } from '../../core/extract/pastDate';
 export { examplesFrom, parseSlotExamples, slotExamplesSchema } from './examples';

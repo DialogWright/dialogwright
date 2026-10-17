@@ -95,7 +95,7 @@ describe('a date slot built from the defaults', () => {
   it('carries its type and its parsed options, defaults applied', () => {
     expect(ahead.type).toBe('date');
     expect(ahead.config).toEqual({
-      range: 'future', windows: false, qualifier: false, preferMonthDay: true, fillAt: 'fill', whenUnsaid: 'invalid-if-prompted', whenUnresolved: 'invalid-if-prompted',
+      range: 'future', windows: false, qualifier: false, sayYear: 'other-year', preferMonthDay: true, fillAt: 'fill', whenUnsaid: 'invalid-if-prompted', whenUnresolved: 'invalid-if-prompted',
       keypad: false, confirm: 'summary', readBack: 'implicit',
     });
     expect(Object.isFrozen(ahead.config)).toBe(true);
@@ -130,12 +130,72 @@ describe('fill', () => {
     expect(ahead.fill(visit({ Mode: ['absolute', 0.9], Month: ['august', 0.9], Day: ['1', 0.9] }), ctx)).toMatchObject({ value: '2027-08-01' });
   });
 
+  const seen = (picks: Record<string, [string, number]>): AnswerMap => Object.fromEntries(Object.entries(picks).map(([part, [label, p]]) => [`seen${part}`, chose(label, p)]));
+
   it('fills a day back: yesterday, the last such weekday (a week back for today\'s own), the last such day of the month', () => {
-    const seen = (picks: Record<string, [string, number]>): AnswerMap => Object.fromEntries(Object.entries(picks).map(([part, [label, p]]) => [`seen${part}`, chose(label, p)]));
-    expect(back.fill(seen({ Mode: ['relative_day', 0.9], Relative: ['yesterday', 0.9] }), ctx)).toMatchObject({ kind: 'filled', value: '2026-09-17' });
+    expect(back.fill(seen({ Mode: ['relative_day', 0.9], Relative: ['yesterday', 0.9] }), ctx)).toMatchObject({ kind: 'filled', value: '2026-09-17', display: 'Thursday, September 17' });
     expect(back.fill(seen({ Mode: ['weekday', 0.9], Weekday: ['friday', 0.9] }), ctx)).toMatchObject({ value: '2026-09-11' });
     expect(back.fill(seen({ Mode: ['absolute', 0.9], Day: ['25', 0.9] }), ctx)).toMatchObject({ value: '2026-08-25' });
-    expect(back.fill(seen({ Mode: ['absolute', 0.9], Month: ['october', 0.9], Day: ['3', 0.9] }), ctx)).toMatchObject({ value: '2025-10-03' });
+    expect(back.fill(seen({ Mode: ['absolute', 0.9], Month: ['september', 0.9], Day: ['10', 0.9] }), ctx)).toMatchObject({ value: '2026-09-10', display: 'Thursday, September 10' });
+  });
+
+  it('back, nearFuture refuse (the default): a month and day up to 31 days ahead is this year\'s, refused as future; further ahead, last year\'s, said with its year', () => {
+    const on = (month: string, day: string) => seen({ Mode: ['absolute', 0.9], Month: [month, 0.9], Day: [day, 0.9] });
+    // Today, 2026-09-18: October 3rd is 15 days ahead, October 19th 31 (the last day still refused), October 20th 32.
+    expect(back.fill(on('october', '3'), asked)).toEqual({ kind: 'invalid', reason: 'future', raw: '2026-10-03', retryPromptId: 'ask_seen_future' });
+    expect(back.fill(on('september', '19'), asked)).toEqual({ kind: 'invalid', reason: 'future', raw: '2026-09-19', retryPromptId: 'ask_seen_future' });
+    expect(back.fill(on('october', '19'), asked)).toMatchObject({ kind: 'invalid', reason: 'future', raw: '2026-10-19' });
+    expect(back.fill(on('october', '20'), asked)).toMatchObject({ kind: 'filled', value: '2025-10-20', display: 'Monday, October 20, 2025' });
+    expect(back.fill(on('december', '5'), ctx)).toMatchObject({ kind: 'filled', value: '2025-12-05', display: 'Friday, December 5, 2025' });
+    // Not asked for the day: a day to come is no value, never one moved into the past.
+    expect(back.fill(on('october', '3'), ctx)).toEqual({ kind: 'absent' });
+    // The live call's: October 22nd said on Saturday, October 17th, five days ahead.
+    expect(back.fill(on('october', '22'), testSlotContext('', { todayIso: '2026-10-17', prompted: true }))).toMatchObject({ kind: 'invalid', reason: 'future', raw: '2026-10-22' });
+    // Only this year's day is weighed, as ahead: January 10th said on December 20th is this year's, gone;
+    // December 25th said on January 10th is 349 days ahead, so last year's.
+    expect(back.fill(on('january', '10'), testSlotContext('', { todayIso: '2026-12-20', prompted: true }))).toMatchObject({ kind: 'filled', value: '2026-01-10', display: 'Saturday, January 10' });
+    expect(back.fill(on('december', '25'), testSlotContext('', { todayIso: '2027-01-10' }))).toMatchObject({ kind: 'filled', value: '2026-12-25', display: 'Friday, December 25, 2026' });
+    // The threshold the slot reads still comes first: a day to come it is not sure of is not resolved.
+    expect(back.fill(seen({ Mode: ['absolute', 0.9], Month: ['october', 0.9], Day: ['3', T.SLOT_CHOICE_FILL - 0.01] }), asked)).toEqual({ kind: 'invalid', reason: 'unresolvable', raw: '' });
+    // nearFuture last-year: last year's, however near, as before.
+    const lastYear = defineSlot('seen', { type: 'date', range: 'past', nearFuture: 'last-year' });
+    expect(lastYear.fill(on('october', '3'), asked)).toMatchObject({ kind: 'filled', value: '2025-10-03', display: 'Friday, October 3, 2025' });
+    expect(lastYear.prompts).toEqual([]);
+    expect(defineSlot('seen', { type: 'date', range: 'past', futurePrompt: 'loss_date_not_yet' }).fill(on('october', '3'), asked)).toMatchObject({ retryPromptId: 'loss_date_not_yet' });
+  });
+
+  it('back, qualifier: "next" Thursday is a day to come, refused; "this" Thursday this week\'s when gone, else refused; none the last one', () => {
+    const q = defineSlot('seen', { type: 'date', range: 'past', qualifier: true });
+    expect(q.questionIds).toEqual(['seenMode', 'seenRelative', 'seenWeekday', 'seenQualifier', 'seenMonth', 'seenDay']);
+    expect(q.prompts).toEqual([{ id: 'ask_seen_future', why: 'the caller named a day that has not happened yet (the fill\'s retryPromptId, reason future): it asks again for a day gone' }]);
+    const thu = (qualifier: string, p = 0.9) => ({ seenMode: chose('weekday', 0.92), seenWeekday: chose('thursday', 1), seenQualifier: chose(qualifier, p) });
+    // The live call's day, Saturday, October 17th.
+    const sat = testSlotContext('', { todayIso: '2026-10-17', prompted: true });
+    expect(q.fill(thu('next'), sat)).toEqual({ kind: 'invalid', reason: 'future', raw: '2026-10-22', retryPromptId: 'ask_seen_future' });
+    expect(q.fill(thu('this'), sat)).toMatchObject({ kind: 'filled', value: '2026-10-15', confidence: 0.9 });
+    expect(q.fill(thu('none'), sat)).toMatchObject({ kind: 'filled', value: '2026-10-15', confidence: 0.92 });
+    // On a Monday, "this Thursday" has not come yet; "this Monday" is today.
+    const monday = testSlotContext('', { todayIso: '2026-10-12', prompted: true });
+    expect(q.fill(thu('this'), monday)).toMatchObject({ kind: 'invalid', reason: 'future', raw: '2026-10-15' });
+    expect(q.fill({ seenMode: chose('weekday', 0.9), seenWeekday: chose('monday', 0.9), seenQualifier: chose('this', 0.9) }, monday)).toMatchObject({ kind: 'filled', value: '2026-10-12' });
+    expect(q.fill(thu('none'), monday)).toMatchObject({ kind: 'filled', value: '2026-10-08' });
+    // Not asked for the day: absent.
+    expect(q.fill(thu('next'), testSlotContext('', { todayIso: '2026-10-17' }))).toEqual({ kind: 'absent' });
+    // With nearFuture last-year, the qualifier still refuses a day to come, and the line is still declared.
+    expect(defineSlot('seen', { type: 'date', range: 'past', qualifier: true, nearFuture: 'last-year' }).prompts).toEqual(q.prompts);
+  });
+
+  it('says the year of a day not in this year, ahead and back, unless sayYear is never', () => {
+    expect(ahead.fill(visit({ Mode: ['absolute', 0.9], Month: ['january', 0.9], Day: ['8', 0.9] }), ctx)).toMatchObject({ value: '2027-01-08', display: 'Friday, January 8, 2027' });
+    expect(ahead.fill(visit({ Mode: ['absolute', 0.9], Month: ['december', 0.9], Day: ['31', 0.9] }), ctx)).toMatchObject({ value: '2026-12-31', display: 'Thursday, December 31' });
+    expect(ahead.display('2027-01-08', undefined, '2026-09-18')).toBe('Friday, January 8, 2027');
+    expect(ahead.display('2027-01-08', 'es', '2026-09-18')).toBe('viernes, 8 de enero de 2027');
+    expect(ahead.display('2026-12-31', 'es', '2026-09-18')).toBe('jueves, 31 de diciembre');
+    // With no day to compare it to, as a day this year.
+    expect(ahead.display('2027-01-08')).toBe('Friday, January 8');
+    const never = defineSlot('seen', { type: 'date', range: 'past', nearFuture: 'last-year', sayYear: 'never' });
+    expect(never.fill(seen({ Mode: ['absolute', 0.9], Month: ['october', 0.9], Day: ['3', 0.9] }), ctx)).toMatchObject({ value: '2025-10-03', display: 'Friday, October 3' });
+    expect(never.display('2025-10-03', undefined, '2026-09-18')).toBe('Friday, October 3');
   });
 
   it('takes a confident month and day over a weekday reading of the mode, unless preferMonthDay is off', () => {
@@ -238,12 +298,14 @@ describe('the keypad', () => {
     for (const keys of ['1305', '0005', '1000', '0230', '1032', '0917', '100', '10055', '10*5', '']) expect(booking.dtmf!.parse(keys, ctx), keys).toBeNull();
   });
 
-  it('back: MMDD as the last such day, up to today', () => {
+  it('back: MMDD as the last such day, up to today; one up to 31 days ahead is no value (nearFuture refuse)', () => {
     const seen = defineSlot('seen', { type: 'date', range: 'past', keypad: true });
     expect(seen.dtmf!.parse('0912', ctx)).toEqual({ value: '2026-09-12', display: 'Saturday, September 12' });
     expect(seen.dtmf!.parse('0918', ctx)).toMatchObject({ value: '2026-09-18' });
-    expect(seen.dtmf!.parse('1003', ctx)).toMatchObject({ value: '2025-10-03' });
-    for (const keys of ['1332', '0231', '0229', '0000']) expect(seen.dtmf!.parse(keys, ctx), keys).toBeNull();
+    expect(seen.dtmf!.parse('1020', ctx)).toEqual({ value: '2025-10-20', display: 'Monday, October 20, 2025' });
+    for (const keys of ['1332', '0231', '0229', '0000', '1003', '0919', '1019']) expect(seen.dtmf!.parse(keys, ctx), keys).toBeNull();
+    const lastYear = defineSlot('seen', { type: 'date', range: 'past', keypad: true, nearFuture: 'last-year' });
+    expect(lastYear.dtmf!.parse('1003', ctx)).toEqual({ value: '2025-10-03', display: 'Friday, October 3, 2025' });
   });
 });
 
@@ -271,15 +333,22 @@ describe('the words and the ids', () => {
     expect(slot.fill({ visitMode: chose('relative_day', 0.9), visitRelativeDay: chose('tomorrow', 0.9) }, ctx)).toMatchObject({ value: '2026-09-19' });
   });
 
-  it('refuses a span or a qualifier for a past date, and options the configuration leaves unused', () => {
+  it('refuses a span for a past date, a past date\'s options ahead, and options the configuration leaves unused', () => {
     const paths = (config: Record<string, unknown>) => {
       const r = buildSlot('due', { type: 'date', ...config });
       return r.ok ? [] : r.problems.map((p) => `${p.path}: ${p.message}`);
     };
     expect(paths({ range: 'past', windows: true, qualifier: true })).toEqual([
       'due.windows: windows needs range "future": a day that already happened is one day, never a span',
-      'due.qualifier: qualifier needs range "future": "this" or "next" names a weekday to come',
     ]);
+    expect(paths({ range: 'future', nearFuture: 'refuse', futurePrompt: 'not_yet' })).toEqual([
+      'due.nearFuture: nearFuture needs range "past": ahead, a day to come is the day wanted',
+      'due.futurePrompt: futurePrompt needs range "past": ahead, a day to come is never refused',
+    ]);
+    expect(paths({ range: 'past', nearFuture: 'last-year', futurePrompt: 'not_yet' })).toEqual([
+      'due.futurePrompt: "futurePrompt" is not used, since with nearFuture "last-year" and no qualifier no day to come is heard',
+    ]);
+    expect(paths({ range: 'past', nearFuture: 'last-year', qualifier: true, futurePrompt: 'not_yet' })).toEqual([]);
     expect(paths({ range: 'future', narrowPrompt: 'which_day', text: { window: 'Span?', qualifier: 'This?' } })).toEqual([
       'due.narrowPrompt: "narrowPrompt" is not used, since windows is off and no span of days is held',
       'due.text.window: "text.window" is not used, since windows is off and the window question is not asked',
@@ -402,11 +471,11 @@ describe('the testkit\'s dates, written as configuration', () => {
   // weekday rule, which neither hand-written slot had), through the same shadow harness the migration uses.
   it('declares what the hand-written slots did', () => {
     expect(deliveryDayDateSlot.config).toEqual({
-      range: 'future', keypad: true, preferMonthDay: false, context: 'The caller is saying which day they want a delivery on.',
+      range: 'future', keypad: true, preferMonthDay: false, sayYear: 'never', context: 'The caller is saying which day they want a delivery on.',
       windows: false, qualifier: false, fillAt: 'fill', whenUnsaid: 'invalid-if-prompted', whenUnresolved: 'invalid-if-prompted', confirm: 'summary', readBack: 'implicit',
     });
     expect(expectedDateDateSlot.config).toEqual({
-      range: 'past', keypad: true, preferMonthDay: false, context: 'The caller is saying which day a parcel was due to arrive.',
+      range: 'past', keypad: true, preferMonthDay: false, nearFuture: 'last-year', sayYear: 'never', context: 'The caller is saying which day a parcel was due to arrive.',
       exclude: "The caller's date of birth is not the day the parcel was due.",
       windows: false, qualifier: false, fillAt: 'fill', whenUnsaid: 'invalid-if-prompted', whenUnresolved: 'invalid-if-prompted', confirm: 'summary', readBack: 'implicit',
     });
@@ -454,7 +523,7 @@ describe('the docs', () => {
   it('the docs page names every option and every text part', () => {
     const readme = readFileSync(new URL('../../../../../docs/slots/date.md', import.meta.url), 'utf8');
     const options = Object.keys((slotTypeJsonSchema(dateType).properties ?? {}) as object).filter((k) => k !== 'type');
-    expect(options.sort()).toEqual(['askedOf', 'attempts', 'confirm', 'context', 'exclude', 'fillAt', 'ids', 'keypad', 'listen', 'narrowPrompt', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'preferMonthDay', 'qualifier', 'range', 'readBack', 'text', 'whenUnresolved', 'whenUnsaid', 'windows']);
+    expect(options.sort()).toEqual(['askedOf', 'attempts', 'confirm', 'context', 'exclude', 'fillAt', 'futurePrompt', 'ids', 'keypad', 'listen', 'narrowPrompt', 'nearFuture', 'offer', 'offerAnswers', 'offerAt', 'onMaxAttempts', 'preferMonthDay', 'qualifier', 'range', 'readBack', 'sayYear', 'text', 'whenUnresolved', 'whenUnsaid', 'windows']);
     for (const option of options) expect(readme, option).toContain(`\`${option}\``);
     for (const part of ['mode', 'modeNone', 'relative', 'weekday', 'qualifier', 'month', 'day', 'window']) expect(readme, part).toContain(`\`text.${part}\``);
   });
@@ -477,7 +546,7 @@ describe('a date slot in Spanish (es, es-*)', () => {
   it('takes the keypad day first in Spanish (DDMM), month first otherwise', () => {
     expect(booking.dtmf!.parse('0510', testSlotContext('', { locale: 'es' }))).toEqual({ value: '2026-10-05', display: 'lunes, 5 de octubre' });
     expect(booking.dtmf!.parse('1005', testSlotContext(''))).toEqual({ value: '2026-10-05', display: 'Monday, October 5' });
-    expect(booking.dtmf!.parse('1305', testSlotContext('', { locale: 'es' }))).toEqual({ value: '2027-05-13', display: 'jueves, 13 de mayo' });
+    expect(booking.dtmf!.parse('1305', testSlotContext('', { locale: 'es' }))).toEqual({ value: '2027-05-13', display: 'jueves, 13 de mayo de 2027' });
     expect(booking.dtmf!.parse('0513', testSlotContext('', { locale: 'es' }))).toBeNull();
   });
 
