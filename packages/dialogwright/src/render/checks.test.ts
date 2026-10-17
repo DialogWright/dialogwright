@@ -219,6 +219,18 @@ describe('the checks on a framed line\'s span (held to its content alone)', () =
     expect(q.criteria.true).toContain('or it leaves out a time, an amount or who is to act that the quoted words give');
     expect(q.criteria.false).toContain('nothing dropped that changes the meaning or what the recipient should do (a time, an amount, who is to act), and every negated statement, refusal and condition kept with its no or its condition');
   });
+
+  it('a summary that adds content is unfaithful: a person, a company or anything else its words do not name, in either span drift question (the maintainer, 2026-10-17)', () => {
+    const asCaller = renderSpanDriftQuestion().renderSpanDrift as { criteria: { true: string; false: string } };
+    const toCaller = renderSpanDriftQuestion('to-caller').renderSpanDrift as { criteria: { true: string; false: string } };
+    expect(asCaller.criteria.true).toContain('or it names a person, a company or anything else the quoted words do not (who the message is from, whom it is for, what it is about), content the message does not have;');
+    expect(asCaller.criteria.false).toContain('nothing added (no one and nothing named that the quoted words do not name)');
+    // Spoken to the caller, the names it lists (frame) are theirs to use.
+    expect(toCaller.criteria.true).toContain('or it names a person, a company or anything else that neither their message nor frame names (who the message is from, whom it is for, what it is about), content the message does not have;');
+    expect(toCaller.criteria.false).toContain('nothing added (no one and nothing named that neither their message nor frame names)');
+    // A definition of unfaithful, as the answer judge's "a fact of its own" is: no procedure for the words.
+    for (const q of [asCaller, toCaller]) for (const procedure of ['capitalized', 'a capital', 'first word']) expect(q.criteria.true + q.criteria.false).not.toContain(procedure);
+  });
 });
 
 describe('a span begins mid-sentence after its frame (review fixes)', () => {
