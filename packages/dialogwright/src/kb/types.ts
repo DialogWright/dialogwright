@@ -21,6 +21,8 @@ export interface KbSettings {
   readonly maxAnswerChars: number;
   /** How topics are nominated: settings the retriever reads. */
   readonly retrieval: { readonly cap: number; readonly floor?: number; readonly embedder?: string };
+  /** Answers from approved documents where no topic answers (kb.yaml documents): off unless `summarize` is on; absent, off (a knowledge base built in code). */
+  readonly documents?: { readonly summarize: 'on' | 'off'; readonly cap: number; readonly floor?: number };
 }
 
 /** A topic's wording in one locale (kb/locale/<tag>/topics.yaml). */
@@ -103,7 +105,15 @@ export interface KbSourceDocument {
     readonly crawl?: { readonly start: string; readonly depth: number; readonly include?: readonly string[]; readonly allowHosts?: readonly string[]; readonly maxPages?: number; readonly rateMs?: number };
   };
   /** Its sections by id; a paged document's say the pages they are on (provenance only, never hashed). */
-  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number }>>;
+  readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number; readonly summarize?: false }>>;
+  /** Which callers an answer summarized from it is for (canonical: each fact's values sorted); absent, every caller. */
+  readonly applies?: Readonly<Record<string, readonly string[]>>;
+  /** Its approval for summarizing (kb.yaml documents), as the file has it. */
+  readonly approval?: { readonly owner: string; readonly approvedBy: string; readonly on: string; readonly hash: string };
+  /** The hash of what an approval covers, now (./hash.ts documentHashOf). */
+  readonly hash: string;
+  /** Whether it may be summarized as it stands: approved, and not changed since (`edited`). */
+  readonly freshness: 'fresh' | 'unapproved' | 'edited';
 }
 
 /** An app's knowledge base: the `kb/` folder, loaded. */

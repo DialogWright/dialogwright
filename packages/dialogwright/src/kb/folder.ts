@@ -1,5 +1,5 @@
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '../define/problems';
-import { approvalHashOf, canonicalApplies, collapseWhitespace, sourceHashOf } from './hash';
+import { approvalHashOf, canonicalApplies, collapseWhitespace, documentHashOf, sourceHashOf } from './hash';
 import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
 import type { KbApprovalLogRead, KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
 import { STATIC_MODELS } from './embed/model';
@@ -117,7 +117,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   const sources: Record<string, KbSourceDocument> = {};
   for (const { id, file } of yamlFiles(`${base}/sources`, 'source document', io, problems)) {
     const doc = readOne<KbSourceYaml>(file, 'kbSource', io, problems, false);
-    if (doc) sources[id] = { id, document: doc.document, ...(doc.provenance ? { provenance: doc.provenance } : {}), sections: doc.sections };
+    if (doc) sources[id] = sourceOf(id, doc);
   }
 
   // The passages: the default locale's, then each other locale's.
@@ -243,13 +243,33 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   const index = readIndex(base, settings.retrieval.embedder, io);
   const approvalLog = readLog(base, io);
   return {
-    settings: { action: settings.action, applies: settings.applies, localeFallback: settings.localeFallback, maxAnswerChars: settings.maxAnswerChars, retrieval: settings.retrieval },
+    settings: { action: settings.action, applies: settings.applies, localeFallback: settings.localeFallback, maxAnswerChars: settings.maxAnswerChars, retrieval: settings.retrieval, documents: settings.documents },
     defaultLocale,
     topics,
     passages: built,
     sources: sortedSources,
     ...(index ? { index } : {}),
     ...(approvalLog ? { approvalLog } : {}),
+  };
+}
+
+/**
+ * A source document as the loader keeps it: its title, provenance, applies (canonical) and sections,
+ * with the hash of what an approval for summarizing covers now, and whether it may be summarized as it
+ * stands (approved and unchanged since: `fresh`).
+ */
+export function sourceOf(id: string, doc: KbSourceYaml): KbSourceDocument {
+  const hash = documentHashOf({ id, document: doc.document, applies: doc.applies, sections: Object.entries(doc.sections).map(([sid, s]) => ({ id: sid, heading: s.heading, text: s.text, summarize: s.summarize })) });
+  const freshness = doc.approval === undefined ? 'unapproved' : doc.approval.hash === hash ? 'fresh' : 'edited';
+  return {
+    id,
+    document: doc.document,
+    ...(doc.provenance ? { provenance: doc.provenance } : {}),
+    sections: doc.sections,
+    ...(doc.applies !== undefined ? { applies: canonicalApplies(doc.applies) } : {}),
+    ...(doc.approval !== undefined ? { approval: doc.approval } : {}),
+    hash,
+    freshness,
   };
 }
 

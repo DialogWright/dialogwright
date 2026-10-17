@@ -33,6 +33,9 @@ export const DEFAULT_MAX_ANSWER_CHARS = 400;
 /** How many topics retrieval nominates at most when kb.yaml does not say. */
 export const DEFAULT_RETRIEVAL_CAP = 8;
 
+/** How many sections of approved documents retrieval nominates at most, unless kb.yaml's documents.cap says. */
+export const DEFAULT_SECTIONS_CAP = 4;
+
 /** A SHA-256, 64 lowercase hex characters. */
 const sha256 = () => matching(/^[0-9a-f]{64}$/, 'is not a SHA-256 hash: it must be 64 lowercase hex characters', 'leave the hashes to pnpm kb:approve, which writes them');
 
@@ -83,6 +86,14 @@ export const kbSettingsSchema = z
       })
       .default({ cap: DEFAULT_RETRIEVAL_CAP })
       .describe('How topics are nominated for a caller\'s words: settings only, read by the retriever.'),
+    documents: z
+      .strictObject({
+        summarize: z.enum(['on', 'off']).default('off').describe('on: where no topic answers a question, the line may answer it from the sections of the documents in kb/sources that a person approved for summarizing (pnpm kb:approve --document), worded by a model from the sections the decision model chose, held to them by the checks and the drift judge. A section a passage cites, and one marked summarize: false, is never summarized. Default off: only topics answer.'),
+        cap: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(8, { error: 'must be at most 8' }).default(DEFAULT_SECTIONS_CAP).describe(`How many sections retrieval nominates at most, each asked whether it says what the caller asked. Default ${DEFAULT_SECTIONS_CAP}.`),
+        floor: z.number({ error: 'must be a number' }).min(0, { error: 'must be between 0 and 1' }).max(1, { error: 'must be between 0 and 1' }).optional().describe('The cosine similarity below which a section found by its meaning is not nominated; a keyword match always counts. Default: retrieval.floor, else the embedder\'s own (pnpm kb:bakeoff --sections sweeps it).'),
+      })
+      .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP })
+      .describe('Answers from approved documents, where no topic answers: off by default.'),
   })
   .describe('kb/kb.yaml: the knowledge base\'s settings.');
 
@@ -219,6 +230,19 @@ export const kbSourceSchema = z
       })
       .optional()
       .describe('Where the text came from.'),
+    applies: z
+      .record(identifier(), z.union([domainValue(), unique(domainValue(), 'value').min(1, { error: 'must list at least one value' })]), { error: 'must be a map from a fact in kb.yaml\'s applies to its value or values' })
+      .optional()
+      .describe('Which callers an answer summarized from it is for (kb.yaml documents), as a passage\'s applies: for each fact in kb.yaml\'s applies, a value or a list of values. Default: every caller.'),
+    approval: z
+      .strictObject({
+        owner: text().describe('Who owns the content (a team).'),
+        approvedBy: text().describe('Who approved it for summarizing.'),
+        on: isoDate().describe('The day it was approved.'),
+        hash: sha256().describe('SHA-256 of everything approved: the document\'s id, title and applies, and each section\'s id, heading, text and whether it may be summarized. A changed word makes it differ, and the document is withheld until it is approved again.'),
+      })
+      .optional()
+      .describe('Who approved the document for summarizing (kb.yaml documents: on), when, and the hash of what they approved. Written by pnpm kb:approve --document, which also logs it in kb/approvals.jsonl; pnpm check refuses an approval with no line there.'),
     sections: z
       .record(
         text(),
@@ -227,6 +251,7 @@ export const kbSourceSchema = z
           text: text().describe('The section\'s text, as the document has it. Approvals hash it (whitespace collapsed), so a changed word makes its passages stale.'),
           page: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a document with pages (a PDF): the page the section starts on. Provenance only: approvals do not hash it.'),
           lastPage: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('For a section that runs on past its first page: the page it ends on. Provenance only.'),
+          summarize: z.literal(false, { error: 'must be false, or left out' }).optional().describe('false: never answered from by summarizing (kb.yaml documents), whatever the document\'s approval: for what a document says that should not be said to a caller. Default: summarized where no passage cites it.'),
         }),
         { error: 'must be a map from section id to the section' },
       )

@@ -67,6 +67,39 @@
         }
       },
       "additionalProperties": false
+    },
+    "documents": {
+      "default": {
+        "summarize": "off",
+        "cap": 4
+      },
+      "description": "Answers from approved documents, where no topic answers: off by default.",
+      "type": "object",
+      "properties": {
+        "summarize": {
+          "default": "off",
+          "description": "on: where no topic answers a question, the line may answer it from the sections of the documents in kb/sources that a person approved for summarizing (pnpm kb:approve --document), worded by a model from the sections the decision model chose, held to them by the checks and the drift judge. A section a passage cites, and one marked summarize: false, is never summarized. Default off: only topics answer.",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        "cap": {
+          "default": 4,
+          "description": "How many sections retrieval nominates at most, each asked whether it says what the caller asked. Default 4.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "floor": {
+          "description": "The cosine similarity below which a section found by its meaning is not nominated; a keyword match always counts. Default: retrieval.floor, else the embedder's own (pnpm kb:bakeoff --sections sweeps it).",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

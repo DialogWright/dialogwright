@@ -73,6 +73,33 @@ export interface ApprovedContent {
   accountLineText: string | null;
 }
 
+/** What a document's approval for summarizing covers (kb.yaml documents). */
+export interface ApprovedDocument {
+  /** Its file name without .yaml. */
+  id: string;
+  /** Its title. */
+  document: string;
+  applies: Readonly<Record<string, string | readonly string[]>> | undefined;
+  /** Its sections, in the file's order. */
+  sections: readonly { id: string; heading?: string | undefined; text: string; summarize?: false | undefined }[];
+}
+
+/**
+ * The hash of everything a document's approval covers: its id, title and applies, and each section's
+ * id, heading, text (whitespace collapsed) and whether it may be summarized. Its provenance and pages
+ * are not covered: a document read again unchanged stays approved.
+ */
+export function documentHashOf(doc: ApprovedDocument): string {
+  return sha256(
+    orderedJson({
+      id: doc.id,
+      document: collapseWhitespace(doc.document),
+      applies: canonicalApplies(doc.applies),
+      sections: doc.sections.map((s) => ({ id: s.id, heading: s.heading === undefined ? null : collapseWhitespace(s.heading), text: collapseWhitespace(s.text), summarize: s.summarize !== false })),
+    }),
+  );
+}
+
 /** The hash of everything an approval covers (an approval's `hash`). */
 export function approvalHashOf(content: ApprovedContent): string {
   return sha256(

@@ -17,7 +17,7 @@ import { handoffDataProblems } from '../handoff/data';
 import { callDataSourceProblem } from '../channel/callData';
 import { DEFAULT_THRESHOLDS } from '../core/thresholds';
 import { CONSENT_PROMPT } from '../core/textConsent';
-import { kbLinkProblems, kbStateProblems } from '../kb/rules';
+import { kbDocumentWarnings, kbLinkProblems, kbStateProblems } from '../kb/rules';
 import { withoutFallbackWarnings } from '../kb/fallback';
 import { knowledgePromptReferences, knowledgeUseProblems, knowledgeUseStateProblems } from './knowledgeUse';
 import { checkPromptReferences, checkWarnings, provenLevel } from './formChecks';
@@ -417,6 +417,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));
     problems.push(...kbStateProblems(config.knowledge, options.todayIso ?? new Date().toISOString().slice(0, 10), locate));
+    for (const w of kbDocumentWarnings(config.knowledge)) {
+      const at = locate(w.file, w.path) ?? { line: 1, column: 1 };
+      warnings.push({ file: w.file, line: at.line, column: at.column, path: formatPath(w.path), message: w.message, fix: w.fix });
+    }
   }
   // Forms that answer from the knowledge base, and intents that say a passage: crossLink holds them
   // to the code when it ran; without it, to the folder alone. A passage an intent says must be fresh.

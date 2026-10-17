@@ -4,7 +4,7 @@ import { inForceOn, answers } from './resolve';
 import type { KbPassage, KnowledgeBase } from './types';
 import { MODEL_COMMAND, STATIC_MODELS } from './embed/model';
 import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIndex';
-import { APPROVALS_LOG, approvalLogged } from './log';
+import { APPROVALS_LOG, approvalLogged, documentApprovalLogged } from './log';
 
 /**
  * The rules across a knowledge base's files, as problems in the loader's form
@@ -263,6 +263,11 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
       at(p.file, ['approval'], `passage "${p.id}" was approved outside kb:approve: its approval (by ${p.approval!.approvedBy} on ${p.approval!.on}) has no line of its id and hash in ${base}/${APPROVALS_LOG}, so no one is on record for it`, `review it against its source, then ${approve} (approvals are written by kb:approve, never by hand)`);
     }
   }
+  for (const doc of Object.values(kb.sources)) {
+    if (documentApprovalLogged(kb, doc) === false) {
+      at(`${base}/sources/${doc.id}.yaml`, ['approval'], `document "${doc.id}" was approved for summarizing outside kb:approve: its approval (by ${doc.approval!.approvedBy} on ${doc.approval!.on}) has no line of its id and hash in ${base}/${APPROVALS_LOG}, so no one is on record for it`, `read it whole, then ${approveDocumentCommandFor(doc.id)} (approvals are written by kb:approve, never by hand)`);
+    }
+  }
   const log = kb.approvalLog;
   if (log !== undefined && 'invalid' in log) at(log.file, [], `${log.file} cannot be read: ${log.invalid}`, `restore it from version control: it is appended to by ${APPROVE_COMMAND}, never rewritten`);
   problems.push(...kbIndexProblems(kb, locate, base));
@@ -282,6 +287,35 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
     }
   }
   return problems;
+}
+
+/** The command that approves a document for summarizing, as a problem's fix gives it. */
+export function approveDocumentCommandFor(id: string): string {
+  return `pnpm kb:approve --document ${id} --by "<your name>"`;
+}
+
+/** A warning of the knowledge base's documents, where `check` reports it (as a problem, but it does not fail the check). */
+export interface KbWarning {
+  readonly file: string;
+  readonly path: DataPath;
+  readonly message: string;
+  readonly fix: string;
+}
+
+/**
+ * With answers from documents on (kb.yaml documents.summarize), each document no one approved for
+ * summarizing, or changed since its approval: it is never answered from until a person approves it,
+ * which is the app's state, not an error in it, so `check` warns rather than fails.
+ */
+export function kbDocumentWarnings(kb: KnowledgeBase, base = 'kb'): KbWarning[] {
+  if (kb.settings.documents?.summarize !== 'on') return [];
+  const out: KbWarning[] = [];
+  for (const doc of Object.values(kb.sources)) {
+    const file = `${base}/sources/${doc.id}.yaml`;
+    if (doc.freshness === 'unapproved') out.push({ file, path: ['document'], message: `document "${doc.id}" is not approved for summarizing, so no answer is drawn from it`, fix: `read it whole, then ${approveDocumentCommandFor(doc.id)}` });
+    else if (doc.freshness === 'edited') out.push({ file, path: ['approval', 'hash'], message: `document "${doc.id}" changed after its approval for summarizing, so no answer is drawn from it`, fix: `read what changed (${STATUS_COMMAND}), then ${approveDocumentCommandFor(doc.id)}` });
+  }
+  return out;
 }
 
 /** How many of a topic's missing or stale index entries a problem lists by name before it counts the rest. */

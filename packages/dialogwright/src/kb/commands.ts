@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
-import { approveOne, formatApproveResult, placeOf, statusLines, notAPerson, type KbPlace } from './approval';
+import { approveDocument, approveOne, formatApproveResult, placeOf, statusLines, notAPerson, type KbPlace } from './approval';
 import { bakeoff, formatResults, formatSweep, parseParaphrases, sweep } from './bakeoff';
 import { downloadModel, loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, DEFAULT_EMBEDDER, type PinnedModel } from './embed/model';
 import type { Embedder } from './embed/types';
@@ -260,7 +260,7 @@ function placesFrom(io: KbIo, discover: () => string[]): KbPlace[] | string {
   return places.length > 0 ? places : 'no knowledge base found: the working directory is not an app folder with a kb/, and no app folder has a kb/kb.yaml';
 }
 
-const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>] [--yes]';
+const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>] [--yes]\n       dialogwright kb:approve --document <doc...> --by "<your name>" [--owner "<team>"] [--dir <app folder>] [--yes]   (a source document approved for summarizing: kb.yaml documents)';
 
 /**
  * `kb:approve <id...> --by "<name>" [--owner "<team>"] [--dir <app>] [--yes]`: approves each passage
@@ -275,9 +275,10 @@ const APPROVE_USAGE = 'usage: dialogwright kb:approve <id...> --by "<your name>"
  * person, --yes in CI, no terminal and no --yes).
  */
 export async function kbApproveCommand(args: readonly string[], io: KbIo, discover: () => string[]): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--by', '--owner', '--dir'], flags: ['--yes'] });
+  const parsed = parseArgs(args, { values: ['--by', '--owner', '--dir'], flags: ['--yes', '--document'] });
+  const documents = typeof parsed !== 'string' && parsed.flags.has('--document');
   if (typeof parsed === 'string' || parsed.positional.length === 0 || parsed.values['--by'] === undefined) {
-    io.err(`dialogwright kb:approve: ${typeof parsed === 'string' ? parsed : parsed.positional.length === 0 ? 'name the passages or drafts to approve, by id' : '--by is required: the name of the person who reviewed the passages against their sources and approves them'}\n${APPROVE_USAGE}`);
+    io.err(`dialogwright kb:approve: ${typeof parsed === 'string' ? parsed : parsed.positional.length === 0 ? (documents ? 'name the documents to approve for summarizing, by their file id in kb/sources' : 'name the passages or drafts to approve, by id') : `--by is required: the name of the person who ${documents ? 'read the documents and approves them for summarizing' : 'reviewed the passages against their sources and approves them'}`}\n${APPROVE_USAGE}`);
     return 2;
   }
   const by = parsed.values['--by'];
@@ -315,7 +316,9 @@ export async function kbApproveCommand(args: readonly string[], io: KbIo, discov
   const owner = parsed.values['--owner'];
   if (confirm !== null) {
     const ids = parsed.positional;
-    const question = `Approve ${ids.length === 1 ? ids[0] : `${ids.length} passages (${ids.join(', ')})`} in ${place.label} as ${by.trim()}${owner !== undefined ? ` for ${owner.trim()}` : ''}? You have read ${ids.length === 1 ? 'its answer' : 'each answer'} against its source section and answer for it. [y/N] `;
+    const question = documents
+      ? `Approve ${ids.length === 1 ? `the document ${ids[0]}` : `${ids.length} documents (${ids.join(', ')})`} in ${place.label} for summarizing, as ${by.trim()}${owner !== undefined ? ` for ${owner.trim()}` : ''}? You have read ${ids.length === 1 ? 'it' : 'each'} whole: callers may hear answers worded from ${ids.length === 1 ? 'its' : 'their'} sections, and you answer for what ${ids.length === 1 ? 'it says' : 'they say'}. [y/N] `
+      : `Approve ${ids.length === 1 ? ids[0] : `${ids.length} passages (${ids.join(', ')})`} in ${place.label} as ${by.trim()}${owner !== undefined ? ` for ${owner.trim()}` : ''}? You have read ${ids.length === 1 ? 'its answer' : 'each answer'} against its source section and answer for it. [y/N] `;
     if (!(await confirm(question))) {
       io.err('dialogwright kb:approve: not confirmed: nothing approved, nothing written');
       return 1;
@@ -324,7 +327,8 @@ export async function kbApproveCommand(args: readonly string[], io: KbIo, discov
   const today = (io.today ?? (() => new Date().toISOString().slice(0, 10)))();
   let refused = false;
   for (const id of parsed.positional) {
-    const result = approveOne(place, id, { by, ...(owner !== undefined ? { owner } : {}), today });
+    const options = { by, ...(owner !== undefined ? { owner } : {}), today };
+    const result = documents ? approveDocument(place, id, options) : approveOne(place, id, options);
     const lines = formatApproveResult(result, place.label);
     if (result.outcome === 'refused') {
       refused = true;

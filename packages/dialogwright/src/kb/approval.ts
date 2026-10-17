@@ -7,8 +7,8 @@ import { closest, formatProblem, positionOf, type DataPath, type Problem } from 
 import { PENDING_TOPICS_FILE, passageOf, sourceTextOf } from './folder';
 import { collapseWhitespace } from './hash';
 import { excerptProblems, NO_EXCERPT } from './excerpt';
-import { APPROVALS_LOG, approvalLogged, logLineOf, parseApprovalLog, type ApprovalLogLine } from './log';
-import { approveCommandFor, EDITED_WHAT, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
+import { APPROVALS_LOG, approvalLogged, documentApprovalLogged, logLineOf, parseApprovalLog, type ApprovalLogLine } from './log';
+import { approveCommandFor, approveDocumentCommandFor, EDITED_WHAT, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
 import { KB_FILE_ID, type KbPassageYaml, type KbPendingYaml } from './schema';
 import type { KbPassage, KnowledgeBase } from './types';
 
@@ -118,7 +118,7 @@ export function excerptInSource(excerpt: string, sectionText: string): boolean {
 
 /** What kb:approve did with one id. */
 export type ApproveResult =
-  | { id: string; outcome: 'approved'; from: 'pending' | 'passage'; file: string; line: ApprovalLogLine; moved?: string }
+  | { id: string; outcome: 'approved'; from: 'pending' | 'passage' | 'document'; file: string; line: ApprovalLogLine; moved?: string }
   | { id: string; outcome: 'fresh'; file: string; approvedBy: string; on: string }
   | { id: string; outcome: 'refused'; reason: string; problems: string[] };
 
@@ -239,6 +239,55 @@ export function approveOne(place: KbPlace, id: string, options: ApproveOptions):
   return pending ? approveDraft(place, loaded, id, pendingFile, given) : approvePassage(place, loaded, id, passageFiles[0]!, given);
 }
 
+/**
+ * Approves one source document for summarizing (kb.yaml documents): the person has read it whole,
+ * and callers may hear answers worded from its sections. Written into the document (`approval`, its
+ * hash the document's now: hash.ts documentHashOf) and logged (`from: document`), as a passage's is.
+ * Writes nothing when it refuses.
+ */
+export function approveDocument(place: KbPlace, id: string, options: ApproveOptions): ApproveResult {
+  if (!KB_FILE_ID.test(id)) return { id, outcome: 'refused', reason: `"${id}" is not a document id (a file name in kb/sources, without .yaml)`, problems: [] };
+  const loaded = load(place);
+  const file = `${loaded.base}/sources/${id}.yaml`;
+  const path = join(dirname(place.kbDir), file);
+  if (!existsSync(path)) {
+    let ids: string[] = [];
+    try {
+      ids = readdirSync(join(place.kbDir, 'sources')).filter((n) => n.endsWith('.yaml')).map((n) => n.slice(0, -'.yaml'.length));
+    } catch {
+      // no sources folder: no ids to offer
+    }
+    const near = closest(id, ids);
+    return { id, outcome: 'refused', reason: `there is no document "${id}" (${loaded.base}/sources)${near ? `; did you mean "${near}"?` : ''}`, problems: [] };
+  }
+  if (!loaded.kb) return notLoaded(id, loaded, [file]);
+  const kb = loaded.kb;
+  const doc = Object.hasOwn(kb.sources, id) ? kb.sources[id]! : undefined;
+  if (!doc) return { id, outcome: 'refused', reason: `${file} did not load as a source document`, problems: [] };
+  if (doc.freshness === 'fresh' && documentApprovalLogged(kb, doc) !== false) return { id, outcome: 'fresh', file, approvedBy: doc.approval!.approvedBy, on: doc.approval!.on };
+  const by = options.by.trim();
+  const owner = options.owner?.trim() ?? doc.approval?.owner;
+  if (owner === undefined || owner === '') return { id, outcome: 'refused', reason: `"${id}" has never been approved, so it has no owner yet: give the team that owns its content with --owner "<team>"`, problems: [] };
+  const approval = { owner, approvedBy: by, on: options.today, hash: doc.hash };
+  const before = readFileSync(path, 'utf8');
+  const { doc: yamlDoc } = parseForEdit(before);
+  const existing = yamlDoc.get('approval', true);
+  if (isMap(existing)) {
+    for (const [key, v] of Object.entries(approval)) existing.set(key, v);
+  } else {
+    yamlDoc.set('approval', yamlDoc.createNode(approval));
+  }
+  writeFileSync(path, yamlDoc.toString({ lineWidth: 0 }));
+  const after = load(place).kb?.sources[id];
+  if (after?.freshness !== 'fresh') {
+    writeFileSync(path, before);
+    return { id, outcome: 'refused', reason: `the approval written to ${file} did not read back as fresh (${after?.freshness ?? 'not loaded'}), so the file is as it was`, problems: [] };
+  }
+  const line: ApprovalLogLine = { id, version: '', approvedBy: by, owner, on: options.today, sourceHash: '', hash: doc.hash, from: 'document' };
+  appendApprovalLog(place.kbDir, line);
+  return { id, outcome: 'approved', from: 'document', file, line };
+}
+
 /** A passage already in passages/: approved as it is now. */
 function approvePassage(place: KbPlace, loaded: Loaded, id: string, file: string, options: ApproveOptions): ApproveResult {
   if (!loaded.kb) return notLoaded(id, loaded, [file]);
@@ -351,6 +400,7 @@ export function formatApproveResult(r: ApproveResult, label: string): string[] {
   if (r.outcome === 'fresh') return [`${r.id}: already approved and fresh (by ${r.approvedBy} on ${r.on}): nothing written`];
   if (r.outcome === 'refused') return [`${r.id}: refused: ${r.reason}`, ...r.problems.map((p) => `  ${p}`)];
   const l = r.line;
+  if (r.from === 'document') return [`${r.id}: approved for summarizing by ${l.approvedBy} for ${l.owner} on ${l.on}: wrote the approval to ${r.file}; hash ${l.hash.slice(0, 12)}; logged in ${join(label, APPROVALS_LOG)}`];
   const what = r.moved ? `moved the draft ${r.moved} to ${r.file}` : `wrote the approval to ${r.file}`;
   return [`${r.id}: approved (version ${l.version}) by ${l.approvedBy} for ${l.owner} on ${l.on}: ${what}; sourceHash ${l.sourceHash.slice(0, 12)}, hash ${l.hash.slice(0, 12)}; logged in ${join(label, APPROVALS_LOG)}`];
 }
@@ -484,6 +534,27 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
     for (const p of t.problems) lines.push(`    ! ${p}`);
   }
   if (proposed.length > 0) lines.push(`    -> accept, rename or merge each in pnpm kb:review (${base}/pending/${PENDING_TOPICS_FILE}); a draft of a proposed topic is approved after its topic`);
+  // The documents answered from by summarizing (kb.yaml documents), with summarizing on or any approved.
+  const docs = Object.values(kb.sources);
+  if (kb.settings.documents?.summarize === 'on' || docs.some((d) => d.approval !== undefined)) {
+    const on = kb.settings.documents?.summarize === 'on';
+    lines.push(`documents for summarizing (kb.yaml documents: ${on ? 'on' : 'off, so none is answered from'}):`);
+    for (const d of docs) {
+      const left = Object.values(d.sections).filter((s) => s.summarize === false).length;
+      const sections = `${Object.keys(d.sections).length} sections${left > 0 ? `, ${left} never summarized` : ''}`;
+      if (d.freshness === 'fresh' && documentApprovalLogged(kb, d) !== false) lines.push(`  ${d.id}  approved by ${d.approval!.approvedBy} (${d.approval!.owner}) on ${d.approval!.on}  (${sections})`);
+      else if (d.freshness === 'fresh') {
+        lines.push(`  ${d.id}  approved outside kb:approve, not in ${base}/${APPROVALS_LOG}: pnpm check refuses  (${sections})`);
+        lines.push(`    -> read it whole, then ${approveDocumentCommandFor(d.id)}`);
+      } else if (d.freshness === 'edited') {
+        lines.push(`  ${d.id}  changed since ${d.approval!.approvedBy} approved it on ${d.approval!.on}: withheld  (${sections})`);
+        lines.push(`    -> read what changed (git diff ${base}/sources/${d.id}.yaml), then ${approveDocumentCommandFor(d.id)}`);
+      } else {
+        lines.push(`  ${d.id}  not approved for summarizing${on ? ': never answered from' : ''}  (${sections})`);
+        lines.push(`    -> read it whole, then ${approveDocumentCommandFor(d.id)} --owner "<team>"`);
+      }
+    }
+  }
   if (outside.length + changed.length + edited.length + unapproved.length + drafts.length + proposed.length === 0) lines.push('every passage is approved and fresh, and nothing waits for review');
   else lines.push('pnpm check fails while a passage is stale or unapproved; a draft is never said until it is approved');
   return { lines, ok: true };

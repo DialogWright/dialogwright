@@ -1,6 +1,6 @@
 # Knowledge-base answers from approved documents
 
-Date: 2026-10-17. Status: **a proposal, for the maintainer's decision.** It changes a rule in CLAUDE.md (below); nothing is built.
+Date: 2026-10-17. Status: **decided (the maintainer, 2026-10-17: the recommendations, below); built on the branch `kb-documents`.** It changes a rule in CLAUDE.md; the maintainer approved the change.
 
 ## The problem
 
@@ -139,3 +139,15 @@ Before it is on in an example app:
 4. **The second attempt**: built off, turned on by default only if the measurement shows the false passes do not rise; or off for good.
 5. **The section question in the same request** (no second round trip, a larger request on such turns), or a second request only when the topic question reads unanswered (smaller requests, slower answers): recommended the same request.
 6. **Harbor Mutual as the example**, with a fuller member guide.
+
+## Decided (the maintainer, 2026-10-17)
+
+The maintainer took every recommendation and left the build to the builder, deciding on the measurements: "go with your recommendations, build it ... make the decisions you think are best". So:
+
+1. The rule change, as worded above.
+2. A question nothing answers does not count as a try, with no limit, for every app with a topic slot (`unanswered: { counts: false }` the default); a turn that says nothing about what the caller wants (`none`) counts as before. An app that wants a limit sets one.
+3. `onFail: not-found` is the default.
+4. The second attempt is built and off by default; it is turned on by default only if `render:judge-eval` shows the false passes do not rise.
+5. The section question is asked in the turn's own request.
+6. Harbor Mutual is the example, with a fuller member guide; a person approves its documents for summarizing, as for every approval.
+

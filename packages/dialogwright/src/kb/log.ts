@@ -7,7 +7,7 @@
  * configuration hashes, and nothing a call does consults it.
  */
 
-import type { KbPassage, KnowledgeBase } from './types';
+import type { KbPassage, KnowledgeBase, KbSourceDocument } from './types';
 
 /** Where the log of approvals is, in the kb folder. */
 export const APPROVALS_LOG = 'approvals.jsonl';
@@ -34,9 +34,11 @@ export interface ApprovalLogLine {
    * the log, and kb:status marks the passages it approved): kb:review's "Confirm this approval"
    * appends their line, `from: passage`, with the same hashes. The log is appended to, never
    * rewritten: a migration taken again under a later format is new lines, and the last line with a
-   * passage's id and hash is the one that stands.
+   * passage's id and hash is the one that stands. `document`: a source document approved for
+   * summarizing (kb.yaml documents, kb:approve --document), its line's id the document's file id and
+   * its hash the document's (hash.ts documentHashOf); its `version` and `sourceHash` are empty.
    */
-  from: 'pending' | 'passage' | 'migration';
+  from: 'pending' | 'passage' | 'migration' | 'document';
   /**
    * The source section's text as it was approved (its hash is `sourceHash`), so a review after the
    * source changes can show what changed (kb:review's diff). Lines written before it was kept lack it.
@@ -81,4 +83,11 @@ export function approvalLogged(kb: Pick<KnowledgeBase, 'approvalLog'>, passage: 
   const log = kb.approvalLog;
   if (passage.approval === undefined || log === undefined || 'invalid' in log) return null;
   return logLineOf(log.lines, passage.id, passage.approval.hash) !== null;
+}
+
+/** Whether a document's approval for summarizing is in the log the loader read (a `document` line of its id and hash), as approvalLogged. */
+export function documentApprovalLogged(kb: Pick<KnowledgeBase, 'approvalLog'>, doc: Pick<KbSourceDocument, 'id' | 'approval'>): boolean | null {
+  const log = kb.approvalLog;
+  if (doc.approval === undefined || log === undefined || 'invalid' in log) return null;
+  return logLineOf(log.lines.filter((l) => l.from === 'document'), doc.id, doc.approval.hash) !== null;
 }

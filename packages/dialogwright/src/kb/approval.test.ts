@@ -96,8 +96,8 @@ describe('who may approve', () => {
   it('kb:approve needs ids and --by, and refuses an approver who is not a person, writing nothing', async () => {
     const kb = kbCopy();
     edit(join(kb, 'sources/patron-guide.yaml'), (t) => t.replace('for each day an item is overdue, up to 5', 'for every day an item is overdue, up to 5'));
-    expect(await approve(kb, '--by', 'Jane Smith')).toMatchObject({ code: 2, err: ['dialogwright kb:approve: name the passages or drafts to approve, by id', expect.stringContaining('usage:')] });
-    expect(await approve(kb, 'late-fees-adult')).toMatchObject({ code: 2, err: ['dialogwright kb:approve: --by is required: the name of the person who reviewed the passages against their sources and approves them', expect.stringContaining('usage:')] });
+    expect(await approve(kb, '--by', 'Jane Smith')).toMatchObject({ code: 2, err: ['dialogwright kb:approve: name the passages or drafts to approve, by id', expect.stringContaining('usage:'), expect.stringContaining('--document')] });
+    expect(await approve(kb, 'late-fees-adult')).toMatchObject({ code: 2, err: ['dialogwright kb:approve: --by is required: the name of the person who reviewed the passages against their sources and approves them', expect.stringContaining('usage:'), expect.stringContaining('--document')] });
     expect((await approve(kb, 'late-fees-adult', '--by', 'Claude')).err[0]).toBe(
       'dialogwright kb:approve: --by "Claude" is not a person: an approval records the person who read the answer against its source and answers for it, and an assistant or a tool may draft a passage but never approve one',
     );
@@ -386,6 +386,48 @@ describe('kb:approve a draft', () => {
       '  kb/locale/fr:1:1  (file)  the knowledge base has fr passages, but the app does not speak fr  ->  add locale/fr/prompts.yaml to the app, or delete kb/locale/fr',
     ]);
     expect(existsSync(join(dir, 'kb/locale/fr'))).toBe(false);
+  });
+});
+
+describe('kb:approve --document: a source document approved for summarizing', () => {
+  const doc = (kbDir: string, id: string) => loadKnowledgeFolder(kbDir, 'en-US').kb!.sources[id]!;
+
+  it('writes the approval into the document and logs it (from: document); the document reads back fresh', async () => {
+    const kbDir = kbCopy();
+    expect(doc(kbDir, 'visitor-guide')).toMatchObject({ freshness: 'unapproved' });
+    const r = await approve(kbDir, '--document', 'visitor-guide', '--by', 'Riley Moreno', '--owner', 'Branch Services');
+    expect(r.code).toBe(0);
+    expect(r.out.join('\n')).toMatch(/^visitor-guide: approved for summarizing by Riley Moreno for Branch Services on 2026-10-03: wrote the approval to kb\/sources\/visitor-guide.yaml; hash [0-9a-f]{12}; logged in/);
+    const after = doc(kbDir, 'visitor-guide');
+    expect(after).toMatchObject({ freshness: 'fresh', approval: { owner: 'Branch Services', approvedBy: 'Riley Moreno', on: TODAY, hash: after.hash } });
+    expect(logOf(kbDir)).toEqual([{ id: 'visitor-guide', version: '', approvedBy: 'Riley Moreno', owner: 'Branch Services', on: TODAY, sourceHash: '', hash: after.hash, from: 'document' }]);
+    // Approved again unchanged: nothing written.
+    const again = await approve(kbDir, '--document', 'visitor-guide', '--by', 'Riley Moreno');
+    expect(again.out.join('\n')).toContain('already approved and fresh');
+    expect(logOf(kbDir)).toHaveLength(1);
+  });
+
+  it('is withheld once a word changes, and a section left out changes it too; its provenance does not', async () => {
+    const kbDir = kbCopy();
+    await approve(kbDir, '--document', 'visitor-guide', '--by', 'Riley Moreno', '--owner', 'Branch Services');
+    const file = join(kbDir, 'sources', 'visitor-guide.yaml');
+    edit(file, (t) => t.replace('retrieved: 2026-09-01', 'retrieved: 2026-10-01'));
+    expect(doc(kbDir, 'visitor-guide').freshness).toBe('fresh');
+    edit(file, (t) => t.replace('within two days', 'within three days'));
+    expect(doc(kbDir, 'visitor-guide').freshness).toBe('edited');
+    edit(file, (t) => t.replace('within three days', 'within two days'));
+    expect(doc(kbDir, 'visitor-guide').freshness).toBe('fresh');
+    edit(file, (t) => t.replace('    summarize: false\n', ''));
+    expect(doc(kbDir, 'visitor-guide').freshness).toBe('edited');
+  });
+
+  it('refuses a document that is not there, offering the nearest, and one never approved without an owner', async () => {
+    const kbDir = kbCopy();
+    const missing = await approve(kbDir, '--document', 'visitor-guid', '--by', 'Riley Moreno', '--owner', 'Branch Services');
+    expect(missing.code).toBe(1);
+    expect(missing.err.join('\n')).toContain('there is no document "visitor-guid" (kb/sources); did you mean "visitor-guide"?');
+    const noOwner = await approve(kbDir, '--document', 'visitor-guide', '--by', 'Riley Moreno');
+    expect(noOwner.err.join('\n')).toContain('has never been approved, so it has no owner yet');
   });
 });
 
