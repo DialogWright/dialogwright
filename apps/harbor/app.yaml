@@ -32,6 +32,17 @@ console:
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
 voice:
   hints: [claim, coverage, covered, report, accident, injury, hospital, diagnosis, member ID, physical therapy, agent]
+  # How identifiers are said on the phone (the text stays as written in a chat, the trace and the console):
+  # a claim number after the word claim, and the phone's last four after "ending in", digit by digit
+  # ("your claim number is four seven three zero", not "four thousand seven hundred thirty"); a member ID
+  # or another run of five digits or more in groups of digits.
+  spokenDigits:
+    - pattern: '([Cc]laim(?: number)?(?: is)?) (\d{4})\b'
+      spell: lead
+    - pattern: '(ending in) (\d{4})\b'
+      spell: lead
+    - pattern: '\d{4,}(?: \d{4,})+|\d{5,}'
+      spell: groups
 
 # What a transfer hands the person who takes the call: the values the caller never confirmed are
 # named (the skill's default for a new app), and the member ID goes by its last four, so the
