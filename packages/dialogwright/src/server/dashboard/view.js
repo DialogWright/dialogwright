@@ -95,7 +95,8 @@ const WORDING_WHY = {
 /**
  * Generated wording on a turn (TraceRecord.render), as the console shows it under the agent's line:
  * each line the app generates, said generated (with the fixed line it stands for) or fixed, and why; a
- * framed line's span by its name, with its exact content beside it.
+ * framed line's span by its name, with its exact content beside it; and a line that fell back, the
+ * wording that was refused (`refused`), shown as not said.
  */
 export function wordingOf(render) {
   return render.lines.map((l) => ({
@@ -106,6 +107,9 @@ export function wordingOf(render) {
     mode: l.mode,
     fixed: l.fixed,
     ...(l.mode === 'generated' ? {} : { why: l.unchanged === true ? 'said unchanged: the wording was the words themselves' : l.fallback !== undefined ? `fell back: ${WORDING_WHY[l.fallback] ?? l.fallback}` : WORDING_WHY[l.skipped] ?? 'not tried' }),
+    // The wording a check or the judge set aside, never said: as the trace keeps it (masked where the
+    // records mask it, a summarized slot's span by its length), never put back together here.
+    ...(l.mode !== 'generated' && l.fallback !== undefined && typeof l.refused === 'string' && l.refused !== '' ? { refused: l.refused } : {}),
   }));
 }
 

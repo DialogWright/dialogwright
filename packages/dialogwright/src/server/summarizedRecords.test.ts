@@ -25,6 +25,10 @@ import { policyCardText } from '../testing/policyCard';
 import type { App } from '../core/app/types';
 import type { JevClient } from '../jev/types';
 import { FileCallStateStore } from './stores/file';
+import { redactRecord } from './dashboard/events';
+import { consoleMetaOf } from './dashboard/meta';
+import { configure, reduce, wordingOf } from './dashboard/view.js';
+import type { TraceRecord } from '../trace/types';
 import { SESSION_SCHEMA } from '../core/session';
 
 /**
@@ -150,6 +154,24 @@ describe('redact: length-summarized (live findings, item 20)', () => {
     expect(r.said).toContain(`called and left this message: ${MESSAGE}. Shall I pass it on?`);
     expect(r.session.slots.message!.value).toBe(MESSAGE);
     nowhere(r.records, PIECES);
+  });
+
+  it('a summary the checks refused is kept by its length, in the trace and on the console\'s call detail, never whole', async () => {
+    // A figure the message does not have: the span falls back to the message, and its wording is refused.
+    const refused = 'please call me about the March invoice, 99 dollars twice';
+    const r = await call({ spans: { confirm_take_message: refused } }, TO_READ_BACK);
+    expect(r.said).toContain(`called and left this message: ${MESSAGE}. Shall I pass it on?`);
+    nowhere(r.records, [...PIECES, '99 dollars']);
+    // The trace's render line holds the refused wording by its length alone.
+    const records = r.records.trace.trim().split('\n').map((l) => JSON.parse(l) as TraceRecord);
+    const line = records.flatMap((x) => x.render?.lines ?? []).find((l) => l.promptId === 'confirm_take_message' && l.refused !== undefined)!;
+    expect(line).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: `<${refused.length} chars>` });
+    // The console shows what the trace holds: the mask, on the replay's records and on the live events alike.
+    const fromTrace = records.flatMap((x) => (x.render ? wordingOf(redactRecord(x, app).render!) : [])).find((w) => w.refused !== undefined)!;
+    expect(fromTrace).toMatchObject({ why: 'fell back: a number, date or name it was not given', refused: `<${refused.length} chars>` });
+    configure(consoleMetaOf(app));
+    const live = reduce(JSON.parse(r.records.console) as DashboardEvent[]).lines.flatMap((l) => l.wording ?? []).find((w) => w.refused !== undefined)!;
+    expect(live.refused).toBe(`<${refused.length} chars>`);
   });
 
   it('an interruption during the read-back: what was heard of our line is kept by its length, in the records and in the session at rest', async () => {
