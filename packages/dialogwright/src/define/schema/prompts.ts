@@ -72,7 +72,7 @@ const span = z
       .optional()
       .describe(
         'A to-caller span only (`speaks: to-caller`): the line\'s variables whose value the span may use (to name whom the message is for where the message means them): each a `choice` slot of the line (who the message is for, as said, such as [recipient]). ' +
-          'They are the app\'s own option text, not the caller\'s words, so they are not screened; they are sent to the model and to the drift check, and the only names the span may say beside the content\'s (no other capitalized name passes its checks). Never a `name` slot (the caller\'s own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.',
+          'They are the app\'s own option text, not the caller\'s words, so they are not screened; they are sent to the model and to the drift check, and the only names the span may say beside the content\'s (the drift judge counts any other as unfaithful). Never a `name` slot (the caller\'s own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.',
       ),
   })
   .describe('One generated span of a fixed line.');
