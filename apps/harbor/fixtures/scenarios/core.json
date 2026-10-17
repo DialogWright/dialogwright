@@ -1602,5 +1602,138 @@
       "decision": "prompt",
       "promptId": "offer_transfer"
     }
+  },
+  {
+    "id": "coverage-again-no-ack",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "and what about prescriptions, are those covered"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "coverage-three-questions",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "and what about prescriptions, are those covered"
+      },
+      {
+        "say": "one more, how long do i have to file a claim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW",
+      "text": "180 days"
+    }
+  },
+  {
+    "id": "coverage-then-claim-next-wording",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "check my claim please"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_otp",
+      "principalLevel": 1,
+      "gate": "sendCode:ALLOW",
+      "text": "Happy to help you check on a claim."
+    }
+  },
+  {
+    "id": "three-requests-third-wording",
+    "steps": [
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "check my claim please"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "the physical therapy one"
+      },
+      {
+        "say": "i need to file a claim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "form": "report_claim",
+      "principalLevel": 2,
+      "text": "Of course, let's report a new claim."
+    }
+  },
+  {
+    "id": "claim-again-no-ack",
+    "steps": [
+      {
+        "say": "has claim 4655 been paid"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "can you check on claim 4702"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4702"
+    }
   }
 ]

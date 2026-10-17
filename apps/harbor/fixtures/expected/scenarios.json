@@ -2069,6 +2069,141 @@
     "pass": true,
     "mismatches": []
   },
+  "coverage-again-no-ack": {
+    "id": "coverage-again-no-ack",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-three-questions": {
+    "id": "coverage-three-questions",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "coverage-then-claim-next-wording": {
+    "id": "coverage-then-claim-next-wording",
+    "decision": "prompt",
+    "promptId": "ask_otp",
+    "acks": [
+      "ack_intent.v2"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "claim_status",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "sendCode:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "three-requests-third-wording": {
+    "id": "three-requests-third-wording",
+    "decision": "prompt",
+    "promptId": "ask_lossType",
+    "acks": [
+      "ack_intent.v3"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-again-no-ack": {
+    "id": "claim-again-no-ack",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "member-chat-signs-in-claim-paid": {
     "id": "member-chat-signs-in-claim-paid",
     "decision": "prompt",
@@ -2215,6 +2350,33 @@
     "promptId": "anything_else",
     "acks": [
       "ack_intent",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "member-chat-coverage-again": {
+    "id": "member-chat-coverage-again",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
       "coverage_answer"
     ],
     "reason": null,

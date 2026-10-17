@@ -61,6 +61,13 @@ handoff:
 frustration:
   forms: [claim_status, report_claim]
 
+# A request made again in the same call (a second coverage question) goes straight to its question or
+# its answer, with no "Sure, I can help you check coverage." before it: the maintainer's decision after
+# the live call of 2026-10-17, where three coverage questions each heard it (DESIGN.md "Acknowledgements").
+# Each new request is acknowledged in the next of ack_intent's wordings (prompts.yaml's variants).
+ackIntent:
+  repeat: skip
+
 # The engine's own model questions need to know whom the caller is addressing.
 wording:
   addressee: the Harbor Mutual member line

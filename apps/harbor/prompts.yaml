@@ -46,8 +46,17 @@ prompts:
   no_input:
     text: I didn't hear anything.
     interruptible: false
+  # Said as a request starts. A call that asks for one thing after another hears these in turn (the
+  # text, then each variant in order), and a request made again is gone straight into (app.yaml's
+  # ackIntent): the live call of 2026-10-17 heard "Sure, I can help you check coverage." before each
+  # of three coverage questions. Each reads with every label: check on a claim, check coverage,
+  # report a new claim.
   ack_intent:
     text: Sure, I can help you {intentLabel}.
+    variants:
+      - Happy to help you {intentLabel}.
+      - Of course, let's {intentLabel}.
+      - All right, let's {intentLabel}.
     interruptible: false
   confirm_intent_explicit:
     text: Just to check, you'd like to {intentLabel}. Is that right?
@@ -268,7 +277,7 @@ prompts:
     generate:
       answer:
         from: answer
-        goal: Answer the member's question from their plan's passage, in a sentence or two.
+        goal: Answer the member's question from their plan's passage, in a sentence or two, keeping anything the passage says that changes the answer.
   # Said before an answer whose wording is not ready within a line's budget; the answer follows.
   kb_hold:
     text: One moment while I gather that information.

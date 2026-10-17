@@ -105,5 +105,25 @@
       "gate": "searchPolicy:ALLOW",
       "text": "Sure, I can help you check coverage. One moment while I gather that information."
     }
+  },
+  {
+    "id": "member-chat-coverage-again",
+    "as": "web",
+    "steps": [
+      {
+        "signIn": "42716358"
+      },
+      {
+        "say": "is physical therapy covered"
+      },
+      {
+        "say": "and what about prescriptions, are those covered"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW"
+    }
   }
 ]
