@@ -1,15 +1,36 @@
 import { getDocumentProxy } from 'unpdf';
 import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../sections';
+import { withTables, type PlacedRun, type RowLine } from './pdfTables';
 
 /**
  * PDF to sections, with unpdf (pdf.js built for servers: pure JavaScript, no canvas, no native code).
  *
- * pdf.js gives each page's text as positioned runs with their font size. The runs are joined into
- * lines (a run on the same baseline continues the line), and the lines into blocks:
+ * pdf.js gives each page's text as positioned runs with their font and size. The runs are joined into
+ * lines (a run on the same baseline continues the line, unless a gap over 1.5 times its size is before
+ * it: a table's next cell), a page's tables are read as their rows (./pdfTables.ts), and the lines are
+ * joined into blocks:
  *
- * - The body size is the size most of the document's characters are set in. A short line set at
- *   least 15% larger is a heading; the distinct heading sizes, largest first, are levels 1, 2 and 3
- *   (smaller ones are level 3). Consecutive heading lines of one size are one heading.
+ * - A footnote marker is dropped: a run of one to three digits or a footnote sign (or a few, with commas),
+ *   set smaller than its line and raised above its baseline ("Benefits⁶" is "Benefits").
+ * - What a page carries on its margins is dropped, so it never becomes a section's text: a line in a
+ *   page's top or bottom strip (FURNITURE_BAND of its height) whose words (digits aside) come back on at
+ *   least a fifth of the pages (three at least) or that start as such a line does (a footer wrapped
+ *   otherwise on one page), a short line at a place in the strip that carries text
+ *   on that many pages and whose words come back at least once (a chapter's name over its pages), and
+ *   a page number there.
+ * - A contents page's lines, a title then dot leaders then a page number, are dropped, and so is a section
+ *   headed "Contents" or "Table of contents".
+ * - A cover is read apart: on a document of more than one page, the first page's lines set in a style
+ *   (size and weight) no later page uses and larger than every later heading. Its largest line is the
+ *   document's title, and the rest is the first section's text (a plan's name, a number, a date).
+ * - The body size is the size most of the document's characters are set in. A line of at most 120
+ *   characters set at least 15% larger is a heading; so is a line of at most 80 set in bold at the body
+ *   size or larger that does not end in a colon or a stop (a run-in "Benefits include:" is not). The
+ *   distinct heading styles, largest first and bold before regular at one size, are levels 1, 2 and 3
+ *   (smaller ones are level 3). Consecutive heading lines of one style on one page are one heading,
+ *   and one that ends up as a sentence (a stop at its end, or longer than 120) is a paragraph.
+ * - A heading that says again the heading its section is under, at the same level with none above it
+ *   between (a heading repeated at the top of each page, or "..., continued"), continues that section.
  * - Body lines make paragraphs; a vertical gap over 1.6 times the line's size starts a new one. A line
  *   ending in a hyphen joins the next with no space (the hyphen kept), others with one space.
  *
@@ -32,48 +53,139 @@ export const PDF_OPEN_OPTIONS: Readonly<{ isEvalSupported: false }> = { isEvalSu
 /** A PDF refused before it is read: too many pages. */
 export class PdfLimitError extends Error {}
 
-interface Run {
+export interface Run {
   str: string;
   transform: number[];
   width: number;
+  fontName?: string;
   hasEOL?: boolean;
 }
 
-interface Line {
+/** One line of a page: its text, its size, its baseline (from the page's bottom), and whether it is set in bold. */
+export interface Line {
   page: number;
   text: string;
   size: number;
   y: number;
+  bold?: boolean;
+  /** Its runs where they are on the page (a table's cells are found from them). */
+  runs?: readonly PlacedRun[];
+  /** A table's row (./pdfTables.ts): said as a paragraph of its own, or a heading over the rows under it. */
+  kind?: RowLine['kind'];
+}
+
+/** A page's lines, with its height (where its top and bottom strips are). */
+export interface PageLines {
+  page: number;
+  height: number;
+  lines: readonly Line[];
 }
 
 /** How much larger than the body a line must be to be a heading. */
 const HEADING_RATIO = 1.15;
 /** The longest a heading line is. */
 const MAX_HEADING_CHARS = 120;
+/** The longest a bold line at the body size is, to be a heading. */
+const MAX_BOLD_HEADING_CHARS = 80;
 /** A gap between lines over this many times the line's size starts a new paragraph. */
 const PARAGRAPH_GAP = 1.6;
+/** A gap on one baseline over this many times the text's size ends a line: what follows is another cell. */
+const CELL_GAP = 1.5;
+/** A footnote marker's size is at most this much of its line's. */
+const MARKER_RATIO = 0.8;
+/** The share of a page's height at its top and at its bottom where headers, footers and page numbers are. */
+export const FURNITURE_BAND = 0.07;
+/** The share of the pages a margin line comes back on to be the page's furniture (and three pages at least). */
+const FURNITURE_SHARE = 0.2;
+/** The longest a margin line is to be dropped for its place alone. */
+const MAX_PLACED_CHARS = 80;
 
-/** The runs of one page as lines, in the order pdf.js gives them. */
-function linesOf(runs: readonly Run[], page: number): Line[] {
-  const lines: Line[] = [];
-  let current: (Line & { end: number }) | null = null;
+/** A font's name says it is bold. */
+export const isBoldFontName = (name: string): boolean => /bold|black|heavy|semibold|demi/i.test(name);
+
+const MARKER = /^[\p{N}*†‡§]{1,3}(,\s?[\p{N}*†‡§]{1,3}){0,3}$/u;
+
+/** The runs of one page as lines, in the order pdf.js gives them; `bold` says which fonts are bold. */
+export function linesOf(runs: readonly Run[], page: number, bold: (fontName: string) => boolean = () => false): Line[] {
+  type Open = Line & { end: number; regular: number; placed: PlacedRun[] };
+  const lines: Open[] = [];
+  let current: Open | null = null;
   for (const run of runs) {
     if (typeof run.str !== 'string' || run.str === '') continue;
     const [a = 0, b = 0, c = 0, d = 0, x = 0, y = 0] = run.transform;
     const size = Math.max(Math.hypot(a, b), Math.hypot(c, d));
-    if (current && Math.abs(current.y - y) <= Math.max(current.size, size) * 0.5) {
+    const blank = run.str.trim() === '';
+    const regular = !blank && !bold(run.fontName ?? '') ? 1 : 0;
+    // A wide gap on one baseline is a table's gutter: the text after it is a cell of its own (./pdfTables.ts).
+    const apart = current !== null && !blank && x - current.end > Math.max(current.size, size) * CELL_GAP;
+    if (current && !apart && Math.abs(current.y - y) <= Math.max(current.size, size) * 0.5) {
+      // A footnote marker: smaller than its line and raised above it.
+      if (size <= current.size * MARKER_RATIO && y - current.y >= current.size * 0.15 && MARKER.test(run.str.trim())) continue;
       const gap = x - current.end;
       const space = gap > size * 0.15 && !current.text.endsWith(' ') && !run.str.startsWith(' ');
       current.text += (space ? ' ' : '') + run.str;
       current.size = Math.max(current.size, size);
-      current.end = x + run.width;
+      // A space as wide as a gutter says nothing of where the text ends.
+      if (!blank) current.end = x + run.width;
+      current.regular += regular;
+      current.placed.push({ x, end: x + run.width, text: run.str, bold: !blank && regular === 0 });
     } else {
       if (current) lines.push(current);
-      current = { page, text: run.str, size, y, end: x + run.width };
+      current = { page, text: run.str, size, y, end: x + run.width, regular: blank ? 0 : regular, placed: [{ x, end: x + run.width, text: run.str, bold: !blank && regular === 0 }] };
     }
   }
   if (current) lines.push(current);
-  return lines.map(({ page: p, text, size, y }) => ({ page: p, text: cleanText(text), size: Math.round(size * 10) / 10, y })).filter((l) => l.text !== '');
+  return lines
+    .map(({ page: p, text, size, y, regular, placed }) => ({ page: p, text: cleanText(text), size: Math.round(size * 10) / 10, y, ...(regular === 0 ? { bold: true } : {}), runs: placed }))
+    .filter((l) => l.text !== '');
+}
+
+/** A line's words with its digits as one sign: a header that numbers its pages is one line on every page. */
+const wordsOf = (text: string): string => text.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ');
+/** How many of a margin line's first characters (its words) say it is the same footer. */
+const FURNITURE_PREFIX = 24;
+const prefixOf = (text: string): string | null => {
+  const words = wordsOf(text);
+  return words.length >= FURNITURE_PREFIX ? words.slice(0, FURNITURE_PREFIX) : null;
+};
+const PAGE_NUMBER = /^(page\s*)?\d{1,4}(\s*(of|\/)\s*\d{1,4})?$/i;
+const DOT_LEADERS = /\S.*(\.\s?){4,}\s*\d{1,4}$/;
+
+/** The lines of every page but its furniture (headers, footers, page numbers) and a contents page's lines. */
+export function bodyLines(pages: readonly PageLines[]): Line[] {
+  const strip = (l: Line, height: number): 'top' | 'bottom' | null => (l.y >= height * (1 - FURNITURE_BAND) ? 'top' : l.y <= height * FURNITURE_BAND ? 'bottom' : null);
+  const byWords = new Map<string, Set<number>>();
+  const byPlace = new Map<string, Set<number>>();
+  const byPrefix = new Map<string, Set<number>>();
+  const note = (map: Map<string, Set<number>>, key: string, page: number) => map.set(key, (map.get(key) ?? new Set()).add(page));
+  for (const p of pages) {
+    for (const l of p.lines) {
+      const band = strip(l, p.height);
+      if (band === null) continue;
+      note(byWords, `${band}:${wordsOf(l.text)}`, p.page);
+      const prefix = prefixOf(l.text);
+      if (prefix !== null) note(byPrefix, `${band}:${prefix}`, p.page);
+      note(byPlace, `${band}:${Math.round(l.y / 2)}`, p.page);
+    }
+  }
+  const enough = Math.max(3, Math.ceil(pages.length * FURNITURE_SHARE));
+  const out: Line[] = [];
+  for (const p of pages) {
+    for (const l of p.lines) {
+      if (DOT_LEADERS.test(l.text)) continue;
+      const band = strip(l, p.height);
+      if (band !== null) {
+        if (PAGE_NUMBER.test(l.text)) continue;
+        const words = byWords.get(`${band}:${wordsOf(l.text)}`)?.size ?? 0;
+        if (words >= enough) continue;
+        const prefix = prefixOf(l.text);
+        if (prefix !== null && (byPrefix.get(`${band}:${prefix}`)?.size ?? 0) >= enough) continue;
+        if ((byPlace.get(`${band}:${Math.round(l.y / 2)}`)?.size ?? 0) >= enough && words >= 2 && l.text.length <= MAX_PLACED_CHARS) continue;
+      }
+      out.push(l);
+    }
+  }
+  return out;
 }
 
 /** The size most characters are set in. */
@@ -96,20 +208,71 @@ function joinLine(text: string, next: string): string {
   return /\p{L}-$/u.test(text) && /^\p{Ll}/u.test(next) ? text + next : `${text} ${next}`;
 }
 
-/** Lines to blocks: headings by size, paragraphs by vertical gaps. */
+const styleOf = (l: Line): string => `${l.size}${l.bold ? 'b' : ''}`;
+
+/** Whether a line is a heading, by its size and weight against the body's (see the file's comment). */
+function headingTest(body: number): (l: Line) => boolean {
+  return (l) =>
+    l.text.length <= MAX_HEADING_CHARS &&
+    (l.size >= body * HEADING_RATIO || (l.bold === true && l.size >= body && l.text.length <= MAX_BOLD_HEADING_CHARS && !/[:.;,]$/.test(l.text)));
+}
+
+/**
+ * A document's cover, read apart from its body (see the file's comment): its title and the rest of its
+ * text, and the lines left. None on a document of one page, or whose first page sets nothing apart.
+ */
+export function coverOf(lines: readonly Line[]): { title?: string; text: string[]; rest: Line[] } {
+  const pages = new Set(lines.map((l) => l.page));
+  if (pages.size < 2) return { text: [], rest: [...lines] };
+  const first = Math.min(...pages);
+  const later = lines.filter((l) => l.page !== first);
+  const isHeading = headingTest(bodySize(lines));
+  const laterStyles = new Set(later.map(styleOf));
+  const top = Math.max(0, ...later.filter(isHeading).map((l) => l.size));
+  const cover = lines.filter((l) => l.page === first && !laterStyles.has(styleOf(l)) && l.size > top);
+  if (cover.length === 0) return { text: [], rest: [...lines] };
+  const largest = Math.max(...cover.map((l) => l.size));
+  const title = cover.filter((l) => l.size === largest).map((l) => l.text).join(' ');
+  const text: string[] = [];
+  for (const l of cover) {
+    if (l.size === largest) continue;
+    const prev = cover[cover.indexOf(l) - 1];
+    if (prev && styleOf(prev) === styleOf(l) && text.length > 0) text[text.length - 1] = `${text[text.length - 1]} ${l.text}`;
+    else text.push(l.text);
+  }
+  return { title, text, rest: lines.filter((l) => !cover.includes(l)) };
+}
+
+/** A heading's words to compare with another's: a "continued" at its end dropped. */
+const sameHeading = (text: string): string => cleanText(text.toLowerCase().replace(/[,;:\s]*\(?(continued|cont'?d\.?)\)?\s*$/, ''));
+
+/** Lines to blocks: headings by size and weight, paragraphs by vertical gaps. */
 export function blocksOfLines(lines: readonly Line[]): Block[] {
   const body = bodySize(lines);
-  const isHeading = (l: Line): boolean => l.size >= body * HEADING_RATIO && l.text.length <= MAX_HEADING_CHARS;
-  const sizes = [...new Set(lines.filter(isHeading).map((l) => l.size))].sort((x, y) => y - x);
-  const levelOf = (size: number): 1 | 2 | 3 => Math.min(sizes.indexOf(size) + 1, 3) as 1 | 2 | 3;
+  const plain = headingTest(body);
+  const isHeading = (l: Line): boolean => l.kind === undefined && plain(l);
+  const styles = [...new Map(lines.filter(isHeading).map((l) => [styleOf(l), l])).values()]
+    .sort((x, y) => y.size - x.size || Number(y.bold === true) - Number(x.bold === true))
+    .map(styleOf);
+  const levelOf = (l: Line): 1 | 2 | 3 => Math.min(styles.indexOf(styleOf(l)) + 1, 3) as 1 | 2 | 3;
   const blocks: Block[] = [];
   let prev: Line | null = null;
   for (const line of lines) {
     const last = blocks[blocks.length - 1];
+    if (line.kind === 'row') {
+      blocks.push({ kind: 'para', text: line.text, page: line.page });
+      prev = null;
+      continue;
+    }
+    if (line.kind === 'group') {
+      blocks.push({ kind: 'heading', level: 3, text: line.text, page: line.page });
+      prev = null;
+      continue;
+    }
     if (isHeading(line)) {
-      if (last?.kind === 'heading' && prev && isHeading(prev) && prev.size === line.size && prev.page === line.page) {
+      if (last?.kind === 'heading' && prev && isHeading(prev) && styleOf(prev) === styleOf(line) && prev.page === line.page) {
         blocks[blocks.length - 1] = { ...last, text: `${last.text} ${line.text}` };
-      } else blocks.push({ kind: 'heading', level: levelOf(line.size), text: line.text, page: line.page });
+      } else blocks.push({ kind: 'heading', level: levelOf(line), text: line.text, page: line.page });
     } else {
       const continues = last?.kind === 'para' && prev !== null && !isHeading(prev) && prev.page === line.page && prev.y - line.y <= line.size * PARAGRAPH_GAP;
       if (continues) blocks[blocks.length - 1] = { ...last, text: joinLine(last.text, line.text) };
@@ -117,23 +280,82 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
     }
     prev = line;
   }
-  return blocks;
+  // A heading that ended up as a sentence is a paragraph; one that says again the heading its section
+  // is under continues that section.
+  const out: Block[] = [];
+  const open: (string | undefined)[] = [];
+  for (const b of blocks) {
+    if (b.kind !== 'heading') {
+      out.push(b);
+      continue;
+    }
+    if (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text)) {
+      out.push({ kind: 'para', text: b.text, ...(b.page === undefined ? {} : { page: b.page }) });
+      continue;
+    }
+    if (open[b.level] !== undefined && open[b.level] === sameHeading(b.text)) continue;
+    open[b.level] = sameHeading(b.text);
+    open.length = b.level + 1;
+    out.push(b);
+  }
+  return out;
 }
 
-/** A PDF's bytes to sections, with its metadata title when it has one (refused over `maxPages`, default 500). */
-export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<ExtractedDocument & { pages: number }> {
+/** A document's pages read to sections: its furniture dropped, its cover read apart, its body cut at its headings. */
+export function readPages(pages: readonly PageLines[]): ExtractedDocument {
+  const body = bodyLines(pages);
+  const tabled: Line[] = [];
+  for (const p of pages) tabled.push(...(withTables(body.filter((l) => l.page === p.page)) as Line[]));
+  const cover = coverOf(tabled);
+  const blocks: Block[] = [
+    ...cover.text.map((text): Block => ({ kind: 'para', text, page: Math.min(...pages.map((p) => p.page)) })),
+    ...blocksOfLines(cover.rest),
+  ];
+  // A contents page's heading, and what is under it until the next heading.
+  const CONTENTS = /^(table of )?contents$/i;
+  const kept: Block[] = [];
+  let contents = false;
+  for (const b of blocks) {
+    if (b.kind === 'heading') contents = CONTENTS.test(b.text);
+    if (!contents) kept.push(b);
+  }
+  const read = sectionsOf(kept, { paged: true, ...(cover.title === undefined ? {} : { titled: true }) });
+  const title = cover.title ?? read.title;
+  return { ...(title === undefined ? {} : { title }), sections: read.sections };
+}
+
+/** A PDF's pages as lines, and its metadata title (refused over `maxPages`, default 500). */
+export async function pdfPages(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<{ pages: PageLines[]; count: number; metaTitle?: string }> {
   const maxPages = options.maxPages ?? MAX_PDF_PAGES;
   const pdf = await getDocumentProxy(new Uint8Array(bytes), { ...PDF_OPEN_OPTIONS } as Parameters<typeof getDocumentProxy>[1]);
   try {
     if (pdf.numPages > maxPages) throw new PdfLimitError(`it has ${pdf.numPages} pages, over the ${maxPages} read`);
-    const lines: Line[] = [];
+    const pages: PageLines[] = [];
     for (let n = 1; n <= pdf.numPages; n += 1) {
       const page = await pdf.getPage(n);
       const content = await page.getTextContent();
-      lines.push(...linesOf(content.items as unknown as Run[], n));
+      // The fonts' names (which say which are bold) are known once the page's operators are read.
+      const bold = new Map<string, boolean>();
+      try {
+        await page.getOperatorList();
+      } catch {
+        // No weights for this page: its lines are read by their size alone.
+      }
+      const isBold = (fontName: string): boolean => {
+        if (!bold.has(fontName)) {
+          let name = '';
+          try {
+            name = String((page.commonObjs.get(fontName) as { name?: unknown } | undefined)?.name ?? '');
+          } catch {
+            name = '';
+          }
+          bold.set(fontName, isBoldFontName(name));
+        }
+        return bold.get(fontName)!;
+      };
+      pages.push({ page: n, height: page.getViewport({ scale: 1 }).height, lines: linesOf(content.items as unknown as Run[], n, isBold) });
       page.cleanup();
     }
-    const read = sectionsOf(blocksOfLines(lines), { paged: true });
     let metaTitle: string | undefined;
     try {
       const info = (await pdf.getMetadata()).info as { Title?: unknown } | undefined;
@@ -141,9 +363,16 @@ export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number
     } catch {
       metaTitle = undefined;
     }
-    const title = read.title ?? metaTitle;
-    return { ...(title === undefined ? {} : { title }), sections: read.sections, pages: pdf.numPages };
+    return { pages, count: pdf.numPages, ...(metaTitle === undefined ? {} : { metaTitle }) };
   } finally {
     await pdf.loadingTask.destroy();
   }
+}
+
+/** A PDF's bytes to sections, with its metadata title when it has one (refused over `maxPages`, default 500). */
+export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<ExtractedDocument & { pages: number }> {
+  const { pages, count, metaTitle } = await pdfPages(bytes, options);
+  const read = readPages(pages);
+  const title = read.title ?? metaTitle;
+  return { ...(title === undefined ? {} : { title }), sections: read.sections, pages: count };
 }
