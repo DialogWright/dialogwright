@@ -4592,6 +4592,81 @@
     "principalLevel": 0,
     "gate": "getCoverage:STEP_UP"
   },
+  "fr-05": {
+    "id": "fr-05",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null
+  },
+  "fr-06": {
+    "id": "fr-06",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "fr-07": {
+    "id": "fr-07",
+    "decision": "prompt",
+    "promptId": "nomatch_open",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
   "br-01": {
     "id": "br-01",
     "decision": "prompt",

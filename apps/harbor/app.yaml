@@ -55,9 +55,13 @@ handoff:
       clientId: masked
 
 # The paragraph: "a member who sounds frustrated about a claim is offered" a person. So the
-# frustration ladder (the acknowledgement, a person offered, then a person) runs in the claim forms
-# only, and in a coverage question set aside from one; on a coverage question alone, or at the
-# opening question, the caller's tone is not answered (a person is still theirs for the asking).
+# frustration ladder (the acknowledgement, a person offered, then a person) runs in the claim forms,
+# in a coverage question set aside from one, and right after a claim's status or report (answered,
+# refused or ended) until the member asks for something else: "this is ridiculous" just after a
+# claim lookup was refused counts (the engine's `after: count`, the default). Elsewhere, on a coverage
+# question alone or at the opening question, a member who sounds very frustrated hears the
+# acknowledgement and is not offered a person for it (`elsewhere: acknowledge`, the default); a person
+# is still theirs for the asking. The maintainer's decision after the live calls of 2026-10-17.
 frustration:
   forms: [claim_status, report_claim]
 
