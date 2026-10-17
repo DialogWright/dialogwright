@@ -49,6 +49,7 @@ const FROM: Record<ApprovalLogLine['from'], string> = {
   pending: 'a draft from kb/pending, approved with kb:approve',
   passage: 'a passage in kb/passages, approved with kb:approve (or confirmed in kb:review)',
   migration: 'carried over by a migration from an earlier format',
+  document: 'a source document approved for summarizing, with kb:approve --document',
 };
 
 /** The Knowledge base tab: every topic and its passages, then the rejected drafts. */

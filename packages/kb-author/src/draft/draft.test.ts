@@ -139,7 +139,7 @@ describe('kb:draft', () => {
 
 describe('the Claude drafter', () => {
   const request: DraftRequest = {
-    source: { id: 'patron-guide', document: 'Example Town Library Patron Guide', sections: { 'meeting-rooms': { heading: 'Meeting rooms', text: 'Meeting rooms can be booked up to sixty days ahead at no charge by any card holder.' } } },
+    source: { id: 'patron-guide', document: 'Example Town Library Patron Guide', sections: { 'meeting-rooms': { heading: 'Meeting rooms', text: 'Meeting rooms can be booked up to sixty days ahead at no charge by any card holder.' } }, hash: '', freshness: 'unapproved' },
     existingTopics: [{ id: 'opening_hours', title: 'Opening hours', keywords: ['open'], asks: [] }],
     locale: 'en-US',
     maxAnswerChars: 400,
