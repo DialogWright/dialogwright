@@ -3,7 +3,7 @@ import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
 import type { Nomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
-import { formOf, formSlotsFor, isCarried } from './app/lookup';
+import { formOf, formSlotsFor, isCarried, keepsLastTask } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
 import type { App } from './app/types';
 import type { GateVerdict, Principal, ToolCall } from '../gate/types';
@@ -250,6 +250,14 @@ export interface Session {
    * (core/turn.ts ackIntent). Absent until the first, so every other session is as it was.
    */
   ackIntentSaid?: number;
+  /**
+   * The call's most recent task: the form last closed (completed, refused or ended, closeForm), until
+   * an informational answer is said with no form open (the caller started another task). The
+   * frustration ladder reads it with no form open (App.frustration.after). Kept only by an app whose
+   * ladder is limited to some forms and runs after them (keepsLastTask), so every other session is as
+   * it was.
+   */
+  lastTask?: FormId;
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -650,6 +658,7 @@ export function setForm(session: Session, form: FormId): Session {
 export function closeForm(session: Session, keep: readonly SlotId[] = []): Session {
   const app = appOf(session);
   if (session.form) {
+    noteTaskClosed(session, session.form);
     // The greeting's proposal was for the slot this form had: a later form may propose at the slot
     // again, unless the next form keeps the slot as it is.
     if (session.greetingOffered !== undefined && formOf(app, session.form).slots.includes(session.greetingOffered) && !keep.includes(session.greetingOffered)) delete session.greetingOffered;
@@ -679,6 +688,11 @@ export function closeForm(session: Session, keep: readonly SlotId[] = []): Sessi
   delete session.callerOffered;
   app.facts?.onFormClosed?.(session.facts);
   return session;
+}
+
+/** `form` was the call's most recent task (Session.lastTask), where the app keeps it (keepsLastTask). */
+export function noteTaskClosed(session: Session, form: FormId): void {
+  if (keepsLastTask(appOf(session))) session.lastTask = form;
 }
 
 export function requiredSlots(session: Session): readonly SlotId[] {

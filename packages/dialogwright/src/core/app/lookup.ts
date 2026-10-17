@@ -1,4 +1,4 @@
-import type { AckRepeat, AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AckRepeat, AnythingElseSilence, App, ChangeSlotWithValue, FormDef, FrustrationAfter, FrustrationElsewhere, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 import type { Principal } from '../../gate/types';
@@ -137,13 +137,40 @@ export function formSlotsFor(app: App, form: FormId, principal: Principal): read
 
 /**
  * Whether the frustration ladder runs on this turn (App.frustration): on every turn, unless the app
- * names forms, and then only when `form` (the form open, or with none open the intent the turn reads)
- * or `parked` (the form set aside for an aside, Session.parked) is one of them.
+ * names forms, and then when `open` (the form open) or `parked` (the form set aside for an aside,
+ * Session.parked) is one of them; with no form open, when `asked` (the task the turn asks for, a form
+ * or an informational intent with an answer, isTaskIntent; null for none) is one of them; and with no
+ * form open and no task asked, when `last` (the call's most recent task, Session.lastTask) is one of
+ * them and the app counts frustration after one (App.frustration.after, default `count`).
  */
-export function frustrationHeardIn(app: App, form: FormId | null, parked: FormId | null): boolean {
+export function frustrationHeardIn(app: App, open: FormId | null, parked: FormId | null, asked: string | null, last: FormId | null): boolean {
   const forms = app.frustration?.forms;
   if (forms === undefined) return true;
-  return (form !== null && forms.includes(form)) || (parked !== null && forms.includes(parked));
+  if (open !== null || parked !== null) return (open !== null && forms.includes(open)) || (parked !== null && forms.includes(parked));
+  if (asked !== null) return forms.includes(asked);
+  return frustrationAfterOf(app) === 'count' && last !== null && forms.includes(last);
+}
+
+/** Whether frustration right after a form the ladder runs in counts (App.frustration.after): `count` unless the app says `ignore`. Only read where the app names forms. */
+export function frustrationAfterOf(app: App): FrustrationAfter {
+  return app.frustration?.after ?? 'count';
+}
+
+/**
+ * What high frustration gets where the ladder does not run (App.frustration.elsewhere): `acknowledge`
+ * unless the app says `ignore`. Only an app that names forms has such turns.
+ */
+export function frustrationElsewhereOf(app: App): FrustrationElsewhere {
+  return app.frustration?.elsewhere ?? 'acknowledge';
+}
+
+/**
+ * Whether the session keeps the call's most recent task (Session.lastTask): only for an app whose
+ * ladder is limited to some forms and runs after them (App.frustration), so every other session is as
+ * it was.
+ */
+export function keepsLastTask(app: App): boolean {
+  return app.frustration?.forms !== undefined && frustrationAfterOf(app) === 'count';
 }
 
 /** What a request the call has already acknowledged gets when made again: the app's (App.ackIntent.repeat), else `say`. */

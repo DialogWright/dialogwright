@@ -818,6 +818,9 @@ interface Informed {
  * line after it are said in the new locale.
  */
 function informed(s: Session, io: TurnIO, informs: Informs): Informed {
+  // An answer said with no form open is a task of its own: the call's most recent task is no longer
+  // the form closed before it (Session.lastTask, App.frustration.after). A switch of language is not.
+  if (s.form === null && (informs.passage !== undefined || informs.promptId !== undefined)) delete s.lastTask;
   if (informs.passage !== undefined) {
     const said: InformationalAnswer = informationalAnswer(s, io.tc, io.out, informs.passage);
     return { acks: [said.ack], answered: said.answered };
@@ -2348,7 +2351,7 @@ function escalate(s: Session, decision: Decision, rung: FrustrationRung | undefi
   // What a completion just said while a downstream service's answer is awaited (e.g. a report's
   // number) is not taken back for an offer: the answer follows. The same goes for an offer already
   // on the table, which keeps what it was for.
-  if (rung === 'ack' || s.pendingService !== null || s.pendingConfirmation?.target === 'transfer') {
+  if (rung === 'ack' || rung === 'ack_only' || s.pendingService !== null || s.pendingConfirmation?.target === 'transfer') {
     return { ...decision, acks: [ACK_FRUSTRATION, ...decision.acks] };
   }
   // The offer takes the place of the question this turn would have asked. What the turn filled or
@@ -3051,9 +3054,10 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const ctx = slotContext(s, event.text, tc);
       const { rows, verdict } = evaluateGates(s, turnState, answers, tc.thresholds, summaryValuesGiven(s, answers, ctx));
       // The gate worked the rung out from the count but left the count alone; the turn owns the
-      // bookkeeping, and only a verdict that carries a rung is a frustrated turn to count.
+      // bookkeeping, and only a verdict that carries a rung of the ladder is a frustrated turn to count:
+      // the acknowledgement alone, where the ladder does not run (`ack_only`), never is.
       const rung = frustrationOf(verdict);
-      if (rung !== undefined) s.frustratedTurns += 1;
+      if (rung === 'ack' || rung === 'offer') s.frustratedTurns += 1;
       const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
       const decided = readSummary(s, escalate(s, resolved, rung), io);
       rows.push(...(io.openingRows ?? []), ...slotRows(io.app, events, tc.thresholds, verdict.kind === 'proceed' ? verdict.dictated : undefined));

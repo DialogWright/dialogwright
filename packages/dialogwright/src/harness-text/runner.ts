@@ -3,7 +3,7 @@ import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
-import { emptySlot, missingSlots, newSession, setForm, type Session } from '../core/session';
+import { emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
 import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
@@ -149,6 +149,8 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     if (!seed.anythingElse) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no anything_else context (App.testing.seed.anythingElse)`);
     const answered = seed.anythingElse();
     session.completed = [answered.form];
+    // It is the call's most recent task, as closing it would have left it (Session.lastTask).
+    noteTaskClosed(session, answered.form);
     if (answered.call) {
       const { value } = callTool(session, answered.call, tc, newTurnOut());
       formOf(app, answered.form).onEntry?.(session, value);

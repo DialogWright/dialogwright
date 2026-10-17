@@ -470,6 +470,11 @@ describe('defineApp: what app.yaml shows and the clips name, and what the confir
     expect(problems(libraryCode, wrong)).toEqual([expect.stringMatching(/^app\.yaml:\d+:\d+ {2}frustration\.forms\[0\] {2}frustration names the form "renew_lone", but forms\.yaml has no form "renew_lone" {2}-> {2}rename it to "renew_loan", or delete it$/)]);
     const right = app((t) => `${t}\nfrustration:\n  forms: [renew_loan]\n`);
     expect(defineApp(right, libraryCode).frustration).toEqual({ forms: ['renew_loan'] });
+    const both = app((t) => `${t}\nfrustration:\n  forms: [renew_loan]\n  after: ignore\n  elsewhere: ignore\n`);
+    expect(defineApp(both, libraryCode).frustration).toEqual({ forms: ['renew_loan'], after: 'ignore', elsewhere: 'ignore' });
+    // Without forms the ladder runs on every turn, so neither has anything to say.
+    const alone = app((t) => `${t}\nfrustration:\n  elsewhere: ignore\n`);
+    expect(problems(libraryCode, alone)).toEqual([expect.stringMatching(/^app\.yaml:\d+:\d+ {2}frustration\.elsewhere {2}frustration\.elsewhere says what happens beside the forms the ladder runs in, but frustration names no forms \(so it runs on every turn\) {2}-> {2}name the forms \(frustration\.forms\), or delete it$/)]);
   });
 
   it('a voice tag names a vocabulary clip, a clip id is used once, and a clip plays for a variable some line has', () => {

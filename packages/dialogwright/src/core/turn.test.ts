@@ -1110,6 +1110,58 @@ describe('frustration escalation', () => {
     expect(r.decision).toEqual({ kind: 'ignore' });
     expect(r.session.pendingConfirmation).toEqual({ target: 'transfer', attempts: 0 });
   });
+
+  /**
+   * An app that limits the ladder to some forms (App.frustration.forms, here the missing-parcel
+   * report): right after that form it still counts (`after`), and elsewhere a caller this upset
+   * hears the acknowledgement alone (`elsewhere`), never counted. Both defaults.
+   */
+  describe('limited to some forms', () => {
+    const APP = 'testkit-frustration-turns';
+    registerApp({ ...testkitApp, id: APP, frustration: { forms: ['report_missing'] } });
+    const NONE = choice({ none: 0.9, other: 0.1 });
+    const CAPABILITIES: Ack = { promptId: 'capabilities', vars: {} };
+    /** The report filed and closed: its summary's yes, then the depot's answer, at "anything else?". */
+    const filed = (): Session => resolve(afterTurns([...HAPPY, 'yes'], APP).session, serviceResultEvent('depot', { searchDays: 2 }), null, tc).session;
+
+    it('keeps the form closed as the call\'s most recent task', () => {
+      const s = filed();
+      expect(s.form).toBeNull();
+      expect(s.lastTask).toBe('report_missing');
+      // An app whose ladder runs everywhere keeps nothing.
+      expect(resolve(afterTurns([...HAPPY, 'yes']).session, serviceResultEvent('depot', { searchDays: 2 }), null, tc).session.lastTask).toBeUndefined();
+    });
+
+    it('acknowledges frustration at the greeting before the re-ask, and does not count it', () => {
+      const r = say(started(APP), "you know, this is ridiculous, i've called three times", { intent: NONE, frustration: HIGH });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', acks: [ACK_FRUSTRATION] });
+      expect(r.session.frustratedTurns).toBe(0);
+      const again = say(r.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(again.decision).toMatchObject({ acks: [ACK_FRUSTRATION] });
+      expect(again.decision).not.toMatchObject({ promptId: 'offer_transfer' });
+      expect(again.session.frustratedTurns).toBe(0);
+    });
+
+    it('counts frustration right after the form: acknowledged, then a person offered', () => {
+      const first = say(filed(), 'come on, this is so stupid, i hate these systems', { intent: NONE, frustration: HIGH });
+      expect(first.decision).toMatchObject({ kind: 'prompt', acks: [ACK_FRUSTRATION] });
+      expect(first.session.frustratedTurns).toBe(1);
+      const second = say(first.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(second.decision).toMatchObject(OFFER);
+      expect(second.session.frustratedTurns).toBe(2);
+    });
+
+    it('stops counting once the caller starts another task: an informational answer said', () => {
+      const first = say(filed(), 'come on, this is so stupid, i hate these systems', { intent: NONE, frustration: HIGH });
+      const asked = say(first.session, 'what can you do', { intent: choice({ capabilities: 0.9, other: 0.06, none: 0.04 }) });
+      expect(asked.decision).toMatchObject({ acks: [CAPABILITIES] });
+      expect(asked.session.lastTask).toBeUndefined();
+      const after = say(asked.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(after.decision).toMatchObject({ kind: 'prompt', acks: [ACK_FRUSTRATION] });
+      expect(after.decision).not.toMatchObject({ promptId: 'offer_transfer' });
+      expect(after.session.frustratedTurns).toBe(1);
+    });
+  });
 });
 
 describe('capabilities', () => {

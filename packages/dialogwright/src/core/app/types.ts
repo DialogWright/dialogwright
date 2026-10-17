@@ -109,6 +109,24 @@ export type QuestionAtSummary = 'aside' | 'summary';
 export type AnythingElseSilence = 'repeat' | 'opener' | 'goodbye';
 
 /**
+ * With app.yaml `frustration.forms`, whether frustration right after one of those forms counts
+ * (App.frustration.after): `count`, the ladder also runs with no form open while the call's most
+ * recent task was one of them (Session.lastTask: it completed, was refused or ended) and the turn asks
+ * for no other task (a form, or an informational intent with an answer), until the caller starts one;
+ * `ignore`, it runs only while one is open or set aside, or on a turn that asks for one (as before
+ * 2026-10-17). Default `count`.
+ */
+export type FrustrationAfter = 'count' | 'ignore';
+
+/**
+ * With app.yaml `frustration.forms`, what a turn the frustration question reads as high
+ * (GATE_FRUSTRATION_HIGH) gets where the ladder does not run (App.frustration.elsewhere):
+ * `acknowledge`, the acknowledgement (`ack_frustration`) before what the turn says, never counted
+ * toward the offer of a person; `ignore`, nothing (as before 2026-10-17). Default `acknowledge`.
+ */
+export type FrustrationElsewhere = 'acknowledge' | 'ignore';
+
+/**
  * What a request the call has already acknowledged gets when the caller makes it again, for
  * App.ackIntent: `say`, the acknowledgement (ack_intent) again; `skip`, none, so the form goes
  * straight to its first question or its answer.
@@ -1348,10 +1366,14 @@ export interface App {
    * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
    * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is
    * open or set aside for an aside (Session.parked), or, with no form open, on a turn whose intent read
-   * is one of them. On every other turn the caller's tone is neither counted nor answered. Without it,
-   * every turn (Harbor findings item 3; the maintainer's decision, 2026-10-16).
+   * is one of them. Without `forms`, every turn (Harbor findings item 3; the maintainer's decision,
+   * 2026-10-16). With `forms`, two more (the maintainer's decision, 2026-10-17, after live calls):
+   * `after`, whether the ladder also runs with no form open when the call's most recent task was one
+   * of them (it completed, was refused or ended) and the turn asks for no other task, until the caller
+   * starts one (FrustrationAfter, default `count`); `elsewhere`, what a turn read as high frustration
+   * gets where the ladder does not run (FrustrationElsewhere, default `acknowledge`).
    */
-  frustration?: { readonly forms?: readonly FormId[] };
+  frustration?: { readonly forms?: readonly FormId[]; readonly after?: FrustrationAfter; readonly elsewhere?: FrustrationElsewhere };
   /**
    * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
    * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"

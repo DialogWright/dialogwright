@@ -56,7 +56,7 @@ export interface RenderFigures {
 const emptyGroup = (): GroupFigures => ({ calls: 0, ended: 0, contained: 0, reasks: 0, frustratedCalls: 0, frustratedTurns: 0, lengthMs: 0, costUsd: 0 });
 export const emptyRenderFigures = (): RenderFigures => ({ groups: { generated: emptyGroup(), fixed: emptyGroup() }, prompts: {}, costUsd: 0 });
 
-const FRUSTRATED = new Set(['ack', 'offer', 'handoff']);
+const FRUSTRATED = new Set(['ack', 'offer', 'handoff', 'ack_only']);
 
 /**
  * What a call adds to the generated-wording figures, from its records as on disk; null for a call with no

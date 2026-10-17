@@ -883,6 +883,12 @@ export function crossLink(
   app.frustration?.forms?.forEach((id, i) => {
     if (!has(forms, id)) yaml('app.yaml', ['frustration', 'forms', i], `frustration names the form "${id}", but forms.yaml has no form "${id}"`, `${renameHint(id, formIds)}delete it`);
   });
+  // after and elsewhere say what happens beside the forms the ladder is limited to: without forms it runs on every turn.
+  for (const key of ['after', 'elsewhere'] as const) {
+    if (app.frustration !== undefined && app.frustration.forms === undefined && app.frustration[key] !== undefined) {
+      yaml('app.yaml', ['frustration', key], `frustration.${key} says what happens beside the forms the ladder runs in, but frustration names no forms (so it runs on every turn)`, 'name the forms (frustration.forms), or delete it');
+    }
+  }
   for (const id of Object.keys(shown?.formLabels ?? {})) {
     if (!has(forms, id)) yaml('app.yaml', ['console', 'formLabels', id], `form "${id}" has a label, but forms.yaml has no form "${id}"`, `${renameHint(id, formIds)}delete the label`, true);
   }
@@ -1100,7 +1106,11 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'questionAtSummary', a.questionAtSummary);
-  put(app, 'frustration', a.frustration === undefined ? undefined : { ...(a.frustration.forms !== undefined ? { forms: [...a.frustration.forms] } : {}) });
+  put(app, 'frustration', a.frustration === undefined ? undefined : {
+    ...(a.frustration.forms !== undefined ? { forms: [...a.frustration.forms] } : {}),
+    ...(a.frustration.after !== undefined ? { after: a.frustration.after } : {}),
+    ...(a.frustration.elsewhere !== undefined ? { elsewhere: a.frustration.elsewhere } : {}),
+  });
   put(app, 'anythingElseSilence', a.anythingElseSilence);
   put(app, 'ackIntent', a.ackIntent === undefined ? undefined : { ...a.ackIntent });
   put(app, 'thresholds', a.thresholds);

@@ -577,7 +577,15 @@ export const appSchema = z
         forms: unique(identifier(), 'form')
           .min(1, { error: 'must name at least one form' })
           .optional()
-          .describe('The forms in which a frustrated caller is answered: the acknowledgement (ack_frustration), then a person offered (offer_transfer), then a person (handoff_frustrated), while one of them is open or set aside for an aside, or, with no form open, on a turn whose intent is one of them ("this is ridiculous, I just want to know about my claim"). On every other turn the caller\'s tone is neither counted nor answered (a person is still theirs for the asking). Default: every turn.'),
+          .describe('The forms in which the frustration ladder runs: the acknowledgement (ack_frustration), then a person offered (offer_transfer), then a person (handoff_frustrated), while one of them is open or set aside for an aside, or, with no form open, on a turn whose intent is one of them ("this is ridiculous, I just want to know about my claim"), or right after one of them (after). On every other turn the caller\'s tone is not counted, and is acknowledged only (elsewhere); a person is still theirs for the asking. Default: every turn.'),
+        after: z
+          .enum(['count', 'ignore'])
+          .optional()
+          .describe('With forms: whether frustration right after one of them counts. "count": with no form open, while the call\'s most recent task was one of them (it completed, was refused or ended) and the turn asks for no other task, the ladder runs as it would inside it, until the caller starts another task (a form, or an informational intent with an answer). "ignore": it runs only while one is open or set aside, or on a turn that asks for one. Default "count".'),
+        elsewhere: z
+          .enum(['acknowledge', 'ignore'])
+          .optional()
+          .describe('With forms: what a turn read as high frustration gets where the ladder does not run. "acknowledge": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. "ignore": nothing. Mild frustration gets nothing either way. Default "acknowledge".'),
       })
       .optional()
       .describe('Where the frustration ladder runs. Default: on every turn, in every form and outside one.'),

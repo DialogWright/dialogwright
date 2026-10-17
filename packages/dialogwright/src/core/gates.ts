@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
-import { informationOf, isFormIntent, type Informs } from './app/intents';
-import { changeSlotWithValueOf, formOf, frustrationHeardIn, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
+import { informationOf, isFormIntent, isTaskIntent, type Informs } from './app/intents';
+import { changeSlotWithValueOf, formOf, frustrationElsewhereOf, frustrationHeardIn, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -20,14 +20,16 @@ export interface GateRow {
 /**
  * The rung the frustration gate reached: `ack` for the first frustrated turn,
  * `offer` for the second. A handoff is a verdict of its own, and a turn that is not frustrated --
- * or one that is answering the offer -- carries nothing.
+ * or one that is answering the offer -- carries nothing. `ack_only` is no rung of the ladder: a turn
+ * read as high frustration where the ladder does not run (App.frustration.elsewhere `acknowledge`)
+ * hears the acknowledgement as `ack` does, and is never counted toward the offer of a person.
  *
  * Only the verdicts that let the call go on carry it: the turn prepends the acknowledgment to the
  * prompt it was going to play, or replaces that prompt with the offer, and neither makes sense for
  * a turn that says nothing (`ignore`, `hold`), one that is already leaving (`handoff`), or a replay
  * of the last prompt.
  */
-export type FrustrationRung = 'ack' | 'offer';
+export type FrustrationRung = 'ack' | 'offer' | 'ack_only';
 interface Frustrated {
   frustration?: FrustrationRung;
 }
@@ -230,12 +232,16 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     const high = isScore(f) ? (f.probabilities.high ?? 0) : 0;
     // At a dictation the caller's tone is the words' own (an annoyed message is still a message): the
     // turn is neither counted nor answered for it, and the row says so.
-    // Outside the forms the app names for it (App.frustration), the tone is not answered either: the
-    // form open, the one set aside for an aside, or with none open the one the words ask for (the
-    // intent read), "this is ridiculous, I just want to know about my claim" at the opening question.
-    const [asked] = session.form === null && isChoice(answers.intent) ? rankProbabilities(answers.intent.probabilities) : [];
-    const heard = frustrationHeardIn(app, session.form ?? asked?.label ?? null, session.parked?.form ?? null);
-    const frustrated = atLeast(high, t.GATE_FRUSTRATION_HIGH) && dictation === null && heard;
+    // Outside the forms the app names for it (App.frustration), the ladder does not run: the form
+    // open, the one set aside for an aside; with none open the task the words ask for (the intent
+    // read), "this is ridiculous, I just want to know about my claim" at the opening question; and
+    // with none asked for, the call's most recent task (Session.lastTask, App.frustration.after):
+    // "this is ridiculous" just after a claim's lookup was refused.
+    const [top] = session.form === null && isChoice(answers.intent) ? rankProbabilities(answers.intent.probabilities) : [];
+    const asked = top !== undefined && isTaskIntent(app, top.label) ? top.label : null;
+    const heard = frustrationHeardIn(app, session.form, session.parked?.form ?? null, asked, session.lastTask ?? null);
+    const strong = atLeast(high, t.GATE_FRUSTRATION_HIGH) && dictation === null;
+    const frustrated = strong && heard;
     // The caller answering the offer is not counted again, however crossly they answer it.
     const atOffer = session.pendingConfirmation?.target === 'transfer';
     const count = frustrated && !atOffer ? session.frustratedTurns + 1 : session.frustratedTurns;
@@ -244,8 +250,12 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
         : count === 2 && !session.transferDeclined ? 'offer'
           : 'handoff';
     const unheard = dictation !== null && atLeast(high, t.GATE_FRUSTRATION_HIGH);
-    const unlisted = !heard && dictation === null && atLeast(high, t.GATE_FRUSTRATION_HIGH);
-    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: unheard ? 'dictation' : unlisted ? 'not_listed' : rung, decided: false };
+    const unlisted = strong && !heard;
+    // Where the ladder does not run, a caller this upset still hears the acknowledgement before what
+    // the turn says (App.frustration.elsewhere), never counted: the offer of a person stays the listed
+    // forms'. Not at the offer of a person (one made because there was no answer), which the turn answers.
+    const acknowledged = unlisted && !atOffer && frustrationElsewhereOf(app) === 'acknowledge';
+    const row = { gate: 'frustration', value: high, threshold: t.GATE_FRUSTRATION_HIGH, passed: rung !== 'handoff', outcome: unheard ? 'dictation' : acknowledged ? 'ack_only' : unlisted ? 'not_listed' : rung, decided: false };
     if (rung !== 'handoff') rows.push(row);
     // The third rung is a verdict of its own, and `decide` is first-wins, so a verdict an earlier
     // gate already settled has to be answered for rather than quietly swallowing the transfer.
@@ -260,7 +270,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
       // its failure and loses only the credit for deciding the turn.
       resettle(row, { kind: 'handoff', reason: 'frustrated' });
     } else decide(row, { kind: 'handoff', reason: 'frustrated' });
-    frustrationRung = rung === 'ack' || rung === 'offer' ? rung : null;
+    frustrationRung = rung === 'ack' || rung === 'offer' ? rung : acknowledged ? 'ack_only' : null;
   }
 
   // 6. pending confirmation. Intent and slot readbacks decide here. The summary (target form)

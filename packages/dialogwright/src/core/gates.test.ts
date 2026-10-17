@@ -116,14 +116,16 @@ describe('evaluateGates', () => {
 
     describe('limited to some forms (App.frustration.forms)', () => {
       registerApp({ ...testkitApp, id: 'testkit-frustration-forms', frustration: { forms: ['report_missing'] } });
-      const listed = (form: string | null): Session => {
-        const s = newSession('s', 0, VOICE_RELAY, undefined, 'testkit-frustration-forms');
+      registerApp({ ...testkitApp, id: 'testkit-frustration-forms-only', frustration: { forms: ['report_missing'], after: 'ignore', elsewhere: 'ignore' } });
+      const listed = (form: string | null, app = 'testkit-frustration-forms'): Session => {
+        const s = newSession('s', 0, VOICE_RELAY, undefined, app);
         return form === null ? s : setForm(s, form);
       };
+      const noRequest = { intent: choice({ none: 0.95, other: 0.05 }) };
 
       it('runs the ladder while a form it names is open', () => {
         const s = listed('report_missing');
-        expect(frustrationOf(run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) })).verdict)).toBe('ack');
+        expect(frustrationOf(run(s, angry(noRequest)).verdict)).toBe('ack');
         s.frustratedTurns = 2;
         expect(run(s, angry()).verdict).toEqual({ kind: 'handoff', reason: 'frustrated' });
       });
@@ -132,21 +134,81 @@ describe('evaluateGates', () => {
         expect(frustrationOf(run(listed(null), angry()).verdict)).toBe('ack');
       });
 
-      it('answers no tone in another form, nor outside one on a turn that asks for none it names: not counted, and the row says not_listed', () => {
-        for (const form of ['track_parcel', null]) {
-          const s = listed(form);
-          s.frustratedTurns = 2;
-          const r = run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) }));
-          expect(r.verdict.kind).not.toBe('handoff');
-          expect(frustrationOf(r.verdict)).toBeUndefined();
-          expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'not_listed', decided: false });
-        }
-      });
-
       it('runs it in an aside taken from a form it names (the task set aside)', () => {
         const s = listed('track_parcel');
         s.parked = { form: 'report_missing' } as Session['parked'];
-        expect(frustrationOf(run(s, angry({ intent: choice({ none: 0.95, other: 0.05 }) })).verdict)).toBe('ack');
+        expect(frustrationOf(run(s, angry(noRequest)).verdict)).toBe('ack');
+      });
+
+      describe('after one of its forms (App.frustration.after)', () => {
+        const after = (last: string, app?: string): Session => {
+          const s = listed(null, app);
+          s.lastTask = last;
+          return s;
+        };
+
+        it('runs it with no form open while the last task was one it names and the turn asks for no other: counted, then the offer', () => {
+          const s = after('report_missing');
+          const first = run(s, angry(noRequest));
+          expect(frustrationOf(first.verdict)).toBe('ack');
+          expect(frustrationRow(first)).toMatchObject({ outcome: 'ack' });
+          s.frustratedTurns = 1;
+          expect(frustrationOf(run(s, angry(noRequest)).verdict)).toBe('offer');
+          // "That's all" asks for no task either: the ladder still runs on it.
+          expect(frustrationOf(run(s, angry({ intent: choice({ done: 0.9, none: 0.1 }) })).verdict)).toBe('offer');
+        });
+
+        it('stops on a turn that asks for another task: a form, or an informational answer', () => {
+          for (const intent of [choice({ track_parcel: 0.9, none: 0.1 }), choice({ capabilities: 0.9, none: 0.1 })]) {
+            const s = after('report_missing');
+            s.frustratedTurns = 1;
+            const r = run(s, angry({ intent }));
+            expect(frustrationOf(r.verdict)).toBe('ack_only');
+            expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'ack_only' });
+          }
+        });
+
+        it('does not run after a form it does not name, nor with after: ignore', () => {
+          for (const s of [after('track_parcel'), after('report_missing', 'testkit-frustration-forms-only')]) {
+            s.frustratedTurns = 1;
+            expect(frustrationOf(run(s, angry(noRequest)).verdict)).not.toBe('offer');
+          }
+        });
+      });
+
+      describe('where the ladder does not run (App.frustration.elsewhere)', () => {
+        it('acknowledges high frustration, never counted: no offer and no handoff however many turns came before', () => {
+          for (const form of ['track_parcel', null]) {
+            const s = listed(form);
+            s.frustratedTurns = 2;
+            const r = run(s, angry(noRequest));
+            expect(r.verdict.kind).not.toBe('handoff');
+            expect(frustrationOf(r.verdict)).toBe('ack_only');
+            expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'ack_only', decided: false });
+          }
+        });
+
+        it('answers no tone with elsewhere: ignore, and the row says not_listed', () => {
+          for (const form of ['track_parcel', null]) {
+            const s = listed(form, 'testkit-frustration-forms-only');
+            s.frustratedTurns = 2;
+            const r = run(s, angry(noRequest));
+            expect(r.verdict.kind).not.toBe('handoff');
+            expect(frustrationOf(r.verdict)).toBeUndefined();
+            expect(frustrationRow(r)).toMatchObject({ passed: true, outcome: 'not_listed', decided: false });
+          }
+        });
+
+        it('acknowledges neither mild frustration nor the answer to an offer of a person', () => {
+          const mild = run(listed(null), baseAnswers({ ...noRequest, frustration: score({ none: 0.3, mild: 0.6, high: 0.1 }) }));
+          expect(frustrationOf(mild.verdict)).toBeUndefined();
+          expect(frustrationRow(mild)).toMatchObject({ outcome: 'pass' });
+          const s = listed('track_parcel');
+          s.pendingConfirmation = { target: 'transfer', attempts: 0, why: 'no-answer' } as Session['pendingConfirmation'];
+          const r = run(s, angry({ confirmsYes: noul(0.05), confirmsNo: noul(0.9) }));
+          expect(r.verdict).toEqual({ kind: 'rejected' });
+          expect(frustrationRow(r)).toMatchObject({ outcome: 'not_listed' });
+        });
       });
     });
 

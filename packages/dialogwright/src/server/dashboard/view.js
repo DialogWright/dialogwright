@@ -1534,9 +1534,9 @@ function stepOf(r) {
   return id ? slotWords(id) : null;
 }
 
-/** Whether a record's frustration gate fired (its first two rungs, or the handoff it ends in). */
+/** Whether a record's frustration gate fired (its first two rungs, the handoff it ends in, or the acknowledgement alone where the ladder does not run). */
 function frustratedOn(r) {
-  if ((r.gates ?? []).some((g) => g && g.gate === 'frustration' && (g.outcome === 'ack' || g.outcome === 'offer' || g.outcome === 'handoff'))) return true;
+  if ((r.gates ?? []).some((g) => g && g.gate === 'frustration' && (g.outcome === 'ack' || g.outcome === 'offer' || g.outcome === 'handoff' || g.outcome === 'ack_only'))) return true;
   return r.decision?.kind === 'handoff' && r.decision.reason === 'frustrated';
 }
 

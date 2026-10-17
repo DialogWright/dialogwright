@@ -4571,6 +4571,7 @@
     "decision": "prompt",
     "promptId": "ask_memberId",
     "acks": [
+      "ack_frustration",
       "ack_intent"
     ],
     "reason": null,

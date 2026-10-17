@@ -22,6 +22,17 @@ export function isFormIntent(app: App, intent: string): boolean {
 }
 
 /**
+ * Whether `intent` is a task the caller can start: a form, or an informational intent with an answer
+ * to say (its line or its knowledge-base passage). Not "none", "done" or a switch of language alone.
+ * What ends the frustration ladder's run after a task (App.frustration.after).
+ */
+export function isTaskIntent(app: App, intent: string): boolean {
+  if (isFormIntent(app, intent)) return true;
+  const def = app.intents[intent];
+  return def?.kind === 'informational' && (def.passage !== undefined || def.promptId !== undefined);
+}
+
+/**
  * The label a locale gives an intent or an internal form (AppLocales.labels), or undefined where it gives
  * none, or for the default locale and a session with no locale, whose labels are intents.yaml's and forms.yaml's.
  */
