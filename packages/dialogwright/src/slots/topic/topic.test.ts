@@ -201,6 +201,23 @@ describe('its options', () => {
     expect(defineSlot('subject', { type: 'topic', unanswered: 'ask' }).notFound).toBeUndefined();
   });
 
+  it('ask of each section in the app\'s own words (text.section), filled with the section as the default is; refuse a name it does not have', () => {
+    const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
+    const own = defineSlot('subject', { type: 'topic', text: { section: 'Read asr.text. Does this section of the {document} answer the caller\'s question? {heading}: {text}' } }, undefined, { catalog: CATALOG });
+    expect(own.questions(ctx('is there wifi', { nominated: [], sections: [section] }))).toEqual({
+      subjectSection1: { type: 'noul', instructions: "Read asr.text. Does this section of the Visitor Guide answer the caller's question? Wi-Fi: Every branch has free Wi-Fi." },
+    });
+    expect(subject.questions(ctx('is there wifi', { nominated: [], sections: [section] }))).toEqual({
+      subjectSection1: { type: 'noul', instructions: 'Read asr.text. Does this section of the Visitor Guide say what the caller asks about? Wi-Fi: Every branch has free Wi-Fi.' },
+    });
+    const bad = buildSlot('subject', { type: 'topic', text: { section: 'Does the {page} answer it? {text}' } });
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.problems.map(formatProblem)).toEqual([
+      "(code)  subject.text.section  text.section uses {page}, which is not one of its variables; it may use {document}, {heading}, {text}  ->  write {document}, {heading} and {text} where the document's title, the section's heading and its text go, and no other {name}",
+    ]);
+  });
+
   it('refuse a criterion with a name or a filter it does not have, and a cap out of range', () => {
     const bad = buildSlot('subject', { type: 'topic', criterion: 'About {name|upper}', cap: 0 });
     expect(bad.ok).toBe(false);

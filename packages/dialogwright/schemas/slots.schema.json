@@ -2258,7 +2258,7 @@
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
               },
               "section": {
-                "description": "With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document's title, {heading} its heading, {text} its text.",
+                "description": "With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document's title, {heading} its heading, {text} its text. Unlike the other parts, an app's own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

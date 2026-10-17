@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { identifier } from '../../define/schema/common';
 import { questionParts, questionText, textParts } from '../parts/text';
+import { checkTemplate } from '../parts/template';
 import { checkCriterion, CRITERION_FILTERS, CRITERION_VARS } from './criterion';
 import { alwaysConfirmText } from '../parts/readBack';
 
@@ -22,7 +23,7 @@ export const TOPIC_PARTS = textParts('topic', {
   section: {
     template: 'Read asr.text. Does this section of the {document} say what the caller asks about? {heading}: {text}',
     vars: ['document', 'heading', 'text'],
-    about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text.',
+    about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text. Unlike the other parts, an app\'s own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.',
   },
   unanswered: {
     template: 'Asks about something none of these answers',
@@ -107,6 +108,14 @@ export const topicOptions = z
     ids: TOPIC_QUESTIONS.schema.describe('Question ids in place of the default: `ids.choice` is the question\'s id (default: the slot\'s id followed by "Topic"), to keep the id an existing slot used.'),
   })
   .superRefine((o, ctx) => {
+    const section = o.text?.section;
+    if (section !== undefined) {
+      try {
+        checkTemplate(section, TOPIC_PARTS.defs.section.vars, 'text.section');
+      } catch (e) {
+        ctx.addIssue({ code: 'custom', path: ['text', 'section'], message: (e as Error).message, params: { fix: 'write {document}, {heading} and {text} where the document\'s title, the section\'s heading and its text go, and no other {name}' } });
+      }
+    }
     for (const problem of checkCriterion(o.criterion)) {
       ctx.addIssue({
         code: 'custom',

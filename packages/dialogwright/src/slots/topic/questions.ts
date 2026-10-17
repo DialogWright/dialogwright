@@ -1,6 +1,7 @@
 import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
 import type { Nomination } from '../../kb/types';
+import { renderTemplate } from '../parts/template';
 import { renderCriterion } from './criterion';
 import { TOPIC_PARTS, UNANSWERED_DEFAULTS, type TopicOptions } from './options';
 
@@ -50,7 +51,10 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
     // The sections of approved documents nominated beside the topics (kb.yaml documents): whether each
     // says what the caller asked, so a question no topic answers may be answered from them.
     sections.forEach((s, i) => {
-      questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: TOPIC_PARTS.render('section', o.text, { document: s.documentTitle, heading: s.heading, text: s.text }) };
+      // The app's own wording (text.section) is a template too, unlike the type's other parts: the
+      // question differs by section, and words taken as they are would show the model no section.
+      const template = o.text?.section ?? TOPIC_PARTS.defs.section.template;
+      questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, { document: s.documentTitle, heading: s.heading, text: s.text }, `the topic slot ${slot}'s text.section`) };
     });
     if (offered.length === 0) return questions;
     const criteria: Record<string, string> = {};
