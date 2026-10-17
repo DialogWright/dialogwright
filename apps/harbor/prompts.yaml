@@ -314,6 +314,9 @@ prompts:
   ask_lossDate_dtmf:
     text: Please enter the date as four digits, two for the month and two for the day.
     interruptible: true
+  ask_lossDate_future:
+    text: That date hasn't happened yet. What date did it happen?
+    interruptible: true
   loss_date_future:
     text: That date is in the future.
     interruptible: true

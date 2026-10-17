@@ -425,6 +425,58 @@
     "principalLevel": 2,
     "gate": "getClaim:BLOCK"
   },
+  "cs-18": {
+    "id": "cs-18",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW"
+  },
+  "cs-19": {
+    "id": "cs-19",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK"
+  },
   "sel-01": {
     "id": "sel-01",
     "decision": "prompt",
@@ -2057,6 +2109,144 @@
       "lossType": "accident_injury",
       "lossDate": "2025-12-20",
       "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-09": {
+    "id": "ld-09",
+    "decision": "prompt",
+    "promptId": "ask_lossDate_future",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-10": {
+    "id": "ld-10",
+    "decision": "prompt",
+    "promptId": "ask_lossDate_future",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-11": {
+    "id": "ld-11",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2025-12-05",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-12": {
+    "id": "ld-12",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-10",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-13": {
+    "id": "ld-13",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": null
+  },
+  "ld-14": {
+    "id": "ld-14",
+    "decision": "prompt",
+    "promptId": "ask_lossDate",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": null,
+      "lossDescription": "i slipped on the ice and broke my wrist next thursday"
     },
     "queued": [],
     "principalLevel": 2,

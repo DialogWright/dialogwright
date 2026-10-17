@@ -1419,6 +1419,131 @@
     "pass": true,
     "mismatches": []
   },
+  "report-next-weekday-refused": {
+    "id": "report-next-weekday-refused",
+    "decision": "prompt",
+    "promptId": "ask_lossDate_future",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-near-future-date-refused": {
+    "id": "report-near-future-date-refused",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-12",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-last-year-date-says-year": {
+    "id": "report-last-year-date-says-year",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2025-12-05",
+      "lossDescription": "i slipped on the ice and hurt my wrist"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-this-year-date-no-year": {
+    "id": "report-this-year-date-no-year",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-10",
+      "lossDescription": "i slipped on the ice and hurt my wrist"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-this-weekday-taken": {
+    "id": "report-this-weekday-taken",
+    "decision": "prompt",
+    "promptId": "ask_lossDescription",
+    "acks": [],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-17",
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
   "report-outside-coverage": {
     "id": "report-outside-coverage",
     "decision": "handoff",
@@ -2183,6 +2308,60 @@
     "promptId": "anything_else",
     "acks": [
       "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "claim-then-another-by-description": {
+    "id": "claim-then-another-by-description",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_paid"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "report-then-new-claim-by-number": {
+    "id": "report-then-new-claim-by-number",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "claim_status_received"
     ],
     "reason": null,
     "decidedGate": "intent",

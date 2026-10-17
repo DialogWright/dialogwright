@@ -78,11 +78,17 @@ lossType:
       say: a covered diagnosis
       means: "A diagnosis the caller names, of a covered illness such as cancer, a heart attack or a stroke, even if it led to a hospital stay"
 
-# When the loss happened: a day already gone (range: past never gives a day to come, so a future
-# date is asked again), keyable as MMDD. The date of birth is the date this is not.
+# When the loss happened: a day already gone, keyable as MMDD. The paragraph says the loss date
+# can't be in the future, so a day the caller names that has not happened is refused and asked again
+# (ask_lossDate_future), never moved into the past: "next Thursday" (qualifier: "this" or "next"
+# before a weekday is asked; "this Thursday" is this week's once it has come), and a month and day
+# up to 31 days ahead (the type's nearFuture default, refuse: "October twenty second" said on October
+# 17th). Further ahead, a month and day is last year's, and the read-back says its year (the type's
+# sayYear default). The date of birth is the date this is not.
 lossDate:
   type: date
   range: past
+  qualifier: true
   keypad: true
   context: The caller is saying when an accident, injury, hospital stay or diagnosis happened.
   exclude: "The caller's date of birth, or a date answering a question about it, is not when it happened."

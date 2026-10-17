@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { ANONYMOUS, checkApp, formatProblem, type GateFacts, type Party, type Principal, type ToolCall } from 'dialogwright';
+import { ANONYMOUS, checkApp, formatProblem, type CompletionContext, type GateFacts, type Party, type Principal, type Session, type ToolCall } from 'dialogwright';
 import { confirmationHash } from 'dialogwright/policy';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, gateEvaluator, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
@@ -158,6 +158,30 @@ describe('the claims intake service', () => {
     expect(check({ fastTrack: true, documents: ['discharge_summary'], adjusterContactDays: 2.5 })).toBe(false);
     expect(check({ fastTrack: true, documents: ['discharge_summary'], adjusterContactDays: 45 })).toBe(false);
     expect(check({ fastTrack: 'yes', documents: ['discharge_summary'], adjusterContactDays: 2 })).toBe(false);
+  });
+
+  it('puts a claim the call files into the claim list it holds, newest first, so the next claim question finds it at once', () => {
+    const sys = new Systems();
+    const view = (n: string) => sys.view(sys.claim(n)!);
+    const slot = (value: string) => ({ value, display: value, confirmed: true, window: null });
+    const s = {
+      principal: memberPrincipal('42716358', 2)!,
+      facts: { claims: [view('4702'), view('4655')] },
+      slots: { lossType: slot('accident_injury'), lossDate: slot('2026-09-15'), lossDescription: slot('I slipped on the ice') },
+      pendingHash: 'read back', confirmedHash: null,
+    } as unknown as Session;
+    const callTool = (call: ToolCall) => {
+      if (call.tool !== 'createClaim') return { decision: { verdict: 'ALLOW' }, value: null };
+      const p = call.params;
+      return { decision: { verdict: 'ALLOW' }, value: sys.view(sys.file(p.memberId!, p.lossType as 'accident_injury', p.lossDate!, p.lossDescription!, '2026-09-18', 'key-1')) };
+    };
+    const c = { s, acks: [], callTool, refusal: () => { throw new Error('refused'); } } as unknown as CompletionContext;
+    expect(code.forms.report_claim!.complete!(c)).toMatchObject({ kind: 'said' });
+    expect((s.facts as { claims: { number: string }[] }).claims.map((x) => x.number)).toEqual(['4730', '4702', '4655']);
+    // A call that never listed the member's claims holds no list to bring up to date.
+    const none = { ...s, facts: {}, pendingHash: 'read back' } as unknown as Session;
+    code.forms.report_claim!.complete!({ ...c, s: none } as unknown as CompletionContext);
+    expect(none.facts).toEqual({});
   });
 
   it('files a claim once for one write, however often the write is repeated', () => {

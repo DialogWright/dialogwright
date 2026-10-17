@@ -1020,6 +1020,168 @@
     }
   },
   {
+    "id": "report-next-weekday-refused",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "next thursday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_lossDate_future",
+      "slots": {
+        "lossDate": null
+      },
+      "text": "That date hasn't happened yet."
+    }
+  },
+  {
+    "id": "report-near-future-date-refused",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "october tenth"
+      },
+      {
+        "say": "september twelfth"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_lossDescription",
+      "slots": {
+        "lossDate": "2026-09-12"
+      }
+    }
+  },
+  {
+    "id": "report-last-year-date-says-year",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "december fifth"
+      },
+      {
+        "say": "i slipped on the ice and hurt my wrist"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "slots": {
+        "lossDate": "2025-12-05"
+      },
+      "text": "on Friday, December 5, 2025, and I have your description"
+    }
+  },
+  {
+    "id": "report-this-year-date-no-year",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "september tenth"
+      },
+      {
+        "say": "i slipped on the ice and hurt my wrist"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "confirm_report",
+      "slots": {
+        "lossDate": "2026-09-10"
+      },
+      "text": "on Thursday, September 10, and I have your description"
+    }
+  },
+  {
+    "id": "report-this-weekday-taken",
+    "steps": [
+      {
+        "say": "report a claim"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "this thursday"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_lossDescription",
+      "slots": {
+        "lossDate": "2026-09-17"
+      }
+    }
+  },
+  {
     "id": "report-outside-coverage",
     "steps": [
       {
@@ -1734,6 +1896,75 @@
       "principalLevel": 2,
       "gate": "getClaim:ALLOW",
       "text": "Your claim 4702"
+    }
+  },
+  {
+    "id": "claim-then-another-by-description",
+    "steps": [
+      {
+        "say": "can you check on claim 4702"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "what about my physical therapy claim"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4655"
+    }
+  },
+  {
+    "id": "report-then-new-claim-by-number",
+    "steps": [
+      {
+        "say": "can you check on claim 4702"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "i need to file a claim"
+      },
+      {
+        "say": "an accident injury"
+      },
+      {
+        "say": "september twelfth"
+      },
+      {
+        "say": "i slipped on the ice and hurt my wrist"
+      },
+      {
+        "say": "yes"
+      },
+      {
+        "say": "can you check on claim 4730"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "gate": "getClaim:ALLOW",
+      "text": "Your claim 4730"
     }
   }
 ]

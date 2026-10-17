@@ -103,10 +103,19 @@ export class Systems {
   }
 }
 
-/** What the app keeps on the session: the member's claims, as the claim_status form's entry call read them. */
+/**
+ * What the app keeps on the session: the member's claims, as the claim_status form's entry call read
+ * them, kept for the call (so a later claim question matches "my physical therapy claim" on the turn
+ * it is asked, before the form's entry call lists them again) and brought up to date when the call
+ * files a claim (completeReport).
+ */
 interface Facts {
   claims?: ClaimView[];
 }
+
+/** Claims newest first, as listClaims gives them: by service date, then by number. */
+const newestFirst = (a: Pick<ClaimView, 'serviceDate' | 'number'>, b: Pick<ClaimView, 'serviceDate' | 'number'>): number =>
+  a.serviceDate === b.serviceDate ? b.number.localeCompare(a.number) : b.serviceDate.localeCompare(a.serviceDate);
 
 /**
  * The member a call is about. A member's is the one they verified or signed in as (the principal's
@@ -240,7 +249,7 @@ export const TOOLS: Record<string, ToolDef> = {
       const s = sys as Systems;
       const list = s.claims
         .filter((c) => c.memberId === call.params.memberId)
-        .sort((a, b) => (a.serviceDate === b.serviceDate ? b.number.localeCompare(a.number) : b.serviceDate.localeCompare(a.serviceDate)))
+        .sort(newestFirst)
         .map((c) => s.view(c));
       return { value: list, summary: `${list.length} claim${list.length === 1 ? '' : 's'}` };
     },
@@ -352,7 +361,12 @@ function completeReport(c: CompletionContext): Completion {
   if (decision.verdict === 'NEEDS_HUMAN' && decision.reason === 'coverage') return { kind: 'decision', decision: handoff(s, 'coverage', acks) };
   if (decision.verdict !== 'ALLOW') return c.refusal(decision);
   s.pendingHash = null;
-  const claim = (value as ClaimView).number;
+  const filed = value as ClaimView;
+  const claim = filed.number;
+  // The claim list the call holds is stale now: the new claim goes into it, in its place, so a
+  // question about it next ("what's the status of claim 4730", "my wrist claim") finds it.
+  const facts = s.facts as Facts;
+  if (facts.claims) facts.claims = [...facts.claims.filter((c) => c.number !== claim), filed].sort(newestFirst);
   const lines: Ack[] = [{ promptId: 'claim_filed', vars: { claim } }];
   // The intake service's triage. Called failSoft: a service that is down, or a reply that fails its
   // check, is no answer, and the member hears that an adjuster will be in touch.
@@ -427,7 +441,6 @@ export const code: AppCode = {
   facts: {
     initial: () => ({}),
     clone: (f) => ({ ...(f as Facts), ...((f as Facts).claims ? { claims: [...(f as Facts).claims!] } : {}) }),
-    onFormClosed: (f) => { delete (f as Facts).claims; },
     forSlots: (f) => ({ sources: { claims: (f as Facts).claims ?? [] } }),
   },
   forms: {
@@ -496,8 +509,9 @@ export const code: AppCode = {
         lossDate: { value: '2026-09-12', display: 'Saturday, September 12th' },
         lossDescription: { value: 'I slipped on the ice and hurt my wrist', display: 'your description' },
       },
-      // A corpus line at "anything else?" follows a claim's status, read through the gate.
-      anythingElse: () => ({ form: 'claim_status', call: { tool: 'getClaim', params: { claim: '4702' } } }),
+      // A corpus line at "anything else?" follows a claim's status: the form's entry call, read through
+      // the gate, leaves the member's claims on the call (onEntry), which stay for the rest of it.
+      anythingElse: () => ({ form: 'claim_status', call: { tool: 'listClaims', params: { memberId: MEMBERS[0]!.id } } }),
     },
     // A corpus line answering the offer of a person (after an answer that could not be given) is seeded in the coverage form.
     offerTransferForm: 'coverage',

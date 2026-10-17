@@ -15,6 +15,8 @@
 {"id": "cs-15", "text": "my member id is four two seven one six three five eight and i'm checking on claim 4702", "intent": "claim_status", "context": "no_form", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true, "claimSelectChoice": "claim_4702"}}
 {"id": "cs-16", "text": "did you get the claim for my physical therapy", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4655"}}
 {"id": "cs-17", "text": "and what about four seven one one", "intent": "claim_status", "context": "anything_else", "labels": {"claimSelectChoice": "claim_4711"}, "tags": ["live_asr"]}
+{"id": "cs-18", "text": "what about my physical therapy claim", "intent": "claim_status", "context": "anything_else", "labels": {"claimSelectChoice": "claim_4655"}, "tags": ["live_asr"]}
+{"id": "cs-19", "text": "can you check on claim 4730", "intent": "claim_status", "context": "anything_else", "labels": {"claimSelectChoice": "claim_4730"}}
 {"id": "sel-01", "text": "the one for the emergency room", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}}
 {"id": "sel-02", "text": "4655", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4655"}}
 {"id": "sel-03", "text": "four six five five", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4655"}}
@@ -82,6 +84,12 @@
 {"id": "ld-06", "text": "no wait, it was the eleventh of september", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "absolute", "lossDateDay": "11", "lossDateMonth": "september"}}
 {"id": "ld-07", "text": "tomorrow", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "relative_day"}, "tags": ["future_date"]}
 {"id": "ld-08", "text": "december twentieth", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "absolute", "lossDateDay": "20", "lossDateMonth": "december"}}
+{"id": "ld-09", "text": "next thursday", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "weekday", "lossDateWeekday": "thursday", "lossDateQualifier": "next"}, "tags": ["future_date"]}
+{"id": "ld-10", "text": "october tenth", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "absolute", "lossDateDay": "10", "lossDateMonth": "october"}, "tags": ["future_date"]}
+{"id": "ld-11", "text": "december fifth", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "absolute", "lossDateDay": "5", "lossDateMonth": "december"}}
+{"id": "ld-12", "text": "september tenth", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "absolute", "lossDateDay": "10", "lossDateMonth": "september"}}
+{"id": "ld-13", "text": "this thursday", "intent": "none", "context": "report_claim", "prompted": "lossDate", "labels": {"lossDateMode": "weekday", "lossDateWeekday": "thursday", "lossDateQualifier": "this"}}
+{"id": "ld-14", "text": "i slipped on the ice and broke my wrist next thursday", "intent": "none", "context": "report_claim", "prompted": "lossType", "labels": {"lossType": "accident_injury", "lossDateMode": "weekday", "lossDateWeekday": "thursday", "lossDateQualifier": "next", "lossDescriptionGiven": true}, "tags": ["future_date", "live_asr"]}
 {"id": "dsc-01", "text": "i slipped on the ice and hurt my wrist", "intent": "none", "context": "report_claim", "prompted": "lossDescription", "labels": {"lossDescriptionGiven": true}}
 {"id": "dsc-02", "text": "fell down the stairs at home and twisted my ankle", "intent": "none", "context": "report_claim", "prompted": "lossDescription", "labels": {"lossDescriptionGiven": true}}
 {"id": "dsc-03", "text": "i was in a car accident and they kept me overnight", "intent": "none", "context": "report_claim", "prompted": "lossDescription", "labels": {"lossDescriptionGiven": true}}
