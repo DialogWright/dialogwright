@@ -258,6 +258,15 @@ export interface Session {
    * it was.
    */
   lastTask?: FormId;
+  /**
+   * The question the caller's last turn was a frustration-only turn at, caught (core/turn.ts
+   * caughtFrustration, App.frustration.miss): `at`, the question (questionOf), `turns`, how many such
+   * turns in a row. The first at a question is no miss; from the second in a row at the same question
+   * each counts as one again, so the question's escape (the keypad menu, a person) still comes. Gone
+   * once a turn gives anything else (a request, a value, a yes or a no, a key) or the question
+   * changes. Absent until the first, so every other session, and one saved before it, is as it was.
+   */
+  frustrationOnly?: { readonly at: string; readonly turns: number };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];

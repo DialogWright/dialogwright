@@ -1133,6 +1133,8 @@ describe('frustration escalation', () => {
       const r = say(say(started(), FED_UP, { intent: NONE, frustration: HIGH }).session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
       expect(r.decision).toMatchObject(OFFER);
       expect(r.session.frustratedTurns).toBe(2);
+      // The offer is the ladder's second rung, unchanged: the run of caught turns ends there.
+      expect(r.session.frustrationOnly).toBeUndefined();
     });
 
     it("at a slot's question: the acknowledgement, then the slot's own question (not its retry), with no attempt used", () => {
@@ -1194,10 +1196,72 @@ describe('frustration escalation', () => {
       expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
       expect(r.session.frustratedTurns).toBe(0);
       expect(r.session.intentAttempts).toBe(0);
-      const again = say(r.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(r.session.frustrationOnly).toEqual({ at: 'intent', turns: 1 });
+    });
+
+    /**
+     * Where the ladder does not move on to an offer, a caller who says only that they are fed up, again
+     * and again at the same question, still reaches the question's escape (the maintainer's decision,
+     * 2026-10-17): the first is no miss, and from the second in a row each counts, with the
+     * acknowledgement and never "Sorry, I didn't catch that".
+     */
+    it('counts the second frustration-only turn in a row at the same question, with the acknowledgement and the plain question', () => {
+      const first = say(started(APP), 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      const second = say(first.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(second.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
+      expect(spokenText(testkitApp, second.decision)).not.toContain("didn't catch");
+      expect(second.session.intentAttempts).toBe(1);
+      expect(second.session.frustrationOnly).toEqual({ at: 'intent', turns: 2 });
+      expect(second.session.frustratedTurns).toBe(0);
+    });
+
+    it('reaches the keypad menu on the third, and a person once the menu has been asked about as well', () => {
+      const turns = [started(APP)];
+      for (let i = 0; i < 5; i++) turns.push(say(turns[i]!, 'this is ridiculous', { intent: NONE, frustration: HIGH }).session);
+      const third = say(turns[2]!, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(third.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_dtmf_menu', menu: true, acks: [ACK_FRUSTRATION] });
+      expect(third.session.intentAttempts).toBe(2);
+      // The menu is a question of its own: the first frustration-only turn at it is caught, the next counted.
+      const fourth = say(turns[3]!, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(fourth.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_dtmf_menu', acks: [ACK_FRUSTRATION] });
+      expect(fourth.session.intentAttempts).toBe(2);
+      const fifth = say(turns[4]!, 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      expect(fifth.decision).toMatchObject({ kind: 'handoff', reason: 'max-attempts' });
+    });
+
+    it("at a slot's question: the second in a row is counted with the slot's own question, the third is its keypad line", () => {
+      const at = say(started(APP), 'where is my parcel', { intent: intent('track_parcel') });
+      expect(at.decision).toMatchObject({ promptId: 'ask_accountId' });
+      const first = say(at.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      expect(first.decision).toMatchObject({ promptId: 'ask_accountId', acks: [ACK_FRUSTRATION] });
+      expect(first.session.slots.accountId!.attempts).toBe(0);
+      const second = say(first.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      expect(second.decision).toMatchObject({ promptId: 'ask_accountId', acks: [ACK_FRUSTRATION] });
+      expect(second.session.slots.accountId!.attempts).toBe(1);
+      const third = say(second.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      expect(third.decision).toMatchObject({ promptId: 'ask_accountId_dtmf', acks: [ACK_FRUSTRATION] });
+      expect(third.session.slots.accountId!.attempts).toBe(2);
+    });
+
+    it('starts over when the caller asks for something in between', () => {
+      const first = say(started(APP), 'this is ridiculous', { intent: NONE, frustration: HIGH });
+      const asked = say(first.session, 'what can you do', { intent: choice({ capabilities: 0.9, other: 0.06, none: 0.04 }) });
+      expect(asked.session.frustrationOnly).toBeUndefined();
+      const again = say(asked.session, 'this is ridiculous', { intent: NONE, frustration: HIGH });
       expect(again.decision).toMatchObject({ promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
-      expect(again.session.frustratedTurns).toBe(0);
       expect(again.session.intentAttempts).toBe(0);
+      expect(again.session.frustrationOnly).toEqual({ at: 'intent', turns: 1 });
+    });
+
+    it('starts over when the question changes: a value given, then frustration at the next question', () => {
+      const at = say(started(APP), 'where is my parcel', { intent: intent('track_parcel') });
+      const first = say(at.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      const id = say(first.session, ID_TEXT, { intentChange: ANSWERING, ...ID_ANSWERS });
+      expect(id.decision).toMatchObject({ promptId: 'ask_dob' });
+      expect(id.session.frustrationOnly).toBeUndefined();
+      const fed = say(id.session, 'this is ridiculous', { frustration: HIGH, intentChange: ANSWERING });
+      expect(fed.decision).toMatchObject({ promptId: 'ask_dob', acks: [ACK_FRUSTRATION] });
+      expect(fed.session.slots.dob!.attempts).toBe(0);
     });
 
     it('counts frustration right after the form: acknowledged, then a person offered', () => {

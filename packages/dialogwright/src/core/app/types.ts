@@ -132,7 +132,9 @@ export type FrustrationElsewhere = 'acknowledge' | 'ignore';
  * for the question asked (App.frustration.miss). `ignore`, no miss: the frustration was caught, so the
  * acknowledgement is followed by the question the caller was on, asked again as it stands (the opening
  * question, "anything else?" where that was it, a slot's own question, a summary or an offer), and no
- * attempt is counted toward the keypad menu or a person; `count`, the miss line after the
+ * attempt is counted toward the keypad menu or a person, for the first such turn at a question (from the
+ * second in a row at the same question each counts again, without the miss line: Session.frustrationOnly);
+ * `count`, the miss line after the
  * acknowledgement, and the miss counted (as before 2026-10-17). Default `ignore`, the maintainer's
  * decision (2026-10-17) for every app.
  */
