@@ -57,8 +57,11 @@ export const DEFAULT_THRESHOLDS = {
   // both topics it may fill and closer than this (slots/topic/fill.ts)
   KB_TOPIC_MARGIN: 0.15,
   // knowledge: a section of an approved document answers a question no topic does when the model reads
-  // that it says what the caller asked at this or above (kb.yaml documents; slots/topic/fill.ts)
-  KB_SECTION_ANSWERS: 0.6,
+  // that it says what the caller asked at this or above (kb.yaml documents; slots/topic/fill.ts).
+  // 0.60 → 0.55 (the maintainer's decision, 2026-10-17): on Harbor's handbook the right section read 0.56
+  // to 0.93 on its own question (the explanation of benefits the 0.56, missed at 0.60); a second section
+  // reads up to 0.59 where it says some of the same (a new card: the app's digital card), at most two kept
+  KB_SECTION_ANSWERS: 0.55,
   // knowledge: a question asked with the request that no topic answers is held as the slot's not-found reply
   // only at this or above (slots/topic/fill.ts): a held reply says nothing was found, so it must be sure the
   // caller asked something (a bare "coverage" read unanswered 0.55 against none 0.40, Harbor, 2026-10-17)
