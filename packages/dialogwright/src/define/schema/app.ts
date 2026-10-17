@@ -585,14 +585,18 @@ export const appSchema = z
         elsewhere: z
           .enum(['acknowledge', 'ignore'])
           .optional()
-          .describe('With forms: what a turn read as high frustration gets where the ladder does not run. "acknowledge": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. "ignore": nothing. Mild frustration gets nothing either way. Default "acknowledge".'),
+          .describe('With forms: what a turn read as high frustration gets where the ladder does not run. "acknowledge": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. "ignore": nothing. Mild frustration gets nothing either way until the call has shown high frustration (then it counts as high: mild). Default "acknowledge".'),
         miss: z
           .enum(['ignore', 'count'])
           .optional()
           .describe('What a turn whose frustration is acknowledged (ack_frustration: the ladder\'s first rung, or the acknowledgement where the ladder does not run) is when it would otherwise be a miss: no request heard, no value for the question asked ("this is ridiculous"). "ignore": not a miss, since the frustration was caught: the acknowledgement, then the question the caller was on asked again as it stands (the opening question, "anything else?" where that was it, the slot\'s own question, the summary or the offer), never the miss line, and no attempt counted toward the keypad menu or a person; from the second such turn in a row at the same question each counts as a miss again (after the acknowledgement, with the plain question, the keypad line or the end the ladder reaches, never the miss line), so the escape still comes. "count": the miss line after the acknowledgement, and the miss counted. A turn that also makes a request or gives a value is the same either way. Default "ignore".'),
+        mild: z
+          .enum(['after-high', 'ignore'])
+          .optional()
+          .describe('What a turn read as mild frustration gets. "after-high": once the call has shown high frustration (a turn read as high), a later turn read as mild or more counts as a high one does: the acknowledgement, the ladder toward the offer of a person where it runs, the acknowledgement alone elsewhere, and no miss for a turn that is only frustration; a caller never read as high is unchanged (mild does nothing, since a terse caller often reads mild). "ignore": only a high reading acts, on every turn. Default "after-high".'),
       })
       .optional()
-      .describe('Where the frustration ladder runs, and whether a turn whose frustration is acknowledged is a miss. Default: on every turn, in every form and outside one, and never a miss.'),
+      .describe('Where the frustration ladder runs, whether a turn whose frustration is acknowledged is a miss, and whether a mild reading counts after a high one. Default: on every turn, in every form and outside one, never a miss, and mild counted once the call has shown high frustration.'),
     anythingElseSilence: z
       .enum(['repeat', 'opener', 'goodbye'])
       .optional()

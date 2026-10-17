@@ -3121,7 +3121,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       s.consecutiveFailures = 0;
       io.turnState = turnState;
       const ctx = slotContext(s, event.text, tc);
-      const { rows, verdict } = evaluateGates(s, turnState, answers, tc.thresholds, summaryValuesGiven(s, answers, ctx));
+      const { rows, verdict, readHigh } = evaluateGates(s, turnState, answers, tc.thresholds, summaryValuesGiven(s, answers, ctx));
+      // A turn meant for us read as high: from now a mild reading counts too (Session.frustrationHigh, App.frustration.mild).
+      if (readHigh && verdict.kind !== 'ignore' && verdict.kind !== 'hold') s.frustrationHigh = true;
       // The gate worked the rung out from the count but left the count alone; the turn owns the
       // bookkeeping, and only a verdict that carries a rung of the ladder is a frustrated turn to count:
       // the acknowledgement alone, where the ladder does not run (`ack_only`), never is.

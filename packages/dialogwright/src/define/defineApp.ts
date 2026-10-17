@@ -1111,6 +1111,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     ...(a.frustration.after !== undefined ? { after: a.frustration.after } : {}),
     ...(a.frustration.elsewhere !== undefined ? { elsewhere: a.frustration.elsewhere } : {}),
     ...(a.frustration.miss !== undefined ? { miss: a.frustration.miss } : {}),
+    ...(a.frustration.mild !== undefined ? { mild: a.frustration.mild } : {}),
   });
   put(app, 'anythingElseSilence', a.anythingElseSilence);
   put(app, 'ackIntent', a.ackIntent === undefined ? undefined : { ...a.ackIntent });

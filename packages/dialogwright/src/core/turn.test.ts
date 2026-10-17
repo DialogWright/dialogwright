@@ -1284,6 +1284,87 @@ describe('frustration escalation', () => {
       expect(after.session.frustratedTurns).toBe(1);
     });
   });
+
+  /**
+   * Once the call has shown high frustration, a mild reading counts as a high one does
+   * (App.frustration.mild, default `after-high`, the maintainer's decision, 2026-10-17, after a live call:
+   * "It's my ... ER visit." read high, then "Come on. Like, seriously, really?" read mild 0.98 and heard
+   * "Sorry, I didn't catch that.", then "Is it really not gonna determine that I'm frustrated?" read mild
+   * 0.80 and heard the keypad menu). A caller never read as high is unchanged.
+   */
+  describe('mild after high', () => {
+    const NONE = choice({ none: 0.9, other: 0.1 });
+    const MILD = score({ none: 0.02, mild: 0.98, high: 0 });
+    const MILD_AGAIN = score({ none: 0.2, mild: 0.8, high: 0 });
+    const LIMITED = 'testkit-frustration-mild';
+    registerApp({ ...testkitApp, id: LIMITED, frustration: { forms: ['report_missing'] } });
+    const IGNORES = 'testkit-frustration-mild-ignore';
+    registerApp({ ...testkitApp, id: IGNORES, frustration: { mild: 'ignore' } });
+    /** At the account ID question of the parcel report, after the first turn read as high. */
+    const highInForm = (app?: string): TurnResult => afterTurns([OPENER], app);
+
+    it('keeps that the call has shown high frustration, from the first turn read as high', () => {
+      expect(started().frustrationHigh).toBeUndefined();
+      const calm = say(started(), 'where is my parcel', { intent: intent('track_parcel') });
+      expect(calm.session.frustrationHigh).toBeUndefined();
+      const mild = say(started(), 'come on, where is my parcel', { intent: intent('track_parcel'), frustration: MILD });
+      expect(mild.session.frustrationHigh).toBeUndefined();
+      expect(highInForm().session.frustrationHigh).toBe(true);
+    });
+
+    it('where the ladder runs: high acknowledged, then a mild turn offers a person, and once declined a mild turn is a person', () => {
+      const first = highInForm();
+      expect(first.decision).toMatchObject({ promptId: 'ask_accountId', acks: [ACK_FRUSTRATION, ACK('report_missing')] });
+      const second = say(first.session, 'come on. like, seriously, really?', { frustration: MILD, intentChange: ANSWERING });
+      expect(second.decision).toMatchObject(OFFER);
+      expect(second.session.frustratedTurns).toBe(2);
+      const row = second.rows.find((r) => r.gate === 'frustration')!;
+      expect(row).toMatchObject({ outcome: 'offer', threshold: DEFAULT_THRESHOLDS.GATE_FRUSTRATION_HIGH });
+      expect(row.value).toBeCloseTo(0.98);
+      const back = say(second.session, 'no', NO);
+      const third = say(back.session, "is it really not gonna determine that i'm frustrated?", { frustration: MILD_AGAIN, intentChange: ANSWERING });
+      expect(third.decision).toMatchObject({ kind: 'handoff', reason: 'frustrated' });
+    });
+
+    it('where the ladder does not run: high, then mild twice at the greeting, each acknowledged, the first mild no miss, the second counted', () => {
+      const high = say(started(LIMITED), "it's my damn er visit", { intent: NONE, frustration: HIGH });
+      expect(high.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
+      expect(high.session.frustrationHigh).toBe(true);
+      const mild = say(high.session, 'come on. like, seriously, really?', { intent: NONE, frustration: MILD });
+      expect(mild.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_intent', acks: [ACK_FRUSTRATION] });
+      expect(mild.rows.find((r) => r.gate === 'frustration')).toMatchObject({ outcome: 'ack_only' });
+      expect(spokenText(testkitApp, mild.decision)).not.toContain("didn't catch");
+      expect(mild.session.frustratedTurns).toBe(0);
+      // The second frustration-only turn in a row at the opening question: counted, with the plain question.
+      expect(mild.session.intentAttempts).toBe(1);
+      const again = say(mild.session, "is it really not gonna determine that i'm frustrated?", { intent: NONE, frustration: MILD_AGAIN });
+      expect(again.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_dtmf_menu', acks: [ACK_FRUSTRATION] });
+      expect(again.session.frustratedTurns).toBe(0);
+    });
+
+    it('a mild reading on a call never read as high is unchanged: no acknowledgement, the miss line', () => {
+      const r = say(started(), 'come on. like, seriously, really?', { intent: NONE, frustration: MILD });
+      expect(r.decision).toMatchObject({ kind: 'prompt', promptId: 'nomatch_open', acks: [] });
+      expect(r.rows.find((g) => g.gate === 'frustration')).toMatchObject({ outcome: 'pass', value: 0 });
+      expect(r.session.frustratedTurns).toBe(0);
+      expect(r.session.frustrationHigh).toBeUndefined();
+    });
+
+    it('a high reading in side speech is not kept (nor at a dictation: core/dictation.test.ts)', () => {
+      const aside = say(started(), 'ugh, this is ridiculous, no not you', { addressedToSystem: noul(0.05), frustration: HIGH });
+      expect(aside.decision).toEqual({ kind: 'ignore' });
+      expect(aside.session.frustrationHigh).toBeUndefined();
+    });
+
+    it('with frustration.mild: ignore, a mild turn after high does nothing (as before)', () => {
+      const first = highInForm(IGNORES);
+      expect(first.session.frustrationHigh).toBe(true);
+      const second = say(first.session, 'come on. like, seriously, really?', { frustration: MILD, intentChange: ANSWERING });
+      expect(second.decision).toMatchObject({ kind: 'prompt', promptId: 'ask_accountId_retry', acks: [] });
+      expect(second.session.frustratedTurns).toBe(1);
+      expect(second.rows.find((r) => r.gate === 'frustration')).toMatchObject({ outcome: 'pass', value: 0 });
+    });
+  });
 });
 
 describe('capabilities', () => {

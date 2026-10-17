@@ -141,6 +141,19 @@ export type FrustrationElsewhere = 'acknowledge' | 'ignore';
 export type FrustrationMiss = 'ignore' | 'count';
 
 /**
+ * What a mild reading of the frustration question gets (App.frustration.mild). `after-high`: once the
+ * call has shown high frustration (a turn read as high, GATE_FRUSTRATION_HIGH: Session.frustrationHigh),
+ * a later turn read as mild or more (its mild and high together at GATE_FRUSTRATION_HIGH) counts as a high
+ * one does: the acknowledgement, the ladder toward the offer of a person where it runs, the acknowledgement
+ * alone elsewhere, and a frustration-only turn caught as one; a caller never read as high is unchanged
+ * (mild does nothing, since a terse caller often reads mild). `ignore`, only a high reading acts, on every
+ * turn (as before 2026-10-17). Default `after-high`, the maintainer's decision (2026-10-17) for every app,
+ * after a live call where "Come on. Like, seriously, really?" read mild just after a turn read high and
+ * heard "Sorry, I didn't catch that.".
+ */
+export type FrustrationMild = 'after-high' | 'ignore';
+
+/**
  * What a request the call has already acknowledged gets when the caller makes it again, for
  * App.ackIntent: `say`, the acknowledgement (ack_intent) again; `skip`, none, so the form goes
  * straight to its first question or its answer.
@@ -1387,9 +1400,11 @@ export interface App {
    * starts one (FrustrationAfter, default `count`); `elsewhere`, what a turn read as high frustration
    * gets where the ladder does not run (FrustrationElsewhere, default `acknowledge`). With or without
    * `forms`, `miss`: whether a turn whose frustration is acknowledged, and that would otherwise be a miss,
-   * is one (FrustrationMiss, default `ignore`, the maintainer's decision, 2026-10-17).
+   * is one (FrustrationMiss, default `ignore`, the maintainer's decision, 2026-10-17); and `mild`: whether a
+   * mild reading counts once the call has shown high frustration (FrustrationMild, default `after-high`,
+   * the maintainer's decision, 2026-10-17).
    */
-  frustration?: { readonly forms?: readonly FormId[]; readonly after?: FrustrationAfter; readonly elsewhere?: FrustrationElsewhere; readonly miss?: FrustrationMiss };
+  frustration?: { readonly forms?: readonly FormId[]; readonly after?: FrustrationAfter; readonly elsewhere?: FrustrationElsewhere; readonly miss?: FrustrationMiss; readonly mild?: FrustrationMild };
   /**
    * What a caller who says nothing after "Is there anything else I can help with?" (the `anything_else`
    * line) hears when the no-input wait runs out: `repeat`, the `no_input` line and "anything else?"

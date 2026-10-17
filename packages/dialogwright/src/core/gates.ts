@@ -1,6 +1,6 @@
 import { isChoice, isScore, noulValue, rankProbabilities, type AnswerMap } from '../jev/types';
 import { informationOf, isFormIntent, isTaskIntent, type Informs } from './app/intents';
-import { changeSlotWithValueOf, formOf, frustrationElsewhereOf, frustrationHeardIn, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
+import { changeSlotWithValueOf, formOf, frustrationElsewhereOf, frustrationHeardIn, frustrationMildOf, priorityIntentsOf, priorityThresholdOf, questionAtSummaryOf, unsureOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, FormId, Intent, SlotId } from './app/types';
 import type { Session } from './session';
@@ -123,6 +123,11 @@ function addedIntent(app: App, ranked: readonly { label: string; p: number }[], 
 export interface GateResult {
   rows: GateRow[];
   verdict: Verdict;
+  /**
+   * The frustration question read this turn as high (GATE_FRUSTRATION_HIGH, its high alone), not at a
+   * dictation: the turn keeps it on the session (Session.frustrationHigh) when the turn was meant for us.
+   */
+  readHigh: boolean;
 }
 
 const NO_SLOTS: ReadonlySet<SlotId> = new Set();
@@ -227,9 +232,17 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   // count the session carries; only the handoff is a verdict of its own, and the turn does the
   // bookkeeping. A repeated attempt no longer matters.
   let frustrationRung: FrustrationRung | null = null;
+  let shownHigh = false;
   {
     const f = answers.frustration;
-    const high = isScore(f) ? (f.probabilities.high ?? 0) : 0;
+    const readHigh = isScore(f) ? (f.probabilities.high ?? 0) : 0;
+    // Once the call has shown high frustration (Session.frustrationHigh), a turn read as mild or more
+    // counts as a high one does (App.frustration.mild, default `after-high`, the maintainer's decision,
+    // 2026-10-17): its mild and high together at the same bar. A caller never read as high is unchanged:
+    // a terse caller often reads mild. The row's value is what was held to the bar.
+    const mildCounts = session.frustrationHigh === true && frustrationMildOf(app) === 'after-high';
+    const high = mildCounts && isScore(f) ? readHigh + (f.probabilities.mild ?? 0) : readHigh;
+    shownHigh = atLeast(readHigh, t.GATE_FRUSTRATION_HIGH) && dictation === null;
     // At a dictation the caller's tone is the words' own (an annoyed message is still a message): the
     // turn is neither counted nor answered for it, and the row says so.
     // Outside the forms the app names for it (App.frustration), the ladder does not run: the form
@@ -568,7 +581,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
     rows.push(row);
   }
 
-  return { rows, verdict: withFrustration(settledVerdict, frustrationRung) };
+  return { rows, verdict: withFrustration(settledVerdict, frustrationRung), readHigh: shownHigh };
 }
 
 /**

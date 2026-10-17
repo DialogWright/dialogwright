@@ -940,7 +940,7 @@
       ]
     },
     "frustration": {
-      "description": "Where the frustration ladder runs, and whether a turn whose frustration is acknowledged is a miss. Default: on every turn, in every form and outside one, and never a miss.",
+      "description": "Where the frustration ladder runs, whether a turn whose frustration is acknowledged is a miss, and whether a mild reading counts after a high one. Default: on every turn, in every form and outside one, never a miss, and mild counted once the call has shown high frustration.",
       "type": "object",
       "properties": {
         "forms": {
@@ -961,7 +961,7 @@
           ]
         },
         "elsewhere": {
-          "description": "With forms: what a turn read as high frustration gets where the ladder does not run. \"acknowledge\": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. \"ignore\": nothing. Mild frustration gets nothing either way. Default \"acknowledge\".",
+          "description": "With forms: what a turn read as high frustration gets where the ladder does not run. \"acknowledge\": the acknowledgement (ack_frustration) before what the turn says, never counted toward the offer of a person. \"ignore\": nothing. Mild frustration gets nothing either way until the call has shown high frustration (then it counts as high: mild). Default \"acknowledge\".",
           "type": "string",
           "enum": [
             "acknowledge",
@@ -974,6 +974,14 @@
           "enum": [
             "ignore",
             "count"
+          ]
+        },
+        "mild": {
+          "description": "What a turn read as mild frustration gets. \"after-high\": once the call has shown high frustration (a turn read as high), a later turn read as mild or more counts as a high one does: the acknowledgement, the ladder toward the offer of a person where it runs, the acknowledgement alone elsewhere, and no miss for a turn that is only frustration; a caller never read as high is unchanged (mild does nothing, since a terse caller often reads mild). \"ignore\": only a high reading acts, on every turn. Default \"after-high\".",
+          "type": "string",
+          "enum": [
+            "after-high",
+            "ignore"
           ]
         }
       },

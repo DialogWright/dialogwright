@@ -478,6 +478,9 @@ describe('defineApp: what app.yaml shows and the clips name, and what the confir
     // Whether an acknowledged turn is a miss holds with or without forms.
     const miss = app((t) => `${t}\nfrustration:\n  miss: count\n`);
     expect(defineApp(miss, libraryCode).frustration).toEqual({ miss: 'count' });
+    // So does whether a mild reading counts after a high one.
+    const mild = app((t) => `${t}\nfrustration:\n  mild: ignore\n`);
+    expect(defineApp(mild, libraryCode).frustration).toEqual({ mild: 'ignore' });
   });
 
   it('a voice tag names a vocabulary clip, a clip id is used once, and a clip plays for a variable some line has', () => {

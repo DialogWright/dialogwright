@@ -133,6 +133,8 @@ describe('the turn at a whole-answer text slot\'s question is its words (command
       const t = say(s, words, { ...PLAIN, ...LOW, ...over });
       readBackWith(t, words);
       expect(t.session.frustratedTurns, words).toBe(2);
+      // Nor is the call taken to have shown high frustration (Session.frustrationHigh): the tone is the words' own.
+      expect(t.session.frustrationHigh, words).toBeUndefined();
       expect(t.rows.filter((r) => r.outcome === 'dictation' || r.outcome.startsWith('dictation:')).length, words).toBeGreaterThan(0);
     }
   });

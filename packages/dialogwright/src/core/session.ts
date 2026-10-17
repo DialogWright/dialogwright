@@ -267,6 +267,13 @@ export interface Session {
    * changes. Absent until the first, so every other session, and one saved before it, is as it was.
    */
   frustrationOnly?: { readonly at: string; readonly turns: number };
+  /**
+   * The call has shown high frustration: a turn the frustration question read as high
+   * (GATE_FRUSTRATION_HIGH), meant for us (not side speech or a held partial) and not a dictation. From
+   * then a turn read as mild counts as a high one (App.frustration.mild, core/gates.ts). Never unset on
+   * the call. Absent until the first, so every other session, and one saved before it, is as it was.
+   */
+  frustrationHigh?: true;
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
