@@ -40,7 +40,7 @@ The text the model is sent is made of parts. Each has a default, a template over
 |---|---|---|
 | `text.instructions` | The question that asks which topic the caller asks about, sent to the model in place of the default. | `Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing.` |
 | `text.none` | What the question's "none" label means: the caller asks about none of the topics offered. | `Asks about none of these` |
-| `text.unanswered` | What the question's "unanswered" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers. | `Asks a question none of these answers` |
+| `text.unanswered` | What the question's "unanswered" label means, with `unanswered: retry`: the caller asks a question none of the topics offered answers. | `Asks about something none of these answers` |
 
 ### Question ids
 
@@ -82,12 +82,12 @@ On the slot `subject`, the question is `subjectTopic`, a choice whose labels are
 
 > - `parking`: Asks about parking
 > - `opening_hours`: Asks about opening hours
-> - `unanswered`: Asks a question none of these answers
-> - `none`: Names none of these and asks no question
+> - `unanswered`: Asks about something none of these answers
+> - `none`: Says nothing about what they want to know
 
 and the instructions:
 
-> Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask a question none of them answers, and none when they name none of them and ask no question (saying only that they have one is none).
+> Read asr.text. Which of these topics does the caller ask about? Choose unanswered when they ask about something none of them answers, and none when they say nothing about what they want to know (saying only that they have a question is none).
 
 With `unanswered: ask`, there is no `unanswered` label, `none` is "Asks about none of these", and the instructions are "Read asr.text. Which of these topics does the caller ask about? Choose none when they ask about none of them, or ask nothing."
 
