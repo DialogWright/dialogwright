@@ -449,6 +449,14 @@ The same call's filing-deadline answer, "You have 180 days from the date of your
 
 Both change the requests a recording makes (the turns after a second request, and every worded answer's request and its judge's), so Harbor must be recorded again; until then its replay misses those requests.
 
+### Recording 7: jev-1.13.0 and gemini-3.1-flash-lite-preview, 2026-10-17, acknowledgements and the answer's goal
+
+After the acknowledgement options (said once a call per request, `ackIntent.repeat: skip`, and four wordings in turn) and the answer's new goal ("..., keeping anything the passage says that changes the answer"), from the maintainer's live call of 2026-10-17: 507 requests, $0.0899; trimmed. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- **Worded answers**: 11 tried, 10 said as a new wording, 1 fell back (a figure or name not in the passage). Before the goal changed: 4 of 7 (Recording 6). Latency p50 840 ms, p95 4.1 s.
+- **The filing deadline**, the answer the live call heard refused twice: now worded with its condition, for example "You have 180 days from the date of your accident to tell us about a claim. Claims sent after that time may still be reviewed, but payment is not guaranteed, so it is best to file as soon as you can."
+- **The judge on the live call's two wordings**, added to `fixtures/judge/answers.jsonl` and recorded: the one that drops the condition scores 0.44 (refused at Harbor's 0.3; the engine's 0.5 would have let it by), the one that keeps it 0.08. On all 30 cases at 0.5: 14 of 17 unfaithful caught, 1 of 13 faithful refused.
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
