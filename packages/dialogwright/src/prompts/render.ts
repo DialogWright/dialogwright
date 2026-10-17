@@ -5,7 +5,7 @@ import { exactClipId, isPauseOnly, joinSpoken, lineOf, segmentTemplate, stripLea
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
-import { KB_ACCOUNT_VAR, KB_ANSWER_SOURCE } from '../render/config';
+import { KB_ACCOUNT_VAR, KB_ANSWER_SOURCE, KB_SECTIONS_SOURCE } from '../render/config';
 
 export interface PromptEntry {
   text: string;
@@ -103,7 +103,8 @@ export function framedVars(app: App, id: string, vars: Record<string, string>, s
     // A knowledge answer's wording (a span `from: answer`) stands for the passage alone: the topic's
     // account line, the caller's own data, is said after it as it is after the passage.
     const account = span.from === KB_ANSWER_SOURCE ? (vars[KB_ACCOUNT_VAR] ?? '') : '';
-    const value = Object.hasOwn(spans, name) ? (account === '' ? spans[name] : `${spans[name]} ${account}`) : vars[span.from];
+    // An answer from documents (a span `from: sections`) not worded says the line's fallback, its own {answer}: never the sections.
+    const value = Object.hasOwn(spans, name) ? (account === '' ? spans[name] : `${spans[name]} ${account}`) : span.from === KB_SECTIONS_SOURCE ? vars[name] : vars[span.from];
     if (value === undefined) delete out[name];
     else out[name] = value;
   }

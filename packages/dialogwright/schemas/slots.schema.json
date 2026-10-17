@@ -2219,7 +2219,7 @@
             ]
           },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, unanswered.",
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, section, unanswered.",
             "type": "object",
             "properties": {
               "instructions": {
@@ -2230,6 +2230,12 @@
               },
               "none": {
                 "description": "What the question's \"none\" label means: the caller asks about none of the topics offered.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "section": {
+                "description": "With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document's title, {heading} its heading, {text} its text.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

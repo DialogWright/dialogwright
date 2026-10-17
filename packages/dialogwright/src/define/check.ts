@@ -1,3 +1,4 @@
+import { ROTATING_LINES } from '../core/wordings';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1327,8 +1328,8 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
 }
 
 /**
- * A line's other wordings (prompts.yaml's `variants`), in each locale: only the acknowledgement of a
- * request (ack_intent) has them, said in turn; each is fixed text, so the line is not generated; and
+ * A line's other wordings (prompts.yaml's `variants`), in each locale: only the lines said in turn have
+ * them (core/wordings.ts ROTATING_LINES: the acknowledgement of a request, the not-found line, the hold lines); each is fixed text, so the line is not generated; and
  * each names the variables of the line's text, so whichever is said is given what it says.
  */
 function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
@@ -1338,8 +1339,8 @@ function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][s
     const line = locale === null ? `the line "${id}"` : `the ${locale} line "${id}"`;
     const at = (path: (string | number)[]): { line: number; column: number } => locate(file, path) ?? { line: 1, column: 1 };
     const path = ['prompts', id, 'variants'];
-    if (id !== 'ack_intent') {
-      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants, other wordings said in turn, which only ack_intent (the acknowledgement of a request) has`, fix: 'delete variants from this line' });
+    if (!ROTATING_LINES.includes(id)) {
+      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants, other wordings said in turn, which only the lines said in turn have (${ROTATING_LINES.join(', ')})`, fix: 'delete variants from this line' });
       continue;
     }
     if (p.mode === 'generative' || p.generate !== undefined) {

@@ -259,6 +259,7 @@ export interface KbKnowledge {
 /** Knowledge without a knowledge base: the topics the app's own retriever nominates (answers resolved in its own code), and that retriever. */
 export interface CodeKnowledge {
   readonly kb?: undefined;
+  readonly sections?: undefined;
   readonly topics: readonly CatalogTopic[];
   readonly retriever: Retriever;
 }

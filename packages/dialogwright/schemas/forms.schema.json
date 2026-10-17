@@ -78,6 +78,26 @@
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               },
+              "documents": {
+                "description": "With kb.yaml documents: summarize on, how an answer drawn from sections of approved documents is said, where no topic answers. Default: kb_documents_answer, and the not-found line when it cannot be worded.",
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "description": "The prompt an answer from documents is said through: its text says {answer}, the fallback (what onFail says), and its {answer} is a span generated `from: sections`. Default: kb_documents_answer.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  },
+                  "onFail": {
+                    "description": "What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the first sentences of the best section, word for word, in the kb_documents_opening frame where the app has it.",
+                    "type": "string",
+                    "enum": [
+                      "not-found",
+                      "opening"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
               "midTask": {
                 "description": "What asking for this form while another is open does to that form. aside (the default): the form in hand is set aside as it stands, the answer is said, and the form resumes where it was (its question, or its summary or confirmation asked again), whether the caller replaced the task with the question or added it; the topic said with the question is the one answered (the topic is asked in a second, small request on the same words). With no answer to give, the unavailable line is said and a person offered, once per call, as for an informational intent's passage; turned down, the form resumes. task: the form is a task like any other, as before this option: it replaces the form in hand or is queued after it, as the model reads the turn, and its topic is asked once it is open.",
                 "type": "string",

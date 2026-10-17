@@ -1,3 +1,4 @@
+import { ROTATING_LINES } from '../wordings';
 import { isRuleId } from '../../gate/policy';
 import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
@@ -111,13 +112,13 @@ export function validateApp(app: App): void {
       if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
     }
   }
-  // Other wordings (prompts.yaml's variants) only on the acknowledgement of a request, each fixed and
+  // Other wordings (prompts.yaml's variants) only on the lines said in turn (core/wordings.ts ROTATING_LINES), each fixed and
   // with the variables of the line's text, so whichever is said is given what it says. Every locale's too.
   for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { text?: string; variants?: readonly string[] }>>][]) {
     for (const [id, entry] of Object.entries(lines)) {
       if (entry.variants === undefined) continue;
       const where = `the line "${id}"${locale === '' ? '' : ` (locale ${locale})`}`;
-      if (id !== 'ack_intent') fail(`${where} has variants, which only ack_intent may have: delete them`);
+      if (!ROTATING_LINES.includes(id)) fail(`${where} has variants, which only the lines said in turn may have (${ROTATING_LINES.join(', ')}): delete them`);
       if (entry.variants.length === 0) fail(`${where} has an empty list of variants: give at least one wording, or delete them`);
       if (app.generated?.lines[id] !== undefined) fail(`${where} has variants and is generated: other wordings are fixed text, so the line is said word for word`);
       const vars = (t: string): string => [...new Set([...t.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort().join(',');

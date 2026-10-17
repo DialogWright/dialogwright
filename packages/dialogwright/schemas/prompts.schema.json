@@ -21,7 +21,7 @@
             "description": "Whether the caller may talk over the line (barge-in). false for lines that must be heard whole, such as a keypad instruction or a legal statement."
           },
           "variants": {
-            "description": "ack_intent only: the line's other wordings, each fixed text said word for word (never generated), each with the same {variables} as `text`. The call says them in turn as it acknowledges one request after another: `text` the first time, then each variant in order, then `text` again (by how many times the call has said the line, never at random, so a replay or a recording says the same). A locale's prompts.yaml gives its own, as many as it likes; without them its `text` is said every time. Absent: `text` every time.",
+            "description": "ack_intent, kb_not_found, kb_hold and kb_hold_more only (the lines said in turn): the line's other wordings, each fixed text said word for word (never generated), each with the same {variables} as `text`. The call says them in turn as it acknowledges one request after another: `text` the first time, then each variant in order, then `text` again (by how many times the call has said the line, never at random, so a replay or a recording says the same). A locale's prompts.yaml gives its own, as many as it likes; without them its `text` is said every time. Absent: `text` every time.",
             "minItems": 1,
             "type": "array",
             "items": {
@@ -109,7 +109,7 @@
               "type": "object",
               "properties": {
                 "from": {
-                  "description": "The slot whose content the span is worded from (the message, the note): the caller's words, collected. The model is sent only this content, quoted, with the span's goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. `answer` on a form's knowledge answer line (forms.yaml's answers.answer, default kb_answer), as its {answer} span: the approved passage the knowledge completion resolved for the caller, worded for their question, only on a topic kb/topics.yaml marks `risk: low` (the passage is said word for word on every other topic, and whenever a check fails or the drift judge refuses). Required in prompts.yaml; a locale gives a span only its goal.",
+                  "description": "The slot whose content the span is worded from (the message, the note): the caller's words, collected. The model is sent only this content, quoted, with the span's goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. `sections` on a form's documents answer line (forms.yaml's answers.documents.answer, default kb_documents_answer), as its {answer} span: the sections of approved documents the decision model chose for the caller's question (kb.yaml documents), worded for it; the line's fixed text, the fallback (answers.documents.onFail), is said whenever a check fails or the drift judge refuses. `answer` on a form's knowledge answer line (forms.yaml's answers.answer, default kb_answer), as its {answer} span: the approved passage the knowledge completion resolved for the caller, worded for their question, only on a topic kb/topics.yaml marks `risk: low` (the passage is said word for word on every other topic, and whenever a check fails or the drift judge refuses). Required in prompts.yaml; a locale gives a span only its goal.",
                   "type": "string",
                   "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                 },
@@ -131,6 +131,12 @@
                     "as-caller",
                     "to-caller"
                   ]
+                },
+                "retry": {
+                  "description": "An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, within the answer's limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1
                 },
                 "names": {
                   "description": "A to-caller span only (`speaks: to-caller`): the line's variables whose value the span may use (to name whom the message is for where the message means them): each a `choice` slot of the line (who the message is for, as said, such as [recipient]). They are the app's own option text, not the caller's words, so they are not screened; they are sent to the model and to the drift check, and the only names the span may say beside the content's (the drift judge counts any other as unfaithful). Never a `name` slot (the caller's own name is never put for a pronoun), an identity factor, a slot with a redact setting, or a choice whose options say a digit: `pnpm check` refuses each. Read from prompts.yaml, for every locale.",

@@ -154,7 +154,7 @@ describe('a line\'s wordings (prompts.yaml variants)', () => {
   it('is refused by validateApp on another line, with other variables, or on a generated line, and an unknown repeat', () => {
     const line = (id: string, variants: readonly string[]): App => ({ ...testkitApp, prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, [id]: { ...testkitApp.prompts.manifest[id]!, variants } } } });
     expect(() => validateApp(app)).not.toThrow();
-    expect(() => validateApp(line('anything_else', ['Anything more?']))).toThrow('the line "anything_else" has variants, which only ack_intent may have');
+    expect(() => validateApp(line('anything_else', ['Anything more?']))).toThrow('the line "anything_else" has variants, which only the lines said in turn may have (ack_intent, kb_not_found, kb_hold, kb_hold_more)');
     expect(() => validateApp(line('ack_intent', ['Happy to help.']))).toThrow('the line "ack_intent" has the variant "Happy to help.", whose variables are not its text\'s');
     expect(() => validateApp(line('ack_intent', []))).toThrow('the line "ack_intent" has an empty list of variants');
     expect(() => validateApp({ ...testkitApp, ackIntent: { repeat: 'never' as never } })).toThrow('ackIntent.repeat "never" is not "say" or "skip"');
