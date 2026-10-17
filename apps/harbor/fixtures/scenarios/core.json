@@ -2182,5 +2182,25 @@
       "promptId": "anything_else",
       "gate": "searchPolicy:ALLOW"
     }
+  },
+  {
+    "id": "coverage-roof-covered",
+    "steps": [
+      {
+        "say": "if i fell off the roof would that be covered"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW",
+      "text": "A covered accident is"
+    }
   }
 ]
