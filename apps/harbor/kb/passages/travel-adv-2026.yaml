@@ -7,11 +7,10 @@ effective: { from: 2026-01-01 }
 source: { document: accident-advantage-member-guide-2026, section: "2 Coverage when you travel" }
 answer: "Your plan covers accidents anywhere in the world, with no territorial limit. If you're hurt while you're traveling, get the care you need and keep the itemized bills and any report from the doctor or hospital that treated you. Bills in another currency are fine, and benefits are paid in US dollars. You can file the claim when you get home, as long as it's within 180 days of the accident."
 # Version 2026.2 (2026-10-16): the fuller answer from the member guide, drafted by an AI coding assistant
-# (Claude) for a person to read against its source and approve; the approval below is the earlier
-# version's, so the passage is withheld until then.
+# (Claude) and approved by a person against its source (kb:approve, 2026-10-17).
 approval:
   owner: Benefits Content
-  approvedBy: Compliance Review
-  on: 2025-12-10
-  sourceHash: 1fb200fdbd908f4c375f47c609330fe4ceca9fc0c1c2d42a9f18d940a904b7f9
-  hash: 0306aa2b0f8bebc964ac1f87509a90efc6420ce95b6813b51e9fe45e5130b858
+  approvedBy: Jason Stiles
+  on: 2026-10-17
+  sourceHash: 3a197dd34ba41009ae894741a900276ef4909eb08233dacf27e50585a0d209b1
+  hash: 71c8d22b647fd9c2009fcd40b40d169df4bcaee57b67ec76ba885a8117161c07

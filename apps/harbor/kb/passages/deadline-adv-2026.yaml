@@ -7,11 +7,10 @@ effective: { from: 2026-01-01 }
 source: { document: accident-advantage-member-guide-2026, section: "1 Filing a claim" }
 answer: "You have 180 days from the date of your accident to tell us about a claim. You can file it in the member portal, in the Harbor Mutual app, or by calling member services, and you'll need the date of the accident, a short description of what happened, and the bills or a statement from the doctor who treated you. Claims sent after 180 days may still be reviewed, but payment isn't guaranteed, so it's best to file as soon as you can. You can send any documents you don't have yet later."
 # Version 2026.2 (2026-10-16): the fuller answer from the member guide, drafted by an AI coding assistant
-# (Claude) for a person to read against its source and approve; the approval below is the earlier
-# version's, so the passage is withheld until then.
+# (Claude) and approved by a person against its source (kb:approve, 2026-10-17).
 approval:
   owner: Benefits Content
-  approvedBy: Compliance Review
-  on: 2025-12-10
-  sourceHash: ca625bd2c1a8afe2570c7c69de9a12bc6ee5dd9c3faded28d726cb61a3f2f5ab
-  hash: da8ed531ea2e446da21f711df53831b88c693a6649866196580b02fba6b383f0
+  approvedBy: Jason Stiles
+  on: 2026-10-17
+  sourceHash: 56c8bef8ac0f66adc237bcf1f551291aaabeea0f4a065a3a7cb20d7605159cee
+  hash: 8f82e56a5b5fe89e1b01a3a43342caa665f774ea18612a3bdf96612ae95ff8b6

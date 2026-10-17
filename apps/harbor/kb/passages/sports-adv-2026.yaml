@@ -7,11 +7,10 @@ effective: { from: 2026-01-01 }
 source: { document: accident-advantage-member-guide-2026, section: "3 Sports and recreation" }
 answer: "Injuries from amateur sports and recreation are covered, including school teams, club and league play, pickup games and fitness classes. Injuries while playing a sport professionally, meaning you're paid to play or compete, are not covered. Coaching or refereeing for pay is not playing professionally, so an injury while doing either is covered like any other accident."
 # Version 2026.2 (2026-10-16): the fuller answer from the member guide, drafted by an AI coding assistant
-# (Claude) for a person to read against its source and approve; the approval below is the earlier
-# version's, so the passage is withheld until then.
+# (Claude) and approved by a person against its source (kb:approve, 2026-10-17).
 approval:
   owner: Benefits Content
-  approvedBy: Compliance Review
-  on: 2025-12-10
-  sourceHash: 794df36ab2ce0fa37f53368622673307c99b931879333871d6b99f3e0388ec34
-  hash: f5abe17c559709c232141b85420f59fb94fd4d290daba41784574da9880cb357
+  approvedBy: Jason Stiles
+  on: 2026-10-17
+  sourceHash: e1f95f9d3df0193312bc1dca31ade61ea68f2d89e4e9644d259a05522ad2d6ca
+  hash: 923927c1376393b4f58c6c69f57dd80b0b64a33d12cc5937371465fdc9ed49e3
