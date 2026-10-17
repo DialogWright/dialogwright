@@ -1273,6 +1273,31 @@
     "principalLevel": 0,
     "gate": "getCoverage:STEP_UP"
   },
+  "cv-23": {
+    "id": "cv-23",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sports_injury",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
   "tp-01": {
     "id": "tp-01",
     "decision": "prompt",

@@ -2790,5 +2790,33 @@
     "gate": "searchPolicy:ALLOW",
     "pass": true,
     "mismatches": []
+  },
+  "coverage-skiing-worded": {
+    "id": "coverage-skiing-worded",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }

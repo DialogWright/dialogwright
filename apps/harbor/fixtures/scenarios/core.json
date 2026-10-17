@@ -2163,5 +2163,24 @@
       "gate": "getClaim:ALLOW",
       "text": "Your claim 4730"
     }
+  },
+  {
+    "id": "coverage-skiing-worded",
+    "steps": [
+      {
+        "say": "am i covered if i hurt myself skiing"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "gate": "searchPolicy:ALLOW"
+    }
   }
 ]
