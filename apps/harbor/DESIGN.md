@@ -518,6 +518,10 @@ And Harbor's frustration lines no longer apologize: the line cannot know what up
 
 The lines said change (the acknowledgement's words in every call that hears it, and the offer where the miss line was), and the turn state carries the prompt just played, so every request after an acknowledgement changes, and the new lines and calls need a recording; until then the replay misses those requests.
 
+### Recording 13: jev-1.13.0, 2026-10-17, mild after high, and the acknowledgement without an apology
+
+After a mild reading came to count once the call had shown high frustration, and Harbor's frustration lines went back to acknowledging without an apology ("I understand, let's get this sorted."), from the maintainer's live call: 598 requests, $0.1077; trimmed. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`, the live words among them (fr-08 to fr-10 and three new calls).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
