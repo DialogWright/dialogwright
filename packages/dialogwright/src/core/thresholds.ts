@@ -56,6 +56,9 @@ export const DEFAULT_THRESHOLDS = {
   // knowledge: a topic slot with `disambiguate` asks which of two topics when the model's top two are
   // both topics it may fill and closer than this (slots/topic/fill.ts)
   KB_TOPIC_MARGIN: 0.15,
+  // knowledge: a section of an approved document answers a question no topic does when the model reads
+  // that it says what the caller asked at this or above (kb.yaml documents; slots/topic/fill.ts)
+  KB_SECTION_ANSWERS: 0.6,
   // confirmations and menus
   CONFIRM_YES: 0.7,
   CONFIRM_NO: 0.7,

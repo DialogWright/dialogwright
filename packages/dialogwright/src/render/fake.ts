@@ -114,6 +114,20 @@ export function fakeAnswerWording(act: SpanAct): string {
   return (kept.length === 0 ? sentences : kept).join(' ');
 }
 
+/**
+ * The fake's own wording of an answer from documents (a span `from: sections`), deterministic: the
+ * sections' sentences that share a word with the caller's question (past the most common), at most two, in
+ * the sections' order; the first section's first sentence where none does. A test double's choice, standing
+ * in for what a model might word: no model is told it.
+ */
+export function fakeDocumentsWording(act: SpanAct): string {
+  const asked = new Set((act.answer?.question ?? '').toLowerCase().match(/[\p{L}\p{N}']+/gu)?.filter((w) => !COMMON.has(w)) ?? []);
+  const sentences = act.content.flatMap((c) => c.value.trim().split(/(?<=[.!?])\s+/)).filter((x) => x !== '');
+  const tokens = (x: string): string[] => x.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+  const kept = sentences.filter((x) => tokens(x).some((w) => asked.has(w))).slice(0, 2);
+  return (kept.length === 0 ? sentences.slice(0, 1) : kept).join(' ');
+}
+
 export class FakeRenderClient implements RenderClient {
   readonly model = FAKE_RENDER_MODEL;
   /** The acts it was asked to word, in order, with their prompt ids: what a test reads back. */
@@ -146,7 +160,7 @@ export class FakeRenderClient implements RenderClient {
       said = typeof own === 'function' ? own(act) : own;
     }
     if (said instanceof Error) throw new RenderClientError(said.message);
-    const text = said ?? (isSpanAct(act) ? (act.answer !== undefined ? fakeAnswerWording(act) : fakeSpanWording(act)) : fakeWording(act));
+    const text = said ?? (isSpanAct(act) ? (act.answer?.from === 'sections' ? fakeDocumentsWording(act) : act.answer !== undefined ? fakeAnswerWording(act) : fakeSpanWording(act)) : fakeWording(act));
     return { text, model: FAKE_RENDER_MODEL, usage: { inputTokens: Math.ceil(JSON.stringify(act).length / 4), outputTokens: Math.ceil(text.length / 4) }, latencyMs: this.opts.delayMs ?? 0, source: 'fake' };
   }
 }

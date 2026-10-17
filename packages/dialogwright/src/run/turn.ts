@@ -17,7 +17,7 @@ import type { RenderContext } from '../prompts/render';
 import { buildTraceRecord, type TraceSink } from '../trace/writer';
 import type { FollowUpRecord, TraceRecord } from '../trace/types';
 import type { AuditDraft, AuditEntry, Chained } from '../audit/types';
-import { topicsListening } from '../core/knowledge';
+import { topicsListening, type TurnKnowledge } from '../core/knowledge';
 import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
@@ -211,7 +211,7 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
   const retrieved = knowledge !== undefined && tc.knowledge === undefined
     ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
     : null;
-  const known: TurnContext = retrieved ? { ...tc, knowledge: { nominated: retrieved.nominated } } : tc;
+  const known: TurnContext = retrieved ? { ...tc, knowledge: knowledgeOf(retrieved) } : tc;
   const questions = followUpQuestions(session, followUp, words, known);
   // Nothing to ask, or nothing the turn's own answers do not already answer.
   if (Object.keys(questions).length === 0 || Object.keys(questions).every((id) => Object.hasOwn(answers, id))) return { tc: known, answers, run: null, retrieved, ms: null };
@@ -224,6 +224,11 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
   // Only the follow-up's own questions are taken from it: the turn's answers stand as they came.
   const added = Object.fromEntries(Object.entries(asked.value.answers).filter(([id]) => Object.hasOwn(questions, id) && !Object.hasOwn(answers, id)));
   return { tc: known, answers: { ...answers, ...added }, run: { followUp, questions, response: asked.value, error: null }, retrieved, ms };
+}
+
+/** What retrieval gives the turn (TurnContext.knowledge): the topics, and the sections where the app nominates any. */
+function knowledgeOf(retrieved: Retrieved): TurnKnowledge {
+  return { nominated: retrieved.nominated, ...(retrieved.sections !== undefined ? { sections: retrieved.sections } : {}) };
 }
 
 /** The trace's account of a follow-up (TraceRecord.followUp). */
@@ -348,7 +353,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const retrieved = topicsListening(session, event, base.duringService)
     ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
     : null;
-  const tc: TurnContext = retrieved ? { ...base, knowledge: { nominated: retrieved.nominated } } : base;
+  const tc: TurnContext = retrieved ? { ...base, knowledge: knowledgeOf(retrieved) } : base;
   const t0 = performance.now();
   const p = plan(session, event, tc);
   const t1 = performance.now();

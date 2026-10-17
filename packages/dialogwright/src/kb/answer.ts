@@ -10,7 +10,10 @@ import { isAnonymous } from '../gate/types';
 import { VAR } from '../prompts/segments';
 import { answerSpanOf, KB_ACCOUNT_VAR, KB_QUESTION_VAR } from '../render/config';
 import { collapseWhitespace } from './hash';
-import { kbAuditRow, kbSourceOf } from './record';
+import { documentsSourceOf, kbAuditRow, kbSourceOf } from './record';
+import { resolveSections, sectionKeysOf, sentencesOf } from './sectionTexts';
+import { nextWording } from '../core/wordings';
+import { localePromptEntry } from '../prompts/render';
 import { resolvePassage } from './resolve';
 import type { AppKnowledge, KbAnswer, KbPassage, KnowledgeBase } from './types';
 
@@ -37,6 +40,16 @@ export const KB_ANSWER_PROMPT = 'kb_answer';
 export const KB_UNAVAILABLE_PROMPT = 'kb_unavailable';
 /** The variable the answer line says the answer (and its account line) in. */
 export const KB_ANSWER_VAR = 'answer';
+/** The line an answer from documents is said through (kb.yaml documents), unless forms.yaml's answers.documents names another. */
+export const KB_DOCUMENTS_ANSWER_PROMPT = 'kb_documents_answer';
+/** The line said when nothing answers (a question no topic or section answers, or an answer from documents that cannot be worded); rotates through its variants. */
+export const KB_NOT_FOUND_PROMPT = 'kb_not_found';
+/** The frame of a section's opening sentences said in place of an answer from documents that cannot be worded (onFail: opening), with {opening}. */
+export const KB_DOCUMENTS_OPENING_PROMPT = 'kb_documents_opening';
+/** The variable an answer from documents carries its sections' text in, beside {answer} (the line's fallback): what the wording is drawn from, never said as it is. */
+export const KB_SOURCE_VAR = 'answerSource';
+/** The variable an answer line carries the wording of its hold line in (kb_hold, rotating): the hold line said if its wording is late. */
+export const KB_HOLD_VAR = 'answerHold';
 /** The param the resolving tool and an account line's tool are given the topic in. */
 export const KB_TOPIC_PARAM = 'topic';
 
@@ -140,6 +153,12 @@ export interface KbCompletionOptions {
    * caller who is not a subject is answered about no one.
    */
   readonly subject?: SlotId;
+  /**
+   * An answer from documents (kb.yaml documents): the line it is said through (default
+   * kb_documents_answer), and what is said when it cannot be worded (`onFail`: `not-found`, the default,
+   * the not-found line; `opening`, the best section's opening sentences, word for word).
+   */
+  readonly documents?: { readonly answer?: string; readonly onFail?: 'not-found' | 'opening' };
 }
 
 /** The action a knowledge completion resolves through: its own `via`, else the knowledge base's. */
@@ -196,6 +215,15 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     const result = readKbAnswer(value);
     if (result.source !== undefined) c.out.kb = result.source;
     if (!('answer' in result)) return unavailableCompletion(c, unavailablePrompt);
+    // An answer from sections of approved documents (kb.yaml documents): the line's fixed text is what is
+    // said when it cannot be worded (onFail: the not-found line, or the best section's opening), and the
+    // sections go beside it, for the wording alone (render/turn.ts).
+    if (result.source.from === 'documents') {
+      const line = opts.documents?.answer ?? KB_DOCUMENTS_ANSWER_PROMPT;
+      const heard = s.slots[opts.slot]?.heard;
+      const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', result.answer, unavailablePrompt);
+      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, [KB_HOLD_VAR]: holdWording(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
+    }
     const defaultLocale = defaultLocaleOf(app);
     const locale = result.source.locale ?? s.locale ?? defaultLocale;
     let answer = result.answer;
@@ -206,8 +234,35 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
       account = read.decision.verdict === 'ALLOW' ? fillAccountLine(line.text, read.value) : null;
       if (account !== null) answer = `${answer} ${account}`;
     }
-    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer, ...wordingVars(app, answerPrompt, account, s.slots[opts.slot]?.heard) } }] };
+    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer, ...wordingVars(app, answerPrompt, account, s.slots[opts.slot]?.heard), ...(answerSpanOf(app.generated?.lines[answerPrompt]) !== null ? { [KB_HOLD_VAR]: holdWording(app, s) } : {}) } }] };
   };
+}
+
+/** Whether the app has the line `id` (in its prompts). */
+const hasPrompt = (app: App, id: string): boolean => Object.hasOwn(app.prompts.manifest, id);
+
+/**
+ * The wording of the hold line for this answer (kb_hold, in turn through its variants: core/wordings.ts),
+ * or kb_hold itself where the app has no variants. Counted once per answer that may be worded, said or not.
+ */
+function holdWording(app: App, s: Session): string {
+  return hasPrompt(app, 'kb_hold') ? nextWording(s, 'kb_hold') : 'kb_hold';
+}
+
+/**
+ * What an answer from documents says when it cannot be worded (its line's fixed text): with onFail
+ * `not-found` (the default), the not-found line in turn through its wordings (kb_not_found), else the
+ * form's unavailable line; with `opening`, the first sentences of the best section, word for word, in
+ * the kb_documents_opening frame where the app has it. Text in the call's language.
+ */
+function documentsFallback(app: App, s: Session, onFail: 'not-found' | 'opening', sectionsText: string, unavailablePrompt: string): string {
+  if (onFail === 'opening') {
+    const opening = sentencesOf(sectionsText.split('\n\n')[0] ?? '').slice(0, 2).join(' ');
+    if (!hasPrompt(app, KB_DOCUMENTS_OPENING_PROMPT)) return opening;
+    return localePromptEntry(app, KB_DOCUMENTS_OPENING_PROMPT, s.locale).entry.text.replace(VAR, (m, name: string) => (name === 'opening' ? opening : m));
+  }
+  const id = hasPrompt(app, KB_NOT_FOUND_PROMPT) ? nextWording(s, KB_NOT_FOUND_PROMPT) : unavailablePrompt;
+  return localePromptEntry(app, id, s.locale).entry.text;
 }
 
 /**
@@ -280,6 +335,13 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
       const facts = opts.facts ? opts.facts(call.params, sys, tc) : {};
       if (facts === null) return { value: { unavailable: 'no-facts' } satisfies KbAnswer, summary: 'no passage (no-facts)' };
       const locale = opts.locale?.(s) ?? s.locale ?? kb.defaultLocale;
+      // Sections of approved documents (kb.yaml documents), named by the topic slot's value.
+      const keys = sectionKeysOf(call.params[KB_TOPIC_PARAM] ?? '');
+      if (keys !== null) {
+        const r = resolveSections(kb, keys, facts, locale);
+        if ('unavailable' in r) return { value: { unavailable: r.unavailable } satisfies KbAnswer, summary: `no passage (${r.unavailable})` };
+        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
+      }
       const r = resolvePassage(kb, { topic: call.params[KB_TOPIC_PARAM] ?? '', facts, todayIso: tc.todayIso, locale });
       if ('fresh' in r) return { value: { answer: r.passage.answer, source: recordOf(kb, r.passage, facts, true) } satisfies KbAnswer, summary: r.passage.id };
       const value: KbAnswer = { unavailable: r.unavailable, ...(r.passage ? { source: recordOf(kb, r.passage, facts, false) } : {}) };

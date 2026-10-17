@@ -1,6 +1,7 @@
 import type { AuditDraft } from '../audit/types';
 import type { KbSource } from '../core/lifecycle';
-import type { KbPassage } from './types';
+import type { KbPassage, KnowledgeBase } from './types';
+import type { KbSection } from './sectionTexts';
 
 /**
  * The knowledge record (core/lifecycle.ts KbSource) built from a `kb/` passage, and the audit row
@@ -81,6 +82,36 @@ export function kbAuditRow(source: KbSource): AuditDraft {
       ...(source.locale !== undefined ? { locale: source.locale } : {}),
       ...(source.sourceHash !== undefined ? { sourceHash: shortHash(source.sourceHash) } : {}),
       ...(source.approvalHash !== undefined ? { approvalHash: shortHash(source.approvalHash) } : {}),
+      ...(source.from === 'documents' ? { from: 'documents', sections: source.sections ?? [] } : {}),
     },
+  };
+}
+
+/**
+ * The knowledge record of an answer drawn from sections of approved documents (kb.yaml documents),
+ * as a passage's is (kbSourceOf): named by its first section's document (`document:<id>`), with the
+ * sections' keys, the caller's facts the documents depend on, and the document's approval.
+ */
+export function documentsSourceOf(kb: Pick<KnowledgeBase, 'sources'>, sections: readonly KbSection[], facts: Readonly<Record<string, string | undefined>>): KbSource {
+  const first = sections[0]!;
+  const doc = kb.sources[first.document]!;
+  const a = doc.approval;
+  const applies: Record<string, string> = {};
+  for (const fact of Object.keys(first.applies ?? {}).sort()) {
+    const value = Object.hasOwn(facts, fact) ? facts[fact] : undefined;
+    if (value !== undefined) applies[fact] = value;
+  }
+  return {
+    passageId: `document:${first.document}`,
+    topic: 'documents',
+    version: a ? shortHash(a.hash) : '',
+    applies,
+    document: doc.document,
+    section: sections.map((s) => s.section).join(' | '),
+    effectiveFrom: a?.on ?? '',
+    ...(a ? { approvedBy: a.approvedBy, approvedOn: a.on, approvalHash: shortHash(a.hash) } : {}),
+    fresh: true,
+    from: 'documents',
+    sections: sections.map((s) => s.key),
   };
 }

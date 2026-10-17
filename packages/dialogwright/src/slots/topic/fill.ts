@@ -4,7 +4,8 @@ import { isChoice, rankProbabilities, type Ranked } from '../../jev/types';
 import type { TopicCatalog } from '../../kb/types';
 import { meetsThreshold } from '../parts/thresholds';
 import type { TopicOptions } from './options';
-import { offeredTopics } from './questions';
+import { offeredTopics, sectionQuestionIdOf, SECTIONS_VALUE_PREFIX } from './questions';
+import { noulValue } from '../../jev/types';
 
 /**
  * A topic slot's fill. A label is a topic it may fill with when the question offered it on that turn
@@ -31,7 +32,40 @@ import { offeredTopics } from './questions';
  * is a miss with `reask`: counted, and the question asked again as it stands rather than the retry line,
  * which says nothing answers what was asked.
  */
+/** The most sections an answer from documents is worded from. */
+export const MAX_ANSWER_SECTIONS = 2;
+
 export function topicFill(
+  o: TopicOptions,
+  questionId: string,
+  cap: number,
+  catalog: TopicCatalog | undefined,
+  display: (value: string, locale?: string) => string,
+  slot = questionId.replace(/Topic$/, ''),
+): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
+  const byTopic = topicOnly(o, questionId, cap, catalog, display);
+  return (answers, ctx) => {
+    const out = byTopic(answers, ctx);
+    // A topic wins: sections answer only a question no topic does (kb.yaml documents), never a turn that
+    // asked nothing (none on top), and never with `unanswered: ask`.
+    if (out.kind === 'filled' || out.kind === 'disambiguate' || out.kind === 'help' || o.unanswered !== 'retry' || (ctx.sections ?? []).length === 0) return out;
+    const a = answers[questionId];
+    if (isChoice(a)) {
+      const top = o.disambiguate ? rankProbabilities(typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {})[0]?.label : a.choice;
+      if (top === 'none') return out;
+    }
+    const answering = (ctx.sections ?? [])
+      .map((s, i) => ({ s, p: noulValue(answers, sectionQuestionIdOf(slot, i)) }))
+      .filter((x) => meetsThreshold(ctx.thresholds, 'KB_SECTION_ANSWERS', x.p))
+      .sort((x, y) => y.p - x.p)
+      .slice(0, MAX_ANSWER_SECTIONS);
+    if (answering.length === 0) return out;
+    return { kind: 'filled', value: `${SECTIONS_VALUE_PREFIX}${answering.map((x) => x.s.key).join('|')}`, display: answering[0]!.s.heading.toLowerCase(), confidence: answering[0]!.p, confirm: 'none' };
+  };
+}
+
+/** The fill by the topic question alone (see topicFill). */
+function topicOnly(
   o: TopicOptions,
   questionId: string,
   cap: number,

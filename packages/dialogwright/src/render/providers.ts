@@ -1,6 +1,6 @@
 import type { RenderModelChoice } from '../core/app/types';
 import { actMessage, instructionsOf } from './prompt';
-import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
+import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type Generation, type RenderClient, type RenderPrice, type RenderRequest } from './types';
 
 /**
  * Where generated lines are worded (generated wording, design section 5): a model reached through
@@ -25,6 +25,10 @@ import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFA
  *   (default 4000 on a call, 6000 in a chat; never less than the line's two budgets together). Past the
  *   line's budgets the caller hears the hold line first; past this, the passage word for word.
  *   RENDER_ANSWER_TIMEOUT_MS sets both at once, and a channel's own setting wins over it.
+ * - RENDER_DOCUMENTS_TIMEOUT_VOICE_MS and RENDER_DOCUMENTS_TIMEOUT_CHAT_MS: the same for an answer worded from
+ *   sections of approved documents (a span `from: sections`, kb.yaml documents): default 6000 on a call,
+ *   8000 in a chat. Past half of it the caller hears the second hold line (kb_hold_more) where the app has
+ *   it; past it, the line's fallback (answers.documents.onFail). RENDER_DOCUMENTS_TIMEOUT_MS sets both.
  * - RENDER_PRICE_INPUT_PER_MTOK and RENDER_PRICE_OUTPUT_PER_MTOK: the model's price in US dollars per
  *   million tokens, for the cost in the trace and Insights; default the default model's.
  * - RENDER_THINKING and RENDER_EFFORT: how the model thinks (reasons) while it words a line. On Anthropic
@@ -316,12 +320,13 @@ function perChannel(env: Env, base: string, defaults: { readonly voice: number; 
 }
 
 /** RENDER_SHARE, the wording's and the checks' budgets per channel, a knowledge answer's limit per channel, and the price, with their defaults. */
-export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
+export function renderSettings(env: Env = process.env): { share: number; timeoutMs: { voice: number; chat: number }; checkTimeoutMs: { voice: number; chat: number }; answerTimeoutMs: { voice: number; chat: number }; documentsTimeoutMs: { voice: number; chat: number }; price: RenderPrice } {
   return {
     share: bounded(env, 'RENDER_SHARE', 0, 100, 100),
     timeoutMs: perChannel(env, 'RENDER_TIMEOUT', DEFAULT_RENDER_TIMEOUT_MS),
     checkTimeoutMs: perChannel(env, 'RENDER_CHECK_TIMEOUT', DEFAULT_RENDER_CHECK_TIMEOUT_MS),
     answerTimeoutMs: perChannel(env, 'RENDER_ANSWER_TIMEOUT', DEFAULT_RENDER_ANSWER_TIMEOUT_MS),
+    documentsTimeoutMs: perChannel(env, 'RENDER_DOCUMENTS_TIMEOUT', DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS),
     price: { input: price(env, 'RENDER_PRICE_INPUT_PER_MTOK', DEFAULT_RENDER_PRICE.input), output: price(env, 'RENDER_PRICE_OUTPUT_PER_MTOK', DEFAULT_RENDER_PRICE.output) },
   };
 }

@@ -1,3 +1,4 @@
+import { nextWording } from './wordings';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
 import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
@@ -37,7 +38,7 @@ import { lineOf, wordingId } from '../prompts/segments';
 import { saidCode } from './spokenCode';
 import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
-import type { Nomination } from '../kb/types';
+import type { Nomination, SectionNomination } from '../kb/types';
 
 export interface TurnContext {
   nowMs: number;
@@ -290,6 +291,7 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     // What retrieval nominated, only on a turn it ran for: any other turn's slots see the context
     // they always have.
     ...(tc.knowledge !== undefined ? { nominated: tc.knowledge.nominated } : {}),
+    ...(tc.knowledge?.sections !== undefined ? { sections: tc.knowledge.sections } : {}),
   };
 }
 
@@ -299,9 +301,9 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
  * describe those words, so they are replaced by the ones retrieved for the words themselves on their
  * own turn (`nominated`, kept with the pending confirmation), or dropped when none were.
  */
-function knowledgeOfWords(tc: TurnContext, nominated: readonly Nomination[] | undefined): TurnContext {
+function knowledgeOfWords(tc: TurnContext, nominated: readonly Nomination[] | undefined, sections?: readonly SectionNomination[]): TurnContext {
   const { knowledge: _, ...rest } = tc;
-  if (nominated !== undefined) return { ...rest, knowledge: { nominated } };
+  if (nominated !== undefined) return { ...rest, knowledge: { nominated, ...(sections !== undefined ? { sections } : {}) } };
   return tc.knowledge === undefined ? tc : rest;
 }
 
@@ -1787,14 +1789,6 @@ function acknowledge(s: Session, form: FormId): void {
   s.acknowledged = [...(s.acknowledged ?? []), form];
 }
 
-/** The prompt id of the wording `line` is said in this time: its own, unless it has others in the call's language. */
-function nextWording(s: Session, line: string): string {
-  const count = wordingsOf(appOf(s), line, s.locale);
-  if (count < 2) return line;
-  const said = s.ackIntentSaid ?? 0;
-  s.ackIntentSaid = said + 1;
-  return wordingId(line, (said % count) + 1);
-}
 
 /**
  * The form heard a spoken turn (FormDef.onAnswers): before the turn fills anything or decides, so
@@ -2025,7 +2019,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (!isFormIntent(io.app, pc.intent)) return { decision: failAttempt(s, 'intent', io), events: [] };
       // Fill from what the caller originally said, not from the "yes"; the form hears the yes too.
       // Its topic slot reads the topics nominated for those words, not this turn's (for the yes).
-      const said = slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated));
+      const said = slotContext(s, pc.text, knowledgeOfWords(io.tc, pc.nominated, pc.sections));
       // An aside to the form in hand, confirmed: taken as one, and the form resumes after it.
       if (asideNow(s, pc.intent)) return takeAside(s, pc.intent, pc.answers, said, io, answers);
       // A priority intent that corrects the form, checked first ("just to check, ..."): those words
@@ -2216,7 +2210,7 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
     case 'route':
       if (verdict.confirm === 'explicit') {
         // The words' nominations go with them, for the form the yes opens (only when retrieval ran).
-        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text, ...(ctx.nominated !== undefined ? { nominated: ctx.nominated } : {}) };
+        s.pendingConfirmation = { target: 'intent', intent: verdict.intent, answers, text: ctx.text, ...(ctx.nominated !== undefined ? { nominated: ctx.nominated } : {}), ...(ctx.sections !== undefined ? { sections: ctx.sections } : {}) };
         return { decision: prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, verdict.intent, s.locale) }, [], ['yes', 'no']), events: [] };
       }
       // "No, that's all" at "anything else?": the call ends with the goodbye alone.

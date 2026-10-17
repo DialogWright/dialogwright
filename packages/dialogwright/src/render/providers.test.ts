@@ -97,11 +97,11 @@ describe('the model an app names (style.yaml\'s model, live findings item 27)', 
 
 describe('renderSettings', () => {
   it('defaults: every call generated, 900 ms on a call and 1500 in a chat, the default model\'s price', () => {
-    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, price: { input: 0.1, output: 0.5 } });
+    expect(renderSettings({})).toEqual({ share: 100, timeoutMs: { voice: 900, chat: 1500 }, checkTimeoutMs: { voice: 500, chat: 1000 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, price: { input: 0.1, output: 0.5 } });
   });
 
   it('RENDER_SHARE, RENDER_TIMEOUT_MS (both channels) and the price, each checked', () => {
-    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, price: { input: 1, output: 5 } });
+    expect(renderSettings({ RENDER_SHARE: '50', RENDER_TIMEOUT_MS: '900', RENDER_CHECK_TIMEOUT_MS: '300', RENDER_PRICE_INPUT_PER_MTOK: '1', RENDER_PRICE_OUTPUT_PER_MTOK: '5' })).toEqual({ share: 50, timeoutMs: { voice: 900, chat: 900 }, checkTimeoutMs: { voice: 300, chat: 300 }, answerTimeoutMs: { voice: 4000, chat: 6000 }, documentsTimeoutMs: { voice: 6000, chat: 8000 }, price: { input: 1, output: 5 } });
     expect(() => renderSettings({ RENDER_SHARE: '150' })).toThrow('RENDER_SHARE must be a whole number from 0 to 100, got "150"');
     expect(() => renderSettings({ RENDER_TIMEOUT_MS: 'fast' })).toThrow('RENDER_TIMEOUT_MS');
     expect(() => renderSettings({ RENDER_PRICE_INPUT_PER_MTOK: '-1' })).toThrow('RENDER_PRICE_INPUT_PER_MTOK');

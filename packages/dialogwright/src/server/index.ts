@@ -434,7 +434,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       continue;
     }
     const settings = forApp(a.id, () => renderSettings(a.env));
-    renderers.set(a.id, { client: new ModelRenderClient(provider), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, price: settings.price });
+    renderers.set(a.id, { client: new ModelRenderClient(provider), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price });
     log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider} (${renderModelSourceLabel(renderModelSource(a.env, model))}), ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its checks ${settings.checkTimeoutMs.voice} and ${settings.checkTimeoutMs.chat} ms`);
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;

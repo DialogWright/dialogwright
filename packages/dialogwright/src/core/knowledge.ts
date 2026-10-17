@@ -1,5 +1,5 @@
 import type { SessionEvent } from '../channel/events';
-import type { Nomination } from '../kb/types';
+import type { Nomination, SectionNomination } from '../kb/types';
 import { appOf } from './app/registry';
 import { activeSlots } from './fia';
 import type { Session } from './session';
@@ -13,6 +13,8 @@ import type { SlotSpec } from './slots/types';
  */
 export interface TurnKnowledge {
   readonly nominated: readonly Nomination[];
+  /** The sections of approved documents nominated for the words (kb.yaml documents), best first; absent for an app with none to nominate. */
+  readonly sections?: readonly SectionNomination[];
 }
 
 /** Whether a slot reads the topics retrieval nominates (SlotSpec.nominates): a topic slot. */

@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
-import type { AppKnowledge, NominateInput, Nomination, NominationVia } from '../kb/types';
+import type { AppKnowledge, NominateInput, Nomination, NominationVia, Retriever, SectionNomination } from '../kb/types';
+import type { SectionRetriever } from '../kb/sections';
 import type { RetrievalRecord } from '../trace/types';
 
 /**
@@ -14,6 +15,8 @@ export const RETRIEVE_BUDGET_MS = 150;
 /** What the retrieval step gives the turn: the nominations, and, when a retriever ran, its trace record and how long it took. */
 export interface Retrieved {
   readonly nominated: readonly Nomination[];
+  /** The sections nominated beside the topics (kb.yaml documents); absent when the app has no section retriever. */
+  readonly sections?: readonly SectionNomination[];
   /** The trace's record of the run (TraceRecord.retrieval); null when the app has no retriever, so nothing ran. */
   readonly record: RetrievalRecord | null;
   /** How long the retriever took (TraceTiming.retrieveMs); null when nothing ran. */
@@ -49,6 +52,22 @@ const LATE = Symbol('late');
  * synchronously in well under a millisecond.
  */
 export async function retrieve(knowledge: AppKnowledge, input: NominateInput, budgetMs: number = RETRIEVE_BUDGET_MS): Promise<Retrieved> {
+  const topics = await retrieveTopics(knowledge, input, budgetMs);
+  const sections = 'kb' in knowledge && knowledge.kb !== undefined ? knowledge.sections : undefined;
+  if (sections === undefined || topics.record === null) return topics;
+  // The sections of approved documents (kb.yaml documents), by the same rules and with their own budget.
+  const s = await retrieveTopics({ retriever: sections } as AppKnowledge, input, budgetMs);
+  const byKey = new Map((sections as SectionRetriever).sections.map((x) => [x.key, x]));
+  const nominated: SectionNomination[] = s.nominated.flatMap((n) => {
+    const x = byKey.get(n.topic);
+    return x ? [{ key: x.key, document: x.document, documentTitle: x.documentTitle, heading: x.heading, text: x.text, score: n.score, via: n.via }] : [];
+  });
+  const sectionRecord = { retrieverId: sections.id, nominated: nominated.map(({ key, score, via }) => ({ key, score, via })), ...(s.record?.failed !== undefined ? { failed: s.record.failed } : {}) };
+  return { nominated: topics.nominated, sections: nominated, record: { ...topics.record, sections: sectionRecord }, ms: (topics.ms ?? 0) + (s.ms ?? 0) };
+}
+
+/** One retriever's run for the words (`knowledge.retriever`), as `retrieve` describes. */
+async function retrieveTopics(knowledge: { readonly retriever?: Retriever }, input: NominateInput, budgetMs: number): Promise<Retrieved> {
   const retriever = knowledge.retriever;
   if (retriever === undefined) return { nominated: [], record: null, ms: null };
   const base = { retrieverId: retriever.id, ...(retriever.indexHash !== undefined ? { indexHash: retriever.indexHash } : {}) };

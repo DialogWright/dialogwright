@@ -121,7 +121,20 @@ export function stubSpanDrift(state: unknown): boolean {
  * condition or an exclusion that bears on the question, or turns one around, is a real judge's to read;
  * the adversarial suite's drifting wordings are refused by the judge their attack registers them with.
  */
-export function stubAnswerDrift(state: unknown): boolean {
+/**
+ * The stub's documents drift judge (render/checks.ts renderDocumentsDriftQuestion): as stubAnswerDrift, held
+ * to the sections, but for what it must keep: an answer from documents is focused on the question, so a
+ * time, an amount or a name of a section the question did not ask about is rightly left out (the real
+ * judge reads which bear on it). It refuses a figure or a capitalized name the sections do not have, words
+ * of an injection or an instruction, and two words or more of its own.
+ */
+export function stubDocumentsDrift(state: unknown): boolean {
+  const s = state as { answer?: { said?: unknown; goal?: unknown; sections?: unknown; question?: unknown } } | null;
+  const sections = typeof s?.answer?.sections === 'string' ? s.answer.sections : '';
+  return stubAnswerDrift({ answer: { ...s?.answer, passage: sections } }, false);
+}
+
+export function stubAnswerDrift(state: unknown, keepAll = true): boolean {
   const s = state as { answer?: { said?: unknown; goal?: unknown; passage?: unknown; question?: unknown } } | null;
   const said = typeof s?.answer?.said === 'string' ? s.answer.said : '';
   const passage = typeof s?.answer?.passage === 'string' ? s.answer.passage : '';
@@ -129,7 +142,7 @@ export function stubAnswerDrift(state: unknown): boolean {
   const question = new Set(tokens(typeof s?.answer?.question === 'string' ? s.answer.question : ''));
   const given = new Set(tokens(passage));
   const kept = new Set(tokens(said));
-  if (mustKeep(passage).some((w) => !kept.has(w))) return true;
+  if (keepAll && mustKeep(passage).some((w) => !kept.has(w))) return true;
   const own = tokens(said).filter((w) => !given.has(w));
   if (manipulationPattern(undefined).test(own.join(' ')) || DRIFT_CUES.test(own.join(' '))) return true;
   if (own.some(isFigureWord)) return true;
@@ -247,6 +260,7 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)
     case 'renderSpanDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubSpanDrift)
     case 'renderAnswerDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubAnswerDrift)
+    case 'renderDocumentsDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDocumentsDrift)
     default: return quietAnswer(id, q, 0.9, app);
   }
 }
@@ -279,6 +293,8 @@ export class HeuristicStubClient implements JevClient {
     if (Object.hasOwn(req.questions, 'renderSpanDrift')) answers.renderSpanDrift = noulAnswer(stubSpanDrift(req.state) ? 0.9 : 0.04);
     // A knowledge answer's wording: held to its approved passage.
     if (Object.hasOwn(req.questions, 'renderAnswerDrift')) answers.renderAnswerDrift = noulAnswer(stubAnswerDrift(req.state) ? 0.9 : 0.04);
+    // An answer from documents' wording: held to its sections.
+    if (Object.hasOwn(req.questions, 'renderDocumentsDrift')) answers.renderDocumentsDrift = noulAnswer(stubDocumentsDrift(req.state) ? 0.9 : 0.04);
     return {
       answers,
       model: 'stub-heuristic',

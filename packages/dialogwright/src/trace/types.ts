@@ -41,6 +41,8 @@ export interface RetrievalRecord {
   nominated: Array<{ topic: string; score: number; via: NominationVia }>;
   failed?: 'error' | 'invalid' | 'late';
   message?: string;
+  /** The sections of approved documents nominated beside the topics (kb.yaml documents), by key; absent with none to nominate. */
+  sections?: { retrieverId: string; nominated: Array<{ key: string; score: number; via: NominationVia }>; failed?: 'error' | 'invalid' | 'late' };
 }
 
 /**

@@ -33,10 +33,10 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
     const p = replayedRenderProvider(app, env);
     const client = new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'replay', model: p.model });
     client.preload();
-    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path} (--render recorded)`] };
+    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path} (--render recorded)`] };
   }
   if (kind === 'stub' || kind === 'heuristic') {
-    return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
+    return { renderer: { client: new FakeRenderClient(), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price }, header: renderLines(null, { fake: true }) };
   }
   // The app's own model (style.yaml's `model`) under the environment's settings.
   const model = app.generated?.model;
@@ -44,7 +44,7 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
     const p = replayedRenderProvider(app, env);
     const client = new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'replay', model: p.model });
     client.preload();
-    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
+    return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price }, header: [...renderLines(p, { replayed: true }), `render cassette ${client.path}`] };
   }
   const missing = appModelKeyMissing(env, model);
   // A run with the app's own model and no key says its lines fixed, as a server does, and says why.
@@ -53,7 +53,7 @@ export function harnessRenderer(kind: string, app: App, recordedDir: string, opt
   if (p === null) return { renderer: null, header: renderLines(null) };
   const live = new ModelRenderClient(p);
   const client = kind === 'record' ? new RenderCassette({ path: renderCassettePath(recordedDir, renderCassetteModel(p)), mode: 'record', model: p.model, inner: live }) : live;
-  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, price: settings.price }, header: [...renderLines(p), ...(client instanceof RenderCassette ? [`render cassette ${client.path}`] : [])] };
+  return { renderer: { client, share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price }, header: [...renderLines(p), ...(client instanceof RenderCassette ? [`render cassette ${client.path}`] : [])] };
 }
 
 /**

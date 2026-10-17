@@ -67,6 +67,16 @@ const form = z
             'A slot of this form that names the subject the answer is about, for a caller who is not one of the app\'s subjects (a delegate acting for them, asked it with the slot\'s askedOf): its value goes to the resolving action and an account line\'s tool as the subject param, and the gate\'s scope rule decides whether this caller may read that subject\'s answer. A subject is always answered about themselves. ' +
               'Default: none, and a caller who is not a subject is answered about no one (the scope rule refuses).',
           ),
+        documents: z
+          .strictObject({
+            answer: identifier().optional().describe('The prompt an answer from documents is said through: its text says {answer}, the fallback (what onFail says), and its {answer} is a span generated `from: sections`. Default: kb_documents_answer.'),
+            onFail: z
+              .enum(['not-found', 'opening'])
+              .optional()
+              .describe('What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the first sentences of the best section, word for word, in the kb_documents_opening frame where the app has it.'),
+          })
+          .optional()
+          .describe('With kb.yaml documents: summarize on, how an answer drawn from sections of approved documents is said, where no topic answers. Default: kb_documents_answer, and the not-found line when it cannot be worded.'),
         midTask: z
           .enum(['aside', 'task'])
           .optional()

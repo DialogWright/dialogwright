@@ -149,6 +149,20 @@ export type KbApprovalLogRead =
   | { readonly file: string; readonly lines: readonly { readonly id: string; readonly hash: string; readonly from: string }[] }
   | { readonly file: string; readonly invalid: string };
 
+/**
+ * A section of an approved document nominated for a caller's words (kb.yaml documents), with what the
+ * slot asks about it: its key (`<document>#<section>`), heading and text, and its document.
+ */
+export interface SectionNomination {
+  readonly key: string;
+  readonly document: string;
+  readonly documentTitle: string;
+  readonly heading: string;
+  readonly text: string;
+  readonly score: number;
+  readonly via: NominationVia;
+}
+
 /** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */
 export type NominationVia = 'keyword' | 'dense' | 'app';
 

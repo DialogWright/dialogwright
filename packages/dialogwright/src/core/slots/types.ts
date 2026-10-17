@@ -1,7 +1,7 @@
 import type { AnswerMap, QuestionMap } from '../../jev/types';
 import type { Thresholds } from '../thresholds';
 import type { Outcome, SlotId } from '../app/types';
-import type { Nomination } from '../../kb/types';
+import type { Nomination, SectionNomination } from '../../kb/types';
 
 /**
  * A slot's own pending narrowing: part of a value heard, the rest still owed (e.g. a date of birth: a
@@ -69,6 +69,12 @@ export interface SlotContext {
    * slots see the context they always have.
    */
   nominated?: readonly Nomination[];
+  /**
+   * The sections of approved documents nominated for this turn's words, best first (kb.yaml documents,
+   * TurnContext.knowledge.sections): what a topic slot asks of beside its topics, whether each says what
+   * the caller asked. Present only where nominated was and the app summarizes documents.
+   */
+  sections?: readonly SectionNomination[];
 }
 
 export interface SlotCandidate {

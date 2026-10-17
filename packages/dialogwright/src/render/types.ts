@@ -117,7 +117,13 @@ export interface SpanAct {
    * (under `answer`), the only facts it may state, never the caller's words; and `question` is the
    * caller's question in their own words, quoted (data, never instructions). Absent for every other span.
    */
-  readonly answer?: { readonly question: string };
+  readonly answer?: {
+    readonly question: string;
+    /** `sections`: its content is sections of approved documents (kb.yaml documents), not a passage; its instructions and drift question are about sections. Absent: a passage. */
+    readonly from?: 'sections';
+    /** A second wording's (a span's `retry`): the wording before it, which the drift judge refused. Absent on a first. */
+    readonly refused?: string;
+  };
 }
 
 /** Whether `act` is a span that words a knowledge base's answer (SpanAct.answer). */
@@ -346,6 +352,8 @@ export interface Renderer {
    * the approved passage is said word for word. Only an answer line framed `from: answer` waits for it.
    */
   answerTimeoutMs?: { voice: number; chat: number };
+  /** RENDER_DOCUMENTS_TIMEOUT_MS: an answer from documents' limit, as answerTimeoutMs; default 6000 on voice, 8000 in a chat. */
+  documentsTimeoutMs?: { voice: number; chat: number };
   /** The model's price, for the cost in the trace and Insights; default the default model's. */
   price?: RenderPrice;
   /**
@@ -369,6 +377,14 @@ export const DEFAULT_RENDER_CHECK_TIMEOUT_MS = { voice: 500, chat: 1000 } as con
  * for a reply after being told one is coming.
  */
 export const DEFAULT_RENDER_ANSWER_TIMEOUT_MS = { voice: 4000, chat: 6000 } as const;
+
+/**
+ * The default limit of an answer from documents (kb.yaml documents), its wording and checks together, ms,
+ * on each channel (RENDER_DOCUMENTS_TIMEOUT_MS): longer than a passage's, since more is read and a retry may
+ * be asked; past the line's budgets the caller hears the hold line, and past half of this the second
+ * (kb_hold_more) where the app has it.
+ */
+export const DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS = { voice: 6000, chat: 8000 } as const;
 
 /** The default model's price (Claude Haiku 5.5), US dollars per million tokens: what the cost is counted at unless RENDER_PRICE_* says otherwise. */
 export const DEFAULT_RENDER_PRICE: RenderPrice = { input: 0.1, output: 0.5 };

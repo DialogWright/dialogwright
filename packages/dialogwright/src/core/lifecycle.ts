@@ -79,6 +79,14 @@ export interface KbSource {
    */
   said?: 'passage' | 'worded';
   /**
+   * `documents`: an answer drawn from sections of documents a person approved for summarizing (kb.yaml
+   * documents), not a passage: `passageId` is `document:<id>`, `topic` is `documents`, `section` names
+   * the sections and `sections` their keys, the approval is the document's. Absent for a passage.
+   */
+  from?: 'documents';
+  /** For an answer from documents: the keys (`<document>#<section>`) of the sections it was drawn from. */
+  sections?: string[];
+  /**
    * @deprecated Phase 6: one fact a passage depended on, from before `applies`. Use
    * `applies: { plan }` instead. Kept for one release so an app that still sets it compiles; the
    * engine never reads or shows it, and the next release removes it.

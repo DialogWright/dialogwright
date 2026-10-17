@@ -50,6 +50,7 @@ const span = z
       .optional()
       .describe(
         'The slot whose content the span is worded from (the message, the note): the caller\'s words, collected. The model is sent only this content, quoted, with the span\'s goal; the exact content is what is stored, and it fills the span word for word whenever the span is not generated or a check fails. ' +
+          '`sections` on a form\'s documents answer line (forms.yaml\'s answers.documents.answer, default kb_documents_answer), as its {answer} span: the sections of approved documents the decision model chose for the caller\'s question (kb.yaml documents), worded for it; the line\'s fixed text, the fallback (answers.documents.onFail), is said whenever a check fails or the drift judge refuses. ' +
           '`answer` on a form\'s knowledge answer line (forms.yaml\'s answers.answer, default kb_answer), as its {answer} span: the approved passage the knowledge completion resolved for the caller, worded for their question, only on a topic kb/topics.yaml marks `risk: low` (the passage is said word for word on every other topic, and whenever a check fails or the drift judge refuses). Required in prompts.yaml; a locale gives a span only its goal.',
       ),
     goal: text().describe('What the span must say, for the model that words it ("Summarize the caller\'s message in one sentence, in their own terms."). In a locale\'s prompts.yaml: the span is generated in that locale only where its goal is given there.'),
@@ -67,6 +68,12 @@ const span = z
           'to-caller: to the caller, about their own message, as a receptionist reads one back: the model and the drift judge are told the line is spoken to the person who left the message and are given the names the span lists in `names` (who the message is for, {recipient}), as context, never how to word it; under a frame that speaks to them ("{recipient} gets your message, in short: {summary}"), never one that says they "said" it. ' +
           'English only for now: in another language the span is worded as-caller. Read from prompts.yaml, for every locale.',
       ),
+    retry: z
+      .int({ error: 'must be a whole number' })
+      .min(0, { error: 'must be 0 or 1' })
+      .max(1, { error: 'must be 0 or 1' })
+      .optional()
+      .describe('An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, within the answer\'s limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.'),
     names: unique(identifier(), 'variable')
       .min(1, { error: 'must name at least one variable' })
       .optional()

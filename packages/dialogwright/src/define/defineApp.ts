@@ -1283,8 +1283,8 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.summary?.onNo === 'read-back') def.summaryOnNo = 'read-back';
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
-    const { slot, via, answer, unavailable, subject } = form.answers;
-    def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}), ...(subject !== undefined ? { subject } : {}) });
+    const { slot, via, answer, unavailable, subject, documents } = form.answers;
+    def.complete = kbCompletion({ slot, ...(via !== undefined ? { via } : {}), ...(answer !== undefined ? { answer } : {}), ...(unavailable !== undefined ? { unavailable } : {}), ...(subject !== undefined ? { subject } : {}), ...(documents !== undefined ? { documents } : {}) });
     // An aside to the task in hand, unless the form says it is a task like any other.
     if (form.answers.midTask !== 'task') def.aside = { slot };
   }

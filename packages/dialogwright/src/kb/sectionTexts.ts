@@ -8,6 +8,14 @@ import type { KnowledgeBase } from './types';
  * (./vectorIndex.ts) reads them without importing the retrievers.
  */
 
+/** The value a topic slot fills with when sections answer (kb.yaml documents): `sections:` and their keys, joined by `|`. */
+export const SECTIONS_VALUE_PREFIX = 'sections:';
+
+/** The section keys a topic slot's value names, or null when it names a topic. */
+export function sectionKeysOf(value: string): string[] | null {
+  return value.startsWith(SECTIONS_VALUE_PREFIX) ? value.slice(SECTIONS_VALUE_PREFIX.length).split('|').filter((k) => k !== '') : null;
+}
+
 /** A section's key, as a nomination and the trace name it: `<document id>#<section id>`. */
 export const sectionKeyOf = (document: string, section: string): string => `${document}#${section}`;
 
@@ -56,6 +64,29 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
     }
   }
   return out;
+}
+
+/** Why no answer may be drawn from sections: one is not (or no longer) summarizable, none is for this caller, or the call is in another language. */
+export type SectionsUnavailable = 'unknown-topic' | 'stale' | 'no-facts' | 'no-translation';
+
+/**
+ * The sections named by `keys` as they may be summarized now for a caller with these facts, in the
+ * language of the call: each must still be summarizable (its document approved and unchanged, not cited,
+ * not left out), its document must apply to the caller (each fact its applies names must match), and the
+ * call must be in the knowledge base's default language (sections are not translated). Those that hold, in
+ * the order given; or why none does.
+ */
+export function resolveSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'>, keys: readonly string[], facts: Readonly<Record<string, string | undefined>>, locale: string): { sections: KbSection[] } | { unavailable: SectionsUnavailable } {
+  const language = (tag: string): string => tag.toLowerCase().split(/[-_]/)[0] ?? '';
+  if (language(locale) !== language(kb.defaultLocale)) return { unavailable: 'no-translation' };
+  const now = new Map(summarizableSections(kb).map((s) => [s.key, s]));
+  const named = keys.map((k) => now.get(k)).filter((s): s is KbSection => s !== undefined);
+  if (named.length === 0) return { unavailable: keys.some((k) => summarizableSections(kb, { approved: false }).some((s) => s.key === k)) ? 'stale' : 'unknown-topic' };
+  const forCaller = named.filter((s) => Object.entries(s.applies ?? {}).every(([fact, values]) => {
+    const value = Object.hasOwn(facts, fact) ? facts[fact] : undefined;
+    return value !== undefined && values.includes(value);
+  }));
+  return forCaller.length > 0 ? { sections: forCaller } : { unavailable: 'no-facts' };
 }
 
 /** A section's sentences: where a sentence ends (., ? or ! and a space before a capital or a digit), whitespace collapsed. */

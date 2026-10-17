@@ -4,6 +4,11 @@ import type { Nomination } from '../../kb/types';
 import { renderCriterion } from './criterion';
 import { TOPIC_PARTS, UNANSWERED_DEFAULTS, type TopicOptions } from './options';
 
+/** The id of the yes-or-no asked of a topic slot's `i`th nominated section (from 0): the slot's id, `Section` and its rank from 1. */
+export const sectionQuestionIdOf = (slot: string, i: number): string => `${slot}Section${i + 1}`;
+
+export { SECTIONS_VALUE_PREFIX, sectionKeysOf } from '../../kb/sectionTexts';
+
 /** The id of a topic slot's question: the slot's id followed by `Topic`, unless `ids.choice` says otherwise. */
 export const topicIdOf = (slot: string, o: Pick<TopicOptions, 'ids'>): string => o.ids?.choice ?? `${slot}Topic`;
 
@@ -39,11 +44,19 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
   const unanswered = TOPIC_PARTS.render('unanswered', o.text, {});
   return (ctx) => {
     const offered = offeredTopics(ctx.nominated, cap);
-    if (offered.length === 0) return {};
+    const sections = retry ? (ctx.sections ?? []) : [];
+    if (offered.length === 0 && sections.length === 0) return {};
+    const questions: QuestionMap = {};
+    // The sections of approved documents nominated beside the topics (kb.yaml documents): whether each
+    // says what the caller asked, so a question no topic answers may be answered from them.
+    sections.forEach((s, i) => {
+      questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: TOPIC_PARTS.render('section', o.text, { document: s.documentTitle, heading: s.heading, text: s.text }) };
+    });
+    if (offered.length === 0) return questions;
     const criteria: Record<string, string> = {};
     for (const n of offered) criteria[n.topic] = renderCriterion(o.criterion, { title: n.title, topic: n.topic });
     if (retry) criteria.unanswered = unanswered;
     criteria.none = none;
-    return { [id]: { type: 'choice', instructions, criteria } };
+    return { [id]: { type: 'choice', instructions, criteria }, ...questions };
   };
 }

@@ -19,6 +19,11 @@ export const TOPIC_PARTS = textParts('topic', {
     vars: [],
     about: 'What the question\'s "none" label means: the caller asks about none of the topics offered.',
   },
+  section: {
+    template: 'Read asr.text. Does this section of the {document} say what the caller asks about? {heading}: {text}',
+    vars: ['document', 'heading', 'text'],
+    about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text.',
+  },
   unanswered: {
     template: 'Asks about something none of these answers',
     vars: [],

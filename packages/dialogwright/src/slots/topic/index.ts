@@ -48,7 +48,7 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
       prompts: promptsOf(id, o),
       thresholds: [o.fillAt],
       questions: topicQuestions(id, o, cap),
-      fill: topicFill(o, questionId, cap, catalog, display),
+      fill: topicFill(o, questionId, cap, catalog, display, id),
       display,
     };
   },

@@ -1733,6 +1733,12 @@ export interface GeneratedSpan {
    * checks let it say beside the content's. Never the caller's own name.
    */
   readonly names?: readonly string[];
+  /**
+   * An answer span (`from: answer` or `from: sections`): how many times more the model is asked when the
+   * drift judge refuses its wording (prompts.yaml's `retry`, 0 or 1), within the answer's limit, told only
+   * that its last wording was judged to say more than its source does for the question. Absent: none.
+   */
+  readonly retry?: number;
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */

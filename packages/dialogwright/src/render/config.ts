@@ -21,6 +21,15 @@ export const FRAMED_GOAL = 'Said as written, but for its generated spans.';
 export const KB_ANSWER_SOURCE = 'answer';
 
 /**
+ * What a span's `from` names for an answer drawn from sections of approved documents (kb.yaml documents;
+ * a form's documents answer line): the sections the decision model chose for the caller's question.
+ */
+export const KB_SECTIONS_SOURCE = 'sections';
+
+/** The word budget of an answer from documents whose span sets no `words`: a sentence or two. */
+export const DEFAULT_DOCUMENTS_WORDS = 60;
+
+/**
  * The word budget of a knowledge answer's span the app does not size (`words` unset): room above its
  * passage, so a faithful wording for the caller's question that takes a few more words than the
  * passage (a word of lead-in, the question's own terms) is not cut back to the passage. A quarter more
@@ -40,15 +49,26 @@ export function answerWordBudget(passageWords: number): number {
 function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
   if (p.generate === undefined) return undefined;
   return Object.fromEntries(Object.entries(p.generate).map(([name, s]) => [name, {
-    from: s.from ?? '', goal: s.goal, words: s.words ?? DEFAULT_SPAN_WORDS,
+    from: s.from ?? '', goal: s.goal, words: s.words ?? (s.from === KB_SECTIONS_SOURCE ? DEFAULT_DOCUMENTS_WORDS : DEFAULT_SPAN_WORDS),
     ...(s.from === KB_ANSWER_SOURCE && s.words === undefined ? { sizedToPassage: true as const } : {}),
     ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}),
+    ...(s.retry !== undefined && s.retry > 0 ? { retry: s.retry } : {}),
   }]));
 }
 
-/** Whether a generated line's span words a knowledge base's answer (`from: answer`). */
+/** Whether a generated line's span words a knowledge base's answer: an approved passage (`from: answer`) or sections of approved documents (`from: sections`). */
 export function isAnswerSpan(span: GeneratedSpan | undefined): boolean {
-  return span?.from === KB_ANSWER_SOURCE;
+  return span?.from === KB_ANSWER_SOURCE || span?.from === KB_SECTIONS_SOURCE;
+}
+
+/** Whether a span words an answer from sections of approved documents (`from: sections`). */
+export function isSectionsSpan(span: GeneratedSpan | undefined): boolean {
+  return span?.from === KB_SECTIONS_SOURCE;
+}
+
+/** The line a form's answer from documents is said through (forms.yaml's `answers.documents.answer`, default `kb_documents_answer`). */
+export function formDocumentsLine(answers: { readonly documents?: { readonly answer?: string | undefined } | undefined }): string {
+  return answers.documents?.answer ?? 'kb_documents_answer';
 }
 
 /** The span of `line` that words a knowledge base's answer (`from: answer`), by name, or null. */
@@ -145,7 +165,7 @@ export function generatedWordingOf(input: {
   }
   if (Object.keys(lines).length === 0 && prescribed.length === 0) return undefined;
   // The topic slots whose question is kept: each form's whose answer line words its answer (`from: answer`).
-  const answerSlots = [...new Set(Object.values(input.forms).flatMap((def) => (def.answers !== undefined && answerSpanOf(lines[formAnswerLine(def.answers)]) !== null ? [def.answers.slot] : [])))];
+  const answerSlots = [...new Set(Object.values(input.forms).flatMap((def) => (def.answers !== undefined && (answerSpanOf(lines[formAnswerLine(def.answers)]) !== null || answerSpanOf(lines[formDocumentsLine(def.answers)]) !== null) ? [def.answers.slot] : [])))];
   const localeGoals: Record<string, Record<string, string>> = {};
   const localeSpanGoals: Record<string, Record<string, Record<string, string>>> = {};
   for (const [locale, prompts] of Object.entries(input.localePrompts)) {
@@ -458,9 +478,18 @@ function spanNamesProblems(id: string, name: string, sp: NonNullable<PromptYaml[
  * what it is worded from, and what fills it word for word); never with `speaks` or `names`, which are for a
  * caller's message.
  */
-function answerSpanProblems(id: string, name: string, sp: NonNullable<PromptYaml['generate']>[string], vars: readonly string[], answerLines: ReadonlySet<string>): WordingProblem[] {
+function answerSpanProblems(id: string, name: string, sp: NonNullable<PromptYaml['generate']>[string], vars: readonly string[], answerLines: ReadonlySet<string>, documentLines: ReadonlySet<string> = new Set()): WordingProblem[] {
   const out: WordingProblem[] = [];
   const at = ['prompts', id, 'generate', name];
+  if (sp.from === KB_SECTIONS_SOURCE) {
+    if (!documentLines.has(id)) out.push({ file: 'prompts.yaml', path: [...at, 'from'], message: `the span "${name}" is worded from sections of documents (from: sections), but "${id}" is no form's documents answer line (forms.yaml's answers.documents.answer, default kb_documents_answer)`, fix: `delete the span, or frame the line a form's answer from documents is said through${documentLines.size > 0 ? ` (${[...documentLines].map((x) => `"${x}"`).join(', ')})` : ''}` });
+    else if (name !== KB_ANSWER_LINE_VAR) out.push({ file: 'prompts.yaml', path: at, message: `the span "${name}" is worded from sections (from: sections), but an answer from documents is the line's {${KB_ANSWER_LINE_VAR}} itself, which says the fallback (onFail) whenever it is not worded`, fix: `name the span "${KB_ANSWER_LINE_VAR}" (generate: { ${KB_ANSWER_LINE_VAR}: { from: ${KB_SECTIONS_SOURCE}, goal: ... } }), with {${KB_ANSWER_LINE_VAR}} in the line's text`, atKey: true });
+    else if (!vars.includes(name)) out.push({ file: 'prompts.yaml', path: at, message: `the line "${id}" has no {${KB_ANSWER_LINE_VAR}}, so its answer would never be said`, fix: `add {${KB_ANSWER_LINE_VAR}} to the line's text where the answer goes`, atKey: true });
+    for (const key of ['speaks', 'names'] as const) {
+      if (sp[key] !== undefined) out.push({ file: 'prompts.yaml', path: [...at, key], message: `the span "${name}" words an answer from documents (from: sections), so "${key}", which is for a caller's message read back, does not apply`, fix: `delete "${key}"`, atKey: true });
+    }
+    return out;
+  }
   if (!answerLines.has(id)) {
     out.push({ file: 'prompts.yaml', path: [...at, 'from'], message: `the span "${name}" is worded from the answer (from: answer), but "${id}" is no form's answer line (forms.yaml's answers.answer, default kb_answer), so it has no approved passage to word`, fix: `delete the span, or frame the line a form's knowledge answer is said through (${answerLines.size > 0 ? [...answerLines].map((x) => `"${x}"`).join(', ') : 'no form answers from the knowledge base'})` });
     return out;
@@ -499,9 +528,10 @@ function framedProblems(id: string, p: PromptYaml, input: { prompts: Readonly<Re
   const names = Object.keys(p.generate ?? {});
   // The lines a form's knowledge answer is said through: the only lines a span may word an answer on.
   const answerLines = new Set(Object.values(input.forms).flatMap((def) => (def.answers !== undefined ? [formAnswerLine(def.answers)] : [])));
+  const documentLines = new Set(Object.values(input.forms).flatMap((def) => (def.answers !== undefined ? [formDocumentsLine(def.answers)] : [])));
   for (const [name, sp] of Object.entries(p.generate ?? {})) {
-    if (sp.from === KB_ANSWER_SOURCE) {
-      out.push(...answerSpanProblems(id, name, sp, vars, answerLines));
+    if (sp.from === KB_ANSWER_SOURCE || sp.from === KB_SECTIONS_SOURCE) {
+      out.push(...answerSpanProblems(id, name, sp, vars, answerLines, documentLines));
       continue;
     }
     out.push(...spanNamesProblems(id, name, sp, vars, names, input));

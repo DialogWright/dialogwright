@@ -1,7 +1,7 @@
 import type { FormId, Intent, SlotId, ToolName } from './app/types';
 import type { SlotPartial } from './slots/types';
 import type { AnswerMap } from '../jev/types';
-import type { Nomination } from '../kb/types';
+import type { Nomination, SectionNomination } from '../kb/types';
 import { ANONYMOUS } from '../gate/principal';
 import { formOf, formSlotsFor, isCarried, keepsLastTask } from './app/lookup';
 import { appOf, defaultAppId, getApp } from './app/registry';
@@ -118,6 +118,8 @@ export type PendingConfirmation =
        * not the yes turn's. Absent when retrieval did not run (and for every app without knowledge).
        */
       nominated?: readonly Nomination[];
+      /** The sections nominated for that utterance beside its topics (kb.yaml documents), kept as `nominated` is. */
+      sections?: readonly SectionNomination[];
     }
   /**
    * A slot's value read back for a yes. `offered`: a value offered before the slot was asked, the
@@ -258,6 +260,12 @@ export interface Session {
    * (core/turn.ts ackIntent). Absent until the first, so every other session is as it was.
    */
   ackIntentSaid?: number;
+  /**
+   * How many times this call has said each other line that rotates through its wordings (core/wordings.ts
+   * ROTATING_LINES: kb_not_found, kb_hold, kb_hold_more), kept only for a line with other wordings in the
+   * call's language. Absent until the first, so every other session is as it was.
+   */
+  linesSaid?: Record<string, number>;
   /**
    * The call's most recent task: the form last closed (completed, refused or ended, closeForm), until
    * an informational answer is said with no form open (the caller started another task). The
