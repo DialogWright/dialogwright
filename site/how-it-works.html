@@ -80,6 +80,7 @@
           <li><a href="#assistants">Built for AI coding assistants</a></li>
           <li><a href="#policy">Compliance can read it</a></li>
           <li><a href="#scale">From one machine to many servers</a></li>
+          <li><a href="#knowledge">Answers from a knowledge base</a></li>
           <li><a href="#wording">Generated wording, where you opt in</a></li>
           <li><a href="#tuning">Tuning with live calls</a></li>
         </ol>
@@ -187,6 +188,7 @@ forms.yaml:11:20  forms.report_outage.slots[1]  slot "symptm" is not defined  -&
 
 <span class="prompt">$ pnpm check</span>
 apps/clinic: ok
+apps/harbor: ok
 apps/secretary: ok
 apps/utility: ok</code></pre>
       </section>
@@ -326,6 +328,54 @@ apps/utility: ok</code></pre>
         </ul>
       </section>
 
+      <section id="knowledge" aria-labelledby="knowledge-title">
+        <h2 id="knowledge-title">Answers from a knowledge base</h2>
+        <p>
+          Callers ask questions a document answers: is this covered, how long do I have, are you open on Saturday.
+          An app answers them from a knowledge base in its folder: topics, and for each a passage written from a
+          section of a source document, which a person has read against that section and approved. Nothing is said
+          that no one approved: a passage whose source changes, or that is edited after its approval, is withheld
+          until a person approves it again.
+        </p>
+        <figure class="wrapped">
+          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/passages/deadline-adv-2026.yaml">apps/harbor/kb/passages/deadline-adv-2026.yaml</a> (excerpt): a passage, its source section and its approval</figcaption>
+<pre data-from="apps/harbor/kb/passages/deadline-adv-2026.yaml"><code>topic: filing_deadline
+applies: { plan: advantage }
+source: { document: accident-advantage-member-guide-2026, section: "1 Filing a claim" }
+answer: "You have 180 days from the date of your accident to tell us about a claim. You can file it in the member portal, in the Harbor Mutual app, or by calling member services, and you'll need the date of the accident, a short description of what happened, and the bills or a statement from the doctor who treated you. Claims sent after 180 days may still be reviewed, but payment isn't guaranteed, so it's best to file as soon as you can. You can send any documents you don't have yet later."
+approval:
+  owner: Benefits Content</code></pre>
+        </figure>
+        <ul>
+          <li><strong>Found on your own machine.</strong> Retrieval matches the caller's words to the topics by their keywords and by their meaning, with a small embedding model that runs locally, with no API call. Its settings are chosen offline, on paraphrases the topics have never seen: Harbor Mutual finds the right topic among the first eight for 95.8% of 120 of them.</li>
+          <li><strong>The decision model chooses; it never writes.</strong> It is asked which of the topics found the caller asked about, whether they asked something none of them answers, or nothing yet. A question nothing answers is told so, in the app's own words, with what can be asked.</li>
+          <li><strong>Prescribed, or worded for the question.</strong> An answer is its approved passage, word for word, unless the app marks the topic <code>risk: low</code>. Then the passage may be worded for what the caller asked, held to the passage by the same checks and judge as any generated line, and the passage is said whenever a check fails or the wording is late. Past a line's budget the caller hears a hold line first.</li>
+          <li><strong>Answers can depend on who is asking.</strong> A passage applies by facts code reads from the system of record (the member's plan), never from what the caller said, and a gated action can add the caller's own data after it ("You've used 4 of them this year.").</li>
+          <li><strong>What nothing answered is ranked.</strong> <code>pnpm kb:gaps</code> reads the calls' traces and ranks the questions the knowledge base did not answer, each with its fix: words for a topic, a new passage, a section of a source to draft one from.</li>
+        </ul>
+        <figure class="wrapped">
+          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/topics.yaml">apps/harbor/kb/topics.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/prompts.yaml">prompts.yaml</a> (excerpts): a topic marked low risk, and the answer line that words it</figcaption>
+<pre data-from="apps/harbor/kb/topics.yaml"><code>filing_deadline:
+  title: Deadline to file a claim
+  asks:
+    - How long do I have to file a claim?
+    - Is there a deadline to file a claim?
+  risk: low</code></pre>
+<pre data-from="apps/harbor/prompts.yaml"><code>  coverage_answer:
+    text: "{answer}"
+    generate:
+      answer:
+        from: answer
+        goal: Answer the member's question from their plan's passage, in a sentence or two, keeping anything the passage says that changes the answer.
+  kb_hold:
+    text: One moment while I gather that information.</code></pre>
+        </figure>
+        <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/12-the-knowledge-base.md">Guide, chapter 12: the knowledge base</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/README.md">Harbor Mutual</a>
+        </p>
+      </section>
+
       <section id="wording" aria-labelledby="wording-title">
         <h2 id="wording-title">Generated wording, where you opt in</h2>
         <p>
@@ -352,9 +402,10 @@ apps/utility: ok</code></pre>
         names: [recipient]</code></pre>
         </figure>
         <ul>
-          <li><strong>Checked before anyone hears it.</strong> Code holds the span to its data and shape: every value word for word, no figure or name it was not given, its word budget, one sentence. What it means is the drift judge's: the decision model, asked whether the span, heard in its sentence, is a faithful summary. That is a judgment, not a guarantee, and it is measured (<a href="decision-models.html#judge">the judge</a>).</li>
+          <li><strong>Checked before anyone hears it.</strong> Code holds the span to its data and shape: every value word for word, no figure it was not given, its word budget, one sentence. What it means is the drift judge's: the decision model, asked whether the span, heard in its sentence, is a faithful summary, and a summary that names anyone or anything the caller did not is not. That is a judgment, not a guarantee, and it is measured (<a href="decision-models.html#judge">the judge</a>).</li>
           <li><strong>Any failure says the exact words.</strong> A check that fails, a slow model or an error, and the caller hears their own message word for word, in the line's other frame.</li>
           <li><strong>Within a budget.</strong> A line's wording has 900 ms on a call and 1500 ms in a chat by default, and its checks 500 ms and 1000 ms; past either, the fixed text is said.</li>
+          <li><strong>The model is yours to choose.</strong> The examples word their lines with Gemini 3.1 Flash-Lite (a preview, through OpenRouter), named in the app's <code>style.yaml</code>. In the front desk's bake-off of four models on the same requests it wrote the summaries fastest, in 491 ms at the median and 841 ms at p95, and no summary turned who does what. A line is about 500 tokens in and 40 out: a month of the maintainer's recordings with it, every generated line of the front desk and Harbor Mutual recorded again and again, came to about 2 cents in all. <code>pnpm render:bakeoff</code> compares models on an app's own lines.</li>
           <li><strong>The message itself is never changed.</strong> The caller's yes covers what the slots hold, and the message is delivered as they said it.</li>
         </ul>
         <p class="links">

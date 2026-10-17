@@ -382,6 +382,10 @@ pre.answers .q { color: var(--term-prompt); }
 .skill-steps li:last-child::before { background: var(--button-bg); border-color: var(--button-bg); color: var(--button-text); }
 
 .three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+/* Four cards: one column on a phone, two by two, then a row of four; never three and one. */
+.four { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .more { display: grid; gap: 1.5rem 3rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .more h3 { font-size: 1rem; color: var(--muted); }
