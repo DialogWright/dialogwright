@@ -36,10 +36,34 @@ export interface KbSection {
   readonly section: string;
   /** Its heading, else its id. */
   readonly heading: string;
+  /**
+   * Its heading after the headings it is under ("Mental health services: Office visits"), for a
+   * section whose id is a path (`mental-health-services/office-visits`, as kb:ingest writes one under
+   * a heading): each parent's heading, or its id's words where the parent has no section of its own.
+   * Its heading alone for a section at the top. The index and the section question read it.
+   */
+  readonly path: string;
   /** Its text, whitespace collapsed. */
   readonly text: string;
   /** Which callers it is for: the document's applies (canonical); absent, every caller. */
   readonly applies?: Readonly<Record<string, readonly string[]>>;
+}
+
+/** A path id's words, where no section of its own gives its heading: "settlement-of-disputes" is "Settlement of disputes". */
+function wordsOfId(segment: string): string {
+  const words = segment.replace(/-\d+$/, '').replace(/-/g, ' ').trim();
+  return words === '' ? segment : words[0]!.toUpperCase() + words.slice(1);
+}
+
+/** A section's heading after the headings of the sections its id is under (see KbSection.path). */
+function pathOf(sections: Readonly<Record<string, { readonly heading?: string | undefined }>>, id: string, heading: string): string {
+  const parts = id.split('/');
+  if (parts.length < 2) return heading;
+  const above = parts.slice(0, -1).map((segment, i) => {
+    const parent = sections[parts.slice(0, i + 1).join('/')];
+    return collapseWhitespace(parent?.heading ?? wordsOfId(segment));
+  });
+  return [...above, heading].join(': ');
 }
 
 /** Whether summarizing is on for this knowledge base (kb.yaml documents.summarize). */
@@ -60,7 +84,8 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
     for (const [id, s] of Object.entries(doc.sections)) {
       const key = sectionKeyOf(doc.id, id);
       if (s.summarize === false || cited.has(key)) continue;
-      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading: collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, '')), text: collapseWhitespace(s.text), ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
+      const heading = collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, ''));
+      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
     }
   }
   return out;
@@ -99,13 +124,14 @@ export function sentencesOf(text: string): string[] {
 
 /**
  * The texts the index embeds for the sections (field `section`, keyed by the section's key, in the
- * default locale): each section's heading and each of its sentences, so a question matches the
+ * default locale): each section's heading after the headings it is under (KbSection.path) and each
+ * of its sentences, so a question matches the
  * sentence that answers it. Sections are in the default locale only.
  */
 export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'>): IndexText[] {
   const out = new Map<string, IndexText>();
   for (const s of summarizableSections(kb, { approved: false })) {
-    for (const raw of [s.heading, ...sentencesOf(s.text)]) {
+    for (const raw of [s.path, ...sentencesOf(s.text)]) {
       const text = collapseWhitespace(raw);
       if (text === '') continue;
       const contentHash = textHash(text);

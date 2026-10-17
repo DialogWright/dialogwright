@@ -60,7 +60,7 @@ export async function retrieve(knowledge: AppKnowledge, input: NominateInput, bu
   const byKey = new Map((sections as SectionRetriever).sections.map((x) => [x.key, x]));
   const nominated: SectionNomination[] = s.nominated.flatMap((n) => {
     const x = byKey.get(n.topic);
-    return x ? [{ key: x.key, document: x.document, documentTitle: x.documentTitle, heading: x.heading, text: x.text, score: n.score, via: n.via }] : [];
+    return x ? [{ key: x.key, document: x.document, documentTitle: x.documentTitle, heading: x.path, text: x.text, score: n.score, via: n.via }] : [];
   });
   const sectionRecord = { retrieverId: sections.id, nominated: nominated.map(({ key, score, via }) => ({ key, score, via })), ...(s.record?.failed !== undefined ? { failed: s.record.failed } : {}) };
   return { nominated: topics.nominated, sections: nominated, record: { ...topics.record, sections: sectionRecord }, ms: (topics.ms ?? 0) + (s.ms ?? 0) };

@@ -511,6 +511,9 @@ describe('a knowledge answer worded for the caller\'s question (from: answer; th
     expect(warn({ hours: { risk: 'regulated' }, fees: { risk: 'regulated' } })).toEqual([expect.stringContaining('no topic in kb/topics.yaml is marked risk: low, so every answer is said word for word')]);
     expect(warn()).toEqual([expect.stringContaining('the app has no knowledge base')]);
     expect(warn({ hours: { risk: 'low' }, fees: { risk: 'regulated' } })).toEqual([]);
+    // An answer from documents (from: sections) is worded whatever the topics' risk: no warning of it.
+    const documents = { kb_documents_answer: line('{answer}', { generate: { answer: { from: 'sections', goal: 'g' } } as PromptYaml['generate'] }) };
+    expect(generatedWordingWarnings({ prompts: documents, forms: answering(), localePrompts: {}, kbTopics: { hours: { risk: 'regulated' } } }).map((w) => w.message)).toEqual([]);
   });
 
   it('check warns of a language an answer is worded in with no hold line: the app\'s kb_hold there, or the engine\'s English words', () => {

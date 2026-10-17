@@ -469,13 +469,20 @@ function missingFile(file: string, kind: Kind, top: readonly string[]): Problem 
   return problemAt(file, WHOLE_FILE, `${file} is missing`, `create ${file}; it starts with ${STARTS_WITH[kind]}.${hint}`);
 }
 
+/**
+ * YAML files a project's tools write at its root, which in a project of its own is its app's folder: a
+ * package manager's lockfile and workspace, a compose file. Never read as part of the app.
+ */
+const TOOLING_YAML: ReadonlySet<string> = new Set(['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']);
+
 /** YAML files in the folder that DialogWright does not read: almost always a misspelled name. */
 function strayYamlFiles(top: readonly string[], problems: Problem[]): void {
   const known = new Set<string>(FOLDER_FILES);
   for (const name of top) {
     // A host file (several apps on one server) sits beside the apps: in a project of its own, whose folder
-    // is its app's, that is in the app's folder. It is the server's, never read as part of the app.
-    if (!/\.ya?ml$/.test(name) || known.has(name) || name === HOST_FILE) continue;
+    // is its app's, that is in the app's folder. It is the server's, never read as part of the app. A
+    // hidden file and a tool's file (TOOLING_YAML) are not the app's either.
+    if (!/\.ya?ml$/.test(name) || known.has(name) || name === HOST_FILE || name.startsWith('.') || TOOLING_YAML.has(name)) continue;
     const near = closest(name.replace(/\.ya?ml$/, '.yaml'), [...known]);
     problems.push(
       problemAt(

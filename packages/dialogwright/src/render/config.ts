@@ -621,7 +621,8 @@ export function generatedWordingWarnings(input: {
   }
   for (const [id, line] of Object.entries(generated)) {
     const answer = answerSpanOf(line);
-    if (answer === null || low > 0) continue;
+    // An answer from documents' sections (from: sections) is worded whatever the topics' risk.
+    if (answer === null || low > 0 || isSectionsSpan(answer.span)) continue;
     out.push({ file: 'prompts.yaml', path: ['prompts', id, 'generate', answer.name, 'from'], message: `the line "${id}" words its answer from the approved passage (from: answer), but ${input.kbTopics === undefined ? 'the app has no knowledge base (kb/topics.yaml)' : 'no topic in kb/topics.yaml is marked risk: low'}, so every answer is said word for word and the span words nothing`, fix: 'mark the topics whose answers may be worded "risk: low" in kb/topics.yaml (the app designer\'s call), or delete the span', atKey: true });
   }
   const documentsRefuseAt = input.style?.judge?.documentsRefuseAt;

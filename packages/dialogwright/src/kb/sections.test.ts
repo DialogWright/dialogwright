@@ -46,7 +46,7 @@ describe('the sections that may be summarized', () => {
   it('are an approved document\'s, but for a section a passage cites and one marked summarize: false', () => {
     const kb = kbWith({ approve: true }).kb();
     expect(summarizableSections(kb).map((s) => s.key)).toEqual(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#parking', 'visitor-guide#lost-card']);
-    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.' });
+    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', path: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.' });
     // The patron guide's sections are each cited by a passage: never summarized, though approved documents' they would be.
     expect(summarizableSections(kb, { approved: false }).some((s) => s.document === 'patron-guide')).toBe(false);
   });
@@ -64,6 +64,19 @@ describe('the sections that may be summarized', () => {
     const file = join(dir, 'sources', 'visitor-guide.yaml');
     writeFileSync(file, readFileSync(file, 'utf8').replace('provenance:', 'summarize: false\nprovenance:'));
     expect(summarizableSections(kb(), { approved: false })).toEqual([]);
+  });
+});
+
+describe('a section under another heading', () => {
+  it('is indexed and asked of by its heading after the headings it is under: a parent section\'s heading, or its id\'s words', () => {
+    const { dir, kb } = kbWith();
+    const file = join(dir, 'sources', 'visitor-guide.yaml');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('  lost-card:', '  parking/accessible-spaces:\n    heading: Accessible spaces\n    text: Two spaces at each entrance are kept for drivers with a disability permit.\n  rooms/study-rooms-2:\n    heading: Study rooms\n    text: Study rooms are booked at the desk for two hours at a time.\n  lost-card:'));
+    const byKey = new Map(summarizableSections(kb(), { approved: false }).map((s) => [s.section, s]));
+    expect(byKey.get('parking/accessible-spaces')).toMatchObject({ heading: 'Accessible spaces', path: 'Parking: Accessible spaces' });
+    expect(byKey.get('rooms/study-rooms-2')).toMatchObject({ heading: 'Study rooms', path: 'Rooms: Study rooms' });
+    expect(byKey.get('wifi')).toMatchObject({ path: 'Wi-Fi' });
+    expect(sectionIndexTexts(kb()).filter((t) => t.topic === 'visitor-guide#parking/accessible-spaces').map((t) => t.text)).toContain('Parking: Accessible spaces');
   });
 });
 

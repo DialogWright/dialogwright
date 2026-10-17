@@ -21,9 +21,9 @@ export { sectionIndexTexts, sectionKeyOf, sectionOfKey, sentencesOf, summarizabl
  * vector; the retriever, built when the app is defined, nominates only those that may be summarized.
  */
 
-/** The sections as topics the keyword retriever reads: the heading its title, the sentences its example questions. */
+/** The sections as topics the keyword retriever reads: the heading after its parents' its title, the sentences its example questions. */
 function asTopics(sections: readonly KbSection[]): Record<string, KbTopic> {
-  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.heading, keywords: [], asks: sentencesOf(s.text), risk: 'low', locales: {} } satisfies KbTopic]));
+  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.path, keywords: [], asks: sentencesOf(s.text), risk: 'low', locales: {} } satisfies KbTopic]));
 }
 
 /**

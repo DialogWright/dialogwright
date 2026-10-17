@@ -572,6 +572,11 @@ describe('loadAppFolder: problems', () => {
     ]);
   });
 
+  it('takes no tool\'s file at a project\'s root for a stray one: a lockfile, a workspace, a compose file, a hidden file', () => {
+    const tools = ['pnpm-lock.yaml', 'pnpm-workspace.yaml', 'compose.yaml', 'docker-compose.yml', '.yarnrc.yml'];
+    expect(loadAppFolder(folder((dir) => tools.forEach((f) => writeFileSync(join(dir, f), 'lockfileVersion: 9\n')))).problems).toEqual([]);
+  });
+
   it('a required file that is missing, with the misspelled file that is there named as the likely cause', () => {
     const result = loadCase('stray-and-misnamed', [ 'policy.yaml' ]);
     expect(result.config).toBeNull();

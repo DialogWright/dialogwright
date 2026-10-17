@@ -157,6 +157,7 @@ export interface SectionNomination {
   readonly key: string;
   readonly document: string;
   readonly documentTitle: string;
+  /** Its heading after the headings it is under (KbSection.path): what the section question shows. */
   readonly heading: string;
   readonly text: string;
   readonly score: number;

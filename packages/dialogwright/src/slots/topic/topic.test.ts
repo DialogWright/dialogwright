@@ -204,18 +204,25 @@ describe('its options', () => {
   it('ask of each section in the app\'s own words (text.section), filled with the section as the default is; refuse a name it does not have', () => {
     const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
     const own = defineSlot('subject', { type: 'topic', text: { section: 'Read asr.text. Does this section of the {document} answer the caller\'s question? {heading}: {text}' } }, undefined, { catalog: CATALOG });
-    expect(own.questions(ctx('is there wifi', { nominated: [], sections: [section] }))).toEqual({
-      subjectSection1: { type: 'noul', instructions: "Read asr.text. Does this section of the Visitor Guide answer the caller's question? Wi-Fi: Every branch has free Wi-Fi." },
-    });
-    expect(subject.questions(ctx('is there wifi', { nominated: [], sections: [section] }))).toEqual({
-      subjectSection1: { type: 'noul', instructions: 'Read asr.text. Does this section of the Visitor Guide say what the caller asks about? Wi-Fi: Every branch has free Wi-Fi.' },
-    });
+    expect(own.questions(ctx('is there wifi', { nominated: [], sections: [section] })).subjectSection1).toEqual({ type: 'noul', instructions: "Read asr.text. Does this section of the Visitor Guide answer the caller's question? Wi-Fi: Every branch has free Wi-Fi." });
+    expect(subject.questions(ctx('is there wifi', { nominated: [], sections: [section] })).subjectSection1).toEqual({ type: 'noul', instructions: 'Read asr.text. Does this section of the Visitor Guide say what the caller asks about? Wi-Fi: Every branch has free Wi-Fi.' });
     const bad = buildSlot('subject', { type: 'topic', text: { section: 'Does the {page} answer it? {text}' } });
     expect(bad.ok).toBe(false);
     if (bad.ok) return;
     expect(bad.problems.map(formatProblem)).toEqual([
       "(code)  subject.text.section  text.section uses {page}, which is not one of its variables; it may use {document}, {heading}, {text}  ->  write {document}, {heading} and {text} where the document's title, the section's heading and its text go, and no other {name}",
     ]);
+  });
+
+  it('with sections and no topic offered, still ask the topic question with its two labels: a question nothing answers is not found, a turn that asks nothing is asked again', () => {
+    const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
+    const at = (text: string, prompted: boolean) => ctx(text, { nominated: [], sections: [section], prompted });
+    expect(Object.keys(criteriaOf(subject.questions(at('is there parking', false)), 'subjectTopic'))).toEqual(['unanswered', 'none']);
+    const asked = { subjectTopic: choice({ unanswered: 0.9, none: 0.1 }), subjectSection1: noul(0.1) };
+    expect(subject.fill(asked, at('is there parking', false))).toMatchObject({ kind: 'invalid', held: true, notFound: true });
+    expect(subject.fill(asked, at('is there parking', true))).toMatchObject({ kind: 'invalid', notFound: true });
+    expect(subject.fill({ ...asked, subjectSection1: noul(0.9) }, at('is there wifi', false))).toMatchObject({ kind: 'filled', value: 'sections:visitor-guide#wifi' });
+    expect(subject.fill({ subjectTopic: choice({ none: 0.9, unanswered: 0.1 }), subjectSection1: noul(0.1) }, at('I have a question', true))).toMatchObject({ kind: 'invalid', reask: true });
   });
 
   it('refuse a criterion with a name or a filter it does not have, and a cap out of range', () => {

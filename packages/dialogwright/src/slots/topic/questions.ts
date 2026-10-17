@@ -56,7 +56,9 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
       const template = o.text?.section ?? TOPIC_PARTS.defs.section.template;
       questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, { document: s.documentTitle, heading: s.heading, text: s.text }, `the topic slot ${slot}'s text.section`) };
     });
-    if (offered.length === 0) return questions;
+    // With sections and no topic offered (an app that answers from documents alone), the question is
+    // still asked, with its two labels: whether the caller asked something none of them answers, or
+    // asked nothing, so a question nothing answers hears the not-found reply.
     const criteria: Record<string, string> = {};
     for (const n of offered) criteria[n.topic] = renderCriterion(o.criterion, { title: n.title, topic: n.topic });
     if (retry) criteria.unanswered = unanswered;
