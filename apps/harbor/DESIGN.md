@@ -494,6 +494,10 @@ The member at the greeting still hears "Sorry, I didn't catch that." after the a
 No request the model is sent changes, but the lines just played do: a turn after one of these hears the acknowledgement first, and the turn state carries the prompt just played, so the new lines and calls need a recording; until then their replay misses those requests.
 
 
+### Recording 11: jev-1.13.0, 2026-10-17, frustration after a claim and elsewhere
+
+After frustration right after a claim task counted toward the offer of a person (`frustration.after: count`) and strong frustration elsewhere was acknowledged (`frustration.elsewhere: acknowledge`), from the maintainer's live calls (frustration read high 1.00, 0.93 and 1.00 and answered "Sorry, I didn't catch that"): 583 requests, $0.1051; trimmed. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`, the live words among them (fr-05 to fr-07 and the five new calls).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
