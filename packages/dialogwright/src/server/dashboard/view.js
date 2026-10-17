@@ -110,7 +110,24 @@ export function wordingOf(render) {
     // The wording a check or the judge set aside, never said: as the trace keeps it (masked where the
     // records mask it, a summarized slot's span by its length), never put back together here.
     ...(l.mode !== 'generated' && l.fallback !== undefined && typeof l.refused === 'string' && l.refused !== '' ? { refused: l.refused } : {}),
+    // The drift judge's reading, where it was asked (RenderLine.judge): the score a generated line passed
+    // with, or the score a line that fell back as drift was refused at, each beside its cutoff.
+    ...judgeText(l),
   }));
+}
+
+/** A judge's score or cutoff, as the console shows it: two places at most (0.38, 0.5). */
+function judgeNumber(x) {
+  return String(Math.round(x * 100) / 100);
+}
+
+/** The judge's reading of a render line in words (WordingLine.judge), or nothing where it holds none. */
+function judgeText(l) {
+  const j = l.judge;
+  if (j === null || typeof j !== 'object' || typeof j.score !== 'number' || !Number.isFinite(j.score) || typeof j.refuseAt !== 'number' || !Number.isFinite(j.refuseAt)) return {};
+  const at = `${judgeNumber(j.score)} (cutoff ${judgeNumber(j.refuseAt)})`;
+  if (l.mode === 'generated') return { judge: `the judge passed it at ${at}` };
+  return l.fallback === 'drift' ? { judge: `refused at ${at}` } : {};
 }
 
 /**

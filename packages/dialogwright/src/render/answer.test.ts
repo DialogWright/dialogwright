@@ -193,6 +193,19 @@ describe('the checks and the judge: the passage word for word whenever one refus
     await refused('Late books on an adult card cost 25 cents a day.', 'drift', {}, refusing);
   });
   it('the stub\'s judge, holding the 5 dollars a book', () => refused('Late books on an adult card cost 25 cents a day.', 'drift'));
+  it('the judge\'s reading kept on the answer line, refused or passed, beside its cutoff; none where a check failed first (RenderLine.judge)', async () => {
+    const base = judge(FRAMED);
+    const at = (p: number): JevClient => ({ ask: async (req) => (Object.hasOwn(req.questions, ANSWER_DRIFT_QUESTION_ID) ? { answers: { [ANSWER_DRIFT_QUESTION_ID]: noulAnswer(p) }, model: 'stub', usage: { inputTokens: 0, outputTokens: 0, estimated: false }, latencyMs: 0, source: 'stub:heuristic' } : base.ask(req)) });
+    const turn = () => asked(FRAMED, 'late_fees', 'how much is a late book');
+    const worded = (wording: string) => renderer({ eachSpan: () => wording });
+    const refusedAt = await rendered(FRAMED, turn(), worded('Late books on an adult card cost 25 cents a day.'), undefined, at(0.9));
+    expect(answerLine(refusedAt)).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { score: 0.9, refuseAt: 0.5 } });
+    const passed = await rendered(FRAMED, turn(), worded('A late book costs 25 cents a day, up to 5 dollars a book.'), undefined, at(0.07));
+    expect(answerLine(passed)).toMatchObject({ mode: 'generated', judge: { score: 0.07, refuseAt: 0.5 } });
+    const figure = await rendered(FRAMED, turn(), worded('A late book costs 50 cents a day.'), undefined, at(0.07));
+    expect(answerLine(figure)).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
+    expect(answerLine(figure)).not.toHaveProperty('judge');
+  });
   it('the model failing', async () => {
     const turn = asked(FRAMED, 'late_fees');
     const out = await rendered(FRAMED, turn, renderer({ eachSpan: () => new Error('down') }));

@@ -1396,6 +1396,22 @@ describe('generated wording on the call detail', () => {
     expect(scriptOf(v.lines, v.turnsView).find((l) => l.who === 'agent')!.wording![1]).toMatchObject({ refused: 'The terms are five years at the Riverside branch.' });
   });
 
+  it('the drift judge\'s reading beside a line it judged: the score a generated line passed with, the score a drift fallback was refused at, each with its cutoff; nothing where it was not asked', () => {
+    const judged = wordingOf({ lines: [
+      { promptId: 'ask_note', mode: 'generated', fixed: 'Any note?', judge: { score: 0.1234, refuseAt: 0.5 } },
+      { promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', fallback: 'drift', refused: 'Jordan asks for a call back', judge: { score: 0.62, refuseAt: 0.5 } },
+      { promptId: 'confirm_y', span: 'summary', mode: 'fixed', fixed: 'call me back', fallback: 'drift', refused: 'a call back', judge: { score: 0.38, refuseAt: 0.3 } },
+      // A check that failed before the judge, a judge that failed, and a trace written before the judge's reading was kept.
+      { promptId: 'confirm_z', span: 'summary', mode: 'fixed', fixed: 'x', fallback: 'question', refused: 'x?' },
+      { promptId: 'confirm_w', span: 'summary', mode: 'fixed', fixed: 'x', fallback: 'drift-error', refused: 'y' },
+      { promptId: 'ask_old', mode: 'generated', fixed: 'Any note?' },
+    ] });
+    expect(judged.map((w) => w.judge)).toEqual(['the judge passed it at 0.12 (cutoff 0.5)', 'refused at 0.62 (cutoff 0.5)', 'refused at 0.38 (cutoff 0.3)', undefined, undefined, undefined]);
+    expect(judged[1]).toEqual({ promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', why: 'fell back: the judge refused it', refused: 'Jordan asks for a call back', judge: 'refused at 0.62 (cutoff 0.5)' });
+    // A reading that is not two numbers is shown as none.
+    expect(wordingOf({ lines: [{ promptId: 'p', mode: 'generated', fixed: 'x', judge: { score: 'high', refuseAt: 0.5 } as unknown as { score: number; refuseAt: number } }] })[0]).not.toHaveProperty('judge');
+  });
+
   it('a refused wording the trace masked is shown masked, never put back together', () => {
     const masked = wordingOf({ lines: [{ promptId: 'confirm_take_message', span: 'summary', mode: 'fixed', fixed: '<104 chars>', fallback: 'foreign', refused: '<57 chars>' }] });
     expect(masked[0]!.refused).toBe('<57 chars>');

@@ -260,6 +260,15 @@ export interface RenderLine {
    * by; `message` the API's own words. Never the key or the request.
    */
   error?: { reason: string; message?: string };
+  /**
+   * The drift judge's reading of the wording, where it was asked and answered (a line worded whole, a
+   * span, a knowledge answer): `score`, how likely it held the wording to be unfaithful, 0 to 1, and
+   * `refuseAt`, the cutoff it was held to (style.yaml's `judge.refuseAt`, default 0.5). On a line said
+   * generated, the score it passed with; on one that fell back as `drift`, the score it was refused at.
+   * Absent where the judge was not asked (a data check failed first, the wording was late, the line was
+   * not tried) or gave no reading (`drift-error`). Two numbers, never any words.
+   */
+  judge?: RenderJudge;
   /** How long the line's generation and checks took, ms. */
   ms?: number;
   usage?: RenderUsage;
@@ -269,6 +278,14 @@ export interface RenderLine {
    * `fixed` is then the approved passage, and `said` its wording, when one was said. Absent on every other line.
    */
   answer?: { passageId: string; topic: string };
+}
+
+/** The drift judge's reading of a wording (RenderLine.judge). */
+export interface RenderJudge {
+  /** How likely the judge held the wording to be unfaithful, 0 to 1 (its answer, as given). */
+  score: number;
+  /** The cutoff it was held to: refused at or above it. */
+  refuseAt: number;
 }
 
 /**

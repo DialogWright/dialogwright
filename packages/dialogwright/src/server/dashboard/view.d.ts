@@ -73,10 +73,16 @@ export interface WordingLine {
   why?: string;
   /** A line that fell back: the wording a check or the judge refused, never said, as the trace keeps it (masked where the records mask it). */
   refused?: string;
+  /**
+   * The drift judge's reading, where it was asked (RenderLine.judge), in words: on a generated line the
+   * score it passed with ("the judge passed it at 0.12 (cutoff 0.5)"), on a line that fell back as drift
+   * the score it was refused at ("refused at 0.62 (cutoff 0.5)"); absent otherwise.
+   */
+  judge?: string;
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string; judge?: { score: number; refuseAt: number } }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';

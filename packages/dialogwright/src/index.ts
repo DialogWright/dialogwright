@@ -257,7 +257,7 @@ export { RenderCassette, renderCassettePath } from './render/cassette';
 export { checkGenerated, checkSpan, renderDriftQuestion, renderSpanDriftQuestion, DRIFT_FIRE } from './render/checks';
 export { generatesLines } from './render/config';
 export { RenderClientError, DEFAULT_RENDER_TIMEOUT_MS, DEFAULT_RENDER_PRICE } from './render/types';
-export type { Renderer, RenderClient, RenderRequest, SpeechAct, SpanAct, RenderAct, SpeechItem, Generation, RenderRecord, RenderLine, RenderFallback, RenderSkip, RenderPrice } from './render/types';
+export type { Renderer, RenderClient, RenderRequest, SpeechAct, SpanAct, RenderAct, SpeechItem, Generation, RenderRecord, RenderLine, RenderJudge, RenderFallback, RenderSkip, RenderPrice } from './render/types';
 export type { RenderProvider, RenderProviderName } from './render/providers';
 export type { GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyle, RenderSituation, RenderChannel } from './core/app/types';
 export type { JevProvider, JevProviderName } from './jev/provider';

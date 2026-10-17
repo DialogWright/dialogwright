@@ -248,6 +248,7 @@
   /* An agent line the turn decided but never said (a reply held for a caller who went on): struck through, dimmed. */
   .said.sys.unsaid { text-decoration:line-through; text-decoration-color:var(--faint); color:var(--muted); }
   .dnote.k-replyHeld .lbl-d, .dnote.k-spuriousInterrupt .lbl-d { color:var(--warn); }
+  .dnote .jscore { color:var(--faint); margin-left:.4em; }
   .dnote.k-refused q { font-style:italic; color:var(--faint); text-decoration:line-through; text-decoration-color:var(--faint); }
   .qtag { display:inline-block; margin:.35em 0 .1em; padding:.15em .6em; border-radius:6px; background:var(--fail-bg); color:#ffb3ba; font-size:.78em; font-weight:600; letter-spacing:.02em; }
 
@@ -757,13 +758,15 @@
       + wordingHtml(l);
   }
 
-  /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why (and the wording refused, not said). */
+  /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why (and the wording refused, not said), with the drift judge's score where it was asked. */
   function wordingHtml(l) {
     // A framed line's span is named after its line ({summary}), its exact content beside a generated one.
     const named = (w) => (w.span !== undefined ? `${esc(w.promptId)} {${esc(w.span)}}` : esc(w.promptId));
+    // The judge's score and its cutoff, muted, after the line's own note.
+    const judged = (w) => (w.judge !== undefined ? `<span class="jscore">· ${esc(w.judge)}</span>` : '');
     return (l.wording ?? []).map((w) => w.mode === 'generated'
-      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.passageId !== undefined ? `approved passage ${esc(w.passageId)}` : w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}</span>`
-      : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${named(w)}</span>${esc(w.why ?? '')}</span>`
+      ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.passageId !== undefined ? `approved passage ${esc(w.passageId)}` : w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}${judged(w)}</span>`
+      : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${named(w)}</span>${esc(w.why ?? '')}${judged(w)}</span>`
         // The wording set aside, under the fixed line that was said in its place: never said, so marked so.
         + (w.refused !== undefined ? `<span class="dnote k-refused"><span class="lbl-d">not said · refused</span><q>${esc(w.refused)}</q></span>` : '')).join('');
   }

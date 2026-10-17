@@ -191,6 +191,19 @@ describe('a generated line falls back to its fixed line', () => {
     await fallsBack({}, 'drift-error', { drift: failing });
   });
 
+  it('keeps the judge\'s reading on a line worded whole: the score it passed with, or was refused at, and none where a check failed first or the judge failed (RenderLine.judge)', async () => {
+    const at = (p: number): JevClient => {
+      const inner = stub();
+      return { ask: async (req) => (req.questions.renderDrift ? { ...(await inner.ask(req)), answers: { renderDrift: { type: 'noul', noul: p } } } : inner.ask(req)) };
+    };
+    const passed = await call(TO_SUMMARY, { ...fake(), drift: at(0.12) });
+    expect(lineOf(passed, 'confirm_take_message')).toMatchObject({ mode: 'generated', judge: { score: 0.12, refuseAt: 0.5 } });
+    expect(lineOf(await fallsBack({}, 'drift', { drift: at(0.71) }), 'confirm_take_message')!.judge).toEqual({ score: 0.71, refuseAt: 0.5 });
+    expect(lineOf(await fallsBack({ say: { confirm_take_message: 'For Dana Reyes, from Morgan Lee, on 555 555 0142? Shall I pass it on?' } }, 'question', { drift: at(0.12) }), 'confirm_take_message')).not.toHaveProperty('judge');
+    const inner = stub();
+    expect(lineOf(await fallsBack({}, 'drift-error', { drift: { ask: (req) => (req.questions.renderDrift ? Promise.reject(new Error('down')) : inner.ask(req)) } }), 'confirm_take_message')).not.toHaveProperty('judge');
+  });
+
   it('when the collected content, read again by the screen, is flagged, or the screen cannot read it: nothing is worded from it', async () => {
     const inner = stub();
     const flagging: JevClient = { ask: async (req) => (req.questions.manipulation && !req.questions.renderDrift ? { ...(await inner.ask(req)), answers: { manipulation: { type: 'noul', noul: 0.95 } } } : inner.ask(req)) };
@@ -430,6 +443,31 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     expect(spanOf(said)).toMatchObject({ mode: 'generated' });
     use(variants.variant(CAUTIOUS));
     await fallsBack('please call me about the March invoice before Friday', 'drift', { drift: at(0.4) });
+  });
+
+  it('keeps the judge\'s reading on the span it judged, passed or refused, beside its cutoff; none where it was not asked (RenderLine.judge)', async () => {
+    const at = (p: number): JevClient => {
+      const inner = stub();
+      return { ask: async (req) => (req.questions.renderSpanDrift ? { ...(await inner.ask(req)), answers: { renderSpanDrift: { type: 'noul', noul: p } } } : inner.ask(req)) };
+    };
+    const passed = await call(TO_SUMMARY, { client: new FakeRenderClient(), drift: at(0.38) });
+    expect(spanOf(passed)).toMatchObject({ mode: 'generated', judge: { score: 0.38, refuseAt: 0.5 } });
+    const refused = await fallsBack('please call me about the March invoice before Friday', 'drift', { drift: at(0.62) });
+    expect(spanOf(refused)!.judge).toEqual({ score: 0.62, refuseAt: 0.5 });
+    // In the trace file as on the record: two numbers, no words.
+    expect((JSON.parse(traceLine(refused.runs.at(-1)!.record, messageApp)) as { render: { lines: { promptId: string; judge?: unknown }[] } }).render.lines.find((l) => l.promptId === 'confirm_take_message')!.judge).toEqual({ score: 0.62, refuseAt: 0.5 });
+    // Not asked: a data check failed first, the wording was late, the judge failed, the content was flagged, or the span was its content word for word.
+    expect(spanOf(await fallsBack('please call me about the March invoice?', 'question', { drift: at(0.1) }))).not.toHaveProperty('judge');
+    expect(spanOf(await fallsBack('', 'timeout', { timeoutMs: { voice: 20, chat: 20 } }, new FakeRenderClient({ delayMs: 200 })))).not.toHaveProperty('judge');
+    const inner = stub();
+    expect(spanOf(await fallsBack('please call me about the March invoice', 'drift-error', { drift: { ask: (req) => (req.questions.renderSpanDrift ? Promise.reject(new Error('down')) : inner.ask(req)) } }))).not.toHaveProperty('judge');
+    const unchanged = await call(TO_SUMMARY, { client: new FakeRenderClient({ spans: { confirm_take_message: MESSAGE } }), drift: at(0.1) });
+    expect(spanOf(unchanged)).toMatchObject({ mode: 'fixed', unchanged: true });
+    expect(spanOf(unchanged)).not.toHaveProperty('judge');
+    // Refused under the app's own cutoff: the cutoff it was held to is the app's.
+    use(variants.variant(CAUTIOUS));
+    const cautious = await fallsBack('please call me about the March invoice before Friday', 'drift', { drift: at(0.38) });
+    expect(spanOf(cautious)!.judge).toEqual({ score: 0.38, refuseAt: 0.3 });
   });
 
   it('fills the span with the exact content when the model errs or is slow, the judge cannot be asked, or the content is flagged', async () => {

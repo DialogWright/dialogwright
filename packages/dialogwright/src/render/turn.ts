@@ -15,7 +15,7 @@ import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isF
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
-import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
+import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
 
 /**
@@ -121,7 +121,12 @@ export interface RenderInput {
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
-type Attempt = { said: string; gen: Generation } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']> };
+type Attempt = { said: string; gen: Generation; judge?: RenderJudge } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']>; judge?: RenderJudge };
+
+/** The drift judge's reading of an attempt, for its line (RenderLine.judge): absent where the judge was not asked or gave no reading. */
+function judgeOf(got: Attempt): { judge?: RenderJudge } {
+  return 'judge' in got && got.judge !== undefined ? { judge: got.judge } : {};
+}
 
 /** A failed request as the trace records it (RenderLine.error): the client's own account, never the request. */
 function requestFailed(e: unknown): Attempt {
@@ -463,11 +468,13 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       used(r.usage);
       const a = r.answers[DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
-      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen };
+      // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge).
+      const judge: RenderJudge = { score: a.noul, refuseAt };
+      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen, judge };
+      return { said: text, gen, judge };
     } catch {
       return { fallback: 'drift-error', refused: text, gen };
     }
-    return { said: text, gen };
   };
   // A framed line's span: screened, worded, held to its content's data and shape (checkSpan), and asked of
   // the drift judge whether it is a faithful summary of its content, heard in its sentence; the frame
@@ -496,11 +503,13 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       used(r.usage);
       const a = r.answers[SPAN_DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
-      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen };
+      // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge).
+      const judge: RenderJudge = { score: a.noul, refuseAt };
+      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen, judge };
+      return { said: text, gen, judge };
     } catch {
       return { fallback: 'drift-error', refused: text, gen };
     }
-    return { said: text, gen };
   };
   // A knowledge answer: the caller's question screened again (their words, kept from the turn they asked
   // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
@@ -531,11 +540,13 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       used(r.usage);
       const a = r.answers[ANSWER_DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
-      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen };
+      // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge).
+      const judge: RenderJudge = { score: a.noul, refuseAt };
+      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen, judge };
+      return { said: text, gen, judge };
     } catch {
       return { fallback: 'drift-error', refused: text, gen };
     }
-    return { said: text, gen };
   };
   const timed = async (act: RenderAct, run: () => Promise<Attempt>, by: Promise<'late'> = deadline): Promise<{ got: Attempt; ms: number }> => {
     const began = performance.now();
@@ -582,7 +593,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if ('said' in got) {
       const was = actions[p.index] as Say;
       actions[p.index] = sayAction([{ text: got.said }], was.interruptible, was.lang);
-      lines.push({ ...base, mode: 'generated', said: got.said, ...meta });
+      lines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       return;
     }
     // (A line worded whole is never said unchanged: only a span is compared with its content.)
@@ -590,7 +601,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       lines.push({ ...base, mode: 'fixed', unchanged: true, ...meta });
       return;
     }
-    lines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
+    lines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got) });
     audit.push({ type: 'render_fallback', detail: { prompt: p.said.promptId, reason: got.fallback } });
   });
   // A framed line: each span said as worded or as its exact content, spliced into the line's fixed
@@ -623,7 +634,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
       if ('said' in got) {
         worded[sp.name] = got.said;
-        spanLines.push({ ...base, mode: 'generated', said: got.said, ...meta });
+        spanLines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
         return;
       }
       // Its content word for word: said unchanged, no fallback (no check failed), so no audit row.
@@ -631,7 +642,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
         spanLines.push({ ...base, mode: 'fixed', unchanged: true, ...meta });
         return;
       }
-      spanLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
+      spanLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got) });
       audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: sp.name, reason: got.fallback } });
     });
     if (Object.keys(worded).length > 0) {
@@ -688,7 +699,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if ('said' in got) {
       const was = actions[index] as Say;
       actions[index] = promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said });
-      answerLines.push({ ...base, mode: 'generated', said: got.said, ...meta });
+      answerLines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       kbSaid = 'worded';
       // The record of what was said: a wording of this approved passage, by its id, version and approval.
       if (kb !== null) audit.push({ type: 'kb_worded', detail: { prompt: promptId, passageId: kb.passageId, version: kb.version, ...(kb.approvalHash !== undefined ? { approvalHash: kb.approvalHash } : {}) } });
@@ -698,7 +709,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       answerLines.push({ ...base, mode: 'fixed', unchanged: true, ...meta });
       return;
     }
-    answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}) });
+    answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got) });
     audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: a.plan.name, reason: got.fallback } });
   });
   // In the order the lines were said.
