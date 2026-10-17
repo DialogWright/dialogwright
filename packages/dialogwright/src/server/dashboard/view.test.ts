@@ -1374,6 +1374,33 @@ describe('generated wording on the call detail', () => {
     expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'fixed', fixed: 'call me back', unchanged: true }] })[0]!.why).toBe('said unchanged: the wording was the words themselves');
   });
 
+  it('a line that fell back shows the wording refused, with its reason; a generated line shows nothing more', () => {
+    const refused = { lines: [
+      { promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?', said: 'Thanks. When was it due to arrive?' },
+      { promptId: 'kb_answer', span: 'answer', answer: { passageId: 'terms-2026', topic: 'terms' }, mode: 'fixed', fixed: 'The terms are three years.', fallback: 'foreign', refused: 'The terms are five years at the Riverside branch.' },
+      { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', fallback: 'drift', refused: 'Any note? Say yes to confirm.' },
+      // A request that failed has no wording to show; a line not tried was never worded.
+      { promptId: 'ask_x', mode: 'fixed', fixed: 'x', fallback: 'error' },
+      { promptId: 'ask_y', mode: 'fixed', fixed: 'y', skipped: 'share' },
+    ] } as const;
+    expect(wordingOf(refused)).toEqual([
+      { promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?' },
+      { promptId: 'kb_answer', span: 'answer', passageId: 'terms-2026', mode: 'fixed', fixed: 'The terms are three years.', why: 'fell back: a number, date or name it was not given', refused: 'The terms are five years at the Riverside branch.' },
+      { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', why: 'fell back: the judge refused it', refused: 'Any note? Say yes to confirm.' },
+      { promptId: 'ask_x', mode: 'fixed', fixed: 'x', why: 'fell back: the model failed' },
+      { promptId: 'ask_y', mode: 'fixed', fixed: 'y', why: 'this call is in the fixed group' },
+    ]);
+    // On the turn rows and in the script alike.
+    const v = reduce([started, { ...turnEvent({ render: { group: 'generated', share: 100, lines: refused.lines.map((l, index) => ({ ...l, index, act: 'ask', situations: ['first-ask'] })) } }), spoken: 'Any note?' } as DashboardEvent]);
+    expect(v.lines.find((l) => l.kind === 'system')!.wording![2]).toMatchObject({ refused: 'Any note? Say yes to confirm.' });
+    expect(scriptOf(v.lines, v.turnsView).find((l) => l.who === 'agent')!.wording![1]).toMatchObject({ refused: 'The terms are five years at the Riverside branch.' });
+  });
+
+  it('a refused wording the trace masked is shown masked, never put back together', () => {
+    const masked = wordingOf({ lines: [{ promptId: 'confirm_take_message', span: 'summary', mode: 'fixed', fixed: '<104 chars>', fallback: 'foreign', refused: '<57 chars>' }] });
+    expect(masked[0]!.refused).toBe('<57 chars>');
+  });
+
   it('a framed line\'s span is named, with its exact content beside it', () => {
     expect(wordingOf({ lines: [{ promptId: 'confirm_x', span: 'summary', mode: 'generated', fixed: 'call me back' }, { promptId: 'confirm_y', span: 'gist', mode: 'fixed', fixed: 'x', fallback: 'person' }] })).toEqual([
       { promptId: 'confirm_x', span: 'summary', mode: 'generated', fixed: 'call me back' },

@@ -71,10 +71,12 @@ export interface WordingLine {
   fixed: string;
   /** Why it was said fixed: a fallback, or why it was not tried. */
   why?: string;
+  /** A line that fell back: the wording a check or the judge refused, never said, as the trace keeps it (masked where the records mask it). */
+  refused?: string;
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';
