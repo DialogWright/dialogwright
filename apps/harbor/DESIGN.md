@@ -505,6 +505,10 @@ On the maintainer's live calls after Recording 11, a member who said only that t
 
 The lines just played change after such a turn (`ask_intent` or `anything_else` where `nomatch_open` or the keypad menu was), and the turn state carries the prompt just played, so the requests after them change. fr-05 to fr-07 and `frustration-at-the-greeting-acknowledged` and `frustration-after-claim-refused-acknowledged` end on the changed line, so nothing after it is asked; the replay (`regress --client recorded`) misses four requests, in the three calls that go on past it: the second turn of `frustration-at-the-greeting-not-offered`, the seventh of `frustration-after-claim-refused-offered`, and the seventh and eighth of `frustration-after-claim-then-coverage-not-offered`. They need a recording.
 
+### Recording 12: jev-1.13.0, 2026-10-17, an acknowledged turn is no miss
+
+After a frustration-only turn the line acknowledges stopped being a miss (the acknowledgement, then the question as it stands; counted again from the second in a row): 583 requests, $0.1051; the clinic recorded too (635 requests, $0.1500). Both replays: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
