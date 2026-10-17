@@ -797,7 +797,8 @@ function reaskCurrent(s: Session, acks: Ack[], intentQuestion = 'ask_intent'): D
  */
 function caughtFrustration(s: Session, io: TurnIO, slot?: SlotId): Decision | null {
   if (io.caught !== true) return null;
-  if (slot !== undefined && s.pendingConfirmation === null && s.promptedFor !== slot) {
+  // Waiting on the portal sign-in, the question the caller is on is the sign-in (reaskCurrent), whatever slot comes next.
+  if (slot !== undefined && s.pendingConfirmation === null && s.promptedFor !== slot && !awaitingSignIn(s)) {
     const window = s.slots[slot]!.window;
     return window === null ? askedAgain(s, slot, []) : askSlot(s, slot, window, []);
   }
