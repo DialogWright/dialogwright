@@ -1385,7 +1385,7 @@ describe('generated wording on the call detail', () => {
     ] } as const;
     expect(wordingOf(refused)).toEqual([
       { promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?' },
-      { promptId: 'kb_answer', span: 'answer', passageId: 'terms-2026', mode: 'fixed', fixed: 'The terms are three years.', why: 'fell back: a number, date or name it was not given', refused: 'The terms are five years at the Riverside branch.' },
+      { promptId: 'kb_answer', span: 'answer', passageId: 'terms-2026', mode: 'fixed', fixed: 'The terms are three years.', why: 'fell back: a number, amount or date it was not given', refused: 'The terms are five years at the Riverside branch.' },
       { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', why: 'fell back: the judge refused it', refused: 'Any note? Say yes to confirm.' },
       { promptId: 'ask_x', mode: 'fixed', fixed: 'x', why: 'fell back: the model failed' },
       { promptId: 'ask_y', mode: 'fixed', fixed: 'y', why: 'this call is in the fixed group' },

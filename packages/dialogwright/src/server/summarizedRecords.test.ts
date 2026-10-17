@@ -168,7 +168,7 @@ describe('redact: length-summarized (live findings, item 20)', () => {
     expect(line).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: `<${refused.length} chars>` });
     // The console shows what the trace holds: the mask, on the replay's records and on the live events alike.
     const fromTrace = records.flatMap((x) => (x.render ? wordingOf(redactRecord(x, app).render!) : [])).find((w) => w.refused !== undefined)!;
-    expect(fromTrace).toMatchObject({ why: 'fell back: a number, date or name it was not given', refused: `<${refused.length} chars>` });
+    expect(fromTrace).toMatchObject({ why: 'fell back: a number, amount or date it was not given', refused: `<${refused.length} chars>` });
     configure(consoleMetaOf(app));
     const live = reduce(JSON.parse(r.records.console) as DashboardEvent[]).lines.flatMap((l) => l.wording ?? []).find((w) => w.refused !== undefined)!;
     expect(live.refused).toBe(`<${refused.length} chars>`);
