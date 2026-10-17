@@ -16,8 +16,8 @@ const kb = loadKnowledgeFolder(join(APP_DIR, 'kb')).kb!;
 const paraphrases = parseParaphrases(readFileSync(join(APP_DIR, 'fixtures/kb/paraphrases.yaml'), 'utf8'), kb);
 
 describe('the knowledge base', () => {
-  it('has fourteen topics, each answered for both plans by a passage in force today', () => {
-    expect(Object.keys(kb.topics)).toHaveLength(14);
+  it('has fifteen topics, each answered for both plans by a passage in force today', () => {
+    expect(Object.keys(kb.topics)).toHaveLength(15);
     for (const topic of Object.keys(kb.topics)) {
       for (const plan of ['advantage', 'advantage_plus']) {
         const inForce = Object.values(kb.passages).filter((p) => p.topic === topic && (p.applies.plan ?? []).includes(plan)

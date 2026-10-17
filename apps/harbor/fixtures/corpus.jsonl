@@ -50,6 +50,10 @@
 {"id": "cv-21", "text": "and what about prescriptions, are those covered", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "prescriptions"}, "tags": ["follow_up_question"]}
 {"id": "cv-22", "text": "one more, how long do i have to file a claim", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "filing_deadline"}, "tags": ["follow_up_question"]}
 {"id": "cv-23", "text": "am i covered if i hurt myself skiing", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "sports_injury"}, "tags": ["live_asr"]}
+{"id": "cv-24", "text": "if i fell off the roof would that be covered", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "covered_accidents"}, "tags": ["live_asr"]}
+{"id": "cv-25", "text": "i slipped on the ice in my driveway, does that count as an accident", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "covered_accidents"}}
+{"id": "cv-26", "text": "is a car accident covered", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "covered_accidents"}}
+{"id": "cv-27", "text": "if i broke my neck and i fell off the roof, would that be covered", "intent": "coverage", "context": "no_form", "labels": {"coverageTopicTopic": "covered_accidents"}, "tags": ["live_asr"]}
 {"id": "tp-01", "text": "physical therapy", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "physical_therapy"}}
 {"id": "tp-02", "text": "what about ambulance rides", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "ambulance"}}
 {"id": "tp-03", "text": "the emergency room", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "emergency_room"}}

@@ -4,6 +4,8 @@
 # certificates are, consistent with them).
 document: Accident Advantage Member Guide
 sections:
+  "0 What counts as a covered accident":
+    text: "A covered accident is a sudden, unexpected event that injures you, such as a fall, a car accident, a sports injury or a burn. An injury from a fall at home, from a ladder or off a roof is covered like any other accident. An illness, or an injury that comes on gradually from overuse, is not an accident. What each benefit pays for an injury from a covered accident is in its own section of this guide."
   "1 Filing a claim":
     text: "You have 180 days from the date of your accident to tell us about a claim. You can file it in the member portal, in the Harbor Mutual app, or by calling member services. You'll need the date of the accident, a short description of what happened, and the bills or a statement from the doctor who treated you. Claims sent after 180 days may still be reviewed, but payment isn't guaranteed, so it's best to file as soon as you can, even if you don't have every document yet. You can send the rest later."
   "2 Coverage when you travel":

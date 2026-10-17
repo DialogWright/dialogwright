@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-passage.schema.json
+# What counts as a covered accident (2026-10-17): drafted by an AI coding assistant (Claude) from the
+# member guide, for a person to read against its source and approve; withheld until then. Regulated
+# (the topic is not marked low risk): said word for word, as it says what the plan covers.
+id: accident-adv-2026
+topic: covered_accidents
+version: "2026.1"
+applies: { plan: advantage }
+effective: { from: 2026-01-01 }
+source: { document: accident-advantage-member-guide-2026, section: "0 What counts as a covered accident" }
+answer: "A covered accident is a sudden, unexpected event that injures you, such as a fall, a car accident, a sports injury or a burn, so an injury from a fall at home, from a ladder or off a roof is covered like any other accident. An illness, or an injury that comes on gradually from overuse, is not an accident."
+approval:
+  owner: Benefits Content
+  approvedBy: Jason Stiles
+  on: 2026-10-17
+  sourceHash: 97cbcf22bac493ae2d40080eb2977490422b6e5a267595b0c6c526831413c030
+  hash: 60ba8caec474e73311c4a7b9279fc745c533755e5f2541ddc198ac101f09c0ee
