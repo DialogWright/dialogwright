@@ -107,7 +107,7 @@ const unapproved = (text: string): string => text.replace(/\napproval:[\s\S]*$/,
 describe('the knowledge base folder: a valid one', () => {
   it('loads the topics, passages, sources and locales, every passage fresh', () => {
     const kb = fixtureKb();
-    expect(kb.settings).toEqual({ action: 'findPassage', applies: { card: ['adult', 'junior'] }, localeFallback: 'none', maxAnswerChars: 400, retrieval: { cap: 8 }, documents: { summarize: 'off', cap: 4 } });
+    expect(kb.settings).toEqual({ action: 'findPassage', applies: { card: ['adult', 'junior'] }, localeFallback: 'none', maxAnswerChars: 400, retrieval: { cap: 8 }, documents: { summarize: 'off', cap: 4, retrieval: 'hybrid' } });
     expect(kb.defaultLocale).toBe('en-US');
     expect(Object.keys(kb.topics)).toEqual(['opening_hours', 'card_renewal', 'late_fees']);
     expect(kb.topics.late_fees).toEqual({

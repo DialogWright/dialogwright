@@ -3,7 +3,8 @@ import { VAR } from '../prompts/segments';
 import { inForceOn, answers } from './resolve';
 import type { KbPassage, KnowledgeBase } from './types';
 import { MODEL_COMMAND, STATIC_MODELS } from './embed/model';
-import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIndex';
+import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder, sectionsIndexTexts } from './vectorIndex';
+import { ONNX_PACKAGE, onnxIdOf, onnxIndexIdOf, onnxSha256 } from './onnx';
 import { APPROVALS_LOG, approvalLogged, documentApprovalLogged } from './log';
 import { summarizableSections } from './sectionTexts';
 
@@ -272,6 +273,7 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
   const log = kb.approvalLog;
   if (log !== undefined && 'invalid' in log) at(log.file, [], `${log.file} cannot be read: ${log.invalid}`, `restore it from version control: it is appended to by ${APPROVE_COMMAND}, never rewritten`);
   problems.push(...kbIndexProblems(kb, locate, base));
+  problems.push(...kbSectionsIndexProblems(kb, locate, base));
   const combos = appliesCombinations(kb.settings.applies);
   for (const topic of Object.values(kb.topics)) {
     for (const facts of combos) {
@@ -366,5 +368,48 @@ export function kbIndexProblems(kb: KnowledgeBase, locate: Locate, base = 'kb'):
     const path: DataPath = Object.hasOwn(kb.topics, topic) ? [topic] : [];
     at(path, Object.hasOwn(kb.topics, topic) ? `${base}/topics.yaml` : file, `the index ${file} is stale for the topic "${topic}": ${parts.join('; ')}`);
   }
+  return problems;
+}
+
+/**
+ * The sections' own vector index, when kb.yaml's documents.embedder names an ONNX model and
+ * summarizing is on (kb/.index/<model>.json): that it is there, is an index, was written by that model
+ * at that commit (its name, revision, precision and pooling), and has a vector for every section's
+ * text and none for a text no section has any more. The package need not be installed: the check reads
+ * only the hashes.
+ */
+export function kbSectionsIndexProblems(kb: KnowledgeBase, locate: Locate, base = 'kb'): Problem[] {
+  const problems: Problem[] = [];
+  const settings = kb.settings.documents;
+  if (settings?.embedder === undefined || settings.summarize !== 'on') return problems;
+  const model = settings.embedder;
+  const file = indexFileOf(base, onnxIndexIdOf(model));
+  const at = (message: string): void => problemAt(problems, locate, `${base}/kb.yaml`, ['documents', 'embedder'], message, `run ${INDEX_COMMAND} (it runs ${model.onnx} through the package ${ONNX_PACKAGE}, which the app installs), and commit ${file}`);
+  const index = kb.sectionsIndex;
+  if (!index || 'missing' in index) {
+    at(`${file} is missing: kb.yaml's documents.embedder names ${model.onnx}, whose vectors of the sections' texts retrieval reads from there`);
+    return problems;
+  }
+  if ('invalid' in index) {
+    at(`${file} is not a vector index: ${index.invalid}`);
+    return problems;
+  }
+  const want = { id: onnxIdOf(model), revision: model.revision, sha256: onnxSha256(model.onnx, model.revision, model.dtype, model.pooling) };
+  const got = index.data.embedder;
+  if (got.id !== want.id || got.revision !== want.revision || got.sha256 !== want.sha256) {
+    at(`${file} was written by ${got.id} at ${got.revision.slice(0, 12)} (${got.sha256.slice(0, 12)}), not by ${want.id} at ${want.revision.slice(0, 12)} with the precision and pooling kb.yaml names (${want.sha256.slice(0, 12)})`);
+    return problems;
+  }
+  const { missing, stale } = indexDrift(kb, index.data, sectionsIndexTexts(kb));
+  if (missing.length === 0 && stale.length === 0) return problems;
+  const sections = (keys: string[]): string => {
+    const unique = [...new Set(keys)];
+    return `${unique.slice(0, LISTED).join(', ')}${unique.length > LISTED ? ` and ${unique.length - LISTED} more` : ''}`;
+  };
+  const parts = [
+    ...(missing.length > 0 ? [`no vector for ${missing.length} text${missing.length === 1 ? '' : 's'} of ${sections(missing.map((m) => m.topic))}`] : []),
+    ...(stale.length > 0 ? [`${stale.length} vector${stale.length === 1 ? '' : 's'} for text no section has any more (${sections(stale.map((s) => s.topic))})`] : []),
+  ];
+  at(`the index ${file} is stale for the sections: ${parts.join('; ')}`);
   return problems;
 }

@@ -71,7 +71,8 @@
     "documents": {
       "default": {
         "summarize": "off",
-        "cap": 4
+        "cap": 4,
+        "retrieval": "hybrid"
       },
       "description": "Answers from approved documents, where no topic answers: off by default.",
       "type": "object",
@@ -97,6 +98,55 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "retrieval": {
+          "default": "hybrid",
+          "description": "How sections are found for a caller's words: hybrid (the default), by their keywords and their meaning fused; dense, by their meaning alone (on a long document, keywords on common words can crowd the right section out: measure both with pnpm kb:bakeoff --sections). Dense needs an embedder: retrieval.embedder, or documents.embedder.",
+          "type": "string",
+          "enum": [
+            "hybrid",
+            "dense"
+          ]
+        },
+        "embedder": {
+          "description": "A contextual embedding model of its own for the sections (an ONNX model, run by the optional package @huggingface/transformers, which the app installs): their vectors are in an index of their own (kb/.index/<model>.json, pnpm kb:index), and the topics keep retrieval.embedder. Opt-in: the package is large, and its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations. Default: the sections are in retrieval.embedder's index.",
+          "type": "object",
+          "properties": {
+            "onnx": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The ONNX sentence-embedding model's Hugging Face id, such as Xenova/bge-small-en-v1.5."
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "The commit of the model's repository to load."
+            },
+            "pooling": {
+              "default": "cls",
+              "description": "How its token vectors become one: the first token's (cls, for bge) or their mean. Default cls.",
+              "type": "string",
+              "enum": [
+                "cls",
+                "mean"
+              ]
+            },
+            "dtype": {
+              "default": "fp32",
+              "description": "Its weights' precision. Default fp32.",
+              "type": "string",
+              "enum": [
+                "fp32",
+                "fp16",
+                "q8"
+              ]
+            }
+          },
+          "required": [
+            "onnx",
+            "revision"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

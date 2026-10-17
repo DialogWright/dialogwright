@@ -11,8 +11,9 @@ import { downloadModel, loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, 
 import type { Embedder } from './embed/types';
 import { DenseRetriever, HybridRetriever } from './hybrid';
 import { KeywordRetriever } from './keyword';
-import type { KnowledgeBase, Retriever } from './types';
-import { buildIndex, INDEX_DIR, parseIndex } from './vectorIndex';
+import type { DocumentsEmbedder, KnowledgeBase, Retriever } from './types';
+import { allIndexTexts, buildIndex, INDEX_DIR, parseIndex, sectionsIndexTexts } from './vectorIndex';
+import type { IndexText } from './words';
 
 /**
  * The knowledge base's retrieval commands (the `dialogwright` bin, define/cli.ts):
@@ -37,6 +38,8 @@ export interface KbIo {
   env?: NodeJS.ProcessEnv;
   /** The embedder for a pinned model, in place of the cache's (a test's). */
   embedderFor?: (model: PinnedModel) => Promise<Embedder>;
+  /** The embedder for the sections' ONNX model (kb.yaml documents.embedder), in place of the package's (a test's). */
+  onnxEmbedderFor?: (settings: DocumentsEmbedder) => Promise<Embedder>;
   /** Today, as an ISO date: the day an approval is recorded on. Default: today (UTC). */
   today?: () => string;
   /**
@@ -156,29 +159,36 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
       failed = true;
       continue;
     }
-    const id = found.kb.settings.retrieval.embedder;
-    if (id === undefined) {
-      io.out(`${found.label}: kb.yaml names no embedder, so retrieval is by keywords alone and there is nothing to index (add retrieval.embedder: ${DEFAULT_EMBEDDER} for hybrid retrieval)`);
-      continue;
-    }
-    const model = STATIC_MODELS[id]!;
-    const file = join(found.kbDir, INDEX_DIR, `${id}.json`);
-    const shown = join(found.label, INDEX_DIR, `${id}.json`);
-    try {
-      const embedder = await (io.embedderFor ?? ((m: PinnedModel) => pinnedEmbedder(m, io)))(model);
-      const before = existsSync(file) ? readFileSync(file, 'utf8') : null;
-      const previous = before === null ? null : parseIndex(before);
-      const built = await buildIndex(found.kb, embedder, typeof previous === 'string' ? null : previous);
-      if (before === built.text) {
-        io.out(`${shown}: up to date (${built.data.entries.length} entries, sha256 ${built.hash.slice(0, 12)})`);
-        continue;
+    const kb = found.kb;
+    /** Writes one index file from `embedder` over `texts`, re-embedding only the texts it does not have. */
+    const write = async (fileId: string, embedder: () => Promise<Embedder>, texts: readonly IndexText[]): Promise<void> => {
+      const file = join(found.kbDir, INDEX_DIR, `${fileId}.json`);
+      const shown = join(found.label, INDEX_DIR, `${fileId}.json`);
+      try {
+        const before = existsSync(file) ? readFileSync(file, 'utf8') : null;
+        const previous = before === null ? null : parseIndex(before);
+        const built = await buildIndex(kb, await embedder(), typeof previous === 'string' ? null : previous, texts);
+        if (before === built.text) {
+          io.out(`${shown}: up to date (${built.data.entries.length} entries, sha256 ${built.hash.slice(0, 12)})`);
+          return;
+        }
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, built.text);
+        io.out(`${shown}: wrote ${built.data.entries.length} entries (${built.embedded} texts embedded, ${built.reused} kept), sha256 ${built.hash.slice(0, 12)}`);
+      } catch (error) {
+        io.err(`${found.label}: ${error instanceof Error ? error.message : String(error)}`);
+        failed = true;
       }
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, built.text);
-      io.out(`${shown}: wrote ${built.data.entries.length} entries (${built.embedded} texts embedded, ${built.reused} kept), sha256 ${built.hash.slice(0, 12)}`);
-    } catch (error) {
-      io.err(`${found.label}: ${error instanceof Error ? error.message : String(error)}`);
-      failed = true;
+    };
+    const id = kb.settings.retrieval.embedder;
+    if (id === undefined && kb.settings.documents?.embedder === undefined) io.out(`${found.label}: kb.yaml names no embedder, so retrieval is by keywords alone and there is nothing to index (add retrieval.embedder: ${DEFAULT_EMBEDDER} for hybrid retrieval)`);
+    else if (id === undefined) io.out(`${found.label}: kb.yaml names no embedder for the topics, so they are found by their keywords alone`);
+    else await write(id, () => (io.embedderFor ?? ((m: PinnedModel) => pinnedEmbedder(m, io)))(STATIC_MODELS[id]!), allIndexTexts(kb));
+    // The sections' own model (documents.embedder): their index of their own.
+    const own = kb.settings.documents?.embedder;
+    if (own !== undefined && summarizing(kb)) {
+      const onnx = await import('./onnx');
+      await write(onnx.onnxIndexIdOf(own), () => (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype })))(own), sectionsIndexTexts(kb));
     }
   }
   return failed ? 1 : 0;
@@ -212,13 +222,32 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
   io.out(`${found.label}: ${keys.length} sections that may be summarized (approved or not), cap ${cap}; ${counted} paraphrases of ${Object.keys(paraphrases.topics).length} sections and ${paraphrases.none.length} lines about none`);
   const runs: { name: string; retriever: SectionRetriever }[] = [{ name: 'keyword', retriever: new SectionRetriever(kb, { all: true, cap }) }];
   const env = io.env ?? process.env;
-  const model = STATIC_MODELS[kb.settings.retrieval.embedder ?? DEFAULT_EMBEDDER]!;
-  if (modelPresent(model, env)) {
-    const embedder = loadPinnedModel(model, env);
-    const built = await buildIndex(kb, embedder);
-    const floor = kb.settings.documents?.floor ?? kb.settings.retrieval.floor ?? model.floor;
-    runs.push({ name: `hybrid (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
-  } else io.out(`hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
+  const own = kb.settings.documents?.embedder;
+  let modelId: string;
+  if (own !== undefined) {
+    // The sections' own model (documents.embedder), as the app finds them with it.
+    const onnx = await import('./onnx');
+    modelId = own.onnx;
+    try {
+      const embedder = await (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype })))(own);
+      const built = await buildIndex(kb, embedder, null, sectionsIndexTexts(kb));
+      const floor = kb.settings.documents?.floor ?? onnx.ONNX_DEFAULT_FLOOR;
+      runs.push({ name: `hybrid (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
+      runs.push({ name: `dense (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }) });
+    } catch (error) {
+      io.out(`${own.onnx}: skipped, ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    const model = STATIC_MODELS[kb.settings.retrieval.embedder ?? DEFAULT_EMBEDDER]!;
+    modelId = model.id;
+    if (modelPresent(model, env)) {
+      const embedder = loadPinnedModel(model, env);
+      const built = await buildIndex(kb, embedder);
+      const floor = kb.settings.documents?.floor ?? kb.settings.retrieval.floor ?? model.floor;
+      runs.push({ name: `hybrid (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
+      runs.push({ name: `dense (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }) });
+    } else io.out(`hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
+  }
   const results = [];
   for (const run of runs) results.push(await bakeoff(run.retriever, paraphrases, locale, today, run.name));
   io.out('');
@@ -226,7 +255,7 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
   const hybrid = runs[1]?.retriever;
   if (doSweep && hybrid) {
     io.out('');
-    io.out(`sweep of sections with ${model.id} (keyword hits always count; the floor applies to hits by meaning):`);
+    io.out(`sweep of sections with ${modelId} (hybrid: keyword hits always count, the floor applies to hits by meaning; dense: by meaning alone):`);
     for (const line of formatSweep(await sweepSections(hybrid, paraphrases, locale))) io.out(line);
   }
   return 0;

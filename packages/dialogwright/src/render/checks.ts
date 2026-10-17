@@ -63,6 +63,87 @@ export const DATE_WORDS: ReadonlySet<string> = new Set([
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'today', 'tonight', 'tomorrow', 'yesterday',
   'weekend', 'weekday', 'noon', 'midnight', 'morning', 'afternoon', 'evening',
 ]);
+const UNIT_VALUES: Readonly<Record<string, number>> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+  fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const SCALE_VALUES: Readonly<Record<string, number>> = { hundred: 100, thousand: 1000, million: 1e6, billion: 1e9 };
+
+/**
+ * The numbers a text says in words, as digits ("one hundred fifty" is "150", "a thousand" is "1000"):
+ * each run of number words read as one number. Only what a figure is; nothing of grammar.
+ */
+export function spelledNumbers(text: string): string[] {
+  const ws = words(text);
+  const out: string[] = [];
+  let total = 0;
+  let current = 0;
+  let open = false;
+  const close = (): void => {
+    if (open) out.push(String(total + current));
+    total = 0;
+    current = 0;
+    open = false;
+  };
+  for (let i = 0; i < ws.length; i += 1) {
+    const w = ws[i]!;
+    const next = ws[i + 1];
+    if (Object.hasOwn(UNIT_VALUES, w)) {
+      current += UNIT_VALUES[w]!;
+      open = true;
+    } else if (Object.hasOwn(SCALE_VALUES, w)) {
+      const scale = SCALE_VALUES[w]!;
+      if (scale === 100) current = (current || 1) * 100;
+      else {
+        total += (current || 1) * scale;
+        current = 0;
+      }
+      open = true;
+    } else if (w === 'a' && next !== undefined && Object.hasOwn(SCALE_VALUES, next) && !open) {
+      current = 1;
+      open = true;
+    } else if (w === 'and' && open && next !== undefined && (Object.hasOwn(UNIT_VALUES, next) || Object.hasOwn(SCALE_VALUES, next))) {
+      continue;
+    } else close();
+  }
+  close();
+  return out;
+}
+
+/** What an amount word says, as a sign a source may have instead ("dollars" for "$"). */
+const AMOUNT_SIGNS: Readonly<Record<string, RegExp>> = {
+  dollar: /\$/, dollars: /\$/, bucks: /\$/, cent: /\u00a2/, cents: /\u00a2/, percent: /%/, euro: /\u20ac/, euros: /\u20ac/, pound: /\u00a3/, pounds: /\u00a3/,
+};
+
+/**
+ * Whether `text` says a figure none of `sources` has: a number (in digits or in words, by its value:
+ * "one hundred fifty dollars" is the "$150" a source says), a currency sign, an amount word (unless a
+ * source says it or its sign: "percent" for "%"), or another number, amount or date word a source
+ * does not say. Data, compared exactly.
+ */
+export function foreignFigure(text: string, sources: readonly string[]): boolean {
+  const allowed = new Set(sources.flatMap((s) => [...digitRuns(s), ...spelledNumbers(s)]));
+  if ([...digitRuns(text), ...spelledNumbers(text)].some((n) => !allowed.has(n))) return true;
+  const said = new Set(sources.flatMap(words));
+  // A currency sign, where a source has it or says its word ("$" for "dollars").
+  const signs: [RegExp, string[]][] = [[/\$/, ['dollar', 'dollars', 'bucks']], [/\u20ac/, ['euro', 'euros']], [/\u00a3/, ['pound', 'pounds']]];
+  for (const [sign, names] of signs) {
+    if (sign.test(text) && !sources.some((s) => sign.test(s)) && !names.some((n) => said.has(n))) return true;
+  }
+  for (const w of words(text)) {
+    if (said.has(w)) continue;
+    if (AMOUNT_WORDS.has(w)) {
+      if (!sources.some((s) => AMOUNT_SIGNS[w]?.test(s))) return true;
+      continue;
+    }
+    // A number word is held by its value above; the others (an ordinal, half, a dozen) and the date words by their words.
+    if (Object.hasOwn(UNIT_VALUES, w) || Object.hasOwn(SCALE_VALUES, w)) continue;
+    if (NUMBER_WORDS.has(w) || DATE_WORDS.has(w)) return true;
+  }
+  return false;
+}
+
 /** Whether a lower-cased word is a figure: a number word, an ordinal, an amount or a date word. */
 export const isFigureWord = (w: string): boolean => NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w) || /\d/.test(w);
 
@@ -134,14 +215,7 @@ export function checkGenerated(text: string, act: SpeechAct, guard: CheckGuard =
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   if (act.items.some((item) => fold(item.value) !== '' && !folded.includes(fold(item.value)))) return 'items';
-  const figures = allowedFigures(act);
-  const figureWords = new Set(figures.flatMap(words));
-  const allowedDigits = new Set(figures.flatMap(digitRuns));
-  if (digitRuns(text).some((d) => !allowedDigits.has(d))) return 'foreign';
-  if (/[$\u20ac\u00a3]/.test(text) && !figures.some((s) => /[$\u20ac\u00a3]/.test(s))) return 'foreign';
-  for (const w of words(text)) {
-    if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !figureWords.has(w)) return 'foreign';
-  }
+  if (foreignFigure(text, allowedFigures(act))) return 'foreign';
   return null;
 }
 
@@ -238,13 +312,7 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): R
   }
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
-  const said = new Set(content.flatMap(words));
-  const allowedDigits = new Set(content.flatMap(digitRuns));
-  if (digitRuns(text).some((d) => !allowedDigits.has(d))) return 'foreign';
-  if (/[$\u20ac\u00a3]/.test(text) && !content.some((c) => /[$\u20ac\u00a3]/.test(c))) return 'foreign';
-  for (const w of words(text)) {
-    if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !said.has(w)) return 'foreign';
-  }
+  if (foreignFigure(text, content)) return 'foreign';
   return null;
 }
 
@@ -279,13 +347,7 @@ export function checkAnswer(text: string, act: SpanAct): RenderFallback | null {
   if (wordCount(text) > act.style.words) return 'words';
   const folded = fold(text);
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
-  const said = new Set(words(passage));
-  const allowedDigits = new Set(digitRuns(passage));
-  if (digitRuns(text).some((d) => !allowedDigits.has(d))) return 'foreign';
-  if (/[$\u20ac\u00a3]/.test(text) && !/[$\u20ac\u00a3]/.test(passage)) return 'foreign';
-  for (const w of words(text)) {
-    if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !said.has(w)) return 'foreign';
-  }
+  if (foreignFigure(text, [passage])) return 'foreign';
   return null;
 }
 

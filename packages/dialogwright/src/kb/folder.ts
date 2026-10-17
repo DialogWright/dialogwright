@@ -4,6 +4,7 @@ import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSettingsYaml, KbSourc
 import type { KbApprovalLogRead, KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
 import { STATIC_MODELS } from './embed/model';
 import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead } from './vectorIndex';
+import { onnxIndexIdOf } from './onnx';
 import { APPROVALS_LOG, MAX_APPROVALS_LOG_BYTES, parseApprovalLog } from './log';
 
 /**
@@ -241,6 +242,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   }
   const sortedSources = Object.fromEntries(Object.keys(sources).sort().map((id) => [id, sources[id]!]));
   const index = readIndex(base, settings.retrieval.embedder, io);
+  const sectionsIndex = settings.documents.embedder !== undefined ? readIndexFile(base, onnxIndexIdOf(settings.documents.embedder), io) : undefined;
   const approvalLog = readLog(base, io);
   return {
     settings: { action: settings.action, applies: settings.applies, localeFallback: settings.localeFallback, maxAnswerChars: settings.maxAnswerChars, retrieval: settings.retrieval, documents: settings.documents },
@@ -249,6 +251,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     passages: built,
     sources: sortedSources,
     ...(index ? { index } : {}),
+    ...(sectionsIndex ? { sectionsIndex } : {}),
     ...(approvalLog ? { approvalLog } : {}),
   };
 }
@@ -295,8 +298,14 @@ function readLog(base: string, io: KbFolderIo): KbApprovalLogRead | undefined {
  * (./rules.ts kbStateProblems), and the default retriever does without one.
  */
 function readIndex(base: string, embedder: string | undefined, io: KbFolderIo): KbIndexRead | undefined {
-  if (embedder === undefined || !Object.hasOwn(STATIC_MODELS, embedder) || !io.readData) return undefined;
-  const file = indexFileOf(base, embedder);
+  if (embedder === undefined || !Object.hasOwn(STATIC_MODELS, embedder)) return undefined;
+  return readIndexFile(base, embedder, io);
+}
+
+/** An index file (kb/.index/<id>.json) as read, when the io reads data. */
+function readIndexFile(base: string, id: string, io: KbFolderIo): KbIndexRead | undefined {
+  if (!io.readData) return undefined;
+  const file = indexFileOf(base, id);
   const read = io.readData(file, MAX_INDEX_BYTES);
   if (read.kind === 'missing') return { file, missing: true };
   if (read.kind === 'problem') return { file, invalid: read.problem.message };

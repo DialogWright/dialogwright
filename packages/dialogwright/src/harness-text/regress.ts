@@ -16,7 +16,7 @@ import { corpusTranscript, modelAnswerLines, questionLines, scenarioTranscript, 
 import type { ScenarioOutcome } from './baseline';
 import type { Outcome } from './runner';
 import { readBaseline, REGRESS_TODAY, writeExpected } from './baseline';
-import { emptyRunAll, runAll } from './runAll';
+import { emptyRunAll, runAll, warmKnowledge } from './runAll';
 import { parseScreenMode } from '../core/screen';
 import { loadHarnessEnv } from '../server/envFile';
 import { defaultAppId, getApp } from '../core/app/registry';
@@ -125,6 +125,8 @@ async function run(argv?: readonly string[]): Promise<void> {
   // cassette replayed, or the model itself when recording (render/harness.ts). None for any other app.
   const rendering = harnessRenderer(kind, getApp(defaultAppId()), recordedDir(), args.render === undefined ? {} : { render: args.render });
   for (const line of rendering.header) header(line);
+  // A model the knowledge base loads on first use, loaded now, so every turn retrieves alike (runAll.ts warmKnowledge).
+  await warmKnowledge();
   const opts: RunOptions = {
     client: buildClient(kind, defaultCorpusFile(), thresholds, REGRESS_TODAY, provider ?? undefined),
     thresholds,

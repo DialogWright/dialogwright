@@ -609,6 +609,23 @@ prompts:
 
 **A person approves each document, once.** `pnpm kb:approve --document <doc> --by "<name>" --owner "<team>"`: they have read it whole, and callers may hear answers worded from its sections. The approval holds the document's hash (its title, its applies, and each section's heading, text and `summarize`); a changed word withholds the whole document until a person approves it again, and `pnpm kb:status` lists it with its fix. A document never approved is never answered from; `pnpm check` warns of each, once summarizing is on.
 
+**A long document** (a benefits booklet of a hundred pages and more, hundreds of sections) is harder to find in than a short one: a question's words match many sections, and the right one must be among the few the decision model is asked of. Measure it with `pnpm kb:bakeoff <dir> --sections <file> --sweep` on paraphrases of the sections callers ask about (a line may name the other sections that answer it as well, `{ say: "is an x-ray covered", also: ["booklet#diagnostic-x-ray"] }`, so a cost said in a summary and the rules said in a chapter both count), then choose:
+
+```yaml
+# kb/kb.yaml
+action: answerQuestion
+documents:
+  summarize: on
+  cap: 6                 # more sections asked of: more found, a longer request
+  floor: 0.65
+  retrieval: dense       # by their meaning alone; hybrid (the default) fuses their keywords too
+  embedder:              # a contextual model of the sections' own, in place of retrieval.embedder
+    onnx: Xenova/bge-small-en-v1.5
+    revision: ea104dacec62c0de699686887e3f920caeb4f3e3   # the model repository's commit
+```
+
+`documents.embedder` is opt-in: the app installs the optional package it runs on (`pnpm add @huggingface/transformers`, some hundreds of megabytes), `pnpm kb:index` writes the sections' vectors to an index of their own (`kb/.index/onnx-<model>.json`; the topics keep `retrieval.embedder`'s), `pnpm check` holds that index to the sections' texts without the package, and the server loads the model when it starts (a model that cannot be loaded leaves the sections' keywords). Its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations and so change a recorded request: build the index and record the cassette on one machine. On a 123-page booklet (291 sections, 114 paraphrases of 38 of them), the right section was among the six nominated for 75% of the lines with the static model and keywords, 86% with bge-small fused with keywords, and 88% with bge-small alone (keywords on common words crowd the right section out of a long document).
+
 **What is never summarized:** a section a passage cites (the passage speaks for it, word for word or worded with its own fallback); a section marked `summarize: false`; and any section of a document whose top says `summarize: false` (a certificate that is only the source of regulated passages, say), which needs no approval and is never warned of. A document may say whom its answers are for (`applies`, as a passage does), read from the system of record by code.
 
 **On a call:** with summarizing on, retrieval nominates sections beside the topics (their headings and sentences are in the index: `pnpm kb:index`), and the topic slot asks, in the turn's own request, one yes-or-no of each: does this section say what the caller asks about? Where no topic fills and the caller asked something (not "I have a question"), the sections read yes at `KB_SECTION_ANSWERS` (0.55) or above, at most two, are the answer's. The knowledge tool resolves them through the gate as it resolves a passage (each still approved, each document applying to the caller, the call in the default language: sections are not translated), and the answer is worded from them, held to them by the checks (no figure they do not have, the word budget, 60 by default) and the documents drift judge, with the caller's question. Its record names the document and sections (`passageId: document:<doc>`, `from: documents`), as does the audit's `kb_worded` row.

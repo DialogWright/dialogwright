@@ -91,8 +91,18 @@ export const kbSettingsSchema = z
         summarize: z.enum(['on', 'off']).default('off').describe('on: where no topic answers a question, the line may answer it from the sections of the documents in kb/sources that a person approved for summarizing (pnpm kb:approve --document), worded by a model from the sections the decision model chose, held to them by the checks and the drift judge. A section a passage cites, and one marked summarize: false, is never summarized. Default off: only topics answer.'),
         cap: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(8, { error: 'must be at most 8' }).default(DEFAULT_SECTIONS_CAP).describe(`How many sections retrieval nominates at most, each asked whether it says what the caller asked. Default ${DEFAULT_SECTIONS_CAP}.`),
         floor: z.number({ error: 'must be a number' }).min(0, { error: 'must be between 0 and 1' }).max(1, { error: 'must be between 0 and 1' }).optional().describe('The cosine similarity below which a section found by its meaning is not nominated; a keyword match always counts. Default: retrieval.floor, else the embedder\'s own (pnpm kb:bakeoff --sections sweeps it).'),
+        retrieval: z.enum(['hybrid', 'dense']).default('hybrid').describe('How sections are found for a caller\'s words: hybrid (the default), by their keywords and their meaning fused; dense, by their meaning alone (on a long document, keywords on common words can crowd the right section out: measure both with pnpm kb:bakeoff --sections). Dense needs an embedder: retrieval.embedder, or documents.embedder.'),
+        embedder: z
+          .strictObject({
+            onnx: z.string().min(1, { error: 'must not be empty' }).describe('The ONNX sentence-embedding model\'s Hugging Face id, such as Xenova/bge-small-en-v1.5.'),
+            revision: matching(/^[0-9a-f]{40}$/, 'is not a commit: it must be 40 lowercase hex characters', 'give the commit of the model\'s repository (a branch such as main moves under a committed index)').describe('The commit of the model\'s repository to load.'),
+            pooling: z.enum(['cls', 'mean']).default('cls').describe('How its token vectors become one: the first token\'s (cls, for bge) or their mean. Default cls.'),
+            dtype: z.enum(['fp32', 'fp16', 'q8']).default('fp32').describe('Its weights\' precision. Default fp32.'),
+          })
+          .optional()
+          .describe('A contextual embedding model of its own for the sections (an ONNX model, run by the optional package @huggingface/transformers, which the app installs): their vectors are in an index of their own (kb/.index/<model>.json, pnpm kb:index), and the topics keep retrieval.embedder. Opt-in: the package is large, and its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations. Default: the sections are in retrieval.embedder\'s index.'),
       })
-      .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP })
+      .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP, retrieval: 'hybrid' })
       .describe('Answers from approved documents, where no topic answers: off by default.'),
   })
   .describe('kb/kb.yaml: the knowledge base\'s settings.');

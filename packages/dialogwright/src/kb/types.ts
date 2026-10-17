@@ -22,7 +22,23 @@ export interface KbSettings {
   /** How topics are nominated: settings the retriever reads. */
   readonly retrieval: { readonly cap: number; readonly floor?: number; readonly embedder?: string };
   /** Answers from approved documents where no topic answers (kb.yaml documents): off unless `summarize` is on; absent, off (a knowledge base built in code). */
-  readonly documents?: { readonly summarize: 'on' | 'off'; readonly cap: number; readonly floor?: number };
+  readonly documents?: {
+    readonly summarize: 'on' | 'off';
+    readonly cap: number;
+    readonly floor?: number;
+    /** How sections are found: their keywords and meaning fused (default), or their meaning alone. */
+    readonly retrieval?: 'hybrid' | 'dense';
+    /** The sections' own embedding model (an ONNX model), its vectors in an index of their own. */
+    readonly embedder?: DocumentsEmbedder;
+  };
+}
+
+/** The sections' own embedding model (kb.yaml documents.embedder): an ONNX model at a commit. */
+export interface DocumentsEmbedder {
+  readonly onnx: string;
+  readonly revision: string;
+  readonly pooling: 'cls' | 'mean';
+  readonly dtype: 'fp32' | 'fp16' | 'q8';
 }
 
 /** A topic's wording in one locale (kb/locale/<tag>/topics.yaml). */
@@ -136,6 +152,12 @@ export interface KnowledgeBase {
    */
   readonly index?: KbIndexRead;
   /**
+   * The sections' own vector index (kb/.index/<model>.json, the model kb.yaml's documents.embedder
+   * names), as read: present only when it names one. `pnpm check` holds it to the sections' texts; the
+   * section retriever reads its vectors (./sections.ts defaultSectionRetriever).
+   */
+  readonly sectionsIndex?: KbIndexRead;
+  /**
    * The log of approvals (kb/approvals.jsonl, ./log.ts) as read: each line's id, hash and where it
    * came from, or why it could not be read. Present when the loader reads the folder from disk;
    * `pnpm check` holds every approval to a line of the same id and hash (./rules.ts). A knowledge
@@ -200,6 +222,8 @@ export interface Retriever {
   /** The hash of the index it reads, when it has one, recorded with its nominations. */
   readonly indexHash?: string;
   nominate(input: NominateInput): Promise<readonly Nomination[]> | readonly Nomination[];
+  /** Loads what it loads on first use (a model), when the server starts: true once loaded, false when there is nothing to load. */
+  warm?(): Promise<boolean>;
 }
 
 /**

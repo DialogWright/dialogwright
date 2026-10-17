@@ -14,8 +14,9 @@ import { cleanText } from '../sections';
  * - Its rows are anchored on its first column: a band of lines (split where a gap is over ROW_GAP times
  *   the line's size) with words in the first column is a row, and the bands without go to the row
  *   above or below them, split at the largest gap (a label set level with the middle of its text).
- * - A table of two columns whose first is short terms in bold and whose second is long (twelve words a
- *   row or more, by the median) is a list of terms: each term a heading over its text.
+ * - A table of two columns whose first is short terms in bold (twelve words at most, four rows in five
+ *   at least) and whose second is long (twelve words a row or more, by the median) is a list of terms:
+ *   each term a heading over its text.
  * - Its columns are found from its gutters: the places across the table no line's text covers but a
  *   one in twenty, one at least and two at most, in a table of eight lines or more (a heading over
  *   several columns, as "Your cost" is over "In network" and "Out of network"). A table has two columns at least.
@@ -64,6 +65,10 @@ const MAX_SPANNING = 2;
 const MIN_SPANNED = 8;
 /** The narrowest gutter, as many times the table's text size (wider than the gap after a bullet). */
 const MIN_GUTTER = 1.2;
+
+/** A term of a list of terms is this many words at most, and this share of a table's rows are terms for it to be a list. */
+const MAX_TERM_WORDS = 12;
+const TERM_SHARE = 0.8;
 
 const CHECK = /^[\u{E000}-\u{F8FF}✓✔☑]+$/u;
 
@@ -221,7 +226,9 @@ function rowsOf(lines: readonly PlacedLine[]): RowLine[] | null {
   const termed = rowBands.map((b, i) => keys[i]! >= 0 && runsIn(b, 0, false).every((r) => r.bold));
   const words = (s: string) => (s === '' ? 0 : s.split(/\s+/).length);
   const long = cells.filter((c) => c[0] !== '').map((c) => words(c[1] ?? '')).sort((x, y) => x - y);
-  const terms = columns.length === 2 && long.length >= 2 && (long[long.length >> 1] ?? 0) >= 12 && cells.every((c, i) => c[0] === '' || (termed[i] && words(c[0]!) <= 8));
+  const labels = cells.map((c, i) => ({ c, i })).filter(({ c }) => c[0] !== '');
+  const termLike = labels.filter(({ c, i }) => termed[i] && words(c[0]!) <= MAX_TERM_WORDS).length;
+  const terms = columns.length === 2 && long.length >= 1 && (long[long.length >> 1] ?? 0) >= 12 && termLike >= labels.length * TERM_SHARE;
   const size = sorted[0]!.size;
   const rows: RowLine[] = [];
   rowBands.forEach((band, i) => {

@@ -1052,6 +1052,16 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     await closeAuditSql();
   };
 
+  // The sections' own embedding model (kb.yaml documents.embedder), loaded before the server listens,
+  // so no call's first questions pay for it (retrieval has a budget: a model still loading nominates
+  // nothing). One that cannot be loaded leaves the keywords (../kb/sections.ts).
+  for (const a of appsRun) {
+    try {
+      if (await a.app.knowledge?.sections?.warm?.()) log(`knowledge: ${a.id}: the sections' embedding model is loaded`);
+    } catch (err) {
+      log(`knowledge: ${a.id}: the sections' embedding model could not be loaded, so sections are found by their keywords: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   // listen reports failure as an 'error' event, which is unhandled (and fatal) unless it is awaited here.
   try {
     await new Promise<void>((resolve, reject) => {

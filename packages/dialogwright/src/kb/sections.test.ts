@@ -46,7 +46,7 @@ describe('the sections that may be summarized', () => {
   it('are an approved document\'s, but for a section a passage cites and one marked summarize: false', () => {
     const kb = kbWith({ approve: true }).kb();
     expect(summarizableSections(kb).map((s) => s.key)).toEqual(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#parking', 'visitor-guide#lost-card']);
-    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', path: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.' });
+    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', path: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.', sentences: ['Every branch has free Wi-Fi.', 'Join the network ExampleTownLibrary; no password is needed.', 'Sessions end when the branch closes.'] });
     // The patron guide's sections are each cited by a passage: never summarized, though approved documents' they would be.
     expect(summarizableSections(kb, { approved: false }).some((s) => s.document === 'patron-guide')).toBe(false);
   });
@@ -93,6 +93,13 @@ describe('their index texts', () => {
     const off = allIndexTexts(kbWith({ summarize: 'off' }).kb());
     expect(on.length - off.length).toBe(sectionIndexTexts(kbWith().kb()).length);
     expect(off.some((t) => t.field === 'section')).toBe(false);
+  });
+
+  it('take a table\'s rows and a list\'s items one by one, each line of a section apart', () => {
+    const { dir, kb } = kbWith();
+    const file = join(dir, 'sources', 'visitor-guide.yaml');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('  lost-card:', '  fees:\n    heading: Fees\n    text: |-\n      Printing: Black and white: 15 cents; Color: 50 cents\n\n      Copies: Black and white: 10 cents\n  lost-card:'));
+    expect(sectionIndexTexts(kb()).filter((t) => t.topic === 'visitor-guide#fees').map((t) => t.text).sort()).toEqual(['Copies: Black and white: 10 cents', 'Fees', 'Printing: Black and white: 15 cents; Color: 50 cents']);
   });
 
   it('split a text into sentences, not at a decimal or an abbreviation in lower case', () => {

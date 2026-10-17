@@ -45,6 +45,12 @@ export interface KbSection {
   readonly path: string;
   /** Its text, whitespace collapsed. */
   readonly text: string;
+  /**
+   * Its sentences, each paragraph's and each line's apart (a table's row, a list's item, as kb:ingest
+   * writes them one to a line): what the index embeds and keywords read, so a question matches the row
+   * that answers it rather than every row of a table at once.
+   */
+  readonly sentences: readonly string[];
   /** Which callers it is for: the document's applies (canonical); absent, every caller. */
   readonly applies?: Readonly<Record<string, readonly string[]>>;
 }
@@ -85,7 +91,7 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
       const key = sectionKeyOf(doc.id, id);
       if (s.summarize === false || cited.has(key)) continue;
       const heading = collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, ''));
-      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
+      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), sentences: s.text.split(/\n+/).flatMap(sentencesOf), ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
     }
   }
   return out;
@@ -131,7 +137,7 @@ export function sentencesOf(text: string): string[] {
 export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'>): IndexText[] {
   const out = new Map<string, IndexText>();
   for (const s of summarizableSections(kb, { approved: false })) {
-    for (const raw of [s.path, ...sentencesOf(s.text)]) {
+    for (const raw of [s.path, ...s.sentences]) {
       const text = collapseWhitespace(raw);
       if (text === '') continue;
       const contentHash = textHash(text);

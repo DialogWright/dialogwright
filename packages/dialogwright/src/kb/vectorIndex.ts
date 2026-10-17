@@ -4,11 +4,21 @@ import { indexTexts, type IndexText, type RetrievalKb } from './words';
 import { sectionIndexTexts } from './sectionTexts';
 import type { KnowledgeBase } from './types';
 
-/** Every text the index embeds: the topics' (./words.ts indexTexts), then, with summarizing on, the sections' (./sectionTexts.ts). */
+/**
+ * Every text the index of retrieval.embedder embeds: the topics' (./words.ts indexTexts), then, with
+ * summarizing on, the sections' (./sectionTexts.ts), unless the sections have an embedder of their own
+ * (kb.yaml documents.embedder), whose index holds them (sectionsIndexTexts).
+ */
 export function allIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>): IndexText[] {
   const topics = indexTexts(kb);
-  if (kb.settings === undefined || kb.sources === undefined || kb.passages === undefined) return topics;
-  return [...topics, ...sectionIndexTexts({ settings: kb.settings, sources: kb.sources, passages: kb.passages, defaultLocale: kb.defaultLocale })];
+  if (kb.settings?.documents?.embedder !== undefined) return topics;
+  return [...topics, ...sectionsIndexTexts(kb)];
+}
+
+/** The sections' texts (./sectionTexts.ts sectionIndexTexts): what the index of documents.embedder embeds, when kb.yaml names one. */
+export function sectionsIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>): IndexText[] {
+  if (kb.settings === undefined || kb.sources === undefined || kb.passages === undefined) return [];
+  return sectionIndexTexts({ settings: kb.settings, sources: kb.sources, passages: kb.passages, defaultLocale: kb.defaultLocale });
 }
 
 /**
@@ -140,8 +150,7 @@ export interface BuiltIndex {
  * now) already has a vector for, from the same embedder, keeps that vector; only the others are
  * embedded. The vectors are stored as float32.
  */
-export async function buildIndex(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, embedder: Embedder, previous?: KbIndexData | null): Promise<BuiltIndex> {
-  const texts = allIndexTexts(kb);
+export async function buildIndex(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, embedder: Embedder, previous?: KbIndexData | null, texts: readonly IndexText[] = allIndexTexts(kb)): Promise<BuiltIndex> {
   const known = new Map<string, Float32Array>();
   if (previous && sameEmbedder(previous.embedder, embedder)) for (const e of previous.entries) known.set(e.contentHash, e.vector);
   const todo = [...new Map(texts.filter((t) => !known.has(t.contentHash)).map((t) => [t.contentHash, t.text])).entries()];
@@ -160,8 +169,7 @@ export async function buildIndex(kb: RetrievalKb & Partial<Pick<KnowledgeBase, '
 }
 
 /** What an index lacks for a knowledge base: the texts with no vector, and the entries no text has any more. */
-export function indexDrift(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, data: KbIndexData): { missing: IndexText[]; stale: VectorEntry[] } {
-  const texts = allIndexTexts(kb);
+export function indexDrift(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, data: KbIndexData, texts: readonly IndexText[] = allIndexTexts(kb)): { missing: IndexText[]; stale: VectorEntry[] } {
   const key = (e: { topic: string; locale: string; field: string; contentHash: string }): string => `${e.topic}\u0000${e.locale}\u0000${e.field}\u0000${e.contentHash}`;
   const have = new Set(data.entries.map(key));
   const want = new Set(texts.map(key));

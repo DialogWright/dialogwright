@@ -33,6 +33,18 @@ export interface Paraphrases {
   readonly topics: Readonly<Record<string, readonly string[]>>;
   /** Lines no topic answers. */
   readonly none: readonly string[];
+  /**
+   * The other topics (sections) that answer a line as well as its own, by `<topic>\u0000<line>`: a
+   * nomination of any of them is a hit (a document that says a benefit's cost in one section and its
+   * rules in another).
+   */
+  readonly also?: Readonly<Record<string, readonly string[]>>;
+}
+
+/** Whether `nominated` holds the line's topic, or one of the others that answer it as well (Paraphrases.also). */
+export function isHit(paraphrases: Paraphrases, topic: string, text: string, nominated: readonly { topic: string }[]): boolean {
+  const also = paraphrases.also?.[`${topic}\u0000${text}`] ?? [];
+  return nominated.some((n) => n.topic === topic || also.includes(n.topic));
 }
 
 /** Reads a paraphrase file's text; throws, saying what is wrong, when it is not one, or names a topic the knowledge base does not have. */
@@ -55,14 +67,45 @@ export function parseSectionParaphrases(text: string, keys: readonly string[]): 
   const data = parse(text) as unknown;
   if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error('a paraphrase file of sections is a map from a section key (<document>#<section>, or none) to a list of lines');
   const topics: Record<string, string[]> = {};
+  const also: Record<string, string[]> = {};
   let none: string[] = [];
+  const known = (key: string): void => {
+    if (keys.includes(key)) return;
+    // The sections that share most of its words, five at most: a long document has hundreds.
+    const words = (k: string) => new Set(k.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+    const wanted = words(key);
+    const near = keys
+      .map((k) => ({ k, shared: [...words(k)].filter((w) => wanted.has(w)).length }))
+      .filter((x) => x.shared > 0)
+      .sort((a, b) => b.shared - a.shared || a.k.localeCompare(b.k))
+      .slice(0, 5)
+      .map((x) => x.k);
+    throw new Error(`"${key}" is not a section that may be summarized (with documents: summarize on; ${keys.length} sections${near.length > 0 ? `, the nearest ${near.join(', ')}` : ''})`);
+  };
   for (const [key, value] of Object.entries(data)) {
-    if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || v.trim() === '')) throw new Error(`"${key}" is not a list of lines`);
-    if (key === 'none') none = value as string[];
-    else if (!keys.includes(key)) throw new Error(`"${key}" is not a section that may be summarized (with documents: summarize on: ${keys.join(', ') || 'none'})`);
-    else topics[key] = value as string[];
+    // A line is its words, or { say: <words>, also: [<section key>, ...] }: the other sections that answer it as well.
+    const lineOf = (v: unknown): { say: string; also: string[] } | null => {
+      if (typeof v === 'string') return v.trim() === '' ? null : { say: v, also: [] };
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
+      const o = v as { say?: unknown; also?: unknown };
+      if (typeof o.say !== 'string' || o.say.trim() === '' || !Array.isArray(o.also) || o.also.some((a) => typeof a !== 'string')) return null;
+      return { say: o.say, also: o.also as string[] };
+    };
+    const lines = Array.isArray(value) ? value.map(lineOf) : null;
+    if (lines === null || lines.some((l) => l === null)) throw new Error(`"${key}" is not a list of lines (each its words, or { say: <words>, also: [<section key>, ...] })`);
+    if (key === 'none') {
+      if (lines.some((l) => l!.also.length > 0)) throw new Error('a line under none has no section, so no other section answers it (also)');
+      none = lines.map((l) => l!.say);
+      continue;
+    }
+    known(key);
+    topics[key] = lines.map((l) => l!.say);
+    for (const l of lines) {
+      l!.also.forEach(known);
+      if (l!.also.length > 0) also[`${key}\u0000${l!.say}`] = l!.also;
+    }
   }
-  return { topics, none };
+  return { topics, none, ...(Object.keys(also).length > 0 ? { also } : {}) };
 }
 
 /**
@@ -79,25 +122,29 @@ export async function sweepSections(
 ): Promise<SweepPoint[]> {
   const lines = [...Object.entries(paraphrases.topics).flatMap(([topic, said]) => said.map((text) => ({ topic: topic as string | null, text }))), ...paraphrases.none.map((text) => ({ topic: null as string | null, text }))];
   const scored = [];
-  for (const { topic, text } of lines) scored.push({ topic, kw: sections.keywordScores(text, locale), dense: await sections.denseHits(text, 0) });
+  for (const { topic, text } of lines) scored.push({ topic, text, kw: sections.keywordScores(text, locale), dense: await sections.denseHits(text, 0) });
   const out: SweepPoint[] = [];
-  for (const floor of floors) {
-    for (const cap of caps) {
-      const topical: number[] = [];
-      const nones: number[] = [];
-      let hits = 0;
-      let total = 0;
-      for (const s of scored) {
-        const nominated = fuse(s.kw, s.dense.filter((h) => h.score >= floor), cap, (t) => t);
-        if (s.topic === null) {
-          nones.push(nominated.length);
-          continue;
+  // Fused with the keywords (hybrid), and by meaning alone (dense: kb.yaml documents.retrieval).
+  for (const kind of ['hybrid', 'dense'] as const) {
+    for (const floor of floors) {
+      for (const cap of caps) {
+        const topical: number[] = [];
+        const nones: number[] = [];
+        let hits = 0;
+        let total = 0;
+        for (const s of scored) {
+          const above = s.dense.filter((h) => h.score >= floor);
+          const nominated = kind === 'hybrid' ? fuse(s.kw, above, cap, (t) => t) : above.slice(0, cap);
+          if (s.topic === null) {
+            nones.push(nominated.length);
+            continue;
+          }
+          topical.push(nominated.length);
+          total += 1;
+          if (isHit(paraphrases, s.topic, s.text, nominated)) hits += 1;
         }
-        topical.push(nominated.length);
-        total += 1;
-        if (nominated.some((n) => n.topic === s.topic)) hits += 1;
+        out.push({ retriever: kind, floor, cap, recall: total === 0 ? 0 : hits / total, meanCandidates: mean(topical), noneCandidates: mean(nones) });
       }
-      out.push({ retriever: 'hybrid', floor, cap, recall: total === 0 ? 0 : hits / total, meanCandidates: mean(topical), noneCandidates: mean(nones) });
     }
   }
   return out;
@@ -142,8 +189,8 @@ export async function bakeoff(retriever: Retriever, paraphrases: Paraphrases, lo
     candidates.push(nominated.length);
     const row = (perTopic[topic] ??= { hits: 0, first: 0, total: 0 });
     row.total += 1;
-    if (nominated.some((n) => n.topic === topic)) row.hits += 1;
-    if (nominated[0]?.topic === topic) row.first += 1;
+    if (isHit(paraphrases, topic, text, nominated)) row.hits += 1;
+    if (nominated[0] !== undefined && isHit(paraphrases, topic, text, [nominated[0]])) row.first += 1;
   }
   const rows = Object.values(perTopic);
   const total = rows.reduce((n, r) => n + r.total, 0);

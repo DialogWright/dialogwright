@@ -1,4 +1,5 @@
 import { DEFAULT_SECTIONS_CAP } from './schema';
+import { LazyOnnxEmbedder, ONNX_DEFAULT_FLOOR } from './onnx';
 import { fuse, HybridRetriever } from './hybrid';
 import { KeywordRetriever } from './keyword';
 import { MemoryVectorIndex } from './embed/memory';
@@ -23,22 +24,39 @@ export { sectionIndexTexts, sectionKeyOf, sectionOfKey, sentencesOf, summarizabl
 
 /** The sections as topics the keyword retriever reads: the heading after its parents' its title, the sentences its example questions. */
 function asTopics(sections: readonly KbSection[]): Record<string, KbTopic> {
-  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.path, keywords: [], asks: sentencesOf(s.text), risk: 'low', locales: {} } satisfies KbTopic]));
+  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.path, keywords: [], asks: [...s.sentences], risk: 'low', locales: {} } satisfies KbTopic]));
 }
 
 /**
  * The section retriever of a knowledge base with summarizing on (kb.yaml documents), beside its topic
  * retriever: by meaning too where that one is hybrid (its embedder and index; the floor
- * documents.floor, else retrieval.floor, else the embedder's own), else by keywords alone. Null with
- * summarizing off, or when no section may be summarized (none approved yet).
+ * documents.floor, else retrieval.floor, else the embedder's own), else by keywords alone. With an
+ * embedder of the sections' own (documents.embedder), by that model and its index (the floor
+ * documents.floor, else ONNX_DEFAULT_FLOOR), the model loaded when the server starts (warm); by meaning alone
+ * with documents.retrieval dense. Null with summarizing off, or when no section may be summarized
+ * (none approved yet).
  */
 export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | undefined): SectionRetriever | null {
   if (kb.settings.documents?.summarize !== 'on') return null;
-  const hybrid = topics instanceof HybridRetriever ? topics : null;
-  const index = kb.index;
-  const vectors = index && 'data' in index ? index.data : null;
-  const dense = hybrid && vectors ? { embedder: hybrid.dense.embedder, vectors, floor: kb.settings.documents.floor ?? kb.settings.retrieval.floor ?? hybrid.dense.floor } : undefined;
-  const retriever = new SectionRetriever(kb, dense ? { dense } : {});
+  const settings = kb.settings.documents;
+  let dense: SectionRetrieverOptions['dense'];
+  let indexHash: string | undefined;
+  if (settings.embedder !== undefined) {
+    // The sections' own model (documents.embedder): its index, and the model loaded when the app starts.
+    const index = kb.sectionsIndex;
+    if (index && 'data' in index) {
+      const embedder = new LazyOnnxEmbedder(settings.embedder, index.data.embedder.dim);
+      dense = { embedder, vectors: index.data, floor: settings.floor ?? ONNX_DEFAULT_FLOOR };
+      indexHash = index.hash;
+    }
+  } else {
+    const hybrid = topics instanceof HybridRetriever ? topics : null;
+    const index = kb.index;
+    const vectors = index && 'data' in index ? index.data : null;
+    if (hybrid && vectors) dense = { embedder: hybrid.dense.embedder, vectors, floor: settings.floor ?? kb.settings.retrieval.floor ?? hybrid.dense.floor };
+    if (index && 'hash' in index) indexHash = index.hash;
+  }
+  const retriever = new SectionRetriever(kb, { ...(dense ? { dense } : {}), keywords: settings.retrieval !== 'dense' || dense === undefined, ...(indexHash !== undefined && dense ? { indexHash } : {}) });
   return retriever.sections.length > 0 ? retriever : null;
 }
 
@@ -49,6 +67,10 @@ export interface SectionRetrieverOptions {
   readonly cap?: number;
   /** The embedder and the index's vectors, for meaning beside keywords; absent, keywords alone. */
   readonly dense?: { readonly embedder: Embedder; readonly vectors: KbIndexData; readonly floor: number };
+  /** Whether keywords count beside meaning (kb.yaml documents.retrieval hybrid). Default true; false needs `dense`. */
+  readonly keywords?: boolean;
+  /** The hash of the index its vectors are from, recorded with its nominations. */
+  readonly indexHash?: string;
 }
 
 /**
@@ -61,6 +83,8 @@ export class SectionRetriever implements Retriever {
   readonly id: string;
   readonly cap: number;
   readonly sections: readonly KbSection[];
+  readonly indexHash?: string;
+  private readonly keywords: boolean;
   private readonly keyword: KeywordRetriever;
   private readonly dense?: { readonly embedder: Embedder; readonly index: MemoryVectorIndex; readonly floor: number };
   private readonly titles: ReadonlyMap<string, string>;
@@ -75,7 +99,17 @@ export class SectionRetriever implements Retriever {
       const entries: VectorEntry[] = options.dense.vectors.entries.filter((e) => e.field === 'section' && keys.has(e.topic));
       this.dense = { embedder: options.dense.embedder, index: new MemoryVectorIndex(options.dense.embedder.dim, entries), floor: options.dense.floor };
     }
-    this.id = this.dense ? `sections:hybrid:${this.dense.embedder.id}` : 'sections:keyword';
+    this.keywords = options.keywords !== false || this.dense === undefined;
+    this.id = this.dense ? `sections:${this.keywords ? 'hybrid' : 'dense'}:${this.dense.embedder.id}` : 'sections:keyword';
+    if (options.indexHash !== undefined) this.indexHash = options.indexHash;
+  }
+
+  /** Loads an embedding model that loads on first use (the sections' own, documents.embedder): true once loaded, false when there is none to load. */
+  async warm(): Promise<boolean> {
+    const embedder = this.dense?.embedder as { warm?: () => Promise<unknown> } | undefined;
+    if (embedder?.warm === undefined) return false;
+    await embedder.warm();
+    return true;
   }
 
   /** Every section's keyword score for the words, best first, uncapped (kb:bakeoff's sweep). */
@@ -97,8 +131,9 @@ export class SectionRetriever implements Retriever {
     const dense = this.dense;
     if (!dense) return this.keyword.nominate({ text, locale, todayIso: '' });
     const kw = this.keyword.scores(text, locale);
-    const search = (q: Float64Array) => fuse(kw, dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[], this.cap, titleOf);
+    const search = (q: Float64Array) => fuse(this.keywords ? kw : [], dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[], this.cap, titleOf);
     const embedded = dense.embedder.embed([text]);
-    return embedded instanceof Promise ? embedded.then((v) => search(v[0]!)) : search(embedded[0]!);
+    // A model that cannot be loaded (its package not installed) leaves the keywords.
+    return embedded instanceof Promise ? embedded.then((v) => search(v[0]!), () => fuse(kw, [], this.cap, titleOf)) : search(embedded[0]!);
   }
 }

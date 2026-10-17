@@ -1,6 +1,7 @@
 import type { CorpusEntry } from '../jev/corpus';
 import type { TraceRecord } from '../trace/types';
 import type { ScenarioOutcome } from './baseline';
+import { defaultAppOrNull } from '../core/app/registry';
 import { runCorpusEntry, runScenario, type Outcome, type RunOptions, type Scenario } from './runner';
 
 export interface RunAllResult {
@@ -30,6 +31,7 @@ export function emptyRunAll(): RunAllResult {
  * overwrites keys; pass a fresh one per run.
  */
 export async function runAll(corpus: CorpusEntry[], scenarios: Scenario[], opts: RunOptions, hooks: RunAllHooks = {}, into: RunAllResult = emptyRunAll()): Promise<RunAllResult> {
+  await warmKnowledge();
   for (const [i, entry] of corpus.entries()) {
     const r = await runCorpusEntry(entry, opts);
     into.corpus[entry.id] = r.outcome;
@@ -45,4 +47,14 @@ export async function runAll(corpus: CorpusEntry[], scenarios: Scenario[], opts:
     hooks.onScenario?.(i + 1, scenarios.length, scenario, records);
   }
   return into;
+}
+
+/**
+ * Loads what the app's retrievers load on first use (the sections' own embedding model, kb.yaml
+ * documents.embedder) before any turn runs, as a server does when it starts: retrieval has a budget,
+ * and a model still loading on a run's first turns would nominate nothing there and something later,
+ * so the same words would make two requests. One that cannot be loaded leaves the keywords, every turn.
+ */
+export async function warmKnowledge(): Promise<void> {
+  await defaultAppOrNull()?.knowledge?.sections?.warm?.().catch(() => false);
 }

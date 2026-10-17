@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Embedder } from './embed/types';
 
 /**
@@ -33,6 +36,9 @@ export const ONNX_DEFAULT_MODEL = 'Xenova/bge-small-en-v1.5';
 /** A starting floor for bge-small's cosine similarities (its unrelated sentences sit higher than a static model's); sweep it with pnpm kb:bakeoff --sweep. */
 export const ONNX_DEFAULT_FLOOR = 0.7;
 
+/** How many texts are embedded at once. */
+export const ONNX_BATCH = 64;
+
 /** A model repository's commit, as a revision must be pinned: 40 hex characters. */
 export const PINNED_REVISION = /^[0-9a-f]{40}$/;
 
@@ -57,6 +63,14 @@ export async function loadTransformers(): Promise<TransformersModule> {
   try {
     return (await import(specifier)) as TransformersModule;
   } catch (error) {
+    // The app's own folder: an app installs the package, and an engine linked from elsewhere (a
+    // workspace, a link: dependency) does not see the app's node_modules from where it is.
+    try {
+      const resolved = createRequire(join(process.cwd(), 'package.json')).resolve(specifier);
+      return (await import(pathToFileURL(resolved).href)) as TransformersModule;
+    } catch {
+      // Not there either: the package is not installed.
+    }
     throw new OnnxUnavailableError(error);
   }
 }
@@ -127,13 +141,70 @@ export class OnnxEmbedder implements Embedder {
     const probe = (await extract(['dimension probe'], { pooling, normalize: true })).tolist();
     const dim = probe[0]?.length ?? 0;
     if (dim === 0) throw new Error(`the model ${model} gave an empty vector`);
-    const sha256 = createHash('sha256').update(`${model}\n${revision}\n${dtype}\n${pooling}\n`).digest('hex');
+    const sha256 = onnxSha256(model, revision, dtype, pooling);
     return new OnnxEmbedder({ id: options.id ?? `onnx:${model}`, revision, sha256, dim, pooling, extract });
   }
 
   async embed(texts: readonly string[]): Promise<Float64Array[]> {
-    if (texts.length === 0) return [];
-    const rows = (await this.extract([...texts], { pooling: this.pooling, normalize: true })).tolist();
-    return rows.map((r) => Float64Array.from(r));
+    // In batches: one batch of every text is padded to its longest, and slows a large index many times over.
+    const out: Float64Array[] = [];
+    for (let i = 0; i < texts.length; i += ONNX_BATCH) {
+      const rows = (await this.extract(texts.slice(i, i + ONNX_BATCH), { pooling: this.pooling, normalize: true })).tolist();
+      out.push(...rows.map((r) => Float64Array.from(r)));
+    }
+    return out;
+  }
+}
+
+/** An ONNX model's identity in an index (EmbedderInfo.sha256): its name, revision, precision and pooling. */
+export function onnxSha256(model: string, revision: string, dtype: string, pooling: string): string {
+  return createHash('sha256').update(`${model}\n${revision}\n${dtype}\n${pooling}\n`).digest('hex');
+}
+
+/** The settings of an ONNX model as kb.yaml's documents.embedder gives them. */
+export interface OnnxModelSettings {
+  readonly onnx: string;
+  readonly revision: string;
+  readonly pooling: 'cls' | 'mean';
+  readonly dtype: 'fp32' | 'fp16' | 'q8';
+}
+
+/** The embedder id an ONNX model has in an index and the trace: "onnx:<model>". */
+export const onnxIdOf = (s: OnnxModelSettings): string => `onnx:${s.onnx}`;
+
+/** The id its index file is named by (kb/.index/<id>.json): "onnx-<model>", in characters a file name takes. */
+export const onnxIndexIdOf = (s: OnnxModelSettings): string => `onnx-${s.onnx.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`;
+
+/**
+ * An ONNX embedder that loads its model on first use (or when `warm` is called, as an app does when
+ * its server starts), with the identity and dimension its index says, so it can be built where an
+ * app is defined (without waiting) and read an index written by `kb:index` with the same model.
+ */
+export class LazyOnnxEmbedder implements Embedder {
+  readonly id: string;
+  readonly revision: string;
+  readonly sha256: string;
+  readonly dim: number;
+  private loading: Promise<OnnxEmbedder> | null = null;
+
+  constructor(
+    private readonly settings: OnnxModelSettings,
+    dim: number,
+    private readonly create: (options: OnnxEmbedderOptions) => Promise<OnnxEmbedder> = (o) => OnnxEmbedder.create(o),
+  ) {
+    this.id = onnxIdOf(settings);
+    this.revision = settings.revision;
+    this.sha256 = onnxSha256(settings.onnx, settings.revision, settings.dtype, settings.pooling);
+    this.dim = dim;
+  }
+
+  /** Loads the model now (once). */
+  warm(): Promise<OnnxEmbedder> {
+    this.loading ??= this.create({ model: this.settings.onnx, revision: this.settings.revision, pooling: this.settings.pooling, dtype: this.settings.dtype, id: this.id });
+    return this.loading;
+  }
+
+  async embed(texts: readonly string[]): Promise<Float64Array[]> {
+    return (await this.warm()).embed(texts);
   }
 }
