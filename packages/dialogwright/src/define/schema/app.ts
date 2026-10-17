@@ -16,7 +16,7 @@ const NUMBER_LOCALE_KEY = new RegExp(`(?:${E164.source})|(?:${ENV_REFERENCE.sour
 
 /**
  * app.yaml: who the app is and how it presents itself. It mirrors the App contract's presentation
- * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, callerNumber, textConsent, callData, startParameters, transfer, hours, onStart, fixtures, testing, and the
+ * fields (id, brand, console, voice, handoff, wording, thresholds, carrySlots, unsureIntent, changeSlotWithValue, anythingElseSilence, ackIntent, callerNumber, textConsent, callData, startParameters, transfer, hours, onStart, fixtures, testing, and the
  * non-text parts of prompts); the dialog itself lives in intents.yaml, forms.yaml, prompts.yaml,
  * policy.yaml and identity.yaml.
  */
@@ -589,6 +589,18 @@ export const appSchema = z
           '"repeat": the no_input line and "anything else?" again. "opener": the no_input line and the opening question (ask_intent). "goodbye": the no_input line and the goodbye, ending the call as done does. ' +
           'With repeat and opener a further silence walks the intent ladder as at the opening (the keypad menu, then a person). Default "repeat".',
       ),
+    ackIntent: z
+      .strictObject({
+        repeat: z
+          .enum(['say', 'skip'])
+          .optional()
+          .describe(
+            'What a request the call has already acknowledged gets when the caller makes it again (a second coverage question after the first was answered): "say", the acknowledgement again; "skip", none: the call goes straight to the form\'s first question, or its answer. ' +
+              'A request is acknowledged once it is started with ack_intent, or named in ack_intent_then or ack_queued. Default "say".',
+          ),
+      })
+      .optional()
+      .describe('The acknowledgement a request starts with (the ack_intent line, "Sure, I can help you {intentLabel}."): whether a request made again in the same call hears it again. Its other wordings, said in turn, are the line\'s `variants` in prompts.yaml. Default: said every time.'),
     callerNumber: callerNumber.optional(),
     records: records.optional(),
     textConsent: textConsent.optional(),

@@ -182,6 +182,8 @@ export type { Ack } from './core/fia';
 export type { Decision, PromptDecision, CompleteDecision, HandoffDecision } from './core/decision';
 export { handoff } from './core/decision';
 export { handoffPromptId } from './prompts/render';
+// The line an ack says, for a wording past its first (`ack_intent` for `ack_intent.v2`: prompts.yaml's variants).
+export { lineOf } from './prompts/segments';
 
 // Reading values out of words, for slot parsers: dates and birthdays, spoken numbers, masks, and the
 // candidate spans a span question offers the model.

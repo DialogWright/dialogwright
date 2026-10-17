@@ -87,6 +87,12 @@ prompts:
   ```yaml
   anythingElseSilence: goodbye   # nothing said after "anything else?" ends the call
   ```
+- `ackIntent: { repeat: skip }` leaves out the acknowledgement a request starts with ("Sure, I can help you check coverage.", the `ack_intent` line) when the caller makes a request the call has already acknowledged: a second coverage question goes straight to its answer, or to the form's first question. `say`, the default, says it every time. A request counts as acknowledged once it is started with `ack_intent`, or named in `ack_intent_then` or `ack_queued`. The line's other wordings, said in turn as one request follows another, are its `variants` in prompts.yaml: [The acknowledgement of a request](#the-acknowledgement-of-a-request).
+
+  ```yaml
+  ackIntent:
+    repeat: skip   # a second coverage question is answered without "Sure, I can help you check coverage." first
+  ```
 - `fixtures: { dir: fixtures }` says where the corpus and the scripted calls are. The folder is relative to the app's package root, which is the folder its commands run in: the engine reads it from the working directory, and an app's `regress`, `cli` and `serve` scripts run in its package. It must stay inside the package, so an absolute path or one with `..` is refused. `check` then requires every intent to have examples there.
 - `testing: { adversarial: on }` runs the adversarial suite with the regression: cases the engine generates from the app (injections, relationships claimed and not proven, off-scope requests, codes said aloud or never sent, hostile replies from every tool), each held to properties over its run, never to lines ([section 15](15-the-adversarial-suite.md#15-the-adversarial-suite)). Default `off`; an app from `create-app` has it on.
 - `prompts` holds what is said about prompts besides their text: which opening lines to use, which variables are always spoken by text to speech, the clips' vocabulary.
@@ -446,6 +452,26 @@ prompts:
 - `interruptible: false` for a line that must be heard whole (a keypad instruction, a statement).
 - `mode` is `fixed` (the default: the text, word for word) or `generative`: the line is worded by a model for the moment, with a `goal`, under checks that hold it to this text's data and meaning, and this text is said whenever a check fails or the model is slow. `when` limits it to some situations or channels, `from` names variables that hold collected content the line may summarize, and `prescribed: true` keeps a line word for word whatever its form says (`pnpm check` refuses `mode: generative` on it). `generate` makes a framed line: its text stays fixed but for the spans it names (`{summary}`), each worded by a model from a slot's content (`from`, a `goal`, `words`), the pattern for reading back a summary of what the caller said ([16.3](16-generated-wording.md#163-summarizing-what-a-caller-said-a-framed-line)). A form's `wording: generative` generates its lines, and its `summary: { onNo: read-back }` reads its summary again word for word on a bare no (after `read_back_exact`). A read-back that may summarize a value a `confirmed` rule holds the caller to says `summarizesConfirmed: true`. All of it is opt-in, and the app's choice: [16. Generated wording](16-generated-wording.md).
 - The engine itself says about thirty lines by name (`goodbye`, `no_input`, `offer_transfer`, the handoff lines, and so on), and `ask_<slot>` and `ask_<slot>_retry` for every slot. Some lines depend on the slot's spec in the code: `ask_<slot>_dtmf` for a slot with a keypad rung (`dtmf`), `confirm_<slot>` and `ask_<slot>_dtmf` for a slot whose every spoken value is read back (`spokenConfirm: 'always'`; `confirm_<slot>` alone where a no asks the slot again, `readBackNo: 'ask'`, as for a library slot's `confirm: always`), `confirm_<slot>` for one that reads some values back (`confirmValues`), `ack_<slot>` for one acknowledged by confidence (`spokenConfirm: 'by-confidence'`), and the slot's `partialPromptId`. A role whose access to a tool is `person` needs the handoff line for its role rule's `reason` (`handoff_role_person` by default). `pnpm check` lists any that are missing and says when the engine says each (section 7). It cannot see the lines a slot's `fill` names (`disambiguate_<slot>`, a `retryPromptId`, a help prompt) unless the slot declares them in its `prompts` (section 5).
+
+#### The acknowledgement of a request
+
+As a request starts, the engine says `ack_intent` with the request's label ("Sure, I can help you {intentLabel}."), so the caller knows which task began. A call that asks for one thing after another hears it each time, in the same words; a caller who asks three coverage questions hears it three times. Two choices, each the app's, change that (the maintainer's decision after a live call, 2026-10-17):
+
+- **Other wordings, in turn.** `variants` on `ack_intent` lists the line's other wordings. The call says `text` the first time, then each variant in order, then `text` again, by how many times the call has said the line: never at random, so a replay or a recording says the same. Each is fixed text, said word for word, with the same variables as `text` (`pnpm check` refuses one that names others, `variants` on any other line, and `variants` on a generated line). Read each with every label the app has ("check on a claim", "report a new claim"): a wording that fits one may not fit another.
+- **No acknowledgement for a request made again.** app.yaml's `ackIntent: { repeat: skip }`: a request the call has already acknowledged goes straight to its question or its answer. A request skipped uses up no wording.
+
+```yaml
+# prompts.yaml
+  ack_intent:
+    text: Sure, I can help you {intentLabel}.
+    variants:
+      - Happy to help you {intentLabel}.
+      - Of course, let's {intentLabel}.
+      - All right, let's {intentLabel}.
+    interruptible: false
+```
+
+A wording past the first is said under its own prompt id, the line's id and its number: `ack_intent.v2`, `ack_intent.v3`. That is what the trace, the console and the regression's `acks` name, and what its clips are named by. App code that looks for the acknowledgement among a decision's acks compares `lineOf(a.promptId) === 'ack_intent'` (`lineOf` from `'dialogwright'`), so every wording is found. A locale's prompts.yaml gives its own `variants`, as many as it likes; without them it says its `text` every time. Both are off by default, so an app that says neither sounds as it always has. The Harbor Mutual example uses both ([its DESIGN.md](../../apps/harbor/DESIGN.md)).
 
 ### policy.yaml
 

@@ -964,6 +964,21 @@
         "goodbye"
       ]
     },
+    "ackIntent": {
+      "description": "The acknowledgement a request starts with (the ack_intent line, \"Sure, I can help you {intentLabel}.\"): whether a request made again in the same call hears it again. Its other wordings, said in turn, are the line's `variants` in prompts.yaml. Default: said every time.",
+      "type": "object",
+      "properties": {
+        "repeat": {
+          "description": "What a request the call has already acknowledged gets when the caller makes it again (a second coverage question after the first was answered): \"say\", the acknowledgement again; \"skip\", none: the call goes straight to the form's first question, or its answer. A request is acknowledged once it is started with ack_intent, or named in ack_intent_then or ack_queued. Default \"say\".",
+          "type": "string",
+          "enum": [
+            "say",
+            "skip"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "callerNumber": {
       "type": "object",
       "properties": {

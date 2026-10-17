@@ -41,15 +41,45 @@ export function exactClipId(promptId: string): string {
   return `${promptId}.exact`;
 }
 
+/** A wording's prompt id past a line's first (wordingId): the line's id, then `.v` and the wording's number, from 2. */
+const WORDING_ID = /^(.+)\.v([2-9]|[1-9]\d+)$/;
+
+/**
+ * The prompt id of a line's wording `n` (prompts.yaml's `variants`, said in turn: core/turn.ts
+ * ackIntent): the line's own id for its first wording, its `text`; `<id>.v2` for its first variant,
+ * `<id>.v3` for the next, and so on. A prompt id in prompts.yaml never has a dot, so none is ever
+ * mistaken for one. It is what the trace, the regression and the clips name the wording said by.
+ */
+export function wordingId(promptId: string, n: number): string {
+  return n <= 1 ? promptId : `${promptId}.v${n}`;
+}
+
+/**
+ * The line a prompt id says: the line whose wording it is for a wording past the first
+ * (`ack_intent` for `ack_intent.v2`, wordingId), and the id itself for every other. Compare with it
+ * when asking which line an ack is ("is this the acknowledgement of the request?").
+ */
+export function lineOf(promptId: string): string {
+  return WORDING_ID.exec(promptId)?.[1] ?? promptId;
+}
+
+/** The number of the wording a prompt id names (wordingId): 1 for a line's own id. */
+export function wordingOf(promptId: string): number {
+  const m = WORDING_ID.exec(promptId);
+  return m === null ? 1 : Number(m[2]);
+}
+
 /**
  * Each line's segments, by prompt id; a framed line with a frame of its own for its exact content
- * (prompts.yaml's `exactText`) has that frame's too, under `<id>.exact` (its clips' ids begin so).
+ * (prompts.yaml's `exactText`) has that frame's too, under `<id>.exact` (its clips' ids begin so), and
+ * a line with other wordings (`variants`) each of theirs, under its wording's id (`<id>.v2`, ...).
  */
 export function segmentsOf<M extends Record<string, PromptEntry>>(manifest: M): Record<keyof M, Segment[]> {
   return Object.fromEntries(
     Object.entries(manifest).flatMap(([id, entry]) => [
       [id, segmentTemplate(id, entry.text)],
       ...(entry.exactText !== undefined ? [[exactClipId(id), segmentTemplate(exactClipId(id), entry.exactText)]] : []),
+      ...(entry.variants ?? []).map((text, i) => [wordingId(id, i + 2), segmentTemplate(wordingId(id, i + 2), text)]),
     ]),
   ) as Record<keyof M, Segment[]>;
 }

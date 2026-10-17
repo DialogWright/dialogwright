@@ -6,7 +6,7 @@ import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { formLabel, informationOf, intentLabel, isFormIntent, relabelled, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
-import { anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
+import { ackRepeatOf, anythingElseSilenceOf, correctsFormOf, formOf, handoffUnconfirmedOf, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
 import type { App, CheckOutcome, Completion, FormCheck, FormId, Intent, Outcome, RouteOutcome, RoutePoint, SlotId, SummaryMove } from './app/types';
 import { maskCallerValue, recordsOf } from '../channel/maskByName';
@@ -32,7 +32,8 @@ import { atLeast, withAppThresholds, type Thresholds } from './thresholds';
 import type { ScreenResult } from './screen';
 import { auditDrafts } from './audit';
 import type { AuditDraft } from '../audit/types';
-import { decisionToActions, promptText, spokenText, type RenderContext } from '../prompts/render';
+import { decisionToActions, promptText, spokenText, wordingsOf, type RenderContext } from '../prompts/render';
+import { lineOf, wordingId } from '../prompts/segments';
 import { saidCode } from './spokenCode';
 import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
@@ -478,6 +479,7 @@ function enqueue(s: Session, intent: FormId | undefined): Ack[] {
   // A form the open one was reached through by next on this call is the task in hand, not another.
   if (intent === undefined || intent === s.form || s.queued.includes(intent) || s.reachedThrough?.includes(intent) === true) return [];
   s.queued.push(intent);
+  acknowledge(s, intent);
   return [{ promptId: 'ack_queued', vars: { intentLabel: formLabel(appOf(s), intent, s.locale) } }];
 }
 
@@ -1412,7 +1414,7 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
   const moved = (io.out.movedOn ?? []).map((m) => m.form);
   const labels = new Set([form, ...moved].map((f) => formLabel(io.app, f, s.locale)));
   const passedLines = new Set(moved.flatMap((f) => formOf(io.app, f).checksPassed ?? []));
-  const entering = (a: Ack): boolean => ((a.promptId === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
+  const entering = (a: Ack): boolean => ((lineOf(a.promptId) === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
   const kept = acks.filter((a) => !entering(a));
   const ending = checkEnding(s, check, decision, kept, summaryVars(s));
   io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(ending.then === 'form' ? { next: ending.form } : {}), ...(confirmed ? { confirmed: true as const } : {}) };
@@ -1691,11 +1693,36 @@ export function pendingAtSignIn(pc: PendingConfirmation | null): PendingConfirma
 }
 
 /**
- * "I'd be happy to help you ...": every form the caller picks is said out loud; a queued form chained
- * in by completeForm is bridged with bridge_next instead.
+ * "Sure, I can help you ...": every form the caller picks is said out loud; a queued form chained in
+ * by completeForm is bridged with bridge_next instead. Two exceptions, each the app's (the maintainer's
+ * decision after a live call, 2026-10-17, where three coverage questions each heard the same line):
+ * - With app.yaml's `ackIntent.repeat: skip`, a request the call has already acknowledged
+ *   (Session.acknowledged) is gone straight into: no line, so the form's first question, or its
+ *   answer, is what the caller hears.
+ * - With the line's other wordings (prompts.yaml's `variants`, in the call's language), each saying
+ *   is the next wording in turn: the text the first time, then each variant in order, then the text
+ *   again (Session.ackIntentSaid; `ack_intent.v2` and on, prompts/segments.ts wordingId). Never at
+ *   random, so a replay or a recording says the same; every wording is fixed text.
  */
-function ackIntent(s: Session, form: FormId): Ack {
-  return { promptId: 'ack_intent', vars: { intentLabel: formLabel(appOf(s), form, s.locale) } };
+function ackIntent(s: Session, form: FormId): Ack[] {
+  if (ackRepeatOf(appOf(s)) === 'skip' && s.acknowledged?.includes(form) === true) return [];
+  acknowledge(s, form);
+  return [{ promptId: nextWording(s, 'ack_intent'), vars: { intentLabel: formLabel(appOf(s), form, s.locale) } }];
+}
+
+/** A request acknowledged, kept (Session.acknowledged) only by an app that skips the line for one made again. */
+function acknowledge(s: Session, form: FormId): void {
+  if (ackRepeatOf(appOf(s)) !== 'skip' || s.acknowledged?.includes(form) === true) return;
+  s.acknowledged = [...(s.acknowledged ?? []), form];
+}
+
+/** The prompt id of the wording `line` is said in this time: its own, unless it has others in the call's language. */
+function nextWording(s: Session, line: string): string {
+  const count = wordingsOf(appOf(s), line, s.locale);
+  if (count < 2) return line;
+  const said = s.ackIntentSaid ?? 0;
+  s.ackIntentSaid = said + 1;
+  return wordingId(line, (said % count) + 1);
 }
 
 /**
@@ -1750,14 +1777,21 @@ function enterForm(s: Session, form: FormId, answers: AnswerMap, ctx: SlotContex
   const acks: Ack[] = aside !== undefined
     ? [...aside.acks]
     : queued.length && queue !== undefined
-      ? [{ promptId: 'ack_intent_then', vars: { a: formLabel(io.app, form, s.locale), b: formLabel(io.app, queue, s.locale) } }]
-      : [ackIntent(s, form)];
+      ? [ackIntentThen(s, form, queue)]
+      : ackIntent(s, form);
   // A yes to the greeting's proposal with the request in the same breath: the slot holds what the yes was to.
   const specs = (fromOutside ? slotsToFill(s).filter((spec) => listenOf(io.app, spec.id) !== 'form') : slotsToFill(s)).filter((spec) => spec.id !== io.kept);
   // The form entered hears the turn whole: a switch of task is no dictation (the prompted slot of the
   // form left may still be set, setForm keeps promptedFor), so no slot quiets the others here.
   const fill = fillSlots(s, answers, ctx, specs, { switching: true });
   return { decision: continueForm(s, io, [...acks, ...fill.acks], fill.disambiguate, fill.help), events: fill.events };
+}
+
+/** "Sure, I can help you {a}, and then {b}.": two requests named in one breath, both acknowledged. */
+function ackIntentThen(s: Session, form: FormId, queue: FormId): Ack {
+  acknowledge(s, form);
+  acknowledge(s, queue);
+  return { promptId: 'ack_intent_then', vars: { a: formLabel(appOf(s), form, s.locale), b: formLabel(appOf(s), queue, s.locale) } };
 }
 
 /** Whether `form` is an aside to the task in hand (FormDef.aside) to be taken now: another form is open. */
@@ -2217,7 +2251,7 @@ function menuChoice(s: Session, io: TurnIO, intent: Intent): Decision {
   }
   if (!isFormIntent(io.app, intent)) return { kind: 'ignore' };
   setForm(s, intent);
-  return continueForm(s, io, [ackIntent(s, intent)], null);
+  return continueForm(s, io, ackIntent(s, intent), null);
 }
 
 function handleDtmf(s: Session, digit: string, io: TurnIO): { decision: Decision; rows: GateRow[] } {

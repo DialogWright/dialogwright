@@ -5,6 +5,7 @@ import { describeDay } from '../../../core/extract/date';
 import type { Ack } from '../../../core/fia';
 import type { Session } from '../../../core/session';
 import { passed, type GateDecision, type Principal, type ToolCall } from '../../../gate/types';
+import { lineOf } from '../../../prompts/segments';
 import { reportFact, setAccountFact, setParcelsFact, setReportFact } from './facts';
 import type { TestkitForm } from './intents';
 import { dayPartDisplay } from './slots/shared';
@@ -41,7 +42,7 @@ function staffReportCheck(c: EntryContext): Decision | Refused | null {
   const { s } = c;
   const { decision } = call(c, { tool: 'createReport', params: {}, purpose: 'entry-check' });
   if (passed(decision, 'role')) return null;
-  const acks = c.acks.filter((a) => a.promptId !== 'ack_intent');
+  const acks = c.acks.filter((a) => lineOf(a.promptId) !== 'ack_intent');
   if (decision.verdict === 'BLOCK') {
     const ack = blockAck(s, decision.reason);
     if (ack) return { kind: 'refused', acks: [...acks, ack] };

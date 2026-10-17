@@ -1,4 +1,5 @@
 import type { App, FormId, Intent } from './types';
+import { lineOf } from '../../prompts/segments';
 
 /**
  * What the engine reads off an app's intents. Each helper stands in for a constant the engine used
@@ -88,7 +89,9 @@ export function labelIn(app: App, label: string, from: string | undefined, to: s
 export function relabelled<A extends { readonly promptId: string; readonly vars: Readonly<Record<string, string>> }>(app: App, acks: readonly A[], from: string | undefined, to: string | undefined): A[] {
   if (from === to) return [...acks];
   return acks.map((a) => {
-    const vars = Object.hasOwn(LABEL_LINE_VARS, a.promptId) ? LABEL_LINE_VARS[a.promptId]! : [];
+    // A line's other wording (`ack_intent.v2`) says the label as the line does.
+    const line = lineOf(a.promptId);
+    const vars = Object.hasOwn(LABEL_LINE_VARS, line) ? LABEL_LINE_VARS[line]! : [];
     const named = vars.filter((v) => a.vars[v] !== undefined);
     if (named.length === 0) return a;
     return { ...a, vars: { ...a.vars, ...Object.fromEntries(named.map((v) => [v, labelIn(app, a.vars[v]!, from, to)])) } };

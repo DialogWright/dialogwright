@@ -108,6 +108,13 @@ export type QuestionAtSummary = 'aside' | 'summary';
  */
 export type AnythingElseSilence = 'repeat' | 'opener' | 'goodbye';
 
+/**
+ * What a request the call has already acknowledged gets when the caller makes it again, for
+ * App.ackIntent: `say`, the acknowledgement (ack_intent) again; `skip`, none, so the form goes
+ * straight to its first question or its answer.
+ */
+export type AckRepeat = 'say' | 'skip';
+
 export interface FormDef {
   /** Business slots, in prompt priority order. */
   slots: readonly SlotId[];
@@ -1357,6 +1364,16 @@ export interface App {
    */
   anythingElseSilence?: AnythingElseSilence;
   /**
+   * The acknowledgement a request starts with (ack_intent, "Sure, I can help you {intentLabel}.", app.yaml
+   * `ackIntent`): `repeat`, what a request the call has already acknowledged (started with ack_intent,
+   * or named in ack_intent_then or ack_queued) gets when the caller makes it again: `say`, the line
+   * again, or `skip`, none (Session.acknowledged). The line's other wordings, said in turn, are its
+   * `variants` (PromptManifestEntry). Without it, `say` (the maintainer's decision after a live call,
+   * 2026-10-17: a caller asking three coverage questions heard "Sure, I can help you check coverage."
+   * before each; an app opts in).
+   */
+  ackIntent?: { readonly repeat?: AckRepeat };
+  /**
    * The app's own named thresholds and their defaults (e.g. how sure the model must be of a part
    * of the day before a hook keeps it), read where the engine's are: TurnContext.thresholds and
    * SlotContext.thresholds carry them beside the engine's, and a run's `--threshold NAME=VALUE`
@@ -1493,7 +1510,7 @@ export interface App {
   /** The prompt manifest and voice tags, plus the spoken vocabulary that gets a clip of its own. */
   prompts: {
     /** Every line, in the app's default locale (App.locales.default; en-US for an app without locales). */
-    manifest: Record<string, { text: string; interruptible: boolean; exactText?: string }>;
+    manifest: Record<string, { text: string; interruptible: boolean; exactText?: string; variants?: readonly string[] }>;
     /** Per-clip voice tags for the clip generator (clip id to tag, e.g. "[calm]"); the tag syntax is the TTS provider's. */
     tags: Record<string, string>;
     /**
@@ -1742,6 +1759,12 @@ export interface PromptManifestEntry {
    * its content word for word; `text` is said with a generated span. Absent: `text` either way.
    */
   exactText?: string;
+  /**
+   * The line's other wordings (prompts.yaml's `variants`, ack_intent's only), each fixed and with the
+   * variables of `text`: said in turn after `text`, each under its own prompt id (`<id>.v2`, ...:
+   * prompts/segments.ts wordingId). Absent: `text` every time.
+   */
+  variants?: readonly string[];
 }
 
 /** The languages an app speaks (App.locales). */

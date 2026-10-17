@@ -1,4 +1,4 @@
-import type { AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
+import type { AckRepeat, AnythingElseSilence, App, ChangeSlotWithValue, FormDef, HandoffUnconfirmed, FormId, IdentityConfig, Intent, QuestionAtSummary, SlotId, ToolDef, ToolName, UnsureIntent } from './types';
 import type { SlotListen, SlotSpec } from '../slots/types';
 import { compiledPolicyOf, identityToolsOf, type CompiledPolicy } from '../../gate/compiled';
 import type { Principal } from '../../gate/types';
@@ -144,6 +144,11 @@ export function frustrationHeardIn(app: App, form: FormId | null, parked: FormId
   const forms = app.frustration?.forms;
   if (forms === undefined) return true;
   return (form !== null && forms.includes(form)) || (parked !== null && forms.includes(parked));
+}
+
+/** What a request the call has already acknowledged gets when made again: the app's (App.ackIntent.repeat), else `say`. */
+export function ackRepeatOf(app: App): AckRepeat {
+  return app.ackIntent?.repeat ?? 'say';
 }
 
 /** What a silence turn right after "anything else?" does: the app's (App.anythingElseSilence), else `repeat`. */

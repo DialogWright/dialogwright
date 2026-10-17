@@ -20,6 +20,15 @@
             "type": "boolean",
             "description": "Whether the caller may talk over the line (barge-in). false for lines that must be heard whole, such as a keypad instruction or a legal statement."
           },
+          "variants": {
+            "description": "ack_intent only: the line's other wordings, each fixed text said word for word (never generated), each with the same {variables} as `text`. The call says them in turn as it acknowledges one request after another: `text` the first time, then each variant in order, then `text` again (by how many times the call has said the line, never at random, so a replay or a recording says the same). A locale's prompts.yaml gives its own, as many as it likes; without them its `text` is said every time. Absent: `text` every time.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "mode": {
             "description": "How the line is produced. fixed: the text above, word for word. generative: worded by a model for the moment (it needs a `goal`), under checks that hold it to this line's data and meaning, with the text above said whenever a check fails or the model is slow. Absent: fixed, unless its form says `wording: generative`; `mode: fixed` keeps a line of such a form fixed.",
             "type": "string",

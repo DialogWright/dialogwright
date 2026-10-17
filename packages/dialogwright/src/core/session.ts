@@ -238,6 +238,18 @@ export interface Session {
    * done. Absent on every other turn, so every session of an app without an aside is as it was.
    */
   parked?: ParkedTask;
+  /**
+   * The requests this call has acknowledged (started with ack_intent, or named in ack_intent_then or
+   * ack_queued), each once, in order: one made again is gone straight into, with no acknowledgement
+   * (App.ackIntent.repeat `skip`). Kept only by an app that says `skip`, so every other session is as it was.
+   */
+  acknowledged?: FormId[];
+  /**
+   * How many times this call has said ack_intent, kept only while the line has other wordings in the
+   * call's language (prompts.yaml's `variants`): the next is said in the wording after, in turn
+   * (core/turn.ts ackIntent). Absent until the first, so every other session is as it was.
+   */
+  ackIntentSaid?: number;
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -498,6 +510,7 @@ export function cloneSession(s: Session): Session {
     ...(s.reachedThrough ? { reachedThrough: [...s.reachedThrough] } : {}),
     ...(s.parked ? { parked: cloneParked(s.parked) } : {}),
     completed: [...s.completed],
+    ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
   };
 }

@@ -38,6 +38,9 @@ const QUESTION_AT_SUMMARY: readonly string[] = ['aside', 'summary'];
 /** What a silence turn right after "anything else?" may do (App.anythingElseSilence). */
 const ANYTHING_ELSE_SILENCE: readonly string[] = ['repeat', 'opener', 'goodbye'];
 
+/** What a request already acknowledged gets when made again (App.ackIntent.repeat). */
+const ACK_REPEAT: readonly string[] = ['say', 'skip'];
+
 /** Words a subject kind may not be: the anonymous kind, and the audit detail keys a subject's id is recorded beside. */
 const RESERVED_KINDS: readonly string[] = ['anonymous', 'channel', 'principal', 'level', 'factor', 'pass', 'config', 'configFiles'];
 
@@ -108,6 +111,19 @@ export function validateApp(app: App): void {
       if (entry.exactText !== undefined && app.generated?.lines[id]?.spans === undefined) fail(`the line "${id}"${locale === '' ? '' : ` (locale ${locale})`} has exactText, a frame for a framed line's exact words, but it is not framed (no span in App.generated): delete exactText`);
     }
   }
+  // Other wordings (prompts.yaml's variants) only on the acknowledgement of a request, each fixed and
+  // with the variables of the line's text, so whichever is said is given what it says. Every locale's too.
+  for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { text?: string; variants?: readonly string[] }>>][]) {
+    for (const [id, entry] of Object.entries(lines)) {
+      if (entry.variants === undefined) continue;
+      const where = `the line "${id}"${locale === '' ? '' : ` (locale ${locale})`}`;
+      if (id !== 'ack_intent') fail(`${where} has variants, which only ack_intent may have: delete them`);
+      if (entry.variants.length === 0) fail(`${where} has an empty list of variants: give at least one wording, or delete them`);
+      if (app.generated?.lines[id] !== undefined) fail(`${where} has variants and is generated: other wordings are fixed text, so the line is said word for word`);
+      const vars = (t: string): string => [...new Set([...t.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort().join(',');
+      for (const v of entry.variants) if (vars(v) !== vars(entry.text ?? '')) fail(`${where} has the variant "${v}", whose variables are not its text's`);
+    }
+  }
   // A framed line's text may not hold the gap a span's sentence marks its place with (render/types.ts SPAN_GAP).
   for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { text?: string }>>][]) {
     for (const [id, entry] of Object.entries(lines)) {
@@ -174,6 +190,7 @@ export function validateApp(app: App): void {
   if (app.changeSlotWithValue !== undefined && !CHANGE_SLOT_WITH_VALUE.includes(app.changeSlotWithValue)) fail(`changeSlotWithValue "${app.changeSlotWithValue}" is not "set-aside" or "decides"`);
   if (app.questionAtSummary !== undefined && !QUESTION_AT_SUMMARY.includes(app.questionAtSummary)) fail(`questionAtSummary "${app.questionAtSummary}" is not "aside" or "summary"`);
   if (app.anythingElseSilence !== undefined && !ANYTHING_ELSE_SILENCE.includes(app.anythingElseSilence)) fail(`anythingElseSilence "${app.anythingElseSilence}" is not "repeat", "opener" or "goodbye"`);
+  if (app.ackIntent?.repeat !== undefined && !ACK_REPEAT.includes(app.ackIntent.repeat)) fail(`ackIntent.repeat "${app.ackIntent.repeat}" is not "say" or "skip"`);
   for (const [id, def] of Object.entries(app.intents)) {
     if (def.unsure !== undefined && !UNSURE_VALUES.includes(def.unsure)) fail(`intent "${id}" has unsure "${def.unsure}", which is not "confirm" or "no-match"`);
     // A priority intent (IntentDef.priority): true, false or { threshold, correctsForm }, its threshold

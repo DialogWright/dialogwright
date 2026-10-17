@@ -1,7 +1,7 @@
 import type { App } from '../core/app/types';
 import type { Decision } from '../core/decision';
 import { endAction, sayAction, transferAction, type Action, type Say, type SayPart } from '../channel/actions';
-import { exactClipId, isPauseOnly, joinSpoken, segmentTemplate, stripLeadingPause, ttsOnly, VAR } from './segments';
+import { exactClipId, isPauseOnly, joinSpoken, lineOf, segmentTemplate, stripLeadingPause, ttsOnly, VAR, wordingOf } from './segments';
 import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
@@ -12,6 +12,8 @@ export interface PromptEntry {
   interruptible: boolean;
   /** A framed line's frame for its exact content (prompts.yaml's `exactText`; frameOf). */
   exactText?: string;
+  /** The line's other wordings, said in turn (prompts.yaml's `variants`; each under its wordingId). */
+  variants?: readonly string[];
 }
 
 export interface RenderContext {
@@ -41,11 +43,24 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
  * not have, and no locale at all read the manifest, as an app without locales always does.
  */
 export function localePromptEntry(app: App, id: string, locale?: string): { entry: PromptEntry; localized: boolean } {
+  // A wording past a line's first (`ack_intent.v2`, wordingId): that variant of the line as the locale
+  // says it, or the line's own text where the locale gives it fewer (a switch of language mid-turn).
+  const line = lineOf(id);
+  if (line !== id) {
+    const found = localePromptEntry(app, line, locale);
+    const text = found.entry.variants?.[wordingOf(id) - 2];
+    return { entry: { text: text ?? found.entry.text, interruptible: found.entry.interruptible }, localized: found.localized };
+  }
   const own = locale === undefined || !app.locales || locale === app.locales.default ? undefined : app.locales.prompts[locale];
   if (own && Object.hasOwn(own, id)) return { entry: own[id]!, localized: true };
   const entry = Object.hasOwn(app.prompts.manifest, id) ? app.prompts.manifest[id] : undefined;
   if (!entry) throw new Error(`unknown prompt id: ${id}`);
   return { entry, localized: false };
+}
+
+/** How many wordings the line `id` has as `locale` says it: its text, and each of its `variants`. */
+export function wordingsOf(app: App, id: string, locale?: string): number {
+  return 1 + (localePromptEntry(app, id, locale).entry.variants?.length ?? 0);
 }
 
 /** The line `id` as `locale` says it (localePromptEntry); without a locale, the app's manifest's. */

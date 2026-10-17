@@ -1316,7 +1316,44 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
     problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
     problems.push(...checkConsentLine(config, locale, prompts, file, locate));
+    problems.push(...checkVariants(locale === config.defaultLocale ? null : locale, prompts, file, locate));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
+  }
+  return problems;
+}
+
+/**
+ * A line's other wordings (prompts.yaml's `variants`), in each locale: only the acknowledgement of a
+ * request (ack_intent) has them, said in turn; each is fixed text, so the line is not generated; and
+ * each names the variables of the line's text, so whichever is said is given what it says.
+ */
+function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
+  const problems: Problem[] = [];
+  for (const [id, p] of Object.entries(prompts)) {
+    if (p.variants === undefined) continue;
+    const line = locale === null ? `the line "${id}"` : `the ${locale} line "${id}"`;
+    const at = (path: (string | number)[]): { line: number; column: number } => locate(file, path) ?? { line: 1, column: 1 };
+    const path = ['prompts', id, 'variants'];
+    if (id !== 'ack_intent') {
+      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants, other wordings said in turn, which only ack_intent (the acknowledgement of a request) has`, fix: 'delete variants from this line' });
+      continue;
+    }
+    if (p.mode === 'generative' || p.generate !== undefined) {
+      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants and is generated (${p.mode === 'generative' ? 'mode: generative' : 'generate'}); its wordings are fixed text, said word for word`, fix: `delete variants, or ${p.mode === 'generative' ? 'mode: generative' : 'generate'}` });
+    }
+    const vars = variablesOf(p.text).sort();
+    p.variants.forEach((variant, i) => {
+      const own = variablesOf(variant).sort();
+      if (own.join(',') === vars.join(',')) return;
+      const named = vars.length === 0 ? 'no variable' : vars.map((v) => `{${v}}`).join(', ');
+      problems.push({
+        file,
+        ...at([...path, i]),
+        path: formatPath([...path, i]),
+        message: `${line}'s variant "${variant}" ${own.length === 0 ? 'names no variable' : `names ${own.map((v) => `{${v}}`).join(', ')}`}, and its text names ${named}: every wording is given what the text is`,
+        fix: `name exactly ${named} in the variant`,
+      });
+    });
   }
   return problems;
 }
