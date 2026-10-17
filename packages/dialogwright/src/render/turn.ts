@@ -17,7 +17,7 @@ import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
 import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
-import { KB_HOLD_VAR, KB_SOURCE_VAR } from '../kb/answer';
+import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_SOURCE_VAR } from '../kb/answer';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -96,10 +96,13 @@ function holdLineOf(app: App, locale: string | undefined, clips: RenderContext |
 export const DEFAULT_HOLD_TEXT = 'One moment while I gather that information.';
 /** The line said before a knowledge answer whose wording runs past its line's budget, where the app has it. */
 export const KB_HOLD_PROMPT = 'kb_hold';
+/** The second hold line, said past half an answer's limit where the app has it. */
+export const KB_HOLD_MORE_PROMPT = 'kb_hold_more';
 
 /**
  * Hands a channel lines to say before the turn has ended: the turn's lines before a knowledge answer still
- * being worded, and the hold line after them, with the turn's result so far (its decision and session).
+ * being worded, and the hold line after them, with the turn's result so far (its decision and session);
+ * and, past half the answer's limit, a second batch of the second hold line alone, said after the first.
  * True when the channel said them (they are then not said again at the turn's end); false where it cannot,
  * and they go with the turn's other lines.
  */
@@ -737,13 +740,29 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       actions.splice(at, 0, line);
       hold = { index: at, promptId: own ? KB_HOLD_PROMPT : null, atMs: performance.now() - t0, early: sent };
       if (sent) early = at + 1;
+      // Still not worded past half the answer's limit: the second hold line (kb_hold_more, in turn through its
+      // wordings), right after the first, to the caller at once where the first went early, so a long wait is
+      // never silence. Only the app's own line, in the call's language.
+      const moreId = firstWorded?.said.vars[KB_HOLD_MORE_VAR];
+      const locale = result.session.locale;
+      const inDefault = locale === undefined || app.locales === undefined || locale === app.locales.default;
+      if (moreId !== undefined && Object.hasOwn(app.prompts.manifest, KB_HOLD_MORE_PROMPT) && (inDefault || localePromptEntry(app, KB_HOLD_MORE_PROMPT, locale).localized)) {
+        const stillDone = await Promise.race([Promise.all(answering).then(() => true as const), after(Math.max(0, answerLimit / 2 - (performance.now() - t0))).then(() => false as const)]);
+        if (!stillDone) {
+          const more = promptSay(app, moreId, {}, false, input.clips ?? null, locale);
+          const moreSent = sent && input.early !== undefined ? input.early([more], { ...result, actions: [...before, line, more] }) : false;
+          actions.splice(at + 1, 0, more);
+          hold.more = { promptId: KB_HOLD_MORE_PROMPT, atMs: performance.now() - t0, early: moreSent };
+          if (moreSent) early = at + 2;
+        }
+      }
     }
   }
   const settledAnswers = await Promise.all(answering);
   for (const t of timers) clearTimeout(t);
   abort.abort();
-  // The lines after the hold line moved one on.
-  const shift = (index: number): number => (hold !== undefined && index >= hold.index ? index + 1 : index);
+  // The lines after the hold line moved one on (two, where the second was said too).
+  const shift = (index: number): number => (hold !== undefined && index >= hold.index ? index + (hold.more !== undefined ? 2 : 1) : index);
   let kbSaid: RenderedTurn['kbSaid'];
   const answerLines: RenderLine[] = [];
   answers.forEach((a, i) => {

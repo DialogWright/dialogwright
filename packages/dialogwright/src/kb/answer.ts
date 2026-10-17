@@ -50,6 +50,8 @@ export const KB_DOCUMENTS_OPENING_PROMPT = 'kb_documents_opening';
 export const KB_SOURCE_VAR = 'answerSource';
 /** The variable an answer line carries the wording of its hold line in (kb_hold, rotating): the hold line said if its wording is late. */
 export const KB_HOLD_VAR = 'answerHold';
+/** The variable an answer line carries the wording of its second hold line in (kb_hold_more, rotating), where the app has it. */
+export const KB_HOLD_MORE_VAR = 'answerHoldMore';
 /** The param the resolving tool and an account line's tool are given the topic in. */
 export const KB_TOPIC_PARAM = 'topic';
 
@@ -224,7 +226,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
       const line = opts.documents?.answer ?? KB_DOCUMENTS_ANSWER_PROMPT;
       const heard = s.slots[opts.slot]?.heard;
       const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', result.answer, unavailablePrompt);
-      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, [KB_HOLD_VAR]: holdWording(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
+      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
     }
     const defaultLocale = defaultLocaleOf(app);
     const locale = result.source.locale ?? s.locale ?? defaultLocale;
@@ -236,7 +238,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
       account = read.decision.verdict === 'ALLOW' ? fillAccountLine(line.text, read.value) : null;
       if (account !== null) answer = `${answer} ${account}`;
     }
-    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer, ...wordingVars(app, answerPrompt, account, s.slots[opts.slot]?.heard), ...(answerSpanOf(app.generated?.lines[answerPrompt]) !== null ? { [KB_HOLD_VAR]: holdWording(app, s) } : {}) } }] };
+    return { kind: 'said', acks: [...c.acks, { promptId: answerPrompt, vars: { [KB_ANSWER_VAR]: answer, ...wordingVars(app, answerPrompt, account, s.slots[opts.slot]?.heard), ...(answerSpanOf(app.generated?.lines[answerPrompt]) !== null ? { [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s) } : {}) } }] };
   };
 }
 
@@ -249,6 +251,11 @@ const hasPrompt = (app: App, id: string): boolean => Object.hasOwn(app.prompts.m
  */
 function holdWording(app: App, s: Session): string {
   return hasPrompt(app, 'kb_hold') ? nextWording(s, 'kb_hold') : 'kb_hold';
+}
+
+/** The wording of the second hold line for this answer (kb_hold_more, in turn), where the app has it. */
+function holdMoreVars(app: App, s: Session): Record<string, string> {
+  return hasPrompt(app, 'kb_hold_more') ? { [KB_HOLD_MORE_VAR]: nextWording(s, 'kb_hold_more') } : {};
 }
 
 /**

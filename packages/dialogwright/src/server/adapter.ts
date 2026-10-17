@@ -1801,8 +1801,11 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       if (entry.socket === null) return false;
       const wait = deps.incompleteWait;
       if (wait && wait.waitMs > 0 && event.type === 'user.speech' && event.final && holdsReply(result, wait.below ?? entry.opts.thresholds.GATE_COMPLETE) !== null) return false;
-      earlyFrames = actionsToFrames([...lines]);
-      earlySent = sendFrames(deps, entry, earlyFrames, result.decision);
+      // A second batch (the second hold line) goes after the first, in order.
+      const batch = actionsToFrames([...lines]);
+      earlyFrames = [...earlyFrames, ...batch];
+      const before = earlySent;
+      earlySent = before === null ? sendFrames(deps, entry, batch, result.decision) : before.then(async (prev) => [...prev, ...(await sendFrames(deps, entry, batch, result.decision))]);
       entry.frames.write('log', { holdLine: { turn: result.session.turnIndex } });
       return true;
     };

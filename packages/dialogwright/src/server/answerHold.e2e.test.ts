@@ -46,6 +46,14 @@ const dir = folder('library-kb-hold', {
 });
 const APP = defineApp(dir, { ...codeFor(dir), knowledge: { retriever: fixedRetriever({ [QUESTION]: ['late_fees'] }) } });
 
+/** The same app with a second hold line (kb_hold_more), said past half the answer's limit. */
+const MORE = 'Still looking, thanks for waiting.';
+const moreDir = folder('library-kb-hold-more', {
+  'prompts.yaml': (t) => APP_EDITS['prompts.yaml']!(t).replace("  kb_answer:\n    text: '{answer}'\n    interruptible: false\n", `${FRAMED_ANSWER}  kb_hold_more:\n    text: ${MORE}\n    interruptible: false\n`),
+  'kb/topics.yaml': (t) => t.replace('    from: getFees\n', '    from: getFees\n  risk: low\n'),
+});
+const APP_MORE = defineApp(moreDir, { ...codeFor(moreDir), knowledge: { retriever: fixedRetriever({ [QUESTION]: ['late_fees'] }) } });
+
 /** The decision model: the caller asks the library a question about the late fees, whatever the words. */
 const ANSWERS: AnswerMap = { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice({ late_fees: 0.92, none: 0.08 }), manipulation: noul(0.02) };
 const perception: JevClient = {
@@ -82,9 +90,9 @@ afterEach(async () => {
 });
 afterAll(cleanScratch);
 
-async function start(client: GatedRenderClient): Promise<string> {
+async function start(client: GatedRenderClient, app = APP, answerMs = 10_000): Promise<string> {
   resetAppsForTest();
-  registerApp(APP);
+  registerApp(app);
   const traceDir = mkdtempSync(join(tmpdir(), 'answer-hold-'));
   dirs.push(traceDir);
   const config = loadConfig({
@@ -92,7 +100,7 @@ async function start(client: GatedRenderClient): Promise<string> {
     TODAY_OVERRIDE: TODAY, TRACE_DIR: traceDir, AUDIT_DIR: join(traceDir, 'audit'), AUDIO_DIR: traceDir, DASHBOARD: 'off', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com',
   });
   // The line's budgets small, the answer's own limit long: the hold line is due at once, the answer whenever the test lets it be.
-  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: 10_000, chat: 10_000 }, drift: new HeuristicStubClient({ todayIso: TODAY, app: APP }) };
+  const renderer: Renderer = { client, timeoutMs: { voice: 30, chat: 30 }, checkTimeoutMs: { voice: 20, chat: 20 }, answerTimeoutMs: { voice: answerMs, chat: answerMs }, drift: new HeuristicStubClient({ todayIso: TODAY, app }) };
   running = await startServer(config, { host: '127.0.0.1', client: perception, log: () => {}, renderer });
   return `ws://127.0.0.1:${running.port}`;
 }
@@ -159,6 +167,59 @@ describe('the hold line in a chat', () => {
       expect(shown[0]).toBe('Sure, I can help you answer a question.');
       expect(shown[1]).toBe(HOLD);
       expect(shown.slice(2).join(' ')).toBe(`${WORDED} ${ACCOUNT} Is there anything else I can help with?`);
+    } finally {
+      socket.close();
+    }
+  });
+});
+
+describe('the second hold line, past half the answer\'s limit', () => {
+  for (const carrier of ['twilio', 'telnyx'] as const) {
+    it(`${carrier}: the hold line, then the second when the wording is still not ready, then the answer, in order and once each`, async () => {
+      const render = new GatedRenderClient();
+      const ws = await start(render, APP_MORE, 2000);
+      const path = carrier === 'twilio' ? '/conversation' : '/conversation/telnyx';
+      const relay = await FakeRelay.connect(`${ws}${path}?token=${carrier === 'twilio' ? running!.tokens.mint('CA-more') : running!.tokens.mint('CA-more', 'telnyx')}`);
+      try {
+        relay.setup('CA-more');
+        await relay.waitForTexts(1);
+        relay.prompt(QUESTION);
+        await render.asked;
+        expect((await relay.waitForTexts(3)).slice(1).map((t) => t.trim())).toEqual(['Sure, I can help you answer a question.', HOLD]);
+        // Past half the 2 s limit, the second hold line, with the answer still not worded.
+        expect((await relay.waitForTexts(4)).at(-1)!.trim()).toBe(MORE);
+        render.answer();
+        const texts = await relay.waitForTexts(6);
+        expect(texts.slice(1).map((t) => t.trim())).toEqual(['Sure, I can help you answer a question.', HOLD, MORE, `${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
+        const textFrames = relay.received.filter((m) => m.type === 'text') as unknown as { token: string; last: boolean }[];
+        // Each batch ends on its own last: the hold line's, the second's, and the answer's reply.
+        expect([textFrames[2]!.last, textFrames[3]!.last, textFrames.at(-1)!.last]).toEqual([true, true, true]);
+      } finally {
+        relay.close();
+      }
+    });
+  }
+
+  it('in a chat: the hold line, the second, then the answer, never twice', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render, APP_MORE, 2000);
+    const socket = new WebSocket(`${ws}/chat`, { origin: 'https://www.example.com' });
+    const got: { type: string; text?: string }[] = [];
+    socket.on('message', (d) => got.push(JSON.parse(d.toString()) as { type: string; text?: string }));
+    await new Promise((resolve) => socket.once('open', resolve));
+    try {
+      socket.send(JSON.stringify({ type: 'start', v: 1 }));
+      await until(() => got.some((m) => m.type === 'say'));
+      const opening = got.length;
+      socket.send(JSON.stringify({ type: 'text', text: QUESTION }));
+      await render.asked;
+      await until(() => got.slice(opening).filter((m) => m.type === 'say').length >= 3);
+      render.answer();
+      await until(() => got.slice(opening).filter((m) => m.type === 'say').length >= 4);
+      await new Promise((r) => setTimeout(r, 50));
+      const shown = got.slice(opening).flatMap((m) => (m.type === 'say' ? [m.text] : []));
+      expect(shown.slice(0, 3)).toEqual(['Sure, I can help you answer a question.', HOLD, MORE]);
+      expect(shown.slice(3).join(' ')).toBe(`${WORDED} ${ACCOUNT} Is there anything else I can help with?`);
     } finally {
       socket.close();
     }

@@ -307,6 +307,11 @@ export interface RenderHold {
   atMs: number;
   /** Whether it went to the caller before the turn ended (RunOptions.early took it), or only with the turn's other lines. */
   early: boolean;
+  /**
+   * The second hold line (kb_hold_more), said right after the first where the answer was still not worded
+   * past half its limit; absent where it was not said (the answer came first, or the app has no kb_hold_more).
+   */
+  more?: { promptId: string; atMs: number; early: boolean };
 }
 
 /** What generated wording did on a turn (TraceRecord.render), only for an app that generates a line and a run with a renderer. */
