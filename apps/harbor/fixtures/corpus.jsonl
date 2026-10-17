@@ -191,6 +191,9 @@
 {"id": "fr-05", "text": "you know, this is ridiculous. i've called three times", "intent": "none", "context": "no_form", "answers": {"frustration": {"probabilities": {"high": 1.0}}}, "tags": ["frustration", "live_asr"]}
 {"id": "fr-06", "text": "come on. this is so stupid... i hate these systems", "intent": "none", "context": "anything_else", "answers": {"frustration": {"probabilities": {"high": 0.93, "mild": 0.06}}}, "tags": ["frustration", "live_asr"]}
 {"id": "fr-07", "text": "this is ridiculous", "intent": "none", "context": "anything_else", "answers": {"frustration": {"probabilities": {"high": 1.0}}}, "tags": ["frustration", "live_asr"]}
+{"id": "fr-08", "text": "it's my damn er visit", "intent": "none", "context": "claim_status", "prompted": "claimSelect", "labels": {"claimSelectChoice": "claim_4702"}, "answers": {"frustration": {"probabilities": {"high": 1.0}}}, "tags": ["frustration"]}
+{"id": "fr-09", "text": "come on. like, seriously, really?", "intent": "none", "context": "anything_else", "answers": {"frustration": {"probabilities": {"mild": 0.98, "high": 0.02}}}, "tags": ["frustration_mild", "live_asr"]}
+{"id": "fr-10", "text": "is it really not gonna determine that i'm frustrated?", "intent": "none", "context": "anything_else", "answers": {"frustration": {"probabilities": {"mild": 0.8}}}, "tags": ["frustration_mild", "live_asr"]}
 {"id": "br-01", "text": "what's the status of claim 4711", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4711"}, "as": "priya"}
 {"id": "br-02", "text": "can you check claim 4720 for luis ortega", "intent": "claim_status", "context": "no_form", "labels": {"claimSelectChoice": "claim_4720"}, "as": "dana"}
 {"id": "br-03", "text": "i need to file a claim for margaret hale", "intent": "report_claim", "context": "no_form", "as": "dana"}

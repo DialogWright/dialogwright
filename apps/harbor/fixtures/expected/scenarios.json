@@ -2327,6 +2327,86 @@
     "pass": true,
     "mismatches": []
   },
+  "frustration-high-then-mild-acknowledged": {
+    "id": "frustration-high-then-mild-acknowledged",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_frustration",
+      "claim_status_in_review"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-high-then-mild-offered": {
+    "id": "frustration-high-then-mild-offered",
+    "decision": "prompt",
+    "promptId": "offer_transfer",
+    "acks": [],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "frustration-high-then-mild-at-the-greeting": {
+    "id": "frustration-high-then-mild-at-the-greeting",
+    "decision": "prompt",
+    "promptId": "nomatch_dtmf_menu",
+    "acks": [
+      "ack_frustration"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "intent_failed",
+    "form": null,
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": null,
+    "pass": true,
+    "mismatches": []
+  },
   "coverage-again-no-ack": {
     "id": "coverage-again-no-ack",
     "decision": "prompt",

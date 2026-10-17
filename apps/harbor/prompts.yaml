@@ -74,7 +74,7 @@ prompts:
     text: Now, for your other request.
     interruptible: false
   ack_frustration:
-    text: I'm sorry this is taking a while.
+    text: I understand, let's get this sorted.
     interruptible: false
   offer_transfer:
     text: Would you like me to connect you with a member services specialist, or keep going?
@@ -115,7 +115,7 @@ prompts:
     text: Connecting you with a member services specialist now.
     interruptible: false
   handoff_frustrated:
-    text: I'm sorry for the trouble. Connecting you with a member services specialist now.
+    text: Let me get you to a member services specialist who can help.
     interruptible: false
   handoff_max_attempts:
     text: Let me connect you with a member services specialist who can help.

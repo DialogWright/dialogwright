@@ -1775,7 +1775,7 @@
     "expect": {
       "decision": "prompt",
       "promptId": "ask_intent",
-      "text": "I'm sorry this is taking a while."
+      "text": "I understand, let's get this sorted."
     }
   },
   {
@@ -1791,7 +1791,7 @@
     "expect": {
       "decision": "prompt",
       "promptId": "ask_intent",
-      "text": "I'm sorry this is taking a while."
+      "text": "I understand, let's get this sorted."
     }
   },
   {
@@ -1820,7 +1820,7 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 2,
-      "text": "I'm sorry this is taking a while."
+      "text": "I understand, let's get this sorted."
     }
   },
   {
@@ -1886,7 +1886,80 @@
       "decision": "prompt",
       "promptId": "anything_else",
       "principalLevel": 2,
-      "text": "I'm sorry this is taking a while."
+      "text": "I understand, let's get this sorted."
+    }
+  },
+  {
+    "id": "frustration-high-then-mild-acknowledged",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it's my damn er visit"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 2,
+      "text": "I understand, let's get this sorted."
+    }
+  },
+  {
+    "id": "frustration-high-then-mild-offered",
+    "steps": [
+      {
+        "say": "claim status"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "dtmf": "123456"
+      },
+      {
+        "say": "it's my damn er visit"
+      },
+      {
+        "say": "come on. like, seriously, really?"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "offer_transfer",
+      "principalLevel": 2
+    }
+  },
+  {
+    "id": "frustration-high-then-mild-at-the-greeting",
+    "steps": [
+      {
+        "say": "you know, this is ridiculous. i've called three times"
+      },
+      {
+        "say": "come on. like, seriously, really?"
+      },
+      {
+        "say": "is it really not gonna determine that i'm frustrated?"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "nomatch_dtmf_menu",
+      "text": "I understand, let's get this sorted."
     }
   },
   {
