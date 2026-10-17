@@ -8,6 +8,7 @@ import {
   brokerOf, last4, memberOf, type Claim, type ClaimStatus, type DocumentCode, type LossType,
 } from './data';
 import { STAND_IN_INTAKE, type IntakeService, type IntakeTriage } from './intake';
+import { portalPages } from './portal';
 
 /**
  * Harbor Mutual, built from its folder. The YAML next to this src/ folder holds what is data: what a
@@ -421,6 +422,8 @@ export const code: AppCode = {
     delegates: () => BROKERS.map((b) => ({ id: b.id, name: b.name, role: b.role, attrs: { office: b.office, officeId: b.officeId } })),
     roleLabel: (role) => (role === 'office_admin' ? 'office administrator' : 'service rep'),
   },
+  // The demo portal (src/portal.ts): served at /harbor/portal only with HARBOR_DEMO_PORTAL=on.
+  pages: portalPages,
   facts: {
     initial: () => ({}),
     clone: (f) => ({ ...(f as Facts), ...((f as Facts).claims ? { claims: [...(f as Facts).claims!] } : {}) }),

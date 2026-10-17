@@ -46,6 +46,8 @@ APP-MAP.md      the app map: intents, forms, slots, actions and rules as diagram
 src/app.ts      the code: the tools, the form hooks and the gate's lookups, joined to the folder by defineApp
 src/data.ts     the fixture members, claims, brokers and usage behind the stub tools
 src/intake.ts   a stand-in for the claims intake service (its rules, run in process)
+src/portal.ts   the demo portal: a stand-in member and broker sign-in for the web chat, off unless HARBOR_DEMO_PORTAL=on
+assets/         the Harbor Mutual logo and emblem, for the portal's pages
 kb/             the knowledge base: settings, topics, the certificates' text by section, approved passages, the approvals log, the index
 fixtures/       the corpus, the scripted calls, the stub baseline, and the paraphrases retrieval is measured on (kb/)
 DESIGN.md       the design worksheet: the paragraph, every choice it left open, the gaps, and the notes on the skill
@@ -104,3 +106,41 @@ A change to the words in the YAML (criteria, labels, prompts, the questions a sl
 ## Running it
 
 `pnpm --filter @dialogwright/example-harbor serve` starts the phone line and the operator console. It needs `PUBLIC_HOST`, `TWILIO_AUTH_TOKEN` and `HANDOFF_NUMBER` (a 555 number is fine for local use; see `.env.example`), and runs on the stub client unless `JEV_CLIENT` says otherwise. It reads a settings file when `ENV_FILE=<path>` names one, such as this folder's `.env`; a variable already in the environment wins over the file. At the repository root, `pnpm configure --app harbor` asks and writes this folder's `.env` (mode 600), and `pnpm start --app harbor` runs the server with it, through a quick tunnel when `PUBLIC_HOST` is unset.
+
+## Try the chats on a server
+
+Harbor has a demo portal (`src/portal.ts`): a stand-in for the member and broker websites and their identity provider, so the web chat can be tried signed in, as a member or as a broker. It lists Harbor's fictional members and brokers, signs you in as whichever you choose with no password, and opens a branded page with the engine's chat widget on Harbor's chat, signed in with a token that lasts an hour. **It signs anyone in as anyone**, which is why it is off unless `HARBOR_DEMO_PORTAL=on`, and why it only ever lists Harbor's invented people. A real site does this part with its own sign-in (a password and a second factor) and its own identity provider.
+
+Off (the default), every path under `/harbor/portal` is a 404. On, the server that runs Harbor serves (its own server, or a host's, [14.15](../../docs/guide/14-running-it.md#1415-several-apps-on-one-server-hostyaml)):
+
+| Path | What it is |
+|---|---|
+| `GET /harbor/portal` | the sign-in page: every member (name, member ID) and broker (name, role, office) |
+| `POST /harbor/portal/sign-in` | signs in as the person chosen (a session cookie for an hour), then the chat page |
+| `GET /harbor/portal/chat` | the member's page (the chat open in the corner) or the broker's (their office's clients, the chat on the page) |
+| `POST /harbor/portal/token` | the signed-in person's token, which the widget's `getToken` asks for |
+| `POST /harbor/portal/sign-out` | ends the session |
+| `GET /harbor/portal/jwks.json` | the public key the tokens are verified with |
+
+The tokens are signed with an Ed25519 key (EdDSA) the server makes as it starts and keeps in memory only (a restart makes a new one, and a page from before it signs in again). Each names `iss` `harbor-demo-portal`, `aud` `harbor-chat`, and an hour's `exp`; a member's has `sub`, the member ID, and a broker's `broker_id` (what `principals.fromClaims` reads), with `role` and `office_id`; the broker's principal is read from Harbor's records by `broker_id`. The engine's chat verifies them against the portal's published key (`CHAT_SIGNIN=jwt`, [13.5](../../docs/guide/13-channels.md#135-sign-in-on-the-web-chat)): a member is signed in at level 2 (`identity.yaml`'s `signIn`), a broker as a broker with their role and office.
+
+The server's settings for it, with your public host (an https tunnel to the server) in place of `<public host>`:
+
+```sh
+CHAT=on
+CHAT_ALLOWED_ORIGINS=https://<public host>
+CHAT_SIGNIN=jwt
+CHAT_JWKS_URL=https://<public host>/harbor/portal/jwks.json
+CHAT_ISSUER=harbor-demo-portal
+CHAT_AUDIENCE=harbor-chat
+WIDGET=on
+WIDGET_FILE=<the repository>/packages/widget/dist/dialogwright-widget.js
+HARBOR_DEMO_PORTAL=on
+```
+
+- Build the widget first, at the repository root: `pnpm --filter @dialogwright/widget build` writes `packages/widget/dist/dialogwright-widget.js`, the file `WIDGET_FILE` names (an absolute path; the server refuses to start when it is missing). Without `WIDGET_FILE` the server looks for `node_modules/@dialogwright/widget/dist/dialogwright-widget.js` in the folder it runs in.
+- The server fetches the key from `CHAT_JWKS_URL`, its own public URL, through the tunnel, the first time someone signs in to the chat.
+- Under a host file, the server's settings file (the `.env` beside `host.yaml`) holds the chat's and the widget's settings; `HARBOR_DEMO_PORTAL=on` may go there or in this folder's own `.env`. When another app on the host signs its chat in with another identity provider, give Harbor its own `CHAT_ISSUER`, `CHAT_AUDIENCE` and `CHAT_JWKS_URL` in this folder's `.env` ([14.15](../../docs/guide/14-running-it.md#1415-several-apps-on-one-server-hostyaml)).
+- As it starts, the server says the portal is on, and names each chat setting above that is not as the portal signs (a `WARNING: demo portal:` line each, with the value it needs).
+
+Then open `https://<public host>/harbor/portal`, choose a member (Jordan Ellis, say: ask whether physical therapy is covered, or report a claim) or a broker (Priya Shah, an office administrator: ask for the status of claim 4711, and the diagnosis is withheld; Dana Ruiz, a service rep, is refused a filing). Sign out at the top, and choose someone else. The calls appear in the console as chats, each with the person the token named.
