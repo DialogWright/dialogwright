@@ -74,6 +74,9 @@ const COMMON_CAPITALS: ReadonlySet<string> = new Set([
   'where', 'why', 'how', 'is', 'are', 'was', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'shall', 'should', 'may', 'might',
   'your', 'you', "you're", "you'd", "you've", 'we', "we'll", "we're", 'it', "it's", 'that', "that's", 'this', 'there', "there's", 'for',
   'in', 'on', 'to', 'with', 'our', 'my', 'one', 'any', 'anything', 'is', 'got', 'understand', 'certainly', 'absolutely', 'thats',
+  // Words that open a sentence's turn of thought, not names (a live answer's "However, ..." was refused as a name).
+  'however', 'although', 'though', 'while', 'since', 'because', 'as', 'even', 'still', 'otherwise', 'instead', 'meanwhile', 'unless',
+  'not', 'only', 'these', 'those', 'they', "they're", 'each', 'every', 'both', 'most', 'some', 'many', 'no', 'not', 'there',
 ]);
 
 /** Lower-cased word tokens (letters, digits, apostrophes). */

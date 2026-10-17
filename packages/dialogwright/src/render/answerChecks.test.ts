@@ -46,6 +46,12 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
     expect(cleanAnswer('No, prescriptions are not covered.', act(PASSAGE, 'q', { sentence: spanSentence('Here it is: {answer}. Anything else?', 'answer') }))).toBe('No, prescriptions are not covered');
   });
 
+  it('takes a sentence that opens with a word such as However as no name, and still refuses a name the passage does not have', () => {
+    // A live answer (2026-10-17) was refused as naming someone because its second sentence began "However".
+    expect(checkAnswer('Prescriptions are not covered by this plan. However, your medical insurance usually covers them.', act())).toBeNull();
+    expect(checkAnswer('Prescriptions are not covered. Riverside covers them instead.', act())).toBe('foreign');
+  });
+
   it('refuses a figure the passage does not have (a digit, a number, amount or date word, a currency sign): the question is no source', () => {
     expect(checkAnswer('You have 90 days from the accident to file a claim.', act(DEADLINE, 'how long do i have, 90 days?'))).toBe('foreign');
     expect(checkAnswer('You have six months to file a claim.', act(DEADLINE, 'do i have six months'))).toBe('foreign');
