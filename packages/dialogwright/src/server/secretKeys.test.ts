@@ -93,7 +93,9 @@ describe('keys at a slot that hides its value', () => {
     expect(trace).toContain('"event":{"type":"user.key","digit":"•"}');
     expect(trace).not.toMatch(/"digit":"\d"/);
     expect(trace).not.toContain('dtmf:7');
-    for (const sink of [frames, trace, JSON.stringify(events)]) expect(sink).not.toContain('7395');
+    // The code as a number of its own anywhere: a leaked key is quoted or stands apart, never inside a longer
+    // number (a turn's measured timing, such as "totalMs":0.0773959, may hold the same four digits by chance).
+    for (const sink of [frames, trace, JSON.stringify(events)]) expect(sink).not.toMatch(/(?<![\d.])7395(?!\d)/);
   });
 
   it('but not at a slot no one hides, nor at the menu', async () => {
