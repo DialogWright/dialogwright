@@ -26,7 +26,10 @@ import { offeredTopics } from './questions';
  * With `unanswered: retry` (the default), the top label `unanswered` at `fillAt` or above (the bar a topic fills at)
  * is a question asked that none of the topics answers: a miss when the slot was asked for, as any; when
  * it was not, an invalid outcome the form holds to (`held`, SlotState.missed), so the slot's retry line
- * is said when the form comes to it rather than its question, as if nothing had been asked.
+ * is said when the form comes to it rather than its question, as if nothing had been asked. At its own
+ * question, `none` on top (the caller said nothing about what they want to know: "I have a question")
+ * is a miss with `reask`: counted, and the question asked again as it stands rather than the retry line,
+ * which says nothing answers what was asked.
  */
 export function topicFill(
   o: TopicOptions,
@@ -41,6 +44,9 @@ export function topicFill(
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '' } : { kind: 'absent' };
     // A question asked that no topic answers (`unanswered: retry`): a miss the form holds to when the slot was not asked for.
     const unanswered: SlotOutcome = ctx.prompted ? miss : { kind: 'invalid', reason: o.missReason, raw: '', held: true };
+    // At its own question, `none` (the caller said nothing about what they want to know): the question asked again, counted.
+    const nothingAsked = (label: string | undefined): boolean => o.unanswered === 'retry' && ctx.prompted && label === 'none';
+    const reask: SlotOutcome = { kind: 'invalid', reason: o.missReason, raw: '', reask: true };
     const isUnanswered = (label: string | undefined, p: number): boolean => o.unanswered === 'retry' && label === 'unanswered' && meetsThreshold(t, o.fillAt, p);
     const offered = new Set(offeredTopics(ctx.nominated, cap).map((n) => n.topic));
     const fillable = (label: string): boolean => label !== 'none' && label !== 'unanswered' && (offered.has(label) || (o.accept === 'catalog' && known.has(label)));
@@ -51,6 +57,7 @@ export function topicFill(
     if (o.disambiguate) {
       const [first, second] = rankProbabilities(probabilities);
       if (first && isUnanswered(first.label, first.p)) return unanswered;
+      if (nothingAsked(first?.label)) return reask;
       if (!first || !fillable(first.label) || !meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', first.p)) return miss;
       top = first;
       if (second && fillable(second.label) && !meetsThreshold(t, 'KB_TOPIC_MARGIN', first.p - second.p)) {
@@ -58,6 +65,7 @@ export function topicFill(
       }
     } else {
       if (typeof a.choice === 'string' && isUnanswered(a.choice, probabilities[a.choice] ?? a.confidence)) return unanswered;
+      if (nothingAsked(a.choice)) return reask;
       if (typeof a.choice !== 'string' || !fillable(a.choice)) return miss;
       top = { label: a.choice, p: probabilities[a.choice] ?? a.confidence };
     }

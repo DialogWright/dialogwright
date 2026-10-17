@@ -162,6 +162,17 @@ describe('the fill', () => {
     expect(asks.fill(unanswered, c())).toEqual({ kind: 'absent' });
   });
 
+  it('at its own question, none on top (nothing said about what the caller wants) is a miss that asks the question again', () => {
+    const nothing = { subjectTopic: choice({ none: 0.9, unanswered: 0.05, returns: 0.05 }) };
+    expect(fill(nothing, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', reask: true });
+    // Not asked for, it is absent as before; a topic under the bar is the plain miss.
+    expect(fill(nothing)).toEqual({ kind: 'absent' });
+    expect(fill({ subjectTopic: choice({ returns: 0.5, none: 0.3, unanswered: 0.2 }) }, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '' });
+    // With unanswered: ask, none is the miss it always was.
+    const asks = defineSlot('subject', { type: 'topic', unanswered: 'ask' }, undefined, { catalog: CATALOG });
+    expect(asks.fill(nothing, c({ prompted: true }))).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '' });
+  });
+
   it('fills nothing it was not offered when retrieval did not run (no nominations on the context)', () => {
     expect(subject.fill({ subjectTopic: choice({ returns: 0.9, none: 0.1 }) }, ctx('back'))).toEqual({ kind: 'absent' });
   });

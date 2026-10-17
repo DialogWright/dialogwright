@@ -54,6 +54,18 @@ describe('a question no topic answers, asked with the request (unanswered: retry
     expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 1 });
   });
 
+  it('after the miss, saying only that they have a question hears the question again, counted; three such tries end with a person', () => {
+    const c = call(APP);
+    say(c, 'can i bring my dog to the library', ASKED({ unanswered: 0.85, none: 0.1, late_fees: 0.05 }), nominated('late_fees'));
+    expect(c.last.decision).toMatchObject({ promptId: 'ask_libraryTopic_retry' });
+    const r = say(c, 'i have a question about the library', ANSWER({ none: 0.95, unanswered: 0.05 }), nominated('late_fees'));
+    expect(r.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
+    expect(heard(c)).toBe('What would you like to know?');
+    expect(r.session.slots.libraryTopic).toMatchObject({ attempts: 2 });
+    const end = say(c, 'i have a question', ANSWER({ none: 0.95, unanswered: 0.05 }), nominated('late_fees'));
+    expect(end.decision).toMatchObject({ kind: 'handoff' });
+  });
+
   it('in the middle of a task, the aside says the miss in place of its question; a topic then asked is answered and the task resumes', () => {
     const c = call(APP);
     say(c, 'I want to renew a book', { intent: choice({ renew_loan: 0.95, none: 0.05 }) });

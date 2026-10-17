@@ -117,7 +117,7 @@
 {"id": "sq-01", "text": "the outage credit", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "outage_credit"}}
 {"id": "sq-02", "text": "what happens if I pay after the due date", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "late_fees"}}
 {"id": "sq-03", "text": "budget billing", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "budget_billing"}}
-{"id": "sq-04", "text": "rebates for solar panels", "intent": "none", "context": "ask_question", "prompted": "subject"}
+{"id": "sq-04", "text": "rebates for solar panels", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "unanswered"}}
 {"id": "sq-05", "text": "how do I get the power put in my name at my new place", "intent": "none", "context": "ask_question", "prompted": "subject", "labels": {"subjectTopic": "start_stop_service"}}
 {"id": "ft-01", "text": "no thanks", "intent": "none", "context": "offer_transfer", "prompted": "subject", "confirm": "no", "tags": ["offer_transfer"]}
 {"id": "ft-02", "text": "yes, put me through to someone", "intent": "agent", "context": "offer_transfer", "prompted": "subject", "confirm": "yes", "tags": ["offer_transfer"]}

@@ -697,7 +697,7 @@ function codeReask(s: Session, io: TurnIO, acks: Ack[], promptId: 'ask_otp' | 'a
  * `intentQuestion` is that plain question for the intent: the opening one (`ask_intent`), or the one
  * the caller was asked instead (`anything_else`, App.anythingElseSilence).
  */
-function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain: boolean | 'frustration' = false, retryPromptId: string | null = null, intentQuestion = 'ask_intent'): Decision {
+function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain: boolean | 'frustration' | 'reask' = false, retryPromptId: string | null = null, intentQuestion = 'ask_intent'): Decision {
   const t = io.tc.thresholds;
   // A guard, not a path anything takes today: `nomatch` re-asks a pending confirmation before it
   // gets here and `proceed` maps a confirm target to a slot. Should a confirm turn reach it, the
@@ -734,8 +734,9 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   }
   if (step === 'open' && plain) return askedAgain(s, target, acks);
   // A frustration-only turn counted (caughtFrustration) is never told it was not caught: the slot's own
-  // question, at every rung short of its keypad line and its end.
-  if (plain === 'frustration' && !toDtmf) return askedAgain(s, target, acks);
+  // question, at every rung short of its keypad line and its end. So is a turn that said nothing the
+  // question asks for (SlotOutcome invalid `reask`: "I have a question" at a topic slot's question).
+  if ((plain === 'frustration' || plain === 'reask') && !toDtmf) return askedAgain(s, target, acks);
   // The slot said why the answer could not be its value, and the generic retry would misstate it.
   if (step === 'open' && retryPromptId !== null) return prompt(retryPromptId, target, {}, acks);
   // A missed answer: the slot's retry line for this failure (outcome.ts retryLineOf).
@@ -2265,7 +2266,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
         const retry = invalid?.kind === 'invalid' ? (invalid.retryPromptId ?? null) : null;
         // A value the slot refused is a value given: the miss is the miss, frustrated or not.
         const caught = invalid === undefined ? caughtFrustration(s, io, target === 'intent' ? undefined : target) : null;
-        return { decision: caught ?? failAttempt(s, target, io, [], false, retry), events: fill.events };
+        // Nothing the question asks for (`reask`): the question again as it stands, the attempt counted.
+        const reask = invalid?.kind === 'invalid' && invalid.reask === true ? 'reask' : false;
+        return { decision: caught ?? failAttempt(s, target, io, [], reask, retry), events: fill.events };
       }
       return { decision: continueForm(s, io, fill.acks, fill.disambiguate, fill.help), events: fill.events };
     }

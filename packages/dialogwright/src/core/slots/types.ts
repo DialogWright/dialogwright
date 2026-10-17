@@ -87,8 +87,11 @@ export type SlotOutcome =
    * misdescribe. `held`: said on a turn the slot was not asked for (a topic slot's question no topic
    * answers, asked with the request that opened the form): the slot keeps the miss (SlotState.missed),
    * and when its form next comes to it, the miss is said and counted in place of its question.
+   * `reask`: at the slot's own question, the caller said nothing it asks for (a topic slot's `none`:
+   * "I have a question"): counted as a miss, but the question is asked again as it stands, at every
+   * rung short of its keypad line and its end, rather than the retry line, which says what went wrong.
    */
-  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string; held?: true }
+  | { kind: 'invalid'; reason: string; raw: string; retryPromptId?: string; held?: true; reask?: true }
   /** The caller said whether they know the value rather than saying it; play this prompt in place of the question. */
   | { kind: 'help'; promptId: string };
 

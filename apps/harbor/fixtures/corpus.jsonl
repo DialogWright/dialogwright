@@ -60,7 +60,7 @@
 {"id": "tp-02", "text": "what about ambulance rides", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "ambulance"}}
 {"id": "tp-03", "text": "the emergency room", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "emergency_room"}}
 {"id": "tp-04", "text": "whether i'm covered for a broken bone", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "fracture"}}
-{"id": "tp-05", "text": "i just want to know what i'm covered for", "intent": "none", "context": "coverage", "prompted": "coverageTopic"}
+{"id": "tp-05", "text": "i just want to know what i'm covered for", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "unanswered"}}
 {"id": "tp-06", "text": "do you cover stitches at urgent care", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "urgent_care"}}
 {"id": "tp-07", "text": "no, i meant my tooth", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "dental_injury"}}
 {"id": "tp-08", "text": "follow up visits", "intent": "none", "context": "coverage", "prompted": "coverageTopic", "labels": {"coverageTopicTopic": "follow_up"}}

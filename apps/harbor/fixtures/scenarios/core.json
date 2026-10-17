@@ -2253,5 +2253,27 @@
       "promptId": "ask_coverageTopic_retry",
       "text": "I couldn't find anything in your plan information"
     }
+  },
+  {
+    "id": "coverage-unanswered-then-nothing-asked",
+    "steps": [
+      {
+        "say": "does my plan cover cosmetic surgery"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "i have a question about my coverage"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_coverageTopic",
+      "text": "What's your coverage question?"
+    }
   }
 ]
