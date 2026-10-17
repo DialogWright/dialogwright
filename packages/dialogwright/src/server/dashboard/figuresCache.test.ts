@@ -376,8 +376,12 @@ describe('a quarter read without holding up a call', () => {
     let apps: Awaited<ReturnType<FiguresCache['range']>> = [];
     const first = await longest(async () => { apps = await cache.range([source], from, to); });
     expect(apps[0]!.figures.calls).toBe(92 * 24 * 208);
-    const said = await longest(async () => { insightsOf(apps, undefined, { from, to }); });
-    const again = await longest(async () => { apps = await cache.range([source], from, to); insightsOf(apps, undefined, { from, to }); });
+    // The fastest of three runs: a stretch the code itself holds the loop for shows in every run, where a
+    // busy machine's pause (a CI runner's neighbour, a collection) shows in one. The first read is timed
+    // once, as it is the only cold one.
+    const fastest = async (work: () => Promise<unknown>): Promise<number> => Math.min(await longest(work), await longest(work), await longest(work));
+    const said = await fastest(async () => { insightsOf(apps, undefined, { from, to }); });
+    const again = await fastest(async () => { apps = await cache.range([source], from, to); insightsOf(apps, undefined, { from, to }); });
     expect(insightsOf(apps, undefined, { from, to }).totals.peak).toBe(40);
     // 20 ms on a developer's machine (about 6 ms measured); a CI runner running the whole suite at once is four to five
     // times slower, so it is held to 60 ms there, and a real regression is still caught by the local run before a commit.
