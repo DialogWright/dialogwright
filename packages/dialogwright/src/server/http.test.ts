@@ -830,11 +830,11 @@ describe('CONSOLE_LOCAL_ONLY', () => {
 describe('app route paths', () => {
   const route = (path: string, label = 'r'): AppRoute => ({ label, path, localOnly: false, handle: async () => false });
 
-  it('accepts lowercase letters, digits and hyphens in segments', () => {
-    expect(() => validateRoutes([route('/chat'), route('/portal-2'), route('/portal/help-1')])).not.toThrow();
+  it('accepts lowercase letters, digits, hyphens and underscores in segments', () => {
+    expect(() => validateRoutes([route('/chat'), route('/portal-2'), route('/portal/help-1'), route('/my_app/portal')])).not.toThrow();
   });
 
-  it.each(['chat', '/', '/chat/', '/Chat', '/chat x', '/chat.html', '/%63hat', '/chat/../x', '/a//b', '/chat?x', '/chat_x', ''])('refuses the path %j', (path) => {
+  it.each(['chat', '/', '/chat/', '/Chat', '/chat x', '/chat.html', '/%63hat', '/chat/../x', '/a//b', '/chat?x', '/chat_X', ''])('refuses the path %j', (path) => {
     expect(() => validateRoutes([route(path, 'odd')])).toThrow(/app route "odd": path .* must be/);
   });
 

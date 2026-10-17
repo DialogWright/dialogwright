@@ -54,7 +54,7 @@ import { PostgresNotices } from './stores/notices';
 import { openSweeps } from './stores/sweeps';
 import { chatTraceMeta } from './traceMeta';
 import type { ServiceUrls } from './services';
-import { validateRoutes, type AppRoute, type AppRoutesFactory } from './appRoutes';
+import { appPagesBase, mountAppPages, validateRoutes, type AppPagesFactory, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
 import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
@@ -73,7 +73,7 @@ export interface RunningServer {
   tokens: ServerTokenStore;
   /** The dashboard's event bus, or undefined when DASHBOARD=off. */
   bus?: DashboardBus;
-  /** The app's own pages its launcher mounted (ServerOverrides.routes), in the order they are asked. */
+  /** The pages mounted: its launcher's (ServerOverrides.routes), then each app's own (App.pages, under /<app id>), in the order they are asked. */
   routes: readonly AppRoute[];
   /** The engine's web chat (CHAT=on), or undefined when it is off. */
   chat?: ChatEndpoint;
@@ -681,10 +681,27 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     config, client: clientOf(routesApp), thresholds, todayIso, tools: toolsOf(routesApp), audit: auditOf(routesApp), bus, traceDir: traceDirOf(routesApp), serviceUrls: serviceUrlsOf(routesApp), log, now,
     anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
   }) ?? { routes: [] };
-  const routes = mounted.routes;
+  // Each app's own pages (App.pages), under /<app id>, on a server of one and a host's alike: each with
+  // its own app's client, tools, audit, traces and services, and its own settings (ctx.env's).
+  const pageWarnings: string[] = [];
+  const pages = appsRun.flatMap((a) => {
+    const factory = a.app.pages as AppPagesFactory | undefined;
+    if (factory === undefined) return [];
+    const base = appPagesBase(a.id);
+    const built = forApp(a.id, () => factory({
+      config, client: clientOf(a.id), thresholds, todayIso, tools: toolsOf(a.id), audit: auditOf(a.id), bus, traceDir: traceDirOf(a.id), serviceUrls: serviceUrlsOf(a.id), log, now,
+      anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
+      app: a.app, base, chatPath: host ? `${CHAT_PATH}/${a.id}` : CHAT_PATH,
+      ...(config.chat ? { chat: host ? forApp(a.id, () => chatSettingsOf(config.chat!, a.env)) : config.chat } : {}),
+      env: (name: string) => a.settings[name],
+    }));
+    for (const w of built.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
+    return forApp(a.id, () => mountAppPages(base, built.routes));
+  });
+  const routes = [...mounted.routes, ...pages];
   validateRoutes(routes);
   if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
-  for (const warning of mounted.warnings ?? []) log(`WARNING: ${warning}`);
+  for (const warning of [...(mounted.warnings ?? []), ...pageWarnings]) log(`WARNING: ${warning}`);
   // Each app's part of the webhooks: its hints, and app.yaml's startParameters and transfer targets read
   // from its environment now: an unset one, or a target neither a number nor a sip: URI, stops the server
   // here, with the fix.

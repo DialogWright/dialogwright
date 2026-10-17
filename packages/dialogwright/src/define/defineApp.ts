@@ -1,3 +1,4 @@
+import type { AppPagesFactory } from '../server/appRoutes';
 import type {
   App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse, TransferConfig, TransferSend,
@@ -105,6 +106,8 @@ export interface AppCode {
   lookups?: readonly string[];
   principals?: App['principals'];
   portal?: App['portal'];
+  /** The app's own pages, served under `/<app id>/` by its own server and a host's (App.pages). */
+  pages?: AppPagesFactory;
   facts?: App['facts'];
   questions?: App['questions'];
   callerState?: App['callerState'];
@@ -1130,6 +1133,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'locales', localesOf(config));
   put(app, 'principals', code.principals);
   put(app, 'portal', code.portal);
+  put(app, 'pages', code.pages);
   put(app, 'testing', code.testing);
   put(app, 'fixtures', a.fixtures);
   put(app, 'adversarial', a.testing?.adversarial === 'on' ? true : undefined);

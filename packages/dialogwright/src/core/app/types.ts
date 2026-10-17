@@ -1546,6 +1546,15 @@ export interface App {
    */
   portal?: PortalConfig;
   /**
+   * The app's own pages (a portal, a page with the web chat on it), served under `/<app id>/` by every
+   * server that runs the app: its own, and a host's (host.yaml) beside the other apps'. Built once the
+   * server has the app's client, tools, audit and console (server/appRoutes.ts AppPageDeps), each route
+   * keeping its own `localOnly`. Without it, the app serves no page of its own (a launcher's
+   * ServerOverrides.routes still may). Typed where an app writes it (AppCode.pages,
+   * server/appRoutes.ts AppPagesFactory): the core sits below the server and never names its types.
+   */
+  pages?: (deps: never) => unknown;
+  /**
    * For the regression harness and the decision-model stubs only, never read by the real model
    * path (the stub clients, JEV_CLIENT=stub, do read them): what the
    * corpus checks its labels against, how a corpus entry's mid-call state is seeded, the stubs'

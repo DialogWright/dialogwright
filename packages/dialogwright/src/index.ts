@@ -204,8 +204,8 @@ export { startServer, main as serverMain } from './server/index';
 export { loadHost } from './server/host';
 export type { HostApp, HostRouting } from './server/host';
 export type { RunningServer, ServerOverrides, Sidecars } from './server/index';
-export { routeOwns, validateRoutes } from './server/appRoutes';
-export type { AppRoute, AppRoutes, AppRouteDeps, AppRoutesFactory } from './server/appRoutes';
+export { appPagesBase, mountAppPages, routeOwns, validateRoutes } from './server/appRoutes';
+export type { AppPageDeps, AppPagesFactory, AppRoute, AppRoutes, AppRouteDeps, AppRoutesFactory } from './server/appRoutes';
 // An app's own pages append to the audit through AppRouteDeps.audit, whose append answers at once with
 // day files and with a promise with AUDIT_STORE=postgres: whenChained takes either.
 export { whenChained, type AuditSink } from './run/turn';

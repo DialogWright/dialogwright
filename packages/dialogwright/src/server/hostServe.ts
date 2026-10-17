@@ -14,8 +14,9 @@ import type { ServerConfig } from './config';
  * --host` and a service file for a host run; an app alone runs its own launcher (`pnpm --filter <app>
  * serve`), as before. The host file is `--host`, else HOST_FILE, else host.yaml in the folder it is run in.
  *
- * Each app's code is imported from its folder (app.ts or src/app.ts, as `pnpm check` reads it). An app's
- * own launcher, and what it starts beside the server (its services, its pages), does not run under a host:
+ * Each app's code is imported from its folder (app.ts or src/app.ts, as `pnpm check` reads it), with
+ * the pages it declares there (App.pages, under /<app id>). An app's own launcher, and what it starts
+ * beside the server (its services, the routes it mounts), does not run under a host:
  * a deployment that needs them writes a launcher of its own, serverMain with loadHost's apps in its
  * overrides (both exported by 'dialogwright').
  */
