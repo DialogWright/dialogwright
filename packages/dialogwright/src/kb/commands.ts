@@ -4,7 +4,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
 import { approveDocument, approveOne, formatApproveResult, placeOf, statusLines, notAPerson, type KbPlace } from './approval';
-import { bakeoff, formatResults, formatSweep, parseParaphrases, sweep } from './bakeoff';
+import { bakeoff, formatResults, formatSweep, parseParaphrases, parseSectionParaphrases, sweepSections, sweep } from './bakeoff';
+import { SectionRetriever, summarizableSections, summarizing } from './sections';
+import { DEFAULT_SECTIONS_CAP } from './schema';
 import { downloadModel, loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, DEFAULT_EMBEDDER, type PinnedModel } from './embed/model';
 import type { Embedder } from './embed/types';
 import { DenseRetriever, HybridRetriever } from './hybrid';
@@ -183,12 +185,60 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
 }
 
 /** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date] [--onnx-revision commit]`: each retriever's recall, candidates and latency (onnx only with its package and a pinned revision). */
+/** kb:bakeoff --sections: the section retriever, by keywords and by meaning, on paraphrases of sections; every document's sections, approved or not. */
+async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, todayArg: string | undefined, io: KbIo): Promise<number> {
+  const found = findKb(resolve(io.cwd, dirArg), dirArg, undefined);
+  if (!found.kb) {
+    for (const line of found.problems) io.err(line);
+    return 1;
+  }
+  const kb = found.kb;
+  if (!summarizing(kb)) {
+    io.err('dialogwright kb:bakeoff: --sections measures the sections of documents, and this knowledge base summarizes none: set documents: { summarize: on } in kb.yaml');
+    return 1;
+  }
+  const keys = summarizableSections(kb, { approved: false }).map((s) => s.key);
+  let paraphrases;
+  try {
+    paraphrases = parseSectionParaphrases(readFileSync(resolve(io.cwd, file), 'utf8'), keys);
+  } catch (error) {
+    io.err(`dialogwright kb:bakeoff: ${file}: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+  const locale = kb.defaultLocale;
+  const today = todayArg ?? new Date().toISOString().slice(0, 10);
+  const cap = kb.settings.documents?.cap ?? DEFAULT_SECTIONS_CAP;
+  const counted = Object.values(paraphrases.topics).reduce((n, l) => n + l.length, 0);
+  io.out(`${found.label}: ${keys.length} sections that may be summarized (approved or not), cap ${cap}; ${counted} paraphrases of ${Object.keys(paraphrases.topics).length} sections and ${paraphrases.none.length} lines about none`);
+  const runs: { name: string; retriever: SectionRetriever }[] = [{ name: 'keyword', retriever: new SectionRetriever(kb, { all: true, cap }) }];
+  const env = io.env ?? process.env;
+  const model = STATIC_MODELS[kb.settings.retrieval.embedder ?? DEFAULT_EMBEDDER]!;
+  if (modelPresent(model, env)) {
+    const embedder = loadPinnedModel(model, env);
+    const built = await buildIndex(kb, embedder);
+    const floor = kb.settings.documents?.floor ?? kb.settings.retrieval.floor ?? model.floor;
+    runs.push({ name: `hybrid (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
+  } else io.out(`hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
+  const results = [];
+  for (const run of runs) results.push(await bakeoff(run.retriever, paraphrases, locale, today, run.name));
+  io.out('');
+  for (const line of formatResults(results)) io.out(line);
+  const hybrid = runs[1]?.retriever;
+  if (doSweep && hybrid) {
+    io.out('');
+    io.out(`sweep of sections with ${model.id} (keyword hits always count; the floor applies to hits by meaning):`);
+    for (const line of formatSweep(await sweepSections(hybrid, paraphrases, locale))) io.out(line);
+  }
+  return 0;
+}
+
 export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--paraphrases', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
-  if (typeof parsed === 'string' || parsed.positional.length !== 1 || parsed.values['--paraphrases'] === undefined) {
-    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]`);
+  const parsed = parseArgs(args, { values: ['--paraphrases', '--sections', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
+  if (typeof parsed === 'string' || parsed.positional.length !== 1 || (parsed.values['--paraphrases'] === undefined) === (parsed.values['--sections'] === undefined)) {
+    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file> (the sections of documents)'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]\n       dialogwright kb:bakeoff <dir> --sections <file> [--sweep] [--today YYYY-MM-DD]   (kb.yaml documents: summarize on; every document's sections, approved or not)`);
     return 2;
   }
+  if (parsed.values['--sections'] !== undefined) return sectionsBakeoff(parsed.positional[0]!, parsed.values['--sections'], parsed.flags.has('--sweep'), parsed.values['--today'], io);
   const dir = resolve(io.cwd, parsed.positional[0]!);
   const found = findKb(dir, parsed.positional[0]!, undefined);
   if (!found.kb) {
@@ -198,7 +248,7 @@ export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promi
   const kb = found.kb;
   let paraphrases;
   try {
-    paraphrases = parseParaphrases(readFileSync(resolve(io.cwd, parsed.values['--paraphrases']), 'utf8'), kb);
+    paraphrases = parseParaphrases(readFileSync(resolve(io.cwd, parsed.values['--paraphrases']!), 'utf8'), kb);
   } catch (error) {
     io.err(`dialogwright kb:bakeoff: ${parsed.values['--paraphrases']}: ${error instanceof Error ? error.message : String(error)}`);
     return 1;

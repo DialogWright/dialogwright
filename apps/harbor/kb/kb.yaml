@@ -20,3 +20,14 @@ retrieval:
   cap: 8
   embedder: potion-base-8M
   floor: 0.35
+# Answers from documents (docs/designs/2026-10-17-kb-documents.md): where no topic answers, the line
+# may answer from the sections of the documents a person approved for summarizing (pnpm kb:approve
+# --document); a section a passage cites is never summarized, nor a certificate (summarize: false).
+# The cap and floor were chosen offline with pnpm kb:bakeoff --sections --sweep on
+# fixtures/kb/section-paraphrases.yaml (DESIGN.md, "Knowledge"): at cap 3 and floor 0.30, 98 percent
+# of 80 paraphrases nominate the right section, with 2.8 sections on average (2.3 for a line no
+# section answers, each a yes-or-no question the decision model answers).
+documents:
+  summarize: on
+  cap: 3
+  floor: 0.3

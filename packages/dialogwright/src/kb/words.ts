@@ -53,8 +53,8 @@ export function topicWordsFor(topic: KbTopic, defaultLocale: string, locale: str
   return wordsIn(topic, defaultLocale, wordingLocaleOf(topic, defaultLocale, locale));
 }
 
-/** The fields of a topic that are embedded: what callers' questions should match (not its answers). */
-export type TopicField = 'title' | 'keyword' | 'ask';
+/** The fields of a topic that are embedded: what callers' questions should match (not its answers); `section`, a document's section's heading or sentence (./sectionTexts.ts). */
+export type TopicField = 'title' | 'keyword' | 'ask' | 'section';
 
 /** One text the index embeds: a topic's title, a keyword or an example question, in one locale. */
 export interface IndexText {
@@ -70,7 +70,7 @@ export function textHash(text: string): string {
   return createHash('sha256').update(collapseWhitespace(text), 'utf8').digest('hex');
 }
 
-const FIELD_ORDER: Readonly<Record<TopicField, number>> = { title: 0, keyword: 1, ask: 2 };
+const FIELD_ORDER: Readonly<Record<TopicField, number>> = { title: 0, keyword: 1, ask: 2, section: 3 };
 
 /**
  * Every text the index embeds, in a fixed order (topic id, locale, field, hash): each topic's title,

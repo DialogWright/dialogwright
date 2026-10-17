@@ -50,6 +50,59 @@ export function parseParaphrases(text: string, kb: RetrievalKb): Paraphrases {
   return { topics, none };
 }
 
+/** Reads a paraphrase file of sections (kb:bakeoff --sections): its keys are section keys (`<document>#<section>`, any document's whatever its approval), or none. */
+export function parseSectionParaphrases(text: string, keys: readonly string[]): Paraphrases {
+  const data = parse(text) as unknown;
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error('a paraphrase file of sections is a map from a section key (<document>#<section>, or none) to a list of lines');
+  const topics: Record<string, string[]> = {};
+  let none: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || v.trim() === '')) throw new Error(`"${key}" is not a list of lines`);
+    if (key === 'none') none = value as string[];
+    else if (!keys.includes(key)) throw new Error(`"${key}" is not a section that may be summarized (with documents: summarize on: ${keys.join(', ') || 'none'})`);
+    else topics[key] = value as string[];
+  }
+  return { topics, none };
+}
+
+/**
+ * The section retriever's recall and candidates at every floor and cap, as `sweep` does for topics:
+ * the keyword scores and every hit by meaning at floor 0 for each line, the floor and cap applied and
+ * the two fused offline.
+ */
+export async function sweepSections(
+  sections: { keywordScores(text: string, locale: string): readonly { topic: string }[]; denseHits(text: string, floor: number): Promise<readonly { topic: string; score: number }[]> },
+  paraphrases: Paraphrases,
+  locale: string,
+  floors: readonly number[] = SWEEP_FLOORS,
+  caps: readonly number[] = SWEEP_CAPS,
+): Promise<SweepPoint[]> {
+  const lines = [...Object.entries(paraphrases.topics).flatMap(([topic, said]) => said.map((text) => ({ topic: topic as string | null, text }))), ...paraphrases.none.map((text) => ({ topic: null as string | null, text }))];
+  const scored = [];
+  for (const { topic, text } of lines) scored.push({ topic, kw: sections.keywordScores(text, locale), dense: await sections.denseHits(text, 0) });
+  const out: SweepPoint[] = [];
+  for (const floor of floors) {
+    for (const cap of caps) {
+      const topical: number[] = [];
+      const nones: number[] = [];
+      let hits = 0;
+      let total = 0;
+      for (const s of scored) {
+        const nominated = fuse(s.kw, s.dense.filter((h) => h.score >= floor), cap, (t) => t);
+        if (s.topic === null) {
+          nones.push(nominated.length);
+          continue;
+        }
+        topical.push(nominated.length);
+        total += 1;
+        if (nominated.some((n) => n.topic === s.topic)) hits += 1;
+      }
+      out.push({ retriever: 'hybrid', floor, cap, recall: total === 0 ? 0 : hits / total, meanCandidates: mean(topical), noneCandidates: mean(nones) });
+    }
+  }
+  return out;
+}
+
 /** One retriever's results. */
 export interface BakeoffResult {
   readonly retriever: string;
@@ -186,6 +239,7 @@ export function formatSweep(points: readonly SweepPoint[]): string[] {
   const lines: string[] = [];
   for (const kind of ['hybrid', 'dense'] as const) {
     const mine = points.filter((p) => p.retriever === kind);
+    if (mine.length === 0) continue;
     const caps = [...new Set(mine.map((p) => p.cap))];
     const floors = [...new Set(mine.map((p) => p.floor))];
     lines.push(`${kind}: recall / mean candidates (on none), by floor and cap`, `floor  ${caps.map((c) => `cap ${c}`.padStart(22)).join('')}`);

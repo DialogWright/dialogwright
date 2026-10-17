@@ -56,7 +56,7 @@ describe('the bake-off', () => {
     const err: string[] = [];
     const io = { out: () => {}, err: (l: string) => err.push(l), cwd: FIXTURES };
     expect(await main(['kb:bakeoff', join(FIXTURES, 'kb')], io)).toBe(2);
-    expect(err[0]).toContain('give one knowledge base (an app folder, or a kb folder) and --paraphrases <file>');
+    expect(err[0]).toContain('give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file>');
     expect(await main(['kb:index', '--wat'], io)).toBe(2);
     expect(err[1]).toBe('dialogwright kb:index: --wat is not an option');
   });

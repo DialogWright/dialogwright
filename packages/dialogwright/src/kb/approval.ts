@@ -9,6 +9,7 @@ import { collapseWhitespace } from './hash';
 import { excerptProblems, NO_EXCERPT } from './excerpt';
 import { APPROVALS_LOG, approvalLogged, documentApprovalLogged, logLineOf, parseApprovalLog, type ApprovalLogLine } from './log';
 import { approveCommandFor, approveDocumentCommandFor, EDITED_WHAT, kbContentProblems, kbLinkProblems, kbStateProblems, type Locate } from './rules';
+import { summarizableSections } from './sectionTexts';
 import { KB_FILE_ID, type KbPassageYaml, type KbPendingYaml } from './schema';
 import type { KbPassage, KnowledgeBase } from './types';
 
@@ -538,8 +539,17 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
   const docs = Object.values(kb.sources);
   if (kb.settings.documents?.summarize === 'on' || docs.some((d) => d.approval !== undefined)) {
     const on = kb.settings.documents?.summarize === 'on';
+    const withSections = new Set(summarizableSections({ ...kb, settings: { ...kb.settings, documents: { summarize: 'on', cap: kb.settings.documents?.cap ?? 4 } } }, { approved: false }).map((s) => s.document));
     lines.push(`documents for summarizing (kb.yaml documents: ${on ? 'on' : 'off, so none is answered from'}):`);
     for (const d of docs) {
+      if (d.summarize === false) {
+        lines.push(`  ${d.id}  never summarized (summarize: false): the source of passages only`);
+        continue;
+      }
+      if (!withSections.has(d.id)) {
+        lines.push(`  ${d.id}  nothing to summarize: a passage cites each of its sections`);
+        continue;
+      }
       const left = Object.values(d.sections).filter((s) => s.summarize === false).length;
       const sections = `${Object.keys(d.sections).length} sections${left > 0 ? `, ${left} never summarized` : ''}`;
       if (d.freshness === 'fresh' && documentApprovalLogged(kb, d) !== false) lines.push(`  ${d.id}  approved by ${d.approval!.approvedBy} (${d.approval!.owner}) on ${d.approval!.on}  (${sections})`);

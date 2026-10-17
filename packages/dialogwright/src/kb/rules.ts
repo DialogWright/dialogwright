@@ -5,6 +5,7 @@ import type { KbPassage, KnowledgeBase } from './types';
 import { MODEL_COMMAND, STATIC_MODELS } from './embed/model';
 import { INDEX_COMMAND, indexDrift, indexFileOf, sameEmbedder } from './vectorIndex';
 import { APPROVALS_LOG, approvalLogged, documentApprovalLogged } from './log';
+import { summarizableSections } from './sectionTexts';
 
 /**
  * The rules across a knowledge base's files, as problems in the loader's form
@@ -310,8 +311,11 @@ export interface KbWarning {
 export function kbDocumentWarnings(kb: KnowledgeBase, base = 'kb'): KbWarning[] {
   if (kb.settings.documents?.summarize !== 'on') return [];
   const out: KbWarning[] = [];
+  // A document every section of which a passage cites (or is left out) has nothing to summarize.
+  const withSections = new Set(summarizableSections(kb, { approved: false }).map((s) => s.document));
   for (const doc of Object.values(kb.sources)) {
     const file = `${base}/sources/${doc.id}.yaml`;
+    if (doc.summarize === false || !withSections.has(doc.id)) continue;
     if (doc.freshness === 'unapproved') out.push({ file, path: ['document'], message: `document "${doc.id}" is not approved for summarizing, so no answer is drawn from it`, fix: `read it whole, then ${approveDocumentCommandFor(doc.id)}` });
     else if (doc.freshness === 'edited') out.push({ file, path: ['approval', 'hash'], message: `document "${doc.id}" changed after its approval for summarizing, so no answer is drawn from it`, fix: `read what changed (${STATUS_COMMAND}), then ${approveDocumentCommandFor(doc.id)}` });
   }

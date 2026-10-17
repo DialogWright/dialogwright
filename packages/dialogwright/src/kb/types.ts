@@ -106,6 +106,8 @@ export interface KbSourceDocument {
   };
   /** Its sections by id; a paged document's say the pages they are on (provenance only, never hashed). */
   readonly sections: Readonly<Record<string, { readonly heading?: string; readonly text: string; readonly page?: number; readonly lastPage?: number; readonly summarize?: false }>>;
+  /** false: never summarized, whatever its approval (a document that is only the source of passages). */
+  readonly summarize?: false;
   /** Which callers an answer summarized from it is for (canonical: each fact's values sorted); absent, every caller. */
   readonly applies?: Readonly<Record<string, readonly string[]>>;
   /** Its approval for summarizing (kb.yaml documents), as the file has it. */
@@ -231,6 +233,12 @@ export type AppKnowledge = KbKnowledge | CodeKnowledge;
 export interface KbKnowledge {
   readonly kb: KnowledgeBase;
   readonly retriever?: Retriever;
+  /**
+   * The retriever of the sections that may be summarized (kb.yaml documents: on; ./sections.ts): the
+   * engine's default, which defineApp and defineKnowledge set. Absent with summarizing off, or with no
+   * section to summarize.
+   */
+  readonly sections?: Retriever;
   readonly topics?: undefined;
 }
 

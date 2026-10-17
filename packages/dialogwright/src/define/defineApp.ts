@@ -32,6 +32,7 @@ import { checkProblems } from './formChecks';
 import type { Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
 import { defaultRetriever } from '../kb/hybrid';
+import { defaultSectionRetriever } from '../kb/sections';
 import { warnFallback } from '../kb/fallback';
 import { KB_ANSWER_PROMPT, KB_UNAVAILABLE_PROMPT, kbCompletion } from '../kb/answer';
 import { answerPromptsOf, knowledgeUseProblems } from './knowledgeUse';
@@ -1154,7 +1155,10 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   // hybrid when kb.yaml names an embedder whose index and weights are there, else keywords alone.
   // A default that fell back to keywords although kb.yaml names an embedder is said, with the fix (../kb/fallback.ts).
   if (config.knowledge) {
-    app.knowledge = { kb: config.knowledge, retriever: code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever };
+    const retriever = code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever;
+    // The sections of approved documents, with summarizing on (kb.yaml documents; ../kb/sections.ts).
+    const sections = defaultSectionRetriever(config.knowledge, retriever);
+    app.knowledge = { kb: config.knowledge, retriever, ...(sections ? { sections } : {}) };
     warnFallback(app.knowledge.retriever, `app "${app.id}"`);
   }
   // The folder's content hashes: what the engine records on each call (call_started, the trace).

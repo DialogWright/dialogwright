@@ -79,6 +79,11 @@
       },
       "additionalProperties": false
     },
+    "summarize": {
+      "description": "false: no section of it is ever answered from by summarizing (kb.yaml documents), and it needs no approval for it: for a document that is only the source of passages (a certificate, a policy). Default: it may be summarized once a person approves it for that.",
+      "type": "boolean",
+      "const": false
+    },
     "applies": {
       "description": "Which callers an answer summarized from it is for (kb.yaml documents), as a passage's applies: for each fact in kb.yaml's applies, a value or a list of values. Default: every caller.",
       "type": "object",

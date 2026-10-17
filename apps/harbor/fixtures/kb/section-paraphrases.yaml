@@ -1,0 +1,102 @@
+# Paraphrases of what the Member Handbook's sections answer, none of them the section's own words,
+# and lines no section answers (none): pnpm kb:bakeoff apps/harbor --sections
+# apps/harbor/fixtures/kb/section-paraphrases.yaml --sweep measures the section retriever on them.
+"harbor-member-handbook-2026#1 Your member ID card":
+  - I can't find my insurance card anywhere
+  - how do I get a replacement card
+  - my wallet was stolen with my card in it
+  - is there a way to show my card on my phone
+  - when will my new card show up
+  - what's on my member card
+  - I need another copy of my ID card
+  - my dog chewed up my card, what do I do
+"harbor-member-handbook-2026#2 Paying your premium":
+  - when is my payment due each month
+  - can I set up autopay
+  - what happens if I'm late paying my bill
+  - can I mail you a check
+  - is there a grace period if I miss a payment
+  - how do I pay for my insurance
+  - will my coverage stop if I forget to pay
+  - can I pay with a credit card
+"harbor-member-handbook-2026#3 Updating your contact information":
+  - I moved, how do I change my address
+  - I have a new cell phone number
+  - how do I update my email
+  - I got married and changed my last name
+  - where do I go to change my mailing address
+  - the codes are going to my old phone
+  - can I update my contact info over the phone
+  - I need to fix my name on my account
+"harbor-member-handbook-2026#4 The Harbor Mutual app":
+  - do you have a mobile app
+  - is the app on android
+  - I forgot my password for the app
+  - can I file a claim from my phone
+  - how do I log in to the app
+  - can I upload a picture of my bill
+  - what can I do in your app
+  - I'm locked out of the app
+"harbor-member-handbook-2026#5 Your explanation of benefits":
+  - I got a statement in the mail, do I have to pay it
+  - what is an EOB
+  - what does the explanation of benefits tell me
+  - where can I see what you paid on my claim
+  - is this paper I got a bill
+  - why did I get an explanation of benefits
+  - how do I find my EOBs online
+  - the statement says you didn't pay part of it, why
+"harbor-member-handbook-2026#6 Appealing a claim decision":
+  - my claim was denied, what can I do
+  - how do I appeal
+  - I don't agree with what you paid
+  - how long do I have to dispute a decision
+  - how long does an appeal take
+  - where do I send an appeal
+  - can I get an outside review of my claim
+  - you turned down my claim and I want to fight it
+"harbor-member-handbook-2026#7 Contacting member services":
+  - what are your hours
+  - are you open on weekends
+  - what's the phone number for customer service
+  - can I talk to a person on Saturday
+  - when do you close today
+  - can I send you a message online
+  - how fast do you answer messages
+  - is anyone there in the evening
+"harbor-member-handbook-2026#8 Adding or removing a family member":
+  - how do I add my wife to my plan
+  - I just had a baby, can I add her
+  - when is open enrollment
+  - can I take my son off my insurance
+  - I got married, can my husband be covered
+  - my plan is through my job, how do I add someone
+  - when does the change start
+  - we adopted a child, can we add him
+"harbor-member-handbook-2026#9 Cancelling your plan":
+  - I want to cancel my insurance
+  - how do I end my coverage
+  - will I get a refund if I cancel
+  - if I cancel will you still pay my claim
+  - when does my coverage stop if I cancel
+  - can I quit my plan anytime
+  - how do I stop my policy
+  - is there a fee to cancel
+"harbor-member-handbook-2026#10 Your privacy":
+  - do you sell my personal information
+  - who do you share my data with
+  - can I see the records you have on me
+  - how do I correct my information
+  - is my information kept private
+  - where's your privacy policy
+  - what do you do with my data
+  - can I get a copy of my file
+none:
+  - does my plan cover physical therapy
+  - what's the weather like today
+  - can I buy car insurance from you
+  - is my x-ray covered
+  - I'd like to report an accident
+  - what's the status of my claim
+  - tell me a joke
+  - how much do you pay for a broken arm

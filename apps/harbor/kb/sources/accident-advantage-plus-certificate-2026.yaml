@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=../../../../packages/dialogwright/schemas/kb-source.schema.json
 # The Accident Advantage Plus Certificate of Coverage, plan year 2026: the sections Harbor's answers are drawn from.
 document: Accident Advantage Plus Certificate of Coverage
+# The legal source of the regulated passages: never summarized (kb.yaml documents).
+summarize: false
 sections:
   "2.3 Territory":
     text: Covered accidents are insured worldwide, without territorial limitation. Benefits are payable in United States dollars.

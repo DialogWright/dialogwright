@@ -230,6 +230,7 @@ export const kbSourceSchema = z
       })
       .optional()
       .describe('Where the text came from.'),
+    summarize: z.literal(false, { error: 'must be false, or left out' }).optional().describe('false: no section of it is ever answered from by summarizing (kb.yaml documents), and it needs no approval for it: for a document that is only the source of passages (a certificate, a policy). Default: it may be summarized once a person approves it for that.'),
     applies: z
       .record(identifier(), z.union([domainValue(), unique(domainValue(), 'value').min(1, { error: 'must list at least one value' })]), { error: 'must be a map from a fact in kb.yaml\'s applies to its value or values' })
       .optional()

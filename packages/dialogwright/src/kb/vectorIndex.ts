@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { Embedder, EmbedderInfo, TopicField, VectorEntry } from './embed/types';
 import { indexTexts, type IndexText, type RetrievalKb } from './words';
+import { sectionIndexTexts } from './sectionTexts';
+import type { KnowledgeBase } from './types';
+
+/** Every text the index embeds: the topics' (./words.ts indexTexts), then, with summarizing on, the sections' (./sectionTexts.ts). */
+export function allIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>): IndexText[] {
+  const topics = indexTexts(kb);
+  if (kb.settings === undefined || kb.sources === undefined || kb.passages === undefined) return topics;
+  return [...topics, ...sectionIndexTexts({ settings: kb.settings, sources: kb.sources, passages: kb.passages, defaultLocale: kb.defaultLocale })];
+}
 
 /**
  * A knowledge base's vector index: kb/.index/<embedder id>.json, written by `pnpm kb:index` and
@@ -70,7 +79,7 @@ export function decodeVector(text: string, dim: number): Float32Array | null {
   return out;
 }
 
-const FIELDS: ReadonlySet<string> = new Set<TopicField>(['title', 'keyword', 'ask']);
+const FIELDS: ReadonlySet<string> = new Set<TopicField>(['title', 'keyword', 'ask', 'section']);
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /** An index file's text, parsed and checked: the index, or what is wrong with it. */
@@ -131,8 +140,8 @@ export interface BuiltIndex {
  * now) already has a vector for, from the same embedder, keeps that vector; only the others are
  * embedded. The vectors are stored as float32.
  */
-export async function buildIndex(kb: RetrievalKb, embedder: Embedder, previous?: KbIndexData | null): Promise<BuiltIndex> {
-  const texts = indexTexts(kb);
+export async function buildIndex(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, embedder: Embedder, previous?: KbIndexData | null): Promise<BuiltIndex> {
+  const texts = allIndexTexts(kb);
   const known = new Map<string, Float32Array>();
   if (previous && sameEmbedder(previous.embedder, embedder)) for (const e of previous.entries) known.set(e.contentHash, e.vector);
   const todo = [...new Map(texts.filter((t) => !known.has(t.contentHash)).map((t) => [t.contentHash, t.text])).entries()];
@@ -151,8 +160,8 @@ export async function buildIndex(kb: RetrievalKb, embedder: Embedder, previous?:
 }
 
 /** What an index lacks for a knowledge base: the texts with no vector, and the entries no text has any more. */
-export function indexDrift(kb: RetrievalKb, data: KbIndexData): { missing: IndexText[]; stale: VectorEntry[] } {
-  const texts = indexTexts(kb);
+export function indexDrift(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>>, data: KbIndexData): { missing: IndexText[]; stale: VectorEntry[] } {
+  const texts = allIndexTexts(kb);
   const key = (e: { topic: string; locale: string; field: string; contentHash: string }): string => `${e.topic}\u0000${e.locale}\u0000${e.field}\u0000${e.contentHash}`;
   const have = new Set(data.entries.map(key));
   const want = new Set(texts.map(key));

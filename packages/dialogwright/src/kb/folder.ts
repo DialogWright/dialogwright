@@ -266,6 +266,7 @@ export function sourceOf(id: string, doc: KbSourceYaml): KbSourceDocument {
     document: doc.document,
     ...(doc.provenance ? { provenance: doc.provenance } : {}),
     sections: doc.sections,
+    ...(doc.summarize === false ? { summarize: false as const } : {}),
     ...(doc.applies !== undefined ? { applies: canonicalApplies(doc.applies) } : {}),
     ...(doc.approval !== undefined ? { approval: doc.approval } : {}),
     hash,
