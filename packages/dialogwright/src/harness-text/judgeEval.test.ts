@@ -262,8 +262,8 @@ describe('answer cases (speaks: answer; a knowledge answer worded for the caller
   };
 
   it('need a question, and only they have one', () => {
-    expect(() => loadJudgeCases(file([{ ...answerCase('a', 'faithful', 'x'), question: undefined }]))).toThrow('an answer case (speaks: answer) has a question, and only an answer case does');
-    expect(() => loadJudgeCases(file([{ id: 'b', family: 'x', expected: 'faithful', speaks: 'as-caller', content: 'call me', span: 'call me', question: 'q', note: 'n' }]))).toThrow('an answer case (speaks: answer) has a question');
+    expect(() => loadJudgeCases(file([{ ...answerCase('a', 'faithful', 'x'), question: undefined }]))).toThrow('an answer case (speaks: answer or documents) has a question, and only an answer case does');
+    expect(() => loadJudgeCases(file([{ id: 'b', family: 'x', expected: 'faithful', speaks: 'as-caller', content: 'call me', span: 'call me', question: 'q', note: 'n' }]))).toThrow('an answer case (speaks: answer or documents) has a question');
   });
 
   it('send the judge what a call sends for a knowledge answer, and are read by checkAnswer and the stub\'s answer judge', async () => {

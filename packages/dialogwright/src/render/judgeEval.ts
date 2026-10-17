@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
-import { stubAnswerDrift, stubSpanDrift } from '../jev/heuristicStub';
+import { stubAnswerDrift, stubDocumentsDrift, stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
-import { answerWordBudget } from './config';
+import { ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
+import { answerWordBudget, DEFAULT_DOCUMENTS_WORDS } from './config';
 import { spanSentence } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
 
@@ -53,9 +53,11 @@ const caseSchema = z.strictObject({
   /**
    * Whose words the span gives: a caller's message, in their own terms or spoken to them; or `answer`, a
    * knowledge answer worded for the caller's question (a span `from: answer`): `content` is then the
-   * approved passage, `question` the caller's question, and `span` the wording.
+   * approved passage, `question` the caller's question, and `span` the wording; or `documents`, an answer
+   * worded from sections of approved documents (a span `from: sections`): `content` is then the sections,
+   * each as `Heading: text`, apart by a blank line.
    */
-  speaks: z.enum(['as-caller', 'to-caller', 'answer']),
+  speaks: z.enum(['as-caller', 'to-caller', 'answer', 'documents']),
   /** An answer case's question, in the caller's own words (required with `speaks: answer`). */
   question: z.string().min(1).optional(),
   /** A to-caller span's names (who the message is for), each under its variable: `{ recipient: "Sam Ortiz" }`. */
@@ -87,7 +89,7 @@ export function loadJudgeCases(path: string): JudgeCase[] {
     const c = r.data;
     if (seen.has(c.id)) throw new Error(`${path}:${i + 1}: the id ${c.id} is given twice`);
     if (c.names !== undefined && c.speaks !== 'to-caller') throw new Error(`${path}:${i + 1}: ${c.id}: names are for a to-caller span only`);
-    if ((c.question !== undefined) !== (c.speaks === 'answer')) throw new Error(`${path}:${i + 1}: ${c.id}: an answer case (speaks: answer) has a question, and only an answer case does`);
+    if ((c.question !== undefined) !== (c.speaks === 'answer' || c.speaks === 'documents')) throw new Error(`${path}:${i + 1}: ${c.id}: an answer case (speaks: answer or documents) has a question, and only an answer case does`);
     seen.add(c.id);
     cases.push(c);
   });
@@ -97,6 +99,8 @@ export function loadJudgeCases(path: string): JudgeCase[] {
 
 /** The goal an answer case is given when it names none (a member line's, as an app's answer line would say it). */
 export const DEFAULT_ANSWER_GOAL = "Answer the caller's question from the passage, in a sentence or two.";
+/** The goal a documents case is given when it names none. */
+export const DEFAULT_DOCUMENTS_GOAL = "Answer the caller's question from the sections, in a sentence or two.";
 
 /**
  * A case's span act, as the engine builds one for a framed line's span: its content quoted under
@@ -105,6 +109,18 @@ export const DEFAULT_ANSWER_GOAL = "Answer the caller's question from the passag
  * word count unless the case sets one, and the caller's question.
  */
 export function actOf(c: JudgeCase): SpanAct {
+  if (c.speaks === 'documents') {
+    return {
+      kind: 'span',
+      goal: c.goal ?? DEFAULT_DOCUMENTS_GOAL,
+      sentence: spanSentence('{answer}', 'answer'),
+      content: c.content.split('\n\n').map((value) => ({ name: 'answer', value })),
+      channel: 'voice',
+      language: 'en-US',
+      style: { persona: 'a plain-spoken agent', words: c.words ?? DEFAULT_DOCUMENTS_WORDS, avoid: [] },
+      answer: { question: c.question ?? '', from: 'sections' },
+    };
+  }
   if (c.speaks === 'answer') {
     return {
       kind: 'span',
@@ -131,11 +147,12 @@ export function actOf(c: JudgeCase): SpanAct {
 }
 
 /** The question a case's judge is asked, by its id: a knowledge answer's, or a span's. */
-const questionIdOf = (c: JudgeCase): string => (c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
+const questionIdOf = (c: JudgeCase): string => (c.speaks === 'documents' ? DOCUMENTS_DRIFT_QUESTION_ID : c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
 
 /** The judge's request for a case: exactly what a call sends for this span (its state and its question). */
 export function judgeRequest(c: JudgeCase): { state: JsonValue; questions: ReturnType<typeof renderSpanDriftQuestion> } {
   const act = actOf(c);
+  if (c.speaks === 'documents') return { state: renderDocumentsDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderDocumentsDriftQuestion() };
   if (c.speaks === 'answer') return { state: renderAnswerDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderAnswerDriftQuestion() };
   return { state: renderSpanDriftState(act, cleanSpan(c.span)) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks) };
 }
@@ -156,6 +173,8 @@ export interface CaseResult {
 
 function codeVerdict(c: JudgeCase): CodeVerdict {
   const act = actOf(c);
+  // An answer from documents: no shortcut for the sections' own words, as a call has none.
+  if (c.speaks === 'documents') return checkAnswer(cleanAnswer(c.span, act), act);
   if (c.speaks === 'answer') {
     const worded = cleanAnswer(c.span, act);
     // As a call does: a wording that is the passage's own words is said as the passage, with nothing asked.
@@ -205,7 +224,7 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
         }
       }
     }
-    out.push({ case: c, checks: codeVerdict(c), stub: c.speaks === 'answer' ? stubAnswerDrift(req.state) : stubSpanDrift(req.state), judge: verdict });
+    out.push({ case: c, checks: codeVerdict(c), stub: c.speaks === 'documents' ? stubDocumentsDrift(req.state) : c.speaks === 'answer' ? stubAnswerDrift(req.state) : stubSpanDrift(req.state), judge: verdict });
     if (opts.progress && (i + 1) % 20 === 0) opts.progress(`  ${i + 1} of ${cases.length} cases`);
   }
   return out;
@@ -314,7 +333,7 @@ function faithfulTable(rows: readonly Tally[]): string[] {
   ];
 }
 const caseLine = (r: CaseResult): string =>
-  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${r.case.speaks === 'answer' ? `${quote(r.case.question ?? '')} of ${quote(r.case.content)}, worded ${quote(r.case.span)}` : `${quote(r.case.content)} read back ${quote(r.case.span)}`}; judge ${judgeText(r.judge)}, data checks ${codeText(r.checks)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
+  `- \`${r.case.id}\` (${r.case.family}, ${r.case.speaks}${r.case.names ? `, names ${Object.values(r.case.names).join(', ')}` : ''}): ${r.case.speaks === 'answer' || r.case.speaks === 'documents' ? `${quote(r.case.question ?? '')} of ${quote(r.case.content)}, worded ${quote(r.case.span)}` : `${quote(r.case.content)} read back ${quote(r.case.span)}`}; judge ${judgeText(r.judge)}, data checks ${codeText(r.checks)}, stub ${r.stub ? 'refused' : 'passed'}. ${r.case.note}`;
 
 /** The report as Markdown lines: the everyday cases first, then the hard cases by family, every case, and the lists to read. */
 export function formatJudgeEval(report: JudgeEvalReport): string[] {
@@ -334,6 +353,9 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
     '',
     ...(report.latency
       ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']
+      : []),
+    ...(all.some((r) => r.case.speaks === 'documents')
+      ? ['Documents cases (speaks: documents): an answer worded for the caller\'s question from sections of approved documents (`content`, each section as `Heading: text`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, 60 unless the case sets one, avoid, a figure the sections do not have); stub: stubDocumentsDrift; judge: the decision model asked renderDocumentsDriftQuestion with the state a call sends (the goal, the wording heard in its line, the sections and the question).', '']
       : []),
     ...(all.some((r) => r.case.speaks === 'answer')
       ? ['Answer cases (speaks: answer): a knowledge answer worded for the caller\'s question from its approved passage (`content`); data checks: checkAnswer as a call runs it (empty, format, question, frame, the word budget, the passage\'s word count and a quarter more (ten more at least) unless the case sets one, avoid, a figure the passage does not have); stub: stubAnswerDrift; judge: the decision model asked renderAnswerDriftQuestion with the state a call sends (the goal, the wording heard in its line, the passage and the question).', '']
