@@ -24,3 +24,8 @@ sections:
     text: "You can cancel your plan at any time by sending us a request through the member portal or by calling member services. Your coverage ends on the last day of the month you cancel in, and we'll refund any premium you've paid for the months after that. Claims for accidents that happened while you were covered are still paid after your plan ends."
   "10 Your privacy":
     text: "We use your information only to run your plan and pay your claims, and we never sell it. You can ask for a copy of the records we keep about you, or ask us to correct something that's wrong, through the member portal. Our privacy notice, in the portal, explains who we share information with and why."
+approval:
+  owner: Member Services
+  approvedBy: Jason Stiles
+  on: 2026-10-17
+  hash: 1d45c5c7a8929aa9399a2e0e103e4e05e077e3f7e8056633bfb7010bbc12a2e7
