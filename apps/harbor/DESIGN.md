@@ -425,6 +425,18 @@ After the birthdate type learned to read a date said only in numbers (the keypad
 - The ten lines measured in Recording 3 now: db-04, db-13 and db-17 verify as August 21, 1984 from their digits (db-13 had been heard as January 1, 1984); db-10 ("eight two one eight four", which the keypad would not split that way) hears the example line.
 - The new lines (db-18 to db-24) and both new calls hold on the real model, but for one: db-22 "august two one eighty four" names a month, so the model reads it (august 0.91, day 21 0.62), and it reads the year as "two one eighty four" 0.49; the caller is asked again. Tagged (bucket 2), safe.
 
+### Recording 6: jev-1.13.0 and gemini-3.1-flash-lite-preview, 2026-10-17, the fuller passages
+
+After the maintainer approved the four low-risk topics' fuller passages (version 2026.2, drawn from each plan's member guide, 60 to 80 words each; `kb:approve`, 2026-10-17): 480 requests, $0.0849; trimmed to the 344 answers a run asks for. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
+- **Generated lines**: 7 tried, 4 said as a new wording, 3 refused by the judge (drift), so the passage was said. Wording latency p50 837 ms, p95 4.3 s.
+- **What a worded answer sounds like now**, for the question asked:
+  - "how long do i have to file a claim", from the 80-word filing passage: "You have 180 days from the date of your accident to tell us about a claim."
+  - "do you pay for prescriptions", by phone: "One moment while I gather that information. Prescription drugs and medications are not covered by this plan, even if prescribed for an injury from a covered accident. You should use your major medical plan card at the pharmacy for those costs."
+  - the same in the member chat, its own wording, after the same hold line.
+- **The hold line** is said where the wording ran past a line's budgets (1.4 s by voice), before the answer, on the phone and in the chat.
+- Against the short passages (Recording 4) the model mostly said the passage back (4 of 7); against the fuller ones it words every answer it is asked for, focused on the question, and the judge, at Harbor's 0.3, refuses the rest.
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.
