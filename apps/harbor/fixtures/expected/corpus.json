@@ -5810,5 +5810,30 @@
     "queued": [],
     "principalLevel": 2,
     "gate": "searchPolicy:ALLOW"
+  },
+  "hb-18": {
+    "id": "hb-18",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#5 Your explanation of benefits (EOB)",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
   }
 }
