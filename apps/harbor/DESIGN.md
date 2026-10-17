@@ -463,6 +463,12 @@ On two live calls (2026-10-17), "Wait. How long do I have the file?" (the recogn
 
 Recorded (509 requests, $0.0901) with the live words as a corpus line at the read-back (cr-10, tagged `live_asr`): filing_deadline 0.83 against none 0.17, and the deadline answered with the read-back after it. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`. Baseline: cr-10 added by hand (from `regress --corpus cr-10 --json`).
 
+### Recording 9: jev-1.13.0, 2026-10-17, a claim number said on its own
+
+On a live call (2026-10-17), "And what about four seven one one?" at "Is there anything else I can help with?" read intent none 0.44 against claim_status 0.43, though the claim question read claim_4711 0.98 from the same words: the caller heard "Sorry, I didn't catch that." With "claim" added it read claim_status 1.00 (and the gate refused it: claim 4711 is not the caller's). "What about forty six fifty five?" a turn before had read claim_status 0.88. The claim-status criterion said a caller who names a claim number is asking about it, and four digits said one at a time did not read as one; it now adds the fact "Claim numbers are four digits, so four digits said on their own name a claim". The speech hints add "file a claim" (the recognizer twice heard "how long do I have to file" as "...the file").
+
+Recorded (510 requests, $0.0908) with the live words as a corpus line (cs-17, tagged `live_asr`, added to the baseline by hand): claim_status 0.80 against none 0.17. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`.
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.

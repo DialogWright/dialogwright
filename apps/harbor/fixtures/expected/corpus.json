@@ -399,6 +399,32 @@
     "principalLevel": 0,
     "gate": "listClaims:STEP_UP"
   },
+  "cs-17": {
+    "id": "cs-17",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "ack_intent",
+      "claim_blocked_scope"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "getClaim:BLOCK"
+  },
   "sel-01": {
     "id": "sel-01",
     "decision": "prompt",

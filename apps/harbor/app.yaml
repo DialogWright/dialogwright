@@ -31,7 +31,7 @@ console:
 
 # The phone line's speech settings: words a caller says first, which the recognizer should expect.
 voice:
-  hints: [claim, coverage, covered, report, accident, injury, hospital, diagnosis, member ID, physical therapy, agent]
+  hints: [claim, file a claim, coverage, covered, report, accident, injury, hospital, diagnosis, member ID, physical therapy, agent]
   # How identifiers are said on the phone (the text stays as written in a chat, the trace and the console):
   # a claim number after the word claim, and the phone's last four after "ending in", digit by digit
   # ("your claim number is four seven three zero", not "four thousand seven hundred thirty"); a member ID

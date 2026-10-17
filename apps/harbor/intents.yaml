@@ -6,7 +6,7 @@ intents:
   # A claim already filed: its status, whether it was paid, or one claim by its number or by what it
   # was for. Level 2 (the member ID and date of birth, then the code), asked before the claim.
   claim_status:
-    criteria: Asks about a claim that was already filed, such as its status, whether it was paid, or a specific claim by its number or by what it was for, including a claim for someone else. A caller who names a claim number or a claim they filed is asking about it, whatever else they add
+    criteria: Asks about a claim that was already filed, such as its status, whether it was paid, or a specific claim by its number or by what it was for, including a claim for someone else. A caller who names a claim number or a claim they filed is asking about it, whatever else they add. Claim numbers are four digits, so four digits said on their own name a claim
     label: check on a claim
     kind: form
 
