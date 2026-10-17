@@ -156,6 +156,7 @@ The earlier Harbor held these in a rule of its own (R4: a loss date that is not 
 | "are prescriptions covered" | `prescriptions` | 7.4 Exclusions | by `plan` | none |
 | "am I covered if I get hurt in Europe" | `travel` | 2.3 Territory | by `plan` | none |
 | "how long do I have to file a claim" | `filing_deadline` | 8.1 Claim filing | by `plan` | none |
+| "if I fell off the roof, would that be covered" | `covered_accidents` | the member guide's "0 What counts as a covered accident" | by `plan` (the same words for both) | none |
 
 Who approved: every passage's approval names Compliance Review (owner Benefits Content), and each was then confirmed in review by the maintainer (the log's `from: passage` lines of 2026-10-04).
 
@@ -175,6 +176,7 @@ Who approved: every passage's approval names Compliance Review (owner Benefits C
 - With three example questions per topic: at cap 4 the sweep tops out at 88%; at cap 8, floor 0.35 gives 96% with 1.13 topics on average for a line about nothing (floor 0.45: 92% and none; floor 0.3: 97% and 2.13).
 - Chosen: `cap: 8`, `floor: 0.35`. The bake-off at those settings: keyword 86.6%, static 94.6%, **hybrid 95.5% recall at the cap, 65.2% top-1, 7.02 candidates, 1.13 on none**. Weakest topic: travel, 6 of 8 (a country named with no travel word: "Mexico", "Japan"). The topic slot's own `cap: 4` (the earlier Harbor's) was dropped, so the question offers what retrieval nominates.
 - `src/kb.test.ts` holds the hybrid recall at 95% or more, at most 1.5 topics for a line about nothing and every topic at 75% or more; it runs where the model is in the cache (CI restores it).
+- **Covered accidents** (2026-10-17, after a live call: "If I fell off the roof, would that be covered?" read as none, 0.80, as no topic said what an accident is). A fifteenth topic, `covered_accidents`, regulated (no `risk`), its passages `accident-adv-2026` and `accident-plus-2026` drawn from a new section of each member guide, "0 What counts as a covered accident", drafted by the builder and withheld until a person approves them. Eight new paraphrases (120 in all). With the topic's first keywords (accident, accidents, crash among them) the hybrid recall fell to 92.5%: the general words drew it into three other topics' lists at the cap, so ambulance ("transported after the crash"), filing ("report an accident") and urgent care each lost one. Narrowed to the words of the topic's own cases (fell, slipped, ladder, roof, burn, at home), with a fifth example question (housework or yard work), and the synonyms `transport`, `transported` (ambulance) and `report a claim`, `how many days` (filing deadline): **hybrid 95.8% recall at the cap, 62.5% top-1, 7.12 candidates, 1.13 on none**, at the same `cap: 8`, `floor: 0.35`. The synonyms were found from the misses, so they are tuned on the held-out set: a fresh set would measure them fairly.
 
 **The corpus and scripted calls** for the knowledge form were written at step 5 with the rest, since every passage was already approved (step 6b's "after the person approves").
 

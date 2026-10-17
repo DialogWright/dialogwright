@@ -32,7 +32,7 @@ emergency_room:
     - Is a trip to the emergency room after an accident covered?
 ambulance:
   title: Ambulance
-  keywords: [ambulance, paramedic, ems]
+  keywords: [ambulance, paramedic, ems, transport, transported]
   asks:
     - Does my plan pay for an ambulance?
     - Is an ambulance ride to the hospital covered?
@@ -115,9 +115,19 @@ travel:
   risk: low
 filing_deadline:
   title: Deadline to file a claim
-  keywords: [deadline, time limit, too late, file a claim, filing, how long do i have, how long to file, deadline to file]
+  keywords: [deadline, time limit, too late, file a claim, filing, how long do i have, how long to file, deadline to file, report a claim, how many days]
   asks:
     - How long do I have to file a claim?
     - Is there a deadline to file a claim?
     - Is it too late to file for an old accident?
   risk: low
+covered_accidents:
+  title: Covered accidents
+  keywords: [covered accident, counts as an accident, fall, fell, falling, slipped, tripped, ladder, roof, burn, burned, at home, car accident]
+  asks:
+    - If I fell off the roof, would that be covered?
+    - Is a car accident covered?
+    - What counts as an accident?
+    - Am I covered if I slip and fall at home?
+    - Does a burn count as an accident?
+    - Is an injury from housework or yard work covered?
