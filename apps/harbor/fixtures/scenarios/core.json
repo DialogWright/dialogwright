@@ -566,7 +566,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_coverageTopic_retry"
+      "promptId": "ask_coverageTopic"
     }
   },
   {
@@ -1521,7 +1521,7 @@
     "id": "other-then-done",
     "steps": [
       {
-        "say": "can i change my address"
+        "say": "do you sell car insurance"
       },
       {
         "say": "never mind, that's all"
@@ -2250,7 +2250,7 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_coverageTopic_retry",
+      "promptId": "ask_coverageTopic",
       "text": "I couldn't find anything in your plan information"
     }
   },

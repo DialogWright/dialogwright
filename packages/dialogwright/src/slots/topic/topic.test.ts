@@ -36,9 +36,9 @@ describe('a topic slot built from the defaults', () => {
   it('reads nominations, asks one question (the slot\'s id followed by Topic) and leads to the disambiguation line', () => {
     expect(subject.nominates).toBe(true);
     expect(subject.spokenConfirm).toBe('summary');
-    expect(subject.questionIds).toEqual(['subjectTopic']);
+    expect(subject.questionIds).toEqual(['subjectTopic', ...Array.from({ length: 8 }, (_, i) => `subjectSection${i + 1}`)]);
     expect(subject.prompts).toEqual([{ id: 'disambiguate_subject', why: 'the caller could mean either of two topics and is asked which', vars: ['a', 'b'] }]);
-    expect(subject.thresholds).toEqual(['SLOT_CHOICE_FILL']);
+    expect(subject.thresholds).toEqual(['SLOT_CHOICE_FILL', 'KB_UNANSWERED', 'KB_SECTION_ANSWERS']);
   });
 
   it('asks nothing when nothing was nominated, or retrieval did not run', () => {
@@ -139,18 +139,21 @@ describe('the fill', () => {
     expect(fill({ subjectTopic: noul(0.9) }, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '' });
     expect(fill({ subjectTopic: choice({ returns: 0.5, none: 0.5 }) })).toEqual({ kind: 'absent' });
     const lax = defineSlot('subject', { type: 'topic', fillAt: 'SLOT_CHOICE_CONFIRM', missReason: 'no_subject' }, undefined, { catalog: CATALOG });
-    expect(lax.thresholds).toEqual(['SLOT_CHOICE_CONFIRM']);
+    expect(lax.thresholds).toEqual(['SLOT_CHOICE_CONFIRM', 'KB_UNANSWERED', 'KB_SECTION_ANSWERS']);
     expect(lax.fill({ subjectTopic: choice({ returns: 0.5, none: 0.5 }) }, c())).toMatchObject({ kind: 'filled', value: 'returns' });
     expect(lax.fill({}, c({ prompted: true }))).toEqual({ kind: 'invalid', reason: 'no_subject', raw: '' });
   });
 
-  it('holds a question no topic answers (unanswered, at fillAt) as a miss when not asked for, and misses it as any when asked', () => {
+  it('holds a question no topic answers (unanswered, at KB_UNANSWERED when not asked for, at fillAt when asked) as its not-found reply', () => {
     const unanswered = { subjectTopic: choice({ unanswered: 0.8, returns: 0.1, none: 0.1 }) };
     expect(fill(unanswered)).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', held: true, notFound: true });
     expect(fill(unanswered, { prompted: true })).toEqual({ kind: 'invalid', reason: 'no_topic', raw: '', notFound: true });
     // Not sure enough of it, or none on top: asked nothing, as before.
-    expect(fill({ subjectTopic: choice({ unanswered: 0.54, none: 0.33, returns: 0.13 }) })).toEqual({ kind: 'absent' });
-    expect(fill({ subjectTopic: choice({ unanswered: 0.55, none: 0.32, returns: 0.13 }) })).toMatchObject({ kind: 'invalid', held: true });
+    // Held from the request it must be sure (KB_UNANSWERED, 0.65): a bare "coverage" read 0.55 must not be told nothing was found.
+    expect(fill({ subjectTopic: choice({ unanswered: 0.55, none: 0.4, returns: 0.05 }) })).toEqual({ kind: 'absent' });
+    expect(fill({ subjectTopic: choice({ unanswered: 0.65, none: 0.3, returns: 0.05 }) })).toMatchObject({ kind: 'invalid', held: true });
+    // At the slot's own question, the bar a topic fills at.
+    expect(fill({ subjectTopic: choice({ unanswered: 0.55, none: 0.4, returns: 0.05 }) }, { prompted: true })).toMatchObject({ kind: 'invalid', notFound: true });
     expect(fill({ subjectTopic: choice({ none: 0.8, unanswered: 0.2 }) })).toEqual({ kind: 'absent' });
     // Never a value, with accept: catalog too; and without disambiguate, the pick.
     const any = defineSlot('subject', { type: 'topic', accept: 'catalog' }, undefined, { catalog: CATALOG });
@@ -186,7 +189,7 @@ describe('its options', () => {
       text: { instructions: 'Which one?', none: 'Neither', unanswered: 'Something else' },
       ids: { choice: 'helpTopic' },
     });
-    expect(kept.questionIds).toEqual(['helpTopic']);
+    expect(kept.questionIds).toEqual(['helpTopic', ...Array.from({ length: 8 }, (_, i) => `helpTopicSection${i + 1}`)]);
     expect(kept.questions(ctx('x', { nominated: [nom('parking')] }))).toEqual({
       helpTopic: { type: 'choice', instructions: 'Which one?', criteria: { parking: 'Is about Parking (parking)', unanswered: 'Something else', none: 'Neither' } },
     });

@@ -282,6 +282,39 @@ prompts:
   kb_hold:
     text: One moment while I gather that information.
     interruptible: false
+    variants:
+      - Let me look that up for you.
+      - I'm just looking through your plan information.
+  # Said after the hold line where an answer is still being worded past half its limit (an answer from
+  # the member handbook takes longer: it is read, worded and checked).
+  kb_hold_more:
+    text: Still checking, thanks for waiting.
+    interruptible: false
+    variants:
+      - Almost there.
+  # A question nothing answers: the not-found line in turn, the guide to what can be asked the first time
+  # and again after two in a row, then the coverage question (the topic slot's not-found reply).
+  kb_not_found:
+    text: I couldn't find anything in your plan information about that.
+    interruptible: true
+    variants:
+      - I'm not seeing anything about that in what I have.
+      - That's not something I have information on.
+  kb_guide:
+    text: I can tell you about things like physical therapy, hospital stays, fractures, or how to file a claim.
+    interruptible: true
+  # An answer from the member handbook (kb.yaml documents), where no topic answers: worded from the
+  # sections the model chose, held to them by the checks and the judge, asked once more if the judge
+  # refuses the first wording (measured: render:judge-eval on fixtures/judge/documents.jsonl, DESIGN.md);
+  # its text, said when it cannot be worded, is the not-found line in turn.
+  kb_documents_answer:
+    text: '{answer}'
+    interruptible: false
+    generate:
+      answer:
+        from: sections
+        retry: 1
+        goal: Answer the member's question from the handbook sections, in a sentence or two, keeping anything they say that changes the answer.
   coverage_unavailable:
     text: That part of the plan information is being updated, so I can't answer it right now.
     interruptible: false

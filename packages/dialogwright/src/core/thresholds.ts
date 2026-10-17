@@ -59,6 +59,10 @@ export const DEFAULT_THRESHOLDS = {
   // knowledge: a section of an approved document answers a question no topic does when the model reads
   // that it says what the caller asked at this or above (kb.yaml documents; slots/topic/fill.ts)
   KB_SECTION_ANSWERS: 0.6,
+  // knowledge: a question asked with the request that no topic answers is held as the slot's not-found reply
+  // only at this or above (slots/topic/fill.ts): a held reply says nothing was found, so it must be sure the
+  // caller asked something (a bare "coverage" read unanswered 0.55 against none 0.40, Harbor, 2026-10-17)
+  KB_UNANSWERED: 0.65,
   // confirmations and menus
   CONFIRM_YES: 0.7,
   CONFIRM_NO: 0.7,

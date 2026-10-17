@@ -186,6 +186,7 @@ function contextsOf(r: Run, windows: readonly SlotPartial[] = []): SlotContext[]
         ...(u.context?.records !== undefined ? { records: u.context.records } : {}),
         ...(u.context?.sources !== undefined ? { sources: u.context.sources } : {}),
         ...(u.context?.nominated !== undefined ? { nominated: u.context.nominated } : {}),
+        ...(u.context?.sections !== undefined ? { sections: u.context.sections } : {}),
       },
     })),
   ];

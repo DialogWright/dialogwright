@@ -109,6 +109,21 @@ These lines say a knowledge base's approved passage, and may word it for the cal
 | --- | --- | --- | --- | --- |
 | `coverage_answer` | `{answer}` | Answer the member's question from their plan's passage, in a sentence or two, keeping anything the passage says that changes the answer. | the passage's word count and a quarter more (ten more at least) | `sports_injury` (Sports injuries), `prescriptions` (Prescriptions), `travel` (Accidents while traveling), `filing_deadline` (Deadline to file a claim) |
 
+These lines answer a question no topic answers from sections of documents a person approved for summarizing (kb.yaml `documents: { summarize: on }`). Retrieval nominates a few sections of the approved documents for the caller's words, and the decision model is asked of each whether it says what the caller asked; a topic it finds always answers instead. A section a passage cites is never summarized (the passage speaks for it), nor one marked `summarize: false`, nor any section of a document so marked. The model is sent the span's goal, its sentence (the line's own fixed words, the answer a gap), the sections chosen (the only facts it may state) and the caller's question in their own words (quoted, and screened again for an injection first): never a record, another section or the transcript. Each wording is checked by code before anyone hears it, for its data and shape: it names no number, amount or date the sections do not; it asks nothing; it copies no four words running of the line's own fixed words; it keeps to its word budget and avoids the phrases style.yaml lists. What it means is the documents drift judge's: the decision model, given the wording heard in its sentence, its goal, the sections and the question, refuses one that says anything other than what the sections say for that question (anything added, anything changed or turned around, a figure moved from one section to another, a condition, a limit or an exclusion that bears on the answer left out, or another question answered), at 0.3 or above (style.yaml's `judge.refuseAt`, more cautious than the default (0.5)). Where the line says `retry`, a wording the judge refused is asked for once more, the model told only that its last was refused, and judged again. The line's fixed text, its fallback, is said whenever a check fails, the judge refuses, the model errs, or the wording and its checks are not done within RENDER_DOCUMENTS_TIMEOUT_MS (6 s on a call and 8 s in a chat by default): by default the not-found line, never the sections themselves. The knowledge record names the document and the sections an answer was drawn from, with the document's approval, and the audit's `kb_worded` row names them too.
+
+| Line | Span | Goal | Words | Asked again when refused |
+| --- | --- | --- | --- | --- |
+| `kb_documents_answer` | `{answer}` | Answer the member's question from the handbook sections, in a sentence or two, keeping anything they say that changes the answer. | 60 | once |
+
+| Document | Approved for summarizing | Never summarized |
+| --- | --- | --- |
+| `accident-advantage-certificate-2026` (Accident Advantage Certificate of Coverage) | never (`summarize: false`) | all |
+| `accident-advantage-member-guide-2026` (Accident Advantage Member Guide) | not approved: never answered from | 0 What counts as a covered accident (a passage cites it); 1 Filing a claim (a passage cites it); 2 Coverage when you travel (a passage cites it); 3 Sports and recreation (a passage cites it); 4 Prescriptions (a passage cites it) |
+| `accident-advantage-plus-certificate-2025` (Accident Advantage Plus Certificate of Coverage) | never (`summarize: false`) | all |
+| `accident-advantage-plus-certificate-2026` (Accident Advantage Plus Certificate of Coverage) | never (`summarize: false`) | all |
+| `accident-advantage-plus-member-guide-2026` (Accident Advantage Plus Member Guide) | not approved: never answered from | 0 What counts as a covered accident (a passage cites it); 1 Filing a claim (a passage cites it); 2 Coverage when you travel (a passage cites it); 3 Sports and recreation (a passage cites it); 4 Prescriptions (a passage cites it) |
+| `harbor-member-handbook-2026` (Harbor Mutual Member Handbook) | not approved: never answered from | nothing |
+
 No line is marked prescribed (`prescribed: true`).
 
 ## Actions

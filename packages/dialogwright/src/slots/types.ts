@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { SlotOutcome, SlotPartial, SlotPrompt, SlotSpec } from '../core/slots/types';
-import type { CatalogTopic, Nomination, TopicCatalog } from '../kb/types';
+import type { CatalogTopic, Nomination, SectionNomination, TopicCatalog } from '../kb/types';
 
 /**
  * The slot library's contract. A slot type turns validated options into a SlotSpec, so the engine
@@ -142,6 +142,8 @@ export interface ExampleContext {
    * it tries those words in, asked or not.
    */
   nominated?: readonly Nomination[];
+  /** The sections of approved documents nominated beside the topics (SlotContext.sections). */
+  sections?: readonly SectionNomination[];
 }
 
 /** The outcome an utterance should give: its kind, and any of its fields to compare exactly. */

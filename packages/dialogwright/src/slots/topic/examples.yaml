@@ -68,6 +68,16 @@
       answers:
         subjectTopic: { choice: { unanswered: 0.85, opening_hours: 0.05, none: 0.1 } }
       expect: { kind: invalid, reason: no_topic, raw: "", held: true }
+    - text: is there wifi at the library
+      context:
+        nominated:
+          - { topic: opening_hours, title: Opening hours, score: 1 }
+        sections:
+          - { key: "visitor-guide#wifi", document: visitor-guide, documentTitle: Visitor Guide, heading: Wi-Fi, text: Every branch has free Wi-Fi., score: 1 }
+      answers:
+        subjectTopic: { choice: { unanswered: 0.9, opening_hours: 0.05, none: 0.05 } }
+        subjectSection1: { noul: 0.92 }
+      expect: { kind: filled, value: "sections:visitor-guide#wifi", display: wifi }
     - text: i have a question for you
       context:
         nominated:

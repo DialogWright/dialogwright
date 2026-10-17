@@ -79,6 +79,14 @@ A caller who asks their question with the request ("can I bring my dog in?") has
 
 `unanswered: ask` keeps the question from before: no `unanswered` label, `none` meaning both, and the slot's question asked after a question nothing answered. An app that wrote its own `text.instructions` or `text.none` for the old labels should read them again beside `text.unanswered`, since the defaults of the two change with the option.
 
+## Sections of approved documents
+
+With answers from documents on (kb.yaml `documents: { summarize: on }`, the guide's section 12.14), retrieval nominates sections of the documents a person approved for summarizing beside the topics (`SlotContext.sections`, at most kb.yaml's `documents.cap`), and the slot asks of each, in the same request, one yes-or-no: `<slot>Section1`, `<slot>Section2` and on, by rank, each "Does this section of the {document} say what the caller asks about? {heading}: {text}" (`text.section`). A topic the topic question fills always wins. Where none fills and the caller asked something (`none` is not on top), the sections read yes at `KB_SECTION_ANSWERS` or above, best first, at most two, fill the slot: its value `sections:<document>#<section>|...`, said by the first section's heading. The form's knowledge completion resolves them through the gate as it does a topic. With `unanswered: ask` no section is asked.
+
+## The not-found reply
+
+A question none of the topics (or sections) answers, read as `unanswered` at the slot's question or held from the request (above), is the slot's not-found reply (`notFound`): where the app has `kb_not_found`, that line in turn through its variants, then `kb_guide` (what can be asked) the first time on the call and again after `notFound.remind` replies in a row without it (default 2), then the slot's question; without `kb_not_found`, the slot's retry line, as before. It counts as a try on the slot's ladder only with `notFound.counts: true` (default false, the maintainer's decision of 2026-10-17): a caller may ask as often as they like.
+
 When a caller's words name a task the engine confirms first ("can I park there with my pass?", then "yes"), the form fills from the earlier words, and the slot reads the topics nominated for those words on their own turn, kept with the confirmation, never the yes turn's.
 
 ## The question
@@ -134,7 +142,7 @@ Built with the knowledge topics:
 | `parking` | Parking | es: Aparcamiento |
 | `late_fees` | Late fees | es: Recargos por retraso |
 
-<details><summary>Starter utterances (10)</summary>
+<details><summary>Starter utterances (11)</summary>
 
 | The caller says | The model answers | The slot gives |
 |---|---|---|
@@ -146,6 +154,7 @@ Built with the knowledge topics:
 | what about my dog<br>_prompted; nominated nothing_ | none | invalid: reason `no_topic`, raw `` |
 | hello there | none | absent |
 | can i bring my dog into the library<br>_nominated opening_hours_ | `subjectTopic`: `unanswered` 0.85, `opening_hours` 0.05, `none` 0.1 | invalid: reason `no_topic`, raw ``, held `true` |
+| is there wifi at the library<br>_nominated opening_hours; sections [{"key":"visitor-guide#wifi","document":"visitor-guide","documentTitle":"Visitor Guide","heading":"Wi-Fi","text":"Every branch has free Wi-Fi.","score":1,"via":"keyword"}]_ | `subjectTopic`: `unanswered` 0.9, `opening_hours` 0.05, `none` 0.05<br>`subjectSection1`: yes 0.92 | filled: value `sections:visitor-guide#wifi`, display `wifi` |
 | i have a question for you<br>_nominated opening_hours_ | `subjectTopic`: `none` 0.9, `unanswered` 0.05, `opening_hours` 0.05 | absent |
 | i just have a quick question<br>_prompted; nominated opening_hours_ | `subjectTopic`: `none` 0.92, `unanswered` 0.05, `opening_hours` 0.03 | invalid: reason `no_topic`, raw ``, reask `true` |
 

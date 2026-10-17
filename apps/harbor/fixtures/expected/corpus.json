@@ -1401,8 +1401,11 @@
   "tp-05": {
     "id": "tp-05",
     "decision": "prompt",
-    "promptId": "ask_coverageTopic_retry",
-    "acks": [],
+    "promptId": "ask_coverageTopic",
+    "acks": [
+      "kb_not_found",
+      "kb_guide"
+    ],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
@@ -4241,12 +4244,14 @@
   "ot-01": {
     "id": "ot-01",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4259,7 +4264,7 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-02": {
     "id": "ot-02",
@@ -4287,12 +4292,14 @@
   "ot-03": {
     "id": "ot-03",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4305,17 +4312,19 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-04": {
     "id": "ot-04",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4328,17 +4337,19 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-05": {
     "id": "ot-05",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4351,17 +4362,19 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-06": {
     "id": "ot-06",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4374,17 +4387,19 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-07": {
     "id": "ot-07",
     "decision": "prompt",
-    "promptId": "nomatch_open",
-    "acks": [],
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
     "reason": null,
     "decidedGate": "intent",
-    "verdict": "intent_failed",
-    "form": null,
+    "verdict": "route",
+    "form": "coverage",
     "slots": {
       "memberId": null,
       "dob": null,
@@ -4397,7 +4412,7 @@
     },
     "queued": [],
     "principalLevel": 0,
-    "gate": null
+    "gate": "getCoverage:STEP_UP"
   },
   "ot-08": {
     "id": "ot-08",
@@ -5348,6 +5363,131 @@
   },
   "cv-29": {
     "id": "cv-29",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-01": {
+    "id": "hb-01",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-02": {
+    "id": "hb-02",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-03": {
+    "id": "hb-03",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-04": {
+    "id": "hb-04",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-05": {
+    "id": "hb-05",
     "decision": "prompt",
     "promptId": "ask_memberId",
     "acks": [

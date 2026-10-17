@@ -578,3 +578,46 @@ prompts:
 **The fallback is the passage**, word for word, whenever a check fails, the judge refuses, the model errs, or the wording and its checks are not done within `RENDER_ANSWER_TIMEOUT_MS` (4 s on a call and 6 s in a chat by default, [14.12](14-running-it.md#1412-the-options)). When they run past a line's own budgets (the wording's and the checks'), the caller first hears the hold line, `kb_hold` (or, where the app has none, the engine's "One moment while I gather that information."), and then the answer, or the passage. The hold line is said only in a language the app gives it in: a locale's own `kb_hold`, or the engine's words for a call in English. In a language with neither, no hold line is said and the answer has only a line's budget, so the caller never waits in silence (`pnpm check` warns of such a language).
 
 What is recorded is in [12.12](#1212-what-is-recorded); the policy card lists each answer line that may be worded, its goal and the topics marked low. Harbor Mutual is the worked example ([its worksheet](../../apps/harbor/DESIGN.md), "Knowledge"); the design and the maintainer's decision are [docs/designs/2026-10-16-kb-summaries.md](../designs/2026-10-16-kb-summaries.md).
+
+### 12.14 Answers from approved documents
+
+A passage is the answer to a topic, written and approved one at a time. For content nothing regulates (a member handbook, a library's visitor guide, an office's how-tos) that is more than it needs: an app may answer from the documents themselves, where no topic answers, once a person has approved each document for summarizing. It is the third kind of knowledge, beside a regulated topic (its passage word for word) and a low-risk one (its passage worded, the passage its fallback): the lowest risk, content not important enough to write a passage for. It fills in around the other two; where a topic answers, its passage wins ([the design](../designs/2026-10-17-kb-documents.md)).
+
+**Turn it on** in kb/kb.yaml, and say through which line such an answer is said:
+
+```yaml
+# kb/kb.yaml
+action: searchPolicy
+documents:
+  summarize: on
+  cap: 3            # how many sections retrieval nominates (kb:bakeoff --sections --sweep)
+  floor: 0.3
+```
+
+```yaml
+# prompts.yaml
+prompts:
+  kb_documents_answer:
+    text: '{answer}'      # said when the answer cannot be worded: the not-found line, by default
+    interruptible: false
+    generate:
+      answer:
+        from: sections
+        retry: 1          # once more when the judge refuses (measure it first: below)
+        goal: Answer the caller's question from the sections, in a sentence or two.
+```
+
+**A person approves each document, once.** `pnpm kb:approve --document <doc> --by "<name>" --owner "<team>"`: they have read it whole, and callers may hear answers worded from its sections. The approval holds the document's hash (its title, its applies, and each section's heading, text and `summarize`); a changed word withholds the whole document until a person approves it again, and `pnpm kb:status` lists it with its fix. A document never approved is never answered from; `pnpm check` warns of each, once summarizing is on.
+
+**What is never summarized:** a section a passage cites (the passage speaks for it, word for word or worded with its own fallback); a section marked `summarize: false`; and any section of a document whose top says `summarize: false` (a certificate that is only the source of regulated passages, say), which needs no approval and is never warned of. A document may say whom its answers are for (`applies`, as a passage does), read from the system of record by code.
+
+**On a call:** with summarizing on, retrieval nominates sections beside the topics (their headings and sentences are in the index: `pnpm kb:index`), and the topic slot asks, in the turn's own request, one yes-or-no of each: does this section say what the caller asks about? Where no topic fills and the caller asked something (not "I have a question"), the sections read yes at `KB_SECTION_ANSWERS` (0.6) or above, at most two, are the answer's. The knowledge tool resolves them through the gate as it resolves a passage (each still approved, each document applying to the caller, the call in the default language: sections are not translated), and the answer is worded from them, held to them by the checks (no figure they do not have, the word budget, 60 by default) and the documents drift judge, with the caller's question. Its record names the document and sections (`passageId: document:<doc>`, `from: documents`), as does the audit's `kb_worded` row.
+
+**When it cannot be worded** (a check fails, the judge refuses, the model errs or is late, or no model is configured), the line's own text is said: forms.yaml's `answers.documents.onFail` says what that is, `not-found` (the default: the not-found line below) or `opening` (the best section's first sentences word for word, in the `kb_documents_opening` frame, "Here's what our guide says: {opening}", where the app has it). The sections themselves are never said as they are.
+
+**A question nothing answers** (no topic, no section) gets the not-found reply, where the app has `kb_not_found`: that line in turn through its variants, then the guide to what can be asked (`kb_guide`) the first time on the call and again after two such replies in a row without it (the topic slot's `notFound.remind`), then the slot's question. It is not counted as a try by default (`notFound.counts: false`, the maintainer's decision of 2026-10-17): the knowledge base lacked it, the caller did not fail, so they may ask as often as they like; an app that wants a limit sets `counts: true`, and three in a row end as any slot's misses do. Without `kb_not_found`, the slot's retry line is said, as before.
+
+**While it is worded:** an answer from documents has a longer limit (`RENDER_DOCUMENTS_TIMEOUT_MS`: 6 s on a call, 8 s in a chat). Past a line's budgets the caller hears the hold line (`kb_hold`, in turn through its `variants`); past half the limit, where the app has it, a second (`kb_hold_more`, with its own variants), so a long wait is never silence. Both go to the caller as soon as they are due, on both carriers and in a chat.
+
+**Measure it before turning it on:** the section retriever on paraphrases of what each section answers and of questions none does (`pnpm kb:bakeoff <dir> --sections <file> --sweep`, every document's sections whatever their approval: measuring needs none), and the documents judge on labelled answers (`pnpm render:judge-eval --cases <file>`, cases `speaks: documents` with the sections as `content`; Harbor Mutual's are `apps/harbor/fixtures/judge/documents.jsonl`). A second draw (`retry`) is judged by the same judge, so its risk is the judge's miss rate on such answers: turn it on where that is measured low.
+

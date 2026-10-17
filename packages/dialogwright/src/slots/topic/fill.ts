@@ -60,7 +60,8 @@ export function topicFill(
       .sort((x, y) => y.p - x.p)
       .slice(0, MAX_ANSWER_SECTIONS);
     if (answering.length === 0) return out;
-    return { kind: 'filled', value: `${SECTIONS_VALUE_PREFIX}${answering.map((x) => x.s.key).join('|')}`, display: answering[0]!.s.heading.toLowerCase(), confidence: answering[0]!.p, confirm: 'none' };
+    const value = `${SECTIONS_VALUE_PREFIX}${answering.map((x) => x.s.key).join('|')}`;
+    return { kind: 'filled', value, display: display(value, ctx.locale), confidence: answering[0]!.p, confirm: 'none' };
   };
 }
 
@@ -81,7 +82,8 @@ function topicOnly(
     // At its own question, `none` (the caller said nothing about what they want to know): the question asked again, counted.
     const nothingAsked = (label: string | undefined): boolean => o.unanswered === 'retry' && ctx.prompted && label === 'none';
     const reask: SlotOutcome = { kind: 'invalid', reason: o.missReason, raw: '', reask: true };
-    const isUnanswered = (label: string | undefined, p: number): boolean => o.unanswered === 'retry' && label === 'unanswered' && meetsThreshold(t, o.fillAt, p);
+    // Held from the request, a not-found reply says nothing was found: it needs KB_UNANSWERED; at the slot's own question, the bar a topic fills at.
+    const isUnanswered = (label: string | undefined, p: number): boolean => o.unanswered === 'retry' && label === 'unanswered' && meetsThreshold(t, ctx.prompted ? o.fillAt : 'KB_UNANSWERED', p);
     const offered = new Set(offeredTopics(ctx.nominated, cap).map((n) => n.topic));
     const fillable = (label: string): boolean => label !== 'none' && label !== 'unanswered' && (offered.has(label) || (o.accept === 'catalog' && known.has(label)));
     const a = answers[questionId];

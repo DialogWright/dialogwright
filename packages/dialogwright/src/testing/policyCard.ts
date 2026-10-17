@@ -2,7 +2,7 @@ import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
 import { recordingOf } from '../core/recording';
-import { answerSpanOf, spanNameVars, summarizedFields } from '../render/config';
+import { answerSpanOf, isSectionsSpan, spanNameVars, summarizedFields } from '../render/config';
 import { DEFAULT_HOLD_TEXT, KB_HOLD_PROMPT } from '../render/turn';
 import { DRIFT_FIRE } from '../render/checks';
 import { lookupRefsOf } from '../define/policyFile';
@@ -538,6 +538,38 @@ function answerWordingSection(app: App, lines: readonly string[], refuseAt: numb
   return out;
 }
 
+/**
+ * Answers from approved documents (kb.yaml documents: a form's documents answer line, framed with a span
+ * from the sections): what the model is sent and never sent, the checks, the judge, the fallback and the
+ * second draw, a table of each such line, and the documents: which a person approved for summarizing, and
+ * what of them is never summarized.
+ */
+function documentsWordingSection(app: App, lines: readonly string[], refuseAt: number, cutoff: string): string[] {
+  const g = app.generated!;
+  const kb = app.knowledge?.kb;
+  const on = kb?.settings.documents?.summarize === 'on';
+  const out = [
+    `These lines answer a question no topic answers from sections of documents a person approved for summarizing (kb.yaml \`documents: { summarize: ${on ? 'on' : 'off'} }\`${on ? '' : ': off, so none is answered from'}). Retrieval nominates a few sections of the approved documents for the caller's words, and the decision model is asked of each whether it says what the caller asked; a topic it finds always answers instead. A section a passage cites is never summarized (the passage speaks for it), nor one marked \`summarize: false\`, nor any section of a document so marked. The model is sent the span's goal, its sentence (the line's own fixed words, the answer a gap), the sections chosen (the only facts it may state) and the caller's question in their own words (quoted, and screened again for an injection first): never a record, another section or the transcript. Each wording is checked by code before anyone hears it, for its data and shape: it names no number, amount or date the sections do not; it asks nothing; it copies no four words running of the line's own fixed words; it keeps to its word budget and avoids the phrases style.yaml lists. What it means is the documents drift judge's: the decision model, given the wording heard in its sentence, its goal, the sections and the question, refuses one that says anything other than what the sections say for that question (anything added, anything changed or turned around, a figure moved from one section to another, a condition, a limit or an exclusion that bears on the answer left out, or another question answered), at ${refuseAt} or above (style.yaml's \`judge.refuseAt\`${cutoff}). Where the line says \`retry\`, a wording the judge refused is asked for once more, the model told only that its last was refused, and judged again. The line's fixed text, its fallback, is said whenever a check fails, the judge refuses, the model errs, or the wording and its checks are not done within RENDER_DOCUMENTS_TIMEOUT_MS (6 s on a call and 8 s in a chat by default): by default the not-found line, never the sections themselves. The knowledge record names the document and the sections an answer was drawn from, with the document's approval, and the audit's \`kb_worded\` row names them too.`,
+    '',
+    '| Line | Span | Goal | Words | Asked again when refused |',
+    '| --- | --- | --- | --- | --- |',
+  ];
+  for (const id of lines) {
+    const answer = answerSpanOf(g.lines[id])!;
+    out.push(`| ${code(id)} | ${code(`{${answer.name}}`)} | ${cell(answer.span.goal)} | ${answer.span.words} | ${answer.span.retry !== undefined && answer.span.retry > 0 ? 'once' : 'no'} |`);
+  }
+  if (kb !== undefined) {
+    out.push('', '| Document | Approved for summarizing | Never summarized |', '| --- | --- | --- |');
+    const cited = new Set(Object.values(kb.passages).map((p) => `${p.source.document}#${p.source.section}`));
+    for (const doc of Object.values(kb.sources)) {
+      const approved = doc.summarize === false ? 'never (`summarize: false`)' : doc.freshness === 'fresh' ? `by ${doc.approval!.approvedBy} (${doc.approval!.owner}) on ${doc.approval!.on}` : doc.freshness === 'edited' ? 'changed since its approval: withheld' : 'not approved: never answered from';
+      const left = Object.entries(doc.sections).filter(([sid, s]) => s.summarize === false || cited.has(`${doc.id}#${sid}`)).map(([sid, s]) => `${s.heading ?? sid}${s.summarize === false ? ' (left out)' : ' (a passage cites it)'}`);
+      out.push(`| ${code(doc.id)} (${cell(doc.document)}) | ${approved} | ${doc.summarize === false ? 'all' : left.length === 0 ? 'nothing' : cell(left.join('; '))} |`);
+    }
+  }
+  return out;
+}
+
 /** Where a generated line is generated (its `when`), in words. */
 function whereWords(line: GeneratedLine): string {
   const situations = line.situations === undefined ? 'every situation' : orList(line.situations.map((s) => SITUATION_WORDS[s]));
@@ -564,8 +596,10 @@ function wordingSection(app: App): string[] {
   const out = ['## Lines a model words', ''];
   const ids = Object.keys(g.lines).filter((id) => g.lines[id]!.spans === undefined);
   // A knowledge answer's line (a span from the answer) has a table of its own, below.
-  const answerLines = Object.keys(g.lines).filter((id) => answerSpanOf(g.lines[id]) !== null);
-  const framed = Object.keys(g.lines).filter((id) => g.lines[id]!.spans !== undefined && !answerLines.includes(id));
+  const answerLines = Object.keys(g.lines).filter((id) => answerSpanOf(g.lines[id]) !== null && !isSectionsSpan(answerSpanOf(g.lines[id])!.span));
+  // An answer from documents' line (a span from the sections) has a table of its own, below.
+  const documentLines = Object.keys(g.lines).filter((id) => answerSpanOf(g.lines[id]) !== null && isSectionsSpan(answerSpanOf(g.lines[id])!.span));
+  const framed = Object.keys(g.lines).filter((id) => g.lines[id]!.spans !== undefined && !answerLines.includes(id) && !documentLines.includes(id));
   // The one named exception: a slot masked in the records that a model is sent whole, to summarize it.
   const summarized = Object.keys(app.slots).filter((id) => app.slots[id]!.summarized === true);
   const exception = summarized.length > 0 ? ' (but a slot listed below as sent whole to be summarized)' : '';
@@ -573,7 +607,7 @@ function wordingSection(app: App): string[] {
   const refuseAt = g.style.refuseAt ?? DRIFT_FIRE;
   // A cutoff other than the default, said plainly: above it, less cautious (the app's choice).
   const cutoff = refuseAt > DRIFT_FIRE ? `, less cautious than the default (${DRIFT_FIRE}): more of what the judge doubts is said` : refuseAt < DRIFT_FIRE ? `, more cautious than the default (${DRIFT_FIRE})` : '';
-  if (ids.length === 0 && framed.length === 0 && answerLines.length === 0) out.push('No line is generated: every line is said word for word.');
+  if (ids.length === 0 && framed.length === 0 && answerLines.length === 0 && documentLines.length === 0) out.push('No line is generated: every line is said word for word.');
   if (ids.length > 0) {
     out.push(`These lines are worded by a model for the moment (generated wording). Each is checked by code before anyone hears it, for its data and shape: every value it must carry is there word for word; it names no number, amount, date or ordinal it was not given (a figure the caller said only in an acknowledgement of it); it names no other value of an item's own slot in its place; it keeps to its word budget and asks one question only where its fixed text does, a question a yes or a no settles kept word for word; and it avoids the phrases style.yaml lists. What it means is the drift judge's: the decision model, given the line, its goal and its fixed text with the caller's words apart, refuses a line that does anything beyond its goal, states anything of the caller's words as the agent's own, or, summarizing or reading them back, misstates them or leaves out a negated statement, a refusal, a condition, a time, an amount or who is to act (it refuses at ${refuseAt} or above, style.yaml's \`judge.refuseAt\`${cutoff}). Collected content is screened for an injection again before a line is worded from it. When a check fails, the judge refuses, the model is slow or errs, or the caller's words were flagged, its fixed text is said instead. The model is sent the line's values as its fixed text would say them (those a tool filled in among them), the caller's words on the turn, quoted (never after a question whose answer the records mask), and the content it may summarize; never an identity factor, a value the records hide whole${exception}, the transcript, or anything else a tool returned.${framed.length > 0 || answerLines.length > 0 ? '' : ' Every other line is said word for word.'}`);
     out.push('', '| Line | Fixed text | Goal | Generated | Carries word for word | Sent whole, though recorded masked | May summarize |', '| --- | --- | --- | --- | --- | --- | --- |');
@@ -612,6 +646,10 @@ function wordingSection(app: App): string[] {
   if (answerLines.length > 0) {
     if (ids.length > 0 || framed.length > 0) out.push('');
     out.push(...answerWordingSection(app, answerLines, refuseAt, cutoff));
+  }
+  if (documentLines.length > 0) {
+    if (ids.length > 0 || framed.length > 0 || answerLines.length > 0) out.push('');
+    out.push(...documentsWordingSection(app, documentLines, refuseAt, cutoff));
   }
   if (summarized.length > 0) {
     out.push('', 'Sent whole to the render model to summarize; masked in the records (a `text` slot\'s `redact: length-summarized`, the one exception to "never a value the records hide whole"):', '', '| Slot | Summarized by | Recorded as |', '| --- | --- | --- |');

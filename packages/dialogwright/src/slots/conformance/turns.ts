@@ -30,6 +30,7 @@ export function kitContext(text: string, over: ExampleContext = {}, locale?: str
   };
   if (over.sources !== undefined) ctx.sources = over.sources;
   if (over.nominated !== undefined) ctx.nominated = over.nominated;
+  if (over.sections !== undefined) ctx.sections = over.sections;
   if (lang !== undefined) ctx.locale = lang;
   return ctx;
 }

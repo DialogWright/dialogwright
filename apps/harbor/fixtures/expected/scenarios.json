@@ -956,8 +956,11 @@
   "coverage-topic-retry": {
     "id": "coverage-topic-retry",
     "decision": "prompt",
-    "promptId": "ask_coverageTopic_retry",
-    "acks": [],
+    "promptId": "ask_coverageTopic",
+    "acks": [
+      "kb_not_found",
+      "kb_guide"
+    ],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
@@ -2877,9 +2880,11 @@
   "coverage-unanswered-not-found": {
     "id": "coverage-unanswered-not-found",
     "decision": "prompt",
-    "promptId": "ask_coverageTopic_retry",
+    "promptId": "ask_coverageTopic",
     "acks": [
-      "identity_verified"
+      "identity_verified",
+      "kb_not_found",
+      "kb_guide"
     ],
     "reason": null,
     "decidedGate": null,

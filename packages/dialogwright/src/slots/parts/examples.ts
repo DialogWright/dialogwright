@@ -24,6 +24,16 @@ const nomination = z.strictObject({
   score: z.number(),
   via: z.enum(['keyword', 'dense', 'app']).default('keyword'),
 });
+/** A section of an approved document retrieval nominated, as an example writes it (kb.yaml documents). */
+const sectionNomination = z.strictObject({
+  key: z.string().min(1),
+  document: z.string().min(1),
+  documentTitle: z.string().min(1),
+  heading: z.string().min(1),
+  text: z.string().min(1),
+  score: z.number(),
+  via: z.enum(['keyword', 'dense', 'app']).default('keyword'),
+});
 /** One of the app's knowledge topics a slot is built with (SlotBuildEnv.catalog). */
 const catalogTopic = z.strictObject({ id: z.string().min(1), title: z.string().min(1), titles: z.record(z.string(), z.string()).optional() });
 
@@ -40,6 +50,7 @@ const utterance = z.strictObject({
       records: z.array(z.unknown()).optional(),
       sources: z.record(z.string(), z.array(z.unknown())).optional(),
       nominated: z.array(nomination).optional(),
+      sections: z.array(sectionNomination).optional(),
     })
     .optional(),
   expect: z.strictObject({
