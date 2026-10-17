@@ -592,6 +592,10 @@ Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 p
 
 The section question's wording was measured first (docs/designs/2026-10-17-kb-documents.md, "Measured": four wordings on the 80 paraphrases, the default kept), which found that "what is an EOB" nominated no section. The handbook's section now says EOB in its heading and its first sentence, and the maintainer approved the handbook again. Recorded (674 requests, $0.1292): "what is an eob" (`hb-18`) reads the section 0.89 and is answered after the member is verified; "i got an explanation of benefits, do i have to pay it" (`hb-10`) still reads 0.45 and stays a known gap. Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`.
 
+### Recording 19: jev-1.13.0, 2026-10-17, the topic question asked beside sections alone
+
+The engine now asks the topic question, with its two labels (unanswered, none), on a turn that offers sections of the handbook and no topic (an app that answers from documents alone must tell a question nothing answers from a turn that asks none), and holds a generated figure to its sources by its value ("one hundred fifty dollars" is a "$150" they say). Every request that offered sections and no topic changed, so Harbor was recorded again (674 requests, $0.1298). Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`, with the generated lines replayed and without.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
