@@ -610,9 +610,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       used(r.usage);
       const a = r.answers[fromSections ? DOCUMENTS_DRIFT_QUESTION_ID : ANSWER_DRIFT_QUESTION_ID];
       if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
-      // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge).
-      const judge: RenderJudge = { score: a.noul, refuseAt };
-      if (a.noul >= refuseAt) return { fallback: 'drift', refused: text, gen, judge };
+      // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge); an answer
+      // from documents at its own cutoff where style.yaml gives one (judge.documentsRefuseAt).
+      const cutoff = fromSections ? (generated.style.documentsRefuseAt ?? refuseAt) : refuseAt;
+      const judge: RenderJudge = { score: a.noul, refuseAt: cutoff };
+      if (a.noul >= cutoff) return { fallback: 'drift', refused: text, gen, judge };
       return { said: text, gen, judge };
     } catch {
       return { fallback: 'drift-error', refused: text, gen };

@@ -43,7 +43,7 @@ export interface KbSection {
 }
 
 /** Whether summarizing is on for this knowledge base (kb.yaml documents.summarize). */
-export const summarizing = (kb: Pick<KnowledgeBase, 'settings'>): boolean => kb.settings.documents?.summarize === 'on';
+export const summarizing = (kb: Pick<KnowledgeBase, 'settings'>): boolean => kb.settings?.documents?.summarize === 'on';
 
 /**
  * The sections that may be summarized (`approved`: true, the default), or every section the index

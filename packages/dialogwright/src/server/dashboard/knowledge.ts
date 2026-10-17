@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { App } from '../../core/app/types';
 import { approvalLogged } from '../../kb/log';
+import { summarizableSections, summarizing } from '../../kb/sectionTexts';
 import { PENDING_TOPICS_FILE } from '../../kb/folder';
 
 /**
@@ -31,6 +32,12 @@ export interface KnowledgeStatus {
     /** Never approved: never said. */
     unapproved: number;
   };
+  /**
+   * With answers from documents on (kb.yaml documents): the documents that may be summarized, by state
+   * (approved and fresh, changed since their approval, never approved), as kb:status counts them; absent
+   * with summarizing off.
+   */
+  documents?: { approved: number; edited: number; unapproved: number };
   /** Drafts waiting in kb/pending, and whether topics are proposed there; null when the server does not know the app's folder. */
   drafts: number | null;
   proposedTopics: boolean | null;
@@ -68,5 +75,12 @@ export async function knowledgeStatusOf(app: App, appDir: string | undefined): P
       proposedTopics = there ? false : null;
     }
   }
-  return { kind: 'kb', topics: Object.keys(kb.topics).length, passages, drafts, proposedTopics };
+  // The documents with something to summarize (kb.yaml documents), by state.
+  let documents: KnowledgeStatus['documents'];
+  if (summarizing(kb)) {
+    const withSections = new Set(summarizableSections(kb, { approved: false }).map((s) => s.document));
+    const docs = Object.values(kb.sources).filter((d) => withSections.has(d.id));
+    documents = { approved: docs.filter((d) => d.freshness === 'fresh').length, edited: docs.filter((d) => d.freshness === 'edited').length, unapproved: docs.filter((d) => d.freshness === 'unapproved').length };
+  }
+  return { kind: 'kb', topics: Object.keys(kb.topics).length, passages, ...(documents !== undefined ? { documents } : {}), drafts, proposedTopics };
 }

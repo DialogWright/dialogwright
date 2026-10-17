@@ -2141,6 +2141,9 @@
         <dt>Stale: edited after approval (withheld)</dt><dd class="${p.edited ? 'bad' : ''}">${n(p.edited)}</dd>
         <dt>Never approved (never said)</dt><dd class="${p.unapproved ? 'warnt' : ''}">${n(p.unapproved)}</dd>
         ${p.outside ? `<dt>Approved outside kb:approve</dt><dd class="bad">${n(p.outside)}</dd>` : ''}
+        ${s.documents ? `<dt>Documents approved for summarizing</dt><dd class="ok">${n(s.documents.approved)}</dd>
+        <dt>Documents changed since approval (withheld)</dt><dd class="${s.documents.edited ? 'bad' : ''}">${n(s.documents.edited)}</dd>
+        <dt>Documents never approved (never answered from)</dt><dd class="${s.documents.unapproved ? 'warnt' : ''}">${n(s.documents.unapproved)}</dd>` : ''}
         <dt>Drafts waiting for review</dt><dd>${s.drafts === null ? '–' : n(s.drafts)}</dd>
         ${s.proposedTopics ? '<dt>Topics proposed</dt><dd>waiting in kb/pending</dd>' : ''}
       </dl>` : `<p class="figs-note">${n(s.topics)} topics, answered by the app's own code.</p>`;

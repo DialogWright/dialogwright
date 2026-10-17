@@ -13,7 +13,7 @@ intents:
   # What the member's plan covers: answered from the approved passages of their own plan's
   # certificate (kb/), word for word. Level 1 (the member ID and date of birth).
   coverage:
-    criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim; or asks about their membership, which the member handbook explains, such as their ID card, paying the premium, appealing a decision, the app, the hours, updating their details, adding or removing someone, or cancelling, whether they ask how or ask for it. An injury or a treatment named in a question about what the plan pays is a coverage question. Asking to buy insurance is not
+    criteria: Asks whether something is covered, how much a benefit pays, or what their plan includes or requires, such as how long they have to file a claim, without reporting a new claim; or asks about their membership, which the member handbook explains, such as their ID card, paying the premium, appealing a decision, the app, the hours, updating their details, adding or removing someone, cancelling, or how their information is kept private, whether they ask how or ask for it. An injury or a treatment named in a question about what the plan pays is a coverage question. Asking to buy insurance is not
     label: check coverage
     kind: form
 

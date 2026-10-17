@@ -102,6 +102,7 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     avoid: [...(style?.avoid ?? [])],
     // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).
     ...(style?.judge?.refuseAt !== undefined ? { refuseAt: style.judge.refuseAt } : {}),
+    ...(style?.judge?.documentsRefuseAt !== undefined ? { documentsRefuseAt: style.judge.documentsRefuseAt } : {}),
   };
 }
 
@@ -622,6 +623,10 @@ export function generatedWordingWarnings(input: {
     const answer = answerSpanOf(line);
     if (answer === null || low > 0) continue;
     out.push({ file: 'prompts.yaml', path: ['prompts', id, 'generate', answer.name, 'from'], message: `the line "${id}" words its answer from the approved passage (from: answer), but ${input.kbTopics === undefined ? 'the app has no knowledge base (kb/topics.yaml)' : 'no topic in kb/topics.yaml is marked risk: low'}, so every answer is said word for word and the span words nothing`, fix: 'mark the topics whose answers may be worded "risk: low" in kb/topics.yaml (the app designer\'s call), or delete the span', atKey: true });
+  }
+  const documentsRefuseAt = input.style?.judge?.documentsRefuseAt;
+  if (documentsRefuseAt !== undefined && documentsRefuseAt > DRIFT_FIRE) {
+    out.push({ file: 'style.yaml', path: ['judge', 'documentsRefuseAt'], message: `judge.documentsRefuseAt is ${documentsRefuseAt}, less cautious than the default (${DRIFT_FIRE}): the documents drift judge lets by an answer from documents it holds up to ${Math.round(documentsRefuseAt * 100)}% likely to be unfaithful (the app's choice; the policy card says so)`, fix: `lower it to ${DRIFT_FIRE} or below, or keep it if that is the owner's choice` });
   }
   const refuseAt = input.style?.judge?.refuseAt;
   if (refuseAt !== undefined && refuseAt > DRIFT_FIRE) {

@@ -306,7 +306,12 @@ prompts:
   # An answer from the member handbook (kb.yaml documents), where no topic answers: worded from the
   # sections the model chose, held to them by the checks and the judge, asked once more if the judge
   # refuses the first wording (measured: render:judge-eval on fixtures/judge/documents.jsonl, DESIGN.md);
-  # its text, said when it cannot be worded, is the not-found line in turn.
+  # its text, said when it cannot be worded, is the best section's opening, word for word, in this frame
+  # (forms.yaml documents.onFail: opening): approved text, never "I couldn't find anything" for a question
+  # the handbook answers.
+  kb_documents_opening:
+    text: "Here's what our member handbook says: {opening}"
+    interruptible: false
   kb_documents_answer:
     text: '{answer}'
     interruptible: false

@@ -37,6 +37,12 @@ export const styleSchema = z
           .max(1, { error: 'must be at most 1' })
           .optional()
           .describe(`The drift judge's probability that a wording is unfaithful (or does more than its goal) at or above which it is refused and the fixed text said. Default ${DRIFT_FIRE}. Lower is more cautious: more callers hear the fixed text. Higher is less cautious than the default: more of what the judge doubts is said (pnpm check warns, and the policy card says so). For a line that must never be worded by a model, mark it prescribed: true instead.`),
+        documentsRefuseAt: z
+          .number({ error: 'must be a number' })
+          .gt(0, { error: 'must be more than 0' })
+          .max(1, { error: 'must be at most 1' })
+          .optional()
+          .describe(`Where the documents drift judge refuses an answer worded from sections of approved documents (a span from: sections), in place of refuseAt for those answers alone: an app that holds its worded passages to a stricter cutoff may hold its answers from documents to another, measured on its own cases (pnpm render:judge-eval, speaks: documents). Default: refuseAt. Above ${DRIFT_FIRE}, less cautious than the default (pnpm check warns).`),
       })
       .optional()
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),

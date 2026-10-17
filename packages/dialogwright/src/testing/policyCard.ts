@@ -544,8 +544,11 @@ function answerWordingSection(app: App, lines: readonly string[], refuseAt: numb
  * second draw, a table of each such line, and the documents: which a person approved for summarizing, and
  * what of them is never summarized.
  */
-function documentsWordingSection(app: App, lines: readonly string[], refuseAt: number, cutoff: string): string[] {
+function documentsWordingSection(app: App, lines: readonly string[], general: number, generalCutoff: string): string[] {
   const g = app.generated!;
+  // The documents judge's own cutoff where style.yaml gives one (judge.documentsRefuseAt).
+  const refuseAt = g.style.documentsRefuseAt ?? general;
+  const cutoff = g.style.documentsRefuseAt === undefined ? generalCutoff : refuseAt > DRIFT_FIRE ? `; its documentsRefuseAt, less cautious than the default (${DRIFT_FIRE})` : refuseAt < DRIFT_FIRE ? `; its documentsRefuseAt, more cautious than the default (${DRIFT_FIRE})` : '; its documentsRefuseAt';
   const kb = app.knowledge?.kb;
   const on = kb?.settings.documents?.summarize === 'on';
   const out = [

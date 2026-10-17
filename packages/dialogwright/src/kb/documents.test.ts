@@ -202,6 +202,18 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(once.client.askedSpans).toHaveLength(1);
   });
 
+  it('a documents cutoff of its own (style.yaml judge.documentsRefuseAt) holds answers from documents alone', async () => {
+    const style = "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  refuseAt: 0.3\n  documentsRefuseAt: 0.5\n";
+    const strict = documentsApp('library-documents-cutoff', { edits: { 'style.yaml': style } });
+    const t = asked(strict, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const out = await rendered(strict, t, renderer(), at(0.4));
+    expect(docLine(out)).toMatchObject({ mode: 'generated', judge: { score: 0.4, refuseAt: 0.5 } });
+    // Without it, the app's refuseAt (0.3) holds them too.
+    const plain = documentsApp('library-documents-cutoff-plain', { edits: { 'style.yaml': "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  refuseAt: 0.3\n" } });
+    const u = asked(plain, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    expect(docLine(await rendered(plain, u, renderer(), at(0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { refuseAt: 0.3 } });
+  });
+
   it('onFail: opening: the best section\'s first sentences, word for word, in the opening frame', () => {
     const app = documentsApp('library-documents-opening', { onFail: 'opening' });
     const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });

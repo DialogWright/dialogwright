@@ -1751,6 +1751,8 @@ export interface RenderStyle {
    * model. Absent in an app built in code: the default.
    */
   readonly refuseAt?: number;
+  /** Where the documents drift judge refuses an answer from documents (style.yaml's `judge.documentsRefuseAt`); default refuseAt. */
+  readonly documentsRefuseAt?: number;
 }
 
 /**

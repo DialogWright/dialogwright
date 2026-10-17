@@ -43,6 +43,12 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1
+        },
+        "documentsRefuseAt": {
+          "description": "Where the documents drift judge refuses an answer worded from sections of approved documents (a span from: sections), in place of refuseAt for those answers alone: an app that holds its worded passages to a stricter cutoff may hold its answers from documents to another, measured on its own cases (pnpm render:judge-eval, speaks: documents). Default: refuseAt. Above 0.5, less cautious than the default (pnpm check warns).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
         }
       },
       "additionalProperties": false

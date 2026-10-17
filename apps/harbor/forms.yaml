@@ -30,7 +30,7 @@ forms:
     summaryPromptId: null
     hooks: [entry, principalEntry]
     calls: [getCoverage, searchPolicy, getUsage]
-    answers: { slot: coverageTopic, answer: coverage_answer, unavailable: coverage_unavailable, subject: clientId }
+    answers: { slot: coverageTopic, answer: coverage_answer, unavailable: coverage_unavailable, subject: clientId, documents: { onFail: opening } }
     checks:
       - action: isClient
         with: [clientId]
