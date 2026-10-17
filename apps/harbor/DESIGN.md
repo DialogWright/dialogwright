@@ -457,6 +457,12 @@ After the acknowledgement options (said once a call per request, `ackIntent.repe
 - **The filing deadline**, the answer the live call heard refused twice: now worded with its condition, for example "You have 180 days from the date of your accident to tell us about a claim. Claims sent after that time may still be reviewed, but payment is not guaranteed, so it is best to file as soon as you can."
 - **The judge on the live call's two wordings**, added to `fixtures/judge/answers.jsonl` and recorded: the one that drops the condition scores 0.44 (refused at Harbor's 0.3; the engine's 0.5 would have let it by), the one that keeps it 0.08. On all 30 cases at 0.5: 14 of 17 unfaithful caught, 1 of 13 faithful refused.
 
+### Recording 8: jev-1.13.0, 2026-10-17, the topic's "none" at a read-back
+
+On two live calls (2026-10-17), "Wait. How long do I have the file?" (the recognizer's "the file" for "to file"), asked at a claim's read-back, opened the coverage aside but did not fill its topic: the topic question, asked as the aside's follow-up, read filing_deadline 0.52 against none 0.48, and on the earlier call 0.47 against 0.53, under the 0.55 the topic fills at, so the caller heard "What's your coverage question?" and had to ask again. A clean wording read 0.98 to 1.00 everywhere. A reading near 0.5 is a question problem (guide 17.4): the topic's `none` said "Asks about none of these, or asks nothing about coverage", and at a claim's read-back a question about filing can read as being about the claim rather than coverage. It now says "Asks about none of these topics".
+
+Recorded (509 requests, $0.0901) with the live words as a corpus line at the read-back (cr-10, tagged `live_asr`): filing_deadline 0.83 against none 0.17, and the deadline answered with the read-back after it. Replay: `0 untagged, 0 failing, 0 differing, 0 misses`. Baseline: cr-10 added by hand (from `regress --corpus cr-10 --json`).
+
 ## Skill trial notes
 
 Each place the skill, the guide, patterns.md, options.md or the framework was unclear, wrong, missing something or cost a wrong turn, with what I did.

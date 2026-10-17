@@ -2427,6 +2427,31 @@
     "principalLevel": 2,
     "gate": "searchPolicy:ALLOW"
   },
+  "cr-10": {
+    "id": "cr-10",
+    "decision": "prompt",
+    "promptId": "confirm_report",
+    "acks": [
+      "coverage_answer"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "report_claim",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": "accident_injury",
+      "lossDate": "2026-09-12",
+      "lossDescription": "I slipped on the ice and hurt my wrist"
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW"
+  },
   "id-01": {
     "id": "id-01",
     "decision": "prompt",

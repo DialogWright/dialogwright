@@ -97,6 +97,7 @@
 {"id": "cr-07", "text": "that's right, go ahead", "intent": "none", "context": "confirm_report_claim", "confirm": "yes"}
 {"id": "cr-08", "text": "actually i want to talk to a person", "intent": "agent", "context": "confirm_report_claim"}
 {"id": "cr-09", "text": "wait, how long do i have to file a claim", "intent": "coverage", "context": "confirm_report_claim", "labels": {"coverageTopicTopic": "filing_deadline"}}
+{"id": "cr-10", "text": "wait, how long do i have the file", "intent": "coverage", "context": "confirm_report_claim", "labels": {"coverageTopicTopic": "filing_deadline"}, "tags": ["live_asr"]}
 {"id": "id-01", "text": "my member id is four two seven one six three five eight", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true}}
 {"id": "id-02", "text": "four two seven one six three five eight", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "four two seven one six three five eight", "memberIdComplete": true, "clientIdGiven": true, "clientIdSpan": "four two seven one six three five eight", "clientIdComplete": true}}
 {"id": "id-03", "text": "42716358", "intent": "none", "context": "claim_status", "prompted": "memberId", "labels": {"memberIdGiven": true, "memberIdSpan": "42716358", "memberIdComplete": true}}
