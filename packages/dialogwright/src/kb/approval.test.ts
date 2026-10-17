@@ -20,7 +20,7 @@ import { runTurn, type RunOptions, type TurnRun } from '../run/turn';
 import { choice, noul } from '../testing/answers';
 import { fixedRetriever } from '../testing/retrievers';
 import { excerptInSource, notAPerson, readApprovalLog } from './approval';
-import { BASE, cleanScratch, codeFor, folder, KB_FIXTURE, TODAY } from './__fixtures__/libraryKbApp';
+import { BASE, cleanScratch, codeFor, folder, KB_FIXTURE, TODAY, VISITOR_GUIDE } from './__fixtures__/libraryKbApp';
 
 /**
  * Approval and staleness: `kb:approve` (a passage re-approved after its source changed or it was
@@ -40,6 +40,7 @@ function kbCopy(): string {
   const dir = mkdtempSync(join(tmpdir(), 'dialogwright-kb-approve-'));
   scratch.push(dir);
   cpSync(KB_FIXTURE, join(dir, 'kb'), { recursive: true });
+  writeFileSync(join(dir, 'kb', 'sources', 'visitor-guide.yaml'), VISITOR_GUIDE);
   return join(dir, 'kb');
 }
 

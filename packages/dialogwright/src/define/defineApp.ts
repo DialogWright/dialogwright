@@ -418,6 +418,16 @@ export function crossLink(
       const lines = answerPromptsOf(form.answers);
       promptExists('forms.yaml', ['forms', id, 'answers', ...(form.answers.answer !== undefined ? ['answer'] : [])], lines.answer);
       promptExists('forms.yaml', ['forms', id, 'answers', ...(form.answers.unavailable !== undefined ? ['unavailable'] : [])], lines.unavailable);
+      // With answers from documents (kb.yaml documents), the line they are said through, framed from the sections.
+      if (config.knowledge?.settings.documents?.summarize === 'on') {
+        const docLine = form.answers.documents?.answer ?? 'kb_documents_answer';
+        const at = ['forms', id, 'answers', ...(form.answers.documents?.answer !== undefined ? ['documents', 'answer'] : [])];
+        if (!has(prompts, docLine)) {
+          yaml('forms.yaml', at, `form "${id}" answers from documents (kb.yaml documents: summarize on), and the line it says them through, "${docLine}", is not in prompts.yaml`, `add "${docLine}:" to prompts.yaml: text '{answer}' (what is said when the answer cannot be worded: the not-found line, by default), with generate: { answer: { from: sections, goal: ... } }`);
+        } else if (prompts[docLine]!.generate?.answer?.from !== 'sections') {
+          yaml('prompts.yaml', ['prompts', docLine], `the line "${docLine}" says answers from documents, but its {answer} is not a span worded from the sections, so every such answer would be its fallback`, `add generate: { answer: { from: sections, goal: "Answer the caller's question from the sections, in a sentence or two." } }`, true);
+        }
+      }
     }
 
     const declared = form.hooks ?? [];

@@ -170,6 +170,13 @@ describe('what counts as a gap', () => {
     expect(collectGaps(turns, none).gaps).toEqual([]);
   });
 
+  it('a turn answered from sections of approved documents is no gap, though no topic answered it', () => {
+    const turns = files.flatMap((f) => readTurns(f).turns);
+    const answered = turns.map((t) => (t.sessionId === 'C02' && t.words === 'what do I owe for an overdue book' ? { ...t, kb: { passageId: 'document:patron-handbook', topic: 'documents', fresh: true, document: 'Patron Handbook', section: 'fees', locale: null } } : t));
+    expect(collectGaps(answered, none).gaps.some((g) => g.sessionId === 'C02')).toBe(false);
+    expect(collectGaps(turns, none).gaps.some((g) => g.sessionId === 'C02')).toBe(true);
+  });
+
   it('leaves out a turn where the call went on to ask another slot, or where the caller was answering a code or a yes or no', () => {
     const turns = files.flatMap((f) => readTurns(f).turns);
     const asked = turns.find((t) => t.sessionId === 'C01' && t.turnIndex === 2)!;

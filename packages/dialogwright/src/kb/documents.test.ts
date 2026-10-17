@@ -17,13 +17,13 @@ import type { Renderer, SpanAct } from '../render/types';
 import { DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
 import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
-import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, type Edit } from './__fixtures__/libraryKbApp';
+import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, VISITOR_GUIDE, type Edit } from './__fixtures__/libraryKbApp';
 import type { SectionRetriever } from './sections';
 import type { SectionNomination } from './types';
 
 /**
  * Answers from approved documents (kb.yaml documents, docs/designs/2026-10-17-kb-documents.md), on the
- * library's line: its visitor guide (Wi-Fi, printing, meeting rooms, a lost card; a note for staff left
+ * library's line: its visitor guide (Wi-Fi, printing, parking, a lost card; a note for staff left
  * out) approved for summarizing in a scratch copy, with summarizing on. A question no topic answers is
  * answered from the sections the decision model says answer it, worded from them, held to them by the
  * checks and the judge, and the line's fallback (the not-found line, or the best section's opening) said
@@ -61,7 +61,7 @@ function documentsApp(id: string, options: { approve?: boolean; retry?: boolean;
     const f = APP_EDITS['forms.yaml']!(t);
     return options.onFail ? f.replace('    answers: { slot: libraryTopic }\n', '    answers: { slot: libraryTopic, documents: { onFail: opening } }\n') : f;
   };
-  const dir = folder(id, { 'prompts.yaml': prompts, 'forms.yaml': forms, 'kb/kb.yaml': (t) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n`, ...(options.edits ?? {}) });
+  const dir = folder(id, { 'prompts.yaml': prompts, 'forms.yaml': forms, 'kb/kb.yaml': (t) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n`, 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE, ...(options.edits ?? {}) });
   if (options.approve !== false) {
     const place = placeOf(dir, 'library');
     if (typeof place === 'string') throw new Error(place);
@@ -128,7 +128,7 @@ describe('answers from documents: the sections the decision model says answer it
     expect(calls(topic.result)[0]).toMatch(/^findPassage\(topic=opening_hours\)/);
     const nothing = asked(APP, 'i have a question', { none: 0.95, unanswered: 0.05 }, { 'visitor-guide#wifi': 0.7 });
     expect(nothing.result.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
-    const under = asked(APP, 'can i bring my dog', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#rooms': 0.4 });
+    const under = asked(APP, 'can i bring my dog', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#parking': 0.4 });
     expect(under.result.decision).toMatchObject({ promptId: 'ask_libraryTopic', acks: [expect.anything(), { promptId: 'kb_not_found', vars: {} }] });
   });
 

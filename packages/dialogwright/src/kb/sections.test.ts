@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { loadKnowledgeFolder } from '../define/load';
 import { approveDocument, placeOf } from './approval';
-import { KB_FIXTURE, TODAY } from './__fixtures__/libraryKbApp';
+import { KB_FIXTURE, TODAY, VISITOR_GUIDE } from './__fixtures__/libraryKbApp';
 import { defaultSectionRetriever, SectionRetriever, sectionIndexTexts, sectionOfKey, sentencesOf, summarizableSections } from './sections';
 import { allIndexTexts } from './vectorIndex';
 import type { KnowledgeBase } from './types';
@@ -26,6 +26,7 @@ function kbWith(options: { approve?: boolean; summarize?: 'on' | 'off' } = {}): 
   scratch.push(root);
   const dir = join(root, 'kb');
   cpSync(KB_FIXTURE, dir, { recursive: true });
+  writeFileSync(join(dir, 'sources', 'visitor-guide.yaml'), VISITOR_GUIDE);
   const kbYaml = join(dir, 'kb.yaml');
   writeFileSync(kbYaml, `${readFileSync(kbYaml, 'utf8').trimEnd()}\ndocuments:\n  summarize: ${options.summarize ?? 'on'}\n`);
   if (options.approve) {
@@ -44,7 +45,7 @@ describe('the sections that may be summarized', () => {
 
   it('are an approved document\'s, but for a section a passage cites and one marked summarize: false', () => {
     const kb = kbWith({ approve: true }).kb();
-    expect(summarizableSections(kb).map((s) => s.key)).toEqual(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#rooms', 'visitor-guide#lost-card']);
+    expect(summarizableSections(kb).map((s) => s.key)).toEqual(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#parking', 'visitor-guide#lost-card']);
     expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.' });
     // The patron guide's sections are each cited by a passage: never summarized, though approved documents' they would be.
     expect(summarizableSections(kb, { approved: false }).some((s) => s.document === 'patron-guide')).toBe(false);
@@ -69,7 +70,7 @@ describe('the sections that may be summarized', () => {
 describe('their index texts', () => {
   it('are each section\'s heading and sentences, keyed by the section, in the default locale; whatever the approval', () => {
     const texts = sectionIndexTexts(kbWith().kb());
-    expect(new Set(texts.map((t) => t.topic))).toEqual(new Set(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#rooms', 'visitor-guide#lost-card']));
+    expect(new Set(texts.map((t) => t.topic))).toEqual(new Set(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#parking', 'visitor-guide#lost-card']));
     expect(texts.filter((t) => t.topic === 'visitor-guide#wifi').map((t) => t.text).sort()).toEqual(['Every branch has free Wi-Fi.', 'Join the network ExampleTownLibrary; no password is needed.', 'Sessions end when the branch closes.', 'Wi-Fi']);
     expect(texts.every((t) => t.field === 'section' && t.locale === 'en-US')).toBe(true);
   });

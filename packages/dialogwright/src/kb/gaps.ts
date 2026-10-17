@@ -363,6 +363,9 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
     return { kind: 'unavailable', topic, near: un.topic !== null ? 'passage' : nominated.length > 0 ? 'nominated' : 'none', ...base, words, reason: un.reason, ...(un.passage ? { passage: un.passage } : {}) };
   }
 
+  // Answered from sections of approved documents (kb.yaml documents): no gap, though no topic answered it.
+  if (t.kb !== null && t.kb.fresh && t.kb.topic === 'documents') return null;
+
   const q = topicQuestionOf(t);
   if (q !== null) {
     const answer = t.answers[q.id];

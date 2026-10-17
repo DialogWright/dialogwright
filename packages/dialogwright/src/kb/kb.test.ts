@@ -124,9 +124,9 @@ describe('the knowledge base folder: a valid one', () => {
     expect(Object.values(kb.passages).map((p) => p.freshness)).toEqual(Array(7).fill('fresh'));
     expect(kb.passages['opening-hours-es']).toMatchObject({ locale: 'es', translates: 'opening-hours', file: 'kb/locale/es/passages/opening-hours-es.yaml' });
     expect(kb.passages['late-fees-adult-2025']).toMatchObject({ applies: { card: ['adult'] }, effective: { from: '2025-01-01', to: '2025-12-31' }, source: { document: 'fee-schedule-2025', section: 'adult' } });
-    expect(Object.keys(kb.sources)).toEqual(['fee-schedule-2025', 'patron-guide', 'visitor-guide']);
-    // A document no one approved for summarizing: answered from by no one, with summarizing off.
-    expect(kb.sources['visitor-guide']).toMatchObject({ freshness: 'unapproved', hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(Object.keys(kb.sources)).toEqual(['fee-schedule-2025', 'patron-guide']);
+    // A document no one approved for summarizing (kb.yaml documents): its hash, and unapproved.
+    expect(kb.sources['patron-guide']).toMatchObject({ freshness: 'unapproved', hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(kb.sources['patron-guide']!.document).toBe('Example Town Library Patron Guide');
   });
 
@@ -169,7 +169,6 @@ describe('the configuration hashes', () => {
       'kb/passages/opening-hours.yaml',
       'kb/sources/fee-schedule-2025.yaml',
       'kb/sources/patron-guide.yaml',
-      'kb/sources/visitor-guide.yaml',
       'kb/topics.yaml',
     ]);
   });

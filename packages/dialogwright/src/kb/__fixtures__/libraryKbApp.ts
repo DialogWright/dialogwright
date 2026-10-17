@@ -67,6 +67,13 @@ export const TOOLS: Record<string, ToolDef> = {
 
 export type Edit = string | ((text: string) => string) | null;
 
+/**
+ * A source document no passage cites, for the tests of answers from documents (kb.yaml documents): the
+ * library's visitor guide, written into a scratch copy's kb/sources/visitor-guide.yaml by the tests that
+ * need it (the fixture's own kb/ has none, so every other test sees the library as it was).
+ */
+export const VISITOR_GUIDE = '# yaml-language-server: $schema=../../../../../schemas/kb-source.schema.json\ndocument: Example Town Library Visitor Guide\nprovenance:\n  file: visitor-guide.pdf\n  retrieved: 2026-09-01\nsections:\n  wifi:\n    heading: Wi-Fi\n    text: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.\n  printing:\n    heading: Printing and copies\n    text: Printing and copying cost 15 cents a page in black and white and 50 cents a page in color. Print from a branch computer, or send a file to print@library.example.com and collect it at the desk within two days.\n  parking:\n    heading: Parking\n    text: Every branch has free parking for up to two hours. Spaces by the entrance are kept for drivers with a disability permit.\n  lost-card:\n    heading: A lost library card\n    text: A lost card is replaced at any branch desk with a photo ID. The first replacement is free and each one after costs 2 dollars.\n  staff:\n    heading: Notes for staff\n    text: Staff override codes for the self-checkout are kept in the binder at the main desk.\n    summarize: false\n';
+
 export const APP_EDITS: Record<string, (text: string) => string> = {
   'app.yaml': (t) => t.replace('prompts:\n  spokenVars: [due]', 'prompts:\n  spokenVars: [due]\n  dataVars: [answer]'),
   'intents.yaml': (t) => t
