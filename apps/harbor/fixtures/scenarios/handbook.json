@@ -1,0 +1,238 @@
+[
+  {
+    "id": "handbook-id-card",
+    "steps": [
+      {
+        "say": "i lost my insurance card, how do i get a new one"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-missed-premium",
+    "steps": [
+      {
+        "say": "what happens if i miss a premium payment"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-change-address",
+    "steps": [
+      {
+        "say": "how do i change my address"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-app-android",
+    "steps": [
+      {
+        "say": "is there an app for android"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-explanation-of-benefits",
+    "steps": [
+      {
+        "say": "i got an explanation of benefits, do i have to pay it"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    },
+    "knownGap": {
+      "reason": "the section on the explanation of benefits read under KB_SECTION_ANSWERS (0.55) on the question (corpus hb-10), so the caller hears the not-found reply",
+      "outcome": {
+        "promptId": "ask_coverageTopic",
+        "acks": [
+          "identity_verified",
+          "kb_not_found",
+          "kb_guide"
+        ],
+        "form": "coverage",
+        "gate": "getCoverage:ALLOW"
+      }
+    }
+  },
+  {
+    "id": "handbook-appeal-window",
+    "steps": [
+      {
+        "say": "my claim was denied, how long do i have to appeal"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-saturday-hours",
+    "steps": [
+      {
+        "say": "are you open on saturday"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-new-baby",
+    "steps": [
+      {
+        "say": "can i add my new baby to my plan"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-cancel-open-claim",
+    "steps": [
+      {
+        "say": "i have a question about my coverage"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      },
+      {
+        "say": "if i cancel my plan, is my open claim still paid"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-privacy",
+    "steps": [
+      {
+        "say": "do you sell my information"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 1,
+      "gate": "searchPolicy:ALLOW"
+    }
+  },
+  {
+    "id": "handbook-not-found",
+    "steps": [
+      {
+        "say": "can i get a discount if i pay for a year up front"
+      },
+      {
+        "say": "four two seven one six three five eight"
+      },
+      {
+        "say": "august twenty first nineteen eighty four"
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "ask_coverageTopic",
+      "principalLevel": 1,
+      "text": "I couldn't find anything in your plan information about that."
+    }
+  }
+]

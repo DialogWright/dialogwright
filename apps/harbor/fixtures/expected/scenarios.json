@@ -2930,5 +2930,313 @@
     "gate": "getCoverage:ALLOW",
     "pass": true,
     "mismatches": []
+  },
+  "handbook-privacy": {
+    "id": "handbook-privacy",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-appeal-window": {
+    "id": "handbook-appeal-window",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-id-card": {
+    "id": "handbook-id-card",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-saturday-hours": {
+    "id": "handbook-saturday-hours",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-explanation-of-benefits": {
+    "id": "handbook-explanation-of-benefits",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-cancel-open-claim": {
+    "id": "handbook-cancel-open-claim",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-new-baby": {
+    "id": "handbook-new-baby",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-not-found": {
+    "id": "handbook-not-found",
+    "decision": "prompt",
+    "promptId": "ask_coverageTopic",
+    "acks": [
+      "identity_verified",
+      "kb_not_found",
+      "kb_guide"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": "coverage",
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "getCoverage:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-missed-premium": {
+    "id": "handbook-missed-premium",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-change-address": {
+    "id": "handbook-change-address",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
+  },
+  "handbook-app-android": {
+    "id": "handbook-app-android",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "identity_verified",
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 1,
+    "gate": "searchPolicy:ALLOW",
+    "pass": true,
+    "mismatches": []
   }
 }

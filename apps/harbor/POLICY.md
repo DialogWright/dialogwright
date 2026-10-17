@@ -122,7 +122,7 @@ These lines answer a question no topic answers from sections of documents a pers
 | `accident-advantage-plus-certificate-2025` (Accident Advantage Plus Certificate of Coverage) | never (`summarize: false`) | all |
 | `accident-advantage-plus-certificate-2026` (Accident Advantage Plus Certificate of Coverage) | never (`summarize: false`) | all |
 | `accident-advantage-plus-member-guide-2026` (Accident Advantage Plus Member Guide) | not approved: never answered from | 0 What counts as a covered accident (a passage cites it); 1 Filing a claim (a passage cites it); 2 Coverage when you travel (a passage cites it); 3 Sports and recreation (a passage cites it); 4 Prescriptions (a passage cites it) |
-| `harbor-member-handbook-2026` (Harbor Mutual Member Handbook) | not approved: never answered from | nothing |
+| `harbor-member-handbook-2026` (Harbor Mutual Member Handbook) | by Jason Stiles (Member Services) on 2026-10-17 | nothing |
 
 No line is marked prescribed (`prescribed: true`).
 

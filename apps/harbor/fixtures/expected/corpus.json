@@ -4257,7 +4257,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#3 Updating your contact information",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -4305,7 +4305,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#1 Your member ID card|harbor-member-handbook-2026#4 The Harbor Mutual app",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -4330,7 +4330,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#9 Cancelling your plan",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -4355,7 +4355,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#7 Contacting member services",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -4405,7 +4405,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#8 Adding or removing a family member",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -5402,7 +5402,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#2 Paying your premium",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -5427,7 +5427,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#4 The Harbor Mutual app",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -5452,7 +5452,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#6 Appealing a claim decision",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -5477,7 +5477,7 @@
       "dob": null,
       "clientId": null,
       "claimSelect": null,
-      "coverageTopic": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#9 Cancelling your plan",
       "lossType": null,
       "lossDate": null,
       "lossDescription": null
@@ -5510,5 +5510,305 @@
     "queued": [],
     "principalLevel": 0,
     "gate": "getCoverage:STEP_UP"
+  },
+  "hb-06": {
+    "id": "hb-06",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#1 Your member ID card",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-07": {
+    "id": "hb-07",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#2 Paying your premium",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-08": {
+    "id": "hb-08",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#3 Updating your contact information",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-09": {
+    "id": "hb-09",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#4 The Harbor Mutual app",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-10": {
+    "id": "hb-10",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#5 Your explanation of benefits",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-11": {
+    "id": "hb-11",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#6 Appealing a claim decision",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-12": {
+    "id": "hb-12",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#7 Contacting member services",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-13": {
+    "id": "hb-13",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#8 Adding or removing a family member",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-14": {
+    "id": "hb-14",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#9 Cancelling your plan",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-15": {
+    "id": "hb-15",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": "sections:harbor-member-handbook-2026#10 Your privacy",
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-16": {
+    "id": "hb-16",
+    "decision": "prompt",
+    "promptId": "ask_memberId",
+    "acks": [
+      "ack_intent"
+    ],
+    "reason": null,
+    "decidedGate": "intent",
+    "verdict": "route",
+    "form": "coverage",
+    "slots": {
+      "memberId": null,
+      "dob": null,
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 0,
+    "gate": "getCoverage:STEP_UP"
+  },
+  "hb-17": {
+    "id": "hb-17",
+    "decision": "prompt",
+    "promptId": "anything_else",
+    "acks": [
+      "kb_documents_answer"
+    ],
+    "reason": null,
+    "decidedGate": null,
+    "verdict": "proceed",
+    "form": null,
+    "slots": {
+      "memberId": "42716358",
+      "dob": "1984-08-21",
+      "clientId": null,
+      "claimSelect": null,
+      "coverageTopic": null,
+      "lossType": null,
+      "lossDate": null,
+      "lossDescription": null
+    },
+    "queued": [],
+    "principalLevel": 2,
+    "gate": "searchPolicy:ALLOW"
   }
 }
