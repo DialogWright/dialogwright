@@ -46,10 +46,13 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
     expect(cleanAnswer('No, prescriptions are not covered.', act(PASSAGE, 'q', { sentence: spanSentence('Here it is: {answer}. Anything else?', 'answer') }))).toBe('No, prescriptions are not covered');
   });
 
-  it('takes a sentence that opens with a word such as However as no name, and still refuses a name the passage does not have', () => {
-    // A live answer (2026-10-17) was refused as naming someone because its second sentence began "However".
+  it('reads no name: a sentence that opens with an ordinary word (However, Professional) passes, and a name the passage does not have is the judge\'s', () => {
+    // Live answers (2026-10-17) were refused as naming someone because a sentence began "However" or
+    // "Professional": the name check is gone (the maintainer's decision, 2026-10-17), and what a wording
+    // names that the passage does not is a fact of its own, which the drift judge refuses.
     expect(checkAnswer('Prescriptions are not covered by this plan. However, your medical insurance usually covers them.', act())).toBeNull();
-    expect(checkAnswer('Prescriptions are not covered. Riverside covers them instead.', act())).toBe('foreign');
+    expect(checkAnswer('Professional prescriptions are not covered by this plan.', act())).toBeNull();
+    expect(checkAnswer('Prescriptions are not covered. Riverside covers them instead.', act())).toBeNull();
   });
 
   it('refuses a figure the passage does not have (a digit, a number, amount or date word, a currency sign): the question is no source', () => {
@@ -59,8 +62,9 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
     expect(checkAnswer('You have 180 days from the accident to file a claim.', act(DEADLINE))).toBeNull();
   });
 
-  it('refuses a capitalized name the passage does not have', () => {
-    expect(checkAnswer('No, but Medicare usually covers prescriptions.', act(PASSAGE, 'does Medicare pay for prescriptions'))).toBe('foreign');
+  it('leaves a capitalized name the passage does not have to the judge, and still refuses a figure beside it', () => {
+    expect(checkAnswer('No, but Medicare usually covers prescriptions.', act(PASSAGE, 'does Medicare pay for prescriptions'))).toBeNull();
+    expect(checkAnswer('No, but Medicare pays 80 percent of prescriptions.', act(PASSAGE, 'does Medicare pay for prescriptions'))).toBe('foreign');
     expect(checkAnswer('Prescriptions are not covered by this plan.', act())).toBeNull();
   });
 

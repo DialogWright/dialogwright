@@ -1354,7 +1354,7 @@ describe('generated wording on the call detail', () => {
     const line = v.lines.find((l) => l.kind === 'system')!;
     expect(line.wording).toEqual([
       { promptId: 'ask_expectedDate', mode: 'generated', fixed: 'When was it due?' },
-      { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', why: 'fell back: a number, date or name it was not given' },
+      { promptId: 'ask_note', mode: 'fixed', fixed: 'Any note?', why: 'fell back: a number, amount or date it was not given' },
     ]);
     expect(scriptOf(v.lines, v.turnsView).find((l) => l.who === 'agent')!.wording).toHaveLength(2);
   });

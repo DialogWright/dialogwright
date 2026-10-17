@@ -410,9 +410,10 @@ describe('a framed line: a fixed line with a generated span (the message fixture
     await fallsBack('unfortunately a charge on the March invoice', 'avoid');
     await fallsBack('please call me about the March invoice before Friday, a $40 refund', 'foreign');
     await fallsBack('please call me about the April invoice', 'foreign');
-    await fallsBack('please call me about the March invoice, Morgan', 'foreign');
     // What it means is the judge's (live findings item 25): a "no" added, a person of its own, a claim of
     // the agent's, a detail left out are no check of words; the stub's judge refuses these, as a real one would.
+    // A name the content does not have is the judge's too (the maintainer's decision, 2026-10-17).
+    await fallsBack('please call me about the March invoice, Morgan', 'drift');
     await fallsBack('please do not call me about the March invoice', 'drift');
     await fallsBack('you would like a call about the March invoice', 'drift');
     await fallsBack('our office will sort out the March invoice', 'drift');
@@ -681,13 +682,13 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
     }
   });
 
-  it('falls back to the exact frame: a name or a figure it was not given by the data checks; what it means (a name for a pronoun not meant, an "I" of its own, persons swapped, a "no" about a person, the message\'s own "you") by the judge (live findings item 25)', async () => {
+  it('falls back to the exact frame: a figure it was not given by the data checks; a name it was not given, and what it means (a name for a pronoun not meant, an "I" of its own, persons swapped, a "no" about a person, the message\'s own "you") by the judge (live findings item 25)', async () => {
     const EXACT = (message: string): string => `${OPEN} Here it is as you said it: ${message}${END}`;
     use(toCaller);
-    // The caller's own name, a name it does not list: never given it.
+    // The caller's own name, a name it does not list: never given it, and the judge's to refuse (the stub's refuses them).
     for (const said of ["the project is complete and you need Morgan Lee's approval", "the project is complete and you need Jordan's approval"]) {
       const r = await call(steps(PROJECT), saying(said));
-      expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: said });
+      expect(spanOf(r), said).toMatchObject({ mode: 'fixed', fallback: 'drift', refused: said });
       expect(lastSaid(r), said).toBe(EXACT(PROJECT));
     }
     // "him" is Riley, whom the message names: the stub's judge refuses Riley left out, as a real one reads it.
@@ -799,14 +800,17 @@ describe('a line that adds no acknowledgement (acknowledge: false; live findings
     expect(Object.hasOwn(act, 'acknowledge')).toBe(false);
   });
 
-  it('a name only the caller said is refused in such a line (foreign), whatever the model was told; allowed where an acknowledgement is', async () => {
+  it('a name only the caller said, in such a line, is the drift judge\'s, as any name is (the data checks read no name: the maintainer\'s decision, 2026-10-17)', async () => {
     use(onLine);
     const thanks = (act: SpeechAct): string => `Thanks, Lee. ${act.fixed}`;
+    const said = 'Thanks, Lee. And who is the message from?';
+    const ask = (r: ScenarioRun) => r.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller');
+    // Not sent the caller's words, the judge sees a name neither its goal nor its fixed line has: refused, the fixed line said.
+    const refused = await call(TO_CALLER, { client: new FakeRenderClient({ say: { ask_caller: thanks } }), drift: refusingJudge(stub(), new Set([said])) });
+    expect(ask(refused)).toMatchObject({ mode: 'fixed', fallback: 'drift', refused: said });
+    // The data checks pass it either way.
     const quiet = await call(TO_CALLER, { client: new FakeRenderClient({ say: { ask_caller: thanks } }) });
-    expect(quiet.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: 'Thanks, Lee. And who is the message from?' });
-    use(messageApp);
-    const plain = await call(TO_CALLER, { client: new FakeRenderClient({ say: { ask_caller: thanks } }) });
-    expect(plain.runs.at(-1)!.record.render!.lines.find((l) => l.promptId === 'ask_caller')!.fallback).not.toBe('foreign');
+    expect(ask(quiet)!.fallback).not.toBe('foreign');
   });
 
   it('after an acknowledgement the core put before it, a line adds none of its own: two never stack (message-for-lee)', async () => {

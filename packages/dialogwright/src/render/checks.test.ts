@@ -63,16 +63,16 @@ describe('the checks on a generated line', () => {
     expect(checkGenerated('What number should we call you back on?', act())).toBe('items');
   });
 
-  it('refuse a number, an amount, a date or a name it was not given', () => {
+  it('refuse a number, an amount or a date it was not given; a name is the drift judge\'s (the maintainer\'s decision, 2026-10-17)', () => {
     expect(checkGenerated('Morgan Lee, is 555 555 0199 the number?', act())).toBe('foreign');
     expect(checkGenerated('Morgan Lee, we can credit you $20, what number?', act())).toBe('foreign');
     expect(checkGenerated('Morgan Lee, we can give you twenty dollars, what number?', act())).toBe('foreign');
     expect(checkGenerated('Morgan Lee, before Friday, what number?', act())).toBe('foreign');
-    expect(checkGenerated('Morgan Lee, Dana says hi, what number?', act())).toBe('foreign');
+    expect(checkGenerated('Morgan Lee, Dana says hi, what number?', act())).toBeNull();
   });
 
   it('let a line draw on the caller\'s own words and the content it summarizes', () => {
-    // A name from the caller's words in any line; a figure from them only in an acknowledgement (the drift check judges the rest).
+    // A figure from the caller's words only in an acknowledgement (the drift check judges the rest).
     expect(checkGenerated('Morgan Lee, Dana will be told: what number?', act({ heard: 'a message for Dana' }))).toBeNull();
     expect(checkGenerated('Morgan Lee, you said Friday: what number?', act({ heard: 'call me before Friday' }))).toBe('foreign');
     const content = act({ asks: true, content: [{ name: 'message', value: 'call about the March invoice' }] });
@@ -94,9 +94,11 @@ describe('the checks on a generated line', () => {
 });
 
 describe('the checks, as the review found them (review fixes)', () => {
-  it('a name that begins a sentence is checked too, a common word that begins one is not', () => {
-    expect(checkGenerated('Thanks. Jordan will call you back. What is the best number to call you back on?', act({ items: [] }))).toBe('foreign');
-    expect(checkGenerated('Thanks! Smith says hi. What number should we use?', act({ items: [] }))).toBe('foreign');
+  it('read no name by its capital: a sentence that opens with an ordinary word, or with a name, passes the data checks (the judge reads names)', () => {
+    expect(checkGenerated('Thanks. Jordan will call you back. What is the best number to call you back on?', act({ items: [] }))).toBeNull();
+    expect(checkGenerated('Thanks! Smith says hi. What number should we use?', act({ items: [] }))).toBeNull();
+    expect(checkGenerated('Thanks. However, we need a number. What number should we use?', act({ items: [] }))).toBeNull();
+    expect(checkGenerated('Professional help is on its way. What number should we use?', act({ items: [] }))).toBeNull();
     expect(checkGenerated('Thanks. What number should we use?', act({ items: [] }))).toBeNull();
     expect(checkGenerated('Morgan Lee, thanks. Which number should we use?', act())).toBeNull();
   });
@@ -185,12 +187,12 @@ describe('the checks on a framed line\'s span (held to its content alone)', () =
     for (const said of ['please call me before Friday about the March invoice', 'we were not charged twice', 'you should not call before Friday about the March invoice']) expect(checkSpan(said, span(), conflicts), said).toBeNull();
   });
 
-  it('refuse a span over its budget, a phrase to avoid, a figure or a name not in the content, markup', () => {
+  it('refuse a span over its budget, a phrase to avoid, a figure not in the content, markup; a name not in it is the judge\'s', () => {
     expect(checkSpan(`do not call before Friday ${'about the invoice '.repeat(8)}`, span(), conflicts)).toBe('words');
     expect(checkSpan('unfortunately do not call before Friday', span(), conflicts)).toBe('avoid');
     expect(checkSpan('do not call before Monday about the March invoice', span(), conflicts)).toBe('foreign');
     expect(checkSpan('do not call before Friday about the $40 March invoice', span(), conflicts)).toBe('foreign');
-    expect(checkSpan('do not call Dana before Friday about the March invoice', span(), conflicts)).toBe('foreign');
+    expect(checkSpan('do not call Dana before Friday about the March invoice', span(), conflicts)).toBeNull();
     expect(checkSpan('do not call before Friday about {message}', span(), conflicts)).toBe('format');
   });
 
@@ -221,10 +223,12 @@ describe('the checks on a framed line\'s span (held to its content alone)', () =
 
 describe('a span begins mid-sentence after its frame (review fixes)', () => {
   const act: SpanAct = { kind: 'span', sentence: SENTENCE, goal: 'Summarize the message.', content: [{ name: 'message', value: 'please call me about the March invoice' }], channel: 'voice', language: 'en-US', style: { persona: 'a calm agent', words: 25, avoid: [] } };
-  it('a summary verb may begin it capitalized; a name its content does not have may not', () => {
-    for (const lead of ['Asks', 'Requests', 'Says', 'Wants', 'Would']) expect(checkSpan(`${lead} a call about the March invoice`, act), lead).toBeNull();
-    expect(checkSpan('Asks Jordan for a call about the March invoice', act)).toBe('foreign');
-    expect(checkSpan('Jordan asks for a call about the March invoice', act)).toBe('foreign');
+  it('any word may begin it capitalized: a summary verb, an ordinary word, or a name its content does not have (the judge\'s)', () => {
+    for (const lead of ['Asks', 'Requests', 'Says', 'Wants', 'Would', 'However', 'Professional']) expect(checkSpan(`${lead} a call about the March invoice`, act), lead).toBeNull();
+    expect(checkSpan('Asks Jordan for a call about the March invoice', act)).toBeNull();
+    expect(checkSpan('Jordan asks for a call about the March invoice', act)).toBeNull();
+    // A figure its content does not have is still the data checks'.
+    expect(checkSpan('Asks for a call about the March invoice by Friday', act)).toBe('foreign');
   });
   it('the model is told to begin in lowercase unless the first word is a name', () => {
     expect(SPAN_INSTRUCTIONS).toContain('Begin in lowercase unless the first word is a name');
@@ -260,11 +264,11 @@ describe('a span that speaks to the caller about their own message (speaks: to-c
   const check = (message: string, said: string): string | null => checkSpan(said, act(message), { conflicts: ['Lee Park'] });
   const judge = (message: string, said: string): boolean => stubSpanDrift(renderSpanDriftState(act(message), said));
 
-  it('its data checks: a name it lists (and its possessive) is given it; the caller\'s own, one it does not list, a figure the message lacks or another recipient is not', () => {
+  it('its data checks: a figure the message lacks or another recipient is refused; a name, listed or not, is the judge\'s (names tell the model and the judge whom it is for)', () => {
     expect(check(PROJECT, "the project is complete and you need Sam Ortiz's approval")).toBeNull();
-    expect(check(PROJECT, "you need Jordan's approval")).toBe('foreign');
-    expect(check(PROJECT, "you need Alex Rivera's approval")).toBe('foreign');
-    expect(checkSpan('the project is complete and Sam needs to approve it', act(PROJECT, { speaks: undefined, names: undefined }))).toBe('foreign');
+    expect(check(PROJECT, "you need Jordan's approval")).toBeNull();
+    expect(check(PROJECT, "you need Alex Rivera's approval")).toBeNull();
+    expect(checkSpan('the project is complete and Sam needs to approve it', act(PROJECT, { speaks: undefined, names: undefined }))).toBeNull();
     expect(check(PROJECT, 'you need his approval by Friday')).toBe('foreign');
     expect(check(PROJECT, 'you need Lee Park to approve it')).toBe('conflict');
   });

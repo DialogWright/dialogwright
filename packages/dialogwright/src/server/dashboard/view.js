@@ -83,7 +83,7 @@ function secs(ms) {
 // negation, person and omitted: reasons of traces written before live findings item 25 removed those checks; still worded.
 const WORDING_WHY = {
   empty: 'the model said nothing', format: 'markup or a link', words: 'over its word budget', question: 'not one question', avoid: 'a phrase to avoid',
-  items: 'a value left out', foreign: 'a number, date or name it was not given', drift: 'the judge refused it', timeout: 'too slow',
+  items: 'a value left out', foreign: 'a number, amount or date it was not given', drift: 'the judge refused it', timeout: 'too slow',
   error: 'the model failed', 'cassette-miss': 'not recorded', 'drift-error': 'the drift check failed', negation: 'a negation added or dropped', conflict: 'named another value in its place', 'content-flagged': 'the collected content was flagged or unread',
   person: 'spoke as the agent or to the listener', omitted: 'left out a "no" or a condition',
   frame: "copied the line's own words",

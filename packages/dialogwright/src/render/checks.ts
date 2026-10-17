@@ -16,8 +16,11 @@ import { SPAN_GAP, type RenderFallback, type SpanAct, type SpeechAct } from './t
  * - `question`: a line whose fixed line asks must end in exactly one question; one that does not ask asks none.
  * - `avoid`: a phrase style.yaml says to avoid.
  * - `items`: a data item it must carry is missing (each word for word, letter case aside).
- * - `foreign`: a number, an amount, a date word or a name that is in none of what it was given (the
- *   fixed line, the goal, the items, the collected content, the caller's own words).
+ * - `foreign`: a figure (a digit, a number, amount or date word, a currency sign) that is in none of what
+ *   it was given (the fixed line, the goal, the items, the collected content, and the caller's own words
+ *   in an acknowledgement). Names are not read by code: a name is found by its capital letter only
+ *   together with every sentence's first word, and a name the line was not given is a fact of its own,
+ *   which the drift judge refuses (the maintainer's decision, 2026-10-17).
  * - `conflict`: another value of an item's own slot (the wrong recipient) named in its place.
  * - `frame` (a span): four words running of its line's own fixed words, which its content does not have.
  * - `drift` (asked of the decision model, after the rest pass; renderDriftQuestion, and for a span
@@ -63,22 +66,6 @@ export const DATE_WORDS: ReadonlySet<string> = new Set([
 /** Whether a lower-cased word is a figure: a number word, an ordinal, an amount or a date word. */
 export const isFigureWord = (w: string): boolean => NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w) || /\d/.test(w);
 
-/**
- * Words a sentence may begin with that are not names: what a line's own wording starts with. Any other
- * capitalized word, at the start of a sentence or inside one, must be in what the line was given.
- */
-const COMMON_CAPITALS: ReadonlySet<string> = new Set([
-  'i', "i'm", "i'll", "i've", "i'd", 'ok', 'okay', 'a', 'an', 'the', 'and', 'but', 'or', 'so', 'now', 'just', 'also', 'then', 'if', 'once',
-  'thanks', 'thank', 'got', 'sure', 'of', 'let', "let's", 'sorry', 'please', 'great', 'alright', 'right', 'yes', 'no', 'happy', 'good',
-  'perfect', 'understood', 'noted', 'here', 'hello', 'hi', 'all', 'before', 'after', 'what', "what's", 'which', 'who', "who's", 'when',
-  'where', 'why', 'how', 'is', 'are', 'was', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'shall', 'should', 'may', 'might',
-  'your', 'you', "you're", "you'd", "you've", 'we', "we'll", "we're", 'it', "it's", 'that', "that's", 'this', 'there', "there's", 'for',
-  'in', 'on', 'to', 'with', 'our', 'my', 'one', 'any', 'anything', 'is', 'got', 'understand', 'certainly', 'absolutely', 'thats',
-  // Words that open a sentence's turn of thought, not names (a live answer's "However, ..." was refused as a name).
-  'however', 'although', 'though', 'while', 'since', 'because', 'as', 'even', 'still', 'otherwise', 'instead', 'meanwhile', 'unless',
-  'not', 'only', 'these', 'those', 'they', "they're", 'each', 'every', 'both', 'most', 'some', 'many', 'no', 'not', 'there',
-]);
-
 /** Lower-cased word tokens (letters, digits, apostrophes). */
 export function words(text: string): string[] {
   return straight(text).toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
@@ -92,35 +79,18 @@ function digitRuns(text: string): string[] {
   return (text.match(/\d(?:[\d,.:]*\d)?/g) ?? []).map((d) => d.replace(/[,.:]/g, ''));
 }
 
-/** Every capitalized word, and whether it begins a sentence (where a common word is capitalized too). */
-function capitals(raw: string): { word: string; initial: boolean }[] {
-  const text = straight(raw);
-  const out: { word: string; initial: boolean }[] = [];
-  const re = /[\p{L}\p{N}']+/gu;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const word = m[0];
-    if (!/^\p{Lu}/u.test(word)) continue;
-    const before = text.slice(0, m.index).trimEnd();
-    out.push({ word, initial: before === '' || /[.!?:;\u2014\u2013"\u201c(]$/.test(before) });
-  }
-  return out;
-}
-
 const fold = (s: string): string => straight(s).toLowerCase().replace(/\s+/g, ' ').trim();
 
 /**
- * What a line may draw its numbers, amounts, dates and names from: its fixed line, its goal, its items
- * and its collected content; and the caller's own words, for names always, but for a figure only in an
- * acknowledgement (which says back what was heard): a question or a statement of the agent's may not
- * state a figure the caller said as its own (the drift check judges how a line uses the caller's words).
+ * What a line may draw its numbers, amounts and dates from: its fixed line, its goal, its items and its
+ * collected content; and the caller's own words only in an acknowledgement (which says back what was
+ * heard) that adds one (not `acknowledge: false`): a question or a statement of the agent's may not state
+ * a figure the caller said as its own (the drift check judges how a line uses the caller's words).
  */
-function allowedSources(act: SpeechAct): { names: string[]; figures: string[] } {
+function allowedFigures(act: SpeechAct): string[] {
   const given = [act.fixed, act.goal, ...act.items.map((i) => i.value), ...(act.content ?? []).map((c) => c.value)];
-  // A line that adds no acknowledgement (acknowledge: false) says nothing back of what the caller said:
-  // a name or a figure only the caller's words have is `foreign` in it, whatever the model was told.
   const heard = act.heard !== undefined && act.acknowledge !== false ? [act.heard] : [];
-  return { names: [...given, ...heard], figures: act.act === 'acknowledge' ? [...given, ...heard] : given };
+  return act.act === 'acknowledge' ? [...given, ...heard] : given;
 }
 
 /** The decision question a line ends on: its fixed text's last sentence, where it is a question. */
@@ -164,21 +134,13 @@ export function checkGenerated(text: string, act: SpeechAct, guard: CheckGuard =
   if (wordCount(text) > act.style.words) return 'words';
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   if (act.items.some((item) => fold(item.value) !== '' && !folded.includes(fold(item.value)))) return 'items';
-  const sources = allowedSources(act);
-  const figureWords = new Set(sources.figures.flatMap(words));
-  const nameWords = new Set(sources.names.flatMap(words));
-  const allowedDigits = new Set(sources.figures.flatMap(digitRuns));
+  const figures = allowedFigures(act);
+  const figureWords = new Set(figures.flatMap(words));
+  const allowedDigits = new Set(figures.flatMap(digitRuns));
   if (digitRuns(text).some((d) => !allowedDigits.has(d))) return 'foreign';
-  if (/[$\u20ac\u00a3]/.test(text) && !sources.figures.some((s) => /[$\u20ac\u00a3]/.test(s))) return 'foreign';
+  if (/[$\u20ac\u00a3]/.test(text) && !figures.some((s) => /[$\u20ac\u00a3]/.test(s))) return 'foreign';
   for (const w of words(text)) {
     if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !figureWords.has(w)) return 'foreign';
-  }
-  for (const { word, initial } of capitals(text)) {
-    const lower = word.toLowerCase();
-    if (nameWords.has(lower)) continue;
-    if (initial && COMMON_CAPITALS.has(lower)) continue;
-    if (!initial && (lower === 'i' || lower.startsWith("i'"))) continue;
-    return 'foreign';
   }
   return null;
 }
@@ -233,11 +195,6 @@ export function sameWords(a: string, b: string): boolean {
   return wa.length > 0 && wa.join(' ') === words(b).join(' ');
 }
 
-/** Words a span may begin with, capitalized, that are not names (beside the common words a line's sentences begin with). */
-const SPAN_CAPITALS: ReadonlySet<string> = new Set(['he', "he's", 'she', "she's", 'they', "they're", "they'd", "they'll", 'them', 'their', 'his', 'her', 'about', 'asking', 'wants', 'needs', 'call', 'calling', 'regarding', 're',
-  // Summary verbs: a span begins mid-sentence, but a model may still capitalize its first word.
-  'asks', 'requests', 'says', 'would', 'wanted', 'needed', 'reports', 'mentions']);
-
 /**
  * Whether a span copies its line's own words: four words running of its sentence's fixed words (a run
  * broken by the gap and by each placeholder) that its content does not have (`frame`). A copy, not a
@@ -258,10 +215,9 @@ export function copiesFrame(text: string, act: Pick<SpanAct, 'sentence' | 'conte
  * The first check a framed line's span fails, or null when it passes them all (the drift check aside).
  * The span is held to its data and shape, against its content (it is shown its sentence so it fits the
  * line, never as something it may draw on): one sentence or less (a stop and a capital after it is `format`); no question (the frame asks any); no other value of the
- * frame's own items in its place (`conflict`); no four words running of its sentence's own (`frame`); its word budget; style.yaml's phrases; and no figure or
- * capitalized word that is not in its content (`foreign`), but the names a to-caller span lists
- * (`act.names`, who the message is for) and their possessives ("Sam's"). Whether it says what the content
- * says (a "no" kept, who does what to whom, whose words they are) is the drift judge's.
+ * frame's own items in its place (`conflict`); no four words running of its sentence's own (`frame`); its word budget; style.yaml's phrases; and no figure
+ * that is not in its content (`foreign`). Whether it says what the content says (a "no" kept, who does
+ * what to whom, whose words they are, a name the content does not have) is the drift judge's.
  */
 export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): RenderFallback | null {
   if (text.trim() === '') return 'empty';
@@ -289,15 +245,6 @@ export function checkSpan(text: string, act: SpanAct, guard: CheckGuard = {}): R
   for (const w of words(text)) {
     if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !said.has(w)) return 'foreign';
   }
-  // The names it was given: its content's words, and a to-caller span's listed names, with a possessive ("Sam's approval").
-  const nameWords = new Set((act.names ?? []).flatMap((n) => words(n.value)));
-  const given = (w: string): boolean => said.has(w) || nameWords.has(w) || (w.endsWith("'s") && (said.has(w.slice(0, -2)) || nameWords.has(w.slice(0, -2))));
-  for (const { word, initial } of capitals(text)) {
-    const lower = word.toLowerCase();
-    if (given(lower)) continue;
-    if (initial && (COMMON_CAPITALS.has(lower) || SPAN_CAPITALS.has(lower))) continue;
-    return 'foreign';
-  }
   return null;
 }
 
@@ -318,9 +265,10 @@ export function cleanAnswer(text: string, act: Pick<SpanAct, 'sentence'>): strin
  * passage or MAX_CHARS, whichever is more (`format`); no question (`question`: an answer asks nothing); no
  * four words running of its sentence's own fixed words the passage does not have (`frame`); its word
  * budget (`words`); style.yaml's phrases (`avoid`); and no figure (a digit, a number, amount or date word,
- * a currency sign) and no capitalized word that is not in the passage (`foreign`): the caller's question is
- * no source of facts. A wording may be more than one sentence: the passage may be. Whether it says only
- * what the passage says for the question is the drift judge's (renderAnswerDriftQuestion).
+ * a currency sign) that is not in the passage (`foreign`): the caller's question is no source of facts. A
+ * wording may be more than one sentence: the passage may be. Whether it says only what the passage says
+ * for the question (a name, a company or a place the passage does not have among it) is the drift
+ * judge's (renderAnswerDriftQuestion).
  */
 export function checkAnswer(text: string, act: SpanAct): RenderFallback | null {
   if (text.trim() === '') return 'empty';
@@ -337,12 +285,6 @@ export function checkAnswer(text: string, act: SpanAct): RenderFallback | null {
   if (/[$\u20ac\u00a3]/.test(text) && !/[$\u20ac\u00a3]/.test(passage)) return 'foreign';
   for (const w of words(text)) {
     if ((NUMBER_WORDS.has(w) || AMOUNT_WORDS.has(w) || DATE_WORDS.has(w)) && !said.has(w)) return 'foreign';
-  }
-  for (const { word, initial } of capitals(text)) {
-    const lower = word.toLowerCase();
-    if (said.has(lower)) continue;
-    if (initial && COMMON_CAPITALS.has(lower)) continue;
-    return 'foreign';
   }
   return null;
 }

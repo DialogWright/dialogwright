@@ -183,7 +183,8 @@ describe('the checks and the judge: the passage word for word whenever one refus
   };
 
   it('a figure the passage does not have', () => refused('A late book costs 50 cents a day.', 'foreign'));
-  it('a name the passage does not have', () => refused('Late books cost 25 cents a day at the Riverside branch, up to 5 dollars a book.', 'foreign'));
+  // The data checks read no name (the maintainer's decision, 2026-10-17): a name the passage does not have is a fact of its own, the judge's (the stub's refuses it).
+  it('a name the passage does not have, by the judge', () => refused('Late books cost 25 cents a day at the Riverside branch, up to 5 dollars a book.', 'drift'));
   it('over its budget (a quarter more than the passage\'s word count, ten more at least: 27 words here)', () => refused('Late books on an adult card cost 25 cents for each and every single day that they are kept out past the day they were due back, up to 5 dollars a book in all.', 'words'));
   it('a question', () => refused('Late books cost 25 cents a day, up to 5 dollars a book. Anything else?', 'question'));
   it('the drift judge\'s refusal (a limit left out)', async () => {
