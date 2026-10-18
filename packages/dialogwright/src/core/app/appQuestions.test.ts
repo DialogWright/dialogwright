@@ -399,7 +399,7 @@ describe('CorpusEntry.labels', () => {
     const bad = (labels: unknown) => () => parseCorpus(line({ id: 'v-2', text: 'tuesday', intent: 'visit', context: 'no_form', labels }), visits);
     expect(bad({ confirmsYes: true })).toThrow(/corpus v-2: labels names the engine's question confirmsYes; use the entry's own field or an answers override/);
     expect(bad({ intent: 'visit' })).toThrow(/engine's question intent/);
-    expect(bad({ partOfDay: 3 })).toThrow(/corpus v-2: label for partOfDay must be a question's label or true or false/);
+    expect(bad({ partOfDay: 3 })).toThrow(/corpus v-2: label for partOfDay is a probability, from 0 to 1, not 3/);
     expect(bad({ partOfDay: '' })).toThrow(/label for partOfDay/);
     expect(bad(['afternoon'])).toThrow(/corpus v-2: labels must be an object of question labels/);
   });
@@ -429,7 +429,7 @@ describe('CorpusEntry.labels', () => {
   it('throws, naming the entry, on a label the question cannot give', async () => {
     const s = started();
     await expect(stub.ask(request(s, 'mornings please'))).rejects.toThrow(/corpus v-bad: label "evening" for partOfDay is not one the question offers \(morning, afternoon, none\)/);
-    await expect(stub.ask(request(s, 'not sure which day'))).rejects.toThrow(/corpus v-type: label for dayUnsure must be true or false, not "yes"/);
+    await expect(stub.ask(request(s, 'not sure which day'))).rejects.toThrow(/corpus v-type: label for dayUnsure must be true or false, or its probability, not "yes"/);
   });
 
   it('feeds a seeded summary\'s turn: the label moves the offer', async () => {
