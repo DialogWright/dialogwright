@@ -8,7 +8,7 @@ import type { Session } from '../core/session';
 import type { TurnContext } from '../core/turn';
 import { isAnonymous } from '../gate/types';
 import { VAR } from '../prompts/segments';
-import { answerSpanOf, KB_ACCOUNT_VAR, KB_QUESTION_VAR } from '../render/config';
+import { answerSpanOf, DEFAULT_DOCUMENTS_WORDS, KB_ACCOUNT_VAR, KB_QUESTION_VAR } from '../render/config';
 import { collapseWhitespace } from './hash';
 import { documentsSourceOf, kbAuditRow, kbSourceOf } from './record';
 import { resolveSections, sectionKeysOf, sentencesOf } from './sectionTexts';
@@ -67,7 +67,8 @@ export function readKbAnswer(value: unknown): KbAnswer {
   const source = isKbSource(value.source) ? value.source : undefined;
   if (typeof value.answer === 'string' && value.answer.trim() !== '' && source !== undefined) {
     if (source.fresh !== true) return { unavailable: 'stale', source };
-    return { answer: value.answer, source, ...(typeof value.opening === 'string' && value.opening.trim() !== '' ? { opening: value.opening } : {}) };
+    const sentences = Array.isArray(value.sentences) && value.sentences.length > 0 && value.sentences.every((x) => typeof x === 'string') ? (value.sentences as string[]) : undefined;
+    return { answer: value.answer, source, ...(sentences !== undefined ? { sentences } : {}) };
   }
   if (typeof value.unavailable === 'string' && value.unavailable !== '') return { unavailable: value.unavailable, ...(source ? { source } : {}) };
   return { unavailable: 'no-answer' };
@@ -226,7 +227,9 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     if (result.source.from === 'documents') {
       const line = opts.documents?.answer ?? KB_DOCUMENTS_ANSWER_PROMPT;
       const heard = s.slots[opts.slot]?.heard;
-      const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', result.opening ?? openingOf(sentencesOf(result.answer.split('\n\n')[0] ?? '')), unavailablePrompt);
+      const budget = answerSpanOf(app.generated?.lines[line])?.span.words ?? DEFAULT_DOCUMENTS_WORDS;
+      const opening = openingOf(result.sentences ?? sentencesOf(result.answer.split('\n\n')[0] ?? ''), budget);
+      const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', opening, unavailablePrompt);
       return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
     }
     const defaultLocale = defaultLocaleOf(app);
@@ -260,17 +263,20 @@ function holdMoreVars(app: App, s: Session): Record<string, string> {
 }
 
 /**
- * A section's opening, said when an answer from it cannot be worded: its first two sentences, each
- * ended where its line ended without a stop (a table's row), so that rows are not run together.
+ * A section's opening, said when an answer from it cannot be worded: the whole section where it fits
+ * the answer's word budget (the span's `words`), else its first two sentences; each ended where its
+ * line ended without a stop (a table's row), so that rows are not run together.
  */
-export function openingOf(sentences: readonly string[]): string {
-  return sentences.slice(0, 2).map((x) => (/[.?!:;]$/.test(x) ? x : `${x}.`)).join(' ');
+export function openingOf(sentences: readonly string[], words: number): string {
+  const ended = sentences.map((x) => (/[.?!:;]$/.test(x) ? x : `${x}.`));
+  const whole = ended.join(' ');
+  return whole.split(/\s+/).filter((w) => w !== '').length <= words ? whole : ended.slice(0, 2).join(' ');
 }
 
 /**
  * What an answer from documents says when it cannot be worded (its line's fixed text): with onFail
  * `not-found` (the default), the not-found line in turn through its wordings (kb_not_found), else the
- * form's unavailable line; with `opening`, the first sentences of the best section, word for word, in
+ * form's unavailable line; with `opening`, the best section's opening (openingOf), word for word, in
  * the kb_documents_opening frame where the app has it. Text in the call's language.
  */
 function documentsFallback(app: App, s: Session, onFail: 'not-found' | 'opening', opening: string, unavailablePrompt: string): string {
@@ -357,7 +363,7 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
       if (keys !== null) {
         const r = resolveSections(kb, keys, facts, locale);
         if ('unavailable' in r) return { value: { unavailable: r.unavailable } satisfies KbAnswer, summary: `no passage (${r.unavailable})` };
-        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), opening: openingOf(r.sections[0]?.sentences ?? []) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
+        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), sentences: r.sections[0]?.sentences ?? [] } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
       }
       const r = resolvePassage(kb, { topic: call.params[KB_TOPIC_PARAM] ?? '', facts, todayIso: tc.todayIso, locale });
       if ('fresh' in r) return { value: { answer: r.passage.answer, source: recordOf(kb, r.passage, facts, true) } satisfies KbAnswer, summary: r.passage.id };

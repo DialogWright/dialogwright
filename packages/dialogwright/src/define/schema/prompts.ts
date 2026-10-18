@@ -73,7 +73,7 @@ const span = z
       .min(0, { error: 'must be 0 or 1' })
       .max(1, { error: 'must be 0 or 1' })
       .optional()
-      .describe('An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, within the answer\'s limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.'),
+      .describe('An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, or the wording has a figure its source does not, within the answer\'s limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.'),
     names: unique(identifier(), 'variable')
       .min(1, { error: 'must name at least one variable' })
       .optional()

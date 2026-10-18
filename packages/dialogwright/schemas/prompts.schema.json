@@ -133,7 +133,7 @@
                   ]
                 },
                 "retry": {
-                  "description": "An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, within the answer's limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.",
+                  "description": "An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, or the wording has a figure its source does not, within the answer's limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.",
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 1

@@ -202,6 +202,21 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(once.client.askedSpans).toHaveLength(1);
   });
 
+  it('with retry: 1, a wording with a figure the sections do not have is asked once more too; one too long is not', async () => {
+    const app = documentsApp('library-documents-retry-figure', { retry: true });
+    const t = asked(app, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const r = renderer({ eachSpan: () => (r.client.askedSpans.length === 1 ? 'Wi-Fi is free for the first hour.' : 'Every branch has free Wi-Fi.') });
+    const out = await rendered(app, t, r);
+    expect(r.client.askedSpans).toHaveLength(2);
+    expect((r.client.askedSpans[1]!.act as SpanAct).answer).toMatchObject({ refused: 'Wi-Fi is free for the first hour.' });
+    expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Every branch has free Wi-Fi.' });
+    // A wording over its word budget says no more than the sections: it is not asked again.
+    const long = renderer({ eachSpan: () => Array.from({ length: 70 }, () => 'free').join(' ') });
+    const over = await rendered(app, t, long);
+    expect(long.client.askedSpans).toHaveLength(1);
+    expect(docLine(over)).toMatchObject({ mode: 'fixed', fallback: 'words' });
+  });
+
   it('a documents cutoff of its own (style.yaml judge.documentsRefuseAt) holds answers from documents alone', async () => {
     const style = "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  refuseAt: 0.3\n  documentsRefuseAt: 0.5\n";
     const strict = documentsApp('library-documents-cutoff', { edits: { 'style.yaml': style } });
@@ -214,17 +229,18 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(docLine(await rendered(plain, u, renderer(), at(0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { refuseAt: 0.3 } });
   });
 
-  it('onFail: opening: the best section\'s first sentences, word for word, in the opening frame', () => {
+  it('onFail: opening: the best section whole where it fits the answer\'s word budget, word for word, in the opening frame', () => {
     const app = documentsApp('library-documents-opening', { onFail: 'opening' });
     const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
     const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((a) => a.promptId === 'kb_documents_answer') : undefined;
-    expect(ack?.vars.answer).toBe("Here's what our guide says: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed.");
+    expect(ack?.vars.answer).toBe("Here's what our guide says: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.");
   });
 
-  it('onFail: opening: a table\'s first two rows, each a sentence of its own, never the whole table run together', () => {
+  it('onFail: opening: a table over the word budget, its first two rows, each a sentence of its own, never the whole table run together', () => {
+    const branches = ['main', 'east', 'west', 'north', 'south', 'river', 'hill', 'park', 'harbor', 'market'];
     const rows = VISITOR_GUIDE.replace(
       '    text: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.\n',
-      '    text: |-\n      Wi-Fi at the main branch: free; password needed: no\n      Wi-Fi at the east branch: free; password needed: no\n      Wi-Fi at the mobile library: not offered\n',
+      `    text: |-\n${branches.map((b) => `      Wi-Fi at the ${b} branch: free; password needed: no\n`).join('')}`,
     );
     const app = documentsApp('library-documents-opening-rows', { onFail: 'opening', edits: { 'kb/sources/visitor-guide.yaml': rows } });
     const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });

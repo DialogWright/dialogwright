@@ -333,10 +333,10 @@ export type KbAnswer =
       readonly answer: string;
       readonly source: KbSource;
       /**
-       * An answer from sections of documents: the best section's first sentences, each of its lines (a
-       * table's row, a list's item) a sentence of its own, said word for word when the answer cannot be
-       * worded (onFail: opening).
+       * An answer from sections of documents: the best section's sentences, each of its lines (a table's
+       * row, a list's item) a sentence of its own, from which its opening is said word for word when the
+       * answer cannot be worded (onFail: opening).
        */
-      readonly opening?: string;
+      readonly sentences?: readonly string[];
     }
   | { readonly unavailable: KbAnswerUnavailable | (string & {}); readonly source?: KbSource };

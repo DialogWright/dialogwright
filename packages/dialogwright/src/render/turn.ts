@@ -100,6 +100,14 @@ export const KB_HOLD_PROMPT = 'kb_hold';
 export const KB_HOLD_MORE_PROMPT = 'kb_hold_more';
 
 /**
+ * The fallbacks after which a knowledge answer is worded again where its span allows (`retry`): those
+ * where the wording said more than its source, as the model is told of a refused wording: the drift
+ * judge's refusal, and a figure the source does not have. A wording too long, or in the wrong shape, is
+ * not asked again.
+ */
+const RETRIED: ReadonlySet<string> = new Set(['drift', 'foreign']);
+
+/**
  * Hands a channel lines to say before the turn has ended: the turn's lines before a knowledge answer still
  * being worded, and the hold line after them, with the turn's result so far (its decision and session);
  * and, past half the answer's limit, a second batch of the second hold line alone, said after the first.
@@ -574,9 +582,10 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const flagged = await screened([{ name: 'question', value: first.answer!.question }], checker());
     if (flagged !== null) return flagged;
     let got = await wordAnswer(promptId, span, first);
-    // A wording the drift judge refused: asked again (the span's `retry`), told only that its last was
-    // refused, within what is left of the answer's limit; each draw is judged again.
-    for (let n = 0; n < retries && 'fallback' in got && got.fallback === 'drift' && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
+    // A wording that said more than its source (the drift judge refused it, or it has a figure the source
+    // does not): asked again (the span's `retry`), told only that its last was refused, within what is
+    // left of the answer's limit; each draw is checked and judged again.
+    for (let n = 0; n < retries && 'fallback' in got && RETRIED.has(got.fallback) && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
       got = await wordAnswer(promptId, span, { ...first, answer: { ...first.answer!, refused: got.refused } }, got);
     }
     return got;
