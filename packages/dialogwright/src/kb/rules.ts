@@ -274,6 +274,7 @@ export function kbStateProblems(kb: KnowledgeBase, todayIso: string, locate: Loc
   if (log !== undefined && 'invalid' in log) at(log.file, [], `${log.file} cannot be read: ${log.invalid}`, `restore it from version control: it is appended to by ${APPROVE_COMMAND}, never rewritten`);
   problems.push(...kbIndexProblems(kb, locate, base));
   problems.push(...kbSectionsIndexProblems(kb, locate, base));
+  problems.push(...kbSectionHintProblems(kb, locate, base));
   const combos = appliesCombinations(kb.settings.applies);
   for (const topic of Object.values(kb.topics)) {
     for (const facts of combos) {
@@ -411,5 +412,20 @@ export function kbSectionsIndexProblems(kb: KnowledgeBase, locate: Locate, base 
     ...(stale.length > 0 ? [`${stale.length} vector${stale.length === 1 ? '' : 's'} for text no section has any more (${sections(stale.map((s) => s.topic))})`] : []),
   ];
   at(`the index ${file} is stale for the sections: ${parts.join('; ')}`);
+  return problems;
+}
+
+/**
+ * kb/sections.yaml's keys: each names a section of a document in kb/sources (<document>#<section>),
+ * with the nearest ones named where it does not.
+ */
+export function kbSectionHintProblems(kb: KnowledgeBase, locate: Locate, base = 'kb'): Problem[] {
+  const problems: Problem[] = [];
+  const keys = Object.values(kb.sources).flatMap((doc) => Object.keys(doc.sections).map((id) => `${doc.id}#${id}`));
+  for (const key of Object.keys(kb.sectionHints ?? {})) {
+    if (keys.includes(key)) continue;
+    const near = closest(key, keys);
+    problemAt(problems, locate, `${base}/sections.yaml`, [key], `"${key}" is not a section of a document in ${base}/sources`, near ? `rename it to "${near}", or delete it` : `name a section as its document names it, <document id>#<section id> (kb/sources/<document id>.yaml), or delete it`);
+  }
   return problems;
 }

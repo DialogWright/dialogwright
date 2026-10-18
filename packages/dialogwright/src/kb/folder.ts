@@ -1,6 +1,6 @@
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '../define/problems';
 import { approvalHashOf, canonicalApplies, collapseWhitespace, documentHashOf, sourceHashOf } from './hash';
-import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
+import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSectionsYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
 import type { KbApprovalLogRead, KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
 import { STATIC_MODELS } from './embed/model';
 import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead } from './vectorIndex';
@@ -62,6 +62,8 @@ const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
   'kb.yaml': 'file',
   'topics.yaml': 'file',
+  // How the sections of documents are found (questions and keywords): optional, never said.
+  'sections.yaml': 'file',
   passages: 'dir',
   sources: 'dir',
   locale: 'dir',
@@ -113,6 +115,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
 
   const settings = readOne<KbSettingsYaml>(`${base}/kb.yaml`, 'kbSettings', io, problems, true);
   const topicsYaml = readOne<KbTopicsYaml>(`${base}/topics.yaml`, 'kbTopics', io, problems, true);
+  const sectionsYaml = readOne<KbSectionsYaml>(`${base}/sections.yaml`, 'kbSections', io, problems, false);
 
   // The source documents.
   const sources: Record<string, KbSourceDocument> = {};
@@ -252,6 +255,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     sources: sortedSources,
     ...(index ? { index } : {}),
     ...(sectionsIndex ? { sectionsIndex } : {}),
+    ...(sectionsYaml ? { sectionHints: Object.fromEntries(Object.entries(sectionsYaml).map(([key, h]) => [key, { asks: h.asks ?? [], keywords: h.keywords ?? [] }])) } : {}),
     ...(approvalLog ? { approvalLog } : {}),
   };
 }

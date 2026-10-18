@@ -136,6 +136,22 @@ export const kbTopicsSchema = z
 
 export type KbTopicsYaml = z.infer<typeof kbTopicsSchema>;
 
+/** A section's key as kb/sections.yaml names it: its document's id, #, and its id. */
+export const SECTION_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]*#.+$/;
+
+const sectionHints = z
+  .strictObject({
+    asks: unique(text(), 'question').optional().describe('Questions a caller asks that this section answers, in their words ("how much is a generic drug" for a table\'s row that says Tier 1). Retrieval reads them beside the section\'s own text; they are never said, so a document\'s approval does not cover them.'),
+    keywords: unique(text(), 'keyword').optional().describe('Words and phrases that name what the section answers exactly. Retrieval matches them as phrases.'),
+  })
+  .describe('How a section of a document is found: what retrieval reads beside its own text.');
+
+export const kbSectionsSchema = z
+  .record(matching(SECTION_KEY, 'is not a section\'s key: it is the document\'s id, #, and the section\'s id (benefit-booklet#claims/how-to-submit-a-claim)', 'name the section as its document in kb/sources names it: <document id>#<section id>'), sectionHints, { error: 'must be a map from a section\'s key to its questions and keywords' })
+  .describe('kb/sections.yaml: how the sections of documents approved for summarizing are found (kb.yaml documents), by section: the questions callers ask that each answers, and its keywords. Retrieval reads them; they are never said, so a document\'s approval does not cover them and editing them needs none.');
+
+export type KbSectionsYaml = z.infer<typeof kbSectionsSchema>;
+
 const localeTopic = z
   .strictObject({
     title: text().optional().describe('The topic\'s title in this locale.'),
@@ -276,6 +292,7 @@ export type KbSourceYaml = z.infer<typeof kbSourceSchema>;
 export const KB_KINDS = {
   kbSettings: { schema: kbSettingsSchema, jsonName: 'kb-settings', title: 'kb/kb.yaml', startsWith: 'the gated action that resolves a passage, for example "action: findPassage"' },
   kbTopics: { schema: kbTopicsSchema, jsonName: 'kb-topics', title: 'kb/topics.yaml', startsWith: 'a topic id and its title, for example "opening_hours: { title: Opening hours }"' },
+  kbSections: { schema: kbSectionsSchema, jsonName: 'kb-sections', title: 'kb/sections.yaml', startsWith: 'a section\'s key and its questions, for example "benefit-booklet#claims: { asks: [how do I file a claim] }"' },
   kbLocaleTopics: { schema: kbLocaleTopicsSchema, jsonName: 'kb-locale-topics', title: 'kb/locale/<tag>/topics.yaml', startsWith: 'a topic id and its wording in this locale, for example "opening_hours: { title: Horario }"' },
   kbPassage: { schema: kbPassageSchema, jsonName: 'kb-passage', title: 'kb/passages/<id>.yaml', startsWith: '"id:" (the file name), "topic:", "version:", "effective:", "source:" and "answer:"' },
   kbSource: { schema: kbSourceSchema, jsonName: 'kb-source', title: 'kb/sources/<doc>.yaml', startsWith: '"document:" (its title) and "sections:"' },

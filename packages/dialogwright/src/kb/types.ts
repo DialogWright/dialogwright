@@ -157,6 +157,8 @@ export interface KnowledgeBase {
    * section retriever reads its vectors (./sections.ts defaultSectionRetriever).
    */
   readonly sectionsIndex?: KbIndexRead;
+  /** How the sections are found (kb/sections.yaml), by section key: the questions each answers and its keywords. Never said. */
+  readonly sectionHints?: Readonly<Record<string, { readonly asks: readonly string[]; readonly keywords: readonly string[] }>>;
   /**
    * The log of approvals (kb/approvals.jsonl, ./log.ts) as read: each line's id, hash and where it
    * came from, or why it could not be read. Present when the loader reads the folder from disk;

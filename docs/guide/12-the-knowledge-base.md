@@ -16,16 +16,17 @@ kb/
   topics.yaml                   what callers ask about: a title, keywords and example questions each, and an optional line from the caller's own data
   passages/<id>.yaml            one approved answer each, in the app's default language
   sources/<doc>.yaml            the documents the answers come from, by section: what an approval is held to
+  sections.yaml                 how the sections of documents approved for summarizing are found: questions and keywords each (optional, never said)
   locale/<tag>/topics.yaml      a language's titles, keywords and example questions
   locale/<tag>/passages/        a language's passages, usually translations
   pending/<id>.yaml             drafts waiting for a person: never read at run time, never said
   pending/topics.yaml           topics the drafts propose
   rejected/<id>.yaml            drafts a person turned down, with who, when and why
   approvals.jsonl               every approval, one line each, appended and never rewritten
-  .index/<embedder>.json        the vectors of the topics' texts, for retrieval by meaning (optional; commit it)
+  .index/<embedder>.json        the vectors of the topics' texts (and the sections'), for retrieval by meaning (optional; commit it)
 ```
 
-Every file has a JSON Schema (`kb-settings`, `kb-topics`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`), named on its first line like the app's other files (the examples below show the file's path there instead). A file that is not in this list is a problem, so a mistyped folder name does not go unnoticed. `pnpm check` reads all of it, and so does `defineApp`.
+Every file has a JSON Schema (`kb-settings`, `kb-topics`, `kb-sections`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`), named on its first line like the app's other files (the examples below show the file's path there instead). A file that is not in this list is a problem, so a mistyped folder name does not go unnoticed. `pnpm check` reads all of it, and so does `defineApp`.
 
 **kb.yaml** says how the knowledge base is read, never what it says:
 
@@ -623,6 +624,17 @@ documents:
     onnx: Xenova/bge-small-en-v1.5
     revision: ea104dacec62c0de699686887e3f920caeb4f3e3   # the model repository's commit
 ```
+
+**Questions that find a section.** A document says "late fees" where a caller says "overdue fine" (a benefits booklet says "Tier 1" where a caller says "generic"), and a section under a long parent can rank below its parent. `kb/sections.yaml` gives a section the questions callers ask that it answers, in their words, and keywords, as `topics.yaml` gives a topic, by `<document>#<section>`:
+
+```yaml
+# kb/sections.yaml
+"patron-guide#3.1":
+  asks: [what is the fine for an overdue book, do I pay if I bring a book back late]
+  keywords: [overdue fine]
+```
+
+Retrieval reads them beside the section's text (`pnpm kb:index` after a change); they are never said, so a document's approval does not cover them and adding one needs no approval again. Add them where a question's right section was not offered: `pnpm kb:gaps` lists what callers asked that nothing answered, and `pnpm kb:bakeoff --sections` measures a change. `pnpm check` refuses a key that names no section. On the booklet above, questions for 23 of its sections took 30 questions written after them (held out) from 70% to 93% with the right section among the six nominated.
 
 `documents.embedder` is opt-in: the app installs the optional package it runs on (`pnpm add @huggingface/transformers`, some hundreds of megabytes), `pnpm kb:index` writes the sections' vectors to an index of their own (`kb/.index/onnx-<model>.json`; the topics keep `retrieval.embedder`'s), `pnpm check` holds that index to the sections' texts without the package, and the server loads the model when it starts (a model that cannot be loaded leaves the sections' keywords). Its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations and so change a recorded request: build the index and record the cassette on one machine. On a 123-page booklet (291 sections, 114 paraphrases of 38 of them), the right section was among the six nominated for 75% of the lines with the static model and keywords, 86% with bge-small fused with keywords, and 88% with bge-small alone (keywords on common words crowd the right section out of a long document).
 

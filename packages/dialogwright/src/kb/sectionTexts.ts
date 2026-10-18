@@ -1,5 +1,5 @@
 import { collapseWhitespace } from './hash';
-import { textHash, type IndexText } from './words';
+import { textHash, type IndexText, type TopicField } from './words';
 import type { KnowledgeBase } from './types';
 
 /**
@@ -51,6 +51,9 @@ export interface KbSection {
    * that answers it rather than every row of a table at once.
    */
   readonly sentences: readonly string[];
+  /** The questions callers ask that it answers, and its keywords (kb/sections.yaml): what retrieval reads beside its text. */
+  readonly asks: readonly string[];
+  readonly keywords: readonly string[];
   /** Which callers it is for: the document's applies (canonical); absent, every caller. */
   readonly applies?: Readonly<Record<string, readonly string[]>>;
 }
@@ -80,7 +83,7 @@ export const summarizing = (kb: Pick<KnowledgeBase, 'settings'>): boolean => kb.
  * holds a vector for (`approved: false`: any document's, approved or not), in document then file
  * order. None when summarizing is off.
  */
-export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'>, options: { approved?: boolean } = {}): KbSection[] {
+export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>, options: { approved?: boolean } = {}): KbSection[] {
   if (!summarizing(kb)) return [];
   const approved = options.approved ?? true;
   const cited = new Set(Object.values(kb.passages).map((p) => sectionKeyOf(p.source.document, p.source.section)));
@@ -91,7 +94,7 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
       const key = sectionKeyOf(doc.id, id);
       if (s.summarize === false || cited.has(key)) continue;
       const heading = collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, ''));
-      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), sentences: s.text.split(/\n+/).flatMap(sentencesOf), ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
+      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), sentences: s.text.split(/\n+/).flatMap(sentencesOf), asks: kb.sectionHints?.[key]?.asks ?? [], keywords: kb.sectionHints?.[key]?.keywords ?? [], ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
     }
   }
   return out;
@@ -131,17 +134,21 @@ export function sentencesOf(text: string): string[] {
 /**
  * The texts the index embeds for the sections (field `section`, keyed by the section's key, in the
  * default locale): each section's heading after the headings it is under (KbSection.path) and each
- * of its sentences, so a question matches the
+ * of its sentences (field `section`), and the questions and keywords kb/sections.yaml gives it (`ask`,
+ * `keyword`), so a question matches the
  * sentence that answers it. Sections are in the default locale only.
  */
-export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'>): IndexText[] {
+export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>): IndexText[] {
   const out = new Map<string, IndexText>();
   for (const s of summarizableSections(kb, { approved: false })) {
-    for (const raw of [s.path, ...s.sentences]) {
-      const text = collapseWhitespace(raw);
-      if (text === '') continue;
-      const contentHash = textHash(text);
-      out.set(`${s.key}\u0000${contentHash}`, { topic: s.key, locale: kb.defaultLocale, field: 'section', text, contentHash });
+    const fields: [TopicField, readonly string[]][] = [['section', [s.path, ...s.sentences]], ['ask', s.asks], ['keyword', s.keywords]];
+    for (const [field, texts] of fields) {
+      for (const raw of texts) {
+        const text = collapseWhitespace(raw);
+        if (text === '') continue;
+        const contentHash = textHash(text);
+        out.set(`${s.key}\u0000${field}\u0000${contentHash}`, { topic: s.key, locale: kb.defaultLocale, field, text, contentHash });
+      }
     }
   }
   const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);

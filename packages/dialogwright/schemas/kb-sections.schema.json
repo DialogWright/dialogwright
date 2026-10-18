@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "propertyNames": {
+    "type": "string",
+    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*#.+$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "asks": {
+        "description": "Questions a caller asks that this section answers, in their words (\"how much is a generic drug\" for a table's row that says Tier 1). Retrieval reads them beside the section's own text; they are never said, so a document's approval does not cover them.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "keywords": {
+        "description": "Words and phrases that name what the section answers exactly. Retrieval matches them as phrases.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "additionalProperties": false,
+    "description": "How a section of a document is found: what retrieval reads beside its own text."
+  },
+  "description": "kb/sections.yaml: how the sections of documents approved for summarizing are found (kb.yaml documents), by section: the questions callers ask that each answers, and its keywords. Retrieval reads them; they are never said, so a document's approval does not cover them and editing them needs none.",
+  "title": "DialogWright kb/sections.yaml"
+}

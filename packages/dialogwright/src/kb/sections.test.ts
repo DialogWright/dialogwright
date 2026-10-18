@@ -7,6 +7,7 @@ import { approveDocument, placeOf } from './approval';
 import { KB_FIXTURE, TODAY, VISITOR_GUIDE } from './__fixtures__/libraryKbApp';
 import { defaultSectionRetriever, SectionRetriever, sectionIndexTexts, sectionOfKey, sentencesOf, summarizableSections } from './sections';
 import { allIndexTexts } from './vectorIndex';
+import { kbSectionHintProblems } from './rules';
 import type { KnowledgeBase } from './types';
 
 /**
@@ -46,7 +47,7 @@ describe('the sections that may be summarized', () => {
   it('are an approved document\'s, but for a section a passage cites and one marked summarize: false', () => {
     const kb = kbWith({ approve: true }).kb();
     expect(summarizableSections(kb).map((s) => s.key)).toEqual(['visitor-guide#wifi', 'visitor-guide#printing', 'visitor-guide#parking', 'visitor-guide#lost-card']);
-    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', path: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.', sentences: ['Every branch has free Wi-Fi.', 'Join the network ExampleTownLibrary; no password is needed.', 'Sessions end when the branch closes.'] });
+    expect(summarizableSections(kb)[0]).toEqual({ key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Example Town Library Visitor Guide', section: 'wifi', heading: 'Wi-Fi', path: 'Wi-Fi', text: 'Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.', sentences: ['Every branch has free Wi-Fi.', 'Join the network ExampleTownLibrary; no password is needed.', 'Sessions end when the branch closes.'], asks: [], keywords: [] });
     // The patron guide's sections are each cited by a passage: never summarized, though approved documents' they would be.
     expect(summarizableSections(kb, { approved: false }).some((s) => s.document === 'patron-guide')).toBe(false);
   });
@@ -106,6 +107,19 @@ describe('their index texts', () => {
     expect(sentencesOf('It costs 2.50 dollars. Open 9 a.m. to 5 p.m. daily! Ask us? Yes.')).toEqual(['It costs 2.50 dollars.', 'Open 9 a.m. to 5 p.m. daily!', 'Ask us?', 'Yes.']);
     expect(sectionOfKey('visitor-guide#lost-card')).toEqual({ document: 'visitor-guide', section: 'lost-card' });
     expect(sectionOfKey('no-key')).toBeNull();
+  });
+});
+
+describe('a section\'s questions and keywords (kb/sections.yaml)', () => {
+  it('are read beside its text by the index and the keywords, never by its approval; a key that names no section is a problem', async () => {
+    const { dir, kb } = kbWith({ approve: true });
+    writeFileSync(join(dir, 'sections.yaml'), '"visitor-guide#printing":\n  asks: [can I make photocopies]\n  keywords: [photocopier]\n"visitor-guide#nowhere":\n  asks: [is there a cafe]\n');
+    const printing = summarizableSections(kb()).find((s) => s.section === 'printing')!;
+    expect(printing).toMatchObject({ asks: ['can I make photocopies'], keywords: ['photocopier'] });
+    expect(kb().sources['visitor-guide']!.freshness).toBe('fresh');
+    expect(sectionIndexTexts(kb()).filter((t) => t.topic === 'visitor-guide#printing' && t.field !== 'section').map((t) => [t.field, t.text])).toEqual(expect.arrayContaining([['ask', 'can I make photocopies'], ['keyword', 'photocopier']]));
+    expect((await new SectionRetriever(kb(), { cap: 2 }).nominate({ text: 'where is the photocopier', locale: 'en-US', todayIso: TODAY }))[0]).toMatchObject({ topic: 'visitor-guide#printing' });
+    expect(kbSectionHintProblems(kb(), () => null).map((p) => p.message)).toEqual(['"visitor-guide#nowhere" is not a section of a document in kb/sources']);
   });
 });
 

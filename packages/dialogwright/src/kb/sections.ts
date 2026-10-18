@@ -22,9 +22,9 @@ export { sectionIndexTexts, sectionKeyOf, sectionOfKey, sentencesOf, summarizabl
  * vector; the retriever, built when the app is defined, nominates only those that may be summarized.
  */
 
-/** The sections as topics the keyword retriever reads: the heading after its parents' its title, the sentences its example questions. */
+/** The sections as topics the keyword retriever reads: the heading after its parents' its title, its questions (kb/sections.yaml) and sentences its example questions, its keywords its keywords. */
 function asTopics(sections: readonly KbSection[]): Record<string, KbTopic> {
-  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.path, keywords: [], asks: [...s.sentences], risk: 'low', locales: {} } satisfies KbTopic]));
+  return Object.fromEntries(sections.map((s) => [s.key, { id: s.key, title: s.path, keywords: [...s.keywords], asks: [...s.asks, ...s.sentences], risk: 'low', locales: {} } satisfies KbTopic]));
 }
 
 /**
@@ -89,14 +89,14 @@ export class SectionRetriever implements Retriever {
   private readonly dense?: { readonly embedder: Embedder; readonly index: MemoryVectorIndex; readonly floor: number };
   private readonly titles: ReadonlyMap<string, string>;
 
-  constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'>, options: SectionRetrieverOptions = {}) {
+  constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>, options: SectionRetrieverOptions = {}) {
     this.sections = summarizableSections(kb, { approved: options.all !== true });
     this.cap = options.cap ?? kb.settings.documents?.cap ?? DEFAULT_SECTIONS_CAP;
     this.titles = new Map(this.sections.map((s) => [s.key, s.heading]));
     this.keyword = new KeywordRetriever({ topics: asTopics(this.sections), defaultLocale: kb.defaultLocale }, { cap: this.cap, id: 'sections:keyword' });
     if (options.dense) {
       const keys = new Set(this.sections.map((s) => s.key));
-      const entries: VectorEntry[] = options.dense.vectors.entries.filter((e) => e.field === 'section' && keys.has(e.topic));
+      const entries: VectorEntry[] = options.dense.vectors.entries.filter((e) => keys.has(e.topic) && (e.field === 'section' || e.field === 'ask' || e.field === 'keyword'));
       this.dense = { embedder: options.dense.embedder, index: new MemoryVectorIndex(options.dense.embedder.dim, entries), floor: options.dense.floor };
     }
     this.keywords = options.keywords !== false || this.dense === undefined;
