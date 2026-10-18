@@ -16,7 +16,7 @@ A slot of this type is written under its id in slots.yaml, with `type: reference
 | `article` | string | unset | The word before the noun in the default questions. Default: "an" when the noun starts with a vowel, otherwise "a". |
 | `length` | integer, 1 to 20 | required | How many characters the reference has. |
 | `alphabet` | string | `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789` | The characters a reference may hold, capital letters and digits. Where it leaves out one of a pair that sound or look alike (O and 0, I and 1), a word said for either is read as the one it holds ("oh" is 0 when it has no O). Default: every letter and digit. |
-| `confirm` | one of `summary`, `always` | `summary` | "summary": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. "always": a reference is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken. |
+| `confirm` | one of `summary`, `acknowledge`, `always` | `summary` | "summary": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. "acknowledge": it is said back as soon as it is heard (`ack_<slot>`, given its display as `{<slot>}`: "Got it, K E V H U D."), with no yes asked, so a caller hears what was taken and can correct it; the form's final confirm, where it has one, still covers it. "always": a reference is read back for a yes as soon as it is heard (`confirm_<slot>`, given its display as `{<slot>}`), before the form goes on; a no empties the slot and asks it again (ack_declined, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no ("no, it's ...") is taken. |
 | `redact` | one of `last4`, `length`, `none` | `length` | How the value is masked wherever it leaves the turn (the trace, the console, the audit, a tool call's param of the same name): "length" (only how many characters, "&lt;6 chars&gt;": a short reference's last four would show most of it), "last4" ("...4QX7") or "none". |
 | `handoff` | one of `last4`, `verified`, `display` | `display` | What a transfer to a person hands over: its "display" in full, its "last4", or only whether the caller was "verified". app.yaml's handoff.data then says whether it goes, and how: by default an identity factor is left out and a redacted value masked. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: given, span, none. |
@@ -65,7 +65,7 @@ On the slot `bookingCode`, `bookingCodeGiven` (yes or no: does the caller state 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `confirm: acknowledge`, `ack_<slot>` ("Got it, {bookingCode}."), said as soon as the reference is heard, before the next question. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display.
 
 ## Examples
 
@@ -117,6 +117,27 @@ order:
 |---|---|---|
 | the order is AB12CD34 | `orderGiven`: yes 0.95<br>`orderSpan`: `ab12cd34` 0.9, `none` 0.1 | filled: value `AB12CD34`, display `A B 1 2 C D 3 4`, display in es `A B 1 2 C D 3 4` |
 | double A one two three four five six | `orderGiven`: yes 0.9<br>`orderSpan`: `double a one two three four five six` 0.9, `none` 0.1 | filled: value `AA123456` |
+
+</details>
+
+#### booking code, said back
+
+The booking code acknowledged as soon as it is heard (ack_<slot>), so the caller hears what was taken.
+
+```yaml
+code:
+  type: reference
+  noun: booking code
+  length: 6
+  alphabet: ABCDEFGHJKMNPQRSTUVWXYZ23456789
+  confirm: acknowledge
+```
+
+<details><summary>Starter utterances (1)</summary>
+
+| The caller says | The model answers | The slot gives |
+|---|---|---|
+| it's QF6VW2 | `codeGiven`: yes 0.95<br>`codeSpan`: `qf6vw2` 0.95, `none` 0.05 | filled: value `QF6VW2`, display `Q F 6 V W 2`, confirm `implicit`, display in es `Q F 6 V W 2` |
 
 </details>
 

@@ -25,7 +25,7 @@ On the slot `bookingCode`, `bookingCodeGiven` (yes or no: does the caller state 
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `confirm: acknowledge`, `ack_<slot>` ("Got it, {bookingCode}."), said as soon as the reference is heard, before the next question. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display.
 
 ## Examples
 

@@ -54,9 +54,9 @@ export const referenceOptions = z
       .default(DEFAULT_ALPHABET)
       .describe('The characters a reference may hold, capital letters and digits. Where it leaves out one of a pair that sound or look alike (O and 0, I and 1), a word said for either is read as the one it holds ("oh" is 0 when it has no O). Default: every letter and digit.'),
     confirm: z
-      .enum(['summary', 'always'])
+      .enum(['summary', 'acknowledge', 'always'])
       .default('summary')
-      .describe(`"summary": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. ${alwaysConfirmText('a reference')}`),
+      .describe(`"summary": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. "acknowledge": it is said back as soon as it is heard (ack_<slot>, given its display as {<slot>}: "Got it, K E V H U D."), with no yes asked, so a caller hears what was taken and can correct it; the form's final confirm, where it has one, still covers it. ${alwaysConfirmText('a reference')}`),
     redact: z
       .enum(['last4', 'length', 'none'])
       .default('length')

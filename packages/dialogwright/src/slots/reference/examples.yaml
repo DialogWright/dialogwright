@@ -67,3 +67,18 @@
         orderGiven: { noul: 0.9 }
         orderSpan: { choice: { double a one two three four five six: 0.9, none: 0.1 } }
       expect: { kind: filled, value: AA123456 }
+
+- name: booking code, said back
+  about: The booking code acknowledged as soon as it is heard (ack_<slot>), so the caller hears what was taken.
+  slot: code
+  config:
+    noun: booking code
+    length: 6
+    alphabet: ABCDEFGHJKMNPQRSTUVWXYZ23456789
+    confirm: acknowledge
+  utterances:
+    - text: it's QF6VW2
+      answers:
+        codeGiven: { noul: 0.95 }
+        codeSpan: { choice: { qf6vw2: 0.95, none: 0.05 } }
+      expect: { kind: filled, value: QF6VW2, display: Q F 6 V W 2, confirm: implicit, displays: { es: Q F 6 V W 2 } }

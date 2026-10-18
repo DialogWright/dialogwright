@@ -55,7 +55,7 @@ function referenceFill(o: ReferenceOptions, slot: string): (answers: AnswerMap, 
     const value = readReference(tokensOf(span.choice), o.alphabet, ctx.locale);
     if (value === null || !referenceFits(value, o.length, o.alphabet)) return { kind: 'invalid', reason: 'shape', raw: value ?? '' };
     const p = span.probabilities?.[span.choice] ?? span.confidence;
-    return { kind: 'filled', value, display: referenceDisplay(value), confidence: p, confirm: 'none' };
+    return { kind: 'filled', value, display: referenceDisplay(value), confidence: p, confirm: o.confirm === 'acknowledge' ? 'implicit' : 'none' };
   };
 }
 
@@ -70,10 +70,14 @@ export const referenceType: SlotType<ReferenceOptions> = defineSlotType<Referenc
   options: referenceOptions,
   build(id, o) {
     const ids = idsOf(id, o);
-    const prompts: SlotPrompt[] = [...readBackPrompts(id, o.confirm)];
+    const acknowledge = o.confirm === 'acknowledge';
+    const prompts: SlotPrompt[] = acknowledge
+      ? [{ id: `ack_${id}`, why: 'it says the reference back as soon as it is heard (confirm: acknowledge)', vars: [id] }]
+      : [...readBackPrompts(id, o.confirm === 'always' ? 'always' : 'summary')];
     return {
       id,
-      ...readBackOf(o.confirm),
+      // Acknowledged: the engine says ack_<slot> for a fill that asks for an implicit read-back (SlotSpec.spokenConfirm by-confidence).
+      ...(acknowledge ? { spokenConfirm: 'by-confidence' as const } : readBackOf(o.confirm === 'always' ? 'always' : 'summary')),
       ...(o.redact === 'last4' ? { redact: 'last4' as const } : {}),
       ...(o.redact === 'length' ? { redact: 'length' as const, statement: false as const } : {}),
       ...(o.handoff !== 'display' ? { handoff: o.handoff } : {}),

@@ -1812,10 +1812,11 @@
           },
           "confirm": {
             "default": "summary",
-            "description": "\"summary\": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. \"always\": a reference is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
+            "description": "\"summary\": the reference is neither acknowledged nor read back on its own; the form's final confirm covers it. \"acknowledge\": it is said back as soon as it is heard (ack_<slot>, given its display as {<slot>}: \"Got it, K E V H U D.\"), with no yes asked, so a caller hears what was taken and can correct it; the form's final confirm, where it has one, still covers it. \"always\": a reference is read back for a yes as soon as it is heard (confirm_<slot>, given its display as {<slot>}), before the form goes on; a no empties the slot and asks it again (ack_declined, then ask_<slot>, or ask_<slot>_dtmf at the keypad rung where the slot takes keys), a step on its ladder, and a second no goes to a person. The right answer said with the no (\"no, it's ...\") is taken.",
             "type": "string",
             "enum": [
               "summary",
+              "acknowledge",
               "always"
             ]
           },
