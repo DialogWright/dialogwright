@@ -67,8 +67,15 @@ export function topicFill(
     if (out.kind === 'filled' || out.kind === 'disambiguate' || out.kind === 'help' || o.unanswered !== 'retry' || (ctx.sections ?? []).length === 0) return out;
     const a = answers[questionId];
     if (isChoice(a)) {
-      const top = o.disambiguate ? rankProbabilities(typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {})[0]?.label : a.choice;
+      const probabilities = typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {};
+      const top = o.disambiguate ? rankProbabilities(probabilities)[0]?.label : a.choice;
       if (top === 'none') return out;
+      // With the request (not at its own question), a section answers only a caller sure to have asked
+      // something (all but `none`, at KB_UNANSWERED, the bar a not-found reply held from it needs): a bare
+      // "coverage" is a request, not a question a section answers. At its own question, what the caller
+      // says is their question.
+      const nothing = probabilities.none;
+      if (!ctx.prompted && !meetsThreshold(ctx.thresholds, 'KB_UNANSWERED', 1 - (typeof nothing === 'number' ? nothing : 0))) return out;
     }
     const answering = (ctx.sections ?? [])
       .map((s, i) => ({ s, p: sectionAnswers(answers, sectionQuestionIdOf(slot, i), o.sections.from) }))

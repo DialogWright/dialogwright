@@ -205,7 +205,7 @@ describe('its options', () => {
     const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
     const own = defineSlot('subject', { type: 'topic', text: { section: 'Read asr.text. Does this section of the {document} answer the caller\'s question? {heading}: {text}' } }, undefined, { catalog: CATALOG });
     expect(own.questions(ctx('is there wifi', { nominated: [], sections: [section] })).subjectSection1).toEqual({ type: 'noul', instructions: "Read asr.text. Does this section of the Visitor Guide answer the caller's question? Wi-Fi: Every branch has free Wi-Fi." });
-    expect(subject.questions(ctx('is there wifi', { nominated: [], sections: [section] })).subjectSection1).toEqual({ type: 'noul', instructions: 'Read asr.text. Does this section of the Visitor Guide say what the caller asks about? Wi-Fi: Every branch has free Wi-Fi.' });
+    expect(subject.questions(ctx('is there wifi', { nominated: [], sections: [section] })).subjectSection1).toEqual({ type: 'noul', instructions: "Read asr.text. Would this section of the Visitor Guide answer the caller's question? Wi-Fi: Every branch has free Wi-Fi." });
     const bad = buildSlot('subject', { type: 'topic', text: { section: 'Does the {page} answer it? {text}' } });
     expect(bad.ok).toBe(false);
     if (bad.ok) return;
@@ -223,6 +223,20 @@ describe('its options', () => {
     expect(subject.fill(asked, at('is there parking', true))).toMatchObject({ kind: 'invalid', notFound: true });
     expect(subject.fill({ ...asked, subjectSection1: noul(0.9) }, at('is there wifi', false))).toMatchObject({ kind: 'filled', value: 'sections:visitor-guide#wifi' });
     expect(subject.fill({ subjectTopic: choice({ none: 0.9, unanswered: 0.1 }), subjectSection1: noul(0.1) }, at('I have a question', true))).toMatchObject({ kind: 'invalid', reask: true });
+  });
+
+  it('answers the request from a section only where the caller surely asked something (KB_UNANSWERED); at its own question, whatever they asked', () => {
+    const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
+    const at = (text: string, prompted: boolean) => ctx(text, { nominated: [], sections: [section], prompted });
+    // A bare word with the request: nothing asked 0.39 (so something asked at most 0.61), a section at 0.6: not an answer.
+    const bare = { subjectTopic: choice({ unanswered: 0.58, none: 0.39 }), subjectSection1: noul(0.6) };
+    expect(subject.fill(bare, at('wifi', false)).kind).not.toBe('filled');
+    // The same at the slot's own question ("What's your question?"): the word is the question, the section its answer.
+    expect(subject.fill(bare, at('wifi', true))).toMatchObject({ kind: 'filled', value: 'sections:visitor-guide#wifi' });
+    // Sure the caller asked: answered with the request, as before.
+    expect(subject.fill({ subjectTopic: choice({ unanswered: 0.9, none: 0.1 }), subjectSection1: noul(0.6) }, at('is there wifi', false))).toMatchObject({ kind: 'filled' });
+    // Asked something, the reading split between unanswered and a topic it did not fill: still asked.
+    expect(subject.fill({ subjectTopic: choice({ unanswered: 0.55, parking: 0.44, none: 0.01 }), subjectSection1: noul(0.9) }, at('how long do I have', false))).toMatchObject({ kind: 'filled' });
   });
 
   it('with sections: { ask: score }, score each section by how much of the question it answers, and fill from a level up (mostly, by default)', () => {

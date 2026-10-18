@@ -21,7 +21,11 @@ export const TOPIC_PARTS = textParts('topic', {
     about: 'What the question\'s "none" label means: the caller asks about none of the topics offered.',
   },
   section: {
-    template: 'Read asr.text. Does this section of the {document} say what the caller asks about? {heading}: {text}',
+    // "Would this section answer the caller's question?", the maintainer's decision (2026-10-18): it read
+    // as the old "Does this section say what the caller asks about?" at a call's start, and far steadier
+    // after a long answer was just read out (the booklet's 152 questions: 121 right where the old read 73;
+    // the handbook's 88 after a coverage answer: 82 where it read 70), with no more wrong sections.
+    template: "Read asr.text. Would this section of the {document} answer the caller's question? {heading}: {text}",
     vars: ['document', 'heading', 'text'],
     about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text. Unlike the other parts, an app\'s own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.',
   },

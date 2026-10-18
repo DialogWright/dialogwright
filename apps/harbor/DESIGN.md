@@ -596,6 +596,10 @@ The section question's wording was measured first (docs/designs/2026-10-17-kb-do
 
 The engine now asks the topic question, with its two labels (unanswered, none), on a turn that offers sections of the handbook and no topic (an app that answers from documents alone must tell a question nothing answers from a turn that asks none), and holds a generated figure to its sources by its value ("one hundred fifty dollars" is a "$150" they say). Every request that offered sections and no topic changed, so Harbor was recorded again (674 requests, $0.1298). Replay: `to triage: 0 untagged corpus differences, 0 failing scripted calls, 0 passing scripted calls that differ from the baseline, 0 cassette misses`, with the generated lines replayed and without.
 
+### Recording 20: jev-1.13.0, 2026-10-18, the section question reworded
+
+The engine now asks each section "Would this section of the {document} answer the caller's question?" (it asked "Does this section ... say what the caller asks about?"), the maintainer's decision after a measurement with the line just played varied (the topic slot's page): on the handbook's 88 questions, after a coverage answer was read out, the right section read yes for 82 of 87 where it read for 70, as many or more at the greeting, mid-claim and at the coverage question, with no more wrong sections. And a section answers a request only where the caller surely asked something (all but `none` at `KB_UNANSWERED`), so a bare "coverage" (cv-16) is asked its question rather than answered from the section on contacting member services, which the new wording read at 0.58 for it. Recorded again: the explanation of benefits reads 0.67 on hb-10 (0.45 before) and is answered, its known gap and the scripted call's matching the baseline again (the tags kept: it has moved by a tenth between recordings); hb-14 ("if I cancel will my open claim still be paid") reads coverage 0.56 against a claim 0.44, within the intents' margin, so the caller is asked which they mean, its known gap moved to that outcome.
+
 ## Final checklist
 
 - [x] Every sentence of the paragraph is a row above, and every row is built.
