@@ -12,7 +12,7 @@ import { buildReport, codeSpan, formatJson, formatMarkdown, reportFromFiles, rep
 import { FakeS3 } from 'dialogwright/testing/fakeS3';
 import { S3Client } from 'dialogwright/trace/s3/client';
 import { segmentName } from 'dialogwright/trace/store';
-import { defaultTraceSpecs, readTurns, traceFilesOf, turnOf } from './traces';
+import { defaultTraceSpecs, readTurns, traceFilesOf, turnOf, type Turn } from './traces';
 
 /**
  * kb:gaps on real trace records: scripted calls to a scratch copy of the library's knowledge base app,
@@ -215,6 +215,55 @@ describe('what counts as a gap', () => {
   it('the words of a turn that took a masked value are withheld, never read', () => {
     const c06 = all().gaps.find((g) => g.sessionId === 'C06')!;
     expect(c06.words).toBeNull();
+  });
+});
+
+describe('an app that answers from documents (kb.yaml documents: summarize on)', () => {
+  const docs: CollectContext = { topicSlots: new Set(['question']), informational: new Set(), nearest: () => null, documents: true };
+  let n = 0;
+  /** A turn of a call with sections offered and no topic: its words, the sections' readings, and what it said. */
+  const turn = (words: string, reads: Record<string, number>, decision: { promptId: string | null; acks: string[] }, kbTopic: string | null = null): Turn => ({
+    file: 'f', line: ++n, sessionId: 'D1', turnIndex: n, ts: `2026-10-18T10:00:${String(n).padStart(2, '0')}.000Z`, words, quarantined: false, locale: 'en-US',
+    retrieval: { nominated: [], failed: null }, sections: Object.entries(reads).map(([key, read]) => ({ key, read })),
+    questions: {}, answers: {}, intent: 'ask_question', decision: { kind: 'prompt', target: null, ...decision }, promptedFor: 'intent',
+    slotValues: {}, masked: [], maskedInDecision: false, calls: [],
+    kb: kbTopic === null ? null : { passageId: 'document:guide', topic: kbTopic, fresh: true, document: 'Guide', section: 'wifi', locale: null },
+  });
+  const NOT_FOUND = { promptId: 'ask_question', acks: ['ack_intent', 'kb_not_found.v2'] };
+
+  it('a gap is a question it said it found nothing for, with the section offered that read nearest', () => {
+    const { gaps } = collectGaps([turn('can I get a gym discount', { 'guide#hours': 0.07, 'guide#fees': 0.31 }, NOT_FOUND)], docs);
+    expect(gaps).toEqual([expect.objectContaining({ kind: 'unmatched', words: 'can I get a gym discount', section: { key: 'guide#fees', read: 0.31 } })]);
+  });
+
+  it('a question checked first is no gap of its own: the yes found nothing, so the gap is the question checked, with its sections; found on the yes, none', () => {
+    const asked = turn('can I get a gym discount', { 'guide#fees': 0.2 }, { promptId: 'confirm_intent_explicit', acks: [] });
+    const yes = turn('yes', { 'guide#hours': 0.6 }, NOT_FOUND);
+    expect(collectGaps([asked, yes], docs).gaps).toEqual([expect.objectContaining({ words: 'can I get a gym discount', section: { key: 'guide#fees', read: 0.2 } })]);
+    const answered = turn('yes', { 'guide#wifi': 0.9 }, { promptId: 'anything_else', acks: ['ack_intent', 'kb_documents_answer'] }, 'documents');
+    expect(collectGaps([asked, answered], docs).gaps).toEqual([]);
+  });
+
+  it('without documents, a question-like turn nothing was nominated for is a gap, as before', () => {
+    const plain: CollectContext = { ...docs, documents: false };
+    expect(collectGaps([turn('can I get a gym discount', {}, { promptId: 'confirm_intent_explicit', acks: [] })], plain).gaps).toEqual([expect.objectContaining({ kind: 'unmatched', words: 'can I get a gym discount' })]);
+  });
+
+  it('the report groups them by the section that came nearest (from 0.3), or none near, each with its fix', () => {
+    const turns = [
+      turn('is wifi free', { 'patron-handbook#fees': 0.41 }, NOT_FOUND),
+      turn('who makes my medicine', { 'patron-handbook#fees': 0.05 }, NOT_FOUND),
+    ];
+    const withDocs = { ...kb, settings: { ...kb.settings, documents: { summarize: 'on' as const, cap: 6 } } };
+    const r = buildReport({ kb: withDocs, place, label: 'app', turns });
+    expect(r.groups.map((g) => [g.key, g.section === null ? null : g.section?.read, g.fixes.map((f) => f.id)])).toEqual([
+      ['section:patron-handbook#fees', 0.41, ['add-glossary']],
+      ['~section', null, ['add-section-asks']],
+    ].sort((a, b) => (a[0]! < b[0]! ? 1 : -1)));
+    const md = formatMarkdown(r).join('\n');
+    expect(md).toContain('By kind: 2 not found in the documents.');
+    expect(md).toContain('No section near');
+    expect(md).toContain('(patron-handbook#fees), read up to 0.41');
   });
 });
 

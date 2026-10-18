@@ -39,6 +39,12 @@ export interface Turn {
   locale: string | null;
   /** What the knowledge retriever did; null when it did not run on this turn. */
   retrieval: { nominated: string[]; failed: string | null } | null;
+  /**
+   * The sections of approved documents offered on this turn (kb.yaml documents), best ranked first, each
+   * with the model's reading of whether it answers the words (its section question's yes, or a score's
+   * share from `mostly` up); null where it was not asked. Empty where none was offered.
+   */
+  sections: { key: string; read: number | null }[];
   questions: Record<string, TurnQuestion>;
   answers: Record<string, TurnAnswer>;
   /** The intent the model chose, when it was asked. */
@@ -102,6 +108,24 @@ export function turnOf(raw: unknown, file: string, line: number): Turn | null {
     }
   }
 
+  // The sections offered (retrieval.sections), in the order the topic slot asks them: <slot>Section1, 2, ...
+  const offered = isObject(raw.retrieval) && isObject(raw.retrieval.sections) && Array.isArray(raw.retrieval.sections.nominated)
+    ? raw.retrieval.sections.nominated.flatMap((n) => (isObject(n) && typeof n.key === 'string' ? [n.key] : []))
+    : [];
+  const readOf = (i: number): number | null => {
+    for (const answered of [raw.answers, followUp?.answers]) {
+      if (!isObject(answered)) continue;
+      for (const [id, a] of Object.entries(answered)) {
+        if (!id.endsWith(`Section${i + 1}`) || !/Section\d+$/.test(id) || !isObject(a)) continue;
+        if (typeof a.noul === 'number') return a.noul;
+        const p = a.probabilities;
+        if (isObject(p)) return ['mostly', 'completely'].reduce((sum, l) => sum + (typeof p[l] === 'number' ? (p[l] as number) : 0), 0);
+      }
+    }
+    return null;
+  };
+  const sections = offered.map((key, i) => ({ key, read: readOf(i) }));
+
   const d = isObject(raw.decision) ? raw.decision : {};
   const decision = {
     kind: str(d.kind) ?? '',
@@ -149,6 +173,7 @@ export function turnOf(raw: unknown, file: string, line: number): Turn | null {
     quarantined: raw.quarantined === true,
     locale: str(raw.locale),
     retrieval,
+    sections,
     questions,
     answers,
     intent,
@@ -210,6 +235,9 @@ export function turnsOfLines(lines: readonly string[], file: string): { turns: T
 
 export type GapKind = 'none' | 'unmatched' | 'unavailable' | 'close';
 
+/** The not-found reply (kb_not_found, and each of its wordings, `.v2` and on). */
+const NOT_FOUND = /^kb_not_found(\.v\d+)?$/;
+
 export const GAP_KINDS: readonly GapKind[] = ['none', 'unmatched', 'unavailable', 'close'];
 
 export type Unavailable = 'stale' | 'not-in-force' | 'no-translation' | 'no-facts' | 'unknown-topic' | 'ambiguous' | 'no-answer';
@@ -238,6 +266,12 @@ export interface Gap {
   passage?: { id: string; document: string | null; section: string | null };
   /** A `close` gap: the other topic of the pair (`topic` is the first). */
   other?: string;
+  /**
+   * A question an app that answers from documents found nothing for (CollectContext.documents): the
+   * section offered that the model read nearest to answering it, with that reading (null where the
+   * model was not asked about it). Absent where no section was offered.
+   */
+  section?: { key: string; read: number | null };
 }
 
 /** What the collector knows beyond the trace. */
@@ -248,6 +282,13 @@ export interface CollectContext {
   informational: ReadonlySet<string>;
   /** The nearest topic by keywords for words said in a locale, when the knowledge base is known and any topic scores. */
   nearest(words: string, locale: string | null): string | null;
+  /**
+   * Whether the app answers from approved documents (kb.yaml `documents: { summarize: on }`): where no
+   * topic was offered, a gap is then a question it said it found nothing for (the not-found reply),
+   * not every question-like turn the documents did not answer at once (one checked first, then
+   * answered on the yes, is none). Absent, false.
+   */
+  documents?: boolean;
 }
 
 /** What a collection counted besides the gaps. */
@@ -386,6 +427,19 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
       return { kind: 'none', topic: q.nominated[0]!, near: 'nominated', ...base, words: own };
     }
     return null;
+  }
+
+  // An app that answers from documents, no topic offered: a gap is a not-found reply, for the question it
+  // answered: this turn's words, or on a yes to a check of the request (a confirm_ prompt the turn
+  // before), the words checked, with the section offered on the turn that read the question.
+  if (ctx.documents === true && t.retrieval !== null && nominated.length === 0) {
+    if (!t.decision.acks.some((a) => NOT_FOUND.test(a))) return null;
+    const checked = seen.prev !== undefined && (seen.prev.decision.promptId ?? '').startsWith('confirm_');
+    const from = checked ? seen.prev! : t;
+    const words = checked ? wordsFor(seen.prev!, undefined) : own;
+    const best = [...from.sections].sort((a, b) => (b.read ?? -1) - (a.read ?? -1))[0];
+    const topic = from.words !== null ? nearest(from.words, from.locale) : null;
+    return { kind: 'unmatched', topic, near: topic !== null ? 'keyword' : 'none', ...base, words, ...(best !== undefined ? { section: best } : {}) };
   }
 
   if (t.retrieval !== null && nominated.length === 0 && t.words !== null) {

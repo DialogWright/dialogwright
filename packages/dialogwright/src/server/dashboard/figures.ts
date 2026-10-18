@@ -145,6 +145,7 @@ function gapContextOf(app: App): CollectContext {
     topicSlots,
     informational,
     nearest: (words, locale) => (keyword && kb ? keyword.scores(words, locale ?? kb.defaultLocale)[0]?.topic ?? null : null),
+    documents: kb?.settings.documents?.summarize === 'on',
   };
 }
 const gapContexts = new WeakMap<App, CollectContext>();

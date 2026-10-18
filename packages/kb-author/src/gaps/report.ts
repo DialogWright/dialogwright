@@ -16,6 +16,10 @@ import { isStoreSpec, readTurns, storeTurns, traceFilesOf, type Turn } from './t
 
 /** The group key of the words no topic is near. */
 export const NO_NEAR_TOPIC = '~';
+/** The group key of an app that answers from documents: questions no section offered came near answering. */
+export const NO_NEAR_SECTION = '~section';
+/** A section the model read at this or above for a question it did not answer is near it: worth a look. */
+export const NEAR_SECTION = 0.3;
 
 /** A sample of what a caller said, and the turn it was said on. */
 export interface Sample {
@@ -25,9 +29,11 @@ export interface Sample {
   sessionId: string;
   turnIndex: number;
   reason?: Unavailable;
+  /** Found nothing for in the documents (an app that answers from them). */
+  documents?: true;
 }
 
-export type FixId = 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool';
+export type FixId = 'add-glossary' | 'add-section-asks' | 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool';
 
 /** What to do about one kind of gap in a group. */
 export interface Fix {
@@ -70,6 +76,12 @@ export interface GapGroup {
   samples: Sample[];
   fixes: Fix[];
   draftFrom: DraftFrom[];
+  /**
+   * A group of questions an app that answers from documents found nothing for, by the section offered
+   * that came nearest (read at NEAR_SECTION or above; its best reading in the group), or none near
+   * (`key` NO_NEAR_SECTION). Absent for every other group.
+   */
+  section?: { key: string; heading: string | null; read: number } | null;
 }
 
 export interface GapReport {
@@ -147,6 +159,13 @@ const MIN_SHARE = 0.3;
 
 const quote = (s: string): string => JSON.stringify(s);
 
+/** A section's heading, by its key (`<document>#<section>`), from the knowledge base's sources. */
+function headingOf(kb: KnowledgeBase, key: string): string | null {
+  const at = key.indexOf('#');
+  if (at < 0) return null;
+  return kb.sources[key.slice(0, at)]?.sections[key.slice(at + 1)]?.heading ?? null;
+}
+
 /** The fix for one gap (the same fix for gaps alike is one fix, counted). */
 function fixesFor(g: Gap, kb: KnowledgeBase, hasFreshPassage: (topic: string) => boolean): Omit<Fix, 'count'>[] {
   const topic = g.topic;
@@ -160,6 +179,14 @@ function fixesFor(g: Gap, kb: KnowledgeBase, hasFreshPassage: (topic: string) =>
       return [{ id: 'add-keywords', kind: 'none', topics: [topic], text: `If topic "${name(topic)}" should answer these, add the way callers put it to its asks and keywords in kb/topics.yaml; if they ask something it does not cover, write a passage for what they ask.` }];
     }
     return [{ id: 'write-passage', kind: 'none', topics: topic !== null ? [topic] : [], text: topic !== null ? `Write a passage for topic "${name(topic)}": it is the nearest topic, and no approved passage answers it.` : 'Write a passage (and a topic) for what callers ask.' }];
+  }
+  if (g.kind === 'unmatched' && g.section !== undefined) {
+    const read = g.section.read;
+    if (read !== null && read >= NEAR_SECTION) {
+      const heading = headingOf(kb, g.section.key);
+      return [{ id: 'add-glossary', kind: 'unmatched', text: `The section "${heading ?? g.section.key}" (${g.section.key}) came nearest, read ${read.toFixed(2)}, under the bar it answers at (KB_SECTION_ANSWERS): if it answers what callers ask, the document says it in other words than theirs: a line in kb/glossary.yaml puts their words in its place for the model's reading, the wording and the judge (the document is approved again). If it does not answer it, the documents do not cover it.` }];
+    }
+    return [{ id: 'add-section-asks', kind: 'unmatched', text: `No section offered came near${read !== null ? ` (the best read ${read.toFixed(2)})` : ''}: if a section of the documents answers it, add the way callers put it to that section's asks in kb/sections.yaml so retrieval offers it (then pnpm kb:index); if none does, the documents do not cover it.` }];
   }
   if (g.kind === 'unmatched') {
     return [
@@ -216,6 +243,7 @@ export function buildReport(o: BuildOptions): GapReport {
     topicSlots: hints.topicSlots,
     informational: hints.informational,
     nearest: (words, locale) => keyword.scores(words, locale ?? kb.defaultLocale)[0]?.topic ?? null,
+    documents: kb.settings.documents?.summarize === 'on',
   };
   const { gaps, stats } = collectGaps(turns, ctx, o.skipped ?? 0);
 
@@ -230,7 +258,8 @@ export function buildReport(o: BuildOptions): GapReport {
 
   const by = new Map<string, Gap[]>();
   for (const g of gaps) {
-    const key = g.topic ?? NO_NEAR_TOPIC;
+    // A question the documents found nothing for: by the section that came nearest, or none near.
+    const key = g.section !== undefined ? (g.section.read !== null && g.section.read >= NEAR_SECTION ? `section:${g.section.key}` : NO_NEAR_SECTION) : g.topic ?? NO_NEAR_TOPIC;
     const list = by.get(key);
     if (list) list.push(g);
     else by.set(key, [g]);
@@ -260,8 +289,11 @@ function groupOf(
   sectionCount: number,
   anyUncited: boolean,
 ): GapGroup {
-  const topic = key === NO_NEAR_TOPIC ? null : key;
+  const bySection = key === NO_NEAR_SECTION || key.startsWith('section:');
+  const topic = key === NO_NEAR_TOPIC || bySection ? null : key;
   const known = topic !== null && Object.hasOwn(kb.topics, topic);
+  const nearest = key.startsWith('section:') ? Math.max(...list.map((g) => g.section?.read ?? 0)) : 0;
+  const section = !bySection ? undefined : key === NO_NEAR_SECTION ? null : { key: key.slice('section:'.length), heading: headingOf(kb, key.slice('section:'.length)), read: nearest };
   const kinds: GapGroup['kinds'] = {};
   const reasons: GapGroup['reasons'] = {};
   for (const g of list) {
@@ -277,7 +309,7 @@ function groupOf(
     const text = g.words.replace(/\s+/g, ' ').trim();
     if (text === '' || seen.has(norm(text))) continue;
     seen.add(norm(text));
-    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}) });
+    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}), ...(g.section !== undefined ? { documents: true as const } : {}) });
   }
 
   const fixes = new Map<string, Fix>();
@@ -291,7 +323,8 @@ function groupOf(
   }
 
   // The sections nothing cites that read as relevant: for the gaps a passage would fix (nothing answers, or nothing in force).
-  const wanting = list.filter((g) => g.kind === 'none' || g.kind === 'unmatched' || g.reason === 'not-in-force');
+  // (Not for questions the documents found nothing for: the documents are answered from as they are.)
+  const wanting = list.filter((g) => g.section === undefined && (g.kind === 'none' || g.kind === 'unmatched' || g.reason === 'not-in-force'));
   let draftFrom: DraftFrom[] = [];
   if (wanting.length > 0 && anyUncited) {
     const said = wanting.flatMap((g) => (g.words === null ? [] : [g.words])).join(' ');
@@ -323,6 +356,7 @@ function groupOf(
     samples,
     fixes: [...fixes.values()].sort((a, b) => b.count - a.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     draftFrom,
+    ...(section !== undefined ? { section } : {}),
   };
 }
 
@@ -396,7 +430,8 @@ export function codeSpan(text: string): string {
 const n = (count: number, one: string, many = `${one}s`): string => `${count} ${count === 1 ? one : many}`;
 
 /** How a group's gaps divide, as words ("3 answered none, 2 unavailable (stale)"). */
-export function kindsText(g: Pick<GapGroup, 'kinds' | 'reasons'>): string {
+export function kindsText(g: Pick<GapGroup, 'kinds' | 'reasons' | 'section'>): string {
+  if (g.section !== undefined) return `${g.kinds.unmatched ?? 0} ${DOCUMENTS_TEXT}`;
   return GAP_KINDS.filter((k) => (g.kinds[k] ?? 0) > 0)
     .map((k) => {
       const reasons = k === 'unavailable' ? Object.entries(g.reasons).map(([r, c]) => `${REASON_TEXT[r as Unavailable]} ${c}`).join(', ') : '';
@@ -406,10 +441,15 @@ export function kindsText(g: Pick<GapGroup, 'kinds' | 'reasons'>): string {
 }
 
 /** A sample's label: its kind, and for an unavailable one its reason. */
-export const sampleLabel = (s: Pick<Sample, 'kind' | 'reason'>): string => (s.reason !== undefined ? `unavailable: ${REASON_TEXT[s.reason]}` : KIND_TEXT[s.kind]);
+export const sampleLabel = (s: Pick<Sample, 'kind' | 'reason' | 'documents'>): string => (s.reason !== undefined ? `unavailable: ${REASON_TEXT[s.reason]}` : s.documents === true ? DOCUMENTS_TEXT : KIND_TEXT[s.kind]);
+
+/** A question an app that answers from documents found nothing for, as a sample's and a group's label says it. */
+const DOCUMENTS_TEXT = 'not found in the documents';
 
 /** The group's heading text: the topic with its title, or "no near topic". */
-export function groupName(g: Pick<GapGroup, 'topic' | 'title' | 'known'>): string {
+export function groupName(g: Pick<GapGroup, 'topic' | 'title' | 'known' | 'section'>): string {
+  if (g.section === null) return 'No section near';
+  if (g.section !== undefined) return `Section: ${g.section.heading ?? g.section.key} (${g.section.key}), read up to ${g.section.read.toFixed(2)}`;
   if (g.topic === null) return 'No near topic';
   return g.title !== null ? `${g.title} (${g.topic})` : g.known ? g.topic : `${g.topic} (not a topic of this knowledge base)`;
 }
@@ -421,7 +461,9 @@ export function formatMarkdown(r: GapReport): string[] {
   lines.push(
     `${r.kb}: ${n(r.gaps, 'gap')} in ${n(r.groups.length, 'group')}, from ${n(t.turns, 'turn')} in ${n(t.calls, 'call')} (${n(t.files, 'trace file')}${t.from !== null ? `, ${t.from === t.to ? t.from : `${t.from} to ${t.to}`}` : ''}${r.since !== null ? `; since ${r.since}` : ''}).`,
   );
-  const kinds = GAP_KINDS.filter((k) => r.byKind[k] > 0).map((k) => `${r.byKind[k]} ${KIND_TEXT[k]}`);
+  // An app that answers from documents: its unmatched questions are ones it found nothing for in them.
+  const documents = r.groups.some((g) => g.section !== undefined);
+  const kinds = GAP_KINDS.filter((k) => r.byKind[k] > 0).map((k) => `${r.byKind[k]} ${k === 'unmatched' && documents ? DOCUMENTS_TEXT : KIND_TEXT[k]}`);
   if (kinds.length > 0) lines.push('', `By kind: ${kinds.join(', ')}.`);
   if (t.retrievalFailed > 0) lines.push('', `${n(t.retrievalFailed, 'turn')} nominated nothing because retrieval failed (an error, an invalid answer or too late): not counted as gaps; see the traces' retrieval.failed.`);
   if (t.skipped > 0) lines.push('', `${n(t.skipped, 'line')} of the traces were not read (not a current trace record).`);
