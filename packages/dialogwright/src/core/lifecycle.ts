@@ -2,6 +2,8 @@ import { confirmationHash } from '../gate/policy';
 import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
+import { typedHere } from './typedFactors';
+export { factorsAsked } from './typedFactors';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, SlotId, ToolName, VerifyOutcome } from './app/types';
 import { emptySlot, type Session } from './session';
@@ -596,7 +598,7 @@ export function blockAck(s: Session, reason: string | undefined): Ack | null {
  * ignores the event, so there is nothing to wait for (signInImpossible).
  */
 export function awaitingSignIn(s: Session): boolean {
-  return s.caps.signIn && identityOf(appOf(s)).signInLevel !== undefined && isAnonymous(s.principal) && s.stepUp !== null;
+  return s.caps.signIn && !typedHere(s) && identityOf(appOf(s)).signInLevel !== undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
 /**
@@ -605,7 +607,7 @@ export function awaitingSignIn(s: Session): boolean {
  * here, and a person takes the call.
  */
 function signInImpossible(s: Session): boolean {
-  return s.caps.signIn && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
+  return s.caps.signIn && !typedHere(s) && identityOf(appOf(s)).signInLevel === undefined && isAnonymous(s.principal) && s.stepUp !== null;
 }
 
 /** The caller-ID question (identity.yaml's `callerId`), said in place of the first factor it leaves to ask. */

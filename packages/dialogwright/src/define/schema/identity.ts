@@ -122,6 +122,10 @@ export const identitySchema = z
       })
       .optional()
       .describe('What a sign-in proves, for a channel that can sign a caller in (a web portal): the core checks the capability, never the channel\'s name.'),
+    typedFactors: z
+      .enum(['ask', 'person'])
+      .optional()
+      .describe('On a channel a caller can sign in to (the web chat), what a caller who has not signed in and whose request needs identity gets. "person" (the default): the factors are never asked there; the caller waits for a sign-in where the app takes one (signIn), else goes to a person. "ask": the factors are asked, typed, as they are said on a call, and checked by the same tools and attempts (for a site with no sign-in of its own); a sign-in, where the app takes one, still counts.'),
   })
   .describe('identity.yaml: who the app serves and how a caller proves who they are. Leave the file out for an app that verifies no one.');
 

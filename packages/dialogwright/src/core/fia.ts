@@ -6,6 +6,7 @@ import { appOf } from './app/registry';
 import type { SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
 import { yesNoOffer } from './callerNumber';
+import { factorsAsked } from './typedFactors';
 import type { Thresholds } from './thresholds';
 
 export type RetryStep = 'open' | 'dtmf' | 'agent';
@@ -119,7 +120,7 @@ export function activeSlots(session: Session): SlotSpec[] {
   if (session.promptedFor === 'otp') return [];
   const app = appOf(session);
   const factorSlots = listeningFactors(session);
-  const collectsIdentity = isAnonymous(session.principal) && !session.caps.signIn;
+  const collectsIdentity = factorsAsked(session);
   if (session.form) {
     // A slot asked only of some callers (SlotSpec.askedOf) is not asked of anyone else, nor listened for.
     const form = formSlotsFor(app, session.form, session.principal).map((id) => slotSpecOf(app, id));

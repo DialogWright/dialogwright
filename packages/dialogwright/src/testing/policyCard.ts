@@ -313,8 +313,10 @@ function identitySection(app: App, source: PolicySource): string[] {
     out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(identity.verifyTool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, and the caller gives their ${factors}.`);
   }
   out.push(identity.signInLevel === undefined
-    ? '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
-    : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.`);
+    ? identity.typedFactors === 'ask'
+      ? '- The app takes no portal sign-in: every caller proves who they are with the factors, said or keyed on a call, typed on a channel that could sign callers in (a web chat; identity.yaml\'s `typedFactors: ask`).'
+      : '- The app takes no portal sign-in: every caller proves who they are on the call, and a caller on a channel that signs callers in (a web chat) whose request needs identity goes to a person.'
+    : `- A sign-in through a portal proves level ${identity.signInLevel} ('${levelName(app, identity.signInLevel)}'), so a signed-in caller starts there.${identity.typedFactors === 'ask' ? ' A caller on that channel who has not signed in is asked the factors, typed, as on a call (identity.yaml\'s `typedFactors: ask`).' : ''}`);
   const purposes = Object.entries(source.purposes).filter(([, level]) => level > 0);
   if (purposes.length > 0) {
     out.push('', 'Some tasks need a higher level before any action is called, even where the action itself needs less:', '');

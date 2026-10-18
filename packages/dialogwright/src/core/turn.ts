@@ -19,7 +19,7 @@ import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, ty
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { afterSlot, appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
+import { afterSlot, appContext, factorsAsked, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, callerPrivacyOf, callerUriOfRaw, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, usableCallerNumber, yesNoOffer, type OfferPending } from './callerNumber';
@@ -1536,7 +1536,7 @@ function checkStepUp(s: Session, check: FormCheck, need: 1 | 2, acks: Ack[], io:
  * with no reason) rather than complete with it unrun.
  */
 function awaitFactors(s: Session, form: FormId, check: FormCheck, acks: Ack[], io: TurnIO): Decision {
-  const collects = isAnonymous(s.principal) && !s.caps.signIn;
+  const collects = factorsAsked(s);
   const asked = collects ? checkStepUp(s, check, 1, acks, io) : null;
   return asked ?? endByCheck(s, form, check, { verdict: 'NEEDS_HUMAN' }, acks, io);
 }

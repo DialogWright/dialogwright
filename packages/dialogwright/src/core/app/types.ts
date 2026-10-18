@@ -581,6 +581,12 @@ export interface IdentityConfig {
    */
   signInClaim?: string;
   /**
+   * On a channel a caller can sign in to (ChannelCaps.signIn), whether a caller who has not signed in
+   * is asked the factors, typed (identity.yaml's `typedFactors: ask`). Absent: never there (a sign-in,
+   * or a person). core/lifecycle.ts factorsAsked.
+   */
+  typedFactors?: 'ask';
+  /**
    * The roles a party of the delegate kind may have, as identity.yaml declares them. With it, every
    * delegate the app's portal and principals produce is checked against it (validateApp, and the
    * harness as it signs one in). Without it (an identity written in code), roles are not checked.
