@@ -248,6 +248,17 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(ack?.vars.answer).toBe("Here's what our guide says: Wi-Fi at the main branch: free; password needed: no. Wi-Fi at the east branch: free; password needed: no.");
   });
 
+  it('onFail: opening: a list\'s markers left out (a bullet glyph, a dash opening a line), its words as they are', () => {
+    const list = VISITOR_GUIDE.replace(
+      '    text: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.\n',
+      '    text: |-\n      Free Wi-Fi at: \u2022 the main branch; \u2022 the east branch; or \u2022 the mobile library\n      - Sessions end when the branch closes.\n',
+    );
+    const app = documentsApp('library-documents-opening-list', { onFail: 'opening', edits: { 'kb/sources/visitor-guide.yaml': list } });
+    const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((a) => a.promptId === 'kb_documents_answer') : undefined;
+    expect(ack?.vars.answer).toBe("Here's what our guide says: Free Wi-Fi at: the main branch; the east branch; or the mobile library. Sessions end when the branch closes.");
+  });
+
   it('the not-found fallback says the next of its wordings each time it is chosen', () => {
     const c = call(APP);
     let session = c.last.session;

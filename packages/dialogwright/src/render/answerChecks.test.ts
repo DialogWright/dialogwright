@@ -54,6 +54,12 @@ describe('a figure, by its value', () => {
     expect(foreignFigure('A thousand dollars a year.', ['$1,000 each year'])).toBe(false);
     expect(foreignFigure('Every Monday.', [row])).toBe(true);
   });
+
+  it('is not "first", a way of speaking far more often than a figure; the other ordinals are', () => {
+    const section = 'For coverage to continue beyond 31 days for a newborn, notify your employer within 31 days of birth.';
+    expect(foreignFigure('Notify your employer within 31 days of the birth so coverage continues beyond the first 31 days.', [section])).toBe(false);
+    expect(foreignFigure('Notify your employer within the second month.', [section])).toBe(true);
+  });
 });
 
 describe('checkAnswer: the wording held to the passage\'s data and shape', () => {

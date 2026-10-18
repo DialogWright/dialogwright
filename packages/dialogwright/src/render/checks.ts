@@ -49,12 +49,17 @@ export function wordCount(text: string): number {
   return text.split(/\s+/).filter((w) => w !== '').length;
 }
 
-/** Number words, ordinals and the like: a figure the line must have been given. */
+/**
+ * Number words, ordinals and the like: a figure the line must have been given. Not "first", the
+ * maintainer's decision (2026-10-17): it is a way of speaking far more often than a figure ("the
+ * first 31 days" for a passage's "beyond 31 days", "first, call ..."), and refusing it refused faithful
+ * wordings on live calls; whether a wording with it says what its source does is the drift judge's.
+ */
 export const NUMBER_WORDS: ReadonlySet<string> = new Set([
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
   'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety',
   'hundred', 'thousand', 'million', 'billion', 'dozen', 'half', 'twice', 'thrice',
-  'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth',
+  'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth',
   'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth', 'thirtieth',
 ]);
 export const AMOUNT_WORDS: ReadonlySet<string> = new Set(['dollar', 'dollars', 'cent', 'cents', 'percent', 'euro', 'euros', 'pound', 'pounds', 'bucks']);

@@ -262,13 +262,17 @@ function holdMoreVars(app: App, s: Session): Record<string, string> {
   return hasPrompt(app, 'kb_hold_more') ? { [KB_HOLD_MORE_VAR]: nextWording(s, 'kb_hold_more') } : {};
 }
 
+/** A list's markers (a bullet glyph, or a dash opening a line), which a document has for the eye and a caller should not hear: the words are kept as they are. */
+const LIST_MARKER = /(^|\s)[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\u25A0\u25A1\u2043\uF0B7\uF0A7](?=\s|$)\s*/gu;
+const withoutMarkers = (line: string): string => line.replace(LIST_MARKER, '$1').replace(/^[-*]\s+/, '').replace(/\s+/g, ' ').trim();
+
 /**
  * A section's opening, said when an answer from it cannot be worded: the whole section where it fits
  * the answer's word budget (the span's `words`), else its first two sentences; each ended where its
- * line ended without a stop (a table's row), so that rows are not run together.
+ * line ended without a stop (a table's row), so that rows are not run together, and a list's markers left out.
  */
 export function openingOf(sentences: readonly string[], words: number): string {
-  const ended = sentences.map((x) => (/[.?!:;]$/.test(x) ? x : `${x}.`));
+  const ended = sentences.map(withoutMarkers).filter((x) => x !== '').map((x) => (/[.?!:;]$/.test(x) ? x : `${x}.`));
   const whole = ended.join(' ');
   return whole.split(/\s+/).filter((w) => w !== '').length <= words ? whole : ended.slice(0, 2).join(' ');
 }

@@ -103,12 +103,12 @@ describe('the checks, as the review found them (review fixes)', () => {
     expect(checkGenerated('Morgan Lee, thanks. Which number should we use?', act())).toBeNull();
   });
 
-  it('one, zero, ordinals and relative dates are figures it must have been given', () => {
+  it('one, zero, ordinals (not "first": a way of speaking, the maintainer\'s decision of 2026-10-17) and relative dates are figures it must have been given', () => {
     const plain = act({ items: [] });
     expect(checkGenerated('Got it, one more thing. What number should we call?', plain)).toBe('foreign');
     expect(checkGenerated('Got it. Is it zero or not? What number?', plain)).toBe('question');
     expect(checkGenerated('Got it, zero fees. What number should we call?', plain)).toBe('foreign');
-    expect(checkGenerated('You owe the first payment. What number should we call?', plain)).toBe('foreign');
+    expect(checkGenerated('You owe the second payment. What number should we call?', plain)).toBe('foreign');
     expect(checkGenerated('We will call today. What number should we call?', plain)).toBe('foreign');
     expect(checkGenerated('We will call tonight. What number should we call?', plain)).toBe('foreign');
   });
