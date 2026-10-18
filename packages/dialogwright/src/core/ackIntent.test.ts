@@ -14,6 +14,7 @@ import { registerApp } from './app/registry';
 import type { App } from './app/types';
 import { validateApp } from './app/validate';
 import { testkitApp } from '../testing/testkit';
+import { askSlot } from './decision';
 
 /**
  * The acknowledgement a request starts with (ack_intent): said again for a request made again unless
@@ -154,9 +155,28 @@ describe('a line\'s wordings (prompts.yaml variants)', () => {
   it('is refused by validateApp on another line, with other variables, or on a generated line, and an unknown repeat', () => {
     const line = (id: string, variants: readonly string[]): App => ({ ...testkitApp, prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, [id]: { ...testkitApp.prompts.manifest[id]!, variants } } } });
     expect(() => validateApp(app)).not.toThrow();
-    expect(() => validateApp(line('anything_else', ['Anything more?']))).toThrow('the line "anything_else" has variants, which only the lines said in turn may have (ack_intent, kb_not_found, kb_hold, kb_hold_more)');
+    expect(() => validateApp(line('anything_else', ['Anything more?']))).toThrow('the line "anything_else" has variants, which only the lines said in turn may have (ack_intent, kb_not_found, kb_hold, kb_hold_more, and a slot\'s own question, ask_<slot>)');
+    // A slot's own question may have them; its retry, and a line named like one for no slot, may not.
+    expect(() => validateApp(line('ask_accountId', ['And your account ID?']))).not.toThrow();
+    expect(() => validateApp(line('ask_accountId_retry', ['Once more?']))).toThrow('the line "ask_accountId_retry" has variants');
+    expect(() => validateApp(line('ask_dob_whole', ['Your date of birth?']))).toThrow('the line "ask_dob_whole" has variants');
     expect(() => validateApp(line('ack_intent', ['Happy to help.']))).toThrow('the line "ack_intent" has the variant "Happy to help.", whose variables are not its text\'s');
     expect(() => validateApp(line('ack_intent', []))).toThrow('the line "ack_intent" has an empty list of variants');
     expect(() => validateApp({ ...testkitApp, ackIntent: { repeat: 'never' as never } })).toThrow('ackIntent.repeat "never" is not "say" or "skip"');
+  });
+});
+
+describe('a slot\'s own question in its other wordings (ask_<slot> variants)', () => {
+  const ASK = testkitApp.prompts.manifest.ask_accountId!;
+  const ROTATE_ASK = 'testkit-ask-rotate';
+  registerApp({ ...testkitApp, id: ROTATE_ASK, prompts: { ...testkitApp.prompts, manifest: { ...testkitApp.prompts.manifest, ask_accountId: { ...ASK, variants: ['And what is your account ID?'] } } } });
+
+  it('is asked in turn each time the call asks it, by how many times, and back to the first; an app without variants asks its text every time', () => {
+    const s = newSession('s', 0, VOICE_RELAY, undefined, ROTATE_ASK);
+    expect([0, 1, 2].map(() => askSlot(s, 'accountId', null, []).promptId)).toEqual(['ask_accountId', 'ask_accountId.v2', 'ask_accountId']);
+    expect(s.linesSaid).toEqual({ ask_accountId: 3 });
+    const plain = newSession('p', 0, VOICE_RELAY, undefined, SAY_APP);
+    expect([0, 1].map(() => askSlot(plain, 'accountId', null, []).promptId)).toEqual(['ask_accountId', 'ask_accountId']);
+    expect(plain.linesSaid).toBeUndefined();
   });
 });

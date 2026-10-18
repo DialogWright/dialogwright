@@ -176,7 +176,7 @@ describe('checkApp: the prompts every locale needs', () => {
       'prompts.yaml:25:9  prompts.ack_intent.variants[0]  the line "ack_intent"\'s variant "Happy to help." names no variable, and its text names {intentLabel}: every wording is given what the text is  ->  name exactly {intentLabel} in the variant',
     ]);
     const other = folder({ 'prompts.yaml': (t) => t.replace('    text: Is there anything else I can help with?\n', '    text: Is there anything else I can help with?\n    variants: [Anything more?]\n') });
-    expect((await lines(other)).filter((l) => l.includes('variants'))).toEqual([expect.stringContaining('the line "anything_else" has variants, other wordings said in turn, which only the lines said in turn have (ack_intent, kb_not_found, kb_hold, kb_hold_more)  ->  delete variants from this line')]);
+    expect((await lines(other)).filter((l) => l.includes('variants'))).toEqual([expect.stringContaining('the line "anything_else" has variants, other wordings said in turn, which only the lines said in turn have (ack_intent, kb_not_found, kb_hold, kb_hold_more, and a slot\'s own question, ask_<slot>)  ->  delete variants from this line')]);
     const es = folder({ 'locale/es/prompts.yaml': (t) => t.replace('    text: Claro, puedo ayudarle a {intentLabel}.\n', '    text: Claro, puedo ayudarle a {intentLabel}.\n    variants: [Con gusto.]\n') });
     expect((await lines(es)).filter((l) => l.includes('variants'))).toEqual([expect.stringContaining('the es line "ack_intent"\'s variant "Con gusto." names no variable')]);
   });

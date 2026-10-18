@@ -93,7 +93,7 @@ const prompt = z
       .min(1, { error: 'must give at least one wording' })
       .optional()
       .describe(
-        'ack_intent, kb_not_found, kb_hold and kb_hold_more only (the lines said in turn): the line\'s other wordings, each fixed text said word for word (never generated), each with the same {variables} as `text`. The call says them in turn as it acknowledges one request after another: `text` the first time, then each variant in order, then `text` again ' +
+        'ack_intent, kb_not_found, kb_hold, kb_hold_more and a slot\'s own question ask_<slot> only (the lines said in turn): the line\'s other wordings, each fixed text said word for word (never generated), each with the same {variables} as `text`. The call says them in turn as it acknowledges one request after another: `text` the first time, then each variant in order, then `text` again ' +
           '(by how many times the call has said the line, never at random, so a replay or a recording says the same). A locale\'s prompts.yaml gives its own, as many as it likes; without them its `text` is said every time. Absent: `text` every time.',
       ),
     mode: z

@@ -1,4 +1,4 @@
-import { ROTATING_LINES } from '../wordings';
+import { ROTATING_LINES, rotatesLine } from '../wordings';
 import { isRuleId } from '../../gate/policy';
 import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
@@ -118,7 +118,7 @@ export function validateApp(app: App): void {
     for (const [id, entry] of Object.entries(lines)) {
       if (entry.variants === undefined) continue;
       const where = `the line "${id}"${locale === '' ? '' : ` (locale ${locale})`}`;
-      if (!ROTATING_LINES.includes(id)) fail(`${where} has variants, which only the lines said in turn may have (${ROTATING_LINES.join(', ')}): delete them`);
+      if (!rotatesLine(id, app.slots)) fail(`${where} has variants, which only the lines said in turn may have (${ROTATING_LINES.join(', ')}, and a slot's own question, ask_<slot>): delete them`);
       if (entry.variants.length === 0) fail(`${where} has an empty list of variants: give at least one wording, or delete them`);
       if (app.generated?.lines[id] !== undefined) fail(`${where} has variants and is generated: other wordings are fixed text, so the line is said word for word`);
       const vars = (t: string): string => [...new Set([...t.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort().join(',');

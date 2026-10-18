@@ -10,6 +10,7 @@ import type { Ack } from './fia';
 import type { Session } from './session';
 import { slotLocaleOf } from './locale';
 import { chooseTransfer, type TransferChoice } from './transfer';
+import { nextWording } from './wordings';
 import { sessionConditionFacts, type ConditionClock } from './routes';
 import { callDataOf } from './callData';
 import { handoffDataSlots } from '../handoff/data';
@@ -227,10 +228,11 @@ export function offerTransfer(acks: Ack[] = []): PromptDecision {
 
 /**
  * Asks for `slot`: for the rest of it when it holds only part of a value (`window`, the slot's own
- * partialPromptId, with its partialVars), otherwise its own ask_<slot>.
+ * partialPromptId, with its partialVars), otherwise its own ask_<slot>, in turn through its variants.
  */
 export function askSlot(s: Session, slot: SlotId, window: SlotPartial | null, acks: Ack[]): PromptDecision {
   const spec = slotSpecOf(appOf(s), slot);
   const partial = window ? spec.partialPromptId : undefined;
-  return prompt(partial ?? `ask_${slot}`, slot, window ? (spec.partialVars?.(window, slotLocaleOf(s)) ?? {}) : {}, acks);
+  // Its own question in turn through its other wordings, where prompts.yaml gives it some (variants).
+  return prompt(partial ?? nextWording(s, `ask_${slot}`), slot, window ? (spec.partialVars?.(window, slotLocaleOf(s)) ?? {}) : {}, acks);
 }

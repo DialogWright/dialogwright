@@ -1,4 +1,4 @@
-import { ROTATING_LINES } from '../core/wordings';
+import { ROTATING_LINES, rotatesLine } from '../core/wordings';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1321,7 +1321,7 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     problems.push(...checkSlotPromptVariables(config, locale, prompts, file, locate, code, codeFile));
     problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
     problems.push(...checkConsentLine(config, locale, prompts, file, locate));
-    problems.push(...checkVariants(locale === config.defaultLocale ? null : locale, prompts, file, locate));
+    problems.push(...checkVariants(locale === config.defaultLocale ? null : locale, prompts, file, locate, { ...(config.slots ?? {}), ...(code?.slots ?? {}) }));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
   }
   return problems;
@@ -1329,18 +1329,18 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
 
 /**
  * A line's other wordings (prompts.yaml's `variants`), in each locale: only the lines said in turn have
- * them (core/wordings.ts ROTATING_LINES: the acknowledgement of a request, the not-found line, the hold lines); each is fixed text, so the line is not generated; and
+ * them (core/wordings.ts rotatesLine: the acknowledgement of a request, the not-found line, the hold lines, and a slot's own question); each is fixed text, so the line is not generated; and
  * each names the variables of the line's text, so whichever is said is given what it says.
  */
-function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
+function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate'], slots: Readonly<Record<string, unknown>>): Problem[] {
   const problems: Problem[] = [];
   for (const [id, p] of Object.entries(prompts)) {
     if (p.variants === undefined) continue;
     const line = locale === null ? `the line "${id}"` : `the ${locale} line "${id}"`;
     const at = (path: (string | number)[]): { line: number; column: number } => locate(file, path) ?? { line: 1, column: 1 };
     const path = ['prompts', id, 'variants'];
-    if (!ROTATING_LINES.includes(id)) {
-      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants, other wordings said in turn, which only the lines said in turn have (${ROTATING_LINES.join(', ')})`, fix: 'delete variants from this line' });
+    if (!rotatesLine(id, slots)) {
+      problems.push({ file, ...at(path), path: formatPath(path), message: `${line} has variants, other wordings said in turn, which only the lines said in turn have (${ROTATING_LINES.join(', ')}, and a slot's own question, ask_<slot>)`, fix: 'delete variants from this line' });
       continue;
     }
     if (p.mode === 'generative' || p.generate !== undefined) {
