@@ -54,9 +54,10 @@ function labelsByCriterion(q: Extract<Question, { type: 'choice' }>, words: stri
  * part picked, as said); a label itself comes first. One the question cannot give, or words that
  * name more than one, is a corpus bug, so it throws with the entry id.
  */
-function questionLabel(id: string, q: Question, label: string | boolean, entryId: string, sharpness: number): Answer {
+function questionLabel(id: string, q: Question, label: string | boolean | number, entryId: string, sharpness: number): Answer {
   if (q.type === 'noul') {
-    if (typeof label !== 'boolean') throw new Error(`corpus ${entryId}: label for ${id} must be true or false, not "${label}"`);
+    if (typeof label === 'number') return noulAnswer(label);
+    if (typeof label !== 'boolean') throw new Error(`corpus ${entryId}: label for ${id} must be true or false, or its probability, not "${label}"`);
     return noulAnswer(label ? 0.9 : 0.05);
   }
   const labels = q.type === 'choice' ? choiceLabels(q) : q.levels.map((l) => l.label);

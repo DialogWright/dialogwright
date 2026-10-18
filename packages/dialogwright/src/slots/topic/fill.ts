@@ -1,9 +1,9 @@
 import type { SlotContext, SlotOutcome } from '../../core/slots/types';
-import type { AnswerMap } from '../../jev/types';
+import type { Answer, AnswerMap } from '../../jev/types';
 import { isChoice, rankProbabilities, type Ranked } from '../../jev/types';
 import type { TopicCatalog } from '../../kb/types';
 import { meetsThreshold } from '../parts/thresholds';
-import type { TopicOptions } from './options';
+import { SECTION_LEVELS, type TopicOptions } from './options';
 import { offeredTopics, sectionQuestionIdOf, SECTIONS_VALUE_PREFIX } from './questions';
 import { noulValue } from '../../jev/types';
 
@@ -32,6 +32,22 @@ import { noulValue } from '../../jev/types';
  * is a miss with `reask`: counted, and the question asked again as it stands rather than the retry line,
  * which says nothing answers what was asked.
  */
+/**
+ * How sure the model is that a section answers: a yes-or-no's yes, or a score's probability of its
+ * level `from` or above (`sections: { ask: score }`). Zero for no answer.
+ */
+export function sectionAnswers(answers: AnswerMap, id: string, from: (typeof SECTION_LEVELS)[number]): number {
+  const a = answers[id] as Answer | null | undefined;
+  if (a === null || typeof a !== 'object' || a.type !== 'score') return noulValue(answers, id);
+  const probabilities = typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {};
+  const at = SECTION_LEVELS.indexOf(from);
+  const p = SECTION_LEVELS.slice(at).reduce((sum, level) => {
+    const v = probabilities[level];
+    return sum + (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+  }, 0);
+  return Math.min(1, p);
+}
+
 /** The most sections an answer from documents is worded from. */
 export const MAX_ANSWER_SECTIONS = 2;
 
@@ -55,7 +71,7 @@ export function topicFill(
       if (top === 'none') return out;
     }
     const answering = (ctx.sections ?? [])
-      .map((s, i) => ({ s, p: noulValue(answers, sectionQuestionIdOf(slot, i)) }))
+      .map((s, i) => ({ s, p: sectionAnswers(answers, sectionQuestionIdOf(slot, i), o.sections.from) }))
       .filter((x) => meetsThreshold(ctx.thresholds, 'KB_SECTION_ANSWERS', x.p))
       .sort((x, y) => y.p - x.p)
       .slice(0, MAX_ANSWER_SECTIONS);

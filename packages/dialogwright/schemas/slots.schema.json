@@ -2210,6 +2210,36 @@
               "ask"
             ]
           },
+          "sections": {
+            "default": {
+              "ask": "yes-no",
+              "from": "mostly"
+            },
+            "description": "With answers from documents (kb.yaml documents): how the slot asks whether each nominated section answers the caller.",
+            "type": "object",
+            "properties": {
+              "ask": {
+                "default": "yes-no",
+                "description": "How each nominated section of an approved document is asked of: `yes-no` (the default), whether it says what the caller asks about; `score`, how much of what the caller asks it answers (none, little, partly, mostly, completely), so a section that is only about the same thing is told from one that answers it.",
+                "type": "string",
+                "enum": [
+                  "yes-no",
+                  "score"
+                ]
+              },
+              "from": {
+                "default": "mostly",
+                "description": "With `ask: score`, the level from which a section answers: the probability the model gives it of this level or above is held to KB_SECTION_ANSWERS. Default mostly.",
+                "type": "string",
+                "enum": [
+                  "partly",
+                  "mostly",
+                  "completely"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
           "notFound": {
             "default": {
               "counts": false,
@@ -2242,7 +2272,7 @@
             ]
           },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, section, unanswered.",
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, section, sectionScore, sectionNone, sectionLittle, sectionPartly, sectionMostly, sectionCompletely, unanswered.",
             "type": "object",
             "properties": {
               "instructions": {
@@ -2259,6 +2289,42 @@
               },
               "section": {
                 "description": "With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document's title, {heading} its heading, {text} its text. Unlike the other parts, an app's own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionScore": {
+                "description": "With `sections: { ask: score }`, the score asked of each nominated section in place of the yes-or-no (`section`): how much of what the caller asks it answers, by the levels below. A template over {document}, {heading} and {text}, as `section` is.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionNone": {
+                "description": "The score's lowest level, `none`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionLittle": {
+                "description": "The score's level `little`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionPartly": {
+                "description": "The score's level `partly`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionMostly": {
+                "description": "The score's level `mostly`.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "sectionCompletely": {
+                "description": "The score's highest level, `completely`.",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

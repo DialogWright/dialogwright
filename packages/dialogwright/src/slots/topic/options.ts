@@ -25,6 +25,16 @@ export const TOPIC_PARTS = textParts('topic', {
     vars: ['document', 'heading', 'text'],
     about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text. Unlike the other parts, an app\'s own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.',
   },
+  sectionScore: {
+    template: 'Read asr.text. How much of what the caller asks does this section of the {document} answer? {heading}: {text}',
+    vars: ['document', 'heading', 'text'],
+    about: 'With `sections: { ask: score }`, the score asked of each nominated section in place of the yes-or-no (`section`): how much of what the caller asks it answers, by the levels below. A template over {document}, {heading} and {text}, as `section` is.',
+  },
+  sectionNone: { template: 'Says nothing about what the caller asks', vars: [], about: 'The score\'s lowest level, `none`.' },
+  sectionLittle: { template: 'Is about the same thing but does not answer what the caller asks', vars: [], about: 'The score\'s level `little`.' },
+  sectionPartly: { template: 'Answers part of what the caller asks', vars: [], about: 'The score\'s level `partly`.' },
+  sectionMostly: { template: 'Answers what the caller asks, but for a detail', vars: [], about: 'The score\'s level `mostly`.' },
+  sectionCompletely: { template: 'Answers everything the caller asks', vars: [], about: 'The score\'s highest level, `completely`.' },
   unanswered: {
     template: 'Asks about something none of these answers',
     vars: [],
@@ -93,6 +103,13 @@ export const topicOptions = z
       .enum(UNANSWERED)
       .default('retry')
       .describe('What a question no topic answers leads to when the slot was not asked for (the turn that asks it opens the form, say). `retry` (the default, the maintainer\'s decision of 2026-10-17): the question has an `unanswered` label beside `none`, and a question read as unanswered is the slot\'s miss: when the form comes to the slot (at once, or after the identity it needs) the caller hears `ask_<slot>_retry` (which says nothing answers that, and what can be asked) and an attempt is counted, rather than the question as if nothing had been asked. `ask`: no such label, and the slot\'s question is asked, as before.'),
+    sections: z
+      .strictObject({
+        ask: z.enum(['yes-no', 'score']).default('yes-no').describe('How each nominated section of an approved document is asked of: `yes-no` (the default), whether it says what the caller asks about; `score`, how much of what the caller asks it answers (none, little, partly, mostly, completely), so a section that is only about the same thing is told from one that answers it.'),
+        from: z.enum(['partly', 'mostly', 'completely']).default('mostly').describe('With `ask: score`, the level from which a section answers: the probability the model gives it of this level or above is held to KB_SECTION_ANSWERS. Default mostly.'),
+      })
+      .default({ ask: 'yes-no', from: 'mostly' })
+      .describe('With answers from documents (kb.yaml documents): how the slot asks whether each nominated section answers the caller.'),
     notFound: z
       .strictObject({
         counts: z.boolean({ error: 'must be true or false' }).default(false).describe('Whether a question nothing answers counts as a try on the slot\'s ladder (attempts, onMaxAttempts). false (the default, the maintainer\'s decision of 2026-10-17): the knowledge base lacked it, the caller did not fail, so they may ask as often as they like; true: three in a row (attempts) end as any slot\'s misses do. A turn that says nothing about what the caller wants (none) counts either way.'),
@@ -108,12 +125,13 @@ export const topicOptions = z
     ids: TOPIC_QUESTIONS.schema.describe('Question ids in place of the default: `ids.choice` is the question\'s id (default: the slot\'s id followed by "Topic"), to keep the id an existing slot used.'),
   })
   .superRefine((o, ctx) => {
-    const section = o.text?.section;
-    if (section !== undefined) {
+    for (const part of ['section', 'sectionScore'] as const) {
+      const template = o.text?.[part];
+      if (template === undefined) continue;
       try {
-        checkTemplate(section, TOPIC_PARTS.defs.section.vars, 'text.section');
+        checkTemplate(template, TOPIC_PARTS.defs[part].vars, `text.${part}`);
       } catch (e) {
-        ctx.addIssue({ code: 'custom', path: ['text', 'section'], message: (e as Error).message, params: { fix: 'write {document}, {heading} and {text} where the document\'s title, the section\'s heading and its text go, and no other {name}' } });
+        ctx.addIssue({ code: 'custom', path: ['text', part], message: (e as Error).message, params: { fix: 'write {document}, {heading} and {text} where the document\'s title, the section\'s heading and its text go, and no other {name}' } });
       }
     }
     for (const problem of checkCriterion(o.criterion)) {
@@ -127,3 +145,6 @@ export const topicOptions = z
   });
 
 export type TopicOptions = z.output<typeof topicOptions>;
+
+/** A section score's levels, lowest first, as the question names them. */
+export const SECTION_LEVELS = ['none', 'little', 'partly', 'mostly', 'completely'] as const;

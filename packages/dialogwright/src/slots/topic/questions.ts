@@ -5,6 +5,9 @@ import { renderTemplate } from '../parts/template';
 import { renderCriterion } from './criterion';
 import { TOPIC_PARTS, UNANSWERED_DEFAULTS, type TopicOptions } from './options';
 
+/** A section score's levels and the text part that says what each means. */
+const SECTION_LEVEL_PARTS = [['none', 'sectionNone'], ['little', 'sectionLittle'], ['partly', 'sectionPartly'], ['mostly', 'sectionMostly'], ['completely', 'sectionCompletely']] as const;
+
 /** The id of the yes-or-no asked of a topic slot's `i`th nominated section (from 0): the slot's id, `Section` and its rank from 1. */
 export const sectionQuestionIdOf = (slot: string, i: number): string => `${slot}Section${i + 1}`;
 
@@ -53,8 +56,14 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
     sections.forEach((s, i) => {
       // The app's own wording (text.section) is a template too, unlike the type's other parts: the
       // question differs by section, and words taken as they are would show the model no section.
+      const vars = { document: s.documentTitle, heading: s.heading, text: s.text };
+      if (o.sections.ask === 'score') {
+        const template = o.text?.sectionScore ?? TOPIC_PARTS.defs.sectionScore.template;
+        questions[sectionQuestionIdOf(slot, i)] = { type: 'score', instructions: renderTemplate(template, vars, `the topic slot ${slot}'s text.sectionScore`), levels: SECTION_LEVEL_PARTS.map(([label, part]) => ({ label, description: TOPIC_PARTS.render(part, o.text, {}) })) };
+        return;
+      }
       const template = o.text?.section ?? TOPIC_PARTS.defs.section.template;
-      questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, { document: s.documentTitle, heading: s.heading, text: s.text }, `the topic slot ${slot}'s text.section`) };
+      questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, vars, `the topic slot ${slot}'s text.section`) };
     });
     // With sections and no topic offered (an app that answers from documents alone), the question is
     // still asked, with its two labels: whether the caller asked something none of them answers, or

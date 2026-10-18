@@ -225,6 +225,21 @@ describe('its options', () => {
     expect(subject.fill({ subjectTopic: choice({ none: 0.9, unanswered: 0.1 }), subjectSection1: noul(0.1) }, at('I have a question', true))).toMatchObject({ kind: 'invalid', reask: true });
   });
 
+  it('with sections: { ask: score }, score each section by how much of the question it answers, and fill from a level up (mostly, by default)', () => {
+    const section = { key: 'visitor-guide#wifi', document: 'visitor-guide', documentTitle: 'Visitor Guide', heading: 'Wi-Fi', text: 'Every branch has free Wi-Fi.', score: 1, via: 'keyword' as const };
+    const scored = defineSlot('subject', { type: 'topic', sections: { ask: 'score' } }, undefined, { catalog: CATALOG });
+    const at = ctx('is there wifi', { nominated: [], sections: [section] });
+    const q = scored.questions(at).subjectSection1 as { type: string; instructions: string; levels: { label: string }[] };
+    expect(q.type).toBe('score');
+    expect(q.instructions).toBe('Read asr.text. How much of what the caller asks does this section of the Visitor Guide answer? Wi-Fi: Every branch has free Wi-Fi.');
+    expect(q.levels.map((l) => l.label)).toEqual(['none', 'little', 'partly', 'mostly', 'completely']);
+    const score = (probabilities: Record<string, number>) => ({ subjectTopic: choice({ unanswered: 0.9, none: 0.1 }), subjectSection1: { type: 'score' as const, score: 0, probabilities, confidence: 0 } });
+    expect(scored.fill(score({ partly: 0.3, mostly: 0.4, completely: 0.2 }), at)).toMatchObject({ kind: 'filled', value: 'sections:visitor-guide#wifi' });
+    expect(scored.fill(score({ little: 0.5, partly: 0.4, mostly: 0.1 }), at)).toMatchObject({ kind: 'invalid', notFound: true });
+    const partly = defineSlot('subject', { type: 'topic', sections: { ask: 'score', from: 'partly' } }, undefined, { catalog: CATALOG });
+    expect(partly.fill(score({ little: 0.3, partly: 0.6, mostly: 0.1 }), at)).toMatchObject({ kind: 'filled' });
+  });
+
   it('refuse a criterion with a name or a filter it does not have, and a cap out of range', () => {
     const bad = buildSlot('subject', { type: 'topic', criterion: 'About {name|upper}', cap: 0 });
     expect(bad.ok).toBe(false);

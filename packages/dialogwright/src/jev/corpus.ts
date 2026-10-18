@@ -102,7 +102,7 @@ export interface CorpusEntry {
    * the entry, on a label the question cannot give; a question not asked in the entry's state never
    * reads its label.
    */
-  labels?: Readonly<Record<string, string | boolean>>;
+  labels?: Readonly<Record<string, string | boolean | number>>;
   /** the caller hedges the request */
   tentative?: boolean;
   /** in-form only: the utterance adds a task or replaces the current one; absent means answering */
@@ -271,14 +271,19 @@ function checkPinned(owner: string, outcome: unknown, where: string, shape: stri
 
 /**
  * An entry's question labels (CorpusEntry.labels): each names a question that is not the engine's
- * (the engine's are the entry's own fields, or an `answers` override), with a label or a yes or no.
+ * (the engine's are the entry's own fields, or an `answers` override), with a label, a yes or no, or a
+ * yes-or-no's probability (0.94: the model's own reading, where two yeses must keep the model's order).
  */
 function checkLabels(entry: CorpusEntry, labels: unknown): void {
   if (typeof labels !== 'object' || labels === null || Array.isArray(labels)) throw new Error(`corpus ${entry.id}: labels must be an object of question labels`);
   for (const [id, label] of Object.entries(labels)) {
     if (ENGINE_QUESTION_IDS.includes(id)) throw new Error(`corpus ${entry.id}: labels names the engine's question ${id}; use the entry's own field or an answers override`);
     if (typeof label === 'boolean') continue;
-    if (typeof label !== 'string' || label === '') throw new Error(`corpus ${entry.id}: label for ${id} must be a question's label or true or false`);
+    if (typeof label === 'number') {
+      if (!(label >= 0 && label <= 1)) throw new Error(`corpus ${entry.id}: label for ${id} is a probability, from 0 to 1, not ${label}`);
+      continue;
+    }
+    if (typeof label !== 'string' || label === '') throw new Error(`corpus ${entry.id}: label for ${id} must be a question's label, true or false, or a yes-or-no's probability`);
   }
 }
 

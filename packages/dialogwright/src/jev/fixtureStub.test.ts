@@ -201,8 +201,8 @@ describe('FixtureStubClient', () => {
 describe('a text slot\'s pick, answered from a corpus label naming the part', () => {
   const ALDER = 'the power is out at 22 Alder Street and nothing works';
   const place = defineSlot('place', { type: 'text', what: 'where the problem is', say: null, redact: 'none', pick: { what: 'the street address' } });
-  const entry = (labels: Record<string, string | boolean>): CorpusEntry => ({ id: 'pk', text: ALDER, intent: 'none', context: 'no_form', labels });
-  const ask = (labels: Record<string, string | boolean>, fallback = new HeuristicStubClient({ app: null })) =>
+  const entry = (labels: Record<string, string | boolean | number>): CorpusEntry => ({ id: 'pk', text: ALDER, intent: 'none', context: 'no_form', labels });
+  const ask = (labels: Record<string, string | boolean | number>, fallback = new HeuristicStubClient({ app: null })) =>
     new FixtureStubClient([entry(labels)], { sharpness: 0.9, fallback, app: null }).ask({ state: { asr: { text: ALDER } } as never, questions: place.questions(testSlotContext(ALDER)) });
 
   it('chooses the letter whose part the label names, case and spacing aside, and the slot fills with that part', async () => {
@@ -211,6 +211,12 @@ describe('a text slot\'s pick, answered from a corpus label naming the part', ()
     expect(place.fill(answers, testSlotContext(ALDER))).toMatchObject({ kind: 'filled', value: '22 Alder Street' });
     expect((await ask({ placeGiven: true, placePick: 'none' })).answers.placePick).toMatchObject({ choice: 'none' });
     expect((await ask({ placeGiven: true, placePick: 'b' })).answers.placePick).toMatchObject({ choice: 'b' });
+  });
+
+  it('answers a yes-or-no with its probability where the label gives one (the model\'s own reading), and refuses one out of range', async () => {
+    expect((await ask({ placeGiven: 0.62, placePick: 'b' })).answers.placeGiven).toMatchObject({ noul: 0.62 });
+    expect((await ask({ placeGiven: true, placePick: 'b' })).answers.placeGiven).toMatchObject({ noul: 0.9 });
+    expect(() => parseCorpus(JSON.stringify({ id: 'pk', text: ALDER, intent: 'none', context: 'no_form', labels: { placeGiven: 1.5 } }))).toThrow('corpus pk: label for placeGiven is a probability, from 0 to 1, not 1.5');
   });
 
   it('throws, naming the entry, on a part the question does not offer', async () => {
