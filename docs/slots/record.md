@@ -76,6 +76,7 @@ The slot reads the probabilities the model gives each label, not its one pick:
 |---|---|
 | A record, and the model's probability for it reaches `fillAt` | `filled`: the value is the key, the display the key or `display`, and no read-back is asked for |
 | Two records, the top one at `SLOT_CHOICE_CONFIRM` or above and the second within `SLOT_CHOICE_MARGIN` of it (with `disambiguate`) | `disambiguate`, between the two keys |
+| No one record chosen, but two or more at `SLOT_CHOICE_SHARED` or above that together reach `SLOT_CHOICE_CONFIRM`: words several records fit ("the Hyundai", two bookings for that car; with `disambiguate`) | `disambiguate`, between the two likeliest |
 | `none`, a label the slot never offers, a key `keyPattern` refuses, or a top label below `SLOT_CHOICE_CONFIRM` or (without a rival) below `fillAt` | `invalid` with `missReason` when the slot was asked for, else `absent` |
 | No answer at all (the question was not asked, having nothing to offer) | the same: `invalid` with `missReason` when the slot was asked for (so the retry ladder moves on), else `absent` |
 

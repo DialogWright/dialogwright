@@ -584,6 +584,7 @@ Compare the model's numbers against `ctx.thresholds`, by name, never against a n
 | `SLOT_CHOICE_CONFIRM` | 0.45 | The least a picked label needs to be taken at all. |
 | `SLOT_CHOICE_FILL` | 0.55 | Enough to take a picked label silently; between the two, take it and read it back. |
 | `SLOT_CHOICE_MARGIN` | 0.15 | Two labels closer than this are asked about (`disambiguate`). |
+| `SLOT_CHOICE_SHARED` | 0.15 | A record slot: a record the model gives this much counts as one the caller's words fit; when no one record is chosen but two or more such records together reach `SLOT_CHOICE_CONFIRM` (words they share, such as the car two bookings are for), the slot asks which of the two likeliest (`disambiguate`). |
 | `SLOT_HELP` | 0.6 | A help answer ("I don't know it") to take as one. |
 | `KB_TOPIC_MARGIN` | 0.15 | Two knowledge-base topics closer than this are asked about (a `topic` slot's `disambiguate`). |
 | `NAME_BARE_SPAN` | 0.7 | A bare name (a `name` slot's `bareAnswer`): the name span's least probability. |

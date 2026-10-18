@@ -35,6 +35,9 @@ export function keyOfLabel(o: Pick<RecordOptions, 'labelPrefix' | 'keyPattern'>)
  *   which of the two.
  * - Below `fillAt`: nothing chosen.
  * - Otherwise filled with the key, never acknowledged (the summary reads it back).
+ * Where nothing is chosen, with `disambiguate`: a description several records share (the car two bookings
+ * are for) spreads the model's answer across them. Two or more records at SLOT_CHOICE_SHARED or above that
+ * together reach SLOT_CHOICE_CONFIRM: ask which of the two likeliest, each said by its display.
  */
 export function recordFill(
   o: RecordOptions,
@@ -54,16 +57,25 @@ export function recordFill(
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '' } : { kind: 'absent' };
     if (!isChoice(a)) return miss;
     const probabilities = typeof a.probabilities === 'object' && a.probabilities !== null ? a.probabilities : {};
-    const [top, second] = rankProbabilities(probabilities);
+    const ranked = rankProbabilities(probabilities);
+    const [top, second] = ranked;
+    // Nothing chosen: ask which, where the words fit several records together (a description they share).
+    const shared = (): SlotOutcome => {
+      if (!o.disambiguate) return miss;
+      const fits = ranked.filter((r) => keyOf(r.label) !== null && meetsThreshold(t, 'SLOT_CHOICE_SHARED', r.p));
+      if (fits.length < 2 || !meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', fits.reduce((sum, r) => sum + r.p, 0))) return miss;
+      const [x, y] = [keyOf(fits[0]!.label)!, keyOf(fits[1]!.label)!];
+      return { kind: 'disambiguate', a: { value: x, display: display(x, ctx.locale) }, b: { value: y, display: display(y, ctx.locale) } };
+    };
     const key = top ? keyOf(top.label) : null;
-    if (!top || key === null || !meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', top.p)) return miss;
+    if (!top || key === null || !meetsThreshold(t, 'SLOT_CHOICE_CONFIRM', top.p)) return shared();
     if (o.disambiguate) {
       const rival = second ? keyOf(second.label) : null;
       if (rival !== null && !meetsThreshold(t, 'SLOT_CHOICE_MARGIN', top.p - second!.p)) {
         return { kind: 'disambiguate', a: { value: key, display: display(key, ctx.locale) }, b: { value: rival, display: display(rival, ctx.locale) } };
       }
     }
-    if (!meetsThreshold(t, o.fillAt, top.p)) return miss;
+    if (!meetsThreshold(t, o.fillAt, top.p)) return shared();
     return { kind: 'filled', value: key, display: display(key, ctx.locale), confidence: top.p, confirm: 'none' };
   };
 }

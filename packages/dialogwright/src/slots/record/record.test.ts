@@ -180,8 +180,21 @@ describe('fill', () => {
     expect(parcel.fill(two(0.5, 0.4), c)).toEqual({ kind: 'disambiguate', a: { value: '7101', display: '7101' }, b: { value: '7102', display: '7102' } });
     expect(parcel.fill(two(T.SLOT_CHOICE_CONFIRM, 0.4), c).kind).toBe('disambiguate');
     expect(parcel.fill(two(0.6, 0.6 - T.SLOT_CHOICE_MARGIN), c).kind).toBe('filled');
-    expect(parcel.fill(two(0.44, 0.43), c).kind).toBe('absent');
-    expect(parcel.fill(two(0.44, 0.43), asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+    expect(parcel.fill(two(0.3, 0.1), c).kind).toBe('absent');
+    expect(parcel.fill(two(0.3, 0.1), asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+  });
+
+  it('asks which, where the words fit several records and none alone is chosen (a description they share), with disambiguate', () => {
+    // The live chat of 2026-10-18: two bookings for one car, "the Hyundai" read 0.46 and 0.15, none 0.39.
+    expect(parcel.fill(two(0.46, 0.15), asked)).toEqual({ kind: 'disambiguate', a: { value: '7101', display: '7101' }, b: { value: '7102', display: '7102' } });
+    // None the likeliest label, the two records together past SLOT_CHOICE_CONFIRM.
+    expect(parcel.fill(two(0.4, 0.19), asked).kind).toBe('disambiguate');
+    expect(parcel.fill(two(0.44, 0.43), c).kind).toBe('disambiguate');
+    // A second record under SLOT_CHOICE_SHARED is not one the words fit; together under SLOT_CHOICE_CONFIRM is no answer.
+    expect(parcel.fill(two(0.46, T.SLOT_CHOICE_SHARED - 0.01), asked)).toEqual({ kind: 'invalid', reason: 'no_parcel', raw: '' });
+    expect(parcel.fill(two(0.25, 0.16), asked).kind).toBe('invalid');
+    const off = defineSlot('parcel', { ...(parcel.config as object), type: 'record', disambiguate: false });
+    expect(off.fill(two(0.46, 0.15), asked).kind).toBe('invalid');
   });
 
   it('with disambiguate off, takes the top one when it reaches fillAt, and declares no line for it', () => {

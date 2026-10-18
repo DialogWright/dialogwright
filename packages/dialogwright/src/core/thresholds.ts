@@ -46,6 +46,11 @@ export const DEFAULT_THRESHOLDS = {
   SLOT_CHOICE_FILL: 0.55,
   SLOT_CHOICE_CONFIRM: 0.45,
   SLOT_CHOICE_MARGIN: 0.15,
+  // a description several records share (a record slot: "the Hyundai", two bookings for it): each record
+  // the model gives this much counts as one the words fit, and when no one record is chosen but those
+  // together reach SLOT_CHOICE_CONFIRM, the slot asks which of the two likeliest (a live chat, 2026-10-18:
+  // 0.46 and 0.15 for two bookings of one car, none at 0.39, asked the same question three times).
+  SLOT_CHOICE_SHARED: 0.15,
   SLOT_HELP: 0.6,
   // a bare name (a `name` slot's bareAnswer): right after the name question, a short answer is the name
   // given when the model's span for it reaches NAME_BARE_SPAN and its yes-or-no that a name was given is

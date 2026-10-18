@@ -88,14 +88,22 @@ export const parcelSelectSlot: SlotSpec = {
     const a = answers.parcelChoice;
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: 'no_parcel', raw: '' } : { kind: 'absent' };
     if (!isChoice(a)) return miss;
-    const [top, second] = rankProbabilities(a.probabilities);
+    const ranked = rankProbabilities(a.probabilities);
+    const [top, second] = ranked;
+    // Words several parcels fit, none chosen alone ("the one from the shop", two from it): ask which of the two likeliest.
+    const shared = (): SlotOutcome => {
+      const fits = ranked.filter((r) => numberOf(r.label) !== null && atLeast(r.p, t.SLOT_CHOICE_SHARED));
+      if (fits.length < 2 || !atLeast(fits.reduce((sum, r) => sum + r.p, 0), t.SLOT_CHOICE_CONFIRM)) return miss;
+      const [x, y] = [numberOf(fits[0]!.label)!, numberOf(fits[1]!.label)!];
+      return { kind: 'disambiguate', a: { value: x, display: x }, b: { value: y, display: y } };
+    };
     const n = top ? numberOf(top.label) : null;
-    if (!top || n === null || !atLeast(top.p, t.SLOT_CHOICE_CONFIRM)) return miss;
+    if (!top || n === null || !atLeast(top.p, t.SLOT_CHOICE_CONFIRM)) return shared();
     const rival = second ? numberOf(second.label) : null;
     if (rival !== null && !atLeast(top.p - second!.p, t.SLOT_CHOICE_MARGIN)) {
       return { kind: 'disambiguate', a: { value: n, display: n }, b: { value: rival, display: rival } };
     }
-    if (!atLeast(top.p, t.SLOT_CHOICE_FILL)) return miss;
+    if (!atLeast(top.p, t.SLOT_CHOICE_FILL)) return shared();
     return { kind: 'filled', value: n, display: n, confidence: top.p, confirm: 'none' };
   },
 
