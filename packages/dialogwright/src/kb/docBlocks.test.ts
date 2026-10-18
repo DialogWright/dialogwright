@@ -74,6 +74,7 @@ function kbKindOf(path: string): KbKind | 'rejected' | null {
   if (path === 'kb/kb.yaml') return 'kbSettings';
   if (path === 'kb/topics.yaml' || path === 'kb/pending/topics.yaml') return 'kbTopics';
   if (path === 'kb/sections.yaml') return 'kbSections';
+  if (path === 'kb/glossary.yaml') return 'kbGlossary';
   if (/^kb\/locale\/[^/]+\/topics\.yaml$/.test(path)) return 'kbLocaleTopics';
   if (/^kb\/passages\/[^/]+\.yaml$/.test(path) || /^kb\/locale\/[^/]+\/passages\/[^/]+\.yaml$/.test(path)) return 'kbPassage';
   if (/^kb\/sources\/[^/]+\.yaml$/.test(path)) return 'kbSource';

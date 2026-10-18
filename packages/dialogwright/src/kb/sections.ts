@@ -89,7 +89,7 @@ export class SectionRetriever implements Retriever {
   private readonly dense?: { readonly embedder: Embedder; readonly index: MemoryVectorIndex; readonly floor: number };
   private readonly titles: ReadonlyMap<string, string>;
 
-  constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>, options: SectionRetrieverOptions = {}) {
+  constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints' | 'glossary'>>, options: SectionRetrieverOptions = {}) {
     this.sections = summarizableSections(kb, { approved: options.all !== true });
     this.cap = options.cap ?? kb.settings.documents?.cap ?? DEFAULT_SECTIONS_CAP;
     this.titles = new Map(this.sections.map((s) => [s.key, s.heading]));

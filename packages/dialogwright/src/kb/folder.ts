@@ -1,6 +1,7 @@
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from '../define/problems';
 import { approvalHashOf, canonicalApplies, collapseWhitespace, documentHashOf, sourceHashOf } from './hash';
-import type { KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSectionsYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
+import type { KbGlossaryYaml, KbKind, KbLocaleTopicsYaml, KbPassageYaml, KbSectionsYaml, KbSettingsYaml, KbSourceYaml, KbTopicsYaml } from './schema';
+import { applyGlossary, glossaryOf, type Glossary } from './glossary';
 import type { KbApprovalLogRead, KbFreshness, KbPassage, KbSourceDocument, KbTopic, KbTopicWording, KnowledgeBase } from './types';
 import { STATIC_MODELS } from './embed/model';
 import { indexFileOf, indexHashOf, MAX_INDEX_BYTES, parseIndex, type KbIndexRead } from './vectorIndex';
@@ -64,6 +65,8 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
   'topics.yaml': 'file',
   // How the sections of documents are found (questions and keywords): optional, never said.
   'sections.yaml': 'file',
+  // The words said in place of a document's jargon, in the sections answered from by summarizing: optional.
+  'glossary.yaml': 'file',
   passages: 'dir',
   sources: 'dir',
   locale: 'dir',
@@ -116,12 +119,14 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
   const settings = readOne<KbSettingsYaml>(`${base}/kb.yaml`, 'kbSettings', io, problems, true);
   const topicsYaml = readOne<KbTopicsYaml>(`${base}/topics.yaml`, 'kbTopics', io, problems, true);
   const sectionsYaml = readOne<KbSectionsYaml>(`${base}/sections.yaml`, 'kbSections', io, problems, false);
+  const glossaryYaml = readOne<KbGlossaryYaml>(`${base}/glossary.yaml`, 'kbGlossary', io, problems, false);
+  const glossary = glossaryYaml ? glossaryOf(glossaryYaml) : undefined;
 
   // The source documents.
   const sources: Record<string, KbSourceDocument> = {};
   for (const { id, file } of yamlFiles(`${base}/sources`, 'source document', io, problems)) {
     const doc = readOne<KbSourceYaml>(file, 'kbSource', io, problems, false);
-    if (doc) sources[id] = sourceOf(id, doc);
+    if (doc) sources[id] = sourceOf(id, doc, glossary);
   }
 
   // The passages: the default locale's, then each other locale's.
@@ -255,6 +260,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     sources: sortedSources,
     ...(index ? { index } : {}),
     ...(sectionsIndex ? { sectionsIndex } : {}),
+    ...(glossary ? { glossary } : {}),
     ...(sectionsYaml ? { sectionHints: Object.fromEntries(Object.entries(sectionsYaml).map(([key, h]) => [key, { asks: h.asks ?? [], keywords: h.keywords ?? [] }])) } : {}),
     ...(approvalLog ? { approvalLog } : {}),
   };
@@ -265,8 +271,10 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
  * with the hash of what an approval for summarizing covers now, and whether it may be summarized as it
  * stands (approved and unchanged since: `fresh`).
  */
-export function sourceOf(id: string, doc: KbSourceYaml): KbSourceDocument {
-  const hash = documentHashOf({ id, document: doc.document, applies: doc.applies, sections: Object.entries(doc.sections).map(([sid, s]) => ({ id: sid, heading: s.heading, text: s.text, summarize: s.summarize })) });
+export function sourceOf(id: string, doc: KbSourceYaml, glossary?: Glossary): KbSourceDocument {
+  // What callers hear: the sections with the glossary's words (./glossary.ts); with no glossary, as written.
+  const said = (s: string | undefined): string | undefined => (s === undefined ? s : applyGlossary(s, glossary));
+  const hash = documentHashOf({ id, document: doc.document, applies: doc.applies, sections: Object.entries(doc.sections).map(([sid, s]) => ({ id: sid, heading: said(s.heading), text: said(s.text)!, summarize: s.summarize })) });
   const freshness = doc.approval === undefined ? 'unapproved' : doc.approval.hash === hash ? 'fresh' : 'edited';
   return {
     id,

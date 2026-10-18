@@ -17,6 +17,7 @@ kb/
   passages/<id>.yaml            one approved answer each, in the app's default language
   sources/<doc>.yaml            the documents the answers come from, by section: what an approval is held to
   sections.yaml                 how the sections of documents approved for summarizing are found: questions and keywords each (optional, never said)
+  glossary.yaml                 the words said in place of the documents' jargon, in the sections answered from (optional)
   locale/<tag>/topics.yaml      a language's titles, keywords and example questions
   locale/<tag>/passages/        a language's passages, usually translations
   pending/<id>.yaml             drafts waiting for a person: never read at run time, never said
@@ -26,7 +27,7 @@ kb/
   .index/<embedder>.json        the vectors of the topics' texts (and the sections'), for retrieval by meaning (optional; commit it)
 ```
 
-Every file has a JSON Schema (`kb-settings`, `kb-topics`, `kb-sections`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`), named on its first line like the app's other files (the examples below show the file's path there instead). A file that is not in this list is a problem, so a mistyped folder name does not go unnoticed. `pnpm check` reads all of it, and so does `defineApp`.
+Every file has a JSON Schema (`kb-settings`, `kb-topics`, `kb-sections`, `kb-glossary`, `kb-locale-topics`, `kb-passage`, `kb-source`, `kb-pending`), named on its first line like the app's other files (the examples below show the file's path there instead). A file that is not in this list is a problem, so a mistyped folder name does not go unnoticed. `pnpm check` reads all of it, and so does `defineApp`.
 
 **kb.yaml** says how the knowledge base is read, never what it says:
 
@@ -635,6 +636,17 @@ documents:
 ```
 
 Retrieval reads them beside the section's text (`pnpm kb:index` after a change); they are never said, so a document's approval does not cover them and adding one needs no approval again. Add them where a question's right section was not offered: `pnpm kb:gaps` lists what callers asked that nothing answered, and `pnpm kb:bakeoff --sections` measures a change. `pnpm check` refuses a key that names no section. On the booklet above, questions for 23 of its sections took 30 questions written after them (held out) from 70% to 93% with the right section among the six nominated.
+
+**Plain words in place of jargon.** A booklet's tables say "CYD" and "Non-Participating Provider"; a caller knows neither, and neither does the decision model asked whether a section answers. `kb/glossary.yaml` says the words heard in their place:
+
+```yaml
+# kb/glossary.yaml
+CYD: calendar year deductible
+Non-Participating Provider: out-of-network provider
+Participating Provider: in-network provider
+```
+
+A term matches as a whole word or phrase (a hyphen joins words), its case as written, the longest first, in one pass. The glossary's words are what the sections answered from by summarizing say everywhere they are read: the section question, the index, the wording and its judge, and the opening said when a wording fails. A source file keeps the document's own words (its provenance, a refresh), and an approved passage is said as approved, never replaced: write it plain. A document's approval covers its sections as replaced, so a change of the glossary that reaches one withholds it until a person reads it and approves it again (`pnpm kb:status` lists it); with no glossary, nothing changes.
 
 `documents.embedder` is opt-in: the app installs the optional package it runs on (`pnpm add @huggingface/transformers`, some hundreds of megabytes), `pnpm kb:index` writes the sections' vectors to an index of their own (`kb/.index/onnx-<model>.json`; the topics keep `retrieval.embedder`'s), `pnpm check` holds that index to the sections' texts without the package, and the server loads the model when it starts (a model that cannot be loaded leaves the sections' keywords). Its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations and so change a recorded request: build the index and record the cassette on one machine. On a 123-page booklet (291 sections, 114 paraphrases of 38 of them), the right section was among the six nominated for 75% of the lines with the static model and keywords, 86% with bge-small fused with keywords, and 88% with bge-small alone (keywords on common words crowd the right section out of a long document).
 

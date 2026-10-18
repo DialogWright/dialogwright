@@ -9,16 +9,16 @@ import type { KnowledgeBase } from './types';
  * summarizing on, the sections' (./sectionTexts.ts), unless the sections have an embedder of their own
  * (kb.yaml documents.embedder), whose index holds them (sectionsIndexTexts).
  */
-export function allIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'sectionHints'>>): IndexText[] {
+export function allIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'sectionHints' | 'glossary'>>): IndexText[] {
   const topics = indexTexts(kb);
   if (kb.settings?.documents?.embedder !== undefined) return topics;
   return [...topics, ...sectionsIndexTexts(kb)];
 }
 
 /** The sections' texts (./sectionTexts.ts sectionIndexTexts): what the index of documents.embedder embeds, when kb.yaml names one. */
-export function sectionsIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'sectionHints'>>): IndexText[] {
+export function sectionsIndexTexts(kb: RetrievalKb & Partial<Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'sectionHints' | 'glossary'>>): IndexText[] {
   if (kb.settings === undefined || kb.sources === undefined || kb.passages === undefined) return [];
-  return sectionIndexTexts({ settings: kb.settings, sources: kb.sources, passages: kb.passages, defaultLocale: kb.defaultLocale, ...(kb.sectionHints !== undefined ? { sectionHints: kb.sectionHints } : {}) });
+  return sectionIndexTexts({ settings: kb.settings, sources: kb.sources, passages: kb.passages, defaultLocale: kb.defaultLocale, ...(kb.sectionHints !== undefined ? { sectionHints: kb.sectionHints } : {}), ...(kb.glossary !== undefined ? { glossary: kb.glossary } : {}) });
 }
 
 /**

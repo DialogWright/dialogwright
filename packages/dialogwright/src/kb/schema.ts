@@ -136,6 +136,12 @@ export const kbTopicsSchema = z
 
 export type KbTopicsYaml = z.infer<typeof kbTopicsSchema>;
 
+export const kbGlossarySchema = z
+  .record(text(), text(), { error: 'must be a map from a term to the words said in its place' })
+  .describe('kb/glossary.yaml: the words documents use that callers would not know, and the words said in their place ("CYD: calendar year deductible"), applied to the sections answered from by summarizing (kb.yaml documents) as a whole word or phrase, its case as written, the longest first. Never to an approved passage, which is said as approved. A document\'s approval covers its sections as replaced, so a change that reaches one withholds it until a person approves it again.');
+
+export type KbGlossaryYaml = z.infer<typeof kbGlossarySchema>;
+
 /** A section's key as kb/sections.yaml names it: its document's id, #, and its id. */
 export const SECTION_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]*#.+$/;
 
@@ -292,6 +298,7 @@ export type KbSourceYaml = z.infer<typeof kbSourceSchema>;
 export const KB_KINDS = {
   kbSettings: { schema: kbSettingsSchema, jsonName: 'kb-settings', title: 'kb/kb.yaml', startsWith: 'the gated action that resolves a passage, for example "action: findPassage"' },
   kbTopics: { schema: kbTopicsSchema, jsonName: 'kb-topics', title: 'kb/topics.yaml', startsWith: 'a topic id and its title, for example "opening_hours: { title: Opening hours }"' },
+  kbGlossary: { schema: kbGlossarySchema, jsonName: 'kb-glossary', title: 'kb/glossary.yaml', startsWith: 'a term and the words said in its place, for example "CYD: calendar year deductible"' },
   kbSections: { schema: kbSectionsSchema, jsonName: 'kb-sections', title: 'kb/sections.yaml', startsWith: 'a section\'s key and its questions, for example "benefit-booklet#claims: { asks: [how do I file a claim] }"' },
   kbLocaleTopics: { schema: kbLocaleTopicsSchema, jsonName: 'kb-locale-topics', title: 'kb/locale/<tag>/topics.yaml', startsWith: 'a topic id and its wording in this locale, for example "opening_hours: { title: Horario }"' },
   kbPassage: { schema: kbPassageSchema, jsonName: 'kb-passage', title: 'kb/passages/<id>.yaml', startsWith: '"id:" (the file name), "topic:", "version:", "effective:", "source:" and "answer:"' },

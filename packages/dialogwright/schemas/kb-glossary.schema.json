@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "propertyNames": {
+    "type": "string",
+    "minLength": 1
+  },
+  "additionalProperties": {
+    "type": "string",
+    "minLength": 1
+  },
+  "description": "kb/glossary.yaml: the words documents use that callers would not know, and the words said in their place (\"CYD: calendar year deductible\"), applied to the sections answered from by summarizing (kb.yaml documents) as a whole word or phrase, its case as written, the longest first. Never to an approved passage, which is said as approved. A document's approval covers its sections as replaced, so a change that reaches one withholds it until a person approves it again.",
+  "title": "DialogWright kb/glossary.yaml"
+}

@@ -1,4 +1,5 @@
 import { collapseWhitespace } from './hash';
+import { applyGlossary, type Glossary } from './glossary';
 import { textHash, type IndexText, type TopicField } from './words';
 import type { KnowledgeBase } from './types';
 
@@ -65,12 +66,12 @@ function wordsOfId(segment: string): string {
 }
 
 /** A section's heading after the headings of the sections its id is under (see KbSection.path). */
-function pathOf(sections: Readonly<Record<string, { readonly heading?: string | undefined }>>, id: string, heading: string): string {
+function pathOf(sections: Readonly<Record<string, { readonly heading?: string | undefined }>>, id: string, heading: string, glossary?: Glossary): string {
   const parts = id.split('/');
   if (parts.length < 2) return heading;
   const above = parts.slice(0, -1).map((segment, i) => {
     const parent = sections[parts.slice(0, i + 1).join('/')];
-    return collapseWhitespace(parent?.heading ?? wordsOfId(segment));
+    return applyGlossary(collapseWhitespace(parent?.heading ?? wordsOfId(segment)), glossary);
   });
   return [...above, heading].join(': ');
 }
@@ -83,7 +84,7 @@ export const summarizing = (kb: Pick<KnowledgeBase, 'settings'>): boolean => kb.
  * holds a vector for (`approved: false`: any document's, approved or not), in document then file
  * order. None when summarizing is off.
  */
-export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>, options: { approved?: boolean } = {}): KbSection[] {
+export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages'> & Partial<Pick<KnowledgeBase, 'sectionHints' | 'glossary'>>, options: { approved?: boolean } = {}): KbSection[] {
   if (!summarizing(kb)) return [];
   const approved = options.approved ?? true;
   const cited = new Set(Object.values(kb.passages).map((p) => sectionKeyOf(p.source.document, p.source.section)));
@@ -93,8 +94,11 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
     for (const [id, s] of Object.entries(doc.sections)) {
       const key = sectionKeyOf(doc.id, id);
       if (s.summarize === false || cited.has(key)) continue;
-      const heading = collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, ''));
-      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading), text: collapseWhitespace(s.text), sentences: s.text.split(/\n+/).flatMap(sentencesOf), asks: kb.sectionHints?.[key]?.asks ?? [], keywords: kb.sectionHints?.[key]?.keywords ?? [], ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
+      // The glossary's words in place of the document's jargon (./glossary.ts): what callers hear, and what the approval covers.
+      const said = (x: string): string => applyGlossary(x, kb.glossary);
+      const heading = said(collapseWhitespace(s.heading ?? id.replace(/^[\d.]+\s+/, '')));
+      const text = said(s.text);
+      out.push({ key, document: doc.id, documentTitle: doc.document, section: id, heading, path: pathOf(doc.sections, id, heading, kb.glossary), text: collapseWhitespace(text), sentences: text.split(/\n+/).flatMap(sentencesOf), asks: kb.sectionHints?.[key]?.asks ?? [], keywords: kb.sectionHints?.[key]?.keywords ?? [], ...(doc.applies !== undefined ? { applies: doc.applies } : {}) });
     }
   }
   return out;
@@ -138,7 +142,7 @@ export function sentencesOf(text: string): string[] {
  * `keyword`), so a question matches the
  * sentence that answers it. Sections are in the default locale only.
  */
-export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints'>>): IndexText[] {
+export function sectionIndexTexts(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints' | 'glossary'>>): IndexText[] {
   const out = new Map<string, IndexText>();
   for (const s of summarizableSections(kb, { approved: false })) {
     const fields: [TopicField, readonly string[]][] = [['section', [s.path, ...s.sentences]], ['ask', s.asks], ['keyword', s.keywords]];
