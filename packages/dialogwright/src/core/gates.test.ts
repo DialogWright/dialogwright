@@ -6,7 +6,7 @@ import { buildTurnState } from './state';
 import { DEFAULT_THRESHOLDS } from './thresholds';
 import { choice, noul, score } from '../testing/answers';
 import type { AnswerMap } from '../jev/types';
-import { VOICE_RELAY } from '../channel/caps';
+import { VOICE_RELAY, WEB_CHAT } from '../channel/caps';
 import { registerApp } from './app/registry';
 import { testkitApp } from '../testing/testkit';
 import type { App, IntentDef } from './app/types';
@@ -48,6 +48,14 @@ describe('evaluateGates', () => {
     const r = run(newSession('s', 0, VOICE_RELAY), baseAnswers({ addressedToSystem: noul(0.2) }));
     expect(r.verdict).toEqual({ kind: 'ignore' });
     expect(r.rows.find((g) => g.gate === 'addressedToSystem')).toMatchObject({ passed: false, decided: true, threshold: DEFAULT_THRESHOLDS.GATE_ADDRESSED });
+  });
+
+  it('never ignores words typed into a chat (no side speech on a channel without speech): the reading recorded as typed, the turn goes on', () => {
+    const r = run(newSession('s', 0, WEB_CHAT), baseAnswers({ addressedToSystem: noul(0.2) }));
+    expect(r.verdict).not.toEqual({ kind: 'ignore' });
+    expect(r.rows.find((g) => g.gate === 'addressedToSystem')).toMatchObject({ value: 0.2, passed: true, outcome: 'typed', decided: false });
+    // Read as addressed, it is a pass as on a call.
+    expect(run(newSession('s', 0, WEB_CHAT), baseAnswers({ addressedToSystem: noul(0.9) })).rows.find((g) => g.gate === 'addressedToSystem')).toMatchObject({ outcome: 'pass' });
   });
 
   it('routes on an intent probability that is the threshold up to floating-point rounding', () => {

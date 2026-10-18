@@ -185,11 +185,14 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   const dictation = dictationOf(session, ts.asr.text);
   const heeds = (intent: string): boolean => dictation === null || dictation.listen.has(intent);
 
-  // 1. addressed to system
+  // 1. addressed to system. Side speech is a spoken call's (someone in the room, a television): words
+  // typed into a chat are always meant for it, so on a channel without speech the reading is recorded
+  // (`typed`) and never ignores the turn, which would leave the person with no reply at all.
   {
     const v = noulValue(answers, 'addressedToSystem');
-    const passed = atLeast(v, t.GATE_ADDRESSED);
-    const row = { gate: 'addressedToSystem', value: v, threshold: t.GATE_ADDRESSED, passed, outcome: passed ? 'pass' : dictation !== null ? 'dictation' : 'ignore', decided: false };
+    const typed = !session.caps.speech;
+    const passed = typed || atLeast(v, t.GATE_ADDRESSED);
+    const row = { gate: 'addressedToSystem', value: v, threshold: t.GATE_ADDRESSED, passed, outcome: atLeast(v, t.GATE_ADDRESSED) ? 'pass' : typed ? 'typed' : dictation !== null ? 'dictation' : 'ignore', decided: false };
     passed || dictation !== null ? rows.push(row) : decide(row, { kind: 'ignore' });
   }
 
