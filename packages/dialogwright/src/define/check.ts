@@ -1407,13 +1407,15 @@ function checkChatVersions(locale: string | null, prompts: LoadedConfig['prompts
 /**
  * A chat version (prompts.yaml's `chat`) that names a variable its line's text does not: the app's code
  * must give it (the hook that says the line, an onSummaryRead's `vars`), or the chat shows the line's
- * text, plain. A warning: the check cannot see what the code gives.
+ * text, plain. A warning: the check cannot see what the code gives. None for a form's summary whose form
+ * has an onSummaryRead hook (forms.yaml's `hooks`), whose `vars` are what gives them.
  */
 function chatVariableWarnings(config: LoadedConfig, report: (file: string, path: (string | number)[], message: string, fix: string) => void): void {
+  const readBy = new Set(Object.values(config.forms.forms).flatMap((f) => (f.hooks?.includes('onSummaryRead') === true && f.summaryPromptId !== null ? [f.summaryPromptId] : [])));
   for (const [locale, prompts] of Object.entries(config.prompts)) {
     const file = locale === config.defaultLocale ? 'prompts.yaml' : `locale/${locale}/prompts.yaml`;
     for (const [id, p] of Object.entries(prompts)) {
-      if (p.chat === undefined) continue;
+      if (p.chat === undefined || readBy.has(id)) continue;
       const text = new Set(variablesOf(p.text));
       const extra = chatVariables(p.chat).filter((v) => !text.has(v));
       if (extra.length === 0) continue;

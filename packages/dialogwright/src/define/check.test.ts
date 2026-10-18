@@ -192,6 +192,9 @@ describe('checkApp: the prompts every locale needs', () => {
     const { checkAppFully } = await import('./check');
     const warned = (await checkAppFully(folder({ 'prompts.yaml': withChat('Anything else, **{first}**?') }), { code: libraryCode })).warnings ?? [];
     expect(warned.map((w) => w.message)).toContain('the line "anything_else"\'s chat version names {first}, which its text does not: the code that says the line must give it, or the chat shows the line\'s text');
+    // A form's summary read by its onSummaryRead hook is given what the hook's vars give: no warning.
+    const read = (await checkAppFully(folder({ 'prompts.yaml': (t) => t.replace(/(  confirm_renew:\n    text: [^\n]*\n)/, '$1    chat: "Renew **{bookTitle}**?"\n'), 'forms.yaml': (t) => t.replace('hooks: [confirmedParams, complete]', 'hooks: [onSummaryRead, confirmedParams, complete]') }), { code: libraryCode })).warnings ?? [];
+    expect(read.filter((w) => w.message.includes('chat version'))).toEqual([]);
     const turned = (t: string): string => t.replace('    text: Sure, I can help you {intentLabel}.\n', '    text: Sure, I can help you {intentLabel}.\n    variants:\n      - Happy to help you {intentLabel}.\n    chat: Sure, I can help you **{intentLabel}**.\n');
     expect((await lines(folder({ 'prompts.yaml': turned, 'app.yaml': (t) => `${t}ackIntent:\n  repeat: skip\n` }))).filter((l) => l.includes('.chat'))).toEqual([
       expect.stringContaining('the line "ack_intent" has a chat version and variants, other wordings said in turn: a chat version is for a line said in one wording  ->  delete chat, or variants'),
