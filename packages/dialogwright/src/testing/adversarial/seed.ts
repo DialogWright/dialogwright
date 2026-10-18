@@ -1,12 +1,10 @@
 import type { FormId, SlotId } from '../../core/app/types';
 import { appOf } from '../../core/app/registry';
 import { formOf, identityOf } from '../../core/app/lookup';
-import { appTurnContext } from '../../core/turn';
 import { ensureEntry, newTurnOut } from '../../core/lifecycle';
 import { emptySlot, setForm, type Session } from '../../core/session';
-import { demoTools } from '../../core/tools';
 import { spokenText, promptText } from '../../prompts/render';
-import { seedCorpusSession, type SeedOptions } from '../../harness-text/runner';
+import { seedCorpusSession, seedTurnContext, type SeedOptions } from '../../harness-text/runner';
 import type { CorpusEntry } from '../../jev/corpus';
 import type { Party } from '../../gate/types';
 import type { CodePrompt } from './types';
@@ -46,7 +44,7 @@ export function codeSeed(form: FormId, delegate?: string): Seed {
     for (const id of identityOf(app).factorSlots) fill(session, id, true);
     setForm(session, form);
     session.entered = null;
-    const tc = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+    const tc = seedTurnContext(app, opts);
     const asked = ensureEntry(session, tc, newTurnOut(), []);
     if (asked?.kind !== 'prompt' || asked.target !== 'otp') throw new Error(`form ${form} does not ask for the code of a caller verified to level 1`);
     session.promptedFor = asked.target;
@@ -89,7 +87,7 @@ export function slotSeed(form: FormId, slot: SlotId, delegate: string): Seed {
       if (id === slot) break;
       fill(session, id, true);
     }
-    const tc = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+    const tc = seedTurnContext(app, opts);
     const instead = ensureEntry(session, tc, newTurnOut(), []);
     if (instead !== null) throw new Error(`form ${form} does not let the delegate "${delegate}" in, so there is no ${slot} to answer`);
     session.promptedFor = slot;

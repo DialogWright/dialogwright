@@ -161,6 +161,13 @@ export interface TraceRecord {
    */
   followUp?: FollowUpRecord;
   /**
+   * What the turn waited on (core/toolWait.ts): each tool call that returned a promise, with how long it
+   * took and what it came to, how many times the core ran, and the hold line and thinking sound said while
+   * it waited (`hold.said` false where the channel says nothing early: the text harness, a one-reply chat).
+   * Only on a turn that called such a tool; absent on every other turn and for every other app.
+   */
+  waited?: WaitedRecord;
+  /**
    * Only on a turn that joined the final prompts of a caller who had not finished (run/continuation.ts,
    * voice.continueWithinMs): the prompts, in order, as each was heard. The event's words are them
    * joined; each fragment's own turn is an earlier record. With `waitedFor`, the words the voice server
@@ -212,4 +219,15 @@ export interface TraceRecord {
    * call's first turn and each turn that says such a line; absent on every other record.
    */
   render?: RenderRecord;
+}
+
+/** What a turn waited on (TraceRecord.waited). */
+export interface WaitedRecord {
+  calls: { tool: string; ms: number; outcome: 'replied' | 'failed' | 'late' }[];
+  /** How many times the core ran: one more than the times it waited. */
+  passes: number;
+  /** The hold line, when it was due: its line, when (ms after the turn first waited) and whether the channel said it. */
+  hold?: { promptId: string; atMs: number; said: boolean };
+  /** How many times the thinking sound played. */
+  sounds?: number;
 }

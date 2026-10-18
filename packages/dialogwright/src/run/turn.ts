@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
-import { followUpOf, followUpQuestions, plan, resolve, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
+import { followUpOf, followUpQuestions, plan, sensitiveDigit, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
 import type { Session } from '../core/session';
 import { maskCodeEvent, maskSpokenCode, saidCode } from '../core/spokenCode';
 import { pronounceFor, unpronounce } from '../channel/pronounce';
@@ -23,6 +23,9 @@ import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
 import type { Renderer } from '../render/types';
+import type { Action } from '../channel/actions';
+import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
+import { resolveWaiting } from './waiting';
 
 export interface TurnObserver {
   /**
@@ -119,6 +122,12 @@ export interface RunOptions {
    * one request with one reply), every line goes with the turn, the hold line in its place.
    */
   early?: EarlyLines;
+  /**
+   * How long lines take to play, by the channel's estimate (the voice relay's, from its clips' lengths):
+   * how a turn waiting on a tool paces its thinking sound (app.yaml `waiting.sound`, run/waiting.ts), one
+   * clip once the last should have played. Unset (a chat, the harness), no sound is played.
+   */
+  playMs?: (actions: readonly Action[]) => number;
 }
 
 /**
@@ -413,7 +422,13 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     : null;
   const turnTc = second?.tc ?? tc;
   const t2f = performance.now();
-  const resolved = resolve(session, event, second?.answers ?? response?.answers ?? null, turnTc, error, screen);
+  // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
+  // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
+  const { result: resolved, waited } = await resolveWaiting(session, event, second?.answers ?? response?.answers ?? null, turnTc, error, screen, {
+    ...(opts.early !== undefined ? { early: opts.early } : {}),
+    ...(opts.playMs !== undefined ? { playMs: opts.playMs } : {}),
+    render: opts.render ?? null,
+  }, waitingOf(appOf(session)).timeoutMs ?? TOOL_TIMEOUT_MS);
   const t3 = performance.now();
   // Retrieval run for the follow-up rather than before planning: its record and its time are the turn's all the same.
   const retrievedAny = retrieved ?? second?.retrieved ?? null;
@@ -459,6 +474,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     driftUsage: rendered?.driftUsage ?? null,
     retrieval: retrievedAny?.record ?? null,
     followUp: second?.run ? followUpRecord(second.run) : null,
+    waited,
     joined: fragments ?? null,
     ...(fragments && waitedFor !== undefined ? { joinedWaitedFor: waitedFor } : {}),
     ts: new Date(now()).toISOString(),

@@ -3,7 +3,8 @@ import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
-import { emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
+import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
+import { untilReplied, type ToolMemo } from '../core/toolWait';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
 import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
@@ -96,7 +97,16 @@ export function outcomeOf(id: string, result: TurnResult, gateEvents: readonly G
 }
 
 /** What seeding needs to reach the tools: the same gate and book of business the entry's turn runs against. */
-export type SeedOptions = Pick<RunOptions, 'thresholds' | 'todayIso' | 'tools'>;
+/**
+ * What a seed runs with: the run's thresholds, day and systems, and the memo its tool calls are kept in
+ * where a tool waits on a system (core/toolWait.ts untilReplied: the seed made again once the reply is in).
+ */
+export type SeedOptions = Pick<RunOptions, 'thresholds' | 'todayIso' | 'tools'> & { readonly toolMemo?: ToolMemo };
+
+/** A seed's turn context: the moment 0, the run's day, thresholds and systems, and its memo (SeedOptions.toolMemo). */
+export function seedTurnContext(app: App, opts: SeedOptions): TurnContext {
+  return appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools(), ...(opts.toolMemo !== undefined ? { toolMemo: opts.toolMemo } : {}) });
+}
 
 type Seed = NonNullable<NonNullable<App['testing']>['seed']>;
 
@@ -129,7 +139,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const app = appOf(session);
   const seed = app.testing?.seed;
   if (!seed) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no ${entry.context} context (App.testing.seed)`);
-  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  const tc: TurnContext = seedTurnContext(app, opts);
   const identity = promptsIdentity(entry, app);
   session.principal = identity ? ANONYMOUS : seed.caller();
   // A caller seeded as verified was verified earlier in the call, so the routes after identity
@@ -265,7 +275,7 @@ function seedTextConsent(session: Session, entry: CorpusEntry, opts: SeedOptions
   const kept = keptCallerNumber(app, number);
   if (kept === undefined) throw new Error(`corpus ${entry.id}: the seed number ${number} is not one the app keeps`);
   session.callerNumber = kept;
-  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  const tc: TurnContext = seedTurnContext(app, opts);
   // The call-start lookup, as a call makes it, so a callerOffer hook that reads what it found answers as on a call.
   const lookup = app.callerNumber?.lookup;
   if (lookup !== undefined) {
@@ -294,7 +304,7 @@ function seedCallerMatch(session: Session, entry: CorpusEntry & { prompted: Slot
   const app = appOf(session);
   const number = app.testing?.seed?.callerNumber;
   if (number === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" seeds no caller-ID question (App.testing.seed.callerNumber)`);
-  const tc: TurnContext = appTurnContext(app, { nowMs: 0, todayIso: opts.todayIso, thresholds: opts.thresholds, tools: opts.tools ?? demoTools() });
+  const tc: TurnContext = seedTurnContext(app, opts);
   const kept = keptCallerNumber(app, number);
   const lookup = app.callerNumber?.lookup;
   if (kept === undefined || lookup === undefined) throw new Error(`corpus ${entry.id}: app "${app.id}" keeps no number to look up for the caller-ID question`);
@@ -425,7 +435,11 @@ export async function runSeeded(entry: CorpusEntry, opts: ScenarioRunOptions, ho
     const app = appOf(fresh);
     if (app.locales) fresh.locale = matchLocale(app, how.locale) ?? app.locales.default;
   }
-  const start = how.seed ? how.seed(fresh, o) : seedCorpusSession(fresh, entry, o);
+  // A tool that waits on a system makes the seed again once its reply is in, from the fresh session each time.
+  const { value: start } = await untilReplied((toolMemo) => {
+    const s = cloneSession(fresh);
+    return how.seed ? how.seed(s, { ...o, toolMemo }) : seedCorpusSession(s, entry, { ...o, toolMemo });
+  }, appOf(fresh).waiting?.timeoutMs);
   const asked = how.seed === undefined && entry.context === 'no_form' && !atGreetingOffer(entry, appOf(start)) && !atCallerMatch(entry, appOf(start)) && !atTextConsent(entry, appOf(start)) ? null : seededPrompt(start);
   const turn = opts.turn ?? runTurn;
   // The call data a seeded call comes with (App.testing.seed.callData); none for an app whose seed names none.

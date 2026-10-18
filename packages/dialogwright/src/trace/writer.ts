@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { FollowUpRecord, RetrievalRecord, TraceRecord, TraceTiming } from './types';
+import type { FollowUpRecord, RetrievalRecord, TraceRecord, TraceTiming, WaitedRecord } from './types';
 import { redactRecordSlots } from './redact';
 import type { SessionEvent } from '../channel/events';
 import type { AnsweredBy, JevResponse, JevUsage, QuestionMap } from '../jev/types';
@@ -72,6 +72,8 @@ export interface TraceInput {
   driftUsage?: JevUsage | null;
   /** The turn's second request (TraceRecord.followUp), its usage added into the record's; null or absent when it made none. */
   followUp?: FollowUpRecord | null;
+  /** What the turn waited on (TraceRecord.waited); null or absent when it waited on nothing. */
+  waited?: WaitedRecord | null;
 }
 
 /** The record's `configHash`: the combined hash of the session's app (App.configHashes), when it has one. */
@@ -129,6 +131,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     ...(input.retrieval ? { retrieval: input.retrieval } : {}),
     // Only on a turn that made a second request: every other record is as it was.
     ...(followUp ? { followUp: { ...followUp } } : {}),
+    // Only on a turn that waited on a tool: every other record is as it was.
+    ...(input.waited ? { waited: input.waited } : {}),
     // Only on a joined turn: every other record is as it was.
     ...(input.joined ? { joined: { fragments: [...input.joined], ...(input.joinedWaitedFor !== undefined ? { waitedFor: input.joinedWaitedFor } : {}) } } : {}),
     // As recorded: each param masked as its call was (core/recording.ts recordedEffect); the runner sends the effect itself.

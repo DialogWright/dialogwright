@@ -887,6 +887,15 @@ export function crossLink(
   for (const [which, id] of Object.entries(app.prompts?.greetings ?? {})) {
     if (id !== undefined) promptExists('app.yaml', ['prompts', 'greetings', which], id);
   }
+  // The lines said while a turn waits on a tool: the app's (app.yaml waiting) and each tool's own (ToolDef.waiting.line).
+  for (const which of ['line', 'start'] as const) {
+    const id = app.waiting?.[which];
+    if (id !== undefined) promptExists('app.yaml', ['waiting', which], id);
+  }
+  for (const [tool, def] of Object.entries(code.tools)) {
+    const id = def?.waiting?.line;
+    if (id !== undefined && !has(prompts, id)) inTs(['tools', tool, 'waiting', 'line'], `tool "${tool}" names the waiting line "${id}", which is not in prompts.yaml`, `${renameHint(id, promptIds)}add "${id}:" to prompts.yaml with its text and interruptible`);
+  }
 
   // app.yaml: what the console and the clip generator name, which nothing else would notice is wrong
   const formIds = Object.keys(forms);
@@ -1117,6 +1126,13 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'questionAtSummary', a.questionAtSummary);
+  put(app, 'waiting', a.waiting === undefined ? undefined : {
+    ...(a.waiting.line !== undefined ? { line: a.waiting.line } : {}),
+    ...(a.waiting.afterMs !== undefined ? { afterMs: typeof a.waiting.afterMs === 'number' ? a.waiting.afterMs : { ...a.waiting.afterMs } } : {}),
+    ...(a.waiting.sound !== undefined ? { sound: a.waiting.sound } : {}),
+    ...(a.waiting.start !== undefined ? { start: a.waiting.start } : {}),
+    ...(a.waiting.timeoutMs !== undefined ? { timeoutMs: a.waiting.timeoutMs } : {}),
+  });
   put(app, 'frustration', a.frustration === undefined ? undefined : {
     ...(a.frustration.forms !== undefined ? { forms: [...a.frustration.forms] } : {}),
     ...(a.frustration.after !== undefined ? { after: a.frustration.after } : {}),

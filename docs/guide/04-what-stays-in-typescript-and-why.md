@@ -106,3 +106,41 @@ Name every field a line says or a call is made from: `object` checks only the fi
 The engine holds the identity tools' replies itself: a verified principal whose first name is not one (more than four words or forty characters once its spaces are collapsed, or anything but letters with an apostrophe, a hyphen, a period, a middle dot or a zero-width joiner inside a word) or whose phone's last four are not four digits is not believed, and the caller goes to a person, since the engine's own lines say both; a sign-in with such a principal is not taken. The id a match names is the app's: the verify tool checks it (`principal: r.object({ id: r.digits(8) })`), since every later call is made for it. The adversarial suite's hostile replies ([section 15](15-the-adversarial-suite.md#15-the-adversarial-suite)) find a field that needs a check: each tool answers with instructions in place of each text field of its reply in turn.
 
 An app outside the engine package imports only from `'dialogwright'` (the clinic's `src/app.ts` does), and the clinic's launchers (`src/index.ts`, `cli.ts`, `regress.ts`, `serve.ts`) show how an app is registered and run.
+
+### A tool that waits on a system: a promise, and what the caller hears meanwhile
+
+A tool that asks another system over the network (a scheduling API's openings, a booking made, an order looked up) returns a promise: `run` may be `async`. Nothing else about the tool changes: the gate decides before it runs, its `check` reads the reply, redaction, the summary, the audit and the idempotency key are as for any tool ([the design](../designs/2026-10-18-async-tools.md)).
+
+```ts
+// An illustration: an app's client for its scheduling system, the app's systems (`sys`) in production.
+const findOpenings: ToolDef = {
+  params: ['service', 'zip'],
+  async run(call, sys) {
+    const openings = await (sys as Scheduler).openings(call.params.service ?? '', call.params.zip ?? '');
+    return { value: { openings }, summary: `${openings.length} openings` };
+  },
+  waiting: { line: 'openings_hold' },   // its own hold line, in place of app.yaml's waiting.line
+  check: r.object({ openings: r.list(r.object({ id: r.code(), day: r.isoDate(), time: r.text({ words: 2, chars: 10 }) })) }),
+};
+```
+
+The core stays synchronous, and is run again rather than suspended. A hook's `ctx.callTool` starts the request and, with no reply yet, returns `{ decision, value: null, pending: true }`; from then on the turn's pass is provisional (no later call of it runs a tool, and nothing the hook did with the null is kept). The runner waits for the reply, keeps it, and runs the turn again from the same session, the call now answered with its reply. Each call runs once a turn however many passes it takes (a write is never made twice by a pass), the turn's gate events, audit and trace are those of its last pass, and calls run one after another, never side by side, since a later call may be made from an earlier one's reply. A hook therefore needs nothing of its own for this; it reads the decision and then the value, as ever. The trace's record of such a turn says what it waited on (`waited`: each call, how long it took, `replied`, `failed` or `late`, and how many passes it took).
+
+A reply later than `waiting.timeoutMs` (10 s by default), or a promise that rejects, is a tool that threw: with `failSoft` the hook gets null (`failed: true`) and chooses its line, without it the turn fails and the caller goes to a person. A write that is late may still be made downstream: pass `ctx.idempotencyKey` to the system (as every write does), so that a retry finds the write rather than makes it again, and say "a person will confirm it" rather than "it failed".
+
+What the caller hears while a turn waits is app.yaml's `waiting`, a classic IVR's way of hiding a lookup behind its own audio:
+
+```yaml
+waiting:
+  line: lookup_hold          # "One second while I look that up.", said as the request starts
+  afterMs: { voice: 0, chat: 1500 }   # how long a turn waits before the line; one number for both
+  sound: thinking            # a clip of the audio folder played after the line while it still waits
+  start: welcome_hold        # said at the call's start while the caller-number lookup and the start hook run
+  timeoutMs: 8000
+```
+
+- **The hold line** (`line`, or the waiting tool's own `waiting.line`) goes to the caller at once, before the turn has ended, through the channel's early lines (the voice relay's and the chat socket's, as a knowledge answer's hold line does), and the turn's reply follows it: the request runs while the words play, so a long lookup is often done by the time they end. `afterMs: 0` (the default) says it whenever a tool waits; a few hundred milliseconds says nothing for a quick reply. On Telnyx the reply waits until Telnyx reports the line played.
+- **The thinking sound** (`sound`) plays after the line, while the turn still waits: one clip at a time, each once the last should have played by its length, so the reply follows within one clip. Keep it short, a second or two: a carrier may not stop a clip it has started (Telnyx cannot). A call only; a chat plays none.
+- **At the call's start** (`start`): the welcome every caller hears, said while the call-start lookup and the start hook's calls run, so the greeting after it may use what they found ("Hi Sam, are you calling about Tuesday?"). Without it, the start waits silently.
+
+A channel that says nothing early (the text harness, `regress`, a chat that answers one request with one reply) says no hold line: the trace records the line as due and not said (`waited.hold.said: false`). The harness seeds a corpus entry's state the same way, again until its tools have replied, so an app whose tools are `async` against an in-memory fake runs its corpus, its scripted calls and the adversarial suite as one whose tools are not. A test that calls a tool's `run` directly reads its reply with `await` (or casts it, `as ToolReply`, for a tool it knows is synchronous).

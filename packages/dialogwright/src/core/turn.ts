@@ -39,8 +39,14 @@ import { saidCode } from './spokenCode';
 import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from './locale';
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
+import type { ToolMemo } from './toolWait';
 
 export interface TurnContext {
+  /**
+   * The turn's tool calls, kept across the passes of a turn that waits on a tool (core/toolWait.ts):
+   * set by the runner (run/turn.ts). Unset, a tool that returns a promise is an error.
+   */
+  toolMemo?: ToolMemo;
   nowMs: number;
   todayIso: string;
   thresholds: Thresholds;

@@ -95,6 +95,12 @@ function turnLines(run: TurnRun, indent: string): string[] {
   // A knowledge answer whose wording ran past its line's budget: the hold line said before it.
   const hold = run.record.render?.hold;
   if (hold !== undefined) lines.push(`${indent}   hold   ${hold.promptId ?? 'the engine\'s words'}, before the answer still being worded`);
+  // A turn that waited on a tool (core/toolWait.ts): each call and how long it took, and the hold line it was due to say.
+  const waited = run.record.waited;
+  if (waited !== undefined) {
+    lines.push(`${indent}   waited ${waited.calls.map((c) => `${c.tool} ${c.ms} ms${c.outcome === 'replied' ? '' : ` (${c.outcome})`}`).join(', ')}`);
+    if (waited.hold !== undefined) lines.push(`${indent}   hold   ${waited.hold.promptId}, ${waited.hold.said ? 'said' : 'due (said only on a channel that speaks early)'}${waited.sounds !== undefined ? `, then ${waited.sounds} sound${waited.sounds === 1 ? '' : 's'}` : ''}`);
+  }
   // An app with transfer: where the handoff goes, the rule taken, and what goes with it, each value as a record keeps it.
   const transfer = run.result.actions.find((a) => a.type === 'transfer');
   if (transfer?.type === 'transfer' && transfer.target !== undefined) lines.push(`${indent}   transfer ${transferLine(run, transfer)}`);

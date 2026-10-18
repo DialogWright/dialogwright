@@ -1,5 +1,6 @@
 import { defaultAppId, getApp } from './app/registry';
 import type { GateLookups, Principal, ToolCall } from '../gate/types';
+import type { ToolReply } from './app/types';
 
 /** Checks a one-time code the caller keyed against the one texted to them. */
 export interface CodeVerifier { check(code: string): boolean }
@@ -33,12 +34,8 @@ export interface Tools {
   answers?(call: ToolCall, ran: ToolRun, principal: Principal): ToolRun;
 }
 
-/** What a tool's run returns (ToolDef.run): its value, its one-line summary, and the id of a record it made. */
-export interface ToolRun {
-  value: unknown;
-  summary: string;
-  ref?: string;
-}
+/** What a tool's run returns (ToolDef.run), once it has: its value, its one-line summary, and the id of a record it made. */
+export type ToolRun = ToolReply;
 
 /** A fresh copy of the default app's systems, with the mock code verifier. */
 export function demoTools(): Tools {

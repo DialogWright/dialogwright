@@ -190,6 +190,22 @@ export function validateApp(app: App): void {
   if (app.unsureIntent !== undefined && !UNSURE_VALUES.includes(app.unsureIntent)) fail(`unsureIntent "${app.unsureIntent}" is not "confirm" or "no-match"`);
   if (app.changeSlotWithValue !== undefined && !CHANGE_SLOT_WITH_VALUE.includes(app.changeSlotWithValue)) fail(`changeSlotWithValue "${app.changeSlotWithValue}" is not "set-aside" or "decides"`);
   if (app.questionAtSummary !== undefined && !QUESTION_AT_SUMMARY.includes(app.questionAtSummary)) fail(`questionAtSummary "${app.questionAtSummary}" is not "aside" or "summary"`);
+  // What a turn says while it waits on a tool (App.waiting, ToolDef.waiting): lines the app has, and times that are times.
+  const lines = app.prompts?.manifest;
+  const isLine = (id: string): boolean => lines === undefined || Object.hasOwn(lines, id);
+  const w = app.waiting;
+  if (w !== undefined) {
+    if (w.line !== undefined && !isLine(w.line)) fail(`waiting.line names "${w.line}", which is not a line of prompts.yaml`);
+    if (w.start !== undefined && !isLine(w.start)) fail(`waiting.start names "${w.start}", which is not a line of prompts.yaml`);
+    if (w.sound !== undefined && w.sound.trim() === '') fail('waiting.sound is empty: name a clip of the app\'s audio folder, or leave it out');
+    const times: [string, number | undefined][] = [['timeoutMs', w.timeoutMs], ...(typeof w.afterMs === 'object' ? [['afterMs.voice', w.afterMs.voice], ['afterMs.chat', w.afterMs.chat]] as [string, number | undefined][] : [['afterMs', w.afterMs]] as [string, number | undefined][])];
+    for (const [name, ms] of times) if (ms !== undefined && (!Number.isFinite(ms) || ms < 0)) fail(`waiting.${name} is ${ms}, which is not a number of milliseconds`);
+    if (w.timeoutMs !== undefined && w.timeoutMs === 0) fail('waiting.timeoutMs is 0: no tool could ever reply in time');
+  }
+  for (const [tool, def] of Object.entries(app.tools ?? {})) {
+    const line = def.waiting?.line;
+    if (line !== undefined && !isLine(line)) fail(`tool "${tool}" names the waiting line "${line}", which is not a line of prompts.yaml`);
+  }
   if (app.anythingElseSilence !== undefined && !ANYTHING_ELSE_SILENCE.includes(app.anythingElseSilence)) fail(`anythingElseSilence "${app.anythingElseSilence}" is not "repeat", "opener" or "goodbye"`);
   if (app.ackIntent?.repeat !== undefined && !ACK_REPEAT.includes(app.ackIntent.repeat)) fail(`ackIntent.repeat "${app.ackIntent.repeat}" is not "say" or "skip"`);
   for (const [id, def] of Object.entries(app.intents)) {

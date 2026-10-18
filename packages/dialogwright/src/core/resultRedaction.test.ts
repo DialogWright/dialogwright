@@ -18,7 +18,7 @@ import { ANONYMOUS } from '../gate/principal';
 import type { Principal } from '../gate/types';
 import { registerApp } from './app/registry';
 import { validateApp } from './app/validate';
-import type { App, CompletionContext } from './app/types';
+import type { App, CompletionContext, ToolReply } from './app/types';
 import { callTool, newTurnOut, RESULT_UNREDACTABLE } from './lifecycle';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { newSession, type Session } from './session';
@@ -55,14 +55,14 @@ const CHATTY: App = {
       // Its reply is no longer a parcel, so the testkit's check of one (ToolDef.check) is not this tool's.
       check: undefined,
       run: (c, sys, x) => {
-        const parcel = getParcel.run(c, sys, x).value as ParcelView;
+        const parcel = (getParcel.run(c, sys, x) as ToolReply).value as ParcelView;
         return { value: { parcel }, summary: `${parcel.status}, left ${parcel.safePlace} (not "${parcel.safePlace}way")`, ref: `${parcel.number}:${parcel.safePlace}` };
       },
     },
   },
 };
 /** The testkit with a getParcel that returns its parcel as text: nothing can be stripped from it. */
-const STRINGY: App = { ...testkitApp, id: 'redact-stringy', tools: { ...testkitApp.tools, getParcel: { ...getParcel, check: undefined, run: (c, sys, x) => ({ value: JSON.stringify(getParcel.run(c, sys, x).value), summary: 'text' }) } } };
+const STRINGY: App = { ...testkitApp, id: 'redact-stringy', tools: { ...testkitApp.tools, getParcel: { ...getParcel, check: undefined, run: (c, sys, x) => ({ value: JSON.stringify((getParcel.run(c, sys, x) as ToolReply).value), summary: 'text' }) } } };
 registerApp(CHATTY);
 registerApp(STRINGY);
 

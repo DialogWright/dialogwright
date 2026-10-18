@@ -1650,6 +1650,50 @@ export const TOOLS: Record<string, ToolDef> = {
 - The identity tools' principal is the engine's to check: a first name that is not one, or a phone's last four that are not four digits, goes to a person.
 - **A downstream system: a tool, or a service.** One the turn asks and has its answer from at once (a lookup, a write, a triage that answers as it is asked) is a tool like any other, with its action and its `check`. A hook that calls it with `c.callTool(call, { failSoft: true })` gets `{ value: null, failed: true }` when the tool throws or its reply fails its check, not a person, so a call made after a write already done (a triage once the claim is filed) can be no answer with a line of the app's own. Work the call waits on after the turn (another agent, a system that answers later) is a service: `code.services` names a `ServiceDef`, a gated tool queues `{ kind: 'service', service, params }` on the turn's effects, the server asks it after the turn, and its answer is the call's next turn, which `onServiceResult` turns into an approved line (the answer is untrusted); `testing.serviceAnswers` answers for it in the regression and the adversarial suite.
 
+## A tool that asks another system: `async run` and `waiting`
+
+**When:** a tool's work is a request over the network (a scheduling API's openings, a booking made, a record looked up): its `run` is `async` and returns a promise. The engine runs the turn again once the reply is in, each call once a turn; nothing in the hooks changes. What the caller hears meanwhile is app.yaml's `waiting`, the way a classic IVR hides a lookup behind its own audio.
+
+```yaml
+# app.yaml
+waiting:
+  line: lookup_hold          # said as the request starts; the reply follows it
+  sound: thinking            # optional: a short clip (audio/thinking.wav) played after the line while it still waits
+  start: welcome_hold        # optional: the welcome said while the call-start lookup and onStart run
+  timeoutMs: 8000            # a reply later than this is a tool that failed
+```
+
+```yaml
+# prompts.yaml
+  lookup_hold:
+    text: One second while I look that up.
+    interruptible: false
+  booking_hold:
+    text: One moment while I book that.
+    interruptible: false
+```
+
+```ts
+// src/app.ts: the systems are the app's API client in production and an in-memory fake in the tests,
+// so the same async tool runs against both.
+bookOpening: {
+  params: ['opening', 'phone'],
+  idempotent: true,
+  waiting: { line: 'booking_hold' },          // this tool's own line, in place of waiting.line
+  async run(call, sys, { idempotencyKey }) {
+    const booked = await (sys as Bookings).book(call.params.opening ?? '', call.params.phone ?? '', idempotencyKey!);
+    return { value: { code: booked.code }, summary: `booked ${booked.code}`, ref: booked.code };
+  },
+  check: r.object({ code: r.code() }),
+},
+```
+
+- **The hold line is said whenever a tool waits** (`afterMs: 0`, the default): the request starts as the words do. Give a chat a longer wait, `afterMs: { voice: 0, chat: 1500 }`, so a quick reply there shows no "one moment".
+- **A reply that is late or fails** is a tool that threw. Call a lookup with `failSoft: true` and say a line of the app's own on `failed`; a write without it goes to a person. A late write may still have been made: pass `idempotencyKey` to the system, so that a retry finds it.
+- **The thinking sound** needs a clip in the app's audio folder; keep it a second or two. It plays on a call only.
+- **The scripted calls and the corpus** run the tools as they are, against the fake: an `async` tool needs nothing of its own there. The trace's `waited` field says what each turn waited on; `regress --scenario <id>` shows the hold line as due (`said: false`, since the harness says nothing early). The chat page, run with `pnpm --filter <app> serve`, shows it said.
+- **Pitfall: a test that calls `run` directly** gets a promise: `await` it.
+
 ## Generated wording: `mode: generative` and `prescribed`
 
 **When:** only when the paragraph asks for it: a warmer re-ask, an acknowledgement that fits, a summary of a message read back, or an entirely generated experience. Every other line is said word for word. A model words a generated line for the moment; checks hold it to its fixed text's values and meaning, and the fixed text is said whenever a check fails or the model is slow ([16](../../../docs/guide/16-generated-wording.md)).

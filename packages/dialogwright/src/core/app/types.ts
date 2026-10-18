@@ -578,6 +578,27 @@ export interface IdentityConfig {
  */
 export type VerifyOutcome = { ok: true; principal: Party } | { ok: false };
 
+/** What a tool's run gives back (ToolDef.run): its value, its one-line summary, and the id of a record it made. */
+export interface ToolReply { value: unknown; summary: string; ref?: string }
+
+/**
+ * What a turn does while it waits on a tool that returns a promise (app.yaml `waiting`; core/toolWait.ts):
+ * the line said once it has waited `afterMs`, the clip played after it while it still waits, the line
+ * said at the call's start while its lookups run, and how long a call may take.
+ */
+export interface WaitingConfig {
+  /** The line said once a turn has waited `afterMs` on a tool (a prompt id); a tool's own (ToolDef.waiting) first. Absent, none. */
+  line?: string;
+  /** How long a turn waits on its tools before the line, in ms: one number, or each channel's. Default 0. */
+  afterMs?: number | { voice?: number; chat?: number };
+  /** A clip (the app's audio folder) played after the line, one at a time, while the turn still waits; on a call only. Absent, none. */
+  sound?: string;
+  /** The line said at the call's start while the start's lookups run (the caller's number, onStart), before the greeting. Absent, none. */
+  start?: string;
+  /** How long a tool may take, in ms: a reply later than this is a tool that failed. Default 10000. */
+  timeoutMs?: number;
+}
+
 /** What a tool is given as it runs (ToolDef.run), beside its call and the app's systems. */
 export interface ToolContext {
   s: Session;
@@ -604,7 +625,13 @@ export interface ToolDef {
    * as policy.yaml's `audit:` declares it (PolicyTables.audit). `check` refuses a param the tool
    * lists (its params, below) that neither covers.
    */
-  run(call: ToolCall, sys: unknown, ctx: ToolContext): { value: unknown; summary: string; ref?: string };
+  run(call: ToolCall, sys: unknown, ctx: ToolContext): ToolReply | Promise<ToolReply>;
+  /**
+   * A tool that waits on a system (its run returns a promise) may name the line said while the turn
+   * waits for it (`line`, a prompt id: "One moment while I book that."), in place of app.yaml's
+   * `waiting.line`. Where several calls of a turn wait, the first one's line is said. Absent, the app's.
+   */
+  waiting?: { line?: string };
   /**
    * The tool writes (files, books, sends), and a repeat of the same write must not be done twice: it is
    * given `ctx.idempotencyKey` as it runs (core/idempotency.ts idempotencyKey: the same for the same
@@ -1389,6 +1416,12 @@ export interface App {
    * decision, 2026-10-16, Harbor findings item 1).
    */
   questionAtSummary?: QuestionAtSummary;
+  /**
+   * What a turn says and plays while it waits on a tool that returns a promise (app.yaml `waiting`,
+   * core/toolWait.ts): a hold line, a thinking sound after it, a line at the call's start behind which
+   * its lookups run, and how long a call may take. Absent, a turn waits silently, up to 10 s a call.
+   */
+  waiting?: WaitingConfig;
   /**
    * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
    * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is

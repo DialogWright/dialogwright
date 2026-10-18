@@ -1,4 +1,5 @@
 import { callerAttestationIn, callerWithheldIn, endDropsSpeechOf, playbackEventOf, readsPlaybackEvents, setupCalledOf, setupCallerOf, setupCallIdOf, textLastOf } from './voice/registry';
+import type { Action } from '../channel/actions';
 import { isWithheldCaller, keptCallerNumber } from '../core/callerNumber';
 import { callerNumberScrub, maskCallerValue, recordsOf, type NumberRecords } from '../channel/maskByName';
 import type { PlaybackEvent } from './voice/provider';
@@ -1824,7 +1825,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     };
     // Through the call's Continuation: a final prompt that continues one whose reply the caller cut
     // off at once runs as the words joined, on the session from before the first of them.
-    const run = await continuationOf(entry).run(entry.session, event, { ...entry.opts, early }, arrival, words);
+    // How long lines take to play, for a turn that waits on a tool to pace its thinking sound (run/waiting.ts).
+    const playMs = (lines: readonly Action[]): number => playbackEstimateMs(actionsToFrames([...lines]), deps.clipDurations ?? new Map());
+    const run = await continuationOf(entry).run(entry.session, event, { ...entry.opts, early, playMs }, arrival, words);
     if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;

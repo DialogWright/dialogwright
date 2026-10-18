@@ -1240,6 +1240,11 @@ function referencesOf(config: LoadedConfig): Reference[] {
   for (const [which, id] of Object.entries(config.app.prompts?.greetings ?? {})) {
     if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['prompts', 'greetings', which] });
   }
+  // The lines said while a turn waits on a tool (app.yaml waiting: the hold line, and the welcome at the call's start).
+  for (const which of ['line', 'start'] as const) {
+    const id = config.app.waiting?.[which];
+    if (id !== undefined) refs.push({ id, file: 'app.yaml', path: ['waiting', which] });
+  }
   return refs;
 }
 

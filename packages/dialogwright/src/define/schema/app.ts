@@ -572,6 +572,36 @@ export const appSchema = z
         'At a form\'s summary, what a question gets when the intent read (at INTENT_ROUTE, 0.7, or more) is a form that answers from the knowledge base as an aside or an informational intent, and the model reads the turn as answering the summary. ' +
           '"aside": the question is answered (the knowledge answer or the informational line, through the gate as always), nothing is written, and the summary is asked again. "summary": the turn is the summary\'s, as the model read it (the question goes unanswered and the summary is asked again). Default "aside".',
       ),
+    waiting: z
+      .strictObject({
+        line: identifier()
+          .optional()
+          .describe('The line said once a turn has waited afterMs on a tool that waits on a system (its run returns a promise): a line of prompts.yaml ("One second while I look that up."). It goes to the caller at once, before the turn has ended, and the turn\'s reply follows it, so the request runs while it plays. A tool may name its own line in code (ToolDef.waiting.line); the first waiting tool\'s is said. Default: none (the turn waits silently).'),
+        afterMs: z
+          .union([
+            z.number().int().min(0),
+            z.strictObject({
+              voice: z.number().int().min(0).optional().describe('On a call. Default 0.'),
+              chat: z.number().int().min(0).optional().describe('On a chat. Default 0.'),
+            }),
+          ])
+          .optional()
+          .describe('How long a turn waits on its tools before it says the line, in milliseconds: one number, or each channel\'s. 0 says the line whenever a tool waits (the request starts as the words do); a few hundred says nothing for a quick reply and the line for a slow one. Default 0.'),
+        sound: identifier()
+          .optional()
+          .describe('A clip of the app\'s audio folder (audio/<id>.wav) played after the line while the turn still waits: one at a time, each once the last should have played, so the reply follows within one clip. A short clip, a second or two: a carrier may not stop a clip it has started. On a call only. Default: none.'),
+        start: identifier()
+          .optional()
+          .describe('The line said at the call\'s start while its lookups run (the caller\'s number lookup, the start hook), before the greeting: the welcome every caller hears, so the greeting after it may use what they found. Default: none (the start waits silently).'),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe('How long a tool may take, in milliseconds: a reply later than this is a tool that failed (with failSoft the hook gets null and chooses its line; without it the turn fails and the caller goes to a person). A write that is late may still be made: its idempotency key is how a retry finds it. Default 10000.'),
+      })
+      .optional()
+      .describe('What a turn says and plays while it waits on a tool whose run returns a promise (a request to another system): a hold line, a thinking sound after it, a welcome at the call\'s start behind which its lookups run, and how long a call may take. Default: the turn waits silently, up to 10 s a call.'),
     frustration: z
       .strictObject({
         forms: unique(identifier(), 'form')

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { checkApp, formatProblem, type ToolCall, type ToolDef } from 'dialogwright';
+import { checkApp, formatProblem, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
 import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, policyInvariants, runRuleExamples } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
 import { APP_DIR, Systems, TOOLS, app, code, statusLine } from './app';
@@ -74,7 +74,7 @@ describe('the read-back and the inbox', () => {
   it('delivers the message word for word, once for a repeated write', () => {
     const sys = new Systems();
     const call: ToolCall = { tool: 'leaveMessage', params: { recipient: 'sam', caller: 'Alex Rivera', phone: '5555550142', message: 'the logo files are ready for review' } };
-    const run = (key: string) => (TOOLS.leaveMessage as ToolDef).run(call, sys, { idempotencyKey: key } as unknown as Parameters<ToolDef['run']>[2]);
+    const run = (key: string) => (TOOLS.leaveMessage as ToolDef).run(call, sys, { idempotencyKey: key } as unknown as Parameters<ToolDef['run']>[2]) as ToolReply;
     const first = run('k-1');
     const again = run('k-1');
     expect(again.ref).toBe(first.ref);
@@ -84,7 +84,7 @@ describe('the read-back and the inbox', () => {
 });
 
 describe('a person\'s status', () => {
-  const read = (sys: Systems, person: string) => (TOOLS.personStatus as ToolDef).run({ tool: 'personStatus', params: { person } }, sys, {} as unknown as Parameters<ToolDef['run']>[2]);
+  const read = (sys: Systems, person: string) => (TOOLS.personStatus as ToolDef).run({ tool: 'personStatus', params: { person } }, sys, {} as unknown as Parameters<ToolDef['run']>[2]) as ToolReply;
 
   it('reads each person\'s status from the calendar, and its reply passes the tool\'s check', () => {
     const sys = new Systems();

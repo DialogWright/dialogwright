@@ -9,6 +9,7 @@ import { DEFAULT_THRESHOLDS } from '../../core/thresholds';
 import { VOICE_RELAY } from '../../channel/caps';
 import { parseCorpus, type CorpusEntry } from '../../jev/corpus';
 import { seedCorpusSession, startSession } from '../../harness-text/runner';
+import { newToolMemo, passPending } from '../../core/toolWait';
 import { maskSpokenCode, spokenCodeMinDigits } from '../../core/spokenCode';
 import { isKbAnswerTool } from '../../kb/answer';
 import { REGRESS_TODAY } from '../../harness-text/baseline';
@@ -124,11 +125,18 @@ class Builder {
     try {
       parseCorpus(JSON.stringify(entry), this.shape.app);
       // The state the line is said in, seeded once here, so a case that cannot be set up is a note, not a failed run.
+      // A seed that waits on a tool cannot be finished here, synchronously: it is taken as one that can be
+      // set up, and the run (runSeeded) makes it again with the reply.
       const s = startSession(entry.id, 0, entry.as);
       const seat = seatSeed(c.at, c.delegate);
-      const opts = { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY };
-      if (seat) seat(s, opts);
-      else seedCorpusSession(s, entry, opts);
+      const toolMemo = newToolMemo();
+      const opts = { thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: REGRESS_TODAY, toolMemo };
+      try {
+        if (seat) seat(s, opts);
+        else seedCorpusSession(s, entry, opts);
+      } catch (e) {
+        if (!passPending(toolMemo)) throw e;
+      }
     } catch (e) {
       this.notes.push(`${c.id}: ${may ? 'skipped' : 'not generated'}: ${e instanceof Error ? e.message : String(e)}`);
       return;

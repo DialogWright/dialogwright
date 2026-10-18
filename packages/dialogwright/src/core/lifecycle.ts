@@ -14,6 +14,7 @@ import type { SlotExhausted } from './outcome';
 import { redactResult, redactedSummary, withheldFields } from './resultRedaction';
 import { idempotencyKey } from './idempotency';
 import type { ToolRun } from './tools';
+import { ASYNC_WITHOUT_RUNNER, memoKey, passPending, throughMemo } from './toolWait';
 import { callerGateFacts, usableCallerNumber } from './callerNumber';
 import { bothScrubs, redactCall, registerScrub, scrubbedDecision, scrubberFor, scrubberOf, withheldScrubber, type Scrub } from './recording';
 
@@ -256,6 +257,11 @@ export interface ToolOutcome {
   redacted?: readonly string[];
   /** The tool threw, on a call made with `failSoft`; absent on every other call. */
   failed?: true;
+  /**
+   * The tool's reply has not come (it returned a promise; core/toolWait.ts): the value is null, and the
+   * turn will run again with the reply. Nothing the hook does with it is kept. Absent on every other call.
+   */
+  pending?: true;
 }
 
 const IGNORE: Decision = { kind: 'ignore' };
@@ -289,14 +295,30 @@ function gateFacts(s: Session, call: ToolCall, tc: TurnContext): GateFacts {
  * Runs a call the gate allowed: the app's tool, against the turn's systems. A tool the app does not
  * define never gets here (the gate's unlisted line blocks it), so one that does is a bug and throws.
  */
-function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): ToolRun {
+function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code: string | undefined): ToolRun | typeof PENDING {
   const def = toolOf(appOf(s), call.tool);
   // A tool that writes is given its write's key (core/idempotency.ts); any other is called as it always was.
   const env = settingOf(tc);
-  const ran = def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out, code, idempotencyKey: idempotencyKey(s, call), env } : { s, tc, out, code, env });
+  const start = (into: TurnOut) => def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out: into, code, idempotencyKey: idempotencyKey(s, call), env } : { s, tc, out: into, code, env });
   // A test's stand-in for the systems' answer (Tools.answers); never set on a call.
-  return tc.tools.answers ? tc.tools.answers(call, ran, s.principal) : ran;
+  const answer = (ran: ToolRun): ToolRun => (tc.tools.answers ? tc.tools.answers(call, ran, s.principal) : ran);
+  const memo = tc.toolMemo;
+  if (memo === undefined) {
+    const ran = start(out);
+    if (ran instanceof Promise || typeof (ran as { then?: unknown }).then === 'function') throw new Error(ASYNC_WITHOUT_RUNNER);
+    return answer(ran as ToolRun);
+  }
+  // Through the turn's memo (core/toolWait.ts): a call made on an earlier pass gets what it came to, and
+  // the effects it queued, into this pass's output; a reply still to come makes the pass provisional.
+  const own = newTurnOut();
+  const got = throughMemo(memo, memoKey(memo, call, code), call.tool, () => start(own), answer, () => own.effects);
+  if ('pending' in got) return PENDING;
+  out.effects.push(...got.effects);
+  return got.run;
 }
+
+/** A call whose reply has not come (runTool): the pass that made it is provisional (core/toolWait.ts). */
+const PENDING = Symbol('pending');
 
 /**
  * Purposes that mark a call as a probe: the gate is asked what it would say, and the tool is never
@@ -411,6 +433,9 @@ export const TOOL_FAILED_SUMMARY = 'the tool failed: nothing was returned';
 export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code?: string, opts: CallOptions = {}): ToolOutcome {
   // Nothing past this line holds the raw call: the event, the trace and the audit see the redacted one.
   const decision = evaluate(s, call, tc);
+  // A pass that found a call still running is provisional (core/toolWait.ts): no later call of it runs a
+  // tool, as it may be made from a value the hook had to guess; the runner runs the turn again once the reply is in.
+  if (passPending(tc.toolMemo)) return { decision, value: null, pending: true };
   // A reply earlier in this turn did not pass its tool's check: the turn ends with a person, and no
   // later call of the turn runs (a probe or a form's check, which run no tool, are asked as ever). The
   // call is recorded, refused, with why.
@@ -427,9 +452,11 @@ export function callTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnO
   }
   // The side effects the tool queues as it runs: recorded with the call's scrub (recordedEffect), sent as they are.
   const effectsBefore = out.effects.length;
-  let ran: ReturnType<typeof runTool>;
+  let ran: ToolRun;
   try {
-    ran = runTool(s, call, tc, out, code);
+    const got = runTool(s, call, tc, out, code);
+    if (got === PENDING) return { decision, value: null, pending: true };
+    ran = got;
   } catch (err) {
     // The gate allowed the call and the tool ran, whatever came of it: the call is recorded (as failed,
     // with nothing of the error) before anything else, so a caller that catches the throw (the start
