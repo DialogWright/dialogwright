@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
 import { untilReplied, type ToolMemo } from '../core/toolWait';
+import { waysOf } from '../core/identityWays';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
 import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
@@ -150,10 +151,15 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   // A caller seeded as verified was verified earlier in the call, so the routes after identity
   // (routes.yaml) have run: the entry's turn does not run them as if the caller had just verified.
   if (!identity && rulesAt(app, 'afterIdentity').length > 0) session.identityRouted = true;
-  // A verified caller's factors stay on the call; a step-up has the factors it asked before the one prompted.
+  // A verified caller's factors stay on the call; a step-up has the factors it asked before the one
+  // prompted, of the way it is on (identity.yaml's `ways`: the way the prompted factor is one of).
   const factors = identityOf(app).factorSlots;
+  const ways = waysOf(app);
+  const way = identity ? Math.max(0, ways.findIndex((w) => w.factorSlots.includes(entry.prompted!))) : 0;
+  const asked = ways[way]!.factorSlots;
+  if (identity && way > 0) session.identityWay = way;
   for (const id of factors) {
-    if (!identity || factors.indexOf(id) < factors.indexOf(entry.prompted)) fillPlaceholder(seed, session, id, true);
+    if (!identity || (asked.includes(id) && asked.indexOf(id) < asked.indexOf(entry.prompted!))) fillPlaceholder(seed, session, id, true);
     else session.slots[id] = emptySlot();
   }
   if (entry.context === 'anything_else') {
