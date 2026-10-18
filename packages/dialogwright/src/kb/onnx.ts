@@ -63,9 +63,10 @@ export async function loadTransformers(from?: string): Promise<TransformersModul
   try {
     return (await import(specifier)) as TransformersModule;
   } catch (error) {
-    // The app's own folder (the knowledge base's, `from`, then where the process runs): an app installs
-    // the package, and an engine linked from elsewhere (a workspace, a link: dependency, a host's server
-    // started in another folder) does not see the app's node_modules from where it is.
+    // The app's own folder (`from`: the folder with app.yaml, whose code the server already runs; never
+    // the kb/ folder inside it, which is data), then where the process runs: an app installs the package,
+    // and an engine linked from elsewhere (a workspace, a link: dependency, a host's server started in
+    // another folder) does not see the app's node_modules from where it is.
     for (const dir of [...(from !== undefined ? [from] : []), process.cwd()]) {
       try {
         const resolved = createRequire(join(dir, 'package.json')).resolve(specifier);
@@ -107,7 +108,7 @@ export interface OnnxEmbedderOptions {
   cacheDir?: string;
   /** Only a model already in the cache; never fetch. Default false. */
   localOnly?: boolean;
-  /** The folder the package is found from before the engine's and the process's (the app's knowledge base folder). */
+  /** The folder the package is found from after the engine's and before the process's: the app's own folder (never its kb/, which is data). */
   from?: string;
 }
 

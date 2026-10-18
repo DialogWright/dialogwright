@@ -121,10 +121,10 @@ describe('its retriever', () => {
     const index = kb().sectionsIndex!;
     if (!('data' in index)) throw new Error('no index');
     let created = 0;
-    const lazy = new LazyOnnxEmbedder(MODEL, 8, '/apps/example/kb', async (o: OnnxEmbedderOptions) => {
+    const lazy = new LazyOnnxEmbedder(MODEL, 8, '/apps/example', async (o: OnnxEmbedderOptions) => {
       created += 1;
-      // The package is found from the knowledge base's own folder first (an app installs it there).
-      expect(o).toMatchObject({ model: MODEL.onnx, revision: MODEL.revision, pooling: 'cls', dtype: 'fp32', from: '/apps/example/kb' });
+      // The package is found from the app's own folder (an app installs it there), never from inside kb/.
+      expect(o).toMatchObject({ model: MODEL.onnx, revision: MODEL.revision, pooling: 'cls', dtype: 'fp32', from: '/apps/example' });
       return model as unknown as OnnxEmbedder;
     });
     expect(lazy).toMatchObject({ id: model.id, sha256: model.sha256, dim: 8 });

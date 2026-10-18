@@ -188,7 +188,7 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
     const own = kb.settings.documents?.embedder;
     if (own !== undefined && summarizing(kb)) {
       const onnx = await import('./onnx');
-      await write(onnx.onnxIndexIdOf(own), () => (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype, ...(kb.folder !== undefined ? { from: kb.folder } : {}) })))(own), sectionsIndexTexts(kb));
+      await write(onnx.onnxIndexIdOf(own), () => (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype, ...(kb.folder !== undefined ? { from: dirname(kb.folder) } : {}) })))(own), sectionsIndexTexts(kb));
     }
   }
   return failed ? 1 : 0;
@@ -229,7 +229,7 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
     const onnx = await import('./onnx');
     modelId = own.onnx;
     try {
-      const embedder = await (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype, ...(kb.folder !== undefined ? { from: kb.folder } : {}) })))(own);
+      const embedder = await (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype, ...(kb.folder !== undefined ? { from: dirname(kb.folder) } : {}) })))(own);
       const built = await buildIndex(kb, embedder, null, sectionsIndexTexts(kb));
       const floor = kb.settings.documents?.floor ?? onnx.ONNX_DEFAULT_FLOOR;
       runs.push({ name: `hybrid (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });

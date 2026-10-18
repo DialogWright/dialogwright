@@ -558,7 +558,8 @@ export function statusLines(place: KbPlace): { lines: string[]; ok: boolean } {
         lines.push(`    -> read it whole, then ${approveDocumentCommandFor(d.id)}`);
       } else if (d.freshness === 'edited') {
         lines.push(`  ${d.id}  changed since ${d.approval!.approvedBy} approved it on ${d.approval!.on}: withheld  (${sections})`);
-        lines.push(`    -> read what changed (git diff ${base}/sources/${d.id}.yaml), then ${approveDocumentCommandFor(d.id)}`);
+        // The glossary's words are part of what was approved (./glossary.ts): a change there shows in neither the source's diff alone.
+        lines.push(`    -> read what changed (git diff ${base}/sources/${d.id}.yaml${kb.glossary !== undefined ? ` ${base}/glossary.yaml` : ''}), then ${approveDocumentCommandFor(d.id)}`);
       } else {
         lines.push(`  ${d.id}  not approved for summarizing${on ? ': never answered from' : ''}  (${sections})`);
         lines.push(`    -> read it whole, then ${approveDocumentCommandFor(d.id)} --owner "<team>"`);

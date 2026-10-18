@@ -80,7 +80,7 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
 export interface ReadKbInput {
   /** The kb folder's path from the app folder, as problems name it ("kb"). */
   base: string;
-  /** The kb folder's own path, where a package an app installs for it is found from (the ONNX embedder's). */
+  /** The kb folder's own path: its parent, the app's folder, is where a package the app installs is found from (the ONNX embedder's). */
   folder?: string;
   /** The app's default locale: kb/passages' and kb/topics.yaml's. */
   defaultLocale: string;

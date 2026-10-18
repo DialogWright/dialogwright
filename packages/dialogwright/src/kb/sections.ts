@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { DEFAULT_SECTIONS_CAP } from './schema';
 import { LazyOnnxEmbedder, ONNX_DEFAULT_FLOOR } from './onnx';
 import { fuse, HybridRetriever } from './hybrid';
@@ -45,7 +46,8 @@ export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | u
     // The sections' own model (documents.embedder): its index, and the model loaded when the app starts.
     const index = kb.sectionsIndex;
     if (index && 'data' in index) {
-      const embedder = new LazyOnnxEmbedder(settings.embedder, index.data.embedder.dim, kb.folder);
+      // The package is found from the app's folder (kb/'s parent, whose code the server already runs), never from inside kb/, which is data.
+      const embedder = new LazyOnnxEmbedder(settings.embedder, index.data.embedder.dim, kb.folder !== undefined ? dirname(kb.folder) : undefined);
       dense = { embedder, vectors: index.data, floor: settings.floor ?? ONNX_DEFAULT_FLOOR };
       indexHash = index.hash;
     }
