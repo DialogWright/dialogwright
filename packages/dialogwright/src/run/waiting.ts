@@ -93,7 +93,7 @@ function showWaiting(session: Session, event: SessionEvent, provisional: TurnRes
   const due = (): void => {
     if (stopped) return;
     if (lineId !== null) {
-      const line = promptSay(app, lineId, {}, false, channel.render ?? null, session.locale);
+      const line = promptSay(app, lineId, {}, false, channel.render ?? null, session.locale, undefined, { shown: !session.caps.speech });
       const said = say([line]);
       hold = { promptId: lineId, atMs: Math.round(performance.now() - t0), said };
       if (said && sound !== null && channel.playMs !== undefined) timer = setTimeout(playSound, Math.max(1, channel.playMs([line])));

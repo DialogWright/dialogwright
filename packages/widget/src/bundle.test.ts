@@ -44,6 +44,7 @@ describe('the widget bundle', () => {
     expect(host!.shadowRoot!.querySelector('h2')!.textContent).toBe('Help');
     expect(typeof window.DialogWright?.mount).toBe('function');
     expect(typeof window.DialogWright?.createChatClient).toBe('function');
+    expect(typeof window.DialogWright?.renderRich).toBe('function');
     host!.remove();
   });
 

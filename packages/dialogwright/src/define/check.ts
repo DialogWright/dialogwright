@@ -1,4 +1,5 @@
 import { ROTATING_LINES, rotatesLine } from '../core/wordings';
+import { chatProblems, chatVariables } from '../prompts/rich';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1327,6 +1328,7 @@ function checkPrompts(config: LoadedConfig, locate: LoadResult['locate'], code: 
     problems.push(...checkFactsOfferLines(config, locale, prompts, file, locate, code));
     problems.push(...checkConsentLine(config, locale, prompts, file, locate));
     problems.push(...checkVariants(locale === config.defaultLocale ? null : locale, prompts, file, locate, { ...(config.slots ?? {}), ...(code?.slots ?? {}) }));
+    problems.push(...checkChatVersions(locale === config.defaultLocale ? null : locale, prompts, file, locate));
     if (locale !== config.defaultLocale) problems.push(...checkTranslation(config, locale, prompts, file, locate, needed));
   }
   return problems;
@@ -1364,6 +1366,41 @@ function checkVariants(locale: string | null, prompts: LoadedConfig['prompts'][s
         fix: `name exactly ${named} in the variant`,
       });
     });
+  }
+  return problems;
+}
+
+/**
+ * A line's words on a chat (prompts.yaml's `chat`), in each locale: only the subset of Markdown a chat
+ * shows (prompts/rich.ts chatProblems), naming only variables its text names (it is given what the text
+ * is), and only on a line that is said word for word in one wording: never one that is generated
+ * (`mode: generative`, `generate`), whose fixed text is what a model's wording is held to, nor one said
+ * in turn (`variants`). A form's `wording: generative` is App.generated's, refused by validateApp.
+ */
+function checkChatVersions(locale: string | null, prompts: LoadedConfig['prompts'][string], file: string, locate: LoadResult['locate']): Problem[] {
+  const problems: Problem[] = [];
+  for (const [id, p] of Object.entries(prompts)) {
+    if (p.chat === undefined) continue;
+    const line = locale === null ? `the line "${id}"` : `the ${locale} line "${id}"`;
+    const path = ['prompts', id, 'chat'];
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    const add = (message: string, fix: string): void => {
+      problems.push({ file, ...at, path: formatPath(path), message, fix });
+    };
+    if (p.mode === 'generative' || p.generate !== undefined) {
+      add(`${line} has a chat version and is generated (${p.mode === 'generative' ? 'mode: generative' : 'generate'}): a generated line is worded from its text on every channel`, `delete chat, or ${p.mode === 'generative' ? 'mode: generative' : 'generate'}`);
+      continue;
+    }
+    if (p.variants !== undefined) {
+      add(`${line} has a chat version and variants, other wordings said in turn: a chat version is for a line said in one wording`, 'delete chat, or variants');
+      continue;
+    }
+    for (const problem of chatProblems(p.chat)) add(`${line}'s chat version has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
+    const text = new Set(variablesOf(p.text));
+    const extra = chatVariables(p.chat).filter((v) => !text.has(v));
+    if (extra.length > 0) {
+      add(`${line}'s chat version names ${extra.map((v) => `{${v}}`).join(', ')}, which its text does not: a line is given only what its text says`, text.size === 0 ? 'name no variable in the chat version' : `use only ${[...text].map((v) => `{${v}}`).join(', ')} in the chat version`);
+    }
   }
   return problems;
 }

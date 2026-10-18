@@ -3,6 +3,14 @@
  * its wire (src/channel/relay for Twilio ConversationRelay); a text channel reads the words.
  */
 
+/**
+ * A run of a formatted line's words (Say.rich, a chat `say`'s `rich`): plain text, bold, italic or
+ * both; or a line break. Never markup: a client puts `text` in a text node.
+ */
+export type ChatInline = { text: string; bold?: true; italic?: true } | { break: true };
+/** A block of a formatted line: a paragraph of runs, or a list whose items are runs (numbered where `ordered`). */
+export type ChatBlock = { type: 'paragraph'; content: ChatInline[] } | { type: 'list'; ordered: boolean; items: ChatInline[][] };
+
 /** Part of a line: words for the channel's own voice or display, or a recorded clip's URL. */
 export type SayPart = { text: string } | { audio: string };
 
@@ -10,9 +18,11 @@ export type SayPart = { text: string } | { audio: string };
  * One line, in order of its parts. `interruptible`: the user may speak over it. `lang`: the
  * language its words are in (a BCP 47 tag), set by the renderer for an app that declares locales;
  * a channel that speaks passes it to its voice. Absent on a line with no language of its own (every
- * line of an app without locales), which a speech channel says in its default language.
+ * line of an app without locales), which a speech channel says in its default language. `rich`: the
+ * line formatted (prompts.yaml's `chat`), only on a channel that shows words (a chat) for a line the
+ * app gives a chat version; its parts then hold the same words as plain text.
  */
-export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string }
+export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string; rich?: ChatBlock[] }
 /** The session is over and its business done. */
 export interface End { type: 'end'; completed: string[] }
 /**

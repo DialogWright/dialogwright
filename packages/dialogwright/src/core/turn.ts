@@ -1381,11 +1381,11 @@ function offerSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, {
   const locale = s.locale ?? defaultLocaleOf(io.app);
   if (pc.from === 'facts') {
     const shown = recordedValue(recordingOf(io.app, pc.slot), pc.display) ?? '•';
-    io.out.offer = { slot: pc.slot, source: 'facts', promptId, said: promptText(io.app, promptId, { [pc.slot]: shown }, s.locale), answer, locale, ...(keyed ? { keyed: true as const } : {}) };
+    io.out.offer = { slot: pc.slot, source: 'facts', promptId, said: promptText(io.app, promptId, { [pc.slot]: shown }, s.locale, { shown: !s.caps.speech }), answer, locale, ...(keyed ? { keyed: true as const } : {}) };
     return;
   }
   const last4 = lastFour(pc.value);
-  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale), answer, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
+  io.out.offer = { slot: pc.slot, source: 'caller-number', promptId, said: promptText(io.app, promptId, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale, { shown: !s.caps.speech }), answer, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
 }
 
 /**
@@ -1406,7 +1406,7 @@ function recordedCallerNumber(app: App, pc: Extract<PendingConfirmation, { targe
  */
 function consentSettled(s: Session, io: TurnIO, pc: Extract<PendingConfirmation, { target: 'slot' }>, granted: boolean | null, keyed = false): void {
   const last4 = lastFour(pc.value);
-  const said = promptText(io.app, CONSENT_PROMPT, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale);
+  const said = promptText(io.app, CONSENT_PROMPT, { last4, callerNumber: recordedCallerNumber(io.app, pc) }, s.locale, { shown: !s.caps.speech });
   const locale = s.locale ?? defaultLocaleOf(io.app);
   s.textConsent = { answer: granted === true ? 'granted' : granted === false ? 'declined' : 'unknown', said, locale };
   io.out.consent = { scope: 'call', granted, promptId: CONSENT_PROMPT, said, last4, locale, ...(keyed ? { keyed: true as const } : {}) };
@@ -2563,7 +2563,7 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
   s.history.push({ node: s.lastPromptId ?? 'start', intent: verdictLabel, outcome: decision.kind });
   if (decision.kind === 'prompt') {
     s.lastPromptId = decision.promptId;
-    s.lastPromptText = spokenText(appOf(s), decision, s.locale);
+    s.lastPromptText = spokenText(appOf(s), decision, s.locale, { shown: !s.caps.speech });
     s.lastPromptOptions = [...decision.options];
     s.promptedFor = decision.target;
     s.menuActive = decision.menu === true;
@@ -2573,7 +2573,7 @@ function bookkeep(s: Session, decision: Decision, verdictLabel: string): void {
     if (decision.help) s.slots[decision.help.slot]!.helped.push(decision.help.promptId);
   } else if (decision.kind === 'complete' || decision.kind === 'handoff') {
     s.lastPromptId = decision.promptId;
-    s.lastPromptText = spokenText(appOf(s), decision, s.locale);
+    s.lastPromptText = spokenText(appOf(s), decision, s.locale, { shown: !s.caps.speech });
     // A code keyed partway is not kept past the call: the buffer goes with any decision that leaves the prompt.
     s.dtmfBuffer = '';
     s.ended = true;
@@ -3080,7 +3080,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
   const act = (decision: Decision): Action[] => {
     if (decision.kind === 'handoff') withTurnTransfer(s, decision, clockOf(tc));
-    return [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale)];
+    return [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale, { shown: !s.caps.speech })];
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });

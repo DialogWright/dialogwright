@@ -1638,7 +1638,7 @@ export interface App {
   /** The prompt manifest and voice tags, plus the spoken vocabulary that gets a clip of its own. */
   prompts: {
     /** Every line, in the app's default locale (App.locales.default; en-US for an app without locales). */
-    manifest: Record<string, { text: string; interruptible: boolean; exactText?: string; variants?: readonly string[] }>;
+    manifest: Record<string, PromptManifestEntry>;
     /** Per-clip voice tags for the clip generator (clip id to tag, e.g. "[calm]"); the tag syntax is the TTS provider's. */
     tags: Record<string, string>;
     /**
@@ -1890,6 +1890,12 @@ export interface ConfigHashes {
 export interface PromptManifestEntry {
   text: string;
   interruptible: boolean;
+  /**
+   * The line's words on a channel that shows them (a chat), formatted (prompts.yaml's `chat`: a small
+   * subset of Markdown, prompts/rich.ts), with the variables of `text` or fewer. A call says `text`.
+   * Absent: `text` everywhere.
+   */
+  chat?: string;
   /**
    * A framed line's frame for its exact content (prompts.yaml's `exactText`): said when every span is
    * its content word for word; `text` is said with a generated span. Absent: `text` either way.

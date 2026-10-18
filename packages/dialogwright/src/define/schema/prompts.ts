@@ -88,6 +88,12 @@ const prompt = z
   .strictObject({
     text: text().describe('The words said. Variables go in braces ({first}); the engine fills them. Said exactly as written unless the line is generated, and then the fallback and the meaning a generated wording is held to.'),
     interruptible: z.boolean({ error: 'must be true or false' }).describe('Whether the caller may talk over the line (barge-in). false for lines that must be heard whole, such as a keypad instruction or a legal statement.'),
+    chat: text()
+      .optional()
+      .describe(
+        'The line\'s words on a chat, formatted; a call says `text`. A small subset of Markdown: paragraphs (a blank line between them; a single newline is a line break), lists (`- ` for bullets, `1. ` for numbers), **bold** and *italic*, and a backslash before a character to show it as it is; no headings, links, code, tables, quotes, HTML or nested lists. ' +
+          'It names only variables `text` names, each filled as plain text (a value never becomes formatting), and the chat also gets its words as plain text. Not on a generated line, or one with `variants`. Absent: `text` on a chat too. A locale\'s prompts.yaml gives its own; without one, that locale\'s `text` is shown.',
+      ),
     variants: z
       .array(text(), { error: 'must be a list of the line\'s other wordings' })
       .min(1, { error: 'must give at least one wording' })

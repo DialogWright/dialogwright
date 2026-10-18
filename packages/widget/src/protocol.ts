@@ -69,9 +69,15 @@ export type ClientMessage =
  */
 export type ChatErrorCode = 'bad_message' | 'too_long' | 'not_allowed' | 'sign_in_failed' | 'session_unknown' | 'busy' | 'server_error';
 
+/** A run of a formatted line's words (a `say`'s `rich`): plain text, bold, italic or both; or a line break. Never markup. */
+export type ChatInline = { text: string; bold?: true; italic?: true } | { break: true };
+/** A block of a formatted line: a paragraph of runs, or a list whose items are runs (numbered where `ordered`). */
+export type ChatBlock = { type: 'paragraph'; content: ChatInline[] } | { type: 'list'; ordered: boolean; items: ChatInline[][] };
+
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }
-  | { type: 'say'; text: string; lang: string }
+  /** A line. `rich`: the same words formatted, for a line the app gives a chat version; absent otherwise, and `text` always carries the words. */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[] }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * transfer.send.chat), for the page's own handover; absent unless the app writes it. `slots` (with

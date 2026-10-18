@@ -1061,8 +1061,8 @@ function put<T extends object, K extends keyof T>(target: T, key: K, value: T[K]
   if (value !== undefined) target[key] = value;
 }
 
-function manifestOf(prompts: Readonly<Record<string, { text: string; interruptible: boolean; exactText?: string; variants?: readonly string[] }>>): Record<string, PromptManifestEntry> {
-  return Object.fromEntries(Object.entries(prompts).map(([id, p]) => [id, { text: p.text, interruptible: p.interruptible, ...(p.exactText !== undefined ? { exactText: p.exactText } : {}), ...(p.variants !== undefined ? { variants: [...p.variants] } : {}) }]));
+function manifestOf(prompts: Readonly<Record<string, { text: string; interruptible: boolean; exactText?: string; variants?: readonly string[]; chat?: string }>>): Record<string, PromptManifestEntry> {
+  return Object.fromEntries(Object.entries(prompts).map(([id, p]) => [id, { text: p.text, interruptible: p.interruptible, ...(p.exactText !== undefined ? { exactText: p.exactText } : {}), ...(p.variants !== undefined ? { variants: [...p.variants] } : {}), ...(p.chat !== undefined ? { chat: p.chat } : {}) }]));
 }
 
 /** What goes with a transfer, as app.yaml writes it, each part only when written. */

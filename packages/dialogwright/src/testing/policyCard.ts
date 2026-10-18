@@ -688,6 +688,29 @@ function wordingSection(app: App): string[] {
   return out;
 }
 
+/**
+ * The lines worded otherwise on a chat (prompts.yaml's `chat`): each with what a call says and what a chat
+ * shows, a prescribed one said so, since its chat words are the app's too. Nothing for an app with none.
+ */
+function chatVersionsSection(app: App): string[] {
+  const ids = Object.keys(app.prompts.manifest).filter((id) => app.prompts.manifest[id]!.chat !== undefined);
+  if (ids.length === 0) return [];
+  const prescribed = new Set(app.generated?.prescribed ?? []);
+  const out = [
+    '## Lines shown otherwise on a chat',
+    '',
+    'These lines have a chat version (prompts.yaml\'s `chat`): a call says the line\'s text, and a chat shows the chat version, formatted (paragraphs, lists, bold and italic), each value in it plain text. Both are fixed, said word for word.',
+    '',
+    '| Line | Said on a call | Shown on a chat |',
+    '| --- | --- | --- |',
+  ];
+  for (const id of ids) {
+    const entry = app.prompts.manifest[id]!;
+    out.push(`| ${code(id)}${prescribed.has(id) ? ' (prescribed)' : ''} | ${cell(entry.text)} | ${cell(entry.chat!.trim().replace(/\r?\n/g, '<br>'))} |`);
+  }
+  return out;
+}
+
 /** A section and the blank line after it; nothing for a section that is not there. */
 const withGap = (lines: string[]): string[] => (lines.length === 0 ? [] : [...lines, '']);
 
@@ -706,6 +729,7 @@ export function policyCardText(app: App, dir: string): string {
     ...withGap(redactionSection(app, source)),
     ...withGap(recordingSection(app, source)),
     ...withGap(wordingSection(app)),
+    ...withGap(chatVersionsSection(app)),
     ...actionsSection(app, source),
     '',
     '### Actions by level, with their rules and what each role gets',

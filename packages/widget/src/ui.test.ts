@@ -78,6 +78,29 @@ describe('the widget', () => {
     expect(root.querySelector('[role="log"] b')).toBeNull();
   });
 
+  it('draws a formatted line (rich) as paragraphs, lists, bold and italic, each word as text, and a line with none as its text', () => {
+    const { f, root } = mount({ startOpen: true });
+    f.emit({
+      type: 'say',
+      text: 'Each clean:\n- Light: a wash',
+      lang: 'en-US',
+      rich: [
+        { type: 'paragraph', content: [{ text: 'Each ' }, { text: '<b>clean</b>', bold: true }, { break: true }, { text: 'today', italic: true }] },
+        { type: 'list', ordered: false, items: [[{ text: 'Light', bold: true }, { text: ': a wash' }]] },
+      ],
+    });
+    const line = root.querySelector('[role="log"] .line.rich')!;
+    expect(line.querySelector('p strong')!.textContent).toBe('<b>clean</b>');
+    expect(line.querySelector('p strong b')).toBeNull();
+    expect(line.querySelector('p br')).not.toBeNull();
+    expect(line.querySelector('p em')!.textContent).toBe('today');
+    expect([...line.querySelectorAll('ul li')].map((li) => li.textContent)).toEqual(['Light: a wash']);
+    expect(line.getAttribute('lang')).toBe('en-US');
+    // A shape the widget does not know is left out; nothing left to draw shows the line's text.
+    f.emit({ type: 'say', text: 'Plain words.', lang: 'en-US', rich: [{ type: 'table' }] as never });
+    expect(lines(root, 'agent').at(-1)).toBe('Plain words.');
+  });
+
   it('does not send on Shift+Enter, an empty box, or while composing', () => {
     const { f, $ } = mount({ startOpen: true });
     const input = $<HTMLTextAreaElement>('textarea')!;

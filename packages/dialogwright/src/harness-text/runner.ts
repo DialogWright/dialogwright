@@ -178,7 +178,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     }
     session.promptedFor = 'intent';
     session.lastPromptId = 'anything_else';
-    session.lastPromptText = promptText(app, 'anything_else', {}, session.locale);
+    session.lastPromptText = promptText(app, 'anything_else', {}, session.locale, { shown: !session.caps.speech });
     session.lastPromptOptions = [];
     return session;
   }
@@ -212,7 +212,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     // beyond the slots (a record found, an option offered) is in the text the caller answers.
     const read = renderSummary(session, prompt(promptId, 'confirm', summaryVars(session), [], ['yes', 'no']), tc, newTurnOut());
     session.lastPromptId = read.promptId;
-    session.lastPromptText = promptText(app, read.promptId, read.vars, session.locale);
+    session.lastPromptText = promptText(app, read.promptId, read.vars, session.locale, { shown: !session.caps.speech });
     // The summary has been spoken, so its values are what a yes arms (the gate's confirmed rule): renderSummary took
     // their hash as it read them.
     session.lastPromptOptions = ['yes', 'no'];
@@ -224,7 +224,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     session.pendingConfirmation = { target: 'transfer', attempts: 0 };
     session.promptedFor = 'confirm';
     session.lastPromptId = 'offer_transfer';
-    session.lastPromptText = promptText(app, 'offer_transfer', {}, session.locale);
+    session.lastPromptText = promptText(app, 'offer_transfer', {}, session.locale, { shown: !session.caps.speech });
     session.lastPromptOptions = ['yes', 'no'];
     session.frustratedTurns = 2;
     return session;
@@ -241,14 +241,14 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
     session.callerOffered = [slot];
     session.promptedFor = slot;
     session.lastPromptId = `offer_${slot}`;
-    session.lastPromptText = promptText(app, `offer_${slot}`, facts ? { [slot]: placeholder.display } : { last4: lastFour(placeholder.value) }, session.locale);
+    session.lastPromptText = promptText(app, `offer_${slot}`, facts ? { [slot]: placeholder.display } : { last4: lastFour(placeholder.value) }, session.locale, { shown: !session.caps.speech });
     session.lastPromptOptions = ['yes', 'no'];
     return session;
   }
   const slot = identity ? entry.prompted! : stopAt ?? null;
   session.promptedFor = slot;
   session.lastPromptId = slot ? `ask_${slot}` : null;
-  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}, session.locale) : '';
+  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}, session.locale, { shown: !session.caps.speech }) : '';
   return session;
 }
 

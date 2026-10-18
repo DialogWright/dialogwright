@@ -70,7 +70,9 @@ Colours a site leaves unset follow the visitor's light or dark scheme.
 
 **Accessibility.** The conversation is an `aria-live="polite"` log; each agent line carries `lang` from the chat's language, so a screen reader pronounces it right; every control is labelled (with the site's words); Enter sends and Shift+Enter starts a new line (both left to an input method while it composes); Escape closes the panel and returns focus to the launcher; the panel takes focus when the person opens it, never on the page's load; a chat that ends under the person's typing moves focus to close; the tab order is launcher, message box, send, sign-in, close; motion is used only when the visitor has not asked for less.
 
-**Safety.** The panel is built with `createElement`, and every line goes in as text: a line from the server can never become markup.
+**Formatted lines.** A line the app gives a chat version (prompts.yaml's `chat`) comes with `rich`, its paragraphs and lists of bold and italic runs, which the panel draws; every other line is its `text`. A page with its own interface draws it with `renderRich(blocks)` (or `DialogWright.renderRich`), which returns a `DocumentFragment` of `p`, `ul`, `ol`, `li`, `strong`, `em` and `br` elements, every word a text node, leaving out a block or run it does not know, or null when nothing is left (show `text` then).
+
+**Safety.** The panel is built with `createElement`, and every line goes in as text: a line from the server can never become markup, a formatted one included (its runs are text nodes inside the elements `renderRich` makes).
 
 ## The client
 
@@ -98,7 +100,7 @@ What it reports through `onEvent`:
 | `{ type: 'connection', state }` | `connecting`, `open` (the chat takes text), `reconnecting`, `closed` (ended, closed by the page, or not taken back), `unavailable` (no chat could be had, or `maxReconnects` ran out, and the client has stopped trying) |
 | `{ type: 'ready', session, locale }` | A chat started or resumed; `locale` is the language the server chose from the one asked for |
 | `{ type: 'restarted' }` | The chat a resume named had ended; a new one starts, its `ready` next |
-| `{ type: 'say', text, lang }` | A line from the agent, in language `lang` |
+| `{ type: 'say', text, lang, rich? }` | A line from the agent, in language `lang`; `rich`, the same words formatted, for a line the app gives a chat version (draw it with `renderRich`) |
 | `{ type: 'signed_in', level }` | The server took the sign-in |
 | `{ type: 'transfer', reason }` | The chat is handed to a person; `end` follows |
 | `{ type: 'end' }` | The chat is over |

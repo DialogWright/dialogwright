@@ -6,6 +6,7 @@ import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
 import { KB_ACCOUNT_VAR, KB_ANSWER_SOURCE, KB_SECTIONS_SOURCE } from '../render/config';
+import { chatLine } from './rich';
 
 export interface PromptEntry {
   text: string;
@@ -14,6 +15,17 @@ export interface PromptEntry {
   exactText?: string;
   /** The line's other wordings, said in turn (prompts.yaml's `variants`; each under its wordingId). */
   variants?: readonly string[];
+  /** The line's words on a channel that shows them, formatted (prompts.yaml's `chat`, prompts/rich.ts). */
+  chat?: string;
+}
+
+/**
+ * How a channel takes a line: `shown`, a channel that shows words rather than speaks them (a chat:
+ * Session.caps.speech false), where a line with a chat version (prompts.yaml's `chat`) is that version,
+ * formatted. Unset: spoken, as every line always was.
+ */
+export interface LineChannel {
+  readonly shown?: boolean;
 }
 
 export interface RenderContext {
@@ -68,8 +80,20 @@ export function promptEntry(app: App, id: string, locale?: string): PromptEntry 
   return localePromptEntry(app, id, locale).entry;
 }
 
-export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string): string {
-  return renderTemplate(frameOf(app, id, promptEntry(app, id, locale)), framedVars(app, id, vars));
+export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string, channel: LineChannel = {}): string {
+  const entry = promptEntry(app, id, locale);
+  const chat = chatTemplateOf(app, id, entry, channel);
+  if (chat !== undefined) return chatLine(chat, vars).text;
+  return renderTemplate(frameOf(app, id, entry), framedVars(app, id, vars));
+}
+
+/**
+ * The chat version a line is shown in on `channel` (prompts.yaml's `chat`): on a channel that shows
+ * words, for a line that has one and is neither generated nor framed (`pnpm check` refuses `chat` on
+ * those); undefined everywhere else, so the line is its text.
+ */
+function chatTemplateOf(app: App, id: string, entry: PromptEntry, channel: LineChannel): string | undefined {
+  return channel.shown === true && entry.chat !== undefined && app.generated?.lines[id] === undefined ? entry.chat : undefined;
 }
 
 /**
@@ -132,8 +156,14 @@ export function lineLang(app: App, locale?: string): string | undefined {
  * One prompt as a line: clips where they exist, TTS text otherwise, adjacent text merged. A line in
  * a locale's own words is spoken whole by TTS: the clips are recordings of the default locale's.
  */
-export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>): Say {
+export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>, channel: LineChannel = {}): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
+  // On a chat, a line with a chat version is that version: its blocks, and the same words as plain text.
+  const chat = chatTemplateOf(app, promptId, entry, channel);
+  if (chat !== undefined) {
+    const shown = chatLine(chat, vars);
+    return { ...sayAction([{ text: shown.text }], interruptible, lineLang(app, locale)), rich: shown.blocks };
+  }
   // A framed line: each span its exact content, or its wording where the renderer gives one; said from
   // its exact frame (`exactText`, its own clips) where it has one and no span is worded.
   const template = frameOf(app, promptId, entry, spans);
@@ -201,10 +231,10 @@ export function saidLineOf(say: Say): SaidLine | undefined {
   return SAID_LINES.get(say);
 }
 
-/** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry). */
-export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string): Action[] {
+/** What a decision asks the channel to do, in order, its lines in `locale` (promptEntry), each as `channel` takes it. */
+export function decisionToActions(app: App, decision: Decision, ctx?: RenderContext | null, locale?: string, channel: LineChannel = {}): Action[] {
   const sayAs = (role: LineRole, exact = false) => (id: string, vars: Record<string, string>, interruptible: boolean): Say => {
-    const line = promptSay(app, id, vars, interruptible, ctx, locale);
+    const line = promptSay(app, id, vars, interruptible, ctx, locale, undefined, channel);
     SAID_LINES.set(line, { promptId: id, vars, role, ...(exact ? { exact: true as const } : {}) });
     return line;
   };
@@ -260,8 +290,8 @@ function closesWithGoodbye(decision: Extract<Decision, { kind: 'complete' }>): b
  * the text a later turn reasons about is defined here instead. In `locale` (promptEntry): a
  * session's lines are in its own (core/locale.ts localeOf).
  */
-export function spokenText(app: App, decision: Decision, locale?: string): string {
-  const text = (id: string, vars: Record<string, string>): string => promptText(app, id, vars, locale);
+export function spokenText(app: App, decision: Decision, locale?: string, channel: LineChannel = {}): string {
+  const text = (id: string, vars: Record<string, string>): string => promptText(app, id, vars, locale, channel);
   switch (decision.kind) {
     case 'ignore':
     case 'hold':

@@ -1,4 +1,5 @@
 import { ROTATING_LINES, rotatesLine } from '../wordings';
+import { chatProblems, chatVariables } from '../../prompts/rich';
 import { isRuleId } from '../../gate/policy';
 import { isBuiltInRuleId, NAMED_RULE_IDS, sourceOf } from '../../gate/compiled';
 import { isDefinedRule, ruleDefinitionProblems } from '../../gate/defineRule';
@@ -123,6 +124,21 @@ export function validateApp(app: App): void {
       if (app.generated?.lines[id] !== undefined) fail(`${where} has variants and is generated: other wordings are fixed text, so the line is said word for word`);
       const vars = (t: string): string => [...new Set([...t.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort().join(',');
       for (const v of entry.variants) if (vars(v) !== vars(entry.text ?? '')) fail(`${where} has the variant "${v}", whose variables are not its text's`);
+    }
+  }
+  // A line's words on a chat (prompts.yaml's chat): the subset a chat shows, naming only variables its text names, and
+  // only on a line said word for word in one wording (not generated, not said in turn). Every locale's too.
+  for (const [locale, lines] of [['', app.prompts?.manifest ?? {}], ...Object.entries(app.locales?.prompts ?? {})] as [string, Readonly<Record<string, { text?: string; variants?: readonly string[]; chat?: string }>>][]) {
+    for (const [id, entry] of Object.entries(lines)) {
+      if (entry.chat === undefined) continue;
+      const where = `the line "${id}"${locale === '' ? '' : ` (locale ${locale})`}`;
+      if (app.generated?.lines[id] !== undefined) fail(`${where} has a chat version and is generated: a generated line is worded from its text on every channel; delete chat`);
+      if (entry.variants !== undefined) fail(`${where} has a chat version and variants: a chat version is for a line said in one wording; delete one`);
+      const problems = chatProblems(entry.chat);
+      if (problems.length > 0) fail(`${where}'s chat version has ${problems[0]}`);
+      const text = new Set([...(entry.text ?? '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]!));
+      const extra = chatVariables(entry.chat).filter((v) => !text.has(v));
+      if (extra.length > 0) fail(`${where}'s chat version names ${extra.map((v) => `{${v}}`).join(', ')}, which its text does not`);
     }
   }
   // A framed line's text may not hold the gap a span's sentence marks its place with (render/types.ts SPAN_GAP).

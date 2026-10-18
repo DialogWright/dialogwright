@@ -258,7 +258,7 @@ function placesSaid(app: App, turns: readonly TurnRun[]): { accepted: string[]; 
     const locale = t.result.session.locale;
     const accounted = new Set<string>();
     for (const line of linesOf(t.result.decision)) {
-      const text = promptText(app, line.promptId, line.vars, locale);
+      const text = promptText(app, line.promptId, line.vars, locale, { shown: !t.result.session.caps.speech });
       if (!text.toLowerCase().includes(plain)) continue;
       accounted.add(text);
       const holding = Object.entries(line.vars).filter(([, v]) => v.toLowerCase().includes(plain)).map(([k]) => k);

@@ -893,6 +893,23 @@ and the line in `prompts.yaml`. After it the caller hears `ask_intent`, so a scr
 
 A key on the keypad menu may name it: the key plays the line, then offers the menu again. A key for a control intent other than `agent` does nothing, so `pnpm check` refuses one. When the menu listens is under "Keypad entry".
 
+## A line formatted on a chat: `chat`
+
+**When:** the app has a chat, and a line lists things (services, steps, what to bring) that read as a wall of text in one sentence. Give the line a chat version beside its text; a call still says `text`.
+
+```yaml
+# prompts.yaml
+  services_info:
+    text: A light clean is a hand wash and dry. A deep clean adds shampooed seats and carpets.
+    chat: |
+      Here's what each clean includes:
+      - **Light clean**: a hand wash and dry.
+      - **Deep clean**: everything in a light clean, plus shampooed seats and carpets.
+    interruptible: true
+```
+
+Paragraphs, `- ` and `1. ` lists, `**bold**` and `*italic*` only; the same variables as `text` or fewer, each shown as plain text. A scripted call on the chat (`"as": "web"`) expects the chat version's words as plain text, a list's items each on a line ("- Light clean: a hand wash and dry."). **Pitfall:** not on a generated line or one with `variants`; `pnpm check` refuses both, and anything outside the subset (a heading, a link).
+
 ## Something that must never wait
 
 **When:** the app has something that must never wait or be missed, an emergency or a safety report: mark its intent `priority: { correctsForm: true }` (the skill's default for such an intent). Without `priority`, a caller who says "actually, I can smell gas right now" at a form's question is read as answering that question, and the form asks the rest of its questions first; one who says "hold on, the smell is getting stronger" half aside is ignored as side speech.

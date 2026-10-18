@@ -1,4 +1,4 @@
-import { CHAT_PROTOCOL_VERSION, contextOf, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
+import { CHAT_PROTOCOL_VERSION, contextOf, type ChatBlock, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
 
 /**
  * The widget without a page: the chat client. It opens the socket, starts the chat (or resumes it
@@ -40,7 +40,8 @@ export type ChatClientEvent =
   | { type: 'ready'; session: string; locale: string }
   /** The chat a resume named had ended: a new one follows, its `ready` next. */
   | { type: 'restarted' }
-  | { type: 'say'; text: string; lang: string }
+  /** A line; `rich`: the same words formatted (paragraphs, lists, bold, italic), where the app gives the line a chat version (renderRich draws it). */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[] }
   /**
    * `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some;
    * `slots`: the collected slots, only where the app's handoff.data.chat says send; `unconfirmed`: those
@@ -269,7 +270,7 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
         case 'pong':
           break;
         case 'say':
-          emit({ type: 'say', text: m.text, lang: m.lang });
+          emit({ type: 'say', text: m.text, lang: m.lang, ...(m.rich !== undefined ? { rich: m.rich } : {}) });
           break;
         case 'transfer': {
           // Only string values are handed on: the page's handover reads them as text.

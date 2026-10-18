@@ -75,6 +75,11 @@ h2 { margin: 0; padding: 14px 48px 14px 16px; font-size: 1.05em; border-bottom: 
 .line { margin: 0; max-width: 85%; padding: 8px 12px; border-radius: var(--_radius); white-space: pre-wrap; overflow-wrap: anywhere; }
 .row { display: flex; flex-direction: column; }
 .row.user { align-items: flex-end; }
+.line.rich { white-space: normal; }
+.line.rich p { margin: 0; }
+.line.rich p + p, .line.rich ul, .line.rich ol { margin: 0.4em 0 0; }
+.line.rich ul, .line.rich ol { padding-left: 1.25em; }
+.line.rich li + li { margin-top: 0.2em; }
 .row.user .line { background: var(--_user-bg); }
 .row.agent .line { background: var(--_agent-bg); }
 .row.notice .line { max-width: 100%; align-self: center; background: transparent; color: var(--_muted); font-size: 0.9em; text-align: center; padding: 2px 8px; }

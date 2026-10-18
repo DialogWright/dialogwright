@@ -1,4 +1,5 @@
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions, type ConnectionState } from './client';
+import { renderRich } from './rich';
 import { CHAT_TEXT_MAX, contextOf, isLocaleTag } from './protocol';
 import { stringsOf, type StringKey, type WidgetStrings } from './strings';
 import { STYLES } from './styles';
@@ -200,10 +201,13 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   let chatLang = locale;
   let over = false;
 
-  const line = (from: 'user' | 'agent' | 'notice', text: string, lang?: string): void => {
+  const line = (from: 'user' | 'agent' | 'notice', text: string, lang?: string, rich?: unknown): void => {
     const row = el('div', { class: `row ${from}` });
     if (from !== 'notice') row.append(el('span', { class: 'sr' }, from === 'user' ? s.you : s.agent));
-    const p = el('p', { class: 'line', 'data-from': from }, text);
+    // A formatted line (its paragraphs and lists) in a block of its own; any other line is its text.
+    const formatted = from === 'agent' && rich !== undefined ? renderRich(rich) : null;
+    const p = formatted === null ? el('p', { class: 'line', 'data-from': from }, text) : el('div', { class: 'line rich', 'data-from': from });
+    if (formatted !== null) p.append(formatted);
     if (lang) p.setAttribute('lang', lang);
     row.append(p);
     log.append(row);
@@ -228,7 +232,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
         chatLang = e.locale;
         break;
       case 'say':
-        line('agent', e.text, e.lang);
+        line('agent', e.text, e.lang, e.rich);
         break;
       case 'restarted':
         notice('restarted');
