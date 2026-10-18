@@ -1,4 +1,6 @@
 import type { SlotPrompt } from '../../core/slots/types';
+import { wordingFor } from '../parts/locale';
+import { capitalized } from '../parts/replies';
 import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
@@ -75,6 +77,13 @@ export const choiceType: SlotType<ChoiceOptions, ChoiceWording> = defineSlotType
           }
         : {}),
       display,
+      // Its buttons on a chat: each option's own button, or how it is said with a capital, in a locale
+      // that says the options its own way that locale's words.
+      replies: (ctx) => keys.map((key) => {
+        const own = wordingFor(wording, ctx.locale)?.options;
+        const button = own !== undefined && Object.hasOwn(own, key) ? undefined : o.options[key]!.button;
+        return button ?? capitalized(display(key, ctx.locale));
+      }),
     };
   },
   get examples() {

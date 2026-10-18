@@ -582,3 +582,11 @@ describe('a choice slot in Spanish: its wording by locale', () => {
     ]);
   });
 });
+
+describe('a choice slot\'s answer buttons (SlotSpec.replies, app.yaml\'s chat.replies)', () => {
+  it('are its options in order: each its button, or how it is said with a capital', () => {
+    expect(speed.replies!(ctx())).toEqual(['Standard delivery', 'Express delivery', 'Next-day delivery']);
+    const labelled = defineSlot('speed', { type: 'choice', options: { standard: { say: 'standard delivery', button: 'Standard' }, express: 'express delivery' } });
+    expect(labelled.replies!(ctx())).toEqual(['Standard', 'Express delivery']);
+  });
+});

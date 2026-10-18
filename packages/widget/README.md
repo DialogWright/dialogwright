@@ -48,7 +48,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
 
 An option it cannot read (an unknown position, a word it does not have, `data-strings` or `data-context` that is not a JSON object, a `data-start-open` other than `true` or `false`, a locale that is not a language tag, a container on a widget that is not inline) is warned about in the console and the default is used; a missing or unusable `endpoint`, or an `inline` widget without a container on the page, is an error.
 
-**Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `endChat`, `newChat`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`. The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
+**Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `endChat`, `newChat`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`, `replies` (the label of a question's answer buttons). The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
 
 **Look.** The widget renders into a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it and it cannot break the site. Theme it with custom properties on that element:
 
@@ -71,6 +71,8 @@ Colours a site leaves unset follow the visitor's light or dark scheme.
 **Accessibility.** The conversation is an `aria-live="polite"` log; each agent line carries `lang` from the chat's language, so a screen reader pronounces it right; every control is labelled (with the site's words); Enter sends and Shift+Enter starts a new line (both left to an input method while it composes); Escape closes the panel and returns focus to the launcher; the panel takes focus when the person opens it, never on the page's load; a chat that ends under the person's typing moves focus to close; the tab order is launcher, message box, send, sign-in, close; motion is used only when the visitor has not asked for less.
 
 **Formatted lines.** A line the app gives a chat version (prompts.yaml's `chat`) comes with `rich`, its paragraphs and lists of bold and italic runs, which the panel draws; every other line is its `text`. A page with its own interface draws it with `renderRich(blocks)` (or `DialogWright.renderRich`), which returns a `DocumentFragment` of `p`, `ul`, `ol`, `li`, `strong`, `em` and `br` elements, every word a text node, leaving out a block or run it does not know, or null when nothing is left (show `text` then).
+
+**Answer buttons.** Where the app turns them on (app.yaml's `chat: { replies: on }`), a question with a known set of answers (yes or no, a choice, one of the caller's records) comes with `replies`, which the panel shows as buttons under the latest question; a tap shows the words as the person's line and sends them, as if typed.
 
 **Safety.** The panel is built with `createElement`, and every line goes in as text: a line from the server can never become markup, a formatted one included (its runs are text nodes inside the elements `renderRich` makes).
 
@@ -100,7 +102,7 @@ What it reports through `onEvent`:
 | `{ type: 'connection', state }` | `connecting`, `open` (the chat takes text), `reconnecting`, `closed` (ended, closed by the page, or not taken back), `unavailable` (no chat could be had, or `maxReconnects` ran out, and the client has stopped trying) |
 | `{ type: 'ready', session, locale }` | A chat started or resumed; `locale` is the language the server chose from the one asked for |
 | `{ type: 'restarted' }` | The chat a resume named had ended; a new one starts, its `ready` next |
-| `{ type: 'say', text, lang, rich? }` | A line from the agent, in language `lang`; `rich`, the same words formatted, for a line the app gives a chat version (draw it with `renderRich`) |
+| `{ type: 'say', text, lang, rich?, replies? }` | A line from the agent, in language `lang`; `rich`, the same words formatted, for a line the app gives a chat version (draw it with `renderRich`); `replies`, answers to offer as buttons under it (app.yaml's `chat.replies`), each the words to `send()` on a tap |
 | `{ type: 'signed_in', level }` | The server took the sign-in |
 | `{ type: 'transfer', reason }` | The chat is handed to a person; `end` follows |
 | `{ type: 'end' }` | The chat is over |

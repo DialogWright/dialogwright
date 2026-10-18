@@ -1,4 +1,5 @@
 import { nextWording } from './wordings';
+import { withReplies } from './replies';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
 import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
@@ -3080,7 +3081,9 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
   const act = (decision: Decision): Action[] => {
     if (decision.kind === 'handoff') withTurnTransfer(s, decision, clockOf(tc));
-    return [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale, { shown: !s.caps.speech })];
+    const actions = [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale, { shown: !s.caps.speech })];
+    // On a chat, a question with a known set of answers gets them as buttons under its line (app.yaml's chat.replies).
+    return withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });

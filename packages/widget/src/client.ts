@@ -40,8 +40,11 @@ export type ChatClientEvent =
   | { type: 'ready'; session: string; locale: string }
   /** The chat a resume named had ended: a new one follows, its `ready` next. */
   | { type: 'restarted' }
-  /** A line; `rich`: the same words formatted (paragraphs, lists, bold, italic), where the app gives the line a chat version (renderRich draws it). */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[] }
+  /**
+   * A line; `rich`: the same words formatted (paragraphs, lists, bold, italic), where the app gives the line a
+   * chat version (renderRich draws it); `replies`: answers to offer as buttons, each the words to send() on a tap.
+   */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
   /**
    * `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some;
    * `slots`: the collected slots, only where the app's handoff.data.chat says send; `unconfirmed`: those
@@ -270,7 +273,7 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
         case 'pong':
           break;
         case 'say':
-          emit({ type: 'say', text: m.text, lang: m.lang, ...(m.rich !== undefined ? { rich: m.rich } : {}) });
+          emit({ type: 'say', text: m.text, lang: m.lang, ...(m.rich !== undefined ? { rich: m.rich } : {}), ...(Array.isArray(m.replies) ? { replies: m.replies.filter((r): r is string => typeof r === 'string') } : {}) });
           break;
         case 'transfer': {
           // Only string values are handed on: the page's handover reads them as text.

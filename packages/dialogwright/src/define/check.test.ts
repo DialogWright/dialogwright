@@ -181,15 +181,17 @@ describe('checkApp: the prompts every locale needs', () => {
     expect((await lines(es)).filter((l) => l.includes('variants'))).toEqual([expect.stringContaining('the es line "ack_intent"\'s variant "Con gusto." names no variable')]);
   });
 
-  it('a line\'s chat version (chat) is the formatting subset, names only its text\'s variables, and is never on a generated line or one said in turn', async () => {
+  it('a line\'s chat version (chat) is the formatting subset, and is never on a generated line or one said in turn; one naming a variable its text does not is a warning', async () => {
     const withChat = (chat: string) => (t: string): string => t.replace('    text: Is there anything else I can help with?\n', `    text: Is there anything else I can help with?\n    chat: ${JSON.stringify(chat)}\n`);
     expect(await lines(folder({ 'prompts.yaml': withChat('Anything **else** I can help with?\n- a loan\n- a hold') }))).toEqual([]);
     const bad = (await lines(folder({ 'prompts.yaml': withChat('# More?\nSee [the site](https://example.com) for {first}') }))).filter((l) => l.includes('.chat'));
     expect(bad).toEqual([
       'prompts.yaml:63:11  prompts.anything_else.chat  the line "anything_else"\'s chat version has a heading (#): use **bold** words instead  ->  write it with paragraphs, lists (- or 1.), **bold** and *italic* only',
       'prompts.yaml:63:11  prompts.anything_else.chat  the line "anything_else"\'s chat version has a link ([words](address)): a chat line takes no links  ->  write it with paragraphs, lists (- or 1.), **bold** and *italic* only',
-      'prompts.yaml:63:11  prompts.anything_else.chat  the line "anything_else"\'s chat version names {first}, which its text does not: a line is given only what its text says  ->  name no variable in the chat version',
     ]);
+    const { checkAppFully } = await import('./check');
+    const warned = (await checkAppFully(folder({ 'prompts.yaml': withChat('Anything else, **{first}**?') }), { code: libraryCode })).warnings ?? [];
+    expect(warned.map((w) => w.message)).toContain('the line "anything_else"\'s chat version names {first}, which its text does not: the code that says the line must give it, or the chat shows the line\'s text');
     const turned = (t: string): string => t.replace('    text: Sure, I can help you {intentLabel}.\n', '    text: Sure, I can help you {intentLabel}.\n    variants:\n      - Happy to help you {intentLabel}.\n    chat: Sure, I can help you **{intentLabel}**.\n');
     expect((await lines(folder({ 'prompts.yaml': turned, 'app.yaml': (t) => `${t}ackIntent:\n  repeat: skip\n` }))).filter((l) => l.includes('.chat'))).toEqual([
       expect.stringContaining('the line "ack_intent" has a chat version and variants, other wordings said in turn: a chat version is for a line said in one wording  ->  delete chat, or variants'),

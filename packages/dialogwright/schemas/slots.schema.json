@@ -295,7 +295,7 @@
             "description": "The slot type."
           },
           "options": {
-            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
+            "description": "The options the caller can choose, in order, as `key: Say` or `key: { say, means, button }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.",
             "type": "object",
             "propertyNames": {
               "type": "string"
@@ -318,6 +318,12 @@
                     },
                     "means": {
                       "description": "What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot's `means` template.",
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    },
+                    "button": {
+                      "description": "The option's button on a chat that offers answers as buttons (app.yaml's `chat.replies`), the words a tap sends (\"Light clean\"). Default: `say`, its first letter a capital. A locale that says the option its own way shows its own `say`.",
                       "type": "string",
                       "minLength": 1,
                       "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

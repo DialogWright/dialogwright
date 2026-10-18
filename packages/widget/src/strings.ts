@@ -41,6 +41,8 @@ export const DEFAULT_STRINGS = {
   /** Shown on a transfer when the site has no onTransfer of its own. */
   transferred: 'We are passing you to a person.',
   error: 'Something went wrong. Please try again.',
+  /** The label of a question's answer buttons (the app's chat.replies), for screen readers. */
+  replies: 'Answers',
 };
 
 export type WidgetStrings = typeof DEFAULT_STRINGS;

@@ -939,6 +939,21 @@
         "summary"
       ]
     },
+    "chat": {
+      "description": "What a web chat shows beside the lines (a call is unchanged). Default: nothing more.",
+      "type": "object",
+      "properties": {
+        "replies": {
+          "description": "Answer buttons on a chat: \"on\" shows, under a question with a known set of answers, each answer as a button whose tap sends its words as the person's message, read as typed words are (a yes-or-no question: Yes and No, or prompts.yaml's reply_yes and reply_no; a choice slot's question: its options, each its `button` or its `say`; a record slot's: its records, as its `display` says them). Never for an identity factor, and only for two to eight answers. \"off\", the default: no buttons.",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "waiting": {
       "description": "What a turn says and plays while it waits on a tool whose run returns a promise (a request to another system): a hold line, a thinking sound after it, a welcome at the call's start behind which its lookups run, and how long a call may take. Default: the turn waits silently, up to 10 s a call.",
       "type": "object",

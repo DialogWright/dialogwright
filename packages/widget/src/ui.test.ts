@@ -101,6 +101,28 @@ describe('the widget', () => {
     expect(lines(root, 'agent').at(-1)).toBe('Plain words.');
   });
 
+  it('shows a question\'s answers as buttons: a tap sends its words as the person\'s, and only the latest question\'s are shown', () => {
+    const { f, root } = mount({ startOpen: true });
+    f.emit({ type: 'say', text: 'Sure.', lang: 'en-US' });
+    f.emit({ type: 'say', text: 'Which service would you like?', lang: 'en-US', replies: ['Light clean', 'Standard clean', 'Deep clean'] });
+    const buttons = () => [...root.querySelectorAll<HTMLButtonElement>('[role="log"] .replies button')];
+    expect(buttons().map((b) => b.textContent)).toEqual(['Light clean', 'Standard clean', 'Deep clean']);
+    expect(root.querySelector('[role="log"] .replies')!.getAttribute('aria-label')).toBe('Answers');
+    buttons()[2]!.click();
+    expect(f.sent).toEqual(['Deep clean']);
+    expect(lines(root, 'user')).toEqual(['Deep clean']);
+    expect(buttons()).toEqual([]);
+    // A later line without answers leaves none; one answer is no choice.
+    f.emit({ type: 'say', text: 'Shall I book it?', lang: 'en-US', replies: ['Yes', 'No'] });
+    expect(buttons().map((b) => b.textContent)).toEqual(['Yes', 'No']);
+    f.emit({ type: 'say', text: 'Done.', lang: 'en-US', replies: ['Only'] });
+    expect(buttons()).toEqual([]);
+    // The chat's end takes them away.
+    f.emit({ type: 'say', text: 'Anything else?', lang: 'en-US', replies: ['Yes', 'No'] });
+    f.emit({ type: 'end' });
+    expect(buttons()).toEqual([]);
+  });
+
   it('does not send on Shift+Enter, an empty box, or while composing', () => {
     const { f, $ } = mount({ startOpen: true });
     const input = $<HTMLTextAreaElement>('textarea')!;

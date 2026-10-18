@@ -1,4 +1,7 @@
 import type { SlotPrompt } from '../../core/slots/types';
+import { capitalized } from '../parts/replies';
+import { recordCandidates, recordsOf } from './questions';
+import { renderLabel } from './label';
 import { examplesFrom } from '../parts/examples';
 import { readBackOf, readBackPrompts } from '../parts/readBack';
 import { defineSlotType } from '../slotType';
@@ -55,6 +58,11 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
       display,
       // With `display`, a fill is said from the record it chose, which display(key) does not have.
       ...(o.display !== undefined ? { displayFrom: 'fill' as const } : {}),
+      // Its buttons on a chat: each record on the list, said as its display says it (else its key).
+      replies: (ctx) => recordCandidates(o, { ...ctx, text: '' }).map((c) => {
+        const record = recordsOf(o, ctx).find((r) => typeof r === 'object' && r !== null && String((r as Record<string, unknown>)[o.key]) === c.key);
+        return capitalized(o.display !== undefined && record !== undefined ? renderLabel(o.display, c.key, record as Record<string, unknown>) : c.key);
+      }),
     };
   },
   get examples() {

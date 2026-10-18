@@ -20,9 +20,11 @@ export type SayPart = { text: string } | { audio: string };
  * a channel that speaks passes it to its voice. Absent on a line with no language of its own (every
  * line of an app without locales), which a speech channel says in its default language. `rich`: the
  * line formatted (prompts.yaml's `chat`), only on a channel that shows words (a chat) for a line the
- * app gives a chat version; its parts then hold the same words as plain text.
+ * app gives a chat version; its parts then hold the same words as plain text. `replies`: the answers a
+ * chat shows as buttons under the line, each the words a tap sends (app.yaml's chat.replies,
+ * core/replies.ts), only on a chat's question with a known set of answers.
  */
-export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string; rich?: ChatBlock[] }
+export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string; rich?: ChatBlock[]; replies?: string[] }
 /** The session is over and its business done. */
 export interface End { type: 'end'; completed: string[] }
 /**

@@ -12,6 +12,8 @@ The basic options (`options`, `means`, `text`, `keypad` and `fillAt`) are enough
 
 <!-- slot-docs:options -->
 
+On a chat with answer buttons (app.yaml's `chat: { replies: on }`), the slot's question shows its options as buttons, in order: each option's `button` ("Light clean"), or its `say` with a capital where it has none; a tap sends those words, read as typed words are. Two to eight options show buttons; more show none.
+
 The question's own wording an app overrides lives under `text:`, as in every type: `text.<part>` is a literal, sent word for word, and the hedge and help questions have their own under `hedge.text` and `help.text`. The defaults are listed under Text parts, after the options table. The criteria of the options are not text parts. Each is data about one option: its own `means`, or the `means` template filled from it (`{say}` and `{key}`), the way a record slot's `label` is a template over each record. So `means` stays an option of its own and is never under `text:`.
 
 The order of `options` matters in two places. It is the keypad order, and it is the order of the labels the model is offered, which is also the order a stub model chooses from.

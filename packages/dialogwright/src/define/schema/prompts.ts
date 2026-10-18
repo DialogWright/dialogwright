@@ -92,7 +92,7 @@ const prompt = z
       .optional()
       .describe(
         'The line\'s words on a chat, formatted; a call says `text`. A small subset of Markdown: paragraphs (a blank line between them; a single newline is a line break), lists (`- ` for bullets, `1. ` for numbers), **bold** and *italic*, and a backslash before a character to show it as it is; no headings, links, code, tables, quotes, HTML or nested lists. ' +
-          'It names only variables `text` names, each filled as plain text (a value never becomes formatting), and the chat also gets its words as plain text. Not on a generated line, or one with `variants`. Absent: `text` on a chat too. A locale\'s prompts.yaml gives its own; without one, that locale\'s `text` is shown.',
+          'It is given what `text` is (and any variable the code gives the line: `pnpm check` warns of one the text does not name, and a chat version missing one shows `text`), each filled as plain text (a value never becomes formatting), and the chat also gets its words as plain text. Not on a generated line, or one with `variants`. Absent: `text` on a chat too. A locale\'s prompts.yaml gives its own; without one, that locale\'s `text` is shown.',
       ),
     variants: z
       .array(text(), { error: 'must be a list of the line\'s other wordings' })

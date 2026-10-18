@@ -422,3 +422,12 @@ describe('a record slot in Spanish (es, es-*)', () => {
     expect(offered('parcel four four one two', 'es')).toEqual([]);
   });
 });
+
+describe('a record slot\'s answer buttons (SlotSpec.replies, app.yaml\'s chat.replies)', () => {
+  it('are its records in order, each as its display says it (else its key), never a number the caller said', () => {
+    expect(booking.replies!(ctx('', { records: BOOKINGS }))).toEqual(['B12', 'C3']);
+    const shown = defineSlot('parcel', { type: 'record', key: 'number', keyPattern: '\\d{4}', label: 'Parcel {number}', display: '{item}, due {day|day}', spoken: { digits: 4 } });
+    expect(shown.replies!(ctx('it is four four one two', { records: PARCELS }))).toEqual(['A box of books, due Monday, September 14', 'A pair of boots, due Wednesday, September 16']);
+    expect(shown.replies!(ctx(''))).toEqual([]);
+  });
+});

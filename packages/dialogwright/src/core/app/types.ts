@@ -1465,6 +1465,11 @@ export interface App {
    */
   waiting?: WaitingConfig;
   /**
+   * What a web chat shows beside the lines (app.yaml's `chat`): `replies: 'on'`, answer buttons under a
+   * question with a known set of answers (core/replies.ts). Absent: none.
+   */
+  chat?: { readonly replies?: 'on' | 'off' };
+  /**
    * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
    * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is
    * open or set aside for an aside (Session.parked), or, with no form open, on a turn whose intent read
@@ -1892,7 +1897,7 @@ export interface PromptManifestEntry {
   interruptible: boolean;
   /**
    * The line's words on a channel that shows them (a chat), formatted (prompts.yaml's `chat`: a small
-   * subset of Markdown, prompts/rich.ts), with the variables of `text` or fewer. A call says `text`.
+   * subset of Markdown, prompts/rich.ts), given the line's variables (one it names and is not given shows `text`). A call says `text`.
    * Absent: `text` everywhere.
    */
   chat?: string;

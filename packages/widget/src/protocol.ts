@@ -76,8 +76,11 @@ export type ChatBlock = { type: 'paragraph'; content: ChatInline[] } | { type: '
 
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }
-  /** A line. `rich`: the same words formatted, for a line the app gives a chat version; absent otherwise, and `text` always carries the words. */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[] }
+  /**
+   * A line. `rich`: the same words formatted, for a line the app gives a chat version; absent otherwise, and
+   * `text` always carries the words. `replies`: answers to offer as buttons, each the words a tap sends as `text`.
+   */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * transfer.send.chat), for the page's own handover; absent unless the app writes it. `slots` (with

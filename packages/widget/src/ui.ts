@@ -216,7 +216,33 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   const notice = (k: StringKey): void => line('notice', s[k]);
 
   /** The chat is over: no more text, and a new chat on offer. Focus on a control going away goes to new chat, so it is not lost to the page. */
+  /** The answer buttons under the latest question (a say's replies), or none: only the latest question's are shown. */
+  let replyRow: HTMLElement | null = null;
+  const clearReplies = (): void => {
+    replyRow?.remove();
+    replyRow = null;
+  };
+  const offer = (answers: readonly string[] | undefined): void => {
+    clearReplies();
+    const words = (answers ?? []).filter((a) => a.trim() !== '').slice(0, 8);
+    if (words.length < 2 || over) return;
+    const row = el('div', { class: 'replies', role: 'group', 'aria-label': s.replies });
+    for (const w of words) {
+      const b = el('button', { type: 'button', class: 'reply' }, w);
+      // A tap is the person's words, sent as typed words are.
+      b.addEventListener('click', () => {
+        sendText(w);
+        input.focus();
+      });
+      row.append(b);
+    }
+    log.append(row);
+    replyRow = row;
+    log.scrollTop = log.scrollHeight;
+  };
+
   const disable = (): void => {
+    clearReplies();
     const had = root.activeElement === input || root.activeElement === send || root.activeElement === signIn || root.activeElement === endChat;
     input.disabled = true;
     send.disabled = true;
@@ -233,6 +259,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
         break;
       case 'say':
         line('agent', e.text, e.lang, e.rich);
+        offer(e.replies);
         break;
       case 'restarted':
         notice('restarted');
@@ -300,12 +327,18 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     });
   };
 
+  /** The person's words, sent: shown as their line, the buttons gone. */
+  const sendText = (text: string): void => {
+    if (text === '' || over || client === null) return;
+    clearReplies();
+    line('user', text, chatLang);
+    void client.send(text);
+  };
   const submit = (): void => {
     const text = input.value.trim();
     if (text === '' || over || client === null) return;
-    line('user', text, chatLang);
     input.value = '';
-    void client.send(text);
+    sendText(text);
   };
 
   /** Opens the panel; focus moves into it only when the person opened it, never on the page's load. */

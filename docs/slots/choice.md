@@ -16,9 +16,10 @@ A slot of this type is written under its id in slots.yaml, with `type: choice` a
 
 | Option | Type | Default | What it does |
 |---|---|---|---|
-| `options` | map of string or map | required | The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered. |
+| `options` | map of string or map | required | The options the caller can choose, in order, as `key: Say` or `key: { say, means, button }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered. |
 | `options.<key>.say` | string | required | The display: how a line, the summary and the model's turn state say the option ("an express delivery"). |
 | `options.<key>.means` | string | unset | What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot's `means` template. |
+| `options.<key>.button` | string | unset | The option's button on a chat that offers answers as buttons (app.yaml's `chat.replies`), the words a tap sends ("Light clean"). Default: `say`, its first letter a capital. A locale that says the option its own way shows its own `say`. |
 | `means` | string | `The caller names {say}` | The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`. |
 | `text` | map | unset | Text to say to the model in place of a default, word for word, by part: instructions, none. |
 | `keypad` | boolean | `false` | Whether the caller can key the option, by its position (1 for the first), after spoken answers missed. At most 9 options. Needs an `ask_<slot>_dtmf` line. |
@@ -68,6 +69,8 @@ A question's id is the slot's id followed by the part's name (the slot `note` an
 | `ids.choice` | The id of the question that asks which of the options the caller names. |
 | `ids.hedge` | The id of the question that asks whether the caller is unsure which option they mean. |
 | `ids.help` | The id of the question that asks what the caller says about the question without naming an option. |
+
+On a chat with answer buttons (app.yaml's `chat: { replies: on }`), the slot's question shows its options as buttons, in order: each option's `button` ("Light clean"), or its `say` with a capital where it has none; a tap sends those words, read as typed words are. Two to eight options show buttons; more show none.
 
 The question's own wording an app overrides lives under `text:`, as in every type: `text.<part>` is a literal, sent word for word, and the hedge and help questions have their own under `hedge.text` and `help.text`. The defaults are listed under Text parts, after the options table. The criteria of the options are not text parts. Each is data about one option: its own `means`, or the `means` template filled from it (`{say}` and `{key}`), the way a record slot's `label` is a template over each record. So `means` stays an option of its own and is never under `text:`.
 

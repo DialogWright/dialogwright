@@ -572,6 +572,17 @@ export const appSchema = z
         'At a form\'s summary, what a question gets when the intent read (at INTENT_ROUTE, 0.7, or more) is a form that answers from the knowledge base as an aside or an informational intent, and the model reads the turn as answering the summary. ' +
           '"aside": the question is answered (the knowledge answer or the informational line, through the gate as always), nothing is written, and the summary is asked again. "summary": the turn is the summary\'s, as the model read it (the question goes unanswered and the summary is asked again). Default "aside".',
       ),
+    chat: z
+      .strictObject({
+        replies: z
+          .enum(['on', 'off'])
+          .optional()
+          .describe(
+            'Answer buttons on a chat: "on" shows, under a question with a known set of answers, each answer as a button whose tap sends its words as the person\'s message, read as typed words are (a yes-or-no question: Yes and No, or prompts.yaml\'s reply_yes and reply_no; a choice slot\'s question: its options, each its `button` or its `say`; a record slot\'s: its records, as its `display` says them). Never for an identity factor, and only for two to eight answers. "off", the default: no buttons.',
+          ),
+      })
+      .optional()
+      .describe('What a web chat shows beside the lines (a call is unchanged). Default: nothing more.'),
     waiting: z
       .strictObject({
         line: identifier()

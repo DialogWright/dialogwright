@@ -56,6 +56,10 @@ the records `{ number: "7101", item: a box of books, day: "2026-09-14" }` and `{
 > - `parcel_4412`: Number 4412, as the caller said it
 > - `none`: Names none of these
 
+## Buttons on a chat
+
+On a chat with answer buttons (app.yaml's `chat: { replies: on }`), the slot's question shows its records as buttons, in order, each as `display` says it (else its key), its first letter a capital; a tap sends those words, read as typed words are. Two to eight records show buttons; more show none.
+
 ## Prompts
 
 `ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two records' displays. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale, with only those variables.

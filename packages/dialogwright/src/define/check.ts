@@ -354,6 +354,10 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     });
   }
+  chatVariableWarnings(config, (file, path, message, fix) => {
+    const at = locate(file, path) ?? { line: 1, column: 1 };
+    warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
+  });
   textConsentWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -1396,13 +1400,26 @@ function checkChatVersions(locale: string | null, prompts: LoadedConfig['prompts
       continue;
     }
     for (const problem of chatProblems(p.chat)) add(`${line}'s chat version has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
-    const text = new Set(variablesOf(p.text));
-    const extra = chatVariables(p.chat).filter((v) => !text.has(v));
-    if (extra.length > 0) {
-      add(`${line}'s chat version names ${extra.map((v) => `{${v}}`).join(', ')}, which its text does not: a line is given only what its text says`, text.size === 0 ? 'name no variable in the chat version' : `use only ${[...text].map((v) => `{${v}}`).join(', ')} in the chat version`);
-    }
   }
   return problems;
+}
+
+/**
+ * A chat version (prompts.yaml's `chat`) that names a variable its line's text does not: the app's code
+ * must give it (the hook that says the line, an onSummaryRead's `vars`), or the chat shows the line's
+ * text, plain. A warning: the check cannot see what the code gives.
+ */
+function chatVariableWarnings(config: LoadedConfig, report: (file: string, path: (string | number)[], message: string, fix: string) => void): void {
+  for (const [locale, prompts] of Object.entries(config.prompts)) {
+    const file = locale === config.defaultLocale ? 'prompts.yaml' : `locale/${locale}/prompts.yaml`;
+    for (const [id, p] of Object.entries(prompts)) {
+      if (p.chat === undefined) continue;
+      const text = new Set(variablesOf(p.text));
+      const extra = chatVariables(p.chat).filter((v) => !text.has(v));
+      if (extra.length === 0) continue;
+      report(file, ['prompts', id, 'chat'], `the line "${id}"'s chat version names ${extra.map((v) => `{${v}}`).join(', ')}, which its text does not: the code that says the line must give ${extra.length === 1 ? 'it' : 'them'}, or the chat shows the line's text`, `give ${extra.map((v) => `{${v}}`).join(', ')} from the code (an onSummaryRead's vars, the hook's line), or use only the text's variables`);
+    }
+  }
 }
 
 /**

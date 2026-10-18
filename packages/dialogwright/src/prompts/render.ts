@@ -6,7 +6,7 @@ import { vocabularyClipId } from './clips';
 import { speechLanguagesOf } from '../core/locale';
 import { handoffDataSlots, handoffDataUnconfirmed } from '../handoff/data';
 import { KB_ACCOUNT_VAR, KB_ANSWER_SOURCE, KB_SECTIONS_SOURCE } from '../render/config';
-import { chatLine } from './rich';
+import { chatLine, chatVariables } from './rich';
 
 export interface PromptEntry {
   text: string;
@@ -82,8 +82,8 @@ export function promptEntry(app: App, id: string, locale?: string): PromptEntry 
 
 export function promptText(app: App, id: string, vars: Record<string, string>, locale?: string, channel: LineChannel = {}): string {
   const entry = promptEntry(app, id, locale);
-  const chat = chatTemplateOf(app, id, entry, channel);
-  if (chat !== undefined) return chatLine(chat, vars).text;
+  const chat = shownLine(chatTemplateOf(app, id, entry, channel), vars);
+  if (chat !== null) return chat.text;
   return renderTemplate(frameOf(app, id, entry), framedVars(app, id, vars));
 }
 
@@ -94,6 +94,16 @@ export function promptText(app: App, id: string, vars: Record<string, string>, l
  */
 function chatTemplateOf(app: App, id: string, entry: PromptEntry, channel: LineChannel): string | undefined {
   return channel.shown === true && entry.chat !== undefined && app.generated?.lines[id] === undefined ? entry.chat : undefined;
+}
+
+/**
+ * A chat version with its variables, or null for none: also for one that names a variable it was not
+ * given (one its text does not name, which the code was to give: `pnpm check` warns of it), so the
+ * line is its text, plain, rather than a turn that fails.
+ */
+function shownLine(chat: string | undefined, vars: Record<string, string>): ReturnType<typeof chatLine> | null {
+  if (chat === undefined) return null;
+  return chatVariables(chat).every((v) => vars[v] !== undefined) ? chatLine(chat, vars) : null;
 }
 
 /**
@@ -159,11 +169,8 @@ export function lineLang(app: App, locale?: string): string | undefined {
 export function promptSay(app: App, promptId: string, vars: Record<string, string>, interruptible: boolean, ctx?: RenderContext | null, locale?: string, spans?: Readonly<Record<string, string>>, channel: LineChannel = {}): Say {
   const { entry, localized } = localePromptEntry(app, promptId, locale);
   // On a chat, a line with a chat version is that version: its blocks, and the same words as plain text.
-  const chat = chatTemplateOf(app, promptId, entry, channel);
-  if (chat !== undefined) {
-    const shown = chatLine(chat, vars);
-    return { ...sayAction([{ text: shown.text }], interruptible, lineLang(app, locale)), rich: shown.blocks };
-  }
+  const shown = shownLine(chatTemplateOf(app, promptId, entry, channel), vars);
+  if (shown !== null) return { ...sayAction([{ text: shown.text }], interruptible, lineLang(app, locale)), rich: shown.blocks };
   // A framed line: each span its exact content, or its wording where the renderer gives one; said from
   // its exact frame (`exactText`, its own clips) where it has one and no span is worded.
   const template = frameOf(app, promptId, entry, spans);

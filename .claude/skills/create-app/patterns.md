@@ -908,7 +908,9 @@ A key on the keypad menu may name it: the key plays the line, then offers the me
     interruptible: true
 ```
 
-Paragraphs, `- ` and `1. ` lists, `**bold**` and `*italic*` only; the same variables as `text` or fewer, each shown as plain text. A scripted call on the chat (`"as": "web"`) expects the chat version's words as plain text, a list's items each on a line ("- Light clean: a hand wash and dry."). **Pitfall:** not on a generated line or one with `variants`; `pnpm check` refuses both, and anything outside the subset (a heading, a link).
+Paragraphs, `- ` and `1. ` lists, `**bold**` and `*italic*` only; the variables of `text`, or others the code gives the line (an `onSummaryRead`'s `vars`, for a read-back that lists its fields: `pnpm check` warns of each), each shown as plain text. A scripted call on the chat (`"as": "web"`) expects the chat version's words as plain text, a list's items each on a line ("- Light clean: a hand wash and dry."). **Pitfall:** not on a generated line or one with `variants`; `pnpm check` refuses both, and anything outside the subset (a heading, a link).
+
+Answer buttons on the chat are app.yaml's `chat: { replies: on }`: Yes and No under a yes-or-no question, a choice slot's options (give each a short `button`, "Light clean", where its `say` reads as part of a sentence, "with text updates"), a record slot's records. A tap sends the button's words, so a corpus line with those words at that question is what a scripted call needs.
 
 ## Something that must never wait
 

@@ -237,6 +237,13 @@ export interface SlotSpec {
    * factor listens as identity says, and may not set it.
    */
   listen?: SlotListen;
+  /**
+   * The answers a chat may offer as buttons at this slot's question (app.yaml's `chat.replies`), in
+   * order, each the words a tap sends as the person's message, read as typed words are: a choice's
+   * options, a record slot's records. Absent, or a list the engine does not show (fewer than two,
+   * more than CHAT_REPLIES_MAX): no buttons.
+   */
+  replies?(ctx: SlotContext): readonly string[];
   /** Questions this slot adds to the turn schema. */
   questions(ctx: SlotContext): QuestionMap;
   /**

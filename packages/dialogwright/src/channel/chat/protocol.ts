@@ -13,7 +13,7 @@ import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX, CHAT_CONTEXT_MAX_BYTES, CONTEX
  * `context` is the page's own data (strings by key, at most CHAT_CONTEXT_KEYS of them, each at most
  * CHAT_CONTEXT_VALUE_MAX characters, CHAT_CONTEXT_BYTES in all), of which the app keeps only the keys its callData names
  * (`chat.<key>`); optional, so a client that sends none is unchanged and the version stays 1.
- * Server to client: `ready` (session, resume, locale), `say` (text, lang, rich?), `transfer` (reason), `end`,
+ * Server to client: `ready` (session, resume, locale), `say` (text, lang, rich?, replies?), `transfer` (reason), `end`,
  * `signed_in` (level), `error` (code, message), `pong`.
  *
  * The server sends what the core keeps for a person taking over (a transfer's collected slots) only
@@ -69,7 +69,12 @@ export type ServerMessage =
    * a chat version (prompts.yaml's `chat`); absent on every other line, so a client that reads only
    * `text`, which always carries the words, is unchanged (the wire stays version 1).
    */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[] }
+  /**
+   * `replies`: answers to offer as buttons under the line, each the words a tap sends as the person's
+   * `text` (app.yaml's chat.replies); absent unless the app turns them on and the line asks a question
+   * with a known set of answers.
+   */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * `transfer.send.chat`), for the page's own handover; `slots` (with `unconfirmed`, the values the
@@ -131,7 +136,7 @@ export function actionsToChatMessages(actions: readonly Action[], defaultLang: s
     switch (a.type) {
       case 'say': {
         const text = a.parts.flatMap((p) => ('text' in p ? [p.text] : [])).join(' ').trim();
-        return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang, ...(a.rich !== undefined ? { rich: structuredClone(a.rich) } : {}) }];
+        return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang, ...(a.rich !== undefined ? { rich: structuredClone(a.rich) } : {}), ...(a.replies !== undefined ? { replies: [...a.replies] } : {}) }];
       }
       case 'transfer': {
         // The collected slots only where the app's handoff data says a chat's transfer sends them (`chat: send`).

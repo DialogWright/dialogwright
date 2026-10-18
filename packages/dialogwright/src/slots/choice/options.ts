@@ -93,6 +93,9 @@ const optionEntry = z.union([
     means: questionText()
       .optional()
       .describe('What the model is told this option is: the text of its criterion, sent exactly as written. Default: the slot\'s `means` template.'),
+    button: questionText()
+      .optional()
+      .describe('The option\'s button on a chat that offers answers as buttons (app.yaml\'s `chat.replies`), the words a tap sends ("Light clean"). Default: `say`, its first letter a capital. A locale that says the option its own way shows its own `say`.'),
   }),
 ]);
 
@@ -100,6 +103,8 @@ const optionEntry = z.union([
 export interface ChoiceOption {
   say: string;
   means?: string;
+  /** Its button on a chat (app.yaml's chat.replies): the words a tap sends. */
+  button?: string;
 }
 
 const helpLabel = z.strictObject({
@@ -114,9 +119,9 @@ export const choiceOptions = z
     options: z
       .record(z.string(), optionEntry)
       .transform((entries): Record<string, ChoiceOption> =>
-        Object.fromEntries(Object.entries(entries).map(([key, entry]) => [key, typeof entry === 'string' ? { say: entry } : { say: entry.say, ...(entry.means !== undefined ? { means: entry.means } : {}) }])),
+        Object.fromEntries(Object.entries(entries).map(([key, entry]) => [key, typeof entry === 'string' ? { say: entry } : { say: entry.say, ...(entry.means !== undefined ? { means: entry.means } : {}), ...(entry.button !== undefined ? { button: entry.button } : {}) }])),
       )
-      .describe('The options the caller can choose, in order, as `key: Say` or `key: { say, means }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.'),
+      .describe('The options the caller can choose, in order, as `key: Say` or `key: { say, means, button }`, at most 200. The key is the value the slot takes and the label the model chooses; `say` is how it is said; the order is the order of the keypad (1, 2, 3, ...) and of the labels the model is offered.'),
     means: questionText()
       .default(DEFAULT_MEANS)
       .describe('The criterion the model is given for each option that has no `means` of its own, as a template over `{say}` and `{key}`.'),

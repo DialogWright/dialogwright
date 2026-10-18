@@ -1126,6 +1126,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'questionAtSummary', a.questionAtSummary);
+  put(app, 'chat', a.chat === undefined ? undefined : { ...(a.chat.replies !== undefined ? { replies: a.chat.replies } : {}) });
   put(app, 'waiting', a.waiting === undefined ? undefined : {
     ...(a.waiting.line !== undefined ? { line: a.waiting.line } : {}),
     ...(a.waiting.afterMs !== undefined ? { afterMs: typeof a.waiting.afterMs === 'number' ? a.waiting.afterMs : { ...a.waiting.afterMs } } : {}),

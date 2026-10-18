@@ -64,7 +64,7 @@ describe('a line with a chat version', () => {
     expect(actionsToChatMessages(actions, 'en-US')[0]).not.toHaveProperty('rich');
   });
 
-  it('is refused on a generated line, beside variants, with markup outside the subset, or naming a variable its text does not', () => {
+  it('is refused on a generated line, beside variants, or with markup outside the subset', () => {
     const app = withChatVersions();
     const m = app.prompts.manifest;
     const bad = (entry: object, generated?: boolean): App => ({
@@ -74,7 +74,22 @@ describe('a line with a chat version', () => {
     });
     expect(() => validateApp(bad({ chat: 'Sorry, **what** was that?' }, true))).toThrow(/has a chat version and is generated/);
     expect(() => validateApp(bad({ chat: 'See [our site](https://example.com).' }))).toThrow(/chat version has a link/);
-    expect(() => validateApp(bad({ chat: 'Sorry, {first}?' }))).toThrow(/chat version names \{first\}, which its text does not/);
+    expect(() => validateApp(bad({ chat: 'Sorry, {first}?' }))).not.toThrow();
     expect(() => validateApp(app)).not.toThrow();
+  });
+
+  it('shows a value the code gives it beside the text\'s, and the text, plain, when one it names is not given', () => {
+    const app = withChatVersions();
+    const m = app.prompts.manifest;
+    const named = { ...app, prompts: { ...app.prompts, manifest: { ...m, nomatch_open: { ...m.nomatch_open!, chat: 'Sorry, **{first}**, what was that?' } } } };
+    const ask = (vars: Record<string, string>) => decisionToActions(named, { kind: 'prompt', promptId: 'nomatch_open', vars, acks: [], target: 'intent', options: [] }, null, undefined, { shown: true })[0]!;
+    expect(ask({ first: 'Robin' })).toMatchObject({ parts: [{ text: 'Sorry, Robin, what was that?' }], rich: [{ type: 'paragraph' }] });
+    expect(ask({})).toEqual({ type: 'say', parts: [{ text: m.nomatch_open!.text }], interruptible: true });
+  });
+
+  it('puts a question\'s answer buttons on its say, and none on a line without them', () => {
+    const say = { type: 'say' as const, parts: [{ text: 'Shall I send it?' }], interruptible: true, replies: ['Yes', 'No'] };
+    expect(actionsToChatMessages([say], 'en-US')).toEqual([{ type: 'say', text: 'Shall I send it?', lang: 'en-US', replies: ['Yes', 'No'] }]);
+    expect(actionsToChatMessages([{ ...say, replies: undefined }], 'en-US')[0]).not.toHaveProperty('replies');
   });
 });

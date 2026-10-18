@@ -711,7 +711,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const meta = { situations: [...p.plan.act.situations], ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
       const was = actions[p.index] as Say;
-      actions[p.index] = sayAction([{ text: got.said }], was.interruptible, was.lang);
+      actions[p.index] = keepReplies(was, sayAction([{ text: got.said }], was.interruptible, was.lang));
       lines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       return;
     }
@@ -767,7 +767,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (Object.keys(worded).length > 0) {
       // Said as the fixed line is (its frame's recorded clips kept), each worded span in its place.
       const was = actions[f.index] as Say;
-      actions[f.index] = promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded);
+      actions[f.index] = keepReplies(was, promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded));
     }
   });
 
@@ -833,7 +833,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
       const was = actions[index] as Say;
-      actions[index] = promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said });
+      actions[index] = keepReplies(was, promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said }));
       answerLines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       kbSaid = 'worded';
       // The record of what was said: a wording of this approved passage, by its id, version and approval.
@@ -849,7 +849,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (got.lines !== undefined) {
       const text = openingFramed(app, result.session.locale, got.lines.text);
       const was = actions[index] as Say;
-      actions[index] = promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale);
+      actions[index] = keepReplies(was, promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale));
       lines = { chosen: got.lines.chosen, of: got.lines.of, said: text };
     }
     answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got), ...(lines !== undefined ? { lines } : {}) });
@@ -890,4 +890,9 @@ export function withRenderAudit(drafts: readonly AuditDraft[], render: readonly 
   const head = [...drafts.slice(0, cut)];
   if (group.length > 0) head.splice(started === -1 ? 0 : started + 1, 0, ...group);
   return [...head, ...rest, ...drafts.slice(cut)];
+}
+
+/** A line worded in place of `was` keeps the answer buttons the turn gave `was` (core/replies.ts): the question is the same. */
+function keepReplies(was: Say, line: Say): Say {
+  return was.replies === undefined ? line : { ...line, replies: [...was.replies] };
 }
