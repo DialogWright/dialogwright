@@ -361,6 +361,28 @@ describe('the chat endpoint', () => {
     expect(replayOf(config, session).filter((e) => e.type === 'ended').map((e) => (e as { reason: string }).reason)).toEqual(['abandoned']);
   });
 
+  it('ends a chat the person ends (end), as a caller\'s hangup: end, the socket closed, the audit closed, the console told', async () => {
+    const { url, config } = await start({ DASHBOARD: 'on' });
+    const ended: DashboardEvent[] = [];
+    running!.bus!.subscribe((e) => {
+      if (e.type === 'ended') ended.push(e);
+    });
+    const c = await ChatClient.connect(url);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    const n = c.received.length;
+    c.send({ type: 'end' });
+    expect((await c.closed).code).toBe(1000);
+    expect(c.received.slice(n)).toEqual([{ type: 'end' }]);
+    expect(running!.chat!.liveCount()).toBe(0);
+    const session = (c.received[0] as Extract<Msg, { type: 'ready' }>).session;
+    expect(auditEntries(config).filter((e) => e.callId === session).at(-1)).toMatchObject({ type: 'call_ended', channel: 'chat', detail: { reason: 'hangup', completed: [] } });
+    expect(ended).toEqual([expect.objectContaining({ type: 'ended', callSid: session, reason: 'hangup' })]);
+    // The frame log has the person's end, and the console's replay says they left.
+    expect(readFrameLog(join(config.traceDir, `${session}.frames.jsonl`)).some((f) => f.dir === 'in' && (f.msg as { type?: string }).type === 'end')).toBe(true);
+    expect(replayOf(config, session).filter((e) => e.type === 'ended').map((e) => (e as { reason: string }).reason)).toEqual(['hangup']);
+  });
+
   it('outlives a frame log it can no longer write: a drop and an idle end with the trace directory gone', async () => {
     let clock = 1_000_000;
     const { url, config, logs } = await start({ CHAT_IDLE_MS: '60000' }, { now: () => clock });

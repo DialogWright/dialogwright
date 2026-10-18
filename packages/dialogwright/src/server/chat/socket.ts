@@ -152,7 +152,10 @@ export interface ChatEndpoint {
   liveIds(): string[];
   /**
    * Sessions someone is in now: with a socket open, or a turn under way. A session whose socket has
-   * dropped waits for a resume until it is idle (CHAT_IDLE_MS), but no one is waiting on it.
+   * dropped waits for a resume until it is idle (CHAT_IDLE_MS), but no one is waiting on it. With a
+   * session store (SESSION_STORE=file or postgres), only those with a turn under way: a chat waiting on
+   * the person is saved, and resumes on the restarted server when the stop closes its socket, so a
+   * stop does not wait for it.
    */
   activeCount(): number;
   /** The server is stopping: a new chat is refused `busy` from now on, and a resume is still taken. */
@@ -182,6 +185,8 @@ function loggedIn(m: ClientMessage, text?: string, spec?: Readonly<Record<string
       return { type: 'text', text: text ?? m.text };
     case 'ping':
       return { type: 'ping' };
+    case 'end':
+      return { type: 'end' };
   }
 }
 
@@ -311,6 +316,25 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     resumeIds.delete(e.resume);
     record(e.frames, 'log', { ended: reason });
     e.socket?.close(1000, 'chat ended');
+  };
+
+  /**
+   * The person ended the chat (an `end` from the client): recorded as a voice caller's hangup is (the
+   * audit's call_ended, reason hangup, with the tasks completed; the console's ended), told `end`, and
+   * forgotten with its saved session.
+   */
+  const endedByCaller = (e: ChatEntry): void => {
+    log(`chat ${e.id}: ended by the person`);
+    try {
+      whenChained(deps.audit.append(e.id, 'chat', { type: 'call_ended', detail: { reason: 'hangup', completed: [...e.session.completed] } }), (entry) => e.auditEntries.push(entry),
+        (err: unknown) => log(`chat ${e.id}: the end's audit entry failed: ${describeError(err)}`));
+      deps.bus?.publish({ type: 'ended', callSid: e.id, at: now(), reason: 'hangup' });
+      sendTo(e, { type: 'end' });
+    } catch (err) {
+      log(`chat ${e.id}: the end failed: ${describeError(err)}`);
+    }
+    // Forgotten whatever failed above, as an idle chat is.
+    finish(e, 'caller');
   };
 
   /**
@@ -659,6 +683,12 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
       void enqueue(entry, (s) => turn(s, textEvent(m.text)));
       return;
     }
+    if (m.type === 'end') {
+      // After what is already queued, so a reply in hand is sent first; the chat then ends as a caller's hangup.
+      record(entry.frames, 'in', loggedIn(m));
+      void enqueue(entry, async (s) => endedByCaller(s));
+      return;
+    }
     // sign_in: in the session's queue, so it is taken in order with what was typed around it.
     record(entry.frames, 'in', loggedIn(m));
     const token = m.token;
@@ -765,7 +795,7 @@ export function chatEndpoint(deps: ChatDeps): ChatEndpoint {
     },
     activeCount() {
       let n = 0;
-      for (const e of sessions.values()) if (e.socket !== null || e.inFlight > 0 || e.waiting > 0) n += 1;
+      for (const e of sessions.values()) if ((state === null && e.socket !== null) || e.inFlight > 0 || e.waiting > 0) n += 1;
       return n;
     },
     drain() {

@@ -58,7 +58,9 @@ export type ClientMessage =
   | { type: 'start'; v: 1; locale?: string; token?: string; resume?: string; context?: Record<string, string> }
   | { type: 'text'; text: string }
   | { type: 'sign_in'; token: string }
-  | { type: 'ping' };
+  | { type: 'ping' }
+  /** The person ends the chat; the server answers `end`. */
+  | { type: 'end' };
 
 /**
  * Why the server refused a message. `busy`: the server holds as many chats as it may (on a start; it

@@ -49,6 +49,8 @@ const clientMessage = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('text'), text: z.string().min(1).max(CHAT_TEXT_MAX) }),
   z.strictObject({ type: z.literal('sign_in'), token: z.string().min(1).max(CHAT_TOKEN_MAX) }),
   z.strictObject({ type: z.literal('ping') }),
+  // The person ends the chat (the widget's End chat): the server ends it as a caller's hangup and answers `end`.
+  z.strictObject({ type: z.literal('end') }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessage>;
 

@@ -181,10 +181,15 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   const send = el('button', { type: 'submit', class: 'send' }, s.send);
   const signIn = el('button', { type: 'button', class: 'signin' }, s.signIn);
   signIn.hidden = options.getToken === undefined;
+  const endChat = el('button', { type: 'button', class: 'endchat' }, s.endChat);
+  const newChat = el('button', { type: 'button', class: 'newchat' }, s.newChat);
+  newChat.hidden = true;
+  const actions = el('div', { class: 'actions' });
+  actions.append(signIn, endChat, newChat);
   const close = inline ? null : el('button', { type: 'button', class: 'close', 'aria-label': s.close }, '×');
   form.append(label, input, send);
-  // Document order is the tab order: the box, send, sign-in, then close (drawn in the corner by CSS).
-  panel.append(title, log, status, form, signIn);
+  // Document order is the tab order: the box, send, sign-in, end chat (or new chat), then close (drawn in the corner by CSS).
+  panel.append(title, log, status, form, actions);
   if (close) panel.append(close);
   if (launcher) root.append(launcher);
   root.append(panel);
@@ -206,13 +211,15 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   };
   const notice = (k: StringKey): void => line('notice', s[k]);
 
-  /** The chat is over: no more text. Focus on a control being disabled goes to close, so it is not lost to the page. */
+  /** The chat is over: no more text, and a new chat on offer. Focus on a control going away goes to new chat, so it is not lost to the page. */
   const disable = (): void => {
-    const had = root.activeElement === input || root.activeElement === send || root.activeElement === signIn;
+    const had = root.activeElement === input || root.activeElement === send || root.activeElement === signIn || root.activeElement === endChat;
     input.disabled = true;
     send.disabled = true;
     signIn.disabled = true;
-    if (had) close?.focus();
+    endChat.hidden = true;
+    newChat.hidden = false;
+    if (had) newChat.focus();
   };
 
   const onEvent = (e: ChatClientEvent): void => {
@@ -312,7 +319,23 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     launcher?.focus();
   };
 
+  /** A new chat after one has ended: the controls back, and a new connection (the conversation so far stays on screen). */
+  const restart = (): void => {
+    client = null;
+    over = false;
+    input.disabled = false;
+    send.disabled = false;
+    signIn.disabled = false;
+    signIn.hidden = options.getToken === undefined;
+    endChat.hidden = false;
+    newChat.hidden = true;
+    connect();
+    input.focus();
+  };
+
   launcher?.addEventListener('click', () => (panel.hidden ? open() : hide()));
+  endChat.addEventListener('click', () => client?.end());
+  newChat.addEventListener('click', restart);
   close?.addEventListener('click', hide);
   signIn.addEventListener('click', () => void client?.signIn());
   form.addEventListener('submit', (ev) => {

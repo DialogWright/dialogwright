@@ -84,10 +84,11 @@ textarea {
   flex: 1; resize: none; min-height: 40px; max-height: 120px; padding: 9px 12px;
   border: 1px solid var(--_muted); border-radius: var(--_radius); background: var(--_bg);
 }
-.send, .signin {
+.send, .signin, .endchat, .newchat {
   border: 0; border-radius: var(--_radius); padding: 9px 14px; background: var(--_accent); color: var(--_on-accent); font-weight: 600;
 }
-.signin { margin: 0 12px 12px; background: transparent; color: var(--_fg); border: 1px solid var(--_accent); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 12px; }
+.signin, .endchat { background: transparent; color: var(--_fg); border: 1px solid var(--_accent); }
 button:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (prefers-reduced-motion: no-preference) {
   .panel { transition: opacity 160ms ease, transform 160ms ease; }

@@ -93,7 +93,8 @@ export interface RunningServer {
    * The first half of a stop: the server stops taking new work and waits for what is live. From now on
    * `/ready` answers 503, a new call is put through to the handoff number, and a new chat is refused
    * `busy`; a live call's turns and its reconnects, and a chat's resume, go on. It resolves once no call
-   * is live and no one is in a chat, or after `ms` (default DRAIN_MS; 0 at once), when it closes the
+   * is live and no one is in a chat (with a session store, no chat has a reply being worked out: one
+   * waiting on the person is saved and resumes on the restarted server), or after `ms` (default DRAIN_MS; 0 at once), when it closes the
    * calls still live with 1001 (going away), so the carrier calls back for them (a few seconds at most).
    * With the memory store it answers each of those callbacks with the handoff number. With a durable
    * store (SESSION_STORE=file) it hands each call over to the restarted server instead: with

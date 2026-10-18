@@ -1282,7 +1282,7 @@ function recordedChannel(record) {
 }
 
 /** How the engine's chat logs a session's end (its `ended` log line), as the console says it. */
-const CHAT_ENDED = { complete: 'completed', handoff: 'handoff', idle: 'abandoned' };
+const CHAT_ENDED = { complete: 'completed', handoff: 'handoff', idle: 'abandoned', caller: 'hangup' };
 
 /**
  * The events one line of the engine chat's frame log stands for: a `start` that resumes is a

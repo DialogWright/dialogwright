@@ -334,6 +334,21 @@ describe('the chat client', () => {
     expect(t.opened).toHaveLength(1);
   });
 
+  it('ends the chat when the person says so: the server ends it and says end, and the client stops without reconnecting', async () => {
+    server = await startTestServer();
+    const t = client({ backoffMs: [10] });
+    await t.c.ready;
+    await waitFor(() => t.of('say').length > 0);
+    t.c.end();
+    await waitFor(() => t.of('connection').at(-1)?.state === 'closed');
+    expect(t.of('end')).toHaveLength(1);
+    await pause(100);
+    expect(t.opened).toHaveLength(1);
+    // Once stopped, end does nothing more.
+    t.c.end();
+    expect(t.of('end')).toHaveLength(1);
+  });
+
   it('speaks the engine\'s protocol: its copy of the wire is the engine\'s', () => {
     expect(CHAT_PROTOCOL_VERSION).toBe(ENGINE_VERSION);
     expect(CHAT_TEXT_MAX).toBe(ENGINE_TEXT_MAX);

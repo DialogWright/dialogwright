@@ -20,6 +20,10 @@ export const DEFAULT_STRINGS = {
   you: 'You:',
   /** Shown before each of the agent's lines, for screen readers. */
   agent: 'Agent:',
+  /** The button that ends the chat, shown while one is open. */
+  endChat: 'End chat',
+  /** The button that starts a new chat once one has ended. */
+  newChat: 'New chat',
   /** The button that asks the site for a sign-in, shown when the site gives a token (getToken). */
   signIn: 'Sign in',
   signedIn: 'You are signed in.',

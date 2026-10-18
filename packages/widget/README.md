@@ -48,7 +48,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`.
 
 An option it cannot read (an unknown position, a word it does not have, `data-strings` or `data-context` that is not a JSON object, a `data-start-open` other than `true` or `false`, a locale that is not a language tag, a container on a widget that is not inline) is warned about in the console and the default is used; a missing or unusable `endpoint`, or an `inline` widget without a container on the page, is an error.
 
-**Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`. The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
+**Words.** Every word the widget shows is a key of `strings` (`src/strings.ts`): `open`, `close`, `title`, `log`, `message`, `placeholder`, `send`, `you`, `agent`, `endChat`, `newChat`, `signIn`, `signedIn`, `signInFailed`, `connecting`, `reconnecting`, `restarted`, `unavailable`, `wait`, `tooLong`, `ended`, `transferred`, `error`. The agent's lines are the app's own, in the chat's language; the server's error messages are never shown.
 
 **Look.** The widget renders into a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it and it cannot break the site. Theme it with custom properties on that element:
 
@@ -88,6 +88,7 @@ const chat = createChatClient({
 });
 await chat.ready;            // { session, locale }
 await chat.send('my power is out');
+chat.end();                  // the person ends the chat: the server says end, and the client stops
 ```
 
 What it reports through `onEvent`:
@@ -110,3 +111,4 @@ How it behaves:
 - **No chat, no loop.** When no chat can be had (the server refuses the page's origin, cannot be reached, or is full: `busy`, `CHAT_MAX_SESSIONS`), the client tries again after each step of `backoffMs` and then stops with `unavailable`; an endpoint the page cannot open at all stops it at once.
 - **Sign-in.** `getToken` is asked when a chat starts, whenever the site calls `signIn()`, and on each reconnect of a signed-in chat; a resume keeps the sign-in the chat had. A token naming someone who acts for others (a delegate) is honoured only when a chat starts, which is why a restarted chat is started with the token rather than signed in afterwards.
 - **A transfer** is reported, then the end; the client does not reconnect.
+- **Ending the chat.** The panel's End chat (`client.end()`) asks the server to end it: the server records it as the person leaving and says `end`, and the client stops. The panel then offers New chat, which starts another on a new connection, the conversation so far kept on screen. A chat not connected at that moment is closed on the page, and the server ends it once it has been idle `CHAT_IDLE_MS`.

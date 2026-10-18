@@ -669,6 +669,31 @@ describe('a web chat across a restart with the file session store', () => {
     expectTraceContinuous(dir, ready.session);
   }, 20_000);
 
+  it('a stop does not wait for a chat waiting on the person: it is saved and resumes on the restarted server; with the memory store it is waited for', async () => {
+    const dir = folder();
+    const first = await boot(settings(dir, { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN }));
+    const c = await Chat.open(first.base);
+    c.send({ type: 'start', v: 1 });
+    await c.until((r) => r.some((m) => m.type === 'say'));
+    await Promise.all(first.server.chat!.tails());
+    expect(first.server.chat!.activeCount()).toBe(0);
+    const began = Date.now();
+    await first.server.drain(10_000);
+    expect(Date.now() - began).toBeLessThan(2_000);
+    expect(first.logs).toContain('drained: no calls or chats left');
+    await first.server.close();
+    expect(await c.closed).toBe(1001);
+    expect(readdirSync(join(dir, 'sessions', 'chats'))).toHaveLength(1);
+    // The memory store keeps nothing a restarted server could resume: an open chat is someone still in it.
+    const memory = await boot(settings(folder(), { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN, SESSION_STORE: 'memory' }));
+    const m = await Chat.open(memory.base);
+    m.send({ type: 'start', v: 1 });
+    await m.until((r) => r.some((x) => x.type === 'say'));
+    await Promise.all(memory.server.chat!.tails());
+    expect(memory.server.chat!.activeCount()).toBe(1);
+    await memory.server.close();
+  }, 20_000);
+
   it('a resume token used before the restart opens nothing after it', async () => {
     const dir = folder();
     const env = settings(dir, { CHAT: 'on', CHAT_ALLOWED_ORIGINS: ORIGIN });

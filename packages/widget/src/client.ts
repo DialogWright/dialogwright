@@ -93,6 +93,12 @@ export interface ChatClient {
   send(text: string): Promise<void>;
   /** Ask the site for a token (`getToken`) and sign in with it. */
   signIn(): Promise<void>;
+  /**
+   * The person ends the chat: the server ends it (as a caller's hangup) and answers `end`, which the
+   * client reports before it stops. A chat not connected just now is closed here, and the server ends it
+   * once it has been idle (CHAT_IDLE_MS).
+   */
+  end(): void;
   /** End the connection; the client does not reconnect. */
   close(): void;
 }
@@ -328,6 +334,16 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
       else outbox.push(m);
     },
     signIn,
+    end() {
+      if (stopped) return;
+      if (live && ws !== null && ws.readyState === OPEN) {
+        sendRaw({ type: 'end' });
+        return;
+      }
+      const socket = ws;
+      stop('closed');
+      socket?.close(1000, 'ended by the person');
+    },
     close() {
       const socket = ws;
       stop('closed');

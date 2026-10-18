@@ -13,12 +13,14 @@ function fakeClient() {
   const made: ChatClientOptions[] = [];
   let closed = 0;
   let signIns = 0;
+  let ends = 0;
   const make = (o: ChatClientOptions): ChatClient => {
     made.push(o);
     return {
       ready: Promise.resolve({ session: 's', locale: 'en-US' }),
       send: async (t) => { sent.push(t); },
       signIn: async () => { signIns += 1; },
+      end: () => { ends += 1; },
       close: () => { closed += 1; },
     };
   };
@@ -28,6 +30,7 @@ function fakeClient() {
     made,
     closed: () => closed,
     signIns: () => signIns,
+    ends: () => ends,
     emit: (e: ChatClientEvent) => made.at(-1)!.onEvent(e),
   };
 }
@@ -213,9 +216,9 @@ describe('the widget', () => {
     expect(launcher.getAttribute('aria-controls')).toBe($('.panel')!.id);
     expect($('.panel')!.getAttribute('aria-labelledby')).toBe($('h2')!.id);
     expect($('button.close')!.getAttribute('aria-label')).toBe(DEFAULT_STRINGS.close);
-    // Tab order is document order: launcher, then the box, then send, then close.
+    // Tab order is document order: launcher, then the box, then send, sign-in, end chat (or new chat), then close.
     const order = [...root.querySelectorAll('button, textarea')].map((el) => el.className || el.tagName.toLowerCase());
-    expect(order).toEqual(['launcher', 'textarea', 'send', 'signin', 'close']);
+    expect(order).toEqual(['launcher', 'textarea', 'send', 'signin', 'endchat', 'newchat', 'close']);
     launcher.click();
     expect(root.activeElement).toBe(input);
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -292,12 +295,34 @@ describe('the widget', () => {
     expect(f.sent).toEqual([]);
   });
 
-  it('moves focus to close when the chat ends under the person\'s typing', () => {
+  it('moves focus to new chat when the chat ends under the person\'s typing', () => {
     const { f, root, $, w } = mount();
     w.open();
     expect(root.activeElement).toBe($('textarea'));
     f.emit({ type: 'end' });
-    expect(root.activeElement).toBe($('button.close'));
+    expect(root.activeElement).toBe($('button.newchat'));
+  });
+
+  it('ends the chat with End chat, then offers a new chat, which starts one on a new connection', () => {
+    const { f, root, $ } = mount({ startOpen: true });
+    const endChat = $<HTMLButtonElement>('button.endchat')!;
+    const newChat = $<HTMLButtonElement>('button.newchat')!;
+    expect([endChat.hidden, newChat.hidden]).toEqual([false, true]);
+    expect(endChat.textContent).toBe(DEFAULT_STRINGS.endChat);
+    endChat.click();
+    expect(f.ends()).toBe(1);
+    f.emit({ type: 'end' });
+    f.emit({ type: 'connection', state: 'closed' });
+    expect(lines(root, 'notice')).toEqual([DEFAULT_STRINGS.ended]);
+    expect([endChat.hidden, newChat.hidden, $<HTMLTextAreaElement>('textarea')!.disabled]).toEqual([true, false, true]);
+    newChat.click();
+    expect(f.made).toHaveLength(2);
+    expect([endChat.hidden, newChat.hidden, $<HTMLTextAreaElement>('textarea')!.disabled]).toEqual([false, true, false]);
+    expect(root.activeElement).toBe($('textarea'));
+    const input = $<HTMLTextAreaElement>('textarea')!;
+    input.value = 'hello again';
+    enter(input);
+    expect(f.sent).toEqual(['hello again']);
   });
 
   it('chats with the app it names on a server of several apps, at <endpoint>/<app>', () => {
