@@ -10,14 +10,14 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { ANSWER_DRIFT_QUESTION_ID, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
 import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
-import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_SOURCE_VAR } from '../kb/answer';
+import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed } from '../kb/answer';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -107,6 +107,9 @@ export const KB_HOLD_MORE_PROMPT = 'kb_hold_more';
  */
 const RETRIED: ReadonlySet<string> = new Set(['drift', 'foreign']);
 
+/** What the lines question (onFail: lines) leaves of the answer's limit for saying what it chose, ms. */
+const LINES_MARGIN_MS = 20;
+
 /**
  * Hands a channel lines to say before the turn has ended: the turn's lines before a knowledge answer still
  * being worded, and the hold line after them, with the turn's result so far (its decision and session);
@@ -134,7 +137,7 @@ export interface RenderInput {
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
-type Attempt = { said: string; gen: Generation; judge?: RenderJudge } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']>; judge?: RenderJudge };
+type Attempt = { said: string; gen: Generation; judge?: RenderJudge } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']>; judge?: RenderJudge; lines?: { chosen: number[]; of: number; text: string } };
 
 /** The drift judge's reading of an attempt, for its line (RenderLine.judge): absent where the judge was not asked or gave no reading. */
 function judgeOf(got: Attempt): { judge?: RenderJudge } {
@@ -222,7 +225,7 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
 }
 
 /** A knowledge answer to word on this turn: its span, the passage and its record, and its act; or why it is not tried. */
-type AnswerPlan = { name: string; passage: string; kb: KbSource | null } & ({ act: SpanAct } | { skipped: RenderSkip });
+type AnswerPlan = { name: string; passage: string; kb: KbSource | null; lines?: readonly string[] } & ({ act: SpanAct } | { skipped: RenderSkip });
 
 /**
  * A form's answer line framed with a span worded from the answer (`from: answer`), on this turn: its act,
@@ -292,7 +295,9 @@ function planDocumentsAnswer(app: App, input: RenderInput, line: GeneratedLine, 
   const span = line.spans![name]!;
   const record = result.kb;
   const sections = (said.vars[KB_SOURCE_VAR] ?? '').split('\n\n').map((s) => s.trim()).filter((s) => s !== '');
-  const base = { name, passage: said.vars[KB_ANSWER_LINE_VAR] ?? '', kb: record };
+  // onFail: lines: the sections' lines, for the decision model to pick from if the answer cannot be worded.
+  const lines = (said.vars[KB_LINES_VAR] ?? '').split('\n').map((s) => s.trim()).filter((s) => s !== '');
+  const base = { name, passage: said.vars[KB_ANSWER_LINE_VAR] ?? '', kb: record, ...(lines.length > 0 ? { lines } : {}) };
   if (record === null || record.from !== 'documents' || record.fresh !== true || sections.length === 0) return { ...base, skipped: 'knowledge' };
   if (said.exact === true) return { ...base, skipped: 'exact' };
   if (group === 'fixed') return { ...base, skipped: 'share' };
@@ -578,7 +583,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
   // (checkAnswer), and asked of the drift judge whether it says only what the passage says for the
   // question; its checks have the line's budget, or what is left of the answer's limit where that is more.
-  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number): Promise<Attempt> => {
+  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly string[]): Promise<Attempt> => {
     const flagged = await screened([{ name: 'question', value: first.answer!.question }], checker());
     if (flagged !== null) return flagged;
     let got = await wordAnswer(promptId, span, first);
@@ -588,7 +593,40 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     for (let n = 0; n < retries && 'fallback' in got && RETRIED.has(got.fallback) && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
       got = await wordAnswer(promptId, span, { ...first, answer: { ...first.answer!, refused: got.refused } }, got);
     }
+    // Not worded, with onFail: lines: the lines of the sections that answer the question, if the decision
+    // model says which in what is left of the answer's limit; else the opening, the line's fixed text.
+    if ('fallback' in got && lines !== undefined && lines.length > 0) {
+      const picked = await pickLines(first, lines);
+      if (picked !== null) got = { ...got, lines: picked };
+    }
     return got;
+  };
+  // The lines that answer the question, asked of the decision model, one yes-or-no question for each line
+  // (answerLinesQuestions): those it says yes to (KB_LINE_ANSWERS), in the document's order, as many as
+  // the answer's word budget holds (the first always). Null where it says none, errs or is late.
+  const pickLines = async (act: SpanAct, lines: readonly string[]): Promise<{ chosen: number[]; of: number; text: string } | null> => {
+    const left = answerLimit - (performance.now() - t0) - LINES_MARGIN_MS;
+    if (left <= 0) return null;
+    const c = checker(left);
+    try {
+      const r = await c.check(drift.ask({ state: answerLinesState(act.answer?.question ?? '', lines) as unknown as JsonValue, questions: answerLinesQuestions(lines.length), timeoutMs: c.left(), signal: abort.signal }));
+      if (r === 'late') return null;
+      used(r.usage);
+      const chosen: number[] = [];
+      let words = 0;
+      lines.forEach((line, i) => {
+        const a = r.answers[`${ANSWER_LINE_QUESTION_PREFIX}${i + 1}`];
+        if (!isNoul(a) || !atLeast(a.noul, input.thresholds.KB_LINE_ANSWERS)) return;
+        const n = wordCount(line);
+        if (chosen.length > 0 && words + n > act.style.words) return;
+        chosen.push(i + 1);
+        words += n;
+      });
+      if (chosen.length === 0) return null;
+      return { chosen, of: lines.length, text: chosen.map((i) => lines[i - 1]!).join(' ') };
+    } catch {
+      return null;
+    }
   };
   const wordAnswer = async (promptId: string, span: string, act: SpanAct, before?: Attempt): Promise<Attempt> => {
     const fromSections = act.answer?.from === 'sections';
@@ -636,7 +674,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   };
   // The answers start with the rest, and have till their own limit.
   const answerDeadline = answers.some((a) => 'act' in a.plan) ? after(answerLimit) : deadline;
-  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0), answerDeadline) : null));
+  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0, a.plan.lines), answerDeadline) : null));
   const [settled, settledSpans] = await Promise.all([
     Promise.all(planned.map(async (p) => {
       if (!('act' in p.plan)) return null;
@@ -806,8 +844,16 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       answerLines.push({ ...base, mode: 'fixed', unchanged: true, ...meta });
       return;
     }
-    answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got) });
-    audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: a.plan.name, reason: got.fallback } });
+    // onFail: lines: the lines the decision model said answer the question, word for word in the opening's frame, in place of the opening.
+    let lines: RenderLine['lines'];
+    if (got.lines !== undefined) {
+      const text = openingFramed(app, result.session.locale, got.lines.text);
+      const was = actions[index] as Say;
+      actions[index] = promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale);
+      lines = { chosen: got.lines.chosen, of: got.lines.of, said: text };
+    }
+    answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got), ...(lines !== undefined ? { lines } : {}) });
+    audit.push({ type: 'render_fallback', detail: { prompt: promptId, span: a.plan.name, reason: got.fallback, ...(lines !== undefined ? { lines: lines.chosen.length } : {}) } });
   });
   // In the order the lines were said.
   const said = [...lines, ...spanLines].map((l) => ({ ...l, index: shift(l.index) }));

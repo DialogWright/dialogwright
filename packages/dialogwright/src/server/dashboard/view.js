@@ -113,6 +113,8 @@ export function wordingOf(render) {
     // The drift judge's reading, where it was asked (RenderLine.judge): the score a generated line passed
     // with, or the score a line that fell back as drift was refused at, each beside its cutoff.
     ...judgeText(l),
+    // An answer from documents not worded, onFail: lines: the lines the decision model chose, said in place of the opening.
+    ...(l.lines !== undefined ? { lines: `said lines ${l.lines.chosen.join(', ')} of ${l.lines.of}, chosen for the question: ${l.lines.said}` } : {}),
   }));
 }
 

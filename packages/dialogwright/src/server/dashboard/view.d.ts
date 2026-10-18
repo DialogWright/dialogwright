@@ -79,10 +79,12 @@ export interface WordingLine {
    * the score it was refused at ("refused at 0.62 (cutoff 0.5)"); absent otherwise.
    */
   judge?: string;
+  /** An answer from documents not worded, with onFail: lines: the lines the decision model chose and what was said of them, in words. */
+  lines?: string;
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string; judge?: { score: number; refuseAt: number } }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string; judge?: { score: number; refuseAt: number }; lines?: { chosen: number[]; of: number; said: string } }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';

@@ -50,7 +50,8 @@ describe('sweep space', () => {
   });
 
   it('covers every threshold exactly once, sweepable or deliberately fixed', () => {
-    const FIXED = ['MAX_ATTEMPTS', 'STUB_SHARPNESS', 'JEV_TIMEOUT_MS', 'SCREEN_GRACE_MS', 'JEV_PRICE_PER_MTOK'];
+    // KB_LINE_ANSWERS is read in the render step (onFail: lines), which a sweep of the turns' readings never reaches.
+    const FIXED = ['MAX_ATTEMPTS', 'STUB_SHARPNESS', 'JEV_TIMEOUT_MS', 'SCREEN_GRACE_MS', 'JEV_PRICE_PER_MTOK', 'KB_LINE_ANSWERS'];
     expect(new Set([...SWEEPABLE, ...FIXED])).toEqual(new Set(Object.keys(DEFAULT_THRESHOLDS)));
   });
 

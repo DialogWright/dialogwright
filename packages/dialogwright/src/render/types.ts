@@ -284,6 +284,14 @@ export interface RenderLine {
    * `fixed` is then the approved passage, and `said` its wording, when one was said. Absent on every other line.
    */
   answer?: { passageId: string; topic: string };
+  /**
+   * An answer from documents that could not be worded, with forms.yaml's answers.documents.onFail: lines:
+   * the lines of its sections the decision model said answer the question (`chosen`, numbered from 1, of
+   * `of` it was asked about) and what was said of them, word for word in the opening's frame, in place of
+   * `fixed` (the opening). Absent where the model was not asked, said no line answers, or did not answer
+   * in time: the opening was said.
+   */
+  lines?: { chosen: number[]; of: number; said: string };
 }
 
 /** The drift judge's reading of a wording (RenderLine.judge). */

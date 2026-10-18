@@ -14,7 +14,7 @@ import { FakeRenderClient, type FakeRenderOptions } from '../render/fake';
 import { SECTIONS_INSTRUCTIONS, instructionsOf } from '../render/prompt';
 import { renderTurn, type RenderedTurn } from '../render/turn';
 import type { Renderer, SpanAct } from '../render/types';
-import { DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
+import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
 import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
 import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, VISITOR_GUIDE, type Edit } from './__fixtures__/libraryKbApp';
@@ -52,14 +52,14 @@ const DOCUMENTS_LINES = `
 `;
 
 /** The library with its visitor guide approved for summarizing and summarizing on; `retry` on its documents line. */
-function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; onFail?: 'opening'; edits?: Record<string, Edit> } = {}): App {
+function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
   const prompts = (t: string): string => {
     const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', '        retry: 1\n        goal: Answer') : DOCUMENTS_LINES;
     return `${APP_EDITS['prompts.yaml']!(t)}${lines}`;
   };
   const forms = (t: string): string => {
     const f = APP_EDITS['forms.yaml']!(t);
-    return options.onFail ? f.replace('    answers: { slot: libraryTopic }\n', '    answers: { slot: libraryTopic, documents: { onFail: opening } }\n') : f;
+    return options.onFail ? f.replace('    answers: { slot: libraryTopic }\n', `    answers: { slot: libraryTopic, documents: { onFail: ${options.onFail} } }\n`) : f;
   };
   const dir = folder(id, { 'prompts.yaml': prompts, 'forms.yaml': forms, 'kb/kb.yaml': (t) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n`, 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE, ...(options.edits ?? {}) });
   if (options.approve !== false) {
@@ -257,6 +257,71 @@ describe('the answer worded from the sections, checked against them', () => {
     const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
     const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((a) => a.promptId === 'kb_documents_answer') : undefined;
     expect(ack?.vars.answer).toBe("Here's what our guide says: Free Wi-Fi at: the main branch; the east branch; or the mobile library. Sessions end when the branch closes.");
+  });
+
+  describe('onFail: lines: the lines the decision model says answer the question, word for word', () => {
+    const ROWS = ['Printing in black and white: 15 cents a page', 'Printing in color: 50 cents a page', 'Copies of a map: free at the desk', 'Scanning to email: free'];
+    let built: App | undefined;
+    const tableApp = (): App => (built ??= documentsApp('library-documents-lines', {
+      onFail: 'lines',
+      edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.\n', `    text: |-\n${ROWS.map((r) => `      ${r}\n`).join('')}`) },
+    }));
+    /** A judge that refuses every wording, and reads each line of the lines question at `lines[i]` (0 where unnamed). */
+    const linesJudge = (lines: Record<number, number>, asked: string[][] = []): JevClient => ({
+      ask: async (req) => {
+        const ids = Object.keys(req.questions);
+        if (ids.includes(DOCUMENTS_DRIFT_QUESTION_ID)) return { answers: { [DOCUMENTS_DRIFT_QUESTION_ID]: noulAnswer(0.9) }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+        if (ids.some((id) => id.startsWith(ANSWER_LINE_QUESTION_PREFIX))) {
+          asked.push((req.state as { answer: { lines: string[] } }).answer.lines);
+          return { answers: Object.fromEntries(ids.map((id) => [id, noulAnswer(lines[Number(id.slice(ANSWER_LINE_QUESTION_PREFIX.length))] ?? 0.02)])), model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+        }
+        return judge(APP).ask(req);
+      },
+    });
+
+    it('the core says the opening, with the sections\' lines beside it, one a line, ended', () => {
+      const t = asked(tableApp(), 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      expect(ack?.vars.answer).toBe("Here's what our guide says: Printing in black and white: 15 cents a page. Printing in color: 50 cents a page. Copies of a map: free at the desk. Scanning to email: free.");
+      expect(ack?.vars.answerLines).toBe(ROWS.map((r) => `${r}.`).join('\n'));
+    });
+
+    it('not worded: the rows that answer it said in the opening\'s frame, the lines asked numbered, the record and the audit saying which', async () => {
+      const app = tableApp();
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const seen: string[][] = [];
+      const out = await rendered(app, t, renderer(), linesJudge({ 2: 0.91 }, seen));
+      expect(seen).toEqual([ROWS.map((r, i) => `${i + 1}. ${r}.`)]);
+      expect(sayText(out.actions)).toContain("Here's what our guide says: Printing in color: 50 cents a page.");
+      expect(sayText(out.actions)).not.toContain('black and white');
+      expect(docLine(out)).toMatchObject({ mode: 'fixed', fallback: 'drift', lines: { chosen: [2], of: 4, said: "Here's what our guide says: Printing in color: 50 cents a page." } });
+      expect(out.audit).toContainEqual({ type: 'render_fallback', detail: { prompt: 'kb_documents_answer', span: 'answer', reason: 'drift', lines: 1 } });
+    });
+
+    it('none answers, or the question is not answered: the opening, as with onFail: opening', async () => {
+      const app = tableApp();
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const none = await rendered(app, t, renderer(), linesJudge({}));
+      expect(sayText(none.actions)).toContain('Printing in black and white: 15 cents a page. Printing in color');
+      expect(docLine(none).lines).toBeUndefined();
+      const failing: JevClient = { ask: async (req) => (Object.keys(req.questions).some((id) => id.startsWith(ANSWER_LINE_QUESTION_PREFIX)) ? Promise.reject(new Error('down')) : linesJudge({}).ask(req)) };
+      const erred = await rendered(app, t, renderer(), failing);
+      expect(docLine(erred)).toMatchObject({ mode: 'fixed', fallback: 'drift' });
+      expect(docLine(erred).lines).toBeUndefined();
+    });
+
+    it('a wording that passes is said, and the lines are never asked; with onFail: opening they are never carried', async () => {
+      const app = tableApp();
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const seen: string[][] = [];
+      const passing: JevClient = { ask: async (req) => (Object.hasOwn(req.questions, DOCUMENTS_DRIFT_QUESTION_ID) ? { answers: { [DOCUMENTS_DRIFT_QUESTION_ID]: noulAnswer(0.05) }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' } : linesJudge({}, seen).ask(req)) };
+      const out = await rendered(app, t, renderer({ eachSpan: () => 'Color printing is 50 cents a page.' }), passing);
+      expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Color printing is 50 cents a page.' });
+      expect(seen).toEqual([]);
+      const opening = asked(documentsApp('library-documents-opening-nolines', { onFail: 'opening' }), 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const ack = 'acks' in opening.result.decision ? opening.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      expect(ack?.vars.answerLines).toBeUndefined();
+    });
   });
 
   it('the not-found fallback says the next of its wordings each time it is chosen', () => {

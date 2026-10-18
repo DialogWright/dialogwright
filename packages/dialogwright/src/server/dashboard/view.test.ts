@@ -422,6 +422,8 @@ describe('stages, gate, source, audit and handoff', () => {
       { promptId: 'kb_answer', span: 'answer', passageId: 'terms-2026', mode: 'generated', fixed: 'The terms are three years.' },
     ]);
     expect(wordingOf({ lines: [{ promptId: 'kb_answer', span: 'answer', mode: 'fixed', fixed: 'x', skipped: 'regulated' }] })[0]!.why).toBe('the topic is regulated: the approved passage, word for word');
+    // An answer from documents not worded, onFail: lines: the lines chosen and what was said of them.
+    expect(wordingOf({ lines: [{ promptId: 'kb_documents_answer', span: 'answer', mode: 'fixed', fixed: 'the opening', fallback: 'drift', lines: { chosen: [2, 4], of: 6, said: 'Row two. Row four.' } }] })[0]!.lines).toBe('said lines 2, 4 of 6, chosen for the question: Row two. Row four.');
     expect(wordingOf({ lines: [{ promptId: 'kb_answer', span: 'answer', mode: 'fixed', fixed: 'x', skipped: 'no-question' }] })[0]!.why).toBe("no question of the caller's to word it for");
   });
 

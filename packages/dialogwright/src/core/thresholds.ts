@@ -62,6 +62,10 @@ export const DEFAULT_THRESHOLDS = {
   // to 0.93 on its own question (the explanation of benefits the 0.56, missed at 0.60); a second section
   // reads up to 0.59 where it says some of the same (a new card: the app's digital card), at most two kept
   KB_SECTION_ANSWERS: 0.55,
+  // knowledge: a line of the chosen sections (a table's row, a list's item) is said in place of an answer from
+  // documents that cannot be worded when the model reads that it says what the caller asked at this or above
+  // (forms.yaml answers.documents.onFail: lines; render/turn.ts); the section's bar, as it is the same reading
+  KB_LINE_ANSWERS: 0.55,
   // knowledge: a question asked with the request that no topic answers is held as the slot's not-found reply
   // only at this or above (slots/topic/fill.ts): a held reply says nothing was found, so it must be sure the
   // caller asked something (a bare "coverage" read unanswered 0.55 against none 0.40, Harbor, 2026-10-17)

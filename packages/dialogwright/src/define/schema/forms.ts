@@ -71,9 +71,9 @@ const form = z
           .strictObject({
             answer: identifier().optional().describe('The prompt an answer from documents is said through: its text says {answer}, the fallback (what onFail says), and its {answer} is a span generated `from: sections`. Default: kb_documents_answer.'),
             onFail: z
-              .enum(['not-found', 'opening'])
+              .enum(['not-found', 'opening', 'lines'])
               .optional()
-              .describe('What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the first sentences of the best section, word for word, in the kb_documents_opening frame where the app has it.'),
+              .describe('What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the best section word for word (whole where it fits the answer\'s word budget, else its first two lines), in the kb_documents_opening frame where the app has it; lines, the lines of the chosen sections (a table\'s rows, a list\'s items) the decision model says answer the question, word for word in that frame, and the opening where it says none does or cannot be asked in time.'),
           })
           .optional()
           .describe('With kb.yaml documents: summarize on, how an answer drawn from sections of approved documents is said, where no topic answers. Default: kb_documents_answer, and the not-found line when it cannot be worded.'),

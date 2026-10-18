@@ -768,7 +768,9 @@
       ? `<span class="dnote k-generated"><span class="lbl-d">generated · ${named(w)}</span>${w.passageId !== undefined ? `approved passage ${esc(w.passageId)}` : w.span !== undefined ? 'exact content' : 'fixed line'}: ${esc(w.fixed)}${judged(w)}</span>`
       : `<span class="dnote k-fixed"><span class="lbl-d">fixed · ${named(w)}</span>${esc(w.why ?? '')}${judged(w)}</span>`
         // The wording set aside, under the fixed line that was said in its place: never said, so marked so.
-        + (w.refused !== undefined ? `<span class="dnote k-refused"><span class="lbl-d">not said · refused</span><q>${esc(w.refused)}</q></span>` : '')).join('');
+        + (w.refused !== undefined ? `<span class="dnote k-refused"><span class="lbl-d">not said · refused</span><q>${esc(w.refused)}</q></span>` : '')
+        // The lines of the sections said in place of the opening (onFail: lines).
+        + (w.lines !== undefined ? `<span class="dnote k-fixed"><span class="lbl-d">said · lines</span>${esc(w.lines)}</span>` : '')).join('');
   }
 
   function inputHtml(l, turn) {

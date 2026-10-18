@@ -1,6 +1,6 @@
 import type { ThresholdName, Thresholds } from '../core/thresholds';
 
-/** The thresholds an automated sweep may move; the rest (retry count, stub sharpness, timeout, screen grace, price) are fixed. */
+/** The thresholds an automated sweep may move; the rest (retry count, stub sharpness, timeout, screen grace, price, and the lines bar read in the render step) are fixed. */
 export const SWEEPABLE: readonly ThresholdName[] = [
   'GATE_ADDRESSED', 'GATE_INTELLIGIBLE', 'GATE_COMPLETE', 'GATE_WANTS_HUMAN',
   'INTENT_ROUTE', 'INTENT_IMPLICIT', 'INTENT_EXPLICIT', 'INTENT_SWITCH', 'PRIORITY_INTENT', 'GATE_INTENT_MARGIN', 'GATE_FRUSTRATION_HIGH',
