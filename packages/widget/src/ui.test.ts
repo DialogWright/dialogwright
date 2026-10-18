@@ -231,6 +231,8 @@ describe('the widget', () => {
 
   it('honours reduced motion and the colour scheme, and takes the site\'s colours', () => {
     expect(STYLES).toContain('prefers-reduced-motion');
+    // The message box at 16px or more, so a phone's browser does not zoom the page when it is tapped.
+    expect(STYLES).toMatch(/textarea \{[^}]*font-size: max\(16px, 1em\)/);
     expect(STYLES).toContain('prefers-color-scheme: dark');
     for (const v of ['--dw-accent', '--dw-accent-fg', '--dw-bg', '--dw-fg', '--dw-user-bg', '--dw-agent-bg', '--dw-radius', '--dw-font', '--dw-z']) expect(STYLES, v).toContain(`var(${v}`);
     // Motion only for those who have not asked for less.

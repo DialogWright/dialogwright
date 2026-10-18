@@ -83,6 +83,8 @@ h2 { margin: 0; padding: 14px 48px 14px 16px; font-size: 1.05em; border-bottom: 
 textarea {
   flex: 1; resize: none; min-height: 40px; max-height: 120px; padding: 9px 12px;
   border: 1px solid var(--_muted); border-radius: var(--_radius); background: var(--_bg);
+  /* At least 16px: a phone's browser (iOS Safari) zooms the page into a smaller box when it is tapped. */
+  font-size: max(16px, 1em);
 }
 .send, .signin, .endchat, .newchat {
   border: 0; border-radius: var(--_radius); padding: 9px 14px; background: var(--_accent); color: var(--_on-accent); font-weight: 600;
