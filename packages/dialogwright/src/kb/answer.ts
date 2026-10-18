@@ -66,7 +66,8 @@ export function readKbAnswer(value: unknown): KbAnswer {
   if (!isObject(value)) return { unavailable: 'no-answer' };
   const source = isKbSource(value.source) ? value.source : undefined;
   if (typeof value.answer === 'string' && value.answer.trim() !== '' && source !== undefined) {
-    return source.fresh === true ? { answer: value.answer, source } : { unavailable: 'stale', source };
+    if (source.fresh !== true) return { unavailable: 'stale', source };
+    return { answer: value.answer, source, ...(typeof value.opening === 'string' && value.opening.trim() !== '' ? { opening: value.opening } : {}) };
   }
   if (typeof value.unavailable === 'string' && value.unavailable !== '') return { unavailable: value.unavailable, ...(source ? { source } : {}) };
   return { unavailable: 'no-answer' };
@@ -225,7 +226,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     if (result.source.from === 'documents') {
       const line = opts.documents?.answer ?? KB_DOCUMENTS_ANSWER_PROMPT;
       const heard = s.slots[opts.slot]?.heard;
-      const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', result.answer, unavailablePrompt);
+      const fallback = documentsFallback(app, s, opts.documents?.onFail ?? 'not-found', result.opening ?? openingOf(sentencesOf(result.answer.split('\n\n')[0] ?? '')), unavailablePrompt);
       return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
     }
     const defaultLocale = defaultLocaleOf(app);
@@ -259,14 +260,21 @@ function holdMoreVars(app: App, s: Session): Record<string, string> {
 }
 
 /**
+ * A section's opening, said when an answer from it cannot be worded: its first two sentences, each
+ * ended where its line ended without a stop (a table's row), so that rows are not run together.
+ */
+export function openingOf(sentences: readonly string[]): string {
+  return sentences.slice(0, 2).map((x) => (/[.?!:;]$/.test(x) ? x : `${x}.`)).join(' ');
+}
+
+/**
  * What an answer from documents says when it cannot be worded (its line's fixed text): with onFail
  * `not-found` (the default), the not-found line in turn through its wordings (kb_not_found), else the
  * form's unavailable line; with `opening`, the first sentences of the best section, word for word, in
  * the kb_documents_opening frame where the app has it. Text in the call's language.
  */
-function documentsFallback(app: App, s: Session, onFail: 'not-found' | 'opening', sectionsText: string, unavailablePrompt: string): string {
+function documentsFallback(app: App, s: Session, onFail: 'not-found' | 'opening', opening: string, unavailablePrompt: string): string {
   if (onFail === 'opening') {
-    const opening = sentencesOf(sectionsText.split('\n\n')[0] ?? '').slice(0, 2).join(' ');
     if (!hasPrompt(app, KB_DOCUMENTS_OPENING_PROMPT)) return opening;
     return localePromptEntry(app, KB_DOCUMENTS_OPENING_PROMPT, s.locale).entry.text.replace(VAR, (m, name: string) => (name === 'opening' ? opening : m));
   }
@@ -349,7 +357,7 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
       if (keys !== null) {
         const r = resolveSections(kb, keys, facts, locale);
         if ('unavailable' in r) return { value: { unavailable: r.unavailable } satisfies KbAnswer, summary: `no passage (${r.unavailable})` };
-        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
+        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), opening: openingOf(r.sections[0]?.sentences ?? []) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
       }
       const r = resolvePassage(kb, { topic: call.params[KB_TOPIC_PARAM] ?? '', facts, todayIso: tc.todayIso, locale });
       if ('fresh' in r) return { value: { answer: r.passage.answer, source: recordOf(kb, r.passage, facts, true) } satisfies KbAnswer, summary: r.passage.id };
