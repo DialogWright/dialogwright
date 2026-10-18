@@ -1,0 +1,69 @@
+# Examples of the `reference` slot type: configurations, and what a caller might say to each.
+# `answers` are the model's answers to the slot's questions, by question id (a slot reads the
+# answers, not the words); `expect` is the outcome the slot must give. The conformance kit runs every
+# utterance here, and the type's docs page shows them.
+
+- name: booking code
+  about: Six characters from an alphabet that leaves out the ones that sound or look alike (no 0, 1, I, L or O), typed or said in any of the ways a caller spells.
+  slot: bookingCode
+  config:
+    noun: booking code
+    length: 6
+    alphabet: ABCDEFGHJKMNPQRSTUVWXYZ23456789
+  utterances:
+    - text: my code is KEVHUD
+      answers:
+        bookingCodeGiven: { noul: 0.95 }
+        bookingCodeSpan: { choice: { kevhud: 0.92, none: 0.08 } }
+      expect: { kind: filled, value: KEVHUD, display: K E V H U D, displays: { es: K E V H U D } }
+    - text: it's K seven M four Q X
+      answers:
+        bookingCodeGiven: { noul: 0.93 }
+        bookingCodeSpan: { choice: { k seven m four q x: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: K7M4QX }
+    - text: kay seven em four queue ex
+      answers:
+        bookingCodeGiven: { noul: 0.9 }
+        bookingCodeSpan: { choice: { kay seven em four queue ex: 0.88, none: 0.12 } }
+      expect: { kind: filled, value: K7M4QX }
+    - text: K as in kilo, E as in echo, V, H, U, D
+      answers:
+        bookingCodeGiven: { noul: 0.92 }
+        bookingCodeSpan: { choice: { k as in kilo e as in echo v h u d: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: KEVHUD }
+    - text: es ka siete eme cuatro cu equis
+      context: { locale: es }
+      answers:
+        bookingCodeGiven: { noul: 0.9 }
+        bookingCodeSpan: { choice: { ka siete eme cuatro cu equis: 0.88, none: 0.12 } }
+      expect: { kind: filled, value: K7M4QX, display: K 7 M 4 Q X }
+    - text: I don't have it with me
+      answers:
+        bookingCodeGiven: { noul: 0.05 }
+        bookingCodeSpan: { choice: { none: 1 } }
+      expect: { kind: absent }
+    - text: it's K seven M four
+      context: { prompted: true }
+      answers:
+        bookingCodeGiven: { noul: 0.8 }
+        bookingCodeSpan: { choice: { none: 1 } }
+      expect: { kind: invalid, reason: no_span }
+
+- name: order reference
+  about: The defaults, eight characters of any letter or digit, masked by its last four.
+  slot: order
+  config:
+    noun: order reference
+    length: 8
+    redact: last4
+  utterances:
+    - text: the order is AB12CD34
+      answers:
+        orderGiven: { noul: 0.95 }
+        orderSpan: { choice: { ab12cd34: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: AB12CD34, display: A B 1 2 C D 3 4, displays: { es: A B 1 2 C D 3 4 } }
+    - text: double A one two three four five six
+      answers:
+        orderGiven: { noul: 0.9 }
+        orderSpan: { choice: { double a one two three four five six: 0.9, none: 0.1 } }
+      expect: { kind: filled, value: AA123456 }

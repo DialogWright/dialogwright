@@ -8,7 +8,7 @@ A slot is one value a form collects: a book, a day, a card number. The model nev
 
 ### Pick a type in slots.yaml
 
-The library has eight types. Each has a page with every option, its default, the default question text, the outcomes it can give, the prompts it needs and starter examples (the pages are [indexed here](../slots/README.md)):
+The library has nine types. Each has a page with every option, its default, the default question text, the outcomes it can give, the prompts it needs and starter examples (the pages are [indexed here](../slots/README.md)):
 
 | Type | It collects |
 |---|---|
@@ -18,6 +18,7 @@ The library has eight types. Each has a page with every option, its default, the
 | [`birthdate`](../slots/birthdate.md) | A date of birth, heard whole or in part |
 | [`name`](../slots/name.md) | The caller's own name |
 | [`record`](../slots/record.md) | One of the app's own records, chosen by what the caller says of it |
+| [`reference`](../slots/reference.md) | A code of letters and digits of a set length: a booking code, an order reference |
 | [`text`](../slots/text.md) | The caller's own words, kept as said |
 | [`topic`](../slots/topic.md) | Which of the knowledge base's topics the caller asks about, from those retrieval nominates |
 
@@ -657,7 +658,7 @@ The hand-written slots these replaced are kept, frozen, in `apps/clinic/src/test
 
 ### When no type fits: a slot in code
 
-The rest of this section is for a slot no library type covers: a value with its own shape, such as a code with letters, or a pairing of two values. In `slots.yaml` it is `{ type: code }`, written as a `SlotSpec` in `code.slots.<id>`. If the same shape would serve other apps, consider contributing it as a type instead (see "Your own slot type", below, and [CONTRIBUTING.md](../../CONTRIBUTING.md#adding-a-slot-type)).
+The rest of this section is for a slot no library type covers: a value with its own shape, such as a pairing of two values. In `slots.yaml` it is `{ type: code }`, written as a `SlotSpec` in `code.slots.<id>`. If the same shape would serve other apps, consider contributing it as a type instead (see "Your own slot type", below, and [CONTRIBUTING.md](../../CONTRIBUTING.md#adding-a-slot-type)).
 
 The types are in `packages/dialogwright/src/core/slots/types.ts` and are exported by `'dialogwright'`. Everything the library types do, they do by building one of these, so reading a type's code (`packages/dialogwright/src/slots/text/` is the plainest) is the best way to learn the contract.
 

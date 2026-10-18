@@ -67,7 +67,7 @@ What a classic IVR design does, each step a declarative block with a default tha
 
 ### Slots
 
-[docs/slots](slots/README.md): the slot types. Most slots are configuration: an app names a type (`digits`, `choice`, `date`, `birthdate`, `name`, `record`, `text`, `topic`) in its `slots.yaml` with a few options, and the engine asks the model the right questions and checks the answers. One page per type, generated from its options; [section 5 of the guide](guide/05-writing-a-slot.md) has the rest, and CONTRIBUTING.md has "Adding a slot type".
+[docs/slots](slots/README.md): the slot types. Most slots are configuration: an app names a type (`digits`, `choice`, `date`, `birthdate`, `name`, `record`, `reference`, `text`, `topic`) in its `slots.yaml` with a few options, and the engine asks the model the right questions and checks the answers. One page per type, generated from its options; [section 5 of the guide](guide/05-writing-a-slot.md) has the rest, and CONTRIBUTING.md has "Adding a slot type".
 
 ### The knowledge base
 

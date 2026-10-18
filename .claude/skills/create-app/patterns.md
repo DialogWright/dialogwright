@@ -1819,7 +1819,7 @@ forms:
 | An amount the caller names freely, in whole units ("between 10 and 100 dollars") | No money type yet. A `digits` slot with `mask: '\d{1,3}'` and no `length`, `redact: none` and a `noun` ("dollar amount"), held to its bounds by `limit`. It reads "twenty five" and "one hundred fifty", but not "a hundred and fifty" (it parses numbers as identifiers), has no keypad (that needs `length`) and no cents. | a gap |
 | An amount the caller names freely, with cents | No type yet. Offer choices instead, or write a slot in code ([authoring guide, "When no type fits"](../../../docs/guide/05-writing-a-slot.md#when-no-type-fits-a-slot-in-code)). | a gap |
 | A street address | `text` with `say: null` (the summary reads the caller's words) and `redact: none`, and a summary line that quotes them ("at: {place}"). `pick` keeps only the part that is the address; `numbers: digits` and `case: title` have code write the value a tool gets ("7625 Oak Hollow Lane") while the read-back keeps the words as said. With `pick` the other slots listen on the turn that gives the address (`others: listen`, the default with `pick`), so "14 Birch Lane, and there's a line down" gives the symptom too; set `others: quiet` only where that answer is the address alone. | a gap |
-| A code with letters | A slot in code. | a gap |
+| A code with letters (a booking code, an order reference) | `reference`, with its `length` and the `alphabet` the business's codes use ([reference](../../../docs/slots/reference.md)). | nothing |
 
 The address in `slots.yaml`:
 
