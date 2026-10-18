@@ -114,6 +114,9 @@ function fillPlaceholder(seed: Seed, session: Session, id: SlotId, confirmed: bo
   const placeholder = Object.hasOwn(seed.placeholders, id) ? seed.placeholders[id] : undefined;
   if (!placeholder) throw new Error(`no placeholder value for slot "${id}"`);
   session.slots[id] = { ...emptySlot(), value: placeholder.value, display: placeholder.display, confirmed };
+  // Given earlier in the call, so its form's afterSlot hook has seen it (Session.slotsSeen), as on a call.
+  const form = session.form !== null ? formOf(appOf(session), session.form) : undefined;
+  if (form?.afterSlot !== undefined && form.slots.includes(id)) session.slotsSeen = { ...(session.slotsSeen ?? {}), [id]: placeholder.value };
 }
 
 /**
@@ -142,6 +145,8 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const tc: TurnContext = seedTurnContext(app, opts);
   const identity = promptsIdentity(entry, app);
   session.principal = identity ? ANONYMOUS : seed.caller();
+  // The facts as the placeholders left them mid-call (App.testing.seed.facts).
+  seed.facts?.(session.facts);
   // A caller seeded as verified was verified earlier in the call, so the routes after identity
   // (routes.yaml) have run: the entry's turn does not run them as if the caller had just verified.
   if (!identity && rulesAt(app, 'afterIdentity').length > 0) session.identityRouted = true;

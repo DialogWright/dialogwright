@@ -397,6 +397,12 @@ export interface AppToolResult {
   redacted?: readonly string[];
   /** The gate allowed the call and the tool threw, made with `failSoft`; absent on every other call. */
   failed?: true;
+  /**
+   * The tool's reply has not come (it waits on a system; core/toolWait.ts): the value is null, and the
+   * turn runs again with the reply, so nothing the hook does with it is kept. A hook may return at once.
+   * Absent on every other call.
+   */
+  pending?: true;
 }
 
 /**
@@ -1996,6 +2002,14 @@ export interface TestingHooks {
     caller(): Principal;
     /** The stand-in for each slot a seeded form has already collected, identity factors included. */
     placeholders: Readonly<Record<SlotId, SlotCandidate>>;
+    /**
+     * The app's facts as the placeholders left them mid-call, where a form's hooks keep something in
+     * them as its slots are given (FormDef.afterSlot: the openings a day's placeholder would have read,
+     * for a record slot's question): written on the seeded session's facts before its form is entered.
+     * A slot a seed fills is taken as seen by its form's afterSlot hook, as on a call. Without it, the
+     * facts are the app's initial ones.
+     */
+    facts?(f: SessionFacts): void;
     /**
      * For the anything_else context: the form just answered before "anything else?", and the call
      * that answered it, made through the gate as the seed's own (e.g. getAccount, listParcels); no

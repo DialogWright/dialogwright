@@ -129,3 +129,21 @@ describe('a completion\'s `again`', () => {
     expect(tries).toBe(2);
   });
 });
+
+describe('a seeded corpus line in a form with afterSlot', () => {
+  it('takes the seeded slots as seen by the hook, and writes the seed\'s facts', async () => {
+    const seen: string[] = [];
+    const hook: Hook = (c) => {
+      seen.push(c.slot);
+      return null;
+    };
+    const app = variant({ delivery_window: { afterSlot: hook } });
+    const withFacts: App = { ...app, testing: { ...app.testing!, seed: { ...app.testing!.seed!, facts: (f) => { (f as Record<string, unknown>).seeded = true; } } } };
+    use(withFacts);
+    const { seedCorpusSession, startSession } = await import('../harness-text/runner');
+    const s = seedCorpusSession(startSession('seeded', 0), { id: 'x', text: 'afternoon', intent: 'none', context: 'delivery_window', prompted: 'deliveryPart' } as never, { thresholds: buildThresholds([]), todayIso: REGRESS_TODAY });
+    expect(s.slotsSeen).toEqual({ deliveryDay: s.slots.deliveryDay!.value });
+    expect((s.facts as Record<string, unknown>).seeded).toBe(true);
+    expect(seen).toEqual([]);
+  });
+});
