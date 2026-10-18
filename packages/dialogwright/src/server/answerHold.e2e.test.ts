@@ -132,6 +132,14 @@ describe('the hold line on the phone', () => {
         // Telnyx ends a reply at its first last: true, so the hold line's reply ends there: the hold line carries it.
         expect(textFrames()[2]!.last).toBe(true);
         render.answer();
+        if (carrier === 'telnyx') {
+          // A reply of its own: the answer waits until Telnyx reports the hold line played (its tokensPlayed), so
+          // two replies are never in flight and its report names the line that finished.
+          await new Promise((r) => setTimeout(r, 300));
+          expect(relay.texts()).toHaveLength(3);
+          relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+          relay.send({ type: 'info', name: 'tokensPlayed', value: `Sure, I can help you answer a question. ${HOLD}` });
+        }
         const texts = await relay.waitForTexts(5);
         expect(texts.slice(3).map((t) => t.trim())).toEqual([`${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
         const after = textFrames().slice(3);
@@ -142,6 +150,34 @@ describe('the hold line on the phone', () => {
       }
     });
   }
+});
+
+describe('a hold line\'s turn on Telnyx, its answer reported played too soon', () => {
+  it('says the answer again, never the acknowledgement or the hold line (a live call, 2026-10-18)', async () => {
+    const render = new GatedRenderClient();
+    const ws = await start(render);
+    const relay = await FakeRelay.connect(`${ws}/conversation/telnyx?token=${running!.tokens.mint('CA-resay', 'telnyx')}`);
+    try {
+      relay.setup('CA-resay');
+      await relay.waitForTexts(1);
+      relay.prompt(QUESTION);
+      await render.asked;
+      await relay.waitForTexts(3);
+      render.answer();
+      relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+      relay.send({ type: 'info', name: 'tokensPlayed', value: `Sure, I can help you answer a question. ${HOLD}` });
+      await relay.waitForTexts(5);
+      // The answer's reply starts, and Telnyx reports it played at once: a cut, by the estimate.
+      relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+      relay.send({ type: 'info', name: 'tokensPlayed', value: `${WORDED} ${ACCOUNT} Is there anything else I can help with?` });
+      relay.send({ type: 'info', name: 'agentSpeaking', value: 'off' });
+      const texts = await relay.waitForTexts(7, 5000);
+      expect(texts.slice(5).map((t) => t.trim())).toEqual([`${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
+      expect(texts.filter((t) => t.trim() === HOLD)).toHaveLength(1);
+    } finally {
+      relay.close();
+    }
+  });
 });
 
 describe('the hold line in a chat', () => {
@@ -186,9 +222,18 @@ describe('the second hold line, past half the answer\'s limit', () => {
         relay.prompt(QUESTION);
         await render.asked;
         expect((await relay.waitForTexts(3)).slice(1).map((t) => t.trim())).toEqual(['Sure, I can help you answer a question.', HOLD]);
+        // On Telnyx each early reply waits for the one before it to have played (its tokensPlayed).
+        if (carrier === 'telnyx') {
+          relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+          relay.send({ type: 'info', name: 'tokensPlayed', value: `Sure, I can help you answer a question. ${HOLD}` });
+        }
         // Past half the 2 s limit, the second hold line, with the answer still not worded.
         expect((await relay.waitForTexts(4)).at(-1)!.trim()).toBe(MORE);
         render.answer();
+        if (carrier === 'telnyx') {
+          relay.send({ type: 'info', name: 'agentSpeaking', value: 'on' });
+          relay.send({ type: 'info', name: 'tokensPlayed', value: MORE });
+        }
         const texts = await relay.waitForTexts(6);
         expect(texts.slice(1).map((t) => t.trim())).toEqual(['Sure, I can help you answer a question.', HOLD, MORE, `${WORDED} ${ACCOUNT}`, 'Is there anything else I can help with?']);
         const textFrames = relay.received.filter((m) => m.type === 'text') as unknown as { token: string; last: boolean }[];

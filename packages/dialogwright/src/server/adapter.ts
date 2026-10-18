@@ -1797,6 +1797,11 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // reply that may be held for a caller who had not finished (holdReply), nor on a call with no socket.
     let earlyFrames: OutboundFrame[] = [];
     let earlySent: Promise<OutboundFrame[]> | null = null;
+    // On a carrier that ends a reply at its first `last: true` (Telnyx), the early lines are a reply of
+    // their own, and the rest of the turn goes once they have played (holdEnd, listening from when they
+    // went out, so a report that comes before the rest is ready counts): with two replies in flight its
+    // report of the first named the second's text, and the turn was said again whole (a live call, 2026-10-18).
+    const earlyPlayback: { played: Promise<{ after: EndAfter; heldMs: number; expectedMs: number }> | null } = { played: null };
     const early: EarlyLines = (lines, result) => {
       if (entry.socket === null) return false;
       const wait = deps.incompleteWait;
@@ -1805,7 +1810,15 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
       const batch = actionsToFrames([...lines]);
       earlyFrames = [...earlyFrames, ...batch];
       const before = earlySent;
-      earlySent = before === null ? sendFrames(deps, entry, batch, result.decision) : before.then(async (prev) => [...prev, ...(await sendFrames(deps, entry, batch, result.decision))]);
+      // On such a carrier a second batch (the second hold line) waits for the first to have played, as the answer does.
+      const playedBefore = earlyPlayback.played;
+      earlySent = before === null
+        ? sendFrames(deps, entry, batch, result.decision)
+        : before.then(async (prev) => {
+          if (playedBefore !== null) await playedBefore;
+          return [...prev, ...(await sendFrames(deps, entry, batch, result.decision))];
+        });
+      if (textLastOf(entry.provider) === 'final') earlyPlayback.played = earlySent.then((sent) => holdEnd(deps, entry.callSid, sent));
       entry.frames.write('log', { holdLine: { turn: result.session.turnIndex } });
       return true;
     };
@@ -1855,6 +1868,10 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     // The lines the channel said before the turn ended (a hold line and those before it) are not said again.
     const frames = said ? actionsToFrames(run.result.actions.slice(run.early ?? 0)) : [];
     const sentEarly: OutboundFrame[] = earlySent !== null ? await earlySent : [];
+    if (earlyPlayback.played !== null && frames.length > 0) {
+      const waited = await earlyPlayback.played;
+      logDelivery(deps, entry, { earlyPlayed: { after: waited.after, heldMs: waited.heldMs, expectedMs: waited.expectedMs } });
+    }
     // A carrier that acts on `end` at once drops the lines not yet said (END_AFTER_PLAYBACK): the
     // goodbye or the transfer line goes now, and the `end` once it has played.
     const at = ending && holdsEnd(deps, entry.provider) ? frames.findIndex((f) => f.type === 'end') : -1;
@@ -1872,7 +1889,9 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     }
     if (ending && deps.store.durable && entry.socket === null && !sent.some((f) => f.type === 'end') && frames.some((f) => f.type === 'end')) unsent = frames;
     // Lines a carrier that reports its playback may cut short, said again if it does (RESAY_CUT_LINES).
-    watchPlayback(deps, entry, [...earlyFrames, ...frames], run.result.decision, [...sentEarly, ...sent], false);
+    // (Only the lines after the early ones, where those were a reply of their own: they have played, and are never said again.)
+    if (earlyPlayback.played !== null) watchPlayback(deps, entry, frames, run.result.decision, sent, false);
+    else watchPlayback(deps, entry, [...earlyFrames, ...frames], run.result.decision, [...sentEarly, ...sent], false);
     // Work handed to a downstream service: its answer is the next turn, and it arms the wait itself.
     if (service && pending) queueService(deps, entry, service, pending);
     // A prompt restarts the wait - including the silence turn's own re-ask, which is how the
