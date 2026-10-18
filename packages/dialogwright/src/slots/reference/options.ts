@@ -8,7 +8,10 @@ import { alwaysConfirmText } from '../parts/readBack';
  */
 export const REFERENCE_PARTS = textParts('reference', {
   given: {
-    template: 'Read asr.text. Does the caller state {article} {noun}, as letters and numbers typed or spoken one at a time, by letter names, or by words such as "K as in kilo"?',
+    // Measured with the decision model, 2026-10-18 (five asks each): a code typed whole read 0.42 to 0.51
+    // under the earlier wording ("...typed or spoken one at a time, by letter names..."), 0.89 to 0.96
+    // under this one; words that give no code stayed at or under 0.12.
+    template: 'Read asr.text. Does the caller state {article} {noun} (letters and numbers, written together or spelled out)?',
     vars: ['article', 'noun'],
     about: 'The yes-or-no question that asks whether the caller states the reference at all.',
   },

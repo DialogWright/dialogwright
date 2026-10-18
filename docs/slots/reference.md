@@ -35,7 +35,7 @@ The text the model is sent is made of parts. Each has a default, a template over
 
 | Part | What it is | Default |
 |---|---|---|
-| `text.given` | The yes-or-no question that asks whether the caller states the reference at all. Variables: `{article}`, `{noun}`. | `Read asr.text. Does the caller state {article} {noun}, as letters and numbers typed or spoken one at a time, by letter names, or by words such as "K as in kilo"?` |
+| `text.given` | The yes-or-no question that asks whether the caller states the reference at all. Variables: `{article}`, `{noun}`. | `Read asr.text. Does the caller state {article} {noun} (letters and numbers, written together or spelled out)?` |
 | `text.span` | The question that asks which span of the caller's words is the reference. Its choices are the spans the engine reads as one, and none. Variables: `{article}`, `{noun}`. | `Read asr.text. Which of these spans is the {noun} the caller states? Choose the span that covers the whole of it as said, and nothing else. Choose none if no span is {article} {noun}.` |
 | `text.none` | What the span question's "none" choice means. Variables: `{article}`, `{noun}`. | `No span of asr.text is {article} {noun}` |
 
