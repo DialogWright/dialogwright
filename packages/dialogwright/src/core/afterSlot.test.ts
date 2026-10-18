@@ -147,3 +147,22 @@ describe('a seeded corpus line in a form with afterSlot', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('a summary whose no means leave it (forms.yaml summary.onNo: leave)', () => {
+  it('closes the form on a bare no, not completed and nothing written, after its left_ line, and the call goes on', async () => {
+    const app = variant({ report_missing: { summaryOnNo: 'leave' } });
+    use({ ...app, prompts: { ...app.prompts, manifest: { ...app.prompts.manifest, left_report_missing: { text: 'Okay, I won\'t file it.', interruptible: false } } } });
+    const runs = await call([...REPORT.slice(0, 6), { say: 'no' }]);
+    const last = runs.at(-1)!;
+    expect(last.result.decision).toMatchObject({ kind: 'prompt', promptId: 'anything_else' });
+    expect(said(last)).toMatch(/^Okay, I won't file it\. /);
+    expect(last.result.session.completed).not.toContain('report_missing');
+    expect(runs.flatMap((r) => r.result.gateEvents).some((e) => e.decision.call.tool === 'createReport')).toBe(false);
+  });
+
+  it('still takes a no that corrects a value', async () => {
+    use(variant({ report_missing: { summaryOnNo: 'leave' } }));
+    const runs = await call([...REPORT.slice(0, 6), { say: 'no, the date is wrong' }]);
+    expect(promptOf(runs.at(-1)!)).toBe('ask_expectedDate');
+  });
+});

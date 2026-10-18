@@ -637,8 +637,9 @@ describe('the engine prompt list', () => {
     // slot's code can offer (two candidates from its fill), handoff_<reason> is the reason's, and
     // offer_<slot> the line a slot that offers the caller's number declares (SlotSpec.prompts).
     // ask_<slot>_noinput (and the numbered ask_<slot>_retry<k> and _noinput<k>) the engine says only
-    // where prompts.yaml has it (core/outcome.ts), so none is ever required.
-    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_noinput', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>', 'offer_<x>']);
+    // where prompts.yaml has it (core/outcome.ts), so none is ever required; so is left_<form>, said after a
+    // no that leaves a form (forms.yaml's summary.onNo: leave) only where prompts.yaml has it.
+    expect([...families].sort()).toEqual(['ack_<x>', 'ask_<x>', 'ask_<x>_dtmf', 'ask_<x>_noinput', 'ask_<x>_retry', 'confirm_<x>', 'disambiguate_<x>', 'handoff_<x>', 'left_<x>', 'offer_<x>']);
   });
 
   it('the role-person reason check names is the gate\'s', async () => {

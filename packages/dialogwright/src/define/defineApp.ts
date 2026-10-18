@@ -1306,7 +1306,7 @@ function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks |
   if (form.internal === true) def.internal = true;
   if (form.label !== undefined) def.label = form.label;
   if (form.listenBeforeEntered !== undefined) def.listenBeforeEntered = form.listenBeforeEntered;
-  if (form.summary?.onNo === 'read-back') def.summaryOnNo = 'read-back';
+  if (form.summary?.onNo === 'read-back' || form.summary?.onNo === 'leave') def.summaryOnNo = form.summary.onNo;
   for (const hook of form.hooks ?? []) def[hook] = hooks?.[hook];
   if (form.answers) {
     const { slot, via, answer, unavailable, subject, documents } = form.answers;

@@ -227,11 +227,12 @@
             "type": "object",
             "properties": {
               "onNo": {
-                "description": "What a bare no at the summary does (a no that changes nothing). ask-change (the default): \"What should I change?\" (ask_change), as always. read-back: the summary is read again word for word first, after read_back_exact (a line the app writes), never generated whatever its when says, and with no attempt counted; a second bare no goes on to ask_change, and the ladder continues as always. With read-back, asking to hear it again at ask_change reads the summary again, word for word.",
+                "description": "What a bare no at the summary does (a no that changes nothing). ask-change (the default): \"What should I change?\" (ask_change), as always. read-back: the summary is read again word for word first, after read_back_exact (a line the app writes), never generated whatever its when says, and with no attempt counted; a second bare no goes on to ask_change, and the ladder continues as always. With read-back, asking to hear it again at ask_change reads the summary again, word for word. leave: the no is the caller's answer to what the summary asks (a summary that asks whether to cancel, with nothing to change): the form closes, not completed and nothing written, and the call goes on to \"anything else?\", after `left_<form>` where prompts.yaml has it (\"Okay, I'll leave it as it is.\"). A no that gives a new value still corrects it.",
                 "type": "string",
                 "enum": [
                   "ask-change",
-                  "read-back"
+                  "read-back",
+                  "leave"
                 ]
               }
             },

@@ -168,9 +168,10 @@ export interface FormDef {
   /**
    * What a bare no at the summary does (forms.yaml's `summary.onNo`): `ask-change` (absent: "What should I
    * change?", as always) or `read-back` (the summary read again word for word first, after
-   * `read_back_exact`; a second bare no asks the change).
+   * `read_back_exact`; a second bare no asks the change) or `leave` (the form closes, not completed, and
+   * the call goes on, after `left_<form>` where prompts.yaml has it).
    */
-  summaryOnNo?: 'ask-change' | 'read-back';
+  summaryOnNo?: 'ask-change' | 'read-back' | 'leave';
   /**
    * The actions (tools) the form's hooks call through the gate: its entry call and the calls its
    * completion and summary hooks make. Declared by every form of an app or by none; the app map

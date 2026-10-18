@@ -2146,6 +2146,15 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
           return { decision: continueForm(s, io, [...acks, ...fill.acks, ...move.acks], null), events: fill.events };
         }
         if (move) return { decision: reaskConfirmation(s, io, [...acks, ...move.acks]), events: fill.events };
+        // A no that answers what the summary asks (forms.yaml's `summary.onNo: leave`: "Shall I cancel it?",
+        // with nothing to change): the form closes, not completed, and the call goes on.
+        if (formOf(io.app, pc.form).summaryOnNo === 'leave') {
+          s.pendingConfirmation = null;
+          s.pendingHash = null;
+          const left = `left_${pc.form}`;
+          const said = Object.hasOwn(io.app.prompts.manifest, left) ? [...acks, ...fill.acks, { promptId: left, vars: {} }] : [...acks, ...fill.acks];
+          return { decision: finishForm(s, pc.form, said, io, false), events: fill.events };
+        }
         // Nothing usable came with the no. With forms.yaml's `summary.onNo: read-back`, the summary is
         // read again first, word for word, after read_back_exact: no rung is spent, and the next bare no
         // asks the change.
