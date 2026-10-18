@@ -3,6 +3,7 @@ import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { typedHere } from './typedFactors';
+import { wayInUse, waysOf } from './identityWays';
 export { factorsAsked } from './typedFactors';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, SlotId, ToolName, VerifyOutcome } from './app/types';
@@ -691,6 +692,16 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
     // A match in use that is gone now (the app's facts changed, or the caller said an identifier of
     // their own) is unused again: every factor is asked, and every factor listens.
     if (match === null && s.callerMatch === 'offered') delete s.callerMatch;
+    // More than one way to prove the level (identity.yaml's `ways`): the way in use is asked, and
+    // checked once all of its factors are given.
+    const ways = waysOf(appOf(s));
+    if (ways.length > 1) {
+      const at = wayInUse(s);
+      if (at !== 0 || s.identityWay !== undefined) s.identityWay = at;
+      const left = ways[at]!.factorSlots.find((id) => s.slots[id]!.value === null);
+      if (left) return askSlot(s, left, s.slots[left]!.window, acks);
+      return verifyFactors(s, tc, out, acks) ?? ensureEntry(s, tc, out, acks);
+    }
     const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);
     if (missing) {
       const window = s.slots[missing]!.window;
@@ -809,8 +820,11 @@ export function stepUp(s: Session, call: ToolCall, need: 1 | 2, tc: TurnContext,
  * retried), or the Decision to speak: the keypad code, another try, or a person.
  */
 export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Decision | null {
-  const { factorSlots, verifyTool, failedPromptId, subjectKind } = identityOf(appOf(s));
-  const params = Object.fromEntries(factorSlots.map((id) => [id, s.slots[id]!.value ?? '']));
+  const { factorSlots, failedPromptId, subjectKind } = identityOf(appOf(s));
+  // The way in use (one, for an app with one set of factors): its factors, checked by its own tool.
+  const way = waysOf(appOf(s))[wayInUse(s)]!;
+  const verifyTool = way.verifyTool;
+  const params = Object.fromEntries(way.factorSlots.map((id) => [id, s.slots[id]!.value ?? '']));
   const { decision, value } = identityCall<VerifyOutcome>(s, verifyTool, params, tc, out);
   if (decision.verdict === 'NEEDS_HUMAN') return handoff(s, 'identity', acks);
   if (decision.verdict !== 'ALLOW' || value === null || value === undefined) return handoff(s, 'needs-human', acks);
@@ -826,6 +840,7 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     const { via: _via, ...proven } = value.principal;
     s.principal = byCallerId ? { ...proven, via: 'caller-id' } : _via === undefined ? value.principal : proven;
     if (byCallerId) noteCallerMatch(s, out, 'verified');
+    delete s.identityWay;
     acks.push({ promptId: 'identity_verified', vars: { first: value.principal.first } });
     if (s.stepUp?.need === 2) return sendCodeAndAsk(s, tc, out, acks);
     s.stepUp = null;
@@ -842,7 +857,7 @@ export function verifyFactors(s: Session, tc: TurnContext, out: TurnOut, acks: A
     delete st.by;
   }
   if (!retryAllowed(s, verifyTool, tc, out)) return handoff(s, 'identity', acks);
-  return askSlot(s, factorSlots[0]!, null, [...acks, { promptId: failedPromptId ?? 'identity_failed', vars: {} }]);
+  return askSlot(s, way.factorSlots[0]!, null, [...acks, { promptId: failedPromptId ?? 'identity_failed', vars: {} }]);
 }
 
 /**

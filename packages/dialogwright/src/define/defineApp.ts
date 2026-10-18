@@ -483,7 +483,7 @@ export function crossLink(
       yaml('forms.yaml', ['forms', id], `form "${id}" does not say which actions it calls, though other forms do`, `add "calls: [<the tools its hooks call>]" to it ("calls: []" for none): every form says, or none does`, true);
     }
   }
-  const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
+  const flow = config.identity ? { verifyTool: config.identity.levels[1].verify, ...(config.identity.levels[1].ways ? { ways: config.identity.levels[1].ways.map((w) => ({ factorSlots: w.factors, verifyTool: w.verify })) } : {}), ...(config.identity.levels[2] ? { codeTool: config.identity.levels[2].verify, sendCodeTool: config.identity.levels[2].send } : {}) } : undefined;
   // A check no form names is formChecks.ts's to report, in its own words.
   // The call-start lookup (app.yaml's callerNumber.lookup) is reached at call start, by no form.
   // So are the actions the start hook calls (app.yaml's onStart.calls).

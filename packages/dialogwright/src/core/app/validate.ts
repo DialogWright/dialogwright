@@ -445,6 +445,13 @@ export function validateApp(app: App): void {
     const { verifyTool, codeTool, sendCodeTool } = identity;
     // Level 2's tools come together: the code is sent and checked, or there is no code (a ladder of one rung).
     if ((codeTool === undefined) !== (sendCodeTool === undefined)) fail(`identity names ${codeTool === undefined ? 'a sendCodeTool but no codeTool' : 'a codeTool but no sendCodeTool'}; level 2 needs both, a ladder of one rung neither`);
+    // Every way's check too (identity.yaml's `ways`), each a tool with rules, and its factors identity factors.
+    for (const [i, way] of (identity.ways ?? []).entries()) {
+      if (!Object.hasOwn(app.tools, way.verifyTool)) fail(`identity way ${i + 1}'s verifyTool "${way.verifyTool}" is not a tool`);
+      if (!Object.hasOwn(rulesFor, way.verifyTool)) fail(`identity way ${i + 1}'s verifyTool "${way.verifyTool}" has no rules in the policy`);
+      for (const slot of way.factorSlots) if (!identity.factorSlots.includes(slot)) fail(`identity way ${i + 1} names "${slot}", which is not among identity's factorSlots`);
+      if (way.sayPromptId !== undefined && app.prompts !== undefined && !Object.hasOwn(app.prompts.manifest, way.sayPromptId)) fail(`identity way ${i + 1}'s line "${way.sayPromptId}" is not a prompt`);
+    }
     for (const [role, tool] of [['verifyTool', verifyTool], ['codeTool', codeTool], ['sendCodeTool', sendCodeTool]] as const) {
       if (tool === undefined) continue;
       if (!Object.hasOwn(app.tools, tool)) fail(`identity ${role} "${tool}" is not a tool`);

@@ -1,0 +1,31 @@
+# More than one way to prove a level
+
+Date: 2026-10-18. Status: **decided (the maintainer, 2026-10-18); built on main.**
+
+## The problem
+
+A level of the identity ladder has one set of factors and one tool that checks them. The create-app skill lists the gap ("your account number, or your phone number and ZIP code": no either-or verification). A booking line met it: a caller proves a booking by its code, or, without the code, by the phone number and zip code on it, which finds every upcoming booking of theirs; the caller then says which one ("the Hyundai", "the Tuesday one").
+
+## The decision
+
+identity.yaml's level 1 may list `ways` in place of `factors` and `verify`:
+
+```yaml
+levels:
+  1:
+    name: booking found
+    ways:
+      - { factors: [bookingCode], verify: findByCode }
+      - { factors: [bookingPhone, bookingZip], verify: findByPhoneZip, say: identity_by_phone }
+    failedPrompt: identity_failed
+```
+
+- **Asking.** A step-up asks the first way's factors, in order. A caller who gives a factor of another way ("my number is ...") is asked the rest of that way. A missed answer to a way's question ("I don't know the code") moves to the next way, with no attempt counted: its `say` line first, where it has one ("No problem, I can find it by your phone number and zip code."), then its first factor. Every way's factors listen while identity is asked, so a caller may give any of them at any time. A missed answer on the last way is retried as any slot's is.
+- **Checking.** The first way whose factors are all filled is checked by its own tool, which returns the principal as a verify tool always has. What the principal stands for, and so what the gate's `scope` allows, is the app's: one booking for a code, every booking of a phone and zip for the other.
+- **Failing.** A failed check counts against the level's attempts, one count shared by every way (each way's tool has the `attempts` rule, which reads the one count); the factors are emptied, and the way that failed is asked again from its first factor after `failedPrompt`.
+- **Everything else** that treats identity factors specially (they are masked, never dictated, never given a caller's number, left out of a handoff) holds for every way's factors, as one set.
+- A level with `ways` takes no `callerId` (the caller-ID match identifies one set of factors); `pnpm check` refuses both. The policy card lists each way.
+
+## What it costs
+
+Nothing for an app whose levels name `factors`: one way, asked and checked as before. The session keeps the way being asked (`Session.identityWay`) only for an app with ways.

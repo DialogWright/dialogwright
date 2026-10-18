@@ -5,7 +5,7 @@ import { attachSource, BUILT_IN_RULES, isBuiltInRuleId, LEGACY_RULE_ID, TABLE_RU
 import { DEFAULT_ROLE_PERSON_REASON } from '../gate/lines';
 import type { Level } from '../gate/types';
 import { closest, formatPath, type DataPath, type Problem } from './problems';
-import type { IdentityYaml, PolicyYaml, RuleEntryYaml } from './schema/index';
+import { normalizeIdentity, type IdentityFile, type IdentityYaml, type PolicyYaml, type RuleEntryYaml } from './schema/index';
 
 /**
  * policy.yaml and identity.yaml in their new shape (./schema/policy.ts, ./schema/identity.ts),
@@ -332,7 +332,8 @@ export interface CompiledIdentity {
  * levels' names, the sign-in's level, the delegates' roles and the attempts go on the configuration
  * too, for the console, the turn and validateApp: the engine decides on the level numbers alone.
  */
-export function compileIdentity(file: IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
+export function compileIdentity(written: IdentityFile | IdentityYaml, options: CompileIdentityOptions = {}): CompiledIdentity {
+  const file = normalizeIdentity(written as IdentityFile);
   const one = file.levels[1];
   const two = file.levels[2];
   const identity = { subjectKind: file.principals.subject } as IdentityConfig;
@@ -341,6 +342,8 @@ export function compileIdentity(file: IdentityYaml, options: CompileIdentityOpti
   if (delegates.length === 1) identity.delegateKind = delegates[0]![0];
   identity.factorSlots = one.factors;
   identity.verifyTool = one.verify;
+  // More than one way to prove level 1 (identity.yaml's `ways`): each its factors, tool and line.
+  if (one.ways !== undefined) identity.ways = Object.freeze(one.ways.map((w) => Object.freeze({ factorSlots: Object.freeze([...w.factors]), verifyTool: w.verify, ...(w.say !== undefined ? { sayPromptId: w.say } : {}) })));
   if (two) {
     identity.codeTool = two.verify;
     identity.sendCodeTool = two.send;
@@ -775,11 +778,20 @@ export function identityProblems(c: PolicyCheckInput): Problem[] {
   const I = c.files.identity;
   const one = identity.levels[1];
   const two = identity.levels[2];
-  one.factors.forEach((slot, i) => {
-    if (c.slots && !c.slots.has(slot)) at(I, ['levels', '1', 'factors', i], `slot "${slot}" is not defined`, `${renameHint(slot, [...c.slots])}${c.addSlot ? c.addSlot(slot) : 'add it to the app\'s slots'}`);
+  // Each factor at its own place: under its way, or under the level's factors.
+  const factorPaths: [DataPath, string][] = one.ways !== undefined
+    ? one.ways.flatMap((w, i) => w.factors.map((slot, j): [DataPath, string] => [['levels', '1', 'ways', i, 'factors', j], slot]))
+    : one.factors.map((slot, i): [DataPath, string] => [['levels', '1', 'factors', i], slot]);
+  for (const [path, slot] of factorPaths) {
+    if (c.slots && !c.slots.has(slot)) at(I, path, `slot "${slot}" is not defined`, `${renameHint(slot, [...c.slots])}${c.addSlot ? c.addSlot(slot) : 'add it to the app\'s slots'}`);
+  }
+  // With ways, each way's tool and line, at its own place in the file; the first way's tool is one.verify.
+  const wayTools: [DataPath, string | undefined, string][] = (one.ways ?? []).map((w, i) => [['levels', '1', 'ways', i, 'verify'], w.verify, '{ level: 0, rules: [attempts] }']);
+  (one.ways ?? []).forEach((w, i) => {
+    if (w.say !== undefined && c.prompts && !c.prompts.includes(w.say)) at(I, ['levels', '1', 'ways', i, 'say'], `prompt "${w.say}" is not in prompts.yaml`, `${renameHint(w.say, c.prompts)}add "${w.say}:" to prompts.yaml with its text and interruptible`);
   });
   const tools: [DataPath, string | undefined, string][] = [
-    [['levels', '1', 'verify'], one.verify, '{ level: 0, rules: [attempts] }'],
+    ...(one.ways !== undefined ? wayTools : [[['levels', '1', 'verify'], one.verify, '{ level: 0, rules: [attempts] }'] as [DataPath, string | undefined, string]]),
     [['levels', '2', 'send'], two?.send, '{ level: 1, rules: [identity] }'],
     [['levels', '2', 'verify'], two?.verify, '{ level: 1, rules: [identity, attempts] }'],
   ];

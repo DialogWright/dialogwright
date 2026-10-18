@@ -5,7 +5,7 @@ import { isOldIdentityContent, isOldPolicyContent } from './convert/legacyShape'
 import { WHOLE_FILE, closest, formatPath, keyPositionOf, positionOf, problemsOfIssues, type DataPath, type Problem } from './problems';
 import {
   FILE_KINDS, FILE_NAMES, FOLDER_FILES, REQUIRED_KINDS, SCHEMAS, SLOTS_FILE, localeFormsSchema, localeIntentsSchema, localeSlotsSchema, slotsSchema,
-  type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityYaml, type IntentsYaml, type LocaleFormsYaml, type LocaleIntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
+  normalizeIdentity, type AppYaml, type FileKind, type RoutesYaml, type FormsYaml, type IdentityFile, type IdentityYaml, type IntentsYaml, type LocaleFormsYaml, type LocaleIntentsYaml, type LocaleSlotsYaml, type PolicyYaml, type PromptYaml,
   type PromptsYaml, type SlotsYaml, type StyleYaml,
 } from './schema/index';
 import { jsonSchemaFor, type JsonSchema } from './schema/json';
@@ -306,7 +306,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
     intents: valid.intents,
     forms: valid.forms,
     policy: valid.policy,
-    identity: valid.identity ?? null,
+    identity: valid.identity ? normalizeIdentity(valid.identity as unknown as IdentityFile) : null,
     routes: valid.routes ?? null,
     slots: valid.slots ?? null,
     style: valid.style ?? null,
@@ -891,7 +891,7 @@ export function loadConfigFile(source: string | Record<string, unknown>, kind: '
     const lines = new LineCounter();
     if (isOldShape(kind, source)) return { value: null, file, doc, lines, located: false, problems: [{ ...oldShape(file, kind), line: 0, column: 0 }] };
     const parsed = SCHEMAS[kind].safeParse(source);
-    if (parsed.success) return { value: parsed.data as PolicyYaml | IdentityYaml, file, doc, lines, located: false, problems };
+    if (parsed.success) return { value: kind === 'identity' ? normalizeIdentity(parsed.data as IdentityFile) : (parsed.data as PolicyYaml), file, doc, lines, located: false, problems };
     const found = problemsOfIssues(parsed.error.issues, { file, doc, lines, value: source, schema: jsonSchemaOf(kind), homesOf: (key) => homesOf(kind, key) });
     return { value: null, file, doc, lines, located: false, problems: found.map((p) => ({ ...p, line: 0, column: 0 })) };
   }
@@ -916,6 +916,6 @@ export function loadConfigFile(source: string | Record<string, unknown>, kind: '
   const documents = new Map<string, { doc: Document; lines: LineCounter }>();
   const checked = checkFile(file, kind, read.text, problems, documents, {});
   const parsed = documents.get(file)!;
-  const value = problems.length === 0 ? (checked as PolicyYaml | IdentityYaml) : null;
+  const value = problems.length === 0 ? (kind === 'identity' ? normalizeIdentity(checked as IdentityFile) : (checked as PolicyYaml)) : null;
   return { value, file, doc: parsed.doc, lines: parsed.lines, located: true, problems };
 }

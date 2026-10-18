@@ -75,17 +75,49 @@ const callerId = z
   .optional()
   .describe('A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors ("I see an account associated with the number you\'re calling from. To access it, please tell me your date of birth, or say different account."). Never identity on its own: the other factors verify it. Needs app.yaml\'s callerNumber lookup and the code\'s facts.callerMatch. A no, "different account" or a failed check falls back to asking every factor.');
 
+/** One way to prove level 1 (a level's `ways`): its factors and the tool that checks them. */
+const way = z
+  .strictObject({
+    factors: unique(identifier(), 'factor slot')
+      .min(1, { error: 'must name at least one factor' })
+      .describe('The slots this way asks, in this order. Each slot id is also the name of its verify tool\'s param that carries its value.'),
+    verify: identifier().describe('The tool that checks this way\'s factors. Its action in policy.yaml runs only the attempts rule; every way\'s tool counts against the one count of attempts.'),
+    say: identifier()
+      .optional()
+      .describe('The line said when the caller is moved to this way after missing the one before it ("No problem, I can find it by your phone number and zip code."), before its first factor is asked. Default: none, the factor\'s question alone.'),
+  })
+  .describe('One way to prove the level: its factors and the tool that checks them.');
+
 const level1 = z
   .strictObject({
     name: text().describe('What the level is called, as the policy card says it (for example "verified"). A label: the engine records the number.'),
     factors: unique(identifier(), 'factor slot')
       .min(1, { error: 'must name at least one factor' })
-      .describe('The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool\'s param that carries its value.'),
-    verify: identifier().describe('The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule.'),
+      .optional()
+      .describe('The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool\'s param that carries its value. Write `ways` instead for more than one way to prove the level.'),
+    verify: identifier().optional().describe('The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule.'),
+    ways: z
+      .array(way)
+      .min(2, { error: 'must list at least two ways (one way is `factors` and `verify`)' })
+      .optional()
+      .describe('More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way\'s factor is asked the rest of that way, and one who misses a way\'s question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. Not with callerId.'),
     failedPrompt: identifier().optional().describe('The prompt said before the factors are asked again after a failed match. Default "identity_failed".'),
     callerId,
   })
-  .describe('Level 1: the factors matched.');
+  .superRefine((l, ctx) => {
+    const single = l.factors !== undefined || l.verify !== undefined;
+    if (l.ways !== undefined && single) ctx.addIssue({ code: 'custom', path: ['ways'], message: 'level 1 names both ways and factors (or verify)', params: { fix: 'keep ways, and delete factors and verify: each way names its own' } });
+    if (l.ways === undefined && (l.factors === undefined || l.verify === undefined)) ctx.addIssue({ code: 'custom', path: [], message: 'level 1 needs factors and verify, or ways', params: { fix: 'add "factors: [...]" and "verify: <tool>", or "ways:" with each way\'s factors and verify' } });
+    if (l.ways !== undefined && l.callerId !== undefined) ctx.addIssue({ code: 'custom', path: ['callerId'], message: 'a level with ways takes no callerId: the caller-ID match stands in for one set of factors', params: { fix: 'delete callerId, or write one way as factors and verify' } });
+    if (l.ways !== undefined) {
+      const seen = new Map<string, number>();
+      l.ways.forEach((w, i) => w.factors.forEach((f) => {
+        if (seen.has(f) && seen.get(f) !== i) ctx.addIssue({ code: 'custom', path: ['ways', i, 'factors'], message: `factor "${f}" is in two ways`, params: { fix: 'give each way factors of its own' } });
+        seen.set(f, i);
+      }));
+    }
+  })
+  .describe('Level 1: the factors matched, or one of several ways.');
 
 const level2 = z
   .strictObject({
@@ -129,4 +161,25 @@ export const identitySchema = z
   })
   .describe('identity.yaml: who the app serves and how a caller proves who they are. Leave the file out for an app that verifies no one.');
 
-export type IdentityYaml = z.infer<typeof identitySchema>;
+/** identity.yaml as it is written. */
+export type IdentityFile = z.infer<typeof identitySchema>;
+
+/** One way to prove level 1, as written. */
+export type IdentityWayYaml = z.infer<typeof way>;
+
+/**
+ * identity.yaml as the app reads it (normalizeIdentity): level 1's `factors` every factor of every way, in
+ * order, and its `verify` the first way's tool, so a reader of one set of factors reads them all.
+ */
+export type IdentityYaml = Omit<IdentityFile, 'levels'> & {
+  levels: Omit<IdentityFile['levels'], 1> & { 1: Omit<IdentityFile['levels'][1], 'factors' | 'verify'> & { factors: string[]; verify: string } };
+};
+
+/** identity.yaml as written, made what the app reads (IdentityYaml): a level with ways gets the union of their factors and its first way's tool. */
+export function normalizeIdentity(file: IdentityFile): IdentityYaml {
+  const one = file.levels[1];
+  const ways = one.ways;
+  const factors = ways !== undefined ? ways.flatMap((w) => w.factors) : one.factors ?? [];
+  const verify = ways !== undefined ? ways[0]!.verify : one.verify ?? '';
+  return { ...file, levels: { ...file.levels, 1: { ...one, factors, verify } } };
+}

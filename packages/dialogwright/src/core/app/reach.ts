@@ -39,16 +39,17 @@ export function reachOf(forms: Readonly<Record<string, FormCalls>>): Reach {
 }
 
 /** The tools the identity flow calls itself: the factors' check, and the one-time code's send and check. */
-export function identityTools(identity: Pick<IdentityConfig, 'verifyTool' | 'codeTool' | 'sendCodeTool'> | undefined): ToolName[] {
+export function identityTools(identity: Pick<IdentityConfig, 'verifyTool' | 'codeTool' | 'sendCodeTool' | 'ways'> | undefined): ToolName[] {
   if (!identity) return [];
-  return [identity.verifyTool, identity.codeTool, identity.sendCodeTool].filter((t): t is string => typeof t === 'string' && t !== '');
+  const checks = identity.ways?.map((w) => w.verifyTool) ?? [identity.verifyTool];
+  return [...checks, identity.codeTool, identity.sendCodeTool].filter((t): t is string => typeof t === 'string' && t !== '');
 }
 
 /**
  * The actions no form reaches: those that no form lists and the identity flow does not call. Empty
  * when the app declares no calls (nothing is known), in the policy's order otherwise.
  */
-export function unreachedActions(actions: readonly ToolName[], forms: Readonly<Record<string, FormCalls>>, identity: Pick<IdentityConfig, 'verifyTool' | 'codeTool' | 'sendCodeTool'> | undefined): ToolName[] {
+export function unreachedActions(actions: readonly ToolName[], forms: Readonly<Record<string, FormCalls>>, identity: Pick<IdentityConfig, 'verifyTool' | 'codeTool' | 'sendCodeTool' | 'ways'> | undefined): ToolName[] {
   const reach = reachOf(forms);
   if (!reach.declared) return [];
   const flow = new Set(identityTools(identity));

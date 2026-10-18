@@ -518,6 +518,14 @@ export type Completion =
    */
   | { kind: 'again'; slots: readonly SlotId[]; acks: Ack[] };
 
+/** One way to prove level 1 (IdentityConfig.ways). */
+export interface IdentityWay {
+  readonly factorSlots: readonly SlotId[];
+  readonly verifyTool: ToolName;
+  /** The line said when the caller is moved to this way (identity.yaml's `say`). */
+  readonly sayPromptId?: string;
+}
+
 export interface IdentityConfig {
   /**
    * The principal kind the app serves and verifies (e.g. 'customer'). Any other kind but anonymous
@@ -534,6 +542,12 @@ export interface IdentityConfig {
    * slot id is also the name of the verify tool's param that carries its value.
    */
   factorSlots: SlotId[];
+  /**
+   * More than one way to prove level 1 (identity.yaml's `ways`; core/identityWays.ts): each its factors,
+   * the tool that checks them, and the line said when the caller is moved to it. Absent for a level with
+   * one set of factors. With ways, factorSlots is every way's factors, in order, and verifyTool the first's.
+   */
+  ways?: readonly IdentityWay[];
   /** The tool that verifies the factors (e.g. verifyCustomer). */
   verifyTool: ToolName;
   /**

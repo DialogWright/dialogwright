@@ -2010,7 +2010,6 @@ A line of it reads `setUpPlan BLOCK reason=date-range {...}` followed by each ru
 Found so far, with the workaround each time. Log the ones you meet in the worksheet.
 
 - **One list of confirmed fields per app**: list the union, send `''` for the rest (above).
-- **One set of factors per level, so no either-or verification** ("your account number, or your phone number and ZIP code"): level 1 has one `factors` list. Choose one set ([Which factors](#which-identity-factors-when-the-paragraph-is-silent)); where the other route is the number calling, [caller ID as the identifier](#verified-by-caller-id-callerid) is the second road to level 1.
 - **No slot asked only of some callers**: a form asks every slot it lists. Give each kind of caller its own form, or its own entry form before a shared booking ([Several entry forms, one booking](#several-entry-forms-one-booking-next)).
 - **The caller's number cannot be offered for a factor**: a phone number on file works as a factor when the caller says or keys it (a `digits` slot), but `callerNumber` on a factor is refused, so the line cannot offer "the number you're calling from" for it. For callers who call from it, use [caller ID as the identifier](#verified-by-caller-id-callerid).
 - **No slot type for an amount of money or an address** (above).

@@ -294,7 +294,12 @@ function identitySection(app: App, source: PolicySource): string[] {
   const verify = `${actionLabel(source, identity.verifyTool)} (${code(identity.verifyTool)})`;
   out.push('| Level | Name | What the caller gives | Checked by |', '| --- | --- | --- | --- |');
   out.push(`| 0 | ${levelName(app, 0)} | nothing | |`);
-  out.push(`| 1 | ${cell(levelName(app, 1))} | their ${factors} | ${cell(verify)} |`);
+  // Level 1 by each of its ways (identity.yaml's `ways`), a row each; one row for one set of factors.
+  if (identity.ways !== undefined) {
+    for (const way of identity.ways) out.push(`| 1 | ${cell(levelName(app, 1))} | their ${slotsInWords(app, way.factorSlots)} | ${cell(`${actionLabel(source, way.verifyTool)} (${code(way.verifyTool)})`)} |`);
+  } else {
+    out.push(`| 1 | ${cell(levelName(app, 1))} | their ${factors} | ${cell(verify)} |`);
+  }
   if (top === 2) {
     const send = `${actionLabel(source, identity.sendCodeTool!)} (${code(identity.sendCodeTool!)})`;
     const check = `${actionLabel(source, identity.codeTool!)} (${code(identity.codeTool!)})`;
@@ -304,6 +309,9 @@ function identitySection(app: App, source: PolicySource): string[] {
   out.push(`- Each level includes the one below it. A ${identity.subjectKind} below an action's level is asked for what the next level needs; any other caller is refused.`);
   out.push(`- The identity checks (${identityToolsOf(identity).map((t) => `${actionLabel(source, t)}, ${code(t)}`).join('; ')}) are for ${identity.subjectKind}s only: a caller not yet verified may use them, and any other party (one who acts for ${identity.subjectKind}s, or anyone else) is refused them before their rules run.`);
   if (top === 2) out.push('- The one-time code is keyed on the keypad: it is masked, never traced and never held as a slot.');
+  if (identity.ways !== undefined) {
+    out.push(`- Level 1 has ${identity.ways.length} ways, each checked by its own check: the caller is asked the first (their ${slotsInWords(app, identity.ways[0]!.factorSlots)}), and one who gives another way's ${identity.ways.length > 2 ? 'details' : `(their ${slotsInWords(app, identity.ways[1]!.factorSlots)})`} or misses a way's question is asked the next way's. Failed checks share one count of attempts.`);
+  }
   // A caller-ID match as the identifier (identity.yaml's callerId): another way to give level 1's
   // factors, checked by the same check. Only for an app that sets it, so every other card is as it was.
   const callerId = identity.callerId;
@@ -332,7 +340,11 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   const top = topLevelOf(identity);
   const out = ['flowchart LR'];
   for (const level of ladderLevels(app)) out.push(`  L${level}(${mermaidLabel(`Level ${level}`, levelName(app, level))})`);
-  out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, identity.factorSlots)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  if (identity.ways !== undefined) {
+    for (const way of identity.ways) out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, way.factorSlots)}`, `checked by: ${actionLabel(source, way.verifyTool)}`)}| L1`);
+  } else {
+    out.push(`  L0 -->|${mermaidLabel(`gives ${slotsInWords(app, identity.factorSlots)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+  }
   const callerId = identity.callerId;
   if (callerId !== undefined) {
     const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));

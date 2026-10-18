@@ -449,6 +449,8 @@ export function compiledPolicyOf(tables: PolicyTables, subjectKind: string, iden
 }
 
 /** The identity tools of an app's identity configuration, each named once: its verify tool, and its code tools where it has a code. */
-export function identityToolsOf(identity: { readonly verifyTool: ToolName; readonly codeTool?: ToolName; readonly sendCodeTool?: ToolName }): ToolName[] {
-  return [...new Set([identity.verifyTool, identity.sendCodeTool, identity.codeTool].filter((t): t is ToolName => typeof t === 'string' && t !== ''))];
+export function identityToolsOf(identity: { readonly verifyTool: ToolName; readonly codeTool?: ToolName; readonly sendCodeTool?: ToolName; readonly ways?: readonly { readonly verifyTool: ToolName }[] }): ToolName[] {
+  // Every way's check (identity.yaml's `ways`), the first of which is verifyTool.
+  const checks = identity.ways?.map((w) => w.verifyTool) ?? [identity.verifyTool];
+  return [...new Set([...checks, identity.sendCodeTool, identity.codeTool].filter((t): t is ToolName => typeof t === 'string' && t !== ''))];
 }

@@ -52,18 +52,53 @@
               "description": "What the level is called, as the policy card says it (for example \"verified\"). A label: the engine records the number."
             },
             "factors": {
+              "description": "The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool's param that carries its value. Write `ways` instead for more than one way to prove the level.",
               "minItems": 1,
               "type": "array",
               "items": {
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-              },
-              "description": "The slots asked for a step-up to this level (for example accountId, dob), in this order. Each slot id is also the name of the verify tool's param that carries its value."
+              }
             },
             "verify": {
+              "description": "The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule.",
               "type": "string",
-              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-              "description": "The tool that checks the factors (for example verifyCustomer). Its action in policy.yaml runs only the attempts rule."
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+            },
+            "ways": {
+              "description": "More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way's factor is asked the rest of that way, and one who misses a way's question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. Not with callerId.",
+              "minItems": 2,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "factors": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                    },
+                    "description": "The slots this way asks, in this order. Each slot id is also the name of its verify tool's param that carries its value."
+                  },
+                  "verify": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "description": "The tool that checks this way's factors. Its action in policy.yaml runs only the attempts rule; every way's tool counts against the one count of attempts."
+                  },
+                  "say": {
+                    "description": "The line said when the caller is moved to this way after missing the one before it (\"No problem, I can find it by your phone number and zip code.\"), before its first factor is asked. Default: none, the factor's question alone.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                  }
+                },
+                "required": [
+                  "factors",
+                  "verify"
+                ],
+                "additionalProperties": false,
+                "description": "One way to prove the level: its factors and the tool that checks them."
+              }
             },
             "failedPrompt": {
               "description": "The prompt said before the factors are asked again after a failed match. Default \"identity_failed\".",
@@ -99,12 +134,10 @@
             }
           },
           "required": [
-            "name",
-            "factors",
-            "verify"
+            "name"
           ],
           "additionalProperties": false,
-          "description": "Level 1: the factors matched."
+          "description": "Level 1: the factors matched, or one of several ways."
         },
         "2": {
           "type": "object",

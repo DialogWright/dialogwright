@@ -40,6 +40,7 @@ import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from '.
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
+import { nextWayAfter, waysOf } from './identityWays';
 
 export interface TurnContext {
   /**
@@ -777,6 +778,16 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   // to the form's next slot, though the only question the customer was asked is the sign-in.
   if (awaitingSignIn(s)) return prompt('signin_reminder', 'intent', {}, acks);
   if (target === 'otp') return codeReask(s, io, acks, 'ask_otp');
+  // A missed answer to a way's question while identity is asked (identity.yaml's `ways`: "I don't know
+  // the code"): the next way, with no attempt counted, after its line, where it has one.
+  const nextWay = target !== 'intent' && plain !== true && s.stepUp !== null && isAnonymous(s.principal) ? nextWayAfter(io.app, target) : null;
+  if (nextWay !== null) {
+    const way = waysOf(io.app)[nextWay]!;
+    s.identityWay = nextWay;
+    const first = way.factorSlots.find((id) => s.slots[id]!.value === null) ?? way.factorSlots[0]!;
+    const lead = way.sayPromptId !== undefined ? [{ promptId: way.sayPromptId, vars: {} }] : [];
+    return askSlot(s, first, s.slots[first]!.window, [...acks, ...lead]);
+  }
   const attempts = target === 'intent' ? ++s.intentAttempts : ++s.slots[target]!.attempts;
   const step = rungFor(s, attempts, t, target === 'intent' ? t.MAX_ATTEMPTS : attemptsOf(io.app, target, t));
   if (step === 'agent') return target === 'intent' ? handoff(s, 'max-attempts', acks) : slotRunsOut(s, target, acks, io);

@@ -412,6 +412,11 @@ export interface Session {
    */
   slotsSeen?: Record<SlotId, string>;
   /**
+   * The way a step-up is asking (identity.yaml's level 1 `ways`, core/identityWays.ts): its index, 0 the
+   * first. Absent until a caller is moved to another way, and for an app with one set of factors.
+   */
+  identityWay?: number;
+  /**
    * The nos the caller has said to each of the open form's checks' read-backs (a check outcome's
    * `confirm`), by action: a second no to one goes to a person. Absent until the first no, and gone
    * when the form closes or another is entered, as `checked` is.
