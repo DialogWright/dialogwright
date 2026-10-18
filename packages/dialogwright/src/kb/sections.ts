@@ -45,7 +45,7 @@ export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | u
     // The sections' own model (documents.embedder): its index, and the model loaded when the app starts.
     const index = kb.sectionsIndex;
     if (index && 'data' in index) {
-      const embedder = new LazyOnnxEmbedder(settings.embedder, index.data.embedder.dim);
+      const embedder = new LazyOnnxEmbedder(settings.embedder, index.data.embedder.dim, kb.folder);
       dense = { embedder, vectors: index.data, floor: settings.floor ?? ONNX_DEFAULT_FLOOR };
       indexHash = index.hash;
     }

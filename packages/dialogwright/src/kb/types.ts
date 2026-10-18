@@ -161,6 +161,8 @@ export interface KnowledgeBase {
   /** How the sections are found (kb/sections.yaml), by section key: the questions each answers and its keywords. Never said. */
   /** The glossary (kb/glossary.yaml, ./glossary.ts): applied to the sections answered from by summarizing, never to a passage. */
   readonly glossary?: Glossary;
+  /** The kb folder's own path, when it was read from disk: where a package the app installs for it is found from (the ONNX embedder's). */
+  readonly folder?: string;
   readonly sectionHints?: Readonly<Record<string, { readonly asks: readonly string[]; readonly keywords: readonly string[] }>>;
   /**
    * The log of approvals (kb/approvals.jsonl, ./log.ts) as read: each line's id, hash and where it

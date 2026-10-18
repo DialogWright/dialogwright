@@ -57,19 +57,22 @@ interface TransformersModule {
 }
 
 /** The package, imported on first use; an OnnxUnavailableError when it is not there. */
-export async function loadTransformers(): Promise<TransformersModule> {
+export async function loadTransformers(from?: string): Promise<TransformersModule> {
   // A variable specifier: the type checker and bundlers do not look for an optional package.
   const specifier: string = ONNX_PACKAGE;
   try {
     return (await import(specifier)) as TransformersModule;
   } catch (error) {
-    // The app's own folder: an app installs the package, and an engine linked from elsewhere (a
-    // workspace, a link: dependency) does not see the app's node_modules from where it is.
-    try {
-      const resolved = createRequire(join(process.cwd(), 'package.json')).resolve(specifier);
-      return (await import(pathToFileURL(resolved).href)) as TransformersModule;
-    } catch {
-      // Not there either: the package is not installed.
+    // The app's own folder (the knowledge base's, `from`, then where the process runs): an app installs
+    // the package, and an engine linked from elsewhere (a workspace, a link: dependency, a host's server
+    // started in another folder) does not see the app's node_modules from where it is.
+    for (const dir of [...(from !== undefined ? [from] : []), process.cwd()]) {
+      try {
+        const resolved = createRequire(join(dir, 'package.json')).resolve(specifier);
+        return (await import(pathToFileURL(resolved).href)) as TransformersModule;
+      } catch {
+        // Not there: the next place, else the package is not installed.
+      }
     }
     throw new OnnxUnavailableError(error);
   }
@@ -104,6 +107,8 @@ export interface OnnxEmbedderOptions {
   cacheDir?: string;
   /** Only a model already in the cache; never fetch. Default false. */
   localOnly?: boolean;
+  /** The folder the package is found from before the engine's and the process's (the app's knowledge base folder). */
+  from?: string;
 }
 
 export class OnnxEmbedder implements Embedder {
@@ -129,7 +134,7 @@ export class OnnxEmbedder implements Embedder {
     if (typeof revision !== 'string' || !PINNED_REVISION.test(revision)) {
       throw new Error(`the ONNX embedder needs a pinned revision: the commit of the model's repository to load (40 hex characters), not ${revision === undefined ? 'none' : JSON.stringify(revision)}; a branch such as "main" moves, and an index built by one model would be read by another`);
     }
-    const mod = await loadTransformers();
+    const mod = await loadTransformers(options.from);
     const model = options.model ?? ONNX_DEFAULT_MODEL;
     const dtype = options.dtype ?? 'fp32';
     const pooling = options.pooling ?? 'cls';
@@ -190,6 +195,7 @@ export class LazyOnnxEmbedder implements Embedder {
   constructor(
     private readonly settings: OnnxModelSettings,
     dim: number,
+    private readonly from?: string,
     private readonly create: (options: OnnxEmbedderOptions) => Promise<OnnxEmbedder> = (o) => OnnxEmbedder.create(o),
   ) {
     this.id = onnxIdOf(settings);
@@ -200,7 +206,7 @@ export class LazyOnnxEmbedder implements Embedder {
 
   /** Loads the model now (once). */
   warm(): Promise<OnnxEmbedder> {
-    this.loading ??= this.create({ model: this.settings.onnx, revision: this.settings.revision, pooling: this.settings.pooling, dtype: this.settings.dtype, id: this.id });
+    this.loading ??= this.create({ model: this.settings.onnx, revision: this.settings.revision, pooling: this.settings.pooling, dtype: this.settings.dtype, id: this.id, ...(this.from !== undefined ? { from: this.from } : {}) });
     return this.loading;
   }
 

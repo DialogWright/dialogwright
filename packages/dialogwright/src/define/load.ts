@@ -296,7 +296,7 @@ function load(dir: string, problems: Problem[], documents: Map<string, { doc: Do
   if (existsNoFollow(join(root.real, 'kb'))) {
     const io = kbIo(root.real, problems, documents, contents);
     const before = problems.length;
-    knowledge = readKbFolder({ base: 'kb', defaultLocale, io, problems });
+    knowledge = readKbFolder({ base: 'kb', folder: join(root.real, 'kb'), defaultLocale, io, problems });
     if (knowledge && problems.length === before) problems.push(...kbContentProblems(knowledge, io.locate));
   }
 
@@ -764,7 +764,7 @@ export function loadKnowledgeFolder(dir: string, defaultLocale: string = DEFAULT
     problems.push(problemAt(base, WHOLE_FILE, `the knowledge base folder "${dir}" does not exist`, 'pass the path of the folder that holds kb.yaml, topics.yaml and passages/'));
     return none();
   }
-  const kb = readKbFolder({ base, defaultLocale, io, problems });
+  const kb = readKbFolder({ base, folder: join(root, base), defaultLocale, io, problems });
   if (kb && problems.length === 0) problems.push(...kbContentProblems(kb, io.locate, base));
   return { kb: problems.length === 0 ? kb : null, problems: sortProblems(problems), locate: io.locate, hashes: configHashesOf(contents), base };
 }

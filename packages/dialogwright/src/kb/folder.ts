@@ -80,6 +80,8 @@ const KB_ENTRIES: Readonly<Record<string, 'file' | 'dir'>> = {
 export interface ReadKbInput {
   /** The kb folder's path from the app folder, as problems name it ("kb"). */
   base: string;
+  /** The kb folder's own path, where a package an app installs for it is found from (the ONNX embedder's). */
+  folder?: string;
   /** The app's default locale: kb/passages' and kb/topics.yaml's. */
   defaultLocale: string;
   io: KbFolderIo;
@@ -87,7 +89,7 @@ export interface ReadKbInput {
 }
 
 /** Reads the kb folder. Returns null when kb.yaml or topics.yaml did not load; every problem goes to `problems`. */
-export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput): KnowledgeBase | null {
+export function readKbFolder({ base, folder, defaultLocale, io, problems }: ReadKbInput): KnowledgeBase | null {
   const at = (file: string, path: DataPath, message: string, fix: string): void => {
     const where = path.length === 0 ? null : io.locate(file, path);
     problems.push({ file, line: where?.line ?? 1, column: where?.column ?? 1, path: path.length === 0 ? WHOLE_FILE : formatPath(path), message, fix });
@@ -261,6 +263,7 @@ export function readKbFolder({ base, defaultLocale, io, problems }: ReadKbInput)
     ...(index ? { index } : {}),
     ...(sectionsIndex ? { sectionsIndex } : {}),
     ...(glossary ? { glossary } : {}),
+    ...(folder !== undefined ? { folder } : {}),
     ...(sectionsYaml ? { sectionHints: Object.fromEntries(Object.entries(sectionsYaml).map(([key, h]) => [key, { asks: h.asks ?? [], keywords: h.keywords ?? [] }])) } : {}),
     ...(approvalLog ? { approvalLog } : {}),
   };
