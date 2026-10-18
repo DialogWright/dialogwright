@@ -19,6 +19,7 @@ export const FORM_HOOKS = [
   'onSummaryAnswer',
   'keepsSlot',
   'onSummaryRead',
+  'afterSlot',
 ] as const;
 export type FormHook = (typeof FORM_HOOKS)[number];
 
@@ -51,7 +52,7 @@ const form = z
           'entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), ' +
           'confirmedParams (the values a confirmed write sends, for the gate\'s confirmed rule), complete (runs when the form is full and confirmed), ' +
           'onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), ' +
-          'onSummaryRead (looks at what the summary is about to name).',
+          'onSummaryRead (looks at what the summary is about to name), afterSlot (runs once a slot is given a value, before the next question: a system asked between the questions).',
       ),
     answers: z
       .strictObject({

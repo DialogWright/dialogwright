@@ -19,6 +19,7 @@ A slot of this type is written under its id in slots.yaml, with `type: record` a
 | `keyPattern` | string | `[A-Za-z0-9_-]+` | A regular expression (its source, no slashes) the whole key must match, such as "\d{4}" for four digits. A record whose key does not match is not offered, and a label or keys that do not match are no value. A key longer than 64 characters is never tried, and a group that repeats a repeat, such as (\d+)+, is refused. |
 | `labelPrefix` | string | `record_` | What each label the model chooses starts with, before the key ("parcel_" gives parcel_4711). It keeps a key from being taken for the question's own "none". |
 | `label` | string | `Number {key}` | The criterion the model is given for each record. A template: {field} is the record's field of that name, {key} the record's key, and {field\|day} formats an ISO date as a day ("Friday, September 18"). Nothing else is evaluated. |
+| `display` | string | unset | What the slot's value is said as (its display: the read-back, a line that names it, the console): a template over the record's fields, as `label` is ("{label}" for a time a schedule labels "Saturday, October 24 at 10:30 AM"). A key no record on the list has (a spoken number, a keypad entry) is said as itself. Default: the key. A template: {field} is the record's field of that name, {key} the record's key, and {field\|day} formats an ISO date as a day ("Friday, September 18"). Nothing else is evaluated. |
 | `spoken` | map | unset | Numbers of `digits` digits the caller says (spoken or written) are offered too, after the records, even when no record has them, so a caller can name one that is not on their list. Default: off, only the records are offered. |
 | `spoken.digits` | integer, 1 to 20 | required | How many digits a number the caller says has. |
 | `spoken.label` | string | `Number {key}, as the caller said it` | The criterion the model is given for a number the caller says; {key} is the number. A template: {field} is the record's field of that name, {key} the record's key, and {field\|day} formats an ISO date as a day ("Friday, September 18"). Nothing else is evaluated. |
@@ -55,7 +56,7 @@ A question's id is the slot's id followed by the part's name (the slot `note` an
 |---|---|
 | `ids.choice` | The id of the question that asks which record the caller means. |
 
-The slot is read back in the final summary and not on its own unless `confirm: always` says so, and its display is the key as it is.
+The slot is read back in the final summary and not on its own unless `confirm: always` says so. Its display is the key as it is, or, with `display`, the record said from its fields (`display: "{label}"` for a time a schedule labels "Saturday, October 24 at 10:30 AM", keyed `1030`); a key no record on the list has is said as itself.
 
 ## Labels
 
@@ -73,7 +74,7 @@ The slot reads the probabilities the model gives each label, not its one pick:
 
 | What the caller said | The outcome |
 |---|---|
-| A record, and the model's probability for it reaches `fillAt` | `filled`: the value and the display are the key, and no read-back is asked for |
+| A record, and the model's probability for it reaches `fillAt` | `filled`: the value is the key, the display the key or `display`, and no read-back is asked for |
 | Two records, the top one at `SLOT_CHOICE_CONFIRM` or above and the second within `SLOT_CHOICE_MARGIN` of it (with `disambiguate`) | `disambiguate`, between the two keys |
 | `none`, a label the slot never offers, a key `keyPattern` refuses, or a top label below `SLOT_CHOICE_CONFIRM` or (without a rival) below `fillAt` | `invalid` with `missReason` when the slot was asked for, else `absent` |
 | No answer at all (the question was not asked, having nothing to offer) | the same: `invalid` with `missReason` when the slot was asked for (so the retry ladder moves on), else `absent` |
@@ -103,7 +104,7 @@ the records `{ number: "7101", item: a box of books, day: "2026-09-14" }` and `{
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two keys. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale, with only those variables.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two records' displays. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale, with only those variables.
 
 ## Examples
 
@@ -209,6 +210,30 @@ booking:
 |---|---|---|
 | booking B twelve<br>_records [{"id":"B12","room":"the north room"},{"id":"C3","room":"the garden room"}]_ | `bookingChoice`: `record_B12` 0.88, `record_C3` 0.02, `none` 0.1 | filled: value `B12`, display `B12`, display in es `B12` |
 | no booking yet<br>_records [{"id":"B12","room":"the north room"}]_ | `bookingChoice`: `none` 0.95, `record_B12` 0.05 | absent |
+
+</details>
+
+#### opening
+
+Open times from a schedule, each labelled by the schedule and said by its label (display), keyed by the time of day.
+
+```yaml
+opening:
+  type: record
+  from: openings
+  key: at
+  keyPattern: \d{4}
+  labelPrefix: at_
+  label: "{label}"
+  display: "{label}"
+```
+
+<details><summary>Starter utterances (2)</summary>
+
+| The caller says | The model answers | The slot gives |
+|---|---|---|
+| ten thirty works<br>_sources {"openings":[{"at":"1030","label":"Saturday, October 24 at 10:30 AM"},{"at":"1100","label":"Saturday, October 24 at 11:00 AM"}]}_ | `openingChoice`: `at_1030` 0.9, `at_1100` 0.06, `none` 0.04 | filled: value `1030`, display `Saturday, October 24 at 10:30 AM`, display in es `Saturday, October 24 at 10:30 AM` |
+| ten thirty or eleven, either<br>_sources {"openings":[{"at":"1030","label":"Saturday, October 24 at 10:30 AM"},{"at":"1100","label":"Saturday, October 24 at 11:00 AM"}]}_ | `openingChoice`: `at_1030` 0.47, `at_1100` 0.45, `none` 0.08 | disambiguate |
 
 </details>
 

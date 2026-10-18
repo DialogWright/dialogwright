@@ -74,6 +74,7 @@ export const recordOptions = z
       .default(DEFAULT_LABEL_PREFIX)
       .describe('What each label the model chooses starts with, before the key ("parcel_" gives parcel_4711). It keeps a key from being taken for the question\'s own "none".'),
     label: labelTemplate('The criterion the model is given for each record.').default(DEFAULT_LABEL),
+    display: labelTemplate('What the slot\'s value is said as (its display: the read-back, a line that names it, the console): a template over the record\'s fields, as `label` is ("{label}" for a time a schedule labels "Saturday, October 24 at 10:30 AM"). A key no record on the list has (a spoken number, a keypad entry) is said as itself. Default: the key.').optional(),
     spoken: z
       .strictObject({
         digits: z.number().int().min(1).max(MAX_KEYPAD).describe('How many digits a number the caller says has.'),
@@ -128,6 +129,7 @@ export const recordOptions = z
       });
     }
     const labels: [string, string, readonly string[] | undefined][] = [['label', o.label, undefined]];
+    if (o.display !== undefined) labels.push(['display', o.display, undefined]);
     if (o.spoken) labels.push(['spoken.label', o.spoken.label, ['key']]);
     for (const [path, template, only] of labels) {
       for (const problem of checkLabelTemplate(template, only)) {

@@ -921,6 +921,12 @@ function completionContext(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[
   return { ...appContext(s, tc, out), acks, refusal: (decision) => refusal(s, decision, acks) };
 }
 
+/** A form's afterSlot hook for `slot` (FormDef.afterSlot), with the turn's acks so far: null where the form has none, or it goes on. */
+export function afterSlot(s: Session, form: FormId, slot: SlotId, acks: Ack[], tc: TurnContext, out: TurnOut): Completion | null {
+  const hook = formOf(appOf(s), form).afterSlot;
+  return hook === undefined ? null : hook({ ...completionContext(s, tc, out, acks), slot });
+}
+
 /** A full, confirmed form's completion: the app's answer for the form, through the gate. */
 export function completion(s: Session, form: FormId, acks: Ack[], tc: TurnContext, out: TurnOut): Completion {
   return formOf(appOf(s), form).complete(completionContext(s, tc, out, acks));

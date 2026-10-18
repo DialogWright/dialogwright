@@ -3,7 +3,18 @@ import type { AnswerMap } from '../../jev/types';
 import { isChoice, rankProbabilities } from '../../jev/types';
 import { meetsThreshold } from '../parts/thresholds';
 import type { RecordOptions } from './options';
-import { keyMatcher } from './questions';
+import { keyMatcher, recordsOf } from './questions';
+import { renderLabel } from './label';
+
+/** The record on the slot's list whose key is `key`, or null. */
+function recordOfKey(o: RecordOptions, ctx: Pick<SlotContext, 'records' | 'sources'>, key: string): Record<string, unknown> | null {
+  for (const record of recordsOf(o, ctx)) {
+    if (typeof record !== 'object' || record === null) continue;
+    const value = (record as Record<string, unknown>)[o.key];
+    if ((typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) && String(value) === key) return record as Record<string, unknown>;
+  }
+  return null;
+}
 
 /** The key a label names (`labelPrefix` and a key that matches `keyPattern`), or null for `none` and any other label. */
 export function keyOfLabel(o: Pick<RecordOptions, 'labelPrefix' | 'keyPattern'>): (label: string) => string | null {
@@ -28,10 +39,16 @@ export function keyOfLabel(o: Pick<RecordOptions, 'labelPrefix' | 'keyPattern'>)
 export function recordFill(
   o: RecordOptions,
   questionId: string,
-  display: (value: string, locale?: string) => string,
+  keyDisplay: (value: string, locale?: string) => string,
 ): (answers: AnswerMap, ctx: SlotContext) => SlotOutcome {
   const keyOf = keyOfLabel(o);
   return (answers, ctx) => {
+    // With `display`, a record on the list is said from its fields; any other key as itself.
+    const display = (key: string, locale?: string): string => {
+      if (o.display === undefined) return keyDisplay(key, locale);
+      const record = recordOfKey(o, ctx, key);
+      return record === null ? keyDisplay(key, locale) : renderLabel(o.display, key, record);
+    };
     const t = ctx.thresholds;
     const a = answers[questionId];
     const miss: SlotOutcome = ctx.prompted ? { kind: 'invalid', reason: o.missReason, raw: '' } : { kind: 'absent' };

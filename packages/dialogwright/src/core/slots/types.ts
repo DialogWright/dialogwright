@@ -370,9 +370,13 @@ export interface SlotSpec {
    * "7625 Oak Hollow Lane"). The display is what a line and the model's turn state carry, as for any
    * slot; a locale switch keeps it rather than formatting the value again, a handoff and the console
    * show the value, and the conformance kit does not hold a fill's display to display(value).
+   * `fill`: a fill's display is made from what the slot chose from, which display(value) does not have
+   * (a record slot with `display`: the record said from its fields, "Saturday, October 24 at 10:30 AM",
+   * its value the key "1030"). As with `said`, a locale switch keeps it and the conformance kit does
+   * not hold a fill's display to display(value); a handoff and the console show the display, as for any slot.
    * Absent: a display is display(value, locale).
    */
-  displayFrom?: 'said';
+  displayFrom?: 'said' | 'fill';
   /**
    * How the slot's value is masked wherever it leaves the turn: a tool call's param of the same
    * name as it is recorded (the gate event, the trace, the audit), and the trace's and console's

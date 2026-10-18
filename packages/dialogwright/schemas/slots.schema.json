@@ -1568,6 +1568,12 @@
             "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
             "description": "The criterion the model is given for each record. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
           },
+          "display": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+            "description": "What the slot's value is said as (its display: the read-back, a line that names it, the console): a template over the record's fields, as `label` is (\"{label}\" for a time a schedule labels \"Saturday, October 24 at 10:30 AM\"). A key no record on the list has (a spoken number, a keypad entry) is said as itself. Default: the key. A template: {field} is the record's field of that name, {key} the record's key, and {field|day} formats an ISO date as a day (\"Friday, September 18\"). Nothing else is evaluated."
+          },
           "spoken": {
             "description": "Numbers of `digits` digits the caller says (spoken or written) are offered too, after the records, even when no record has them, so a caller can name one that is not on their list. Default: off, only the records are offered.",
             "type": "object",

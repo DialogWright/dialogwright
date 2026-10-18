@@ -32,7 +32,7 @@
             "description": "The prompt (an id in prompts.yaml) that reads the filled form back for a yes, or null for a form with no summary (it completes as soon as its slots are full)."
           },
           "hooks": {
-            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's) or goes on to a `next` form (its completion is then that form). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name).",
+            "description": "The code hooks this form uses, written in the app's TypeScript; \"complete\" is required, unless the form `answers` from the knowledge base (its completion is then the engine's) or goes on to a `next` form (its completion is then that form). entry (the call made before the slots are asked), onEntry (applies its result), principalEntry (in its place for someone acting for subjects), confirmedParams (the values a confirmed write sends, for the gate's confirmed rule), complete (runs when the form is full and confirmed), onAnswers (hears every spoken turn), onSummaryAnswer (moves along what the summary offers), keepsSlot (keeps a slot the caller named when changing), onSummaryRead (looks at what the summary is about to name), afterSlot (runs once a slot is given a value, before the next question: a system asked between the questions).",
             "type": "array",
             "items": {
               "type": "string",
@@ -45,7 +45,8 @@
                 "onAnswers",
                 "onSummaryAnswer",
                 "keepsSlot",
-                "onSummaryRead"
+                "onSummaryRead",
+                "afterSlot"
               ]
             }
           },

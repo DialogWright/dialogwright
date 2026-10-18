@@ -19,7 +19,7 @@ import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, ty
 import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
-import { appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
+import { afterSlot, appContext, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
 import { checkEnding, checkHash, checksOf, outcomeOf, runChecks, type CheckReconfirmed, type FormStopped } from './checks';
 import { attemptsOf, endingOf, hasOwnRetries, MAX_ATTEMPTS_REASON, noInputLineOf, retryLineOf, slotOutcomeOf, type Ending, type SlotExhausted } from './outcome';
 import { callerCandidate, callerNumberSlots, callerPrivacyOf, callerUriOfRaw, keptCalledNumber, keptCallerNumber, lastFour, skipsIfNone, skipsOnNo, usableCallerNumber, yesNoOffer, type OfferPending } from './callerNumber';
@@ -528,7 +528,12 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed:
   // with the check's own line, and the write is never attempted.
   const checks = runChecks(s, form, io.tc, io.out);
   if (checks.kind !== 'passed') return stopForm(s, form, checks, acks, io, agreed);
-  const c = completion(s, form, [...acks, ...passedAcks(s, checks)], io.tc, io.out);
+  // The form's afterSlot hook for a value that changed since it last ran (a zip corrected at the
+  // read-back): it may send the caller back a step, or end the form, before anything is written.
+  const before = [...acks, ...passedAcks(s, checks)];
+  const looked = runAfterSlot(s, form, before, io);
+  if (looked !== null) return looked;
+  const c = completion(s, form, before, io.tc, io.out);
   switch (c.kind) {
     case 'said':
       // The routes after this form (routes.yaml afterForm), before its next; then a form with a next
@@ -543,9 +548,62 @@ function completeForm(s: Session, form: FormId, acks: Ack[], io: TurnIO, agreed:
     case 'reconfirm':
       // The values moved after the summary was read: the form loop reads it again.
       return continueForm(s, io, c.acks, null);
+    case 'again':
+      // A system's answer sends the caller back a step (a time just taken): those slots are asked again.
+      emptyForAgain(s, c.slots);
+      return continueForm(s, io, c.acks, null);
     case 'decision':
       return c.decision;
   }
+}
+
+/**
+ * The form's afterSlot hook (FormDef.afterSlot) for each of its slots whose value it has not seen yet,
+ * in the form's order (Session.slotsSeen keeps the value each was last seen with): a system asked
+ * between the questions. `said` is the turn's acks so far, replaced by what the hook says when it goes
+ * on. Null when the form goes on to its next question; else the decision that ends the turn there: an
+ * `again` empties its slots and asks the first of them (continueForm, once more, with nothing else to
+ * see), an `end`, a refusal or a decision ends the form, not completed. Designed 2026-10-18
+ * (docs/designs/2026-10-18-after-slot.md).
+ */
+function runAfterSlot(s: Session, form: FormId, said: Ack[], io: TurnIO): Decision | null {
+  const def = formOf(io.app, form);
+  if (def.afterSlot === undefined) return null;
+  for (const slot of def.slots) {
+    const value = s.slots[slot]?.value ?? null;
+    if (value === null || s.slotsSeen?.[slot] === value) continue;
+    s.slotsSeen = { ...(s.slotsSeen ?? {}), [slot]: value };
+    const c = afterSlot(s, form, slot, [...said], io.tc, io.out);
+    if (c === null) continue;
+    switch (c.kind) {
+      case 'said':
+      case 'reconfirm':
+        said.splice(0, said.length, ...c.acks);
+        continue;
+      case 'again':
+        emptyForAgain(s, c.slots);
+        return continueForm(s, io, c.acks, null);
+      case 'end':
+        return actOn(s, form, { then: 'end', acks: c.acks.slice(), line: { promptId: c.promptId, vars: c.vars }, ...(c.goodbye === false ? { goodbye: false as const } : {}) }, io);
+      case 'refused':
+        return finishForm(s, form, c.acks, io, false);
+      case 'decision':
+        return c.decision;
+    }
+  }
+  return null;
+}
+
+/** The slots an `again` names, emptied to be asked again (their value, display and confirmation, and what the hook saw of them), and the summary's read-back with them. */
+function emptyForAgain(s: Session, slots: readonly SlotId[]): void {
+  for (const id of slots) {
+    if (!Object.hasOwn(s.slots, id)) continue;
+    s.slots[id] = emptySlot();
+    if (s.slotsSeen !== undefined) delete s.slotsSeen[id];
+    if (s.agreed !== undefined) delete s.agreed[id];
+  }
+  s.pendingConfirmation = null;
+  s.pendingHash = null;
 }
 
 /**
@@ -941,7 +999,7 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
   // slot shown as said (SlotSpec.displayFrom) keeps the words: they are the caller's in any locale,
   // and display(value) would give the written value in their place.
   const locale = slotLocaleOf(s);
-  const formatted = (id: SlotId): boolean => Object.hasOwn(io.app.slots, id) && slotSpecOf(io.app, id).displayFrom !== 'said';
+  const formatted = (id: SlotId): boolean => Object.hasOwn(io.app.slots, id) && slotSpecOf(io.app, id).displayFrom === undefined;
   const shown = (id: SlotId, value: string): string => slotSpecOf(io.app, id).display(value, locale, io.tc.todayIso);
   // A factor filled from the caller-ID match has no display: it is never said, in any language.
   for (const [id, slot] of Object.entries(s.slots)) if (slot.value !== null && slot.by !== 'caller-id' && formatted(id)) slot.display = shown(id, slot.value);
@@ -956,7 +1014,7 @@ function switchLocale(s: Session, io: TurnIO, target: string): void {
  */
 function inLocaleOf(s: Session, io: TurnIO, fill: FillResult): Pick<FillResult, 'acks' | 'disambiguate'> {
   const locale = slotLocaleOf(s);
-  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => ({ ...c, display: slotSpecOf(io.app, id).display(c.value, locale, io.tc.todayIso) });
+  const shown = (id: SlotId, c: SlotCandidate): SlotCandidate => (slotSpecOf(io.app, id).displayFrom === undefined ? { ...c, display: slotSpecOf(io.app, id).display(c.value, locale, io.tc.todayIso) } : c);
   return {
     acks: fill.acks.map((a) => ({ ...a, vars: Object.fromEntries(Object.entries(a.vars).map(([k, v]) => [k, Object.hasOwn(io.app.slots, k) ? (s.slots[k]?.display ?? v) : v])) })),
     disambiguate: fill.disambiguate && { ...fill.disambiguate, a: shown(fill.disambiguate.slot, fill.disambiguate.a), b: shown(fill.disambiguate.slot, fill.disambiguate.b) },
@@ -1150,6 +1208,9 @@ function continueForm(s: Session, io: TurnIO, acks: Ack[], disambiguate: FillRes
   const checks = runChecks(s, form, io.tc, io.out);
   if (checks.kind !== 'passed') return stopForm(s, form, checks, said, io);
   said.push(...passedAcks(s, checks));
+  // A system asked between the questions (FormDef.afterSlot), for each value it has not seen.
+  const looked = runAfterSlot(s, form, said, io);
+  if (looked !== null) return looked;
   const next = nextPrompt(s);
   // The caller said whether they know the answer rather than answering: the slot's help prompt
   // takes the question's place this once, and the attempt count does not move, but only when the form would still ask that slot next; otherwise the question the

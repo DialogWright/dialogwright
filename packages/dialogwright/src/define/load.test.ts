@@ -245,7 +245,7 @@ describe('loadAppFolder: problems', () => {
         line: 12,
         column: 13,
         path: 'forms.billing.hooks[0]',
-        message: '"hooks[0]" is "onSumaryRead", which is not allowed here; it must be one of "entry", "onEntry", "principalEntry", "confirmedParams", "complete", "onAnswers", "onSummaryAnswer", "keepsSlot", "onSummaryRead"',
+        message: '"hooks[0]" is "onSumaryRead", which is not allowed here; it must be one of "entry", "onEntry", "principalEntry", "confirmedParams", "complete", "onAnswers", "onSummaryAnswer", "keepsSlot", "onSummaryRead", "afterSlot"',
         fix: 'change it to "onSummaryRead"'
       }
     ]);

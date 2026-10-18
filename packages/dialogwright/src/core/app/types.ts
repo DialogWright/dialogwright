@@ -244,6 +244,16 @@ export interface FormDef {
   /** Runs when the form's slots are complete (and confirmed, where it has a summary). */
   complete(ctx: CompletionContext): Completion;
   /**
+   * Runs once for each value one of the form's slots is given, and again when that value changes,
+   * after the form's checks and before its next question (and first thing again at completion), in the
+   * order the form lists its slots: for a system asked between the questions (an area served, the
+   * openings on a day; docs/designs/2026-10-18-after-slot.md). `ctx.slot` is the slot. Null, or
+   * `said`, goes on (its acks said before the next question); `again` empties the slots it names and
+   * asks the first of them again, no attempt counted; `end`, `decision` and a refusal end the form there,
+   * not completed. `reconfirm` is the same as `said`.
+   */
+  afterSlot?(ctx: CompletionContext & { readonly slot: SlotId }): Completion | null;
+  /**
    * The form heard a spoken turn: `answers` are perception's, the app's own questions'
    * (App.questions) among them, for a preference the caller may volunteer at any point (e.g. a part
    * of the day), which the hook keeps in the session's facts. It runs before the turn fills a slot
@@ -494,7 +504,12 @@ export type Completion =
   | { kind: 'end'; promptId: string; vars: Record<string, string>; acks: Ack[]; goodbye?: false }
   | Refused
   | { kind: 'reconfirm'; acks: Ack[] }
-  | { kind: 'decision'; decision: Decision };
+  | { kind: 'decision'; decision: Decision }
+  /**
+   * A system's answer sends the caller back a step (a time just taken): `slots` are emptied, the acks
+   * said, and the form asks the first of them again, then reads its summary again; no attempt is counted.
+   */
+  | { kind: 'again'; slots: readonly SlotId[]; acks: Ack[] };
 
 export interface IdentityConfig {
   /**

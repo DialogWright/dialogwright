@@ -206,6 +206,7 @@ export interface ParkedTask {
   readonly reachedThrough?: readonly FormId[];
   readonly callerMatch?: 'offered';
   readonly checked?: Readonly<Record<string, string>>;
+  readonly slotsSeen?: Readonly<Record<SlotId, string>>;
   readonly checkReadBackNos?: Readonly<Record<string, number>>;
   readonly callerOffered?: readonly SlotId[];
   /** The nos said to its slots' read-backs (SlotState.readBackNos), by slot, which entering the aside drops. */
@@ -405,6 +406,12 @@ export interface Session {
    */
   checked?: Record<string, string>;
   /**
+   * The value each of the open form's slots had when its afterSlot hook last ran for it (FormDef.afterSlot,
+   * core/turn.ts runAfterSlot), so the hook runs once for each value. Absent until it runs, and gone
+   * when the form closes or another is entered, as the checks' passes are.
+   */
+  slotsSeen?: Record<SlotId, string>;
+  /**
    * The nos the caller has said to each of the open form's checks' read-backs (a check outcome's
    * `confirm`), by action: a second no to one goes to a person. Absent until the first no, and gone
    * when the form closes or another is entered, as `checked` is.
@@ -549,6 +556,7 @@ export function cloneSession(s: Session): Session {
     identityAttempts: { ...s.identityAttempts },
     pendingConfirmation: clonePending(s.pendingConfirmation),
     ...(s.checked ? { checked: { ...s.checked } } : {}),
+    ...(s.slotsSeen ? { slotsSeen: { ...s.slotsSeen } } : {}),
     ...(s.checkReadBackNos ? { checkReadBackNos: { ...s.checkReadBackNos } } : {}),
     ...(s.callerOffered ? { callerOffered: [...s.callerOffered] } : {}),
     ...(s.agreed ? { agreed: { ...s.agreed } } : {}),
@@ -569,6 +577,7 @@ function cloneParked(p: ParkedTask): ParkedTask {
     pendingConfirmation: clonePending(p.pendingConfirmation),
     ...(p.reachedThrough ? { reachedThrough: [...p.reachedThrough] } : {}),
     ...(p.checked ? { checked: { ...p.checked } } : {}),
+    ...(p.slotsSeen ? { slotsSeen: { ...p.slotsSeen } } : {}),
     ...(p.checkReadBackNos ? { checkReadBackNos: { ...p.checkReadBackNos } } : {}),
     ...(p.callerOffered ? { callerOffered: [...p.callerOffered] } : {}),
     ...(p.readBackNos ? { readBackNos: { ...p.readBackNos } } : {}),
@@ -595,6 +604,7 @@ export function parkTask(session: Session): void {
     ...(session.reachedThrough ? { reachedThrough: session.reachedThrough } : {}),
     ...(session.callerMatch === 'offered' ? { callerMatch: 'offered' as const } : {}),
     ...(session.checked ? { checked: session.checked } : {}),
+    ...(session.slotsSeen ? { slotsSeen: session.slotsSeen } : {}),
     ...(session.checkReadBackNos ? { checkReadBackNos: session.checkReadBackNos } : {}),
     ...(session.callerOffered ? { callerOffered: session.callerOffered } : {}),
     ...(Object.keys(readBackNos).length > 0 ? { readBackNos } : {}),
@@ -630,6 +640,8 @@ export function unparkTask(session: Session): void {
   if (back.callerMatch === 'offered' && session.callerMatch === undefined) session.callerMatch = 'offered';
   if (back.checked) session.checked = { ...back.checked };
   else delete session.checked;
+  if (back.slotsSeen) session.slotsSeen = { ...back.slotsSeen };
+  else delete session.slotsSeen;
   if (back.checkReadBackNos) session.checkReadBackNos = { ...back.checkReadBackNos };
   else delete session.checkReadBackNos;
   if (back.callerOffered) session.callerOffered = [...back.callerOffered];
@@ -677,6 +689,7 @@ export function setForm(session: Session, form: FormId): Session {
   session.pendingHash = null;
   // The checks a form passed are its own: the new form runs its checks afresh.
   delete session.checked;
+  delete session.slotsSeen;
   delete session.checkReadBackNos;
   // And the nos said to its slots' read-backs: a slot carried in is read back afresh.
   for (const slot of Object.values(session.slots)) delete slot.readBackNos;
@@ -724,6 +737,7 @@ export function closeForm(session: Session, keep: readonly SlotId[] = []): Sessi
   session.confirmedHash = null;
   session.pendingConfirmation = null;
   delete session.checked;
+  delete session.slotsSeen;
   delete session.checkReadBackNos;
   delete session.callerOffered;
   app.facts?.onFormClosed?.(session.facts);

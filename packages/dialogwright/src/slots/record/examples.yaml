@@ -132,3 +132,33 @@
         records:
           - { id: B12, room: the north room }
       expect: { kind: absent }
+
+- name: opening
+  about: Open times from a schedule, each labelled by the schedule and said by its label (display), keyed by the time of day.
+  slot: opening
+  config:
+    from: openings
+    key: at
+    keyPattern: '\d{4}'
+    labelPrefix: at_
+    label: "{label}"
+    display: "{label}"
+  utterances:
+    - text: ten thirty works
+      answers:
+        openingChoice: { choice: { at_1030: 0.9, at_1100: 0.06, none: 0.04 } }
+      context:
+        sources:
+          openings:
+            - { at: "1030", label: "Saturday, October 24 at 10:30 AM" }
+            - { at: "1100", label: "Saturday, October 24 at 11:00 AM" }
+      expect: { kind: filled, value: "1030", display: "Saturday, October 24 at 10:30 AM", displays: { es: "Saturday, October 24 at 10:30 AM" } }
+    - text: ten thirty or eleven, either
+      answers:
+        openingChoice: { choice: { at_1030: 0.47, at_1100: 0.45, none: 0.08 } }
+      context:
+        sources:
+          openings:
+            - { at: "1030", label: "Saturday, October 24 at 10:30 AM" }
+            - { at: "1100", label: "Saturday, October 24 at 11:00 AM" }
+      expect: { kind: disambiguate }

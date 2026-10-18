@@ -10,7 +10,7 @@ Reach for it when the caller chooses among things the app has looked up. For a f
 
 <!-- slot-docs:options -->
 
-The slot is read back in the final summary and not on its own unless `confirm: always` says so, and its display is the key as it is.
+The slot is read back in the final summary and not on its own unless `confirm: always` says so. Its display is the key as it is, or, with `display`, the record said from its fields (`display: "{label}"` for a time a schedule labels "Saturday, October 24 at 10:30 AM", keyed `1030`); a key no record on the list has is said as itself.
 
 ## Labels
 
@@ -28,7 +28,7 @@ The slot reads the probabilities the model gives each label, not its one pick:
 
 | What the caller said | The outcome |
 |---|---|
-| A record, and the model's probability for it reaches `fillAt` | `filled`: the value and the display are the key, and no read-back is asked for |
+| A record, and the model's probability for it reaches `fillAt` | `filled`: the value is the key, the display the key or `display`, and no read-back is asked for |
 | Two records, the top one at `SLOT_CHOICE_CONFIRM` or above and the second within `SLOT_CHOICE_MARGIN` of it (with `disambiguate`) | `disambiguate`, between the two keys |
 | `none`, a label the slot never offers, a key `keyPattern` refuses, or a top label below `SLOT_CHOICE_CONFIRM` or (without a rival) below `fillAt` | `invalid` with `missReason` when the slot was asked for, else `absent` |
 | No answer at all (the question was not asked, having nothing to offer) | the same: `invalid` with `missReason` when the slot was asked for (so the retry ladder moves on), else `absent` |
@@ -58,7 +58,7 @@ the records `{ number: "7101", item: a box of books, day: "2026-09-14" }` and `{
 
 ## Prompts
 
-`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two keys. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale, with only those variables.
+`ask_<slot>` and `ask_<slot>_retry` as for every slot. With `disambiguate` (the default), `disambiguate_<slot>` with `{a}` and `{b}`, the two records' displays. With `keypad`, `ask_<slot>_dtmf`. With `confirm: always`, `confirm_<slot>`, given `{<slot>}` set to the display: the read-back said as soon as a value is heard; a no empties the slot and asks it again (`ack_declined`, then `ask_<slot>`, or `ask_<slot>_dtmf` at the keypad rung with `keypad`), a step on the slot's ladder; the right answer said with the no ("no, it's ...") is taken instead, and a second no to the read-back goes to a person. `dialogwright check` requires each in every locale, with only those variables.
 
 ## Examples
 

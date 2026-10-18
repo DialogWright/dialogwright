@@ -15,10 +15,46 @@
 | `onSummaryAnswer` | At the summary, an answer that was neither a yes nor a change: the form's own move along what the summary offers. |
 | `keepsSlot` | At the summary, whether a named detail is kept and the answer is the form's own move instead. |
 | `onSummaryRead` | The summary is about to be read: lets the form look at what it names that the slots do not hold. |
+| `afterSlot` | One of the form's slots was given a value (or a new one), before the next question: a system asked between the questions ([below](#a-system-asked-between-the-questions-afterslot)). |
 
 The clinic's reschedule form has six: `[onSummaryRead, onAnswers, onSummaryAnswer, keepsSlot, confirmedParams, complete]`. The library's check_hold has one. Start with `complete` and add a hook only when the form needs it.
 
-Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the routes after identity the first time the caller is through it ([routes.yaml](02-the-files-one-by-one.md#routesyaml-optional)), runs the form's `checks` ([forms.yaml, Checks](02-the-files-one-by-one.md#checks-ending-a-form-part-way)), and asks the next slot or reads the summary. A `STEP_UP` from the entry call or from a check asks for identity first, and the loop comes back to the same place once the caller is verified. A yes at the summary runs the checks once more, then `complete`; a `said` completion runs the routes after the form, then its `next`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form: a `next`, a check's outcome or a route does that.
+Where they run in a turn: the turn fills slots (speech, the keypad, a correction at the summary), then the form loop asks a disambiguation or a slot read-back if one is due, makes the `entry` call if the form has not passed it, runs the routes after identity the first time the caller is through it ([routes.yaml](02-the-files-one-by-one.md#routesyaml-optional)), runs the form's `checks` ([forms.yaml, Checks](02-the-files-one-by-one.md#checks-ending-a-form-part-way)), runs `afterSlot` for each slot whose value it has not seen, and asks the next slot or reads the summary. A `STEP_UP` from the entry call or from a check asks for identity first, and the loop comes back to the same place once the caller is verified. A yes at the summary runs the checks once more, and `afterSlot` for a value changed there, then `complete`; a `said` completion runs the routes after the form, then its `next`. A form that rules a caller out on an answer needs no hook for it: write a check, not a `complete` that turns the caller away after the rest was asked, and never write `s.queued` from a hook to chain a second form: a `next`, a check's outcome or a route does that.
+
+### A system asked between the questions: `afterSlot`
+
+Some answers need a system before the next question: a zip code the business may not serve, the day whose openings the next question names. `afterSlot` runs once for each value one of the form's slots is given, and again when that value changes (a zip corrected at the read-back), after the form's checks and before its next question, in the order the form lists its slots ([the design](../designs/2026-10-18-after-slot.md)). It is given what `complete` is given, with `c.slot`, and returns what `complete` returns, or null:
+
+```ts
+// An illustration: a booking line's coverage and openings, its tools asking the scheduling system.
+afterSlot(c) {
+  if (c.slot === 'zip') {
+    const { decision, value } = c.callTool({ tool: 'checkCoverage', params: { zip: c.s.slots.zip!.value! } }, { failSoft: true });
+    if (decision.verdict !== 'ALLOW') return c.refusal(decision);
+    if ((value as Coverage | null)?.coverage === 'out_of_area') return { kind: 'decision', decision: handoff(c.s, 'out-of-area', c.acks) };
+    return null;
+  }
+  if (c.slot === 'day') {
+    const openings = /* the day's openings, through the gate */;
+    if (openings.length === 0) return { kind: 'again', slots: ['day'], acks: [...c.acks, { promptId: 'none_that_day', vars: {} }] };
+    (c.s.facts as Facts).openings = openings;   // the opening slot's records (facts.forSlots)
+    return { kind: 'said', acks: [...c.acks, { promptId: 'openings_on_day', vars: { first, last } }] };
+  }
+  return null;
+},
+```
+
+| It returns | What follows |
+|---|---|
+| `null`, `said` (or `reconfirm`) | the form goes on; `said`'s acks are said before the next question |
+| `again` (`slots`, `acks`) | those slots are emptied and the first of them asked again after the acks; no attempt is counted (the caller answered, the system said no) |
+| `end` | the call ends on the line, the form not completed |
+| `decision` | that decision, such as a handoff |
+| a refusal | the gate's line or a person, the form closed |
+
+List it in the form's `hooks` and its actions in `calls`, as for any hook. Its calls go through the gate like any other; what it decides is what a system's answer means for the conversation, as a completion decides what a write's answer means. The session keeps the value each slot was last seen with (`slotsSeen`), gone when the form closes.
+
+`complete` may return `again` too: `{ kind: 'again', slots: ['opening'], acks }` for a time taken between the read-back and the yes empties those slots, asks the first again, and reads the summary again, every other value kept.
 
 ### The start hook, predicates and `failSoft`
 

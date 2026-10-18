@@ -53,6 +53,8 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
       fill: recordFill(o, questionId, display),
       ...(o.keypad !== undefined ? { dtmf: { length: o.keypad, parse: recordKeys({ keyPattern: o.keyPattern, keypad: o.keypad }, display) } } : {}),
       display,
+      // With `display`, a fill is said from the record it chose, which display(key) does not have.
+      ...(o.display !== undefined ? { displayFrom: 'fill' as const } : {}),
     };
   },
   get examples() {
