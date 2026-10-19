@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Action, ChatBlock } from '../actions';
+import type { Action, ChatBlock, SaySource } from '../actions';
 
-export type { ChatBlock, ChatInline } from '../actions';
+export type { ChatBlock, ChatInline, SaySource } from '../actions';
 import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX, CHAT_CONTEXT_MAX_BYTES, CONTEXT_KEY, contextBytes } from '../callData';
 
 /**
@@ -13,7 +13,7 @@ import { CALL_DATA_MAX_KEYS, CALL_DATA_VALUE_MAX, CHAT_CONTEXT_MAX_BYTES, CONTEX
  * `context` is the page's own data (strings by key, at most CHAT_CONTEXT_KEYS of them, each at most
  * CHAT_CONTEXT_VALUE_MAX characters, CHAT_CONTEXT_BYTES in all), of which the app keeps only the keys its callData names
  * (`chat.<key>`); optional, so a client that sends none is unchanged and the version stays 1.
- * Server to client: `ready` (session, resume, locale), `say` (text, lang, rich?, replies?), `transfer` (reason), `end`,
+ * Server to client: `ready` (session, resume, locale), `say` (text, lang, rich?, replies?, sources?), `transfer` (reason), `end`,
  * `signed_in` (level), `error` (code, message), `pong`.
  *
  * The server sends what the core keeps for a person taking over (a transfer's collected slots) only
@@ -74,7 +74,12 @@ export type ServerMessage =
    * `text` (app.yaml's chat.replies); absent unless the app turns them on and the line asks a question
    * with a known set of answers.
    */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
+  /**
+   * `sources`: where a knowledge answer's words come from, each a document's title, a section's heading and
+   * the page it starts on (app.yaml's chat.sources); absent unless the app turns them on and the line says
+   * an answer from its knowledge base.
+   */
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * `transfer.send.chat`), for the page's own handover; `slots` (with `unconfirmed`, the values the
@@ -136,7 +141,7 @@ export function actionsToChatMessages(actions: readonly Action[], defaultLang: s
     switch (a.type) {
       case 'say': {
         const text = a.parts.flatMap((p) => ('text' in p ? [p.text] : [])).join(' ').trim();
-        return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang, ...(a.rich !== undefined ? { rich: structuredClone(a.rich) } : {}), ...(a.replies !== undefined ? { replies: [...a.replies] } : {}) }];
+        return text === '' ? [] : [{ type: 'say', text, lang: a.lang ?? defaultLang, ...(a.rich !== undefined ? { rich: structuredClone(a.rich) } : {}), ...(a.replies !== undefined ? { replies: [...a.replies] } : {}), ...(a.sources !== undefined ? { sources: a.sources.map((s) => ({ ...s })) } : {}) }];
       }
       case 'transfer': {
         // The collected slots only where the app's handoff data says a chat's transfer sends them (`chat: send`).

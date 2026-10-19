@@ -22,9 +22,13 @@ export type SayPart = { text: string } | { audio: string };
  * line formatted (prompts.yaml's `chat`), only on a channel that shows words (a chat) for a line the
  * app gives a chat version; its parts then hold the same words as plain text. `replies`: the answers a
  * chat shows as buttons under the line, each the words a tap sends (app.yaml's chat.replies,
- * core/replies.ts), only on a chat's question with a known set of answers.
+ * core/replies.ts), only on a chat's question with a known set of answers. `sources`: where a knowledge
+ * answer's words come from, shown under it (app.yaml's chat.sources, core/sources.ts), only on a chat.
  */
-export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string; rich?: ChatBlock[]; replies?: string[] }
+export interface Say { type: 'say'; parts: SayPart[]; interruptible: boolean; lang?: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
+
+/** A document and section a knowledge answer's words come from: the document's title, the section's heading, and the page it starts on, where the document has pages. */
+export interface SaySource { document: string; section?: string; page?: number }
 /** The session is over and its business done. */
 export interface End { type: 'end'; completed: string[] }
 /**

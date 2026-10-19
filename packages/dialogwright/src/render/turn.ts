@@ -710,7 +710,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const meta = { situations: [...p.plan.act.situations], ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
       const was = actions[p.index] as Say;
-      actions[p.index] = keepReplies(was, sayAction([{ text: got.said }], was.interruptible, was.lang));
+      actions[p.index] = keepChatExtras(was, sayAction([{ text: got.said }], was.interruptible, was.lang));
       lines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       return;
     }
@@ -766,7 +766,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (Object.keys(worded).length > 0) {
       // Said as the fixed line is (its frame's recorded clips kept), each worded span in its place.
       const was = actions[f.index] as Say;
-      actions[f.index] = keepReplies(was, promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded));
+      actions[f.index] = keepChatExtras(was, promptSay(app, promptId, { ...f.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, worded));
     }
   });
 
@@ -832,7 +832,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
     if ('said' in got) {
       const was = actions[index] as Say;
-      actions[index] = keepReplies(was, promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said }));
+      actions[index] = keepChatExtras(was, promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said }));
       answerLines.push({ ...base, mode: 'generated', said: got.said, ...meta, ...judgeOf(got) });
       kbSaid = 'worded';
       // The record of what was said: a wording of this approved passage, by its id, version and approval.
@@ -848,7 +848,9 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (got.lines !== undefined) {
       const text = openingFramed(app, result.session.locale, got.lines.text);
       const was = actions[index] as Say;
-      actions[index] = keepReplies(was, promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale));
+      // Its sources: the sections whose lines were said (by their headings), where the lines name them.
+      const said = new Set(got.lines.chosen.map((n) => a.plan.lines?.[n - 1]?.heading ?? '').filter((h) => h !== ''));
+      actions[index] = keepChatExtras(was, promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale), (s) => said.size === 0 || (s.section !== undefined && said.has(s.section)));
       lines = { chosen: got.lines.chosen, of: got.lines.of, said: text };
     }
     answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got), ...(lines !== undefined ? { lines } : {}) });
@@ -891,7 +893,14 @@ export function withRenderAudit(drafts: readonly AuditDraft[], render: readonly 
   return [...head, ...rest, ...drafts.slice(cut)];
 }
 
-/** A line worded in place of `was` keeps the answer buttons the turn gave `was` (core/replies.ts): the question is the same. */
-function keepReplies(was: Say, line: Say): Say {
-  return was.replies === undefined ? line : { ...line, replies: [...was.replies] };
+/**
+ * A line worded in place of `was` keeps what the turn gave `was` on a chat: its answer buttons (core/replies.ts),
+ * the question being the same, and where its answer comes from (core/sources.ts), the source being the
+ * same; `sources` narrows them (a fallback's lines, from some of the sections only).
+ */
+function keepChatExtras(was: Say, line: Say, sources?: (s: NonNullable<Say['sources']>[number]) => boolean): Say {
+  // Narrowed to none (a heading the lines and the sources give differently): all of them, never none.
+  const narrowed = was.sources?.filter((s) => sources?.(s) ?? true);
+  const kept = narrowed !== undefined && narrowed.length === 0 ? was.sources : narrowed;
+  return { ...line, ...(was.replies !== undefined ? { replies: [...was.replies] } : {}), ...(kept !== undefined && kept.length > 0 ? { sources: kept.map((s) => ({ ...s })) } : {}) };
 }

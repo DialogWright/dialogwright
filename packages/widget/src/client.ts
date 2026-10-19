@@ -1,4 +1,5 @@
-import { CHAT_PROTOCOL_VERSION, contextOf, type ChatBlock, type ChatErrorCode, type ClientMessage, type ServerMessage } from './protocol';
+import { CHAT_PROTOCOL_VERSION, contextOf, type ChatBlock, type ChatErrorCode, type ClientMessage, type SaySource, type ServerMessage } from './protocol';
+import { sourcesField } from './sources';
 
 /**
  * The widget without a page: the chat client. It opens the socket, starts the chat (or resumes it
@@ -42,9 +43,10 @@ export type ChatClientEvent =
   | { type: 'restarted' }
   /**
    * A line; `rich`: the same words formatted (paragraphs, lists, bold, italic), where the app gives the line a
-   * chat version (renderRich draws it); `replies`: answers to offer as buttons, each the words to send() on a tap.
+   * chat version (renderRich draws it); `replies`: answers to offer as buttons, each the words to send() on a tap;
+   * `sources`: where a knowledge answer's words come from (sourcesText words them).
    */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
   /**
    * `data`: what the app's transfer sends a chat (its transfer.send.chat), only when the server sent some;
    * `slots`: the collected slots, only where the app's handoff.data.chat says send; `unconfirmed`: those
@@ -273,7 +275,7 @@ export function createChatClient(o: ChatClientOptions): ChatClient {
         case 'pong':
           break;
         case 'say':
-          emit({ type: 'say', text: m.text, lang: m.lang, ...(m.rich !== undefined ? { rich: m.rich } : {}), ...(Array.isArray(m.replies) ? { replies: m.replies.filter((r): r is string => typeof r === 'string') } : {}) });
+          emit({ type: 'say', text: m.text, lang: m.lang, ...(m.rich !== undefined ? { rich: m.rich } : {}), ...(Array.isArray(m.replies) ? { replies: m.replies.filter((r): r is string => typeof r === 'string') } : {}), ...sourcesField(m.sources) });
           break;
         case 'transfer': {
           // Only string values are handed on: the page's handover reads them as text.

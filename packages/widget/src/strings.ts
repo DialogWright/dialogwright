@@ -43,6 +43,10 @@ export const DEFAULT_STRINGS = {
   error: 'Something went wrong. Please try again.',
   /** The label of a question's answer buttons (the app's chat.replies), for screen readers. */
   replies: 'Answers',
+  /** Before where an answer comes from (the app's chat.sources): one source, several, and a page number's mark. */
+  source: 'Source:',
+  sources: 'Sources:',
+  page: 'p.',
   /** The full-size conversation's (mountConversation): its button that starts a new one, and its status while connected or not. */
   startOver: 'Start over',
   online: 'Online',

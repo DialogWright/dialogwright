@@ -18,6 +18,9 @@ import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../ren
 import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
 import { frameViolations } from '../testing/adversarial/run';
+import { withSources } from '../core/sources';
+import { answerSourcesOf } from './answer';
+import type { Action, SaySource } from '../channel/actions';
 import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, VISITOR_GUIDE, type Edit } from './__fixtures__/libraryKbApp';
 import type { SectionRetriever } from './sections';
 import type { SectionNomination } from './types';
@@ -334,6 +337,32 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(headings).toEqual([...Array.from({ length: 38 }, () => 'Parking'), 'A lost library card', 'A lost library card']);
       const out = await rendered(app, t, renderer(), linesJudge({ 1: 0.9, 39: 0.9 }));
       expect(docLine(out).lines).toMatchObject({ chosen: [1, 39], of: 40, said: "Here's what our guide says: Parking. Parking at branch 1: free for two hours. A lost library card. A lost card is replaced at any branch desk with a photo ID." });
+    });
+
+    it('on a chat with chat.sources on, the answer says where it comes from: its sections, narrowed on a fallback to those whose lines were said', async () => {
+      const branches = Array.from({ length: 3 }, (_, i) => `Parking at branch ${i + 1}: free for two hours`);
+      const app = documentsApp('library-documents-sources', {
+        onFail: 'lines',
+        edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free parking for up to two hours. Spaces by the entrance are kept for drivers with a disability permit.\n', `    text: |-\n${branches.map((r) => `      ${r}\n`).join('')}`) },
+      });
+      const t = asked(app, 'what if I lose my card and where do I park', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#parking': 0.95, 'visitor-guide#lost-card': 0.9 });
+      const kb = app.knowledge!.kb!;
+      const both = [{ document: 'Example Town Library Visitor Guide', section: 'Parking' }, { document: 'Example Town Library Visitor Guide', section: 'A lost library card' }];
+      expect(answerSourcesOf(kb, t.result.kb!)).toEqual(both);
+      const shown = { ...app, chat: { sources: 'on' as const } } as App;
+      const sourcesOn = (actions: Action[]): (SaySource[] | undefined)[] => actions.flatMap((a) => (a.type === 'say' ? [a.sources] : []));
+      const copy = (): Action[] => t.result.actions.map((a) => ({ ...a }) as Action);
+      // On a voice call, with the setting off, or for an answer that may not be said: none.
+      expect(sourcesOn(withSources(shown, copy(), t.result.kb, { shown: false })).every((x) => x === undefined)).toBe(true);
+      expect(sourcesOn(withSources(app, copy(), t.result.kb, { shown: true })).every((x) => x === undefined)).toBe(true);
+      expect(sourcesOn(withSources(shown, copy(), { ...t.result.kb!, fresh: false }, { shown: true })).every((x) => x === undefined)).toBe(true);
+      // On a chat: the answer's line only, every section it was drawn from.
+      const actions = withSources(shown, t.result.actions, t.result.kb, { shown: true });
+      expect(sourcesOn(actions).filter((x) => x !== undefined)).toEqual([both]);
+      // Not worded, said as the lost card's line alone: that section alone.
+      const out = await rendered(app, t, renderer(), linesJudge({ 4: 0.9 }));
+      expect(docLine(out).lines).toMatchObject({ chosen: [4] });
+      expect(sourcesOn(out.actions).filter((x) => x !== undefined)).toEqual([[both[1]]]);
     });
 
     it('a wording that passes is said, and the lines are never asked; with onFail: opening they are never carried', async () => {

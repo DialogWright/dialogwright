@@ -53,6 +53,7 @@ button { cursor: pointer; }
 .turn.agent::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 9px; height: 9px; background: var(--_accent);
   clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
 .turn.agent.old { color: var(--_muted); font-size: 1rem; }
+.turn.agent .cite { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--_muted); }
 .turn.agent p { margin: 0; }
 .turn.agent p + p, .turn.agent ul, .turn.agent ol { margin: 0.5em 0 0; }
 .turn.agent ul, .turn.agent ol { padding-left: 1.1em; }

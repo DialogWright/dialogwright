@@ -1,6 +1,7 @@
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions, type ConnectionState } from './client';
 import { renderRich } from './rich';
-import { CHAT_TEXT_MAX, contextOf, isLocaleTag } from './protocol';
+import { CHAT_TEXT_MAX, contextOf, isLocaleTag, type SaySource } from './protocol';
+import { sourcesText } from './sources';
 import { stringsOf, type StringKey, type WidgetStrings } from './strings';
 import { CONVERSATION_STYLES } from './conversationStyles';
 import { appEndpointOf, endpointOf } from './ui';
@@ -148,7 +149,7 @@ export function mountConversation(container: Element | string, options: Conversa
     replyRow?.remove();
     replyRow = null;
   };
-  const line = (kind: 'agent' | 'you' | 'note', words: string, lang?: string, rich?: unknown): void => {
+  const line = (kind: 'agent' | 'you' | 'note', words: string, lang?: string, rich?: unknown, sources?: readonly SaySource[]): void => {
     if (kind === 'agent') for (const old of log.querySelectorAll('.turn.agent:not(.old)')) old.classList.add('old');
     const drawn = kind === 'agent' && rich !== undefined ? renderRich(rich) : null;
     const turn = el(drawn === null ? 'p' : 'div', { class: `turn ${kind}` });
@@ -156,6 +157,8 @@ export function mountConversation(container: Element | string, options: Conversa
     if (drawn !== null) turn.append(drawn);
     else turn.append(document.createTextNode(words));
     if (lang) turn.setAttribute('lang', lang);
+    // Where a knowledge answer comes from, under it, small (the app's chat.sources).
+    if (kind === 'agent' && sources !== undefined && sources.length > 0) turn.append(el('span', { class: 'cite' }, sourcesText(sources, s)));
     log.append(turn);
     scroll();
   };
@@ -202,7 +205,7 @@ export function mountConversation(container: Element | string, options: Conversa
         break;
       case 'say':
         busy(false);
-        line('agent', e.text, e.lang, e.rich);
+        line('agent', e.text, e.lang, e.rich, e.sources);
         offer(e.replies);
         break;
       case 'restarted':

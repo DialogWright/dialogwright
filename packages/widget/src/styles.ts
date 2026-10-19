@@ -75,6 +75,7 @@ h2 { margin: 0; padding: 14px 48px 14px 16px; font-size: 1.05em; border-bottom: 
 .line { margin: 0; max-width: 85%; padding: 8px 12px; border-radius: var(--_radius); white-space: pre-wrap; overflow-wrap: anywhere; }
 .row { display: flex; flex-direction: column; }
 .row.user { align-items: flex-end; }
+.cite { margin: 3px 0 2px; max-width: 85%; font-size: 0.78em; color: var(--_muted, #5f6368); }
 .replies { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
 .reply { font: inherit; font-size: 0.92em; cursor: pointer; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--_accent); background: transparent; color: var(--_accent); }
 .reply:hover { background: var(--_accent); color: var(--_on-accent); }

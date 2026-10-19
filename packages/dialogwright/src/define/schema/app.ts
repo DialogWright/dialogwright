@@ -595,6 +595,10 @@ export const appSchema = z
           .describe(
             'Answer buttons on a chat: "on" shows, under a question with a known set of answers, each answer as a button whose tap sends its words as the person\'s message, read as typed words are (a yes-or-no question: Yes and No, or prompts.yaml\'s reply_yes and reply_no; a choice slot\'s question: its options, each its `button` or its `say`; a record slot\'s: its records, as its `display` says them). Never for an identity factor, and only for two to eight answers. "off", the default: no buttons.',
           ),
+        sources: z
+          .enum(['on', 'off'])
+          .optional()
+          .describe('Where a knowledge answer comes from, on a chat: "on" shows under an answer from the knowledge base the document and section its words come from (the sections an answer was worded from, those whose lines a fallback said, or the section an approved passage cites), with the page where the document has pages. Never spoken on a call. "off", the default: none.'),
         page: z
           .strictObject({
             serve: z

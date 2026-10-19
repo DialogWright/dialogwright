@@ -101,6 +101,14 @@ describe('the widget', () => {
     expect(lines(root, 'agent').at(-1)).toBe('Plain words.');
   });
 
+  it('shows under a knowledge answer where it comes from, as text', () => {
+    const { f, root } = mount({ startOpen: true });
+    f.emit({ type: 'say', text: 'The ER is $150 a visit.', lang: 'en-US', sources: [{ document: 'Guide <b>', section: 'Fees' }, { document: 'Guide <b>', section: 'Hours', page: 2 }] });
+    const cite = root.querySelector('[role="log"] .cite')!;
+    expect(cite.textContent).toBe('Sources: Guide <b> · Fees; Guide <b> · Hours · p. 2');
+    expect(cite.querySelector('b')).toBeNull();
+  });
+
   it('shows a question\'s answers as buttons: a tap sends its words as the person\'s, and only the latest question\'s are shown', () => {
     const { f, root } = mount({ startOpen: true });
     f.emit({ type: 'say', text: 'Sure.', lang: 'en-US' });

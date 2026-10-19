@@ -1,6 +1,7 @@
 import { createChatClient, type ChatClient, type ChatClientEvent, type ChatClientOptions, type ConnectionState } from './client';
 import { renderRich } from './rich';
-import { CHAT_TEXT_MAX, contextOf, isLocaleTag } from './protocol';
+import { CHAT_TEXT_MAX, contextOf, isLocaleTag, type SaySource } from './protocol';
+import { sourcesText } from './sources';
 import { stringsOf, type StringKey, type WidgetStrings } from './strings';
 import { STYLES } from './styles';
 
@@ -201,7 +202,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
   let chatLang = locale;
   let over = false;
 
-  const line = (from: 'user' | 'agent' | 'notice', text: string, lang?: string, rich?: unknown): void => {
+  const line = (from: 'user' | 'agent' | 'notice', text: string, lang?: string, rich?: unknown, sources?: readonly SaySource[]): void => {
     const row = el('div', { class: `row ${from}` });
     if (from !== 'notice') row.append(el('span', { class: 'sr' }, from === 'user' ? s.you : s.agent));
     // A formatted line (its paragraphs and lists) in a block of its own; any other line is its text.
@@ -210,6 +211,8 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
     if (formatted !== null) p.append(formatted);
     if (lang) p.setAttribute('lang', lang);
     row.append(p);
+    // Where a knowledge answer comes from, under it, small (the app's chat.sources).
+    if (from === 'agent' && sources !== undefined && sources.length > 0) row.append(el('p', { class: 'cite' }, sourcesText(sources, s)));
     log.append(row);
     log.scrollTop = log.scrollHeight;
   };
@@ -258,7 +261,7 @@ export function mountWidget(options: WidgetOptions, deps: WidgetDeps = { createC
         chatLang = e.locale;
         break;
       case 'say':
-        line('agent', e.text, e.lang, e.rich);
+        line('agent', e.text, e.lang, e.rich, e.sources);
         offer(e.replies);
         break;
       case 'restarted':

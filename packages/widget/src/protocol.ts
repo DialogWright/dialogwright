@@ -74,13 +74,17 @@ export type ChatInline = { text: string; bold?: true; italic?: true } | { break:
 /** A block of a formatted line: a paragraph of runs, or a list whose items are runs (numbered where `ordered`). */
 export type ChatBlock = { type: 'paragraph'; content: ChatInline[] } | { type: 'list'; ordered: boolean; items: ChatInline[][] };
 
+/** Where a knowledge answer's words come from (a `say`'s `sources`): a document's title, a section's heading, the page it starts on. */
+export type SaySource = { document: string; section?: string; page?: number };
+
 export type ServerMessage =
   | { type: 'ready'; session: string; resume: string; locale: string }
   /**
    * A line. `rich`: the same words formatted, for a line the app gives a chat version; absent otherwise, and
    * `text` always carries the words. `replies`: answers to offer as buttons, each the words a tap sends as `text`.
+   * `sources`: where a knowledge answer's words come from, where the app shows them (its chat.sources).
    */
-  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[] }
+  | { type: 'say'; text: string; lang: string; rich?: ChatBlock[]; replies?: string[]; sources?: SaySource[] }
   /**
    * The chat goes to a person, for `reason`. `data`: what the app's transfer sends a chat (app.yaml's
    * transfer.send.chat), for the page's own handover; absent unless the app writes it. `slots` (with

@@ -983,6 +983,14 @@
             "off"
           ]
         },
+        "sources": {
+          "description": "Where a knowledge answer comes from, on a chat: \"on\" shows under an answer from the knowledge base the document and section its words come from (the sections an answer was worded from, those whose lines a fallback said, or the section an approved passage cites), with the page where the document has pages. Never spoken on a call. \"off\", the default: none.",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
         "page": {
           "description": "A chat page the engine serves for the app, branded with app.yaml's brand: its logo, name, tagline and colours, the conversation front and centre (the widget's mountConversation), ways to start, and a number to call. Default: none.",
           "type": "object",

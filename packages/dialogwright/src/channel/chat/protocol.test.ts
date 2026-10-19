@@ -51,6 +51,15 @@ describe('the chat wire', () => {
     ]);
   });
 
+  it('carries where a knowledge answer comes from, and nothing on a line without', () => {
+    const [cited, plain] = actionsToChatMessages([
+      { type: 'say', parts: [{ text: 'The ER is $150.' }], interruptible: false, sources: [{ document: 'Guide', section: 'Fees', page: 3 }] },
+      { type: 'say', parts: [{ text: 'Anything else?' }], interruptible: true },
+    ], 'en-US');
+    expect(cited).toEqual({ type: 'say', text: 'The ER is $150.', lang: 'en-US', sources: [{ document: 'Guide', section: 'Fees', page: 3 }] });
+    expect(plain).toEqual({ type: 'say', text: 'Anything else?', lang: 'en-US' });
+  });
+
   it('never sends the collected slots to the browser', () => {
     const [transfer] = actionsToChatMessages([{ type: 'transfer', reason: 'live-agent', completed: ['x'], queued: ['y'], slots: { accountId: '55501234' } }], 'en-US');
     expect(serializeServerMessage(transfer!)).toBe('{"type":"transfer","reason":"live-agent"}');

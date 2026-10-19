@@ -1494,7 +1494,7 @@ export interface App {
    * What a web chat shows beside the lines (app.yaml's `chat`): `replies: 'on'`, answer buttons under a
    * question with a known set of answers (core/replies.ts). Absent: none.
    */
-  chat?: { readonly replies?: 'on' | 'off'; readonly page?: ChatPageConfig };
+  chat?: { readonly replies?: 'on' | 'off'; readonly sources?: 'on' | 'off'; readonly page?: ChatPageConfig };
   /**
    * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
    * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is

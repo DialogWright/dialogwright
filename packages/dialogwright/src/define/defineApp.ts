@@ -1132,6 +1132,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'questionAtSummary', a.questionAtSummary);
   put(app, 'chat', a.chat === undefined ? undefined : {
     ...(a.chat.replies !== undefined ? { replies: a.chat.replies } : {}),
+    ...(a.chat.sources !== undefined ? { sources: a.chat.sources } : {}),
     ...(a.chat.page !== undefined ? { page: {
       serve: a.chat.page.serve,
       ...(a.chat.page.intro !== undefined ? { intro: a.chat.page.intro } : {}),

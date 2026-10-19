@@ -2,6 +2,7 @@ import { nextWording } from './wordings';
 import { withQuestionVars } from './questionVars';
 import { formConfirmedFields } from './confirmedFields';
 import { withReplies } from './replies';
+import { withSources } from './sources';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
 import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
@@ -3085,7 +3086,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     if (decision.kind === 'handoff') withTurnTransfer(s, decision, clockOf(tc));
     const actions = [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale, { shown: !s.caps.speech })];
     // On a chat, a question with a known set of answers gets them as buttons under its line (app.yaml's chat.replies).
-    return withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) });
+    // On a chat, a knowledge answer shows where its words come from (app.yaml's chat.sources).
+    return withSources(io.app, withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) }), io.out.kb, { shown: !s.caps.speech });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
   const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
