@@ -444,3 +444,15 @@ describe('a record slot\'s answer buttons (SlotSpec.replies, app.yaml\'s chat.re
     expect(shown.replies!(ctx(''))).toEqual([]);
   });
 });
+
+describe('a record slot\'s {choices} (SlotSpec.questionVars)', () => {
+  it('says the records it offers in a row, with "or" in the call\'s language, each as its display says it', () => {
+    const shown = defineSlot('parcel', { type: 'record', key: 'number', keyPattern: '\\d{4}', label: 'Parcel {number}', display: '{item}' });
+    expect(shown.questionVars!.names).toEqual(['choices']);
+    expect(shown.questionVars!.of(ctx('', { records: PARCELS }))).toEqual({ choices: 'a box of books or a pair of boots' });
+    const three = [...PARCELS, { number: '7103', item: 'a lamp', day: '2026-09-17' }];
+    expect(shown.questionVars!.of(ctx('', { records: three }))).toEqual({ choices: 'a box of books, a pair of boots, or a lamp' });
+    expect(shown.questionVars!.of(ctx('', { records: three, locale: 'es' }))).toEqual({ choices: 'a box of books, a pair of boots o a lamp' });
+    expect(booking.questionVars!.of(ctx('', { records: BOOKINGS }))).toEqual({ choices: 'B12 or C3' });
+  });
+});

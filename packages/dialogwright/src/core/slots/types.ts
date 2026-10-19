@@ -244,6 +244,13 @@ export interface SlotSpec {
    * more than CHAT_REPLIES_MAX): no buttons.
    */
   replies?(ctx: SlotContext): readonly string[];
+  /**
+   * Values the slot's own question lines may say (`ask_<slot>`, its retries and its other wordings), such
+   * as a record slot's `{choices}`, the records it offers said in a row ("your deep clean on Saturday, or
+   * your light clean on Wednesday"): `names`, and their values for the turn. The app's line uses them or
+   * not. Absent: the question lines are given no values, as always.
+   */
+  questionVars?: { readonly names: readonly string[]; of(ctx: SlotContext): Readonly<Record<string, string>> };
   /** Questions this slot adds to the turn schema. */
   questions(ctx: SlotContext): QuestionMap;
   /**

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { questionVarsFor } from '../core/questionVars';
 import { rulesAt } from '../core/routes';
 import { localDateIso } from '../run/clock';
 import { join } from 'node:path';
@@ -248,7 +249,7 @@ export function seedCorpusSession(session: Session, entry: CorpusEntry, opts: Se
   const slot = identity ? entry.prompted! : stopAt ?? null;
   session.promptedFor = slot;
   session.lastPromptId = slot ? `ask_${slot}` : null;
-  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, {}, session.locale, { shown: !session.caps.speech }) : '';
+  session.lastPromptText = slot ? promptText(app, `ask_${slot}`, { ...questionVarsFor(app, session, slot) }, session.locale, { shown: !session.caps.speech }) : '';
   return session;
 }
 

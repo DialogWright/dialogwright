@@ -1,4 +1,5 @@
 import { nextWording } from './wordings';
+import { withQuestionVars } from './questionVars';
 import { formConfirmedFields } from './confirmedFields';
 import { withReplies } from './replies';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
@@ -3092,6 +3093,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {
     const settled = uncheckedHandoff(s, decision, io.out.unchecked);
+    // A slot's own question with the values its lines may say (a record slot's {choices}).
+    withQuestionVars(io.app, settled, () => slotContext(s, '', tc));
     bookkeep(s, settled, label);
     return settled;
   };

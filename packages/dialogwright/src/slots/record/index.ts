@@ -1,4 +1,5 @@
 import type { SlotPrompt } from '../../core/slots/types';
+import type { SlotContext } from '../../core/slots/types';
 import { capitalized } from '../parts/replies';
 import { recordCandidates, recordsOf } from './questions';
 import { renderLabel } from './label';
@@ -24,6 +25,14 @@ export { LABEL_FILTERS, renderLabel } from './label';
 const examples = examplesFrom(new URL('./examples.yaml', import.meta.url));
 
 /** The lines a record slot may lead to, beyond ask_<slot> and ask_<slot>_retry. */
+/** The records the slot offers (none a number said), each as its display says it, else its key: its buttons and its {choices}. */
+function saidRecords(o: RecordOptions, ctx: SlotContext): string[] {
+  return recordCandidates(o, { ...ctx, text: '' }).map((c) => {
+    const record = recordsOf(o, ctx).find((r) => typeof r === 'object' && r !== null && String((r as Record<string, unknown>)[o.key]) === c.key);
+    return o.display !== undefined && record !== undefined ? renderLabel(o.display, c.key, record as Record<string, unknown>) : c.key;
+  });
+}
+
 function promptsOf(id: string, o: RecordOptions): SlotPrompt[] {
   const out: SlotPrompt[] = [];
   if (o.disambiguate) out.push({ id: `disambiguate_${id}`, why: 'the caller could mean either of two records and is asked which', vars: ['a', 'b'] });
@@ -58,11 +67,14 @@ export const recordType: SlotType<RecordOptions> = defineSlotType<RecordOptions>
       display,
       // With `display`, a fill is said from the record it chose, which display(key) does not have.
       ...(o.display !== undefined ? { displayFrom: 'fill' as const } : {}),
+      // {choices} for its question lines: the records it offers, each as its display says it, said in a row
+      // with "or" in the call's language ("A, B, or C"; "A, B o C").
+      questionVars: {
+        names: ['choices'],
+        of: (ctx) => ({ choices: new Intl.ListFormat(ctx.locale ?? 'en', { type: 'disjunction' }).format(saidRecords(o, ctx)) }),
+      },
       // Its buttons on a chat: each record on the list, said as its display says it (else its key).
-      replies: (ctx) => recordCandidates(o, { ...ctx, text: '' }).map((c) => {
-        const record = recordsOf(o, ctx).find((r) => typeof r === 'object' && r !== null && String((r as Record<string, unknown>)[o.key]) === c.key);
-        return capitalized(o.display !== undefined && record !== undefined ? renderLabel(o.display, c.key, record as Record<string, unknown>) : c.key);
-      }),
+      replies: (ctx) => saidRecords(o, ctx).map(capitalized),
     };
   },
   get examples() {

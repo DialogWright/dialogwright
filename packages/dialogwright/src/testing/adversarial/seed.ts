@@ -1,4 +1,5 @@
 import type { FormId, SlotId } from '../../core/app/types';
+import { questionVarsFor } from '../../core/questionVars';
 import { appOf } from '../../core/app/registry';
 import { formOf, identityOf } from '../../core/app/lookup';
 import { ensureEntry, newTurnOut } from '../../core/lifecycle';
@@ -92,7 +93,7 @@ export function slotSeed(form: FormId, slot: SlotId, delegate: string): Seed {
     if (instead !== null) throw new Error(`form ${form} does not let the delegate "${delegate}" in, so there is no ${slot} to answer`);
     session.promptedFor = slot;
     session.lastPromptId = `ask_${slot}`;
-    session.lastPromptText = promptText(app, `ask_${slot}`, {}, session.locale, { shown: !session.caps.speech });
+    session.lastPromptText = promptText(app, `ask_${slot}`, { ...questionVarsFor(app, session, slot) }, session.locale, { shown: !session.caps.speech });
     session.lastPromptOptions = [];
     return session;
   };

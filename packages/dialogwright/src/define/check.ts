@@ -1521,6 +1521,26 @@ function checkSlotPromptVariables(
   const reported = new Set<string>();
   for (const slot of askedSlots(config)) {
     const spec = code?.slots && Object.hasOwn(code.slots, slot) ? code.slots[slot] : undefined;
+    // A slot that gives its question lines values (SlotSpec.questionVars: a record slot's {choices}):
+    // its question, its other wordings and its retries use only those.
+    const asks = spec?.questionVars === undefined ? [] : Object.keys(prompts).filter((id) => id === `ask_${slot}` || id.startsWith(`ask_${slot}_retry`));
+    for (const id of asks) {
+      if (reported.has(id)) continue;
+      const allowed = spec!.questionVars!.names;
+      const texts = [prompts[id]!.text, ...(prompts[id]!.variants ?? [])];
+      const extra = [...new Set(texts.flatMap((t) => variablesOf(t)))].filter((name) => !allowed.includes(name));
+      if (extra.length === 0) continue;
+      reported.add(id);
+      const at = locate(file, ['prompts', id, 'text']) ?? { line: 1, column: 1 };
+      const line = locale === config.defaultLocale ? `the line "${id}"` : `the ${locale} line "${id}"`;
+      problems.push({
+        file,
+        ...at,
+        path: formatPath(['prompts', id, 'text']),
+        message: `${line} uses ${extra.map((n) => `{${n}}`).join(', ')}, which the slot "${slot}" does not give its question (it gives ${allowed.map((n) => `{${n}}`).join(', ')}), so saying it would fail`,
+        fix: `use only ${allowed.map((n) => `{${n}}`).join(', ')} in this line, or none`,
+      });
+    }
     for (const { id, vars } of spec?.prompts ?? []) {
       if (!has(prompts, id) || reported.has(id)) continue;
       const allowed = vars ?? [];
