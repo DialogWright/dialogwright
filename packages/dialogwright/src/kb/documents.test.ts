@@ -17,6 +17,7 @@ import type { Renderer, SpanAct } from '../render/types';
 import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
 import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
+import { frameViolations } from '../testing/adversarial/run';
 import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, VISITOR_GUIDE, type Edit } from './__fixtures__/libraryKbApp';
 import type { SectionRetriever } from './sections';
 import type { SectionNomination } from './types';
@@ -298,6 +299,15 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(sayText(out.actions)).not.toContain('black and white');
       expect(docLine(out)).toMatchObject({ mode: 'fixed', fallback: 'drift', lines: { chosen: [2], of: 4, said: "Here's what our guide says: Printing and copies. Printing in color: 50 cents a page." } });
       expect(out.audit).toContainEqual({ type: 'render_fallback', detail: { prompt: 'kb_documents_answer', span: 'answer', reason: 'drift', lines: 1 } });
+      // The adversarial suite's frame-kept holds it (the document's own lines, rebuilt from the turn's), and
+      // fails a record whose chosen lines are not the ones said.
+      type FrameTurn = Parameters<typeof frameViolations>[1][number];
+      const turn = { record: { render: out.record }, result: { ...t.result, actions: out.actions } } as unknown as FrameTurn;
+      expect(frameViolations(app, [turn])).toEqual([]);
+      const other = { ...turn, record: { render: { ...out.record, lines: out.record.lines.map((l) => (l.lines ? { ...l, lines: { ...l.lines, chosen: [1] } } : l)) } } } as unknown as FrameTurn;
+      expect(frameViolations(app, [other])).toEqual([expect.stringMatching(/^frame-kept: on turn 1, kb_documents_answer was said as "Here's what our guide says: Printing and copies\. Printing in color/)]);
+      const beyond = { ...turn, record: { render: { ...out.record, lines: out.record.lines.map((l) => (l.lines ? { ...l, lines: { ...l.lines, chosen: [9] } } : l)) } } } as unknown as FrameTurn;
+      expect(frameViolations(app, [beyond])[0]).toMatch(/chose lines its sections do not have \(9 of 4\)/);
     });
 
     it('none answers, or the question is not answered: the opening, as with onFail: opening', async () => {

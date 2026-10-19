@@ -31,6 +31,8 @@ import { cleanGenerated, cleanSpan, sameWords } from '../../render/checks';
 import { noulAnswer } from '../../jev/distributions';
 import { SPAN_GAP, type Renderer, type SpanAct, type SpeechAct } from '../../render/types';
 import { cleanAnswer } from '../../render/checks';
+import { KB_ANSWER_LINE_VAR } from '../../render/config';
+import { KB_LINE_HEADINGS_VAR, KB_LINES_VAR, openingFramed, sectionLinesSaid, type SectionLine } from '../../kb/answer';
 
 /**
  * How the suite is run: the regression's thresholds, date and screen mode, what reads the callers'
@@ -408,6 +410,17 @@ export function frameViolations(app: App, turns: readonly Pick<TurnRun, 'record'
         continue;
       }
       const worded = Object.fromEntries(own.filter((l) => l.mode === 'generated').map((l) => [l.span!, l.said ?? '']));
+      // An answer from documents not worded, said as the lines of its sections the decision model chose
+      // (onFail: lines): the document's own lines, rebuilt here from the turn's, under their headings, in
+      // the opening's frame; never a word of the renderer's.
+      const chosen = own.find((l) => l.lines !== undefined)?.lines?.chosen;
+      if (chosen !== undefined) {
+        const headings = (vars[KB_LINE_HEADINGS_VAR] ?? '').split('\n');
+        const lines = (vars[KB_LINES_VAR] ?? '').split('\n').map((text, n) => ({ text: text.trim(), heading: headings[n]?.trim() ?? '' })).filter((l) => l.text !== '');
+        const picked = chosen.map((n) => lines[n - 1]);
+        if (picked.some((l) => l === undefined)) out.push(`frame-kept: on turn ${i + 1}, ${promptId} chose lines its sections do not have (${chosen.join(', ')} of ${lines.length})`);
+        else vars[KB_ANSWER_LINE_VAR] = openingFramed(app, t.result.session.locale, sectionLinesSaid(picked as SectionLine[]));
+      }
       const expected = renderTemplate(frameOf(app, promptId, localePromptEntry(app, promptId, t.result.session.locale).entry, worded), framedVars(app, promptId, vars, worded));
       const action = t.result.actions[index];
       const actual = action === undefined ? '' : sayText([action]);
