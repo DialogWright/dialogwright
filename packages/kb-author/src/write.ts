@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sourceHashOf } from 'dialogwright';
-import { Document, parse } from 'yaml';
+import { Document, isMap, isPair, isScalar, parse, parseDocument, type Pair, type YAMLMap } from 'yaml';
 import { schemaPathFrom } from './kbPlace';
 import { distinct, type ExtractedSection } from './sections';
 
@@ -19,6 +19,10 @@ import { distinct, type ExtractedSection } from './sections';
  *   bytes and its `retrieved` date stay. A changed or new document is written with today's date.
  * - The same input gives the same bytes: sections in document order, keys in a fixed order, no line
  *   folding, and nothing taken from the clock but the date.
+ * - What a person wrote into a source file is kept when it is written again (a refresh, an ingest of the
+ *   same document): the document's `summarize`, `applies` and `approval` (an approval whose hash the new
+ *   text no longer matches is then stale, read again and approved again, not lost), and a section's
+ *   `summarize` while the section is still there, each with its comments.
  */
 
 /** The settings of the crawl that read a page, kept in its provenance so a refresh can crawl the same way. */
@@ -78,6 +82,8 @@ export const MAX_SOURCE_BYTES = 1024 * 1024;
 export interface Existing {
   id: string;
   key: string | undefined;
+  /** The file's text, for what a person wrote into it (keptByPerson). */
+  text?: string;
   data: { document?: unknown; provenance?: { url?: unknown; file?: unknown; retrieved?: unknown; crawl?: unknown }; sections?: Record<string, { heading?: unknown; text?: unknown; page?: unknown; lastPage?: unknown }> } | null;
 }
 
@@ -99,8 +105,9 @@ export function existingSources(sourcesDir: string): Existing[] {
   return names.map((name) => {
     const id = name.slice(0, -'.yaml'.length);
     try {
-      const data = parse(readFileSync(join(sourcesDir, name), 'utf8')) as Existing['data'];
-      return { id, key: keyOf(data?.provenance), data: data && typeof data === 'object' ? data : null };
+      const text = readFileSync(join(sourcesDir, name), 'utf8');
+      const data = parse(text) as Existing['data'];
+      return { id, key: keyOf(data?.provenance), text, data: data && typeof data === 'object' ? data : null };
     } catch {
       return { id, key: undefined, data: null };
     }
@@ -112,8 +119,46 @@ export function schemaPathFor(sourcesDir: string): string | undefined {
   return schemaPathFrom(sourcesDir, 'kb-source');
 }
 
-/** A source document as YAML. */
-export function sourceYaml(input: { title: string; provenance: SourceInput['provenance']; retrieved: string; sections: readonly ExtractedSection[] }, schemaPath?: string): string {
+/** The keys of a source file and of its sections that reading a document writes; every other is a person's (keptByPerson). */
+const READ_KEYS = new Set(['document', 'provenance', 'sections']);
+const READ_SECTION_KEYS = new Set(['heading', 'text', 'page', 'lastPage']);
+
+const keyName = (pair: Pair): string | undefined => (isScalar(pair.key) && typeof pair.key.value === 'string' ? pair.key.value : undefined);
+
+/**
+ * Copies into `doc` what a person wrote into the file it replaces (`previous`, its text): each top-level key
+ * reading never writes (`summarize`, `applies`, `approval`), after the sections, and each key of a section
+ * still there that reading never writes (`summarize`), after its heading; each with its comments.
+ */
+function keptByPerson(doc: Document, previous: string): void {
+  let old: Document;
+  try {
+    old = parseDocument(previous);
+  } catch {
+    return;
+  }
+  if (old.errors.length > 0 || !isMap(old.contents) || !isMap(doc.contents)) return;
+  for (const pair of old.contents.items) {
+    const name = keyName(pair);
+    if (name !== undefined && !READ_KEYS.has(name)) doc.contents.items.push(pair.clone() as Pair);
+  }
+  const oldSections = old.get('sections', true);
+  const newSections = doc.get('sections', true);
+  if (!isMap(oldSections) || !isMap(newSections)) return;
+  for (const pair of newSections.items) {
+    const id = keyName(pair);
+    const was = id === undefined ? undefined : oldSections.get(id, true);
+    if (!isMap(was) || !isMap(pair.value)) continue;
+    const section = pair.value as YAMLMap;
+    const kept = was.items.filter((p) => isPair(p) && keyName(p) !== undefined && !READ_SECTION_KEYS.has(keyName(p)!)).map((p) => p.clone() as Pair);
+    if (kept.length === 0) continue;
+    const at = section.items.findIndex((p) => keyName(p) === 'heading') + 1;
+    section.items.splice(at, 0, ...kept);
+  }
+}
+
+/** A source document as YAML; with `previous`, the text of the file it replaces, what a person wrote into it kept (keptByPerson). */
+export function sourceYaml(input: { title: string; provenance: SourceInput['provenance']; retrieved: string; sections: readonly ExtractedSection[] }, schemaPath?: string, previous?: string): string {
   const sections = new Map(
     input.sections.map((s) => [
       s.id,
@@ -121,6 +166,7 @@ export function sourceYaml(input: { title: string; provenance: SourceInput['prov
     ]),
   );
   const doc = new Document({ document: input.title, provenance: { ...input.provenance, retrieved: input.retrieved }, sections });
+  if (previous !== undefined) keptByPerson(doc, previous);
   if (schemaPath !== undefined) doc.commentBefore = ` yaml-language-server: $schema=${schemaPath}`;
   return doc.toString({ lineWidth: 0 });
 }
@@ -175,7 +221,7 @@ export function planSources(inputs: readonly SourceInput[], options: { sourcesDi
     const same = previous !== null && previous.document === input.title && sameOrder && sameProvenance && sections.every((s) => s.status === 'unchanged');
     const change: DocumentChange = { id, file: `sources/${id}.yaml`, title: input.title, provenance: input.provenance, status: previous === null ? 'added' : same ? 'unchanged' : 'changed', sections };
     if (change.status === 'unchanged') return change;
-    const yaml = sourceYaml({ title: input.title, provenance: input.provenance, retrieved: options.today, sections: input.sections }, schemaPath);
+    const yaml = sourceYaml({ title: input.title, provenance: input.provenance, retrieved: options.today, sections: input.sections }, schemaPath, previous !== null ? mine?.text : undefined);
     if (Buffer.byteLength(yaml, 'utf8') > MAX_SOURCE_BYTES) {
       return { ...change, refused: `it would be ${Buffer.byteLength(yaml, 'utf8')} bytes, over the ${MAX_SOURCE_BYTES} a knowledge base file may be: split the document and ingest the parts` };
     }
