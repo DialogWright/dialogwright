@@ -50,6 +50,8 @@ export const KB_DOCUMENTS_OPENING_PROMPT = 'kb_documents_opening';
 export const KB_SOURCE_VAR = 'answerSource';
 /** The variable an answer from documents carries its sections' lines in, one a line (onFail: lines): those the decision model says answer the question are said in place of the opening when it cannot be worded; never said as it is. */
 export const KB_LINES_VAR = 'answerLines';
+/** The variable beside KB_LINES_VAR that carries the heading of each line's section, one a line, in the same order: the picker reads each line under it, and the lines chosen are said under it. */
+export const KB_LINE_HEADINGS_VAR = 'answerLineHeadings';
 /** The variable an answer line carries the wording of its hold line in (kb_hold, rotating): the hold line said if its wording is late. */
 export const KB_HOLD_VAR = 'answerHold';
 /** The variable an answer line carries the wording of its second hold line in (kb_hold_more, rotating), where the app has it. */
@@ -71,8 +73,10 @@ export function readKbAnswer(value: unknown): KbAnswer {
     if (source.fresh !== true) return { unavailable: 'stale', source };
     const strings = (v: unknown): string[] | undefined => (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined);
     const sentences = strings(value.sentences);
-    const lines = strings(value.lines);
-    return { answer: value.answer, source, ...(sentences !== undefined ? { sentences } : {}), ...(lines !== undefined ? { lines } : {}) };
+    const sections = Array.isArray(value.sections) && value.sections.length > 0 && value.sections.every((x) => isObject(x) && typeof x.heading === 'string' && strings(x.sentences) !== undefined)
+      ? (value.sections as { heading: string; sentences: string[] }[]).map((x) => ({ heading: x.heading, sentences: x.sentences }))
+      : undefined;
+    return { answer: value.answer, source, ...(sentences !== undefined ? { sentences } : {}), ...(sections !== undefined ? { sections } : {}) };
   }
   if (typeof value.unavailable === 'string' && value.unavailable !== '') return { unavailable: value.unavailable, ...(source ? { source } : {}) };
   return { unavailable: 'no-answer' };
@@ -237,8 +241,9 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
       const fallback = documentsFallback(app, s, onFail, opening, unavailablePrompt);
       // onFail: lines: the sections' lines beside it, one a line, for the decision model to pick from when the
       // answer cannot be worded (render/turn.ts); the opening is said where it picks none.
-      const lines = onFail === 'lines' ? linesOf(result.lines ?? result.sentences ?? []) : [];
-      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, ...(lines.length > 0 ? { [KB_LINES_VAR]: lines.join('\n') } : {}), [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
+      const lines = onFail === 'lines' ? sectionLinesOf(result.sections ?? [{ heading: '', sentences: result.sentences ?? [] }]) : [];
+      const linesVars: Record<string, string> = lines.length > 0 ? { [KB_LINES_VAR]: lines.map((l) => l.text).join('\n'), [KB_LINE_HEADINGS_VAR]: lines.map((l) => l.heading).join('\n') } : {};
+      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, ...linesVars, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
     }
     const defaultLocale = defaultLocaleOf(app);
     const locale = result.source.locale ?? s.locale ?? defaultLocale;
@@ -280,12 +285,50 @@ export function openingFramed(app: App, locale: string | undefined, words: strin
   return localePromptEntry(app, KB_DOCUMENTS_OPENING_PROMPT, locale).entry.text.replace(VAR, (m, name: string) => (name === 'opening' ? words : m));
 }
 
-/** The most lines of the chosen sections the decision model is asked about (onFail: lines): a long table's first. */
+/** The most lines of the chosen sections the decision model is asked about (onFail: lines), shared among them: a long table's first. */
 export const KB_MAX_LINES = 40;
 
-/** The sections' lines as said (a list's markers left out, each ended where its line ended without a stop), the first KB_MAX_LINES. */
-export function linesOf(sentences: readonly string[]): string[] {
-  return sentences.map(withoutMarkers).filter((x) => x !== '').map(ended).slice(0, KB_MAX_LINES);
+/** One line of a chosen section (onFail: lines): its words as said, and its section's heading ('' where it has none). */
+export interface SectionLine {
+  readonly text: string;
+  readonly heading: string;
+}
+
+/**
+ * The chosen sections' lines as said (a list's markers left out, each ended where its line ended without a
+ * stop), at most `max` in all, shared among the sections: a line to each section in turn, in their order,
+ * so a long section never crowds out the next; the room one does not use goes to the others. Each section's
+ * own lines in its order, the sections in theirs.
+ */
+export function sectionLinesOf(sections: readonly { readonly heading: string; readonly sentences: readonly string[] }[], max: number = KB_MAX_LINES): SectionLine[] {
+  const all = sections.map((s) => ({ heading: s.heading, lines: s.sentences.map(withoutMarkers).filter((x) => x !== '').map(ended) }));
+  const take = all.map(() => 0);
+  let left = max;
+  while (left > 0 && all.some((s, i) => take[i]! < s.lines.length)) {
+    all.forEach((s, i) => {
+      if (left > 0 && take[i]! < s.lines.length) {
+        take[i]! += 1;
+        left -= 1;
+      }
+    });
+  }
+  return all.flatMap((s, i) => s.lines.slice(0, take[i]).map((text) => ({ text, heading: s.heading })));
+}
+
+/**
+ * Lines of the chosen sections as they are said (onFail: lines): those of one section after its heading
+ * (ended, so it reads as a sentence of its own), in the order given, a section's heading said once for the
+ * lines that follow it.
+ */
+export function sectionLinesSaid(lines: readonly SectionLine[]): string {
+  const out: string[] = [];
+  let heading: string | null = null;
+  for (const l of lines) {
+    if (l.heading !== heading && l.heading !== '') out.push(ended(l.heading));
+    heading = l.heading;
+    out.push(l.text);
+  }
+  return out.join(' ');
 }
 
 const ended = (x: string): string => (/[.?!:;]$/.test(x) ? x : `${x}.`);
@@ -388,7 +431,7 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
       if (keys !== null) {
         const r = resolveSections(kb, keys, facts, locale);
         if ('unavailable' in r) return { value: { unavailable: r.unavailable } satisfies KbAnswer, summary: `no passage (${r.unavailable})` };
-        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), sentences: r.sections[0]?.sentences ?? [], lines: r.sections.flatMap((x) => x.sentences) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
+        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), sentences: r.sections[0]?.sentences ?? [], sections: r.sections.map((x) => ({ heading: x.heading, sentences: x.sentences })) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
       }
       const r = resolvePassage(kb, { topic: call.params[KB_TOPIC_PARAM] ?? '', facts, todayIso: tc.todayIso, locale });
       if ('fresh' in r) return { value: { answer: r.passage.answer, source: recordOf(kb, r.passage, facts, true) } satisfies KbAnswer, summary: r.passage.id };

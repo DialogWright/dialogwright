@@ -264,43 +264,45 @@ describe('the answer worded from the sections, checked against them', () => {
     let built: App | undefined;
     const tableApp = (): App => (built ??= documentsApp('library-documents-lines', {
       onFail: 'lines',
-      edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free Wi-Fi. Join the network ExampleTownLibrary; no password is needed. Sessions end when the branch closes.\n', `    text: |-\n${ROWS.map((r) => `      ${r}\n`).join('')}`) },
+      edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Printing and copying cost 15 cents a page in black and white and 50 cents a page in color. Print from a branch computer, or send a file to print@library.example.com and collect it at the desk within two days.\n', `    text: |-\n${ROWS.map((r) => `      ${r}\n`).join('')}`) },
     }));
+    const PRINTING = { 'visitor-guide#printing': 0.93 };
     /** A judge that refuses every wording, and reads each line of the lines question at `lines[i]` (0 where unnamed). */
-    const linesJudge = (lines: Record<number, number>, asked: string[][] = []): JevClient => ({
+    const linesJudge = (lines: Record<number, number>, asked: unknown[] = []): JevClient => ({
       ask: async (req) => {
         const ids = Object.keys(req.questions);
         if (ids.includes(DOCUMENTS_DRIFT_QUESTION_ID)) return { answers: { [DOCUMENTS_DRIFT_QUESTION_ID]: noulAnswer(0.9) }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
         if (ids.some((id) => id.startsWith(ANSWER_LINE_QUESTION_PREFIX))) {
-          asked.push((req.state as { answer: { lines: string[] } }).answer.lines);
+          asked.push((req.state as { answer: { sections: { heading: string; lines: string[] }[] } }).answer.sections);
           return { answers: Object.fromEntries(ids.map((id) => [id, noulAnswer(lines[Number(id.slice(ANSWER_LINE_QUESTION_PREFIX.length))] ?? 0.02)])), model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
         }
         return judge(APP).ask(req);
       },
     });
 
-    it('the core says the opening, with the sections\' lines beside it, one a line, ended', () => {
-      const t = asked(tableApp(), 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    it('the core says the opening, with the sections\' lines beside it, one a line, ended, and each line\'s section heading', () => {
+      const t = asked(tableApp(), 'how much is color printing', { unanswered: 0.9, none: 0.1 }, PRINTING);
       const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(ack?.vars.answer).toBe("Here's what our guide says: Printing in black and white: 15 cents a page. Printing in color: 50 cents a page. Copies of a map: free at the desk. Scanning to email: free.");
       expect(ack?.vars.answerLines).toBe(ROWS.map((r) => `${r}.`).join('\n'));
+      expect(ack?.vars.answerLineHeadings).toBe(ROWS.map(() => 'Printing and copies').join('\n'));
     });
 
-    it('not worded: the rows that answer it said in the opening\'s frame, the lines asked numbered, the record and the audit saying which', async () => {
+    it('not worded: the rows that answer it said under their section\'s heading in the opening\'s frame, the lines asked numbered under it, the record and the audit saying which', async () => {
       const app = tableApp();
-      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
-      const seen: string[][] = [];
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, PRINTING);
+      const seen: unknown[] = [];
       const out = await rendered(app, t, renderer(), linesJudge({ 2: 0.91 }, seen));
-      expect(seen).toEqual([ROWS.map((r, i) => `${i + 1}. ${r}.`)]);
-      expect(sayText(out.actions)).toContain("Here's what our guide says: Printing in color: 50 cents a page.");
+      expect(seen).toEqual([[{ heading: 'Printing and copies', lines: ROWS.map((r, i) => `${i + 1}. ${r}.`) }]]);
+      expect(sayText(out.actions)).toContain("Here's what our guide says: Printing and copies. Printing in color: 50 cents a page.");
       expect(sayText(out.actions)).not.toContain('black and white');
-      expect(docLine(out)).toMatchObject({ mode: 'fixed', fallback: 'drift', lines: { chosen: [2], of: 4, said: "Here's what our guide says: Printing in color: 50 cents a page." } });
+      expect(docLine(out)).toMatchObject({ mode: 'fixed', fallback: 'drift', lines: { chosen: [2], of: 4, said: "Here's what our guide says: Printing and copies. Printing in color: 50 cents a page." } });
       expect(out.audit).toContainEqual({ type: 'render_fallback', detail: { prompt: 'kb_documents_answer', span: 'answer', reason: 'drift', lines: 1 } });
     });
 
     it('none answers, or the question is not answered: the opening, as with onFail: opening', async () => {
       const app = tableApp();
-      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, PRINTING);
       const none = await rendered(app, t, renderer(), linesJudge({}));
       expect(sayText(none.actions)).toContain('Printing in black and white: 15 cents a page. Printing in color');
       expect(docLine(none).lines).toBeUndefined();
@@ -310,10 +312,24 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(docLine(erred).lines).toBeUndefined();
     });
 
+    it('two sections share the lines asked, a long one never crowding out the next; each line chosen said under its own section\'s heading', async () => {
+      const branches = Array.from({ length: 45 }, (_, i) => `Parking at branch ${i + 1}: free for two hours`);
+      const app = documentsApp('library-documents-lines-shared', {
+        onFail: 'lines',
+        edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free parking for up to two hours. Spaces by the entrance are kept for drivers with a disability permit.\n', `    text: |-\n${branches.map((r) => `      ${r}\n`).join('')}`) },
+      });
+      const t = asked(app, 'what if I lose my card and where do I park', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#parking': 0.95, 'visitor-guide#lost-card': 0.9 });
+      const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      const headings = (ack?.vars.answerLineHeadings ?? '').split('\n');
+      expect(headings).toEqual([...Array.from({ length: 38 }, () => 'Parking'), 'A lost library card', 'A lost library card']);
+      const out = await rendered(app, t, renderer(), linesJudge({ 1: 0.9, 39: 0.9 }));
+      expect(docLine(out).lines).toMatchObject({ chosen: [1, 39], of: 40, said: "Here's what our guide says: Parking. Parking at branch 1: free for two hours. A lost library card. A lost card is replaced at any branch desk with a photo ID." });
+    });
+
     it('a wording that passes is said, and the lines are never asked; with onFail: opening they are never carried', async () => {
       const app = tableApp();
-      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
-      const seen: string[][] = [];
+      const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, PRINTING);
+      const seen: unknown[] = [];
       const passing: JevClient = { ask: async (req) => (Object.hasOwn(req.questions, DOCUMENTS_DRIFT_QUESTION_ID) ? { answers: { [DOCUMENTS_DRIFT_QUESTION_ID]: noulAnswer(0.05) }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' } : linesJudge({}, seen).ask(req)) };
       const out = await rendered(app, t, renderer({ eachSpan: () => 'Color printing is 50 cents a page.' }), passing);
       expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Color printing is 50 cents a page.' });

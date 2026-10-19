@@ -25,7 +25,10 @@ import { withTables, type PlacedRun, type RowLine } from './pdfTables';
  *   document's title, and the rest is the first section's text (a plan's name, a number, a date).
  * - The body size is the size most of the document's characters are set in. A line of at most 120
  *   characters set at least 15% larger is a heading; so is a line of at most 80 set in bold at the body
- *   size or larger that does not end in a colon or a stop (a run-in "Benefits include:" is not). The
+ *   size or larger that does not end in a colon or a stop (a run-in "Benefits include:" is not). On a page
+ *   set smaller than the document's body (a summary of benefits before a booklet), such a line at that
+ *   page's own body size is a heading too where it starts at the page's left margin, no other line is
+ *   within a line's height of it, and text of its own follows it (not a heading at its level or above). The
  *   distinct heading styles, largest first and bold before regular at one size, are levels 1, 2 and 3
  *   (smaller ones are level 3). Consecutive heading lines of one style on one page are one heading,
  *   and one that ends up as a sentence (a stop at its end, or longer than 120) is a paragraph.
@@ -212,10 +215,35 @@ const styleOf = (l: Line): string => `${l.size}${l.bold ? 'b' : ''}`;
 
 /** Whether a line is a heading, by its size and weight against the body's (see the file's comment). */
 function headingTest(body: number): (l: Line) => boolean {
-  return (l) =>
-    l.text.length <= MAX_HEADING_CHARS &&
-    (l.size >= body * HEADING_RATIO || (l.bold === true && l.size >= body && l.text.length <= MAX_BOLD_HEADING_CHARS && !/[:.;,]$/.test(l.text)));
+  return (l) => l.text.length <= MAX_HEADING_CHARS && (l.size >= body * HEADING_RATIO || boldHeading(l, body));
 }
+
+/** A bold line at `body` size or larger, short, that does not end in a colon or a stop. */
+const boldHeading = (l: Line, body: number): boolean => l.bold === true && l.size >= body && l.text.length <= MAX_BOLD_HEADING_CHARS && !/[:.;,]$/.test(l.text);
+
+/** Where a line starts on its page, where its runs say. */
+const leftOf = (l: Line): number | undefined => l.runs?.[0]?.x;
+
+/**
+ * Whether a line is a heading of a page set smaller than the document's body (see the file's comment): bold
+ * at its page's body size, at the page's left margin, and no other line within a line's height of its
+ * baseline (not a label's value, a table's cell, or a box's caption beside another column's text).
+ */
+function pageHeadingTest(lines: readonly Line[], body: number): (l: Line) => boolean {
+  const byPage = new Map<number, Line[]>();
+  for (const l of lines) byPage.set(l.page, [...(byPage.get(l.page) ?? []), l]);
+  const bodies = new Map([...byPage].map(([page, ls]) => [page, bodySize(ls)]));
+  const margins = new Map([...byPage].map(([page, ls]) => [page, Math.min(...ls.map((l) => leftOf(l) ?? Infinity))]));
+  return (l) => {
+    const pageBody = bodies.get(l.page) ?? body;
+    if (pageBody >= body || l.text.length > MAX_HEADING_CHARS || !boldHeading(l, pageBody)) return false;
+    const x = leftOf(l);
+    if (x !== undefined && x > (margins.get(l.page) ?? x) + l.size * 0.5) return false;
+    return !(byPage.get(l.page) ?? []).some((o) => o !== l && Math.abs(o.y - l.y) < Math.max(o.size, l.size));
+  };
+}
+
+
 
 /**
  * A document's cover, read apart from its body (see the file's comment): its title and the rest of its
@@ -250,7 +278,10 @@ const sameHeading = (text: string): string => cleanText(text.toLowerCase().repla
 export function blocksOfLines(lines: readonly Line[]): Block[] {
   const body = bodySize(lines);
   const plain = headingTest(body);
-  const isHeading = (l: Line): boolean => l.kind === undefined && plain(l);
+  const onPage = pageHeadingTest(lines, body);
+  const isHeading = (l: Line): boolean => l.kind === undefined && (plain(l) || onPage(l));
+  // The headings found by their page's body alone: each must have text of its own under it (below).
+  const byPage = new WeakSet<Block>();
   const styles = [...new Map(lines.filter(isHeading).map((l) => [styleOf(l), l])).values()]
     .sort((x, y) => y.size - x.size || Number(y.bold === true) - Number(x.bold === true))
     .map(styleOf);
@@ -271,8 +302,14 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
     }
     if (isHeading(line)) {
       if (last?.kind === 'heading' && prev && isHeading(prev) && styleOf(prev) === styleOf(line) && prev.page === line.page) {
-        blocks[blocks.length - 1] = { ...last, text: `${last.text} ${line.text}` };
-      } else blocks.push({ kind: 'heading', level: levelOf(line), text: line.text, page: line.page });
+        const joined: Block = { ...last, text: `${last.text} ${line.text}` };
+        if (byPage.has(last)) byPage.add(joined);
+        blocks[blocks.length - 1] = joined;
+      } else {
+        const heading: Block = { kind: 'heading', level: levelOf(line), text: line.text, page: line.page };
+        if (!plain(line)) byPage.add(heading);
+        blocks.push(heading);
+      }
     } else {
       const continues = last?.kind === 'para' && prev !== null && !isHeading(prev) && prev.page === line.page && prev.y - line.y <= line.size * PARAGRAPH_GAP;
       if (continues) blocks[blocks.length - 1] = { ...last, text: joinLine(last.text, line.text) };
@@ -284,20 +321,24 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
   // is under continues that section.
   const out: Block[] = [];
   const open: (string | undefined)[] = [];
-  for (const b of blocks) {
+  blocks.forEach((b, i) => {
     if (b.kind !== 'heading') {
       out.push(b);
-      continue;
+      return;
     }
-    if (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text)) {
+    // A heading found by its page's body with nothing under it (the next block a heading at its level or
+    // above, or none) is a line of its page's text: a plan's name or a date set in bold over a summary.
+    const next = blocks[i + 1];
+    const empty = next === undefined || (next.kind === 'heading' && next.level <= b.level);
+    if (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text) || (byPage.has(b) && empty)) {
       out.push({ kind: 'para', text: b.text, ...(b.page === undefined ? {} : { page: b.page }) });
-      continue;
+      return;
     }
-    if (open[b.level] !== undefined && open[b.level] === sameHeading(b.text)) continue;
+    if (open[b.level] !== undefined && open[b.level] === sameHeading(b.text)) return;
     open[b.level] = sameHeading(b.text);
     open.length = b.level + 1;
     out.push(b);
-  }
+  });
   return out;
 }
 

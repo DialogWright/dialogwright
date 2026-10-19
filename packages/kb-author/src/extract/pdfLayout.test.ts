@@ -103,6 +103,39 @@ describe('headings', () => {
     expect(blocks.filter((b) => b.kind === 'heading').map((b) => b.text)).toEqual(['Exclusions', 'Definitions']);
   });
 
+  it('on a page set smaller than the body are bold lines at that page\'s size, alone at its left margin with text of their own', () => {
+    const booklet = Array.from({ length: 6 }, (_, i) => run(`A long paragraph of the booklet's own body text, line ${i + 1} of it, set in its usual size.`, 46, 700 - i * 14, 11));
+    const summary = [
+      run('Summary of benefits', 46, 720, 14, 'B'),
+      run('Effective date', 46, 700, 10, 'B'),
+      run('Your plan', 46, 680, 14, 'B'),
+      run('Provider network:', 46, 650, 10, 'B'),
+      run('Full network', 400, 650, 10, 'B'),
+      run('This plan uses a network of providers.', 46, 632, 10),
+      run('Deductible', 46, 600, 10, 'B'),
+      run('The amount you pay before the plan pays.', 46, 582, 10),
+      run('No dollar limit', 380, 576, 10, 'B'),
+      run('Individual coverage $1,500', 46, 560, 10),
+      run('Prior authorization', 46, 500, 10, 'B'),
+      run('Some services need approval first.', 46, 482, 10),
+    ];
+    const blocks = blocksOfLines([...lines(booklet, 1), ...lines(summary, 2)]).filter((b) => b.page === 2);
+    expect(blocks.map((b) => [b.kind, b.text])).toEqual([
+      ['heading', 'Summary of benefits'],
+      ['para', 'Effective date'],
+      ['heading', 'Your plan'],
+      ['para', 'Provider network: Full network'],
+      ['para', 'This plan uses a network of providers.'],
+      ['heading', 'Deductible'],
+      ['para', 'The amount you pay before the plan pays. No dollar limit Individual coverage $1,500'],
+      ['heading', 'Prior authorization'],
+      ['para', 'Some services need approval first.'],
+    ]);
+    // On a page set at the document's body size, a bold line set smaller is no heading.
+    const note = blocksOfLines([...lines([...booklet, run('A small bold note', 46, 600, 10, 'B')], 1), ...lines(summary, 2)]).filter((b) => b.page === 1);
+    expect(note.filter((b) => b.kind === 'heading')).toEqual([]);
+  });
+
   it('drop a contents section', () => {
     const doc = readPages([page(1, [run('Table of contents', 72, 700, 14, 'B'), run('Introduction 3', 72, 680, 11), run('Introduction', 72, 600, 14, 'B'), run('Welcome to the plan.', 72, 580, 11), run('Your benefits', 72, 500, 14, 'B'), run('The plan pays for care.', 72, 480, 11)])]);
     expect(doc.sections.map((s) => s.id)).toEqual(['introduction', 'your-benefits']);

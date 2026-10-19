@@ -89,7 +89,7 @@
                     "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
                   },
                   "onFail": {
-                    "description": "What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the best section word for word (whole where it fits the answer's word budget, else its first two lines), in the kb_documents_opening frame where the app has it; lines, the lines of the chosen sections (a table's rows, a list's items) the decision model says answer the question, word for word in that frame, and the opening where it says none does or cannot be asked in time.",
+                    "description": "What is said when an answer from documents cannot be worded (a check fails, the wording is late or errs, or no model is configured): not-found (the default), the not-found line (kb_not_found, in turn through its variants; else the unavailable line); opening, the best section word for word (whole where it fits the answer's word budget, else its first two lines), in the kb_documents_opening frame where the app has it; lines, the lines of the chosen sections (a table's rows, a list's items; at most 40, shared among the sections) the decision model says answer the question, each read under its section's heading, said word for word under that heading in that frame, and the opening where it says none does or cannot be asked in time.",
                     "type": "string",
                     "enum": [
                       "not-found",

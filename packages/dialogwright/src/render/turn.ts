@@ -17,7 +17,7 @@ import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
 import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
-import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed } from '../kb/answer';
+import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINE_HEADINGS_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed, sectionLinesSaid, type SectionLine } from '../kb/answer';
 
 /**
  * The call's group under RENDER_SHARE: `generated` for `share` percent of calls, `fixed` for the rest,
@@ -225,7 +225,7 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
 }
 
 /** A knowledge answer to word on this turn: its span, the passage and its record, and its act; or why it is not tried. */
-type AnswerPlan = { name: string; passage: string; kb: KbSource | null; lines?: readonly string[] } & ({ act: SpanAct } | { skipped: RenderSkip });
+type AnswerPlan = { name: string; passage: string; kb: KbSource | null; lines?: readonly SectionLine[] } & ({ act: SpanAct } | { skipped: RenderSkip });
 
 /**
  * A form's answer line framed with a span worded from the answer (`from: answer`), on this turn: its act,
@@ -296,7 +296,8 @@ function planDocumentsAnswer(app: App, input: RenderInput, line: GeneratedLine, 
   const record = result.kb;
   const sections = (said.vars[KB_SOURCE_VAR] ?? '').split('\n\n').map((s) => s.trim()).filter((s) => s !== '');
   // onFail: lines: the sections' lines, for the decision model to pick from if the answer cannot be worded.
-  const lines = (said.vars[KB_LINES_VAR] ?? '').split('\n').map((s) => s.trim()).filter((s) => s !== '');
+  const headings = (said.vars[KB_LINE_HEADINGS_VAR] ?? '').split('\n');
+  const lines = (said.vars[KB_LINES_VAR] ?? '').split('\n').map((text, i) => ({ text: text.trim(), heading: headings[i]?.trim() ?? '' })).filter((l) => l.text !== '');
   const base = { name, passage: said.vars[KB_ANSWER_LINE_VAR] ?? '', kb: record, ...(lines.length > 0 ? { lines } : {}) };
   if (record === null || record.from !== 'documents' || record.fresh !== true || sections.length === 0) return { ...base, skipped: 'knowledge' };
   if (said.exact === true) return { ...base, skipped: 'exact' };
@@ -583,7 +584,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
   // (checkAnswer), and asked of the drift judge whether it says only what the passage says for the
   // question; its checks have the line's budget, or what is left of the answer's limit where that is more.
-  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly string[]): Promise<Attempt> => {
+  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly SectionLine[]): Promise<Attempt> => {
     const flagged = await screened([{ name: 'question', value: first.answer!.question }], checker());
     if (flagged !== null) return flagged;
     let got = await wordAnswer(promptId, span, first);
@@ -602,9 +603,10 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     return got;
   };
   // The lines that answer the question, asked of the decision model, one yes-or-no question for each line
-  // (answerLinesQuestions): those it says yes to (KB_LINE_ANSWERS), in the document's order, as many as
-  // the answer's word budget holds (the first always). Null where it says none, errs or is late.
-  const pickLines = async (act: SpanAct, lines: readonly string[]): Promise<{ chosen: number[]; of: number; text: string } | null> => {
+  // (answerLinesQuestions): those it says yes to (KB_LINE_ANSWERS), in the document's order, said under their
+  // section's heading, as many as the answer's word budget holds, headings counted (the first always). Null
+  // where it says none, errs or is late.
+  const pickLines = async (act: SpanAct, lines: readonly SectionLine[]): Promise<{ chosen: number[]; of: number; text: string } | null> => {
     const left = answerLimit - (performance.now() - t0) - LINES_MARGIN_MS;
     if (left <= 0) return null;
     const c = checker(left);
@@ -613,17 +615,14 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       if (r === 'late') return null;
       used(r.usage);
       const chosen: number[] = [];
-      let words = 0;
       lines.forEach((line, i) => {
         const a = r.answers[`${ANSWER_LINE_QUESTION_PREFIX}${i + 1}`];
         if (!isNoul(a) || !atLeast(a.noul, input.thresholds.KB_LINE_ANSWERS)) return;
-        const n = wordCount(line);
-        if (chosen.length > 0 && words + n > act.style.words) return;
+        if (chosen.length > 0 && wordCount(sectionLinesSaid([...chosen, i + 1].map((n) => lines[n - 1]!))) > act.style.words) return;
         chosen.push(i + 1);
-        words += n;
       });
       if (chosen.length === 0) return null;
-      return { chosen, of: lines.length, text: chosen.map((i) => lines[i - 1]!).join(' ') };
+      return { chosen, of: lines.length, text: sectionLinesSaid(chosen.map((n) => lines[n - 1]!)) };
     } catch {
       return null;
     }

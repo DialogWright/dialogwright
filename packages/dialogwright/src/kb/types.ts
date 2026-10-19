@@ -339,10 +339,10 @@ export type KbAnswer =
        */
       readonly sentences?: readonly string[];
       /**
-       * An answer from sections of documents: every chosen section's sentences, in order, each of its lines
-       * a sentence of its own, from which the decision model picks those that answer the question when the
-       * answer cannot be worded (onFail: lines).
+       * An answer from sections of documents: every chosen section's heading and sentences, in order, each
+       * of its lines a sentence of its own, from which the decision model picks those that answer the
+       * question when the answer cannot be worded (onFail: lines), said under their section's heading.
        */
-      readonly lines?: readonly string[];
+      readonly sections?: readonly { readonly heading: string; readonly sentences: readonly string[] }[];
     }
   | { readonly unavailable: KbAnswerUnavailable | (string & {}); readonly source?: KbSource };
