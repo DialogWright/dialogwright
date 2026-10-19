@@ -1426,6 +1426,9 @@ function chatPageProblems(config: LoadedConfig, dir: string, locate: LoadResult[
   }
   const intro = config.app.chat?.page?.intro;
   if (intro !== undefined) for (const problem of chatProblems(intro)) add(['chat', 'page', 'intro'], `the chat page's intro has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
+  (config.app.chat?.page?.about ?? []).forEach((section, i) => {
+    for (const problem of chatProblems(section.text)) add(['chat', 'page', 'about', i, 'text'], `the chat page's section "${section.title}" has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
+  });
   return problems;
 }
 

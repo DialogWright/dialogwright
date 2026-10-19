@@ -1137,6 +1137,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
       ...(a.chat.page.intro !== undefined ? { intro: a.chat.page.intro } : {}),
       ...(a.chat.page.starters !== undefined ? { starters: [...a.chat.page.starters] } : {}),
       ...(a.chat.page.phone !== undefined ? { phone: a.chat.page.phone.replace(/^env\./, '') } : {}),
+      ...(a.chat.page.about !== undefined ? { about: a.chat.page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
     } } : {}),
   });
   put(app, 'waiting', a.waiting === undefined ? undefined : {

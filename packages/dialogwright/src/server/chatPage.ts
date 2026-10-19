@@ -78,6 +78,8 @@ export interface ChatPageContent {
   colors: { accent?: string; background?: string; text?: string };
   /** The intro, in the chat formatting. */
   intro?: string;
+  /** Sections under the conversation, each a heading and its text in the chat formatting. */
+  about?: readonly { readonly title: string; readonly text: string }[];
   starters: readonly string[];
   phone: { tel: string; shown: string } | null;
   /** The chat's endpoint path (`/chat`, or `/chat/<app id>` on a host). */
@@ -96,6 +98,9 @@ export function chatPageHtml(c: ChatPageContent): string {
   // The brand's colours where it gives them; the visitor's light or dark scheme for those it does not.
   const own = [accent ? `--accent: ${accent};` : '', background ? `--page-bg: ${background};` : '', text ? `--page-fg: ${text};` : ''].join(' ');
   const intro = c.intro === undefined ? '' : `<div class="intro">${blocksHtml(chatLine(c.intro, {}).blocks)}</div>`;
+  const about = c.about === undefined || c.about.length === 0
+    ? ''
+    : `<section class="about">${c.about.map((s) => `<div class="about-part"><h2>${escapeHtml(s.title)}</h2>${blocksHtml(chatLine(s.text, {}).blocks)}</div>`).join('')}</section>`;
   const call = c.phone === null ? '' : `<a class="call" href="tel:${escapeHtml(c.phone.tel)}"><span>Prefer to talk?</span> ${escapeHtml(c.phone.shown)}</a>`;
   return `<!doctype html>
 <html lang="${escapeHtml(c.lang)}">
@@ -128,6 +133,13 @@ export function chatPageHtml(c: ChatPageContent): string {
   }
   .call { display: block; width: fit-content; margin: 22px auto 0; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--accent); color: var(--page-fg); text-decoration: none; font-weight: 600; }
   .call span { font-weight: 400; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); }
+  .about { max-width: 760px; margin: 40px auto 0; padding: 0 16px; line-height: 1.55; }
+  .about-part { padding: 18px 0; border-top: 1px solid color-mix(in srgb, var(--page-fg) 14%, transparent); }
+  .about h2 { margin: 0 0 6px; font-size: 1.15rem; }
+  .about p { margin: 0.5em 0; }
+  .about ul, .about ol { margin: 0.5em 0; padding-left: 1.3em; }
+  .about li { margin: 0.3em 0; }
+  .about li::marker { color: var(--accent); }
   footer { text-align: center; padding: 40px 16px; font-size: .85rem; color: color-mix(in srgb, var(--page-fg) 60%, var(--page-bg)); }
 </style>
 </head>
@@ -140,6 +152,7 @@ export function chatPageHtml(c: ChatPageContent): string {
 </header>
 <main id="talk"></main>
 ${call}
+${about}
 <footer>${name}</footer>
 <script src="/widget.js"></script>
 <script>
@@ -207,6 +220,7 @@ export function chatPageRoutes(deps: ChatPageDeps): AppRoutes {
     logo: logo === null ? null : `${deps.base}${LOGO_PATH}`,
     colors: { ...(app.brand?.colors ?? {}) },
     ...(page?.intro !== undefined ? { intro: page.intro } : {}),
+    ...(page?.about !== undefined ? { about: page.about } : {}),
     starters: page?.starters ?? defaultStarters(app),
     phone,
     chatPath: deps.chatPath,

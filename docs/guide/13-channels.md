@@ -270,12 +270,20 @@ chat:
     intro: "We come to you."
     starters: [Book a detail, Check on my booking]   # default: the labels of the forms and informational intents
     phone: env.BOOKING_LINE         # optional: the number its button calls
+    about:                          # optional: sections under the conversation
+      - title: How booking works
+        text: |
+          Pick a service and a time, and we confirm by text.
+
+          - **Light clean**: outside only.
+          - **Deep clean**: inside and out.
 ```
 
 - **`serve`**: `public` to anyone who reaches the server, `local` on the server's machine only (as the console is), `off` not at all. The app's own `CHAT_PAGE` setting (`off`, `local` or `public`, in its settings file) overrides it, such as `CHAT_PAGE=off` once a demo is over.
 - **Starters**: `starters`, or by default the labels of the app's forms and of its informational intents that say something ("Book a detail"), a capital first, at most six.
+- **About**: `about`, up to eight sections drawn under the conversation, each a `title` and its `text` in the chat formatting (paragraphs, lists, **bold**, *italic*): what the line does, and how.
 - **Colours**: each a hex code; those the brand leaves out follow the visitor's light or dark scheme. The accent is the console's too.
-- **Safety**: every value is written into the page as text (the intro's formatting drawn as elements), the page is served with a strict content security policy, and an SVG logo is served sandboxed. `pnpm check` checks the logo (its type, that it is there, its size) and the intro's formatting.
+- **Safety**: every value is written into the page as text (the intro's formatting drawn as elements), the page is served with a strict content security policy, and an SVG logo is served sandboxed. `pnpm check` checks the logo (its type, that it is there, its size) and the formatting of the intro and of each about section.
 - **An app's own page**: an app that serves a page of its own at `/chat` (code.pages) keeps it: the engine's gives way. A page that wants more than this (pictures, its services, a layout of its own) is its own page around `mountConversation` ([the design](../designs/2026-10-18-chat-page.md)).
 
 ### 13.8 A caller who had not finished, and how a word is said

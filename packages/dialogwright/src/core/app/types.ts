@@ -1134,6 +1134,8 @@ export interface ChatPageConfig {
   readonly starters?: readonly string[];
   /** The variable (env.<NAME>'s name) holding the number its "Prefer to talk?" button calls. */
   readonly phone?: string;
+  /** Sections under the conversation, each a heading and its text in the chat formatting. */
+  readonly about?: readonly { readonly title: string; readonly text: string }[];
 }
 
 /**

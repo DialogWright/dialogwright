@@ -54,6 +54,14 @@ describe('the chat page\'s parts', () => {
     expect(html).toContain('DialogWright.mountConversation(\'#talk\', { endpoint: "/chat/acme"');
     expect(blocksHtml(chatLine('- **a** <b>\n- c', {}).blocks)).toBe('<ul><li><strong>a</strong> &lt;b&gt;</li><li>c</li></ul>');
   });
+
+  it('draws the about sections under the conversation, each heading and its words as text, in their order; none without', () => {
+    const base = { name: 'Acme', logo: null, colors: {}, starters: ['Hi'], phone: null, chatPath: '/chat', lang: 'en' };
+    const html = chatPageHtml({ ...base, about: [{ title: 'How it <works>', text: 'Answers are **checked**.\n\n- one\n- two' }, { title: 'Second', text: 'More.' }] });
+    expect(html).toContain('<section class="about"><div class="about-part"><h2>How it &lt;works&gt;</h2><p>Answers are <strong>checked</strong>.</p><ul><li>one</li><li>two</li></ul></div><div class="about-part"><h2>Second</h2><p>More.</p></div></section>');
+    expect(html.indexOf('<section class="about">')).toBeGreaterThan(html.indexOf('<main id="talk">'));
+    expect(chatPageHtml(base)).not.toContain('class="about"');
+  });
 });
 
 const TARGETS = { MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALLBACK_DESK: '+15555550103', SECURITY_DESK: '+15555550104' };

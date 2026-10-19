@@ -612,6 +612,18 @@ export const appSchema = z
             phone: envTarget()
               .optional()
               .describe('A "Prefer to talk?" button that calls a number: the variable holding it (env.<NAME>, an E.164 number), read from the app\'s settings. Default: none.'),
+            about: z
+              .array(
+                z.strictObject({
+                  title: text().max(80, { error: 'is too long for a heading: at most 80 characters' }).describe('The section\'s heading.'),
+                  text: text().describe('The section, in the chat formatting (paragraphs, lists, **bold**, *italic*).'),
+                }),
+                { error: 'must be a list of sections, each a title and its text' },
+              )
+              .min(1, { error: 'must give at least one section, or be left out' })
+              .max(8, { error: 'has more than eight sections: a page shows at most eight' })
+              .optional()
+              .describe('Sections under the conversation, each a heading and its text in the chat formatting: what the line does and how ("How answers are checked"). Default: none.'),
           })
           .optional()
           .describe('A chat page the engine serves for the app, branded with app.yaml\'s brand: its logo, name, tagline and colours, the conversation front and centre (the widget\'s mountConversation), ways to start, and a number to call. Default: none.'),
