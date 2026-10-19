@@ -8,7 +8,8 @@ import { findKb, loadKb, type KbPlace } from '../kbPlace';
 import { approve } from '../review/actions';
 import { startReviewServer, type ReviewServer } from '../review/server';
 import { collectGaps, looksLikeQuestion, topicQuestionOf, type CollectContext } from './collect';
-import { buildReport, codeSpan, formatJson, formatMarkdown, reportFromFiles, reportFromTraces, type GapReport } from './report';
+import type { SectionRetriever } from 'dialogwright';
+import { buildReport, codeSpan, formatJson, formatMarkdown, reportFromFiles, reportFromTraces, withCandidates, type GapReport } from './report';
 import { FakeS3 } from 'dialogwright/testing/fakeS3';
 import { S3Client } from 'dialogwright/trace/s3/client';
 import { segmentName } from 'dialogwright/trace/store';
@@ -233,7 +234,7 @@ describe('an app that answers from documents (kb.yaml documents: summarize on)',
 
   it('a gap is a question it said it found nothing for, with the section offered that read nearest', () => {
     const { gaps } = collectGaps([turn('can I get a gym discount', { 'guide#hours': 0.07, 'guide#fees': 0.31 }, NOT_FOUND)], docs);
-    expect(gaps).toEqual([expect.objectContaining({ kind: 'unmatched', words: 'can I get a gym discount', section: { key: 'guide#fees', read: 0.31 } })]);
+    expect(gaps).toEqual([expect.objectContaining({ kind: 'unmatched', words: 'can I get a gym discount', section: { key: 'guide#fees', read: 0.31 }, offered: ['guide#hours', 'guide#fees'] })]);
   });
 
   it('a question checked first is no gap of its own: the yes found nothing, so the gap is the question checked, with its sections; found on the yes, none', () => {
@@ -264,6 +265,41 @@ describe('an app that answers from documents (kb.yaml documents: summarize on)',
     expect(md).toContain('By kind: 2 not found in the documents.');
     expect(md).toContain('No section near');
     expect(md).toContain('(patron-handbook#fees), read up to 0.41');
+  });
+
+  it('lists the sections not offered on the calls that the section retriever ranks for the questions now, with the fix that names them first', async () => {
+    const turns = [
+      turn('is wifi free', { 'patron-handbook#fees': 0.41 }, NOT_FOUND),
+      turn('can I use the wifi for free', { 'patron-handbook#fees': 0.45, 'patron-handbook#hours': 0.1 }, NOT_FOUND),
+    ];
+    const withDocs = { ...kb, settings: { ...kb.settings, documents: { summarize: 'on' as const, cap: 6 } } };
+    const ranked: Record<string, string[]> = {
+      'is wifi free': ['patron-handbook#fees', 'patron-handbook#wifi', 'a#2', 'a#3', 'a#4', 'a#5', 'a#6', 'patron-handbook#rooms'],
+      'can I use the wifi for free': ['patron-handbook#hours', 'patron-handbook#fees', 'patron-handbook#wifi'],
+    };
+    const asked: string[] = [];
+    const retriever = { id: 'sections:test', warm: async () => false, nominate: ({ text }: { text: string }) => { asked.push(text); return (ranked[text] ?? []).map((topic) => ({ topic, title: topic, score: 1, via: 'keyword' })); } } as unknown as SectionRetriever;
+    const r = await withCandidates(buildReport({ kb: withDocs, place, label: 'app', turns }), withDocs, retriever);
+    expect(asked.sort()).toEqual(['can I use the wifi for free', 'is wifi free']);
+    const g = r.groups.find((x) => x.key === 'section:patron-handbook#fees')!;
+    expect(g.candidates?.slice(0, 2)).toEqual([
+      { key: 'patron-handbook#wifi', heading: null, rank: 2, offeredNow: true, questions: 2 },
+      { key: 'a#2', heading: null, rank: 3, offeredNow: true, questions: 1 },
+    ]);
+    expect(g.fixes[0]!.id).toBe('check-candidates');
+    expect(g.candidates!.map((c) => c.key)).not.toContain('patron-handbook#fees');
+    const md = formatMarkdown(r).join('\n');
+    expect(r.candidatesBy).toEqual({ retriever: 'sections:test' });
+    expect(md).toContain('Candidate sections by sections:test.');
+    const unloaded = await withCandidates(buildReport({ kb: withDocs, place, label: 'app', turns }), withDocs, retriever, 'the package is not installed');
+    expect(formatMarkdown(unloaded).join('\n')).toContain("Candidate sections by keywords alone: the sections' model did not load (the package is not installed).");
+    expect(md).toContain('Sections not offered on these calls that rank for the questions now:\n- patron-handbook#wifi (patron-handbook#wifi): offered now, for 2 questions');
+    // Ranked past the cap: so many places down now.
+    const one = await withCandidates(buildReport({ kb: { ...withDocs, settings: { ...withDocs.settings, documents: { summarize: 'on' as const, cap: 1 } } }, place, label: 'app', turns: [turns[0]!] }), { ...withDocs, settings: { ...withDocs.settings, documents: { summarize: 'on' as const, cap: 1 } } }, retriever);
+    expect(one.groups[0]!.candidates![0]).toMatchObject({ key: 'patron-handbook#wifi', rank: 2, offeredNow: false });
+    expect(formatMarkdown(one).join('\n')).toContain('ranks 2 now');
+    // No retriever (an app that does not answer from documents): the report as it was.
+    expect(await withCandidates(r, withDocs, null)).toBe(r);
   });
 });
 

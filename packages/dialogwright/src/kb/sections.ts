@@ -35,9 +35,10 @@ function asTopics(sections: readonly KbSection[]): Record<string, KbTopic> {
  * embedder of the sections' own (documents.embedder), by that model and its index (the floor
  * documents.floor, else ONNX_DEFAULT_FLOOR), the model loaded when the server starts (warm); by meaning alone
  * with documents.retrieval dense. Null with summarizing off, or when no section may be summarized
- * (none approved yet).
+ * (none approved yet). `cap` sets how many it nominates at most in place of documents.cap: for looking further
+ * than a call does (kb:gaps' candidate sections), never a call.
  */
-export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | undefined): SectionRetriever | null {
+export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | undefined, options: { cap?: number } = {}): SectionRetriever | null {
   if (kb.settings.documents?.summarize !== 'on') return null;
   const settings = kb.settings.documents;
   let dense: SectionRetrieverOptions['dense'];
@@ -58,7 +59,7 @@ export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | u
     if (hybrid && vectors) dense = { embedder: hybrid.dense.embedder, vectors, floor: settings.floor ?? kb.settings.retrieval.floor ?? hybrid.dense.floor };
     if (index && 'hash' in index) indexHash = index.hash;
   }
-  const retriever = new SectionRetriever(kb, { ...(dense ? { dense } : {}), keywords: settings.retrieval !== 'dense' || dense === undefined, ...(indexHash !== undefined && dense ? { indexHash } : {}) });
+  const retriever = new SectionRetriever(kb, { ...(dense ? { dense } : {}), keywords: settings.retrieval !== 'dense' || dense === undefined, ...(indexHash !== undefined && dense ? { indexHash } : {}), ...(options.cap !== undefined ? { cap: options.cap } : {}) });
   return retriever.sections.length > 0 ? retriever : null;
 }
 

@@ -1,4 +1,4 @@
-import { KeywordRetriever, loadAppFolder, type KbPlace, type KbTopic, type KnowledgeBase } from 'dialogwright';
+import { DEFAULT_SECTIONS_CAP, defaultRetriever, defaultSectionRetriever, KeywordRetriever, loadAppFolder, type KbPlace, type KbTopic, type KnowledgeBase, type SectionRetriever } from 'dialogwright';
 import { uncitedSections } from '../refresh/refresh';
 import { collectGaps, GAP_KINDS, type CollectContext, type CollectStats, type Gap, type GapKind, type Near, type Unavailable } from './collect';
 import { isStoreSpec, readTurns, storeTurns, traceFilesOf, type Turn } from './traces';
@@ -20,6 +20,10 @@ export const NO_NEAR_TOPIC = '~';
 export const NO_NEAR_SECTION = '~section';
 /** A section the model read at this or above for a question it did not answer is near it: worth a look. */
 export const NEAR_SECTION = 0.3;
+/** How far down the current retrieval of a gap's words the candidate sections are looked for (CandidateSection). */
+export const CANDIDATE_CAP = 12;
+/** How many candidate sections a group lists. */
+export const CANDIDATES_SHOWN = 3;
 
 /** A sample of what a caller said, and the turn it was said on. */
 export interface Sample {
@@ -31,9 +35,27 @@ export interface Sample {
   reason?: Unavailable;
   /** Found nothing for in the documents (an app that answers from them). */
   documents?: true;
+  /** The sections offered on the turn, best ranked first (a question found nothing for in the documents). */
+  offered?: string[];
 }
 
-export type FixId = 'add-glossary' | 'add-section-asks' | 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool';
+/**
+ * A section of the documents that was not offered for a group's questions on their calls, that the app's
+ * own section retriever ranks for their words now: the one a hint (kb/sections.yaml asks) may be wanting,
+ * where the documents say what callers ask in words of their own.
+ */
+export interface CandidateSection {
+  key: string;
+  heading: string | null;
+  /** Its best place in the retrieval of the group's words now (1 is first). */
+  rank: number;
+  /** Whether it is within what a call is offered now (kb.yaml documents.cap): the index already offers it. */
+  offeredNow: boolean;
+  /** How many of the group's questions rank it. */
+  questions: number;
+}
+
+export type FixId = 'add-glossary' | 'add-section-asks' | 'check-candidates' | 'add-keywords' | 'write-passage' | 'draft-from-section' | 're-approve' | 'add-translation' | 'check-facts' | 'fix-topic' | 'fix-overlap' | 'check-tool';
 
 /** What to do about one kind of gap in a group. */
 export interface Fix {
@@ -82,6 +104,8 @@ export interface GapGroup {
    * (`key` NO_NEAR_SECTION). Absent for every other group.
    */
   section?: { key: string; heading: string | null; read: number } | null;
+  /** Sections not offered for the group's questions that the section retriever ranks for them now (reportFromTraces; withCandidates). */
+  candidates?: CandidateSection[];
 }
 
 export interface GapReport {
@@ -93,6 +117,11 @@ export interface GapReport {
   gaps: number;
   byKind: Record<GapKind, number>;
   groups: GapGroup[];
+  /**
+   * How the candidate sections were found (withCandidates): the section retriever's id, and where its model
+   * did not load, why (its candidates are then by keywords alone). Absent where none were looked for.
+   */
+  candidatesBy?: { retriever: string; failed?: string };
 }
 
 const norm = (words: string): string => words.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -309,7 +338,7 @@ function groupOf(
     const text = g.words.replace(/\s+/g, ' ').trim();
     if (text === '' || seen.has(norm(text))) continue;
     seen.add(norm(text));
-    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}), ...(g.section !== undefined ? { documents: true as const } : {}) });
+    samples.push({ kind: g.kind, words: text, ts: g.ts, sessionId: g.sessionId, turnIndex: g.turnIndex, ...(g.reason ? { reason: g.reason } : {}), ...(g.section !== undefined ? { documents: true as const } : {}), ...(g.offered !== undefined ? { offered: g.offered } : {}) });
   }
 
   const fixes = new Map<string, Fix>();
@@ -375,11 +404,65 @@ export function reportFromFiles(o: Omit<BuildOptions, 'turns' | 'skipped' | 'fil
 }
 
 /**
+ * The candidate sections of each group of questions found nothing for in the documents: each sample's words
+ * retrieved by `retriever` (the app's own section retriever, looking CANDIDATE_CAP deep), the sections ranked
+ * that were not offered on the sample's call, by how many of the group's questions rank them, then their best
+ * place; with the fix that names them. The report as it was where the app does not answer from documents.
+ */
+export async function withCandidates(report: GapReport, kb: KnowledgeBase, retriever: SectionRetriever | null, failed?: string): Promise<GapReport> {
+  if (retriever === null) return report;
+  const offeredCap = kb.settings.documents?.cap ?? DEFAULT_SECTIONS_CAP;
+  const groups = await Promise.all(report.groups.map(async (g): Promise<GapGroup> => {
+    const asked = g.samples.filter((s) => s.documents === true && s.offered !== undefined);
+    if (asked.length === 0) return g;
+    const found = new Map<string, { rank: number; questions: number }>();
+    for (const s of asked) {
+      const ranked = await retriever.nominate({ text: s.words, locale: kb.defaultLocale, todayIso: '' });
+      ranked.forEach((n, i) => {
+        if (s.offered!.includes(n.topic)) return;
+        const had = found.get(n.topic);
+        found.set(n.topic, { rank: Math.min(had?.rank ?? Infinity, i + 1), questions: (had?.questions ?? 0) + 1 });
+      });
+    }
+    const candidates = [...found]
+      .sort((a, b) => b[1].questions - a[1].questions || a[1].rank - b[1].rank || (a[0] < b[0] ? -1 : 1))
+      .slice(0, CANDIDATES_SHOWN)
+      .map(([key, c]): CandidateSection => ({ key, heading: headingOf(kb, key), rank: c.rank, offeredNow: c.rank <= offeredCap, questions: c.questions }));
+    if (candidates.length === 0) return g;
+    const fix: Fix = {
+      id: 'check-candidates',
+      kind: 'unmatched',
+      count: asked.length,
+      text: `Sections not offered for these questions on their calls rank for them now (below): if one answers what callers ask, add their words to its asks or keywords in kb/sections.yaml (then pnpm kb:index), so retrieval offers it; one marked "offered now" the current index already offers. A fix for a section that was offered (above) makes it win where it may not answer.`,
+    };
+    return { ...g, candidates, fixes: [fix, ...g.fixes] };
+  }));
+  return { ...report, groups, candidatesBy: { retriever: retriever.id, ...(failed !== undefined ? { failed } : {}) } };
+}
+
+/** The app's own section retriever, looking CANDIDATE_CAP deep (null where the app does not answer from documents). */
+export function candidateRetriever(kb: KnowledgeBase): SectionRetriever | null {
+  return defaultSectionRetriever(kb, defaultRetriever(kb).retriever, { cap: CANDIDATE_CAP });
+}
+
+/**
  * reportFromFiles over files and trace stores alike: a `--traces` spec that is `s3://<bucket>/<prefix>`
  * (TRACE_STORE's) is read through the engine's one trace reader, every call's segments joined, its
  * keys from the S3_ variables in `env`. With no store named, the same report as reportFromFiles.
  */
-export async function reportFromTraces(o: Omit<BuildOptions, 'turns' | 'skipped' | 'files'> & { traces: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; fetch?: typeof fetch }): Promise<{ report: GapReport; files: string[] }> {
+export async function reportFromTraces(o: Omit<BuildOptions, 'turns' | 'skipped' | 'files'> & { traces: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; fetch?: typeof fetch; sectionRetriever?: SectionRetriever | null }): Promise<{ report: GapReport; files: string[] }> {
+  const { sectionRetriever, ...rest } = o;
+  const found = await readReport(rest);
+  // Only where some group has questions found nothing for in the documents: the retriever may load a model.
+  if (!found.report.groups.some((g) => g.samples.some((s) => s.offered !== undefined))) return found;
+  const retriever = sectionRetriever !== undefined ? sectionRetriever : candidateRetriever(o.kb);
+  // A model that does not load leaves the keywords (as on a call): said in the report, with why.
+  let failed: string | undefined;
+  if (retriever !== null) await retriever.warm().catch((error: unknown) => (failed = error instanceof Error ? error.message : String(error)));
+  return { ...found, report: await withCandidates(found.report, o.kb, retriever, failed) };
+}
+
+async function readReport(o: Omit<BuildOptions, 'turns' | 'skipped' | 'files'> & { traces: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; fetch?: typeof fetch }): Promise<{ report: GapReport; files: string[] }> {
   const { env, fetch: fetchImpl, ...fileOptions } = o;
   if (!o.traces.some(isStoreSpec)) return reportFromFiles(fileOptions);
   const files = traceFilesOf(o.traces, o.cwd);
@@ -465,6 +548,7 @@ export function formatMarkdown(r: GapReport): string[] {
   const documents = r.groups.some((g) => g.section !== undefined);
   const kinds = GAP_KINDS.filter((k) => r.byKind[k] > 0).map((k) => `${r.byKind[k]} ${k === 'unmatched' && documents ? DOCUMENTS_TEXT : KIND_TEXT[k]}`);
   if (kinds.length > 0) lines.push('', `By kind: ${kinds.join(', ')}.`);
+  if (r.candidatesBy !== undefined) lines.push('', r.candidatesBy.failed === undefined ? `Candidate sections by ${r.candidatesBy.retriever}.` : `Candidate sections by keywords alone: the sections' model did not load (${r.candidatesBy.failed}).`);
   if (t.retrievalFailed > 0) lines.push('', `${n(t.retrievalFailed, 'turn')} nominated nothing because retrieval failed (an error, an invalid answer or too late): not counted as gaps; see the traces' retrieval.failed.`);
   if (t.skipped > 0) lines.push('', `${n(t.skipped, 'line')} of the traces were not read (not a current trace record).`);
   if (r.groups.length === 0) {
@@ -481,6 +565,10 @@ export function formatMarkdown(r: GapReport): string[] {
     if (g.withheld > 0) lines.push('', `${n(g.withheld, 'turn')} not shown: the caller gave a value the trace masks on ${g.withheld === 1 ? 'it' : 'them'}.`);
     lines.push('', 'Fix:');
     for (const f of g.fixes) lines.push(`- ${f.text}${f.count > 1 ? ` (${f.count})` : ''}`);
+    if (g.candidates !== undefined && g.candidates.length > 0) {
+      lines.push('', 'Sections not offered on these calls that rank for the questions now:');
+      for (const c of g.candidates) lines.push(`- ${c.heading ?? c.key} (${c.key}): ${c.offeredNow ? 'offered now' : `ranks ${c.rank} now`}${c.questions > 1 ? `, for ${c.questions} questions` : ''}`);
+    }
     if (g.draftFrom.length > 0) {
       lines.push('', 'Sections nothing cites that read as relevant:');
       for (const d of g.draftFrom) lines.push(`- ${d.document} / ${d.section}${d.heading !== null ? ` (${d.heading})` : ''}`);

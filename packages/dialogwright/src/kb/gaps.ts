@@ -272,6 +272,8 @@ export interface Gap {
    * model was not asked about it). Absent where no section was offered.
    */
   section?: { key: string; read: number | null };
+  /** A question an app that answers from documents found nothing for: the sections offered on the turn that read it, best ranked first (none where none was). */
+  offered?: string[];
 }
 
 /** What the collector knows beyond the trace. */
@@ -439,7 +441,7 @@ function gapOf(t: Turn, seen: Seen, ctx: CollectContext, topicSlots: ReadonlySet
     const words = checked ? wordsFor(seen.prev!, undefined) : own;
     const best = [...from.sections].sort((a, b) => (b.read ?? -1) - (a.read ?? -1))[0];
     const topic = from.words !== null ? nearest(from.words, from.locale) : null;
-    return { kind: 'unmatched', topic, near: topic !== null ? 'keyword' : 'none', ...base, words, ...(best !== undefined ? { section: best } : {}) };
+    return { kind: 'unmatched', topic, near: topic !== null ? 'keyword' : 'none', ...base, words, ...(best !== undefined ? { section: best } : {}), offered: from.sections.map((s) => s.key) };
   }
 
   if (t.retrieval !== null && nominated.length === 0 && t.words !== null) {

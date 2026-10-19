@@ -45,6 +45,10 @@ function groupCard(ctx: PageContext, view: GapsView, g: GapGroup, rank: number, 
       : `<ul>${g.samples.map((s) => `<li><q>${esc(s.words)}</q> <span class="chip">${esc(sampleLabel(s))}</span> <span class="muted">${esc(s.ts.slice(0, 10))}</span></li>`).join('')}</ul>`;
   const withheld = g.withheld > 0 ? `<p class="hint">${g.withheld} not shown: the caller gave a value the trace masks.</p>` : '';
   const fixes = `<ul>${g.fixes.map((f) => `<li>${esc(f.text)}${f.count > 1 ? ` <span class="muted">(${f.count})</span>` : ''}${fixLinks(ctx, view, g, f)}</li>`).join('')}</ul>`;
+  const candidates =
+    g.candidates === undefined || g.candidates.length === 0
+      ? ''
+      : `<h3>Sections not offered on these calls that rank for the questions now</h3><ul>${g.candidates.map((c) => `<li>${esc(c.heading ?? c.key)} <span class="mono">${esc(c.key)}</span> <span class="chip">${c.offeredNow ? 'offered now' : `ranks ${c.rank} now`}</span>${c.questions > 1 ? ` <span class="muted">for ${c.questions} questions</span>` : ''}</li>`).join('')}</ul>`;
   const more = detail ? '' : g.draftFrom.length > 0 ? `<p><a href="${href(ctx, gapPath(g.key))}">All the callers' words, and ${g.draftFrom.length === 1 ? 'the section' : 'the sections'} to draft from</a></p>` : `<p><a href="${href(ctx, gapPath(g.key))}">All the callers' words</a></p>`;
   return `<section class="card" aria-labelledby="g${rank}">
   <h2 id="g${rank}">${rank}. ${heading} <span class="chip ${g.count >= 5 ? 'warn' : ''}">${g.count} ${g.count === 1 ? 'gap' : 'gaps'}</span></h2>
@@ -53,6 +57,7 @@ function groupCard(ctx: PageContext, view: GapsView, g: GapGroup, rank: number, 
   ${samples}${withheld}
   <h3>Fix</h3>
   ${fixes}
+  ${candidates}
   ${more}
 </section>`;
 }

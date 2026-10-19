@@ -91,6 +91,9 @@ export { KeywordRetriever } from './kb/keyword';
 export type { KeywordRetrieverOptions } from './kb/keyword';
 // Dense retrieval over a vector index, and hybrid (keyword and dense, fused): the default for an app whose kb.yaml names an embedder.
 export { DenseRetriever, HybridRetriever, RRF_K, defaultRetriever, fuse } from './kb/hybrid';
+// The sections of approved documents and their retriever (kb.yaml documents): kb:gaps looks past what a call was offered with it.
+export { SectionRetriever, defaultSectionRetriever } from './kb/sections';
+export { DEFAULT_SECTIONS_CAP } from './kb/schema';
 export type { DefaultRetrieverKind, DefaultRetrieverOptions, DenseOptions, HybridOptions } from './kb/hybrid';
 // The static embedder, its pinned model, an in-memory vector index, and the index file (kb/.index/<embedder>.json).
 export { StaticEmbedder } from './kb/embed/static';
