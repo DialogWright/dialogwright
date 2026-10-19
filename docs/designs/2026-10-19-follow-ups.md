@@ -48,3 +48,15 @@ The first wording asked the model to read the two questions together, and every 
 ## Not now
 
 A question that continues one asked two or more questions before; follow-ups for topics answered by passages alone (their retrieval reads the words alone).
+
+## Later the same day: a bare word
+
+A live chat's "diabetes", right after an answer about an MRI, was read as continuing the MRI question (the diabetes section at 0.16), and a bare follow-up ("cost" after continuing coverage) fared no better: the question told the model to read the caller's words as continuing the earlier question "only where they cannot be understood on its own", and a single word reads as not understood on its own. The question now says what a caller's words may be, a whole question or only the name of what they want to know ("a single word, such as "parking", asks about it"), and that the name of something new stands alone. Retrieval already offered the right sections (16 of 16 bare new subjects, 10 of 10 bare follow-ups with the earlier question): the reading was the loss. Measured against the decision model on the booklet's demo, 93 calls of two questions each:
+
+| | Bare new subjects (16) | Bare follow-ups (10) | Follow-ups (43) | Questions after unrelated ones (24) |
+|---|---|---|---|---|
+| Before | 6 right, 2 wrong | 4, 0 | 37, 5 | 21, 0 |
+| A first rewording ("only where it refers back to it") | 7, 1 | 4, 0 | 39, 4 | 18, 2 |
+| The decision | 11, 1 | 3, 2 | 38, 4 | 21, 1 |
+
+Five more right answers for one more wrong; the bare follow-ups it now gets wrong ("cost" after continuing coverage read as the out-of-pocket maximum) are the next to measure. Half the misses before were the same few: a bare word read as about the earlier subject, every section below 0.45.
