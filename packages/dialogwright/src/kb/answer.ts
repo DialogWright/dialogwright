@@ -438,7 +438,9 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
       if (keys !== null) {
         const r = resolveSections(kb, keys, facts, locale);
         if ('unavailable' in r) return { value: { unavailable: r.unavailable } satisfies KbAnswer, summary: `no passage (${r.unavailable})` };
-        return { value: { answer: r.sections.map((x) => x.text).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), sentences: r.sections[0]?.sentences ?? [], sections: r.sections.map((x) => ({ heading: x.heading, sentences: x.sentences })) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
+        // Each section under its heading after those it is under (KbSection.path), as the wording and its judge read
+        // it: a table's rows are read as what they are rows of (a pharmacy's or a mail service's, a stay's or a visit's).
+        return { value: { answer: r.sections.map((x) => `${x.path}: ${x.text}`).join('\n\n'), source: documentsSourceOf(kb, r.sections, facts), sentences: r.sections[0]?.sentences ?? [], sections: r.sections.map((x) => ({ heading: x.heading, sentences: x.sentences })) } satisfies KbAnswer, summary: `documents ${r.sections.map((x) => x.key).join(', ')}` };
       }
       const r = resolvePassage(kb, { topic: call.params[KB_TOPIC_PARAM] ?? '', facts, todayIso: tc.todayIso, locale });
       if ('fresh' in r) return { value: { answer: r.passage.answer, source: recordOf(kb, r.passage, facts, true) } satisfies KbAnswer, summary: r.passage.id };

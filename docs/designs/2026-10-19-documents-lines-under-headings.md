@@ -26,3 +26,7 @@ The run-on section came from `kb:ingest`. The booklet's summary of benefits is s
 - text of its own follows it (a plan's name or a date set in bold over a summary stays text).
 
 On that booklet this gives four new sections, the deductibles, the out-of-pocket maximum, prior authorization and the notes, each with its figures under it, and changes nothing else. The utility app's PDFs import exactly as before.
+
+## Later the same day: the worded answer under its headings too
+
+A live chat's generic-drug answer gave a 31-90-day price, a row of the mail service table, as a network pharmacy's. The wording model and the documents judge were given the sections' text without their headings, so neither could tell the two pharmacy tables apart. Each section now goes to them under its heading after those it is under (`Heading: text`, `KbSection.path`). On the booklet's 61 labelled answers (`pnpm render:judge-eval`), the judge at 0.5 caught 22 of 32 unfaithful answers with headings and 20 without; the two it now catches are that mail service price, and it refused none of the 29 faithful answers either way.

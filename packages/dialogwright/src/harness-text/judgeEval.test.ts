@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { main } from '../define/cli';
 import { loadCassette } from '../jev/cassette';
 import type { JevClient, JevRequest } from '../jev/types';
-import { renderSpanDriftQuestion, renderSpanDriftState } from '../render/checks';
+import { renderDocumentsDriftQuestion, renderSpanDriftQuestion, renderSpanDriftState } from '../render/checks';
 import { actOf, DEFAULT_CASES_FILE, evaluateCases, judgeLatency, judgeRequest, loadJudgeCases, REALISTIC, saidRates, type JudgeCase } from '../render/judgeEval';
 import { judgeCassettePath, judgeEvalCommand } from './judgeEvalCommand';
 
@@ -291,5 +291,29 @@ describe('answer cases (speaks: answer; a knowledge answer worded for the caller
       ['figure', 'foreign', true, 0.1],
       ['passage', 'unchanged', false, 0.1],
     ]);
+  });
+});
+
+describe('documents cases (speaks: documents; an answer worded from sections), with an earlier question', () => {
+  const SECTIONS = 'Printing: Printing is 10 cents a page in black and white, 50 cents in color.\n\nCopies: Copies cost the same as printing.';
+  const docCase = (id: string, more: Record<string, unknown> = {}) => ({ id, family: 'doc-test', expected: 'faithful', speaks: 'documents', content: SECTIONS, question: 'what about in color', span: 'Printing in color is 50 cents a page.', note: 'a test', ...more });
+  const file = (cases: unknown[]): string => {
+    const path = join(tempDir(), 'documents.jsonl');
+    writeFileSync(path, cases.map((c) => JSON.stringify(c)).join('\n'));
+    return path;
+  };
+
+  it('send the judge the earlier question and the follow-up wording of its question, as a call reading follow-ups does; without one, as before', () => {
+    const [follow, alone] = loadJudgeCases(file([docCase('follow', { earlier: 'how much is printing' }), docCase('alone')]));
+    expect(actOf(follow!).answer).toEqual({ question: 'what about in color', from: 'sections', earlier: 'how much is printing' });
+    const req = judgeRequest(follow!);
+    expect((req.state as { answer: { earlier?: string } }).answer.earlier).toBe('how much is printing');
+    expect(req.questions).toEqual(renderDocumentsDriftQuestion(true));
+    expect(actOf(alone!).answer).toEqual({ question: 'what about in color', from: 'sections' });
+    expect(judgeRequest(alone!).questions).toEqual(renderDocumentsDriftQuestion());
+  });
+
+  it('only a documents case has an earlier question', () => {
+    expect(() => loadJudgeCases(file([{ id: 'b', family: 'x', expected: 'faithful', speaks: 'as-caller', content: 'call me', span: 'call me', earlier: 'q', note: 'n' }]))).toThrow('only a documents case (speaks: documents) has an earlier question');
   });
 });

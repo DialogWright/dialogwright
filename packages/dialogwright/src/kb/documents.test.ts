@@ -127,7 +127,8 @@ describe('answers from documents: the sections the decision model says answer it
     expect(calls(t.result)).toEqual(['findPassage(topic=sections:visitor-guide#wifi) ALLOW: documents visitor-guide#wifi']);
     expect(t.result.kb).toMatchObject({ passageId: 'document:visitor-guide', topic: 'documents', from: 'documents', sections: ['visitor-guide#wifi'], fresh: true, document: 'Example Town Library Visitor Guide', approvedBy: 'Riley Moreno' });
     const ack = 'acks' in t.result.decision ? t.result.decision.acks.find((a) => a.promptId === 'kb_documents_answer') : undefined;
-    expect(ack?.vars).toEqual({ answer: "I couldn't find anything on that.", answerSource: WIFI, answerHold: 'kb_hold', answerQuestion: 'is there wifi at the library' });
+    // The sections go to the wording and its judge under their headings, so a row is read as what it is a row of.
+    expect(ack?.vars).toEqual({ answer: "I couldn't find anything on that.", answerSource: `Wi-Fi: ${WIFI}`, answerHold: 'kb_hold', answerQuestion: 'is there wifi at the library' });
     expect(t.result.audit.find((r) => r.type === 'kb_answer')?.detail).toMatchObject({ passageId: 'document:visitor-guide', from: 'documents', sections: ['visitor-guide#wifi'] });
   });
 
@@ -179,9 +180,10 @@ describe('the answer worded from the sections, checked against them', () => {
     const r = renderer();
     const out = await rendered(APP, t, r);
     const act = r.client.askedSpans[0]!.act as SpanAct;
-    expect(act).toMatchObject({ kind: 'span', content: [{ name: 'answer', value: WIFI }], style: { words: 60 }, answer: { question: 'is there wifi at the library', from: 'sections' } });
+    expect(act).toMatchObject({ kind: 'span', content: [{ name: 'answer', value: `Wi-Fi: ${WIFI}` }], style: { words: 60 }, answer: { question: 'is there wifi at the library', from: 'sections' } });
     expect(instructionsOf(act)).toBe(SECTIONS_INSTRUCTIONS);
-    expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Every branch has free Wi-Fi.', fixed: "I couldn't find anything on that." });
+    // The fake renderer says its content's first sentence, the section under its heading.
+    expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Wi-Fi: Every branch has free Wi-Fi.', fixed: "I couldn't find anything on that." });
     expect(sayText(out.actions)).toContain('Every branch has free Wi-Fi.');
     expect(sayText(out.actions)).not.toContain('Sessions end');
     expect(out.audit).toContainEqual({ type: 'kb_worded', detail: expect.objectContaining({ prompt: 'kb_documents_answer', passageId: 'document:visitor-guide', from: 'documents', sections: ['visitor-guide#wifi'] }) });

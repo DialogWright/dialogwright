@@ -60,6 +60,12 @@ const caseSchema = z.strictObject({
   speaks: z.enum(['as-caller', 'to-caller', 'answer', 'documents']),
   /** An answer case's question, in the caller's own words (required with `speaks: answer`). */
   question: z.string().min(1).optional(),
+  /**
+   * A documents case's earlier question on the call, in the caller's own words, which `question` may
+   * continue (kb.yaml documents.followUps): the judge is sent it and asked the follow-up wording of its
+   * question, as a call that reads follow-ups asks it.
+   */
+  earlier: z.string().min(1).optional(),
   /** A to-caller span's names (who the message is for), each under its variable: `{ recipient: "Sam Ortiz" }`. */
   names: z.record(z.string().regex(/^[a-z][A-Za-z0-9_]*$/), z.string().min(1)).optional(),
   content: z.string().min(1),
@@ -90,6 +96,7 @@ export function loadJudgeCases(path: string): JudgeCase[] {
     if (seen.has(c.id)) throw new Error(`${path}:${i + 1}: the id ${c.id} is given twice`);
     if (c.names !== undefined && c.speaks !== 'to-caller') throw new Error(`${path}:${i + 1}: ${c.id}: names are for a to-caller span only`);
     if ((c.question !== undefined) !== (c.speaks === 'answer' || c.speaks === 'documents')) throw new Error(`${path}:${i + 1}: ${c.id}: an answer case (speaks: answer or documents) has a question, and only an answer case does`);
+    if (c.earlier !== undefined && c.speaks !== 'documents') throw new Error(`${path}:${i + 1}: ${c.id}: only a documents case (speaks: documents) has an earlier question`);
     seen.add(c.id);
     cases.push(c);
   });
@@ -118,7 +125,7 @@ export function actOf(c: JudgeCase): SpanAct {
       channel: 'voice',
       language: 'en-US',
       style: { persona: 'a plain-spoken agent', words: c.words ?? DEFAULT_DOCUMENTS_WORDS, avoid: [] },
-      answer: { question: c.question ?? '', from: 'sections' },
+      answer: { question: c.question ?? '', from: 'sections', ...(c.earlier !== undefined ? { earlier: c.earlier } : {}) },
     };
   }
   if (c.speaks === 'answer') {
@@ -152,7 +159,7 @@ const questionIdOf = (c: JudgeCase): string => (c.speaks === 'documents' ? DOCUM
 /** The judge's request for a case: exactly what a call sends for this span (its state and its question). */
 export function judgeRequest(c: JudgeCase): { state: JsonValue; questions: ReturnType<typeof renderSpanDriftQuestion> } {
   const act = actOf(c);
-  if (c.speaks === 'documents') return { state: renderDocumentsDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderDocumentsDriftQuestion() };
+  if (c.speaks === 'documents') return { state: renderDocumentsDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderDocumentsDriftQuestion(c.earlier !== undefined) };
   if (c.speaks === 'answer') return { state: renderAnswerDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderAnswerDriftQuestion() };
   return { state: renderSpanDriftState(act, cleanSpan(c.span)) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks) };
 }
