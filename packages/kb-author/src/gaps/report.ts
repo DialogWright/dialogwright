@@ -433,7 +433,7 @@ export async function withCandidates(report: GapReport, kb: KnowledgeBase, retri
       id: 'check-candidates',
       kind: 'unmatched',
       count: asked.length,
-      text: `Sections not offered for these questions on their calls rank for them now (below): if one answers what callers ask, add their words to its asks or keywords in kb/sections.yaml (then pnpm kb:index), so retrieval offers it; one marked "offered now" the current index already offers. A fix for a section that was offered (above) makes it win where it may not answer.`,
+      text: `Sections not offered for these questions on their calls rank for them now (below): if one answers what callers ask, add their words to its asks or keywords in kb/sections.yaml (then pnpm kb:index), so retrieval offers it; one marked "offered now" the current index already offers. The fix below, for the section that was offered, would make it win where it may not answer.`,
     };
     return { ...g, candidates, fixes: [fix, ...g.fixes] };
   }));
