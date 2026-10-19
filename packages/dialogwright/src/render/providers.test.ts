@@ -80,6 +80,24 @@ describe('the model an app names (style.yaml\'s model, live findings item 27)', 
     expect(renderModelSource({}, undefined)).toBeNull();
   });
 
+  it('takes the app\'s own thinking and effort (style.yaml model.thinking, model.effort) where its model is in force; the environment\'s over them, and never on another model', () => {
+    const LITE = { provider: 'openrouter' as const, id: 'google/gemini-3.5-flash-lite', thinking: 'adaptive' as const, effort: 'low' as const };
+    const KEYS = { OPENROUTER_API_KEY: 'k', ANTHROPIC_API_KEY: 'k' };
+    // A model whose endpoint refuses reasoning off: the app asks for it, and the request carries it.
+    expect(resolveAppRenderProvider(KEYS, LITE)!.thinking).toEqual({ mode: 'adaptive', effort: 'low', overridden: true });
+    expect(renderEnvOf({}, LITE)).toEqual({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: LITE.id, RENDER_THINKING: 'adaptive', RENDER_EFFORT: 'low' });
+    // Its cassette is named by them, as render:bakeoff names a model asked that way.
+    expect(renderCassetteModel(resolveAppRenderProvider(KEYS, LITE)!)).toBe('google/gemini-3.5-flash-lite.thinking-adaptive.effort-low');
+    // RENDER_THINKING or RENDER_EFFORT in the environment: the environment's pair, the app's neither.
+    expect(resolveAppRenderProvider({ ...KEYS, RENDER_THINKING: 'disabled' }, LITE)!.thinking).toMatchObject({ mode: 'disabled' });
+    expect(resolveAppRenderProvider({ ...KEYS, RENDER_EFFORT: 'high' }, LITE)!.thinking).toEqual({ mode: 'adaptive', effort: 'high', overridden: true });
+    // The environment naming another model: the app's thinking was for its own, and is not sent.
+    expect(renderEnvOf({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'vendor/other' }, LITE)).toEqual({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'vendor/other' });
+    expect(renderEnvOf({ RENDER_PROVIDER: 'anthropic' }, LITE)).toEqual({ RENDER_PROVIDER: 'anthropic' });
+    // Without them, as before.
+    expect(renderEnvOf({}, GEMINI)).toEqual({ RENDER_PROVIDER: 'openrouter', RENDER_MODEL: GEMINI.id });
+  });
+
   it('a key only from the environment: missing, it is named with style.yaml, never a RENDER_PROVIDER that was not set', () => {
     expect(appModelKeyMissing({}, GEMINI)).toBe('OPENROUTER_API_KEY');
     expect(appModelKeyMissing({ OPENROUTER_API_KEY: 'k' }, GEMINI)).toBeNull();

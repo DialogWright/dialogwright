@@ -77,6 +77,25 @@
           "description": "The model id, as the provider names it (\"google/gemini-3.1-flash-lite-preview\" on OpenRouter, \"claude-haiku-5-5\" on Anthropic). Default: the provider's default model (RENDER_MODEL's default).",
           "type": "string",
           "minLength": 1
+        },
+        "thinking": {
+          "description": "How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers \"Reasoning is mandatory\"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. Default: the model's own default (reasoning off on OpenRouter), as before.",
+          "type": "string",
+          "enum": [
+            "disabled",
+            "between-tools",
+            "adaptive",
+            "omit"
+          ]
+        },
+        "effort": {
+          "description": "How hard it thinks, as RENDER_EFFORT says it: low, medium or high (not with thinking: disabled). Measure the choice with render:bakeoff (provider:model:thinking:effort): reasoning adds to every line's wait. Default: the model's own.",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
         }
       },
       "required": [

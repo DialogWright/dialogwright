@@ -198,7 +198,7 @@ export function generatedWordingOf(input: {
     localeGoals,
     ...(Object.keys(localeSpanGoals).length > 0 ? { localeSpanGoals } : {}),
     // The model the app names (style.yaml's `model`): only where it names one, so every other App is as it was.
-    ...(input.style?.model !== undefined ? { model: { provider: input.style.model.provider, ...(input.style.model.id !== undefined ? { id: input.style.model.id } : {}) } } : {}),
+    ...(input.style?.model !== undefined ? { model: { provider: input.style.model.provider, ...(input.style.model.id !== undefined ? { id: input.style.model.id } : {}), ...(input.style.model.thinking !== undefined ? { thinking: input.style.model.thinking } : {}), ...(input.style.model.effort !== undefined ? { effort: input.style.model.effort } : {}) } } : {}),
     // Only where a form's answer line words its answer, so every other App is as it was.
     ...(answerSlots.length > 0 ? { answerSlots } : {}),
   };

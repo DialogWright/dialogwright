@@ -1871,6 +1871,14 @@ export interface RenderStyle {
 export interface RenderModelChoice {
   readonly provider: 'openrouter' | 'anthropic';
   readonly id?: string;
+  /**
+   * How the model thinks while it words a line, as RENDER_THINKING would say it, for this model only (a
+   * model whose endpoint refuses reasoning off, say): sent where the app's model is in force, and
+   * RENDER_THINKING or RENDER_EFFORT in the environment over both (render/providers.ts renderEnvOf).
+   */
+  readonly thinking?: 'disabled' | 'between-tools' | 'adaptive' | 'omit';
+  /** How hard it thinks, as RENDER_EFFORT would say it (with thinking that is not `disabled`). */
+  readonly effort?: 'low' | 'medium' | 'high';
 }
 
 /** An app's generated wording (App.generated). */

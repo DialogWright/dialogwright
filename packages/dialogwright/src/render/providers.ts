@@ -237,7 +237,9 @@ export function renderEnvOf(env: Env, model: RenderModelChoice | undefined): Env
   if (provider !== null && provider !== model.provider) return env;
   const id = (provider !== null ? value(env, 'RENDER_MODEL') : null) ?? model.id;
   const { RENDER_MODEL: _ignored, ...rest } = env;
-  return { ...rest, RENDER_PROVIDER: model.provider, ...(id !== undefined ? { RENDER_MODEL: id } : {}) };
+  // The app's own thinking and effort, for its own model only, and only where the environment names neither.
+  const own = renderModelSource(env, model) === 'style.yaml' && value(env, 'RENDER_THINKING') === null && value(env, 'RENDER_EFFORT') === null;
+  return { ...rest, RENDER_PROVIDER: model.provider, ...(id !== undefined ? { RENDER_MODEL: id } : {}), ...(own && model.thinking !== undefined ? { RENDER_THINKING: model.thinking } : {}), ...(own && model.effort !== undefined ? { RENDER_EFFORT: model.effort } : {}) };
 }
 
 /** Where the render model came from: the app's style.yaml, the environment, or nowhere (no line generated). */

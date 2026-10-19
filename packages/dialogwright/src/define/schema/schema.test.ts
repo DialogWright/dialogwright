@@ -156,6 +156,12 @@ describe('mistakes get a precise error', () => {
     expect(issuesOf('style', 'model: { provider: azure, id: x }\n').map((i) => i.path)).toEqual(['model.provider']);
     expect(issuesOf('style', 'model: { id: x }\n').map((i) => i.path)).toEqual(['model.provider']);
     expect(issuesOf('style', 'model: { provider: openrouter, apiKey: x }\n').map((i) => i.path)).toEqual(['model']);
+    // Its own thinking and effort: reasoning on at low effort, as a model that refuses it off needs.
+    expect(issuesOf('style', 'model: { provider: openrouter, id: google/gemini-3.5-flash-lite, thinking: adaptive, effort: low }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: openrouter, thinking: disabled, effort: low }\n').map((i) => i.path)).toEqual(['model.effort']);
+    expect(issuesOf('style', 'model: { provider: openrouter, thinking: between-tools }\n').map((i) => i.path)).toEqual(['model.thinking']);
+    expect(issuesOf('style', 'model: { provider: anthropic, id: claude-sonnet-5-5, thinking: between-tools }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: openrouter, effort: max }\n').map((i) => i.path)).toEqual(['model.effort']);
   });
 
   it('policy levels, attempts and role access are bounded', () => {

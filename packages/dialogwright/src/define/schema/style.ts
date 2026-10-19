@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { text, unique } from './common';
 import { DRIFT_FIRE } from '../../render/checks';
-import { RENDER_PROVIDERS } from '../../render/providers';
+import { RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -56,6 +56,18 @@ export const styleSchema = z
         id: text()
           .optional()
           .describe('The model id, as the provider names it ("google/gemini-3.1-flash-lite-preview" on OpenRouter, "claude-haiku-5-5" on Anthropic). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
+        thinking: z
+          .enum(RENDER_THINKING_MODES)
+          .optional()
+          .describe('How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers "Reasoning is mandatory"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. Default: the model\'s own default (reasoning off on OpenRouter), as before.'),
+        effort: z
+          .enum(RENDER_EFFORTS)
+          .optional()
+          .describe('How hard it thinks, as RENDER_EFFORT says it: low, medium or high (not with thinking: disabled). Measure the choice with render:bakeoff (provider:model:thinking:effort): reasoning adds to every line\'s wait. Default: the model\'s own.'),
+      })
+      .superRefine((m, ctx) => {
+        if (m.thinking === 'disabled' && m.effort !== undefined) ctx.addIssue({ code: 'custom', path: ['effort'], message: 'effort asks for reasoning, which thinking: disabled turns off', params: { fix: 'remove effort, or set thinking: adaptive' } });
+        if (m.thinking === 'between-tools' && m.provider !== 'anthropic') ctx.addIssue({ code: 'custom', path: ['thinking'], message: 'between-tools is Claude Sonnet 5.5\'s on anthropic', params: { fix: 'on openrouter use disabled, adaptive or omit' } });
       })
       .optional()
       .describe(
