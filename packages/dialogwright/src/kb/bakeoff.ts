@@ -306,6 +306,8 @@ export interface FollowUp {
   readonly after: string;
   readonly say: string;
   readonly sections: readonly string[];
+  /** The sections that answered `after` (as a call keeps them); absent, the one the retriever ranks first for it. */
+  readonly answered?: readonly string[];
 }
 
 /** A follow-up file: a list of `{ after, say, sections: [<document>#<section>, ...] }`, each section one that may be summarized. */
@@ -317,9 +319,11 @@ export function parseFollowUps(text: string, keys: readonly string[]): FollowUp[
     if (typeof o.after !== 'string' || o.after.trim() === '' || typeof o.say !== 'string' || o.say.trim() === '' || !Array.isArray(o.sections) || o.sections.length === 0 || o.sections.some((k) => typeof k !== 'string')) {
       throw new Error(`entry ${i + 1} is not { after: <earlier question>, say: <follow-up>, sections: [<document>#<section>, ...] }`);
     }
-    const unknown = (o.sections as string[]).filter((k) => !keys.includes(k));
+    const answered = (o as { answered?: unknown }).answered;
+    if (answered !== undefined && (!Array.isArray(answered) || answered.some((k) => typeof k !== 'string'))) throw new Error(`entry ${i + 1}'s answered is not a list of section keys`);
+    const unknown = [...(o.sections as string[]), ...((answered as string[] | undefined) ?? [])].filter((k) => !keys.includes(k));
     if (unknown.length > 0) throw new Error(`entry ${i + 1} names sections that may not be summarized: ${unknown.join(', ')}`);
-    return { after: o.after, say: o.say, sections: [...(o.sections as string[])] };
+    return { after: o.after, say: o.say, sections: [...(o.sections as string[])], ...(answered !== undefined ? { answered: [...(answered as string[])] } : {}) };
   });
 }
 
@@ -338,12 +342,20 @@ export interface FollowUpCount {
  * sections are not its own, four at most each).
  */
 export async function followUpBakeoff(plain: Retriever, withEarlier: Retriever, followUps: readonly FollowUp[], paraphrases: Paraphrases, locale: string, todayIso: string): Promise<{ followUps: FollowUpCount; singles: FollowUpCount }> {
-  const keysOf = async (r: Retriever, text: string, earlier?: string): Promise<string[]> => (await r.nominate({ text, locale, todayIso, ...(earlier !== undefined ? { earlier } : {}) })).map((n) => n.topic);
+  // The sections that answered an earlier question, as a call keeps them: those its entry names
+  // (`answered`), else the one the plain retriever ranks first for it.
+  const answered = new Map<string, readonly string[]>();
+  const answeredOf = async (after: string, named?: readonly string[]): Promise<readonly string[]> => {
+    if (named !== undefined) return named;
+    if (!answered.has(after)) answered.set(after, (await plain.nominate({ text: after, locale, todayIso })).slice(0, 1).map((n) => n.topic));
+    return answered.get(after)!;
+  };
+  const keysOf = async (r: Retriever, text: string, earlier?: string, earlierSections?: readonly string[]): Promise<string[]> => (await r.nominate({ text, locale, todayIso, ...(earlier !== undefined ? { earlier } : {}), ...(earlierSections !== undefined ? { earlierSections } : {}) })).map((n) => n.topic);
   let alone = 0;
   let read = 0;
   for (const f of followUps) {
     if ((await keysOf(plain, f.say)).some((k) => f.sections.includes(k))) alone += 1;
-    if ((await keysOf(withEarlier, f.say, f.after)).some((k) => f.sections.includes(k))) read += 1;
+    if ((await keysOf(withEarlier, f.say, f.after, await answeredOf(f.after, f.answered))).some((k) => f.sections.includes(k))) read += 1;
   }
   const earlier = [...new Map(followUps.map((f) => [f.after, f.sections])).entries()];
   let n = 0;
@@ -357,7 +369,7 @@ export async function followUpBakeoff(plain: Retriever, withEarlier: Retriever, 
       for (const [after] of unrelated) {
         n += 1;
         if (hitAlone) sAlone += 1;
-        if ((await keysOf(withEarlier, line, after)).some((k) => want.includes(k))) sRead += 1;
+        if ((await keysOf(withEarlier, line, after, await answeredOf(after))).some((k) => want.includes(k))) sRead += 1;
       }
     }
   }

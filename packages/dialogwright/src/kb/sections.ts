@@ -76,6 +76,8 @@ export interface SectionRetrieverOptions {
   readonly indexHash?: string;
   /** Whether a question is read with the caller's earlier one (kb.yaml documents.followUps on; NominateInput.earlier). Default false. */
   readonly followUps?: boolean;
+  /** With followUps, whether the earlier answer's sections and those under them are candidates too. Default true; false measures without them. */
+  readonly followUpsNear?: boolean;
 }
 
 /**
@@ -113,6 +115,8 @@ export class SectionRetriever implements Retriever {
   private readonly dense?: { readonly embedder: Embedder; readonly index: MemoryVectorIndex; readonly floor: number };
   private readonly titles: ReadonlyMap<string, string>;
   private readonly followUps: boolean;
+  /** Whether a follow-up's candidates include the earlier answer's sections and those under them (on with follow-ups; off to measure without). */
+  readonly followUpsNear: boolean;
 
   constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints' | 'glossary'>>, options: SectionRetrieverOptions = {}) {
     this.sections = summarizableSections(kb, { approved: options.all !== true });
@@ -128,6 +132,7 @@ export class SectionRetriever implements Retriever {
     this.id = this.dense ? `sections:${this.keywords ? 'hybrid' : 'dense'}:${this.dense.embedder.id}` : 'sections:keyword';
     if (options.indexHash !== undefined) this.indexHash = options.indexHash;
     this.followUps = options.followUps === true;
+    this.followUpsNear = options.followUpsNear !== false;
   }
 
   /** Loads an embedding model that loads on first use (the sections' own, documents.embedder): true once loaded (`{ wasm }`, with why, where it runs on WebAssembly), false when there is none to load. */
@@ -151,14 +156,41 @@ export class SectionRetriever implements Retriever {
     return dense.index.search({ vector: v[0]!, limit: this.sections.length, floor });
   }
 
-  nominate({ text, locale, earlier }: NominateInput): Nomination[] | Promise<Nomination[]> {
+  nominate({ text, locale, earlier, earlierSections }: NominateInput): Nomination[] | Promise<Nomination[]> {
     if (this.sections.length === 0) return [];
     const before = this.followUps ? earlier?.trim() : undefined;
     if (before === undefined || before === '') return this.ranked(text, locale, this.cap);
     // A follow-up: the sections for its words alone and for the earlier question with them, twice as deep,
-    // merged, so a question that stands on its own keeps its own sections near the top.
-    const both = [this.ranked(text, locale, this.cap * 2), this.ranked(`${before} ${text}`, locale, this.cap * 2)];
-    return both.some((x) => x instanceof Promise) ? Promise.all(both).then((lists) => mergeRanked(lists, this.cap)) : mergeRanked(both as Nomination[][], this.cap);
+    // and the earlier answer's sections with the sections under them, merged, so a question that stands on
+    // its own keeps its own sections near the top.
+    const lists = [this.ranked(text, locale, this.cap * 2), this.ranked(`${before} ${text}`, locale, this.cap * 2), this.near(earlierSections ?? [], text)];
+    return lists.some((x) => x instanceof Promise) ? Promise.all(lists).then((l) => mergeRanked(l, this.cap)) : mergeRanked(lists as Nomination[][], this.cap);
+  }
+
+  /**
+   * The earlier answer's sections and the sections directly under each, closest to `text` (the follow-up's own
+   * words: the sections are already the earlier answer's, so its words would pull toward what was answered)
+   * first by meaning where the retriever has an embedder (else in the document's order), at most twice the
+   * cap: a detail of what was answered is often a section under it.
+   */
+  private near(keys: readonly string[], text: string): Nomination[] | Promise<Nomination[]> {
+    if (keys.length === 0 || !this.followUpsNear) return [];
+    const found: Nomination[] = [];
+    for (const key of keys) {
+      for (const s of this.sections) {
+        const under = s.key.startsWith(`${key}/`) && !s.key.slice(key.length + 1).includes('/');
+        if ((s.key === key || under) && !found.some((n) => n.topic === s.key)) found.push({ topic: s.key, title: s.heading, score: 0, via: 'earlier' });
+      }
+    }
+    const dense = this.dense;
+    if (dense === undefined || found.length < 2) return found.slice(0, this.cap * 2);
+    const order = (v: Float64Array): Nomination[] => {
+      const close = new Map(dense.index.search({ vector: v, limit: this.sections.length, floor: -1 }).map((h, i) => [h.topic, i]));
+      return [...found].sort((a, b) => (close.get(a.topic) ?? Infinity) - (close.get(b.topic) ?? Infinity)).slice(0, this.cap * 2);
+    };
+    const embedded = dense.embedder.embed([text]);
+    // A model that cannot be loaded leaves the document's order.
+    return embedded instanceof Promise ? embedded.then((v) => order(v[0]!), () => found.slice(0, this.cap * 2)) : order(embedded[0]!);
   }
 
   /** The sections for `text`, at most `cap`. */

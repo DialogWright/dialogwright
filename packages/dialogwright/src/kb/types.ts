@@ -196,7 +196,8 @@ export interface SectionNomination {
 }
 
 /** Where a nomination came from: keyword retrieval, dense (embedding) retrieval, or an app's own retriever. */
-export type NominationVia = 'keyword' | 'dense' | 'app';
+/** How a topic or section was found: by keywords, by meaning, by an app's own retriever, or as the earlier answer's section or one under it (a follow-up, kb.yaml documents.followUps). */
+export type NominationVia = 'keyword' | 'dense' | 'app' | 'earlier';
 
 /** A topic retrieval puts forward for the caller's words: its id and title, its score (higher is closer), and how it was found. */
 export interface Nomination {
@@ -213,6 +214,8 @@ export interface NominateInput {
   readonly todayIso: string;
   /** The caller's earlier question on the call (Session.kbEarlier), for a retriever that reads a follow-up with it (kb.yaml documents.followUps); others ignore it. */
   readonly earlier?: string;
+  /** The sections that answered the earlier question (their keys), where one did: a follow-up's candidates are those and the sections under them too. */
+  readonly earlierSections?: readonly string[];
 }
 
 /**

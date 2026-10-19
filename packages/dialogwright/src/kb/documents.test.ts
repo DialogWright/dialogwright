@@ -406,7 +406,8 @@ describe('the answer worded from the sections, checked against them', () => {
     it('keeps the question answered, and gives the next answer it, the turn state and each section\'s question reading the follow-up with it', () => {
       const app = followApp();
       const first = asked(app, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
-      expect(first.result.session.kbEarlier).toEqual({ question: FIRST });
+      // The question, and the sections that answered it (a follow-up's candidates are those and the sections under them).
+      expect(first.result.session.kbEarlier).toEqual({ question: FIRST, sections: ['visitor-guide#printing'] });
       const firstAck = 'acks' in first.result.decision ? first.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(firstAck?.vars).not.toHaveProperty('answerEarlier');
       // The next turn's state and section questions read it.
@@ -416,7 +417,7 @@ describe('the answer worded from the sections, checked against them', () => {
       const next = asked(app, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], first.result.session);
       const ack = 'acks' in next.result.decision ? next.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(ack?.vars).toMatchObject({ answerQuestion: NEXT, answerEarlier: FIRST });
-      expect(next.result.session.kbEarlier).toEqual({ question: NEXT });
+      expect(next.result.session.kbEarlier).toEqual({ question: NEXT, sections: ['visitor-guide#printing'] });
     });
 
     it('keeps a question the turn found nothing for too, so the next is read with it; without follow-ups, nothing is kept', () => {
@@ -462,6 +463,20 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(await keys(on)).not.toContain('visitor-guide#printing');
       expect(await keys(on, 'can I print at the library')).toContain('visitor-guide#printing');
       expect(await keys(off, 'can I print at the library')).toEqual(await keys(off));
+      // The earlier answer's section and the sections under it are candidates too (`earlier`), the follow-up's words alone finding none of them.
+      const nested = documentsApp('library-documents-follow-ups-nested', {
+        edits: {
+          'kb/kb.yaml': (t: string) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n  followUps: on\n`,
+          'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('  parking:\n', '  printing/posters:\n    heading: Large posters\n    text: A large poster is printed on the plotter by staff, for 5 dollars a sheet.\n  parking:\n'),
+        },
+      });
+      const r = nested.knowledge!.sections as SectionRetriever;
+      const plainKeys = (await r.nominate({ text: 'and how much would that be', locale: 'en-US', todayIso: TODAY })).map((n) => n.topic);
+      expect(plainKeys).not.toContain('visitor-guide#printing/posters');
+      const withoutAnswer = (await r.nominate({ text: 'and how much would that be', locale: 'en-US', todayIso: TODAY, earlier: 'what else can I do there' })).map((n) => n.topic);
+      expect(withoutAnswer).not.toContain('visitor-guide#printing/posters');
+      const read = await r.nominate({ text: 'and how much would that be', locale: 'en-US', todayIso: TODAY, earlier: 'what else can I do there', earlierSections: ['visitor-guide#printing'] });
+      expect(read.find((n) => n.topic === 'visitor-guide#printing/posters')).toMatchObject({ via: 'earlier' });
       expect(mergeRanked([[{ topic: 'a', title: 'A', score: 1, via: 'dense' }, { topic: 'b', title: 'B', score: 0.5, via: 'dense' }], [{ topic: 'b', title: 'B', score: 1, via: 'keyword' }]], 1)).toEqual([{ topic: 'b', title: 'B', score: 0.032522, via: 'dense' }]);
     });
   });

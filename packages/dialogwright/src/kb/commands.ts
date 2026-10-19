@@ -262,7 +262,10 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
     }
     io.out('');
     io.out(`follow-ups (${followUpsFile}): each read alone, and with its earlier question (kb.yaml documents.followUps on):`);
-    for (const run of runs) for (const line of formatFollowUps(run.name, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true }), followUps, paraphrases, locale, today))) io.out(line);
+    for (const run of runs) {
+      for (const line of formatFollowUps(run.name, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true }), followUps, paraphrases, locale, today))) io.out(line);
+      for (const line of formatFollowUps(`${run.name}, without the earlier answer's sections`, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true, followUpsNear: false }), followUps, paraphrases, locale, today))) io.out(line);
+    }
   }
   const hybrid = runs[1]?.retriever;
   if (doSweep && hybrid) {

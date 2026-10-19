@@ -280,7 +280,7 @@ export interface Session {
    * found with it too, and the models reading and wording that answer are shown it. Absent until one is
    * answered, and in every app that does not read follow-ups.
    */
-  kbEarlier?: { question: string };
+  kbEarlier?: { question: string; sections?: string[] };
   /**
    * The call's most recent task: the form last closed (completed, refused or ended, closeForm), until
    * an informational answer is said with no form open (the caller started another task). The

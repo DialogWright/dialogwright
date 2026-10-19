@@ -236,7 +236,7 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
 }
 
 /** The caller's earlier question, for a retriever that reads a follow-up with it (kb.yaml documents.followUps); nothing where none was kept. */
-const earlierOf = (session: Session): { earlier?: string } => (session.kbEarlier !== undefined ? { earlier: session.kbEarlier.question } : {});
+const earlierOf = (session: Session): { earlier?: string; earlierSections?: readonly string[] } => (session.kbEarlier !== undefined ? { earlier: session.kbEarlier.question, ...(session.kbEarlier.sections !== undefined ? { earlierSections: session.kbEarlier.sections } : {}) } : {});
 
 /** What retrieval gives the turn (TurnContext.knowledge): the topics, and the sections where the app nominates any. */
 function knowledgeOf(retrieved: Retrieved): TurnKnowledge {

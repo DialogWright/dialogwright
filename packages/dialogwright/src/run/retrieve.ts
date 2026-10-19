@@ -23,7 +23,7 @@ export interface Retrieved {
   readonly ms: number | null;
 }
 
-const VIA: ReadonlySet<NominationVia> = new Set(['keyword', 'dense', 'app']);
+const VIA: ReadonlySet<NominationVia> = new Set(['keyword', 'dense', 'app', 'earlier']);
 
 /** `value` as nominations, each copied to exactly its four fields; null when it is not a list of them. */
 function nominationsOf(value: unknown): Nomination[] | null {

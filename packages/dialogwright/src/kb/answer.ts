@@ -235,7 +235,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     const followUps = app.knowledge?.kb?.settings.documents?.followUps === 'on';
     const asked = s.slots[opts.slot]?.heard;
     const earlier = followUps && s.kbEarlier !== undefined && s.kbEarlier.question !== asked ? s.kbEarlier.question : undefined;
-    if (followUps && asked !== undefined && asked !== '') s.kbEarlier = { question: asked };
+    if (followUps && asked !== undefined && asked !== '') s.kbEarlier = { question: asked, ...(result.source.from === 'documents' && (result.source.sections ?? []).length > 0 ? { sections: [...result.source.sections!] } : {}) };
     // An answer from sections of approved documents (kb.yaml documents): the line's fixed text is what is
     // said when it cannot be worded (onFail: the not-found line, or the best section's opening), and the
     // sections go beside it, for the wording alone (render/turn.ts).
