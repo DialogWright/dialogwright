@@ -10,7 +10,7 @@ Each question was read on its own. After "What's my deductible?", the follow-up 
 
 Context, never a second call:
 
-1. **The earlier question is kept.** After an answer from the knowledge base, the session keeps the caller's question (the topic slot's heard words; never words said at a sensitive question): `Session.kbEarlier`, absent in an app that does not read follow-ups.
+1. **The earlier question is kept.** After an answer from the knowledge base, or the not-found reply (a caller who then says it another way), the session keeps the caller's question (the topic slot's heard words; never words said at a sensitive question): `Session.kbEarlier`, absent in an app that does not read follow-ups.
 2. **Two rankings, merged.** The next question's sections are found for its words alone and for the earlier question with its words, twice as deep, and merged by reciprocal rank fusion (`mergeRanked`). One more local embedding, no model.
 3. **The decision model reads with it, in the same request.** The turn state carries `earlierQuestion`, and each section's question becomes "Read asr.text, the caller's question. Would this section of the {document} answer it? Only where asr.text cannot be understood on its own (as "what about for a family?" cannot), read it as continuing earlierQuestion, the caller's earlier question on this call." Whether the turn is a follow-up is the model's judgment within the reading it already makes: no rule of the engine's decides it. The question is the caller's own first, the earlier one only for what cannot stand alone (measured below: a wording that asked the model to read the two together cost the questions that stand alone).
 4. **The wording, the drift judge and the lines picker are given it** (`answer.earlier`), with instructions that name it, so the answer and its check are about what the follow-up continues.
@@ -45,4 +45,4 @@ The first wording asked the model to read the two questions together, and every 
 
 ## Not now
 
-A follow-up after a not-found reply (the turn's words are not kept there yet); a question that continues one asked two or more questions before; follow-ups for topics answered by passages alone (their retrieval reads the words alone).
+A question that continues one asked two or more questions before; follow-ups for topics answered by passages alone (their retrieval reads the words alone).

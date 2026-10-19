@@ -419,6 +419,18 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(next.result.session.kbEarlier).toEqual({ question: NEXT });
     });
 
+    it('keeps a question the turn found nothing for too, so the next is read with it; without follow-ups, nothing is kept', () => {
+      const app = followApp();
+      const nothing = asked(app, 'can I borrow a telescope', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.05 });
+      const acks = 'acks' in nothing.result.decision ? nothing.result.decision.acks.map((a) => a.promptId) : [];
+      expect(acks.some((id) => id.startsWith('kb_not_found'))).toBe(true);
+      expect(nothing.result.session.kbEarlier).toEqual({ question: 'can I borrow a telescope' });
+      const next = asked(app, 'what about printing a poster', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], nothing.result.session);
+      const ack = 'acks' in next.result.decision ? next.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      expect(ack?.vars).toMatchObject({ answerEarlier: 'can I borrow a telescope' });
+      expect(asked(APP, 'can I borrow a telescope', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.05 }).result.session.kbEarlier).toBeUndefined();
+    });
+
     it('the wording, the judge and the lines picker are given the earlier question, with instructions that name it', async () => {
       const app = followApp();
       const first = asked(app, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });

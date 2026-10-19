@@ -7,7 +7,7 @@ import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/t
 import { confirmationHash } from '../gate/policy';
 import { noulValue, type AnswerMap, type QuestionMap } from '../jev/types';
 import type { Action } from '../channel/actions';
-import type { SessionEvent, UserSpeech, UserText } from '../channel/events';
+import { wordsOf, type SessionEvent, type UserSpeech, type UserText } from '../channel/events';
 import type { SlotCandidate, SlotContext } from './slots/types';
 import { formLabel, informationOf, intentLabel, isFormIntent, relabelled, type Informs } from './app/intents';
 import { informationalAnswer, offerAfterUnavailable, type InformationalAnswer } from '../kb/answer';
@@ -20,7 +20,7 @@ import { closeForm, cloneSession, emptySlot, missingSlots, parkTask, setForm, un
 import { buildTurnState, type TurnState } from './state';
 import { buildQuestions, callerMatchAsked } from './questions';
 import { changeSlotNamed, evaluateGates, frustrationOf, type FrustrationRung, type GateRow, type Verdict } from './gates';
-import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
+import { activeSlots, applyDtmf, fillSlots, nextPrompt, pendingSlotConfirmation, retryStep, sensitiveAt, slotCtx, slotsToFill, valuesGiven, type Ack, type FillEvent, type FillOptions, type FillResult, type RetryStep } from './fia';
 import { handoffPromptId } from '../prompts/render';
 import { askSlot, handoff, offerTransfer, prompt, withTurnTransfer, type CompleteDecision, type Decision, type PromptDecision } from './decision';
 import { afterSlot, appContext, factorsAsked, askCallerMatch, askCode, awaitingSignIn, CALLER_MATCH_PROMPT, callerMatchOf, callTool, completion, continueIdentity, sendCodeAndAsk, ensureEntry, handleCodeDigit, newTurnOut, noteCallerMatch, stepUp, takeSummaryHash, type CallerMatchStep, type ConsentSettled, type Effect, type FormMovedOn, type GateEvent, type KbSource, type OfferSettled, type MenuKeyTaken, type RouteNoted, type TurnOut, RESULT_UNCHECKED, type UncheckedReply } from './lifecycle';
@@ -847,6 +847,20 @@ function notFoundReply(s: Session, slot: SlotId, io: TurnIO, acks: Ack[], retryP
   s.kbNotFound = guide ? { row: 0, guided: true } : { row: state.row + 1, guided: state.guided };
   const lines: Ack[] = [{ promptId: nextWording(s, KB_NOT_FOUND), vars: {} }, ...(guide ? [{ promptId: KB_GUIDE, vars: {} }] : [])];
   return askSlot(s, slot, null, [...acks, ...lines]);
+}
+
+/**
+ * A question the turn found nothing for (it says the not-found line), kept for a follow-up read with it
+ * (kb.yaml documents.followUps), as an answered one is (kb/answer.ts): the caller's words, never words said
+ * at a sensitive question (sensitiveAt, at the question the caller was on).
+ */
+function keepUnanswered(s: Session, before: Session, decision: Decision, event: SessionEvent): void {
+  if (appOf(s).knowledge?.kb?.settings.documents?.followUps !== 'on') return;
+  if (decision.kind === 'ignore' || decision.kind === 'hold' || decision.kind === 'replay') return;
+  if (!decision.acks.some((a) => a.promptId === KB_NOT_FOUND || a.promptId.startsWith(`${KB_NOT_FOUND}.`))) return;
+  const words = wordsOf(event)?.trim();
+  if (words === undefined || words === '' || sensitiveAt(appOf(s), before.promptedFor)) return;
+  s.kbEarlier = { question: words };
 }
 
 /** The not-found line and the guide to what can be asked (notFoundReply), where the app has them. */
@@ -3086,6 +3100,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
   const act = (decision: Decision): Action[] => {
     if (decision.kind === 'handoff') withTurnTransfer(s, decision, clockOf(tc));
+    keepUnanswered(s, session, decision, event);
     const actions = [...io.prefix, ...decisionToActions(io.app, decision, tc.render, s.locale, { shown: !s.caps.speech })];
     // On a chat, a question with a known set of answers gets them as buttons under its line (app.yaml's chat.replies).
     // On a chat, a knowledge answer shows where its words come from (app.yaml's chat.sources).

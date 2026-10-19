@@ -274,7 +274,8 @@ export interface Session {
    */
   kbNotFound?: { row: number; guided: boolean };
   /**
-   * The caller's last question answered from the knowledge base (their words, as the topic slot heard them),
+   * The caller's last question answered from the knowledge base, or found nothing for (their words, as the
+   * topic slot heard them, or as said on the turn of the not-found reply),
    * kept for a follow-up read with it (kb.yaml documents.followUps on): the next question's sections are
    * found with it too, and the models reading and wording that answer are shown it. Absent until one is
    * answered, and in every app that does not read follow-ups.

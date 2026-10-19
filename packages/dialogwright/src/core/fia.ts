@@ -3,7 +3,7 @@ import type { AnswerMap } from '../jev/types';
 import type { SlotCandidate, SlotContext, SlotOutcome, SlotPartial, SlotSpec } from './slots/types';
 import { askedOfCaller, formOf, formSlotsFor, identityOf, listenOf, slotSpecOf } from './app/lookup';
 import { appOf } from './app/registry';
-import type { SlotId } from './app/types';
+import type { App, SlotId } from './app/types';
 import { missingSlots, requiredSlots, type PendingConfirmation, type Session } from './session';
 import { yesNoOffer } from './callerNumber';
 import { factorsAsked } from './typedFactors';
@@ -435,11 +435,17 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
 function keepHeard(session: Session, id: SlotId, slot: Session['slots'][SlotId], text: string): void {
   const app = appOf(session);
   if (!(app.generated?.answerSlots ?? []).includes(id)) return;
-  const asked = session.promptedFor;
-  const sensitive = asked === 'otp'
-    || (asked !== null && asked !== 'intent' && asked !== 'confirm' && (identityOf(app).factorSlots.includes(asked) || (Object.hasOwn(app.slots, asked) && app.slots[asked]!.redact !== undefined)));
-  if (sensitive || text.trim() === '') delete slot!.heard;
+  if (sensitiveAt(app, session.promptedFor) || text.trim() === '') delete slot!.heard;
   else slot!.heard = text.trim();
+}
+
+/**
+ * Whether words said at the question `asked` (Session.promptedFor) are sensitive, so never kept or sent to a
+ * model as the caller's question: the one-time code, an identity factor, a slot the records mask.
+ */
+export function sensitiveAt(app: App, asked: string | null): boolean {
+  return asked === 'otp'
+    || (asked !== null && asked !== 'intent' && asked !== 'confirm' && (identityOf(app).factorSlots.includes(asked) || (Object.hasOwn(app.slots, asked) && app.slots[asked]!.redact !== undefined)));
 }
 
 export type NextPrompt =
