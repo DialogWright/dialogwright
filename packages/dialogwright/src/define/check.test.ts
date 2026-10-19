@@ -201,6 +201,23 @@ describe('checkApp: the prompts every locale needs', () => {
     ]);
   });
 
+  it('a form\'s read-back confirms the action it writes (writes, or the one confirmed action in its calls), so confirmed lists may differ by action', async () => {
+    const twoLists = (t: string): string => t.replace('      - custom: known-branch\n', '      - custom: known-branch\n      - confirmed: [book, branch]\n');
+    const differ = (l: string) => l.includes('confirmed fields of');
+    // Neither writes nor calls: a read-back is fingerprinted over one list, so the lists must agree.
+    expect((await lines(folder({ 'policy.yaml': twoLists }))).filter(differ)).toEqual([expect.stringContaining('the confirmed fields of "findHold" (book, branch) differ from those of "renewLoan" (book)')]);
+    const writes = (tool: string) => (t: string): string => t.replace('    summaryPromptId: confirm_renew\n', `    summaryPromptId: confirm_renew\n    writes: ${tool}\n`);
+    const named = folder({ 'policy.yaml': twoLists, 'forms.yaml': writes('renewLoan') });
+    expect((await lines(named)).filter(differ)).toEqual([]);
+    // At run time the read-back is fingerprinted over renewLoan's own fields.
+    const { defineApp } = await import('./defineApp');
+    const { formConfirmedFields } = await import('../core/confirmedFields');
+    expect(formConfirmedFields(defineApp(named, libraryCode), 'renew_loan')).toEqual(['book']);
+    expect((await lines(folder({ 'policy.yaml': twoLists, 'forms.yaml': writes('listLoans') }))).filter((l) => l.includes('forms.renew_loan.writes'))).toEqual([
+      expect.stringContaining('form "renew_loan" writes "listLoans", which has no confirmed rule in policy.yaml'),
+    ]);
+  });
+
   it('the chat page\'s logo is a file of a type the page shows, and its intro the chat formatting', async () => {
     const page = (logo: string, intro: string) => (t: string): string => t.replace(/^brand:\n/m, `brand:\n  logo: ${logo}\n`) + `chat:\n  page:\n    serve: local\n    intro: ${JSON.stringify(intro)}\n`;
     const fine = folder({ 'app.yaml': page('logo.png', 'Renew a **loan**.') });

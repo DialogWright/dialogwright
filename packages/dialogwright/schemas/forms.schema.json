@@ -114,6 +114,11 @@
             ],
             "additionalProperties": false
           },
+          "writes": {
+            "description": "The action the form's read-back confirms (one with a `confirmed` rule in policy.yaml): the summary's fingerprint, which the caller's yes arms, is taken over that action's own confirmed fields. Default: the one action with a confirmed rule among `calls`; needed where `calls` names none or more than one. Without either, the app's confirmed rules must all name the same fields.",
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
           "calls": {
             "description": "The actions (tools) this form's hooks call through the gate: its entry call and the calls its completion makes. Declare it for every form or for none (an empty list for a form that calls nothing): the app map draws each form to its actions, and `check` reports an action that no form reaches and the identity flow does not call. A check action is reached through `checks`, not listed here.",
             "type": "array",

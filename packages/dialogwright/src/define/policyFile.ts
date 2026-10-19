@@ -429,6 +429,12 @@ export interface PolicyCheckInput {
   prompts?: readonly string[];
   /** Whether a form has a confirmedParams hook (so something is ever confirmed). */
   confirms?: boolean;
+  /**
+   * Each form with a confirmedParams hook: its forms.yaml `writes` and `calls` (null where it has none),
+   * from which the action its read-back confirms is found (core/confirmedFields.ts). Left out (an app
+   * that is not a folder): every confirmed rule must name the same fields.
+   */
+  confirmingForms?: readonly { form: string; writes: string | null; calls: readonly string[] | null }[];
   /** Where an author writes a part of the code, as a fix names it: `app.ts (code.tools.x)`. */
   inCode(...segs: string[]): string;
   /** A part of the code as a path: `code.tools.x`. */
@@ -627,16 +633,30 @@ export function policyProblems(c: PolicyCheckInput): Problem[] {
   redactProblems(c, at);
   auditProblems(c, at);
 
-  // Decision 5: the summary hash is taken once per form, over one list, until forms name the action they write.
+  // Each form's read-back is fingerprinted over the confirmed fields of the action it writes (its `writes`,
+  // else the one confirmed action among its `calls`). A `writes` names an action with a confirmed rule.
+  const confirmedTools = new Set(confirmed.map((x) => x.tool));
+  const forms = c.confirmingForms;
+  let resolved = forms !== undefined;
+  for (const f of forms ?? []) {
+    if (f.writes !== null) {
+      if (!confirmedTools.has(f.writes)) {
+        at('forms.yaml', ['forms', f.form, 'writes'], `form "${f.form}" writes "${f.writes}", which has no confirmed rule in policy.yaml: a form's read-back confirms an action that has one`, `name an action with a confirmed rule (${quoteList([...confirmedTools]) || 'none has one yet'}), or add the rule to "${f.writes}"`);
+      }
+      continue;
+    }
+    if ((f.calls ?? []).filter((t) => confirmedTools.has(t)).length !== 1) resolved = false;
+  }
+  // Decision 5, where a form's action is not known: the summary hash is taken over one list, so every confirmed rule names the same fields.
   const first = confirmed[0];
   if (first) {
-    for (const other of confirmed.slice(1)) {
+    for (const other of resolved ? [] : confirmed.slice(1)) {
       if (other.fields.length === first.fields.length && other.fields.every((f, i) => f === first.fields[i])) continue;
       at(
         P,
         other.path,
-        `the confirmed fields of "${other.tool}" (${other.fields.join(', ')}) differ from those of "${first.tool}" (${first.fields.join(', ')}); until a form names the action it writes, every confirmed rule of an app names the same fields in the same order (a read-back's hash is taken once, over one list)`,
-        `write [${first.fields.join(', ')}] here, as "${first.tool}" has it`,
+        `the confirmed fields of "${other.tool}" (${other.fields.join(', ')}) differ from those of "${first.tool}" (${first.fields.join(', ')}), and a form whose read-back confirms a write does not say which action it writes, so its read-back is fingerprinted over one list`,
+        `give each form with a confirmedParams hook the action it writes (forms.yaml's writes, or the one confirmed action in its calls), or write [${first.fields.join(', ')}] here, as "${first.tool}" has it`,
       );
     }
     if (c.confirms === false) {

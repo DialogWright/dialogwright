@@ -94,6 +94,12 @@ const form = z
           'said word for word with the topic\'s account line where it has one (or, where the answer line frames its {answer} as a span `from: answer` and the topic is `risk: low`, the approved passage worded for the caller\'s question, the account line after it), or the unavailable line and a person offered, once per call. ' +
           'A form with `answers` has no "complete" hook.',
       ),
+    writes: identifier()
+      .optional()
+      .describe(
+        'The action the form\'s read-back confirms (one with a `confirmed` rule in policy.yaml): the summary\'s fingerprint, which the caller\'s yes arms, is taken over that action\'s own confirmed fields. ' +
+          'Default: the one action with a confirmed rule among `calls`; needed where `calls` names none or more than one. Without either, the app\'s confirmed rules must all name the same fields.',
+      ),
     calls: unique(identifier(), 'action')
       .optional()
       .describe(

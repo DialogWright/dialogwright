@@ -1,4 +1,5 @@
 import { nextWording } from './wordings';
+import { formConfirmedFields } from './confirmedFields';
 import { withReplies } from './replies';
 import { isAnonymous, isParty, sayableParty, type GateDecision } from '../gate/types';
 import { confirmationHash } from '../gate/policy';
@@ -643,7 +644,7 @@ function agreeAsRead(s: Session, form: FormId, unchanged: boolean): void {
   const app = appOf(s);
   if (!unchanged || handoffUnconfirmedOf(app) === 'send') return;
   const params = s.pendingHash !== null ? formOf(app, form).confirmedParams?.(s) : undefined;
-  if (params !== undefined && confirmationHash(params, app.policy.confirmedFields) !== s.pendingHash) return;
+  if (params !== undefined && confirmationHash(params, formConfirmedFields(app, form)) !== s.pendingHash) return;
   agree(s, form);
 }
 

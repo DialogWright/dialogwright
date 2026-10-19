@@ -89,7 +89,7 @@ One row per action, one column per kind of principal. Each cell: allowed, refuse
 |---|---|---|
 | `<tool>` | "<line with {vars}>" | `<field>, <field>` |
 
-The app's one list of confirmed fields (every `confirmed` rule names it, in this order): `<field>, <field>, ...`.
+Each form with a read-back, and the action it writes (its `calls`, or `writes` where it calls two): `<form> -> <tool>`.
 
 ## Bounds
 

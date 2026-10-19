@@ -341,29 +341,41 @@ interface PortalConfig {
 
 **When:** every write a caller asks for (a booking, a report, a payment plan). A write the caller must agree to: the form has a summary (`summaryPromptId`), `confirmedParams`, and its action a `confirmed` rule. The caller's yes arms a hash of exactly the values read back, and the gate refuses a write that sends anything else. A summary reads every value back once, at the end; an answer that must be heard right before the end (one that ends the call) is [read back on its own](#reading-an-answer-back-confirm-and-confirmvalues).
 
-**One list per app.** Every action with a `confirmed` rule names the same fields in the same order (the read-back's hash is taken over one list; `pnpm check` says so if two differ). With two confirmed writes, list the union, and have each form's `confirmedParams` and its write send every field on the list, `''` for the ones it does not have:
+**Each write its own fields.** Each action with a `confirmed` rule names the fields it writes, and each form's read-back is hashed over the fields of the action it writes: the one with a `confirmed` rule among its `calls` (forms.yaml), or the one its `writes` names where it calls two. So give every form its `calls`, and `writes` to a form that calls two confirmed actions:
 
 ```yaml
-# policy.yaml, under actions:
+# policy.yaml, under actions: the fault report confirms the place and the fault
   reportFault:
     level: 0
     rules:
       - identity
-      - confirmed: [accountId, place, fault, count, firstDate, total]
+      - confirmed: [place, fault]
+```
+
+```yaml
+# policy.yaml, under actions: the payment plan confirms its own fields
   setUpPlan:
     level: 2
     rules:
       - identity
-      # ...
-      - confirmed: [accountId, place, fault, count, firstDate, total]
+      - confirmed: [accountId, count, firstDate, total]
+```
+
+```yaml
+# forms.yaml, under forms: its one confirmed action, so its read-back confirms place and fault
+  report_fault:
+    slots: [place, fault]
+    summaryPromptId: confirm_report_fault
+    hooks: [confirmedParams, complete]
+    calls: [reportFault]
 ```
 
 ```ts
 // src/app.ts
-const faultParams = (s: Session): Record<string, string> => ({
-  accountId: '', place: s.slots.place?.value ?? '', fault: s.slots.fault?.value ?? '', count: '', firstDate: '', total: '',
-});
+const faultParams = (s: Session): Record<string, string> => ({ place: s.slots.place?.value ?? '', fault: s.slots.fault?.value ?? '' });
 ```
+
+Without `calls` (or `writes`), a read-back is hashed over one list for the app, so every `confirmed` rule must then name the same fields in the same order, and each write sends every field, `''` for those it does not have; `pnpm check` says which when two differ.
 
 `complete`, as the scaffold writes it:
 
@@ -445,7 +457,7 @@ forms: {
 systems: () => ({ sys: new Systems(), lookups: { scopeOf, ownerOf: (ref) => APPOINTMENTS.find((a) => a.ref === ref)?.accountId ?? null } }),
 ```
 
-- The slot's value is the record's key (`7101`), never words; the model picks among the labels, and `none`. The cancel tool lists `appointment` in its `params`, and the `confirmed` rule is the app's one list ([Confirmed writes](#confirmed-writes)). Moving an appointment is the same form with the new day and time after it, and the write's rules on those.
+- The slot's value is the record's key (`7101`), never words; the model picks among the labels, and `none`. The cancel tool lists `appointment` in its `params`, and its `confirmed` rule names the fields the cancel writes ([Confirmed writes](#confirmed-writes)). Moving an appointment is the same form with the new day and time after it, and the write's rules on those.
 - `scope: { record }` fails closed: a key the caller may not see, one that does not exist, or an empty one is refused with the same `scope` refusal, so the line cannot be used to learn which records exist. `scopeOf` and `ownerOf` are the gate's lookups (`systems()`).
 - **Test:** a caller with two appointments naming each by its day ("the one on Tuesday"), the keypad reference, a reference that is someone else's (BLOCK `scope`, its line), a caller with none (the form says so and ends: an `onEntry` that finds none, or a `complete` that answers with a line), and the step-up. Corpus labels: `appointmentChoice: "appt_7101"` ([corpus.md](corpus.md#labels-by-slot-type)).
 - **Pitfall:** `testing.seed.placeholders` needs a key that a seeded call's records hold, and the policy matrix needs `records` with a `record` id (`{ subject: '55501234', record: '7101' }`: [Testing the policy](#testing-the-policy)). The [record type's page](../../../docs/slots/record.md) has every option.
@@ -1638,7 +1650,7 @@ audit:
 - `accountId` is a `digits` slot (recorded by its last four) and `dob` a `birthdate` slot (hidden), so neither is declared. A slot whose `redact` is `none` (a `name`, a `choice`, a `date`, a `text` with `redact: none`) is not covered: declare its param.
 - Choose per param: an identifier `last4`; free words `length`, or `secret`; hidden but shown to have been given `mask`; a plain choice, a day or an amount `keep`.
 - The rule lines and the tool's summary are masked the same way. A custom rule still writes only what may be recorded.
-- A param no tool lists, or a listed param nothing declares, is a `pnpm check` problem whose fix names both ways out. A `confirmed` field is always a slot or declared. The confirmed list's fields that an action sends empty (the union list, above) are listed too.
+- A param no tool lists, or a listed param nothing declares, is a `pnpm check` problem whose fix names both ways out. A `confirmed` field is always a slot or declared. Where an app keeps one confirmed list (forms without `calls`), the fields an action sends empty are listed too.
 - The policy card has the "What is recorded" table: read it against the worksheet.
 - Write `passed(decision, 'role')` (from `'dialogwright/policy'`) to ask whether a rule passed, by its name; rule lines are recorded under names (`identity`, `scope`, `confirmed`, `role`, `attempts`, `fields`, `dateInRange`, `limit`, `oneOf`, `noneOf`, `callerNumber`, a custom rule's own id).
 
@@ -2028,7 +2040,6 @@ A line of it reads `setUpPlan BLOCK reason=date-range {...}` followed by each ru
 
 Found so far, with the workaround each time. Log the ones you meet in the worksheet.
 
-- **One list of confirmed fields per app**: list the union, send `''` for the rest (above).
 - **No slot asked only of some callers**: a form asks every slot it lists. Give each kind of caller its own form, or its own entry form before a shared booking ([Several entry forms, one booking](#several-entry-forms-one-booking-next)).
 - **The caller's number cannot be offered for a factor**: a phone number on file works as a factor when the caller says or keys it (a `digits` slot), but `callerNumber` on a factor is refused, so the line cannot offer "the number you're calling from" for it. For callers who call from it, use [caller ID as the identifier](#verified-by-caller-id-callerid).
 - **No slot type for an amount of money or an address** (above).

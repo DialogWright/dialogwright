@@ -78,7 +78,7 @@ import { transferProblems, type TransferProblem, type TransferWorld } from '../c
 export type FormHooks = Omit<Pick<FormDef, FormHook>, 'complete'> & Partial<Pick<FormDef, 'complete'>>;
 
 /** FORM_HOOKS names exactly FormDef's functions: a hook added to the contract must be added to forms.yaml's list. */
-type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
+type FormDefHook = Exclude<keyof FormDef, 'slots' | 'summaryPromptId' | 'calls' | 'writes' | 'checks' | 'checksPassed' | 'next' | 'internal' | 'label' | 'listenBeforeEntered' | 'summaryOnNo' | 'aside'>;
 const hooksMatchTheContract: [FormDefHook] extends [FormHook] ? ([FormHook] extends [FormDefHook] ? true : never) : never = true;
 void hooksMatchTheContract;
 
@@ -514,6 +514,7 @@ export function crossLink(
     lookups: Array.isArray(code.lookups) ? code.lookups.filter((x): x is string => typeof x === 'string') : [],
     prompts: promptIds,
     confirms: Object.values(forms).some((form) => (form.hooks ?? []).includes('confirmedParams')),
+    confirmingForms: Object.entries(forms).filter(([, form]) => (form.hooks ?? []).includes('confirmedParams')).map(([id, form]) => ({ form: id, writes: form.writes ?? null, calls: form.calls ?? null })),
     inCode,
     codePath,
   };
@@ -1312,6 +1313,7 @@ function intentOf(def: LoadedConfig['intents']['intents'][string]): IntentDef {
 function formOf(form: LoadedConfig['forms']['forms'][string], hooks: FormHooks | undefined): FormDef {
   const def: Record<string, unknown> = { slots: form.slots, summaryPromptId: form.summaryPromptId };
   if (form.calls !== undefined) def.calls = form.calls;
+  if (form.writes !== undefined) def.writes = form.writes;
   if (form.checks !== undefined && form.checks.length > 0) def.checks = form.checks.map(checkOf);
   if (form.checksPassed !== undefined) def.checksPassed = form.checksPassed;
   if (form.next !== undefined) def.next = form.next;

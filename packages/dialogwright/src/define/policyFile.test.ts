@@ -302,7 +302,7 @@ describe('the checks', () => {
 
   it('confirmed lists that differ (Decision 5); role reasons that differ are each the rule\'s own (Decision 4)', () => {
     expect(actionsWith({ sendCode: { level: 1, rules: ['identity', { confirmed: ['note', 'accountId'] }] } })).toEqual([
-      'actions.sendCode.rules[1].confirmed: the confirmed fields of "sendCode" (note, accountId) differ from those of "fileRequest" (accountId, note); until a form names the action it writes, every confirmed rule of an app names the same fields in the same order (a read-back\'s hash is taken once, over one list) -> write [accountId, note] here, as "fileRequest" has it',
+      'actions.sendCode.rules[1].confirmed: the confirmed fields of "sendCode" (note, accountId) differ from those of "fileRequest" (accountId, note), and a form whose read-back confirms a write does not say which action it writes, so its read-back is fingerprinted over one list -> give each form with a confirmedParams hook the action it writes (forms.yaml\'s writes, or the one confirmed action in its calls), or write [accountId, note] here, as "fileRequest" has it',
     ]);
     const role = (reason?: string) => ({ role: { viewer: 'allow', clerk: 'person', ...(reason ? { reason } : {}) } });
     expect(actionsWith({ getRecord: { level: 1, rules: ['identity', role('staff-filing')] }, sendCode: { level: 1, rules: ['identity', role('staff-sending')] } })).toEqual([]);

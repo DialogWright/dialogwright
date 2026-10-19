@@ -1,4 +1,5 @@
 import { confirmationHash } from '../gate/policy';
+import { formConfirmedFields } from './confirmedFields';
 import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
@@ -916,7 +917,7 @@ function refusal(s: Session, decision: GateDecision, acks: Ack[]): Completion {
 export function takeSummaryHash(s: Session, form: FormId): void {
   const app = appOf(s);
   const params = formOf(app, form).confirmedParams?.(s);
-  s.pendingHash = params ? confirmationHash(params, app.policy.confirmedFields) : null;
+  s.pendingHash = params ? confirmationHash(params, formConfirmedFields(app, form)) : null;
 }
 
 /**

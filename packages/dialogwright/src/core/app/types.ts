@@ -176,10 +176,16 @@ export interface FormDef {
    * The actions (tools) the form's hooks call through the gate: its entry call and the calls its
    * completion and summary hooks make. Declared by every form of an app or by none; the app map
    * (dialogwright/testing appMapText) draws a form to them, and `check` reports an action no form
-   * reaches (core/app/reach.ts). Never read by the engine at run time. Without it, the app does not
+   * reaches (core/app/reach.ts). At run time the engine reads it only for the action a form's read-back confirms (core/confirmedFields.ts). Without it, the app does not
    * say where its calls are made.
    */
   calls?: readonly ToolName[];
+  /**
+   * The action the form's read-back confirms (forms.yaml's `writes`): its summary's fingerprint is taken
+   * over that action's confirmed fields (core/confirmedFields.ts). Absent: the one action with a
+   * confirmed rule among `calls`, else the app's one list.
+   */
+  writes?: ToolName;
   /**
    * The form's checks (forms.yaml `checks`), in the order written: actions the gate decides on
    * part-way through the form, each as soon as the slots it reads are filled and again whenever one
