@@ -138,7 +138,9 @@ describe('answers from documents: the sections the decision model says answer it
     const nothing = asked(APP, 'i have a question', { none: 0.95, unanswered: 0.05 }, { 'visitor-guide#wifi': 0.7 });
     expect(nothing.result.decision).toMatchObject({ promptId: 'ask_libraryTopic' });
     const under = asked(APP, 'can i bring my dog', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#parking': 0.4 });
-    expect(under.result.decision).toMatchObject({ promptId: 'ask_libraryTopic', acks: [expect.anything(), { promptId: 'kb_not_found', vars: {} }] });
+    // The request opened the form on this very turn: its acknowledgement ("Sure, I can help you ...") is
+    // dropped, so the caller does not hear yes and no in one breath.
+    expect(under.result.decision).toMatchObject({ promptId: 'ask_libraryTopic', acks: [{ promptId: 'kb_not_found', vars: {} }] });
   });
 
   it('none before a person approves the document: no section retriever, and the question is as it was', () => {
@@ -156,12 +158,12 @@ describe('the reply to a question nothing answers (kb_not_found, kb_guide)', () 
   };
   const lines = (r: TurnResult): string[] => ('acks' in r.decision ? r.decision.acks.map((a) => a.promptId) : []).concat('promptId' in r.decision ? [r.decision.promptId] : []);
 
-  it('the not-found line in turn, the guide the first time and again after two in a row without it, then the question; never counted', () => {
+  it('the not-found line in turn, the guide the first time and again after two in a row without it, then the question; never counted; never after the request\'s acknowledgement', () => {
     const c = call(guided);
     const seen = [lines(nothing(c, false))];
     for (let i = 0; i < 4; i++) seen.push(lines(nothing(c, true)));
     expect(seen).toEqual([
-      ['ack_intent', 'kb_not_found', 'kb_guide', 'ask_libraryTopic'],
+      ['kb_not_found', 'kb_guide', 'ask_libraryTopic'],
       ['kb_not_found.v2', 'ask_libraryTopic'],
       ['kb_not_found', 'ask_libraryTopic'],
       ['kb_not_found.v2', 'kb_guide', 'ask_libraryTopic'],

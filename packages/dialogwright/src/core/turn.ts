@@ -832,10 +832,14 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
  * default not: the knowledge base lacked it, the caller did not fail), its end then as any miss's. Where the
  * app has the not-found line (kb_not_found), it is said in turn through its wordings, then the guide to what
  * can be asked (kb_guide, where the app has it) the first time on the call and again after `remind` replies
- * in a row without it, then the slot's question; where it has none, the slot's retry line, as before.
+ * in a row without it, then the slot's question; where it has none, the slot's retry line, as before. A
+ * request that opened the form on this very turn is not acknowledged first ("Sure, I can help you find
+ * that." before "I couldn't find anything about that."): its entering line is dropped, as a check's
+ * refusal drops it (endByCheck).
  */
-function notFoundReply(s: Session, slot: SlotId, io: TurnIO, acks: Ack[], retryPromptId: string | null): Decision {
+function notFoundReply(s: Session, slot: SlotId, io: TurnIO, said: Ack[], retryPromptId: string | null): Decision {
   const app = io.app;
+  const acks = s.form === null ? said : said.filter((a) => !enteringLine(a, new Set([formLabel(app, s.form!, s.locale)])));
   const notFound = slotSpecOf(app, slot).notFound ?? { counts: false, remind: 2 };
   if (notFound.counts) {
     const attempts = ++s.slots[slot]!.attempts;
@@ -1613,11 +1617,20 @@ function endByCheck(s: Session, form: FormId, check: FormCheck, decision: Pick<G
   const moved = (io.out.movedOn ?? []).map((m) => m.form);
   const labels = new Set([form, ...moved].map((f) => formLabel(io.app, f, s.locale)));
   const passedLines = new Set(moved.flatMap((f) => formOf(io.app, f).checksPassed ?? []));
-  const entering = (a: Ack): boolean => ((lineOf(a.promptId) === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passedLines.has(a.promptId);
-  const kept = acks.filter((a) => !entering(a));
+  const kept = acks.filter((a) => !enteringLine(a, labels, passedLines));
   const ending = checkEnding(s, check, decision, kept, summaryVars(s));
   io.out.stopped = { form, action: check.action, reason: decision.reason ?? null, then: ending.then, ...(ending.then === 'form' ? { next: ending.form } : {}), ...(confirmed ? { confirmed: true as const } : {}) };
   return actOn(s, form, ending, io);
+}
+
+/**
+ * Whether an ack is a line that said a form, by its label among `labels`, was entered on this very turn
+ * (its ack_intent, "Sure, I can help you ...", its ack_intent_then, or the bridge_next into it from the
+ * queue, "Now, let's ..."), or one of `passed` (a form moved through's checksPassed): what a reply that
+ * turns the request down on the same turn drops, so the caller does not hear yes and no in one breath.
+ */
+function enteringLine(a: Ack, labels: ReadonlySet<string>, passed: ReadonlySet<string> = new Set()): boolean {
+  return ((lineOf(a.promptId) === 'ack_intent' || a.promptId === 'bridge_next') && labels.has(a.vars.intentLabel!)) || (a.promptId === 'ack_intent_then' && labels.has(a.vars.a!)) || passed.has(a.promptId);
 }
 
 /**
