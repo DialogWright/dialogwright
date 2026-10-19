@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Embedder } from './embed/types';
+import { packageDirOf, wasmRuntimeBeside, wasmTransformers } from './onnxWasm';
 
 /**
  * An optional embedder that runs an ONNX sentence-embedding model (by default bge-small-en-v1.5)
@@ -42,10 +43,16 @@ export const ONNX_BATCH = 64;
 /** A model repository's commit, as a revision must be pinned: 40 hex characters. */
 export const PINNED_REVISION = /^[0-9a-f]{40}$/;
 
-/** The ONNX package is not installed (or did not load). */
+/**
+ * The ONNX package is not installed, or is installed (at `installedAt`) but did not load and nothing
+ * beside it could run the model on WebAssembly: each said as it is, with its cause.
+ */
 export class OnnxUnavailableError extends Error {
-  constructor(cause: unknown) {
-    super(`the ONNX embedder needs the optional package ${ONNX_PACKAGE}, which is not installed (${cause instanceof Error ? cause.message : String(cause)}): run pnpm add ${ONNX_PACKAGE}, or use the static embedder (kb.yaml retrieval.embedder: potion-base-8M)`);
+  constructor(cause: unknown, installedAt?: string) {
+    const why = cause instanceof Error ? cause.message : String(cause);
+    super(installedAt === undefined
+      ? `the ONNX embedder needs the optional package ${ONNX_PACKAGE}, which is not installed (${why}): run pnpm add ${ONNX_PACKAGE}, or use the static embedder (kb.yaml retrieval.embedder: potion-base-8M)`
+      : `the ONNX embedder's package ${ONNX_PACKAGE} is installed (${installedAt}) but did not load, and its WebAssembly runtime (onnxruntime-web) is not beside it: ${why}`);
     this.name = 'OnnxUnavailableError';
   }
 }
@@ -54,29 +61,45 @@ export class OnnxUnavailableError extends Error {
 interface TransformersModule {
   pipeline(task: 'feature-extraction', model: string, options?: Record<string, unknown>): Promise<(texts: string[], options: { pooling: 'cls' | 'mean'; normalize: boolean }) => Promise<{ tolist(): number[][] }>>;
   env?: { cacheDir?: string; allowRemoteModels?: boolean };
+  /** `wasm` where the model runs on WebAssembly (kb/onnxWasm.ts); absent on the package itself. */
+  runtime?: 'wasm';
 }
 
-/** The package, imported on first use; an OnnxUnavailableError when it is not there. */
+/**
+ * The package, imported on first use. Where it is installed but does not load (its native runtime,
+ * onnxruntime-node, has no build for this machine: an Intel Mac), the same model on WebAssembly
+ * (kb/onnxWasm.ts) where its runtime is beside it; an OnnxUnavailableError otherwise, saying whether the
+ * package is missing or failed to load, and why.
+ */
 export async function loadTransformers(from?: string): Promise<TransformersModule> {
   // A variable specifier: the type checker and bundlers do not look for an optional package.
   const specifier: string = ONNX_PACKAGE;
-  try {
-    return (await import(specifier)) as TransformersModule;
-  } catch (error) {
-    // The app's own folder (`from`: the folder with app.yaml, whose code the server already runs; never
-    // the kb/ folder inside it, which is data), then where the process runs: an app installs the package,
-    // and an engine linked from elsewhere (a workspace, a link: dependency, a host's server started in
-    // another folder) does not see the app's node_modules from where it is.
-    for (const dir of [...(from !== undefined ? [from] : []), process.cwd()]) {
-      try {
-        const resolved = createRequire(join(dir, 'package.json')).resolve(specifier);
-        return (await import(pathToFileURL(resolved).href)) as TransformersModule;
-      } catch {
-        // Not there: the next place, else the package is not installed.
-      }
+  // Where the package is found: beside the engine, the app's own folder (`from`: the folder with app.yaml,
+  // whose code the server already runs; never the kb/ folder inside it, which is data), then where the
+  // process runs: an app installs the package, and an engine linked from elsewhere (a workspace, a link:
+  // dependency, a host's server started in another folder) does not see the app's node_modules from where it is.
+  let missing: unknown = null;
+  let failed: { dir: string; error: unknown } | null = null;
+  const bases = [import.meta.url, ...[...(from !== undefined ? [from] : []), process.cwd()].map((dir) => join(dir, 'package.json'))];
+  for (const base of bases) {
+    let resolved: string;
+    try {
+      resolved = createRequire(base).resolve(specifier);
+    } catch (error) {
+      missing ??= error;
+      continue;
     }
-    throw new OnnxUnavailableError(error);
+    try {
+      return (await import(pathToFileURL(resolved).href)) as TransformersModule;
+    } catch (error) {
+      failed ??= { dir: packageDirOf(resolved), error };
+    }
   }
+  if (failed !== null) {
+    if (wasmRuntimeBeside(failed.dir)) return { ...wasmTransformers(failed.dir), runtime: 'wasm' } as TransformersModule;
+    throw new OnnxUnavailableError(failed.error, failed.dir);
+  }
+  throw new OnnxUnavailableError(missing);
 }
 
 /** Whether the package can be imported here. */
@@ -117,10 +140,13 @@ export class OnnxEmbedder implements Embedder {
   readonly revision: string;
   readonly sha256: string;
   readonly dim: number;
+  /** Where the model runs: the package's native runtime, or WebAssembly where that has no build for the machine. */
+  readonly runtime: 'native' | 'wasm';
   private readonly extract: (texts: string[], options: { pooling: 'cls' | 'mean'; normalize: boolean }) => Promise<{ tolist(): number[][] }>;
   private readonly pooling: 'cls' | 'mean';
 
-  private constructor(fields: { id: string; revision: string; sha256: string; dim: number; pooling: 'cls' | 'mean'; extract: OnnxEmbedder['extract'] }) {
+  private constructor(fields: { id: string; revision: string; sha256: string; dim: number; pooling: 'cls' | 'mean'; runtime: 'native' | 'wasm'; extract: OnnxEmbedder['extract'] }) {
+    this.runtime = fields.runtime;
     this.id = fields.id;
     this.revision = fields.revision;
     this.sha256 = fields.sha256;
@@ -148,7 +174,7 @@ export class OnnxEmbedder implements Embedder {
     const dim = probe[0]?.length ?? 0;
     if (dim === 0) throw new Error(`the model ${model} gave an empty vector`);
     const sha256 = onnxSha256(model, revision, dtype, pooling);
-    return new OnnxEmbedder({ id: options.id ?? `onnx:${model}`, revision, sha256, dim, pooling, extract });
+    return new OnnxEmbedder({ id: options.id ?? `onnx:${model}`, revision, sha256, dim, pooling, runtime: mod.runtime ?? 'native', extract });
   }
 
   async embed(texts: readonly string[]): Promise<Float64Array[]> {

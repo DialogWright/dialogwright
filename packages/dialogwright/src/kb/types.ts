@@ -230,7 +230,7 @@ export interface Retriever {
   readonly indexHash?: string;
   nominate(input: NominateInput): Promise<readonly Nomination[]> | readonly Nomination[];
   /** Loads what it loads on first use (a model), when the server starts: true once loaded, false when there is nothing to load. */
-  warm?(): Promise<boolean>;
+  warm?(): Promise<boolean | 'wasm'>;
 }
 
 /**

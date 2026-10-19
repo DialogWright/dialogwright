@@ -106,12 +106,12 @@ export class SectionRetriever implements Retriever {
     if (options.indexHash !== undefined) this.indexHash = options.indexHash;
   }
 
-  /** Loads an embedding model that loads on first use (the sections' own, documents.embedder): true once loaded, false when there is none to load. */
-  async warm(): Promise<boolean> {
+  /** Loads an embedding model that loads on first use (the sections' own, documents.embedder): true once loaded (`wasm` where it runs on WebAssembly), false when there is none to load. */
+  async warm(): Promise<boolean | 'wasm'> {
     const embedder = this.dense?.embedder as { warm?: () => Promise<unknown> } | undefined;
     if (embedder?.warm === undefined) return false;
-    await embedder.warm();
-    return true;
+    const loaded = (await embedder.warm()) as { runtime?: string } | undefined;
+    return loaded?.runtime === 'wasm' ? 'wasm' : true;
   }
 
   /** Every section's keyword score for the words, best first, uncapped (kb:bakeoff's sweep). */

@@ -1068,7 +1068,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   // nothing). One that cannot be loaded leaves the keywords (../kb/sections.ts).
   for (const a of appsRun) {
     try {
-      if (await a.app.knowledge?.sections?.warm?.()) log(`knowledge: ${a.id}: the sections' embedding model is loaded`);
+      const warmed = await a.app.knowledge?.sections?.warm?.();
+      if (warmed) log(`knowledge: ${a.id}: the sections' embedding model is loaded${warmed === 'wasm' ? ' (on WebAssembly: its native runtime has no build for this machine)' : ''}`);
     } catch (err) {
       log(`knowledge: ${a.id}: the sections' embedding model could not be loaded, so sections are found by their keywords: ${err instanceof Error ? err.message : String(err)}`);
     }
