@@ -29,6 +29,10 @@ export const styleSchema = z
     avoid: unique(text(), 'phrase')
       .optional()
       .describe('Phrases a generated line must not use ("unfortunately", "I apologize for the inconvenience"): told to the model, and a line that uses one anyway is not said (its fixed line is). Compared without regard to case.'),
+    figures: z
+      .enum(['symbols', 'words'])
+      .optional()
+      .describe('How a generated line writes amounts, percentages and other numbers: "symbols", as figures with their symbols ($150, 20%, a 30-day supply), as documents write them, which a chat shows plainly and a voice reads aloud; "words", spelled out (150 dollars, 20 percent). Told to the model as the line\'s style. Default: none, the model\'s own choice.'),
     judge: z
       .strictObject({
         refuseAt: z

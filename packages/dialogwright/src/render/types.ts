@@ -60,6 +60,8 @@ export interface SpeechAct {
     /** The most words the line may use, on this channel. */
     readonly words: number;
     readonly avoid: readonly string[];
+    /** How to write figures (style.yaml's `figures`), where the app says. */
+    readonly figures?: string;
   };
 }
 
@@ -97,6 +99,8 @@ export interface SpanAct {
     /** The most words the span may use (`generate.<span>.words`). */
     readonly words: number;
     readonly avoid: readonly string[];
+    /** How to write figures (style.yaml's `figures`), where the app says. */
+    readonly figures?: string;
   };
   /**
    * `to-caller` where the span speaks to the caller about their own message (prompts.yaml's `speaks:

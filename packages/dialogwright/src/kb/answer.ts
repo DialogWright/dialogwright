@@ -12,7 +12,6 @@ import { answerSpanOf, DEFAULT_DOCUMENTS_WORDS, KB_ACCOUNT_VAR, KB_QUESTION_VAR 
 import { collapseWhitespace } from './hash';
 import { documentsSourceOf, kbAuditRow, kbSourceOf } from './record';
 import { resolveSections, sectionKeysOf, sectionOfKey, sentencesOf } from './sectionTexts';
-import { applyGlossary } from './glossary';
 import type { SaySource } from '../channel/actions';
 import { nextWording } from '../core/wordings';
 import { localePromptEntry } from '../prompts/render';
@@ -492,8 +491,8 @@ export function offerAfterUnavailable(s: Session, acks: Ack[]): Decision | null 
 
 /**
  * Where a knowledge answer's words come from, as a chat shows them under it (app.yaml's chat.sources): each
- * document's title, each section's heading (the glossary's words, as the answer says them) and the page
- * it starts on. For an answer from documents, the sections it was drawn from, in order; for a passage,
+ * document's title, each section's heading as the document prints it (so a reader finds it there; not the
+ * glossary's words) and the page it starts on. For an answer from documents, the sections it was drawn from, in order; for a passage,
  * the section it cites. None for a source the knowledge base does not have.
  */
 export function answerSourcesOf(kb: Pick<KnowledgeBase, 'sources' | 'passages' | 'glossary'>, record: Pick<KbSource, 'passageId' | 'from' | 'sections'>): SaySource[] {
@@ -501,7 +500,7 @@ export function answerSourcesOf(kb: Pick<KnowledgeBase, 'sources' | 'passages' |
     const doc = Object.hasOwn(kb.sources, document) ? kb.sources[document]! : undefined;
     if (doc === undefined) return null;
     const s = Object.hasOwn(doc.sections, section) ? doc.sections[section] : undefined;
-    const heading = s?.heading !== undefined ? applyGlossary(collapseWhitespace(s.heading), kb.glossary) : undefined;
+    const heading = s?.heading !== undefined ? collapseWhitespace(s.heading) : undefined;
     return { document: doc.document, ...(heading !== undefined && heading !== '' ? { section: heading } : {}), ...(s?.page !== undefined ? { page: s.page } : {}) };
   };
   if (record.from === 'documents') {

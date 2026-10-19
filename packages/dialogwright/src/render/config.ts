@@ -94,12 +94,19 @@ const KB_ANSWER_LINE_DEFAULT = 'kb_answer';
 export const KB_ACCOUNT_VAR = 'answerAccountLine';
 export const KB_QUESTION_VAR = 'answerQuestion';
 
+/** How each of style.yaml's `figures` is told to the model, as the line's style. */
+export const FIGURES: Readonly<Record<'symbols' | 'words', string>> = {
+  symbols: 'write amounts, percentages and other numbers as figures with their symbols ($150, 20%, a 30-day supply), as the source writes them',
+  words: 'write amounts, percentages and other numbers in words (150 dollars, 20 percent), as they are spoken',
+};
+
 /** style.yaml with its defaults filled in. */
 export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
   return {
     persona: style?.persona ?? DEFAULT_PERSONA,
     words: { voice: style?.words?.voice ?? DEFAULT_WORDS.voice, chat: style?.words?.chat ?? DEFAULT_WORDS.chat },
     avoid: [...(style?.avoid ?? [])],
+    ...(style?.figures !== undefined ? { figures: FIGURES[style.figures] } : {}),
     // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).
     ...(style?.judge?.refuseAt !== undefined ? { refuseAt: style.judge.refuseAt } : {}),
     ...(style?.judge?.documentsRefuseAt !== undefined ? { documentsRefuseAt: style.judge.documentsRefuseAt } : {}),

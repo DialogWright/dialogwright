@@ -105,7 +105,7 @@ describe('the widget', () => {
     const { f, root } = mount({ startOpen: true });
     f.emit({ type: 'say', text: 'The ER is $150 a visit.', lang: 'en-US', sources: [{ document: 'Guide <b>', section: 'Fees' }, { document: 'Guide <b>', section: 'Hours', page: 2 }] });
     const cite = root.querySelector('[role="log"] .cite')!;
-    expect(cite.textContent).toBe('Sources: Guide <b> · Fees; Guide <b> · Hours · p. 2');
+    expect(cite.textContent).toBe('Sources: Guide <b> · Fees; Hours, p. 2');
     expect(cite.querySelector('b')).toBeNull();
   });
 

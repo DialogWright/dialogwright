@@ -19,6 +19,7 @@ import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
 import { frameViolations } from '../testing/adversarial/run';
 import { withSources } from '../core/sources';
+import { FIGURES } from '../render/config';
 import { answerSourcesOf } from './answer';
 import type { Action, SaySource } from '../channel/actions';
 import { APP_EDITS, BASE, call, calls, cleanScratch, codeFor, folder, nominated, TODAY, VISITOR_GUIDE, type Edit } from './__fixtures__/libraryKbApp';
@@ -233,6 +234,17 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(docLine(await rendered(plain, u, renderer(), at(0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { refuseAt: 0.3 } });
   });
 
+  it('how figures are written (style.yaml figures) goes to the model with the style, and nothing where the app says none', async () => {
+    const symbols = documentsApp('library-documents-figures', { edits: { 'style.yaml': '# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\nfigures: symbols\n' } });
+    const t = asked(symbols, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const r = renderer();
+    await rendered(symbols, t, r, at(0.1));
+    expect(r.client.askedSpans[0]!.act.style.figures).toBe(FIGURES.symbols);
+    const plain = renderer();
+    await rendered(APP, asked(APP, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 }), plain, at(0.1));
+    expect(plain.client.askedSpans[0]!.act.style).not.toHaveProperty('figures');
+  });
+
   it('onFail: opening: the best section whole where it fits the answer\'s word budget, word for word, in the opening frame', () => {
     const app = documentsApp('library-documents-opening', { onFail: 'opening' });
     const t = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
@@ -343,7 +355,8 @@ describe('the answer worded from the sections, checked against them', () => {
       const branches = Array.from({ length: 3 }, (_, i) => `Parking at branch ${i + 1}: free for two hours`);
       const app = documentsApp('library-documents-sources', {
         onFail: 'lines',
-        edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free parking for up to two hours. Spaces by the entrance are kept for drivers with a disability permit.\n', `    text: |-\n${branches.map((r) => `      ${r}\n`).join('')}`) },
+        // The glossary rewords a heading: the lines carry its words, the citation the document's own.
+        edits: { 'kb/glossary.yaml': 'library card: borrower card\n', 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('    text: Every branch has free parking for up to two hours. Spaces by the entrance are kept for drivers with a disability permit.\n', `    text: |-\n${branches.map((r) => `      ${r}\n`).join('')}`) },
       });
       const t = asked(app, 'what if I lose my card and where do I park', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#parking': 0.95, 'visitor-guide#lost-card': 0.9 });
       const kb = app.knowledge!.kb!;
@@ -363,6 +376,7 @@ describe('the answer worded from the sections, checked against them', () => {
       const out = await rendered(app, t, renderer(), linesJudge({ 4: 0.9 }));
       expect(docLine(out).lines).toMatchObject({ chosen: [4] });
       expect(sourcesOn(out.actions).filter((x) => x !== undefined)).toEqual([[both[1]]]);
+      expect(sayText(out.actions)).toContain('A lost borrower card.');
     });
 
     it('a wording that passes is said, and the lines are never asked; with onFail: opening they are never carried', async () => {

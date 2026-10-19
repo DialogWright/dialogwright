@@ -19,8 +19,19 @@ export function sourcesField(value: unknown): { sources?: SaySource[] } {
   return sources.length > 0 ? { sources } : {};
 }
 
-/** The line under an answer: "Source: <document> · <section> · p. <page>", several joined by "; ". */
+/**
+ * The line under an answer: each document once, its sections after it ("Source: Benefit Booklet · Emergency
+ * Services, p. 7"; "Sources: Benefit Booklet · Deductibles, p. 4; Notes, p. 14"), documents joined by " | ".
+ */
 export function sourcesText(sources: readonly SaySource[], s: Pick<WidgetStrings, 'source' | 'sources' | 'page'>): string {
-  const each = sources.map((x) => [x.document, x.section, x.page !== undefined ? `${s.page} ${x.page}` : undefined].filter((p): p is string => p !== undefined).join(' · '));
-  return `${sources.length === 1 ? s.source : s.sources} ${[...new Set(each)].join('; ')}`;
+  const byDocument = new Map<string, string[]>();
+  for (const x of sources) {
+    const part = x.section === undefined ? (x.page !== undefined ? `${s.page} ${x.page}` : '') : x.page !== undefined ? `${x.section}, ${s.page} ${x.page}` : x.section;
+    const parts = byDocument.get(x.document) ?? [];
+    if (part !== '' && !parts.includes(part)) parts.push(part);
+    byDocument.set(x.document, parts);
+  }
+  const shown = [...byDocument].map(([document, parts]) => (parts.length === 0 ? document : `${document} · ${parts.join('; ')}`));
+  const several = [...byDocument.values()].reduce((n, parts) => n + Math.max(1, parts.length), 0) > 1;
+  return `${several ? s.sources : s.source} ${shown.join(' | ')}`;
 }

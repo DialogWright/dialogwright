@@ -88,7 +88,7 @@ describe('the full-size conversation', () => {
     const { f, root, open } = mount();
     open();
     f.emit({ type: 'say', text: 'The ER is $150 a visit.', lang: 'en-US', sources: [{ document: 'Benefit Booklet', section: 'Emergency Services', page: 32 }] });
-    expect(root.querySelector('.turn.agent .cite')?.textContent).toBe('Source: Benefit Booklet · Emergency Services · p. 32');
+    expect(root.querySelector('.turn.agent .cite')?.textContent).toBe('Source: Benefit Booklet · Emergency Services, p. 32');
     f.emit({ type: 'say', text: 'Anything else?', lang: 'en-US' });
     expect(root.querySelectorAll('.cite').length).toBe(1);
   });

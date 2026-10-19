@@ -1852,6 +1852,8 @@ export interface RenderStyle {
   readonly persona: string;
   readonly words: { readonly voice: number; readonly chat: number };
   readonly avoid: readonly string[];
+  /** How a generated line writes figures (style.yaml's `figures`), as the model is told it; absent: as the model words them. */
+  readonly figures?: string;
   /**
    * Where the drift judge refuses a wording (style.yaml's `judge.refuseAt`; default 0.5): never sent to a
    * model. Absent in an app built in code: the default.

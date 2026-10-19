@@ -12,7 +12,8 @@ describe('where an answer comes from', () => {
   });
 
   it('says one source, or several once each, in the site\'s words', () => {
-    expect(sourcesText([{ document: 'Guide', section: 'Fees', page: 3 }], DEFAULT_STRINGS)).toBe('Source: Guide · Fees · p. 3');
-    expect(sourcesText([{ document: 'Guide' }, { document: 'Guide' }, { document: 'Map' }], { source: 'Fuente:', sources: 'Fuentes:', page: 'pág.' })).toBe('Fuentes: Guide; Map');
+    expect(sourcesText([{ document: 'Guide', section: 'Fees', page: 3 }], DEFAULT_STRINGS)).toBe('Source: Guide · Fees, p. 3');
+    expect(sourcesText([{ document: 'Guide', section: 'Fees', page: 3 }, { document: 'Guide', section: 'Notes', page: 14 }], DEFAULT_STRINGS)).toBe('Sources: Guide · Fees, p. 3; Notes, p. 14');
+    expect(sourcesText([{ document: 'Guide' }, { document: 'Guide' }, { document: 'Map' }], { source: 'Fuente:', sources: 'Fuentes:', page: 'pág.' })).toBe('Fuentes: Guide | Map');
   });
 });

@@ -17,6 +17,7 @@ import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
 import { DEFAULT_RENDER_ANSWER_TIMEOUT_MS, DEFAULT_RENDER_DOCUMENTS_TIMEOUT_MS, DEFAULT_RENDER_CHECK_TIMEOUT_MS, DEFAULT_RENDER_PRICE, DEFAULT_RENDER_TIMEOUT_MS, RenderClientError, type RenderAct, type RenderUsage, type Generation, type RenderFallback, type Renderer, type RenderHold, type RenderJudge, type RenderLine, type RenderRecord, type RenderSkip, type SpanAct, type SpeechAct, type SpeechItem } from './types';
 import type { KbSource } from '../core/lifecycle';
+import { applyGlossary } from '../kb/glossary';
 import { KB_HOLD_MORE_VAR, KB_HOLD_VAR, KB_LINE_HEADINGS_VAR, KB_LINES_VAR, KB_SOURCE_VAR, openingFramed, sectionLinesSaid, type SectionLine } from '../kb/answer';
 
 /**
@@ -215,7 +216,7 @@ function planFramed(app: App, input: RenderInput, line: GeneratedLine & { spans:
         content: [{ name: span.from, value: content }],
         channel,
         language,
-        style: { persona: style.persona, words: span.words, avoid: [...style.avoid] },
+        style: { persona: style.persona, words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
         ...(toCaller ? { speaks: 'to-caller' as const } : {}),
         ...(names.length > 0 ? { names } : {}),
       };
@@ -274,7 +275,7 @@ function planAnswer(app: App, input: RenderInput, line: GeneratedLine, name: str
     content: [{ name: KB_ANSWER_LINE_VAR, value: passage.answer }],
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: span.sizedToPassage === true ? answerWordBudget(wordCount(passage.answer)) : span.words, avoid: [...style.avoid] },
+    style: { persona: style.persona, words: span.sizedToPassage === true ? answerWordBudget(wordCount(passage.answer)) : span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
     answer: { question },
   };
   return { ...base, act };
@@ -324,7 +325,7 @@ function planDocumentsAnswer(app: App, input: RenderInput, line: GeneratedLine, 
     content: sections.map((value) => ({ name: KB_ANSWER_LINE_VAR, value })),
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: span.words, avoid: [...style.avoid] },
+    style: { persona: style.persona, words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
     answer: { question, from: 'sections' },
   };
   return { ...base, act };
@@ -383,7 +384,7 @@ function planLine(app: App, input: RenderInput, line: GeneratedLine, said: SaidL
     situations,
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
-    style: { persona: style.persona, words: style.words[channel], avoid: [...style.avoid] },
+    style: { persona: style.persona, words: style.words[channel], avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
   };
   // The fixed line as the drift check reads it: each collected value left as its {placeholder}, the content apart.
   const judgeFixed = renderTemplate(template, Object.fromEntries(vars.map((v) => [v, from.has(v) ? `{${v}}` : (said.vars[v] ?? '')])));
@@ -848,9 +849,10 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (got.lines !== undefined) {
       const text = openingFramed(app, result.session.locale, got.lines.text);
       const was = actions[index] as Say;
-      // Its sources: the sections whose lines were said (by their headings), where the lines name them.
+      // Its sources: the sections whose lines were said, by their headings (the lines carry the glossary's words, a source the document's own).
       const said = new Set(got.lines.chosen.map((n) => a.plan.lines?.[n - 1]?.heading ?? '').filter((h) => h !== ''));
-      actions[index] = keepChatExtras(was, promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale), (s) => said.size === 0 || (s.section !== undefined && said.has(s.section)));
+      const glossary = app.knowledge?.kb?.glossary;
+      actions[index] = keepChatExtras(was, promptSay(app, promptId, { ...a.said.vars, [KB_ANSWER_LINE_VAR]: text }, was.interruptible, input.clips ?? null, result.session.locale), (s) => said.size === 0 || (s.section !== undefined && said.has(applyGlossary(s.section, glossary))));
       lines = { chosen: got.lines.chosen, of: got.lines.of, said: text };
     }
     answerLines.push({ ...base, mode: 'fixed', ...meta, fallback: got.fallback, ...(got.refused !== undefined ? { refused: got.refused } : {}), ...(got.error !== undefined ? { error: got.error } : {}), ...judgeOf(got), ...(lines !== undefined ? { lines } : {}) });

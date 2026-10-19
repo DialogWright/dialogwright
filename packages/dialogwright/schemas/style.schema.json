@@ -34,6 +34,14 @@
         "minLength": 1
       }
     },
+    "figures": {
+      "description": "How a generated line writes amounts, percentages and other numbers: \"symbols\", as figures with their symbols ($150, 20%, a 30-day supply), as documents write them, which a chat shows plainly and a voice reads aloud; \"words\", spelled out (150 dollars, 20 percent). Told to the model as the line's style. Default: none, the model's own choice.",
+      "type": "string",
+      "enum": [
+        "symbols",
+        "words"
+      ]
+    },
     "judge": {
       "description": "The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge's; the checks by code hold its data and shape).",
       "type": "object",
