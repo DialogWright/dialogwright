@@ -1,11 +1,14 @@
 import { createChatClient } from './client';
 import { mountWidget, positionOf, type WidgetOptions } from './ui';
 import { renderRich } from './rich';
+import { mountConversation } from './conversation';
 
 export { createChatClient, DEFAULT_BACKOFF_MS, DEFAULT_MAX_RECONNECTS } from './client';
 export type { ChatClient, ChatClientEvent, ChatClientOptions, ConnectionState } from './client';
 export type { ChatBlock, ChatErrorCode, ChatInline } from './protocol';
 export { renderRich } from './rich';
+export { mountConversation } from './conversation';
+export type { Conversation, ConversationOptions } from './conversation';
 export { appEndpointOf, mountWidget, POSITIONS } from './ui';
 export type { Position, Widget, WidgetOptions } from './ui';
 export { DEFAULT_STRINGS } from './strings';
@@ -60,7 +63,7 @@ export function optionsFromScript(script: HTMLScriptElement): WidgetOptions {
 
 declare global {
   interface Window {
-    DialogWright?: { mount: typeof mountWidget; createChatClient: typeof createChatClient; renderRich: typeof renderRich };
+    DialogWright?: { mount: typeof mountWidget; createChatClient: typeof createChatClient; renderRich: typeof renderRich; mountConversation: typeof mountConversation };
   }
 }
 
@@ -68,7 +71,7 @@ declare global {
 // for the page to call DialogWright.mount. The script tag is read now: it is only known while the
 // script first runs.
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  window.DialogWright = { mount: mountWidget, createChatClient, renderRich };
+  window.DialogWright = { mount: mountWidget, createChatClient, renderRich, mountConversation };
   const script = document.currentScript;
   if (script instanceof HTMLScriptElement && script.dataset.endpoint !== undefined) {
     const start = (): void => {

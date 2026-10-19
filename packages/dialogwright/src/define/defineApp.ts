@@ -1,4 +1,5 @@
 import type { AppPagesFactory } from '../server/appRoutes';
+import { resolve } from 'node:path';
 import type {
   App, AppBrand, AppLocales, CheckOutcome, Completion, CompletionContext, ConsoleConfig, FormCheck, FormDef, FormId, HandoffData, HandoffWording, IdentityConfig, IntentDef, ModelWording, PolicyTables, PolicyWording,
   PromptManifestEntry, Recognition, RoleAccess, SlotId, ToolDef, ToolName, VoiceConfig, VoiceLocale, CallerNumberUse, TransferConfig, TransferSend,
@@ -187,6 +188,8 @@ export function defineApp(dir: string, code: AppCode, options: DefineAppOptions 
   const problems = crossLink(loaded.config, code, loaded.locate, codeFile, loaded.locateKey, loaded.document);
   if (problems.length > 0) throw new AppDefinitionError(dir, problems, undefined, code);
   const app = buildApp(loaded.config, code, linkSlots(loaded.config, code, loaded.document, codeFile).slots);
+  // The chat page's logo, read from the app folder wherever the server runs.
+  if (app.brand?.logo !== undefined) app.brand = { ...app.brand, logo: resolve(dir, app.brand.logo) };
   try {
     validateApp(app);
   } catch (error) {
@@ -1126,7 +1129,15 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   put(app, 'unsureIntent', a.unsureIntent);
   put(app, 'changeSlotWithValue', a.changeSlotWithValue);
   put(app, 'questionAtSummary', a.questionAtSummary);
-  put(app, 'chat', a.chat === undefined ? undefined : { ...(a.chat.replies !== undefined ? { replies: a.chat.replies } : {}) });
+  put(app, 'chat', a.chat === undefined ? undefined : {
+    ...(a.chat.replies !== undefined ? { replies: a.chat.replies } : {}),
+    ...(a.chat.page !== undefined ? { page: {
+      serve: a.chat.page.serve,
+      ...(a.chat.page.intro !== undefined ? { intro: a.chat.page.intro } : {}),
+      ...(a.chat.page.starters !== undefined ? { starters: [...a.chat.page.starters] } : {}),
+      ...(a.chat.page.phone !== undefined ? { phone: a.chat.page.phone.replace(/^env\./, '') } : {}),
+    } } : {}),
+  });
   put(app, 'waiting', a.waiting === undefined ? undefined : {
     ...(a.waiting.line !== undefined ? { line: a.waiting.line } : {}),
     ...(a.waiting.afterMs !== undefined ? { afterMs: typeof a.waiting.afterMs === 'number' ? a.waiting.afterMs : { ...a.waiting.afterMs } } : {}),

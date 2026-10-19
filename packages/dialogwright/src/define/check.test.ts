@@ -201,6 +201,17 @@ describe('checkApp: the prompts every locale needs', () => {
     ]);
   });
 
+  it('the chat page\'s logo is a file of a type the page shows, and its intro the chat formatting', async () => {
+    const page = (logo: string, intro: string) => (t: string): string => t.replace(/^brand:\n/m, `brand:\n  logo: ${logo}\n`) + `chat:\n  page:\n    serve: local\n    intro: ${JSON.stringify(intro)}\n`;
+    const fine = folder({ 'app.yaml': page('logo.png', 'Renew a **loan**.') });
+    writeFileSync(join(fine, 'logo.png'), 'not really a png, but a file');
+    expect((await lines(fine)).filter((l) => l.includes('logo') || l.includes('intro'))).toEqual([]);
+    const bad = await lines(folder({ 'app.yaml': page('missing.png', '# Renew') }));
+    expect(bad.filter((l) => l.includes('brand.logo'))).toEqual([expect.stringContaining('the logo missing.png is not a file in the app folder  ->  add the file, or correct the path (from the app folder)')]);
+    expect(bad.filter((l) => l.includes('chat.page.intro'))).toEqual([expect.stringContaining('the chat page\'s intro has a heading (#)')]);
+    expect((await lines(folder({ 'app.yaml': page('logo.gif', 'Hi') }))).filter((l) => l.includes('brand.logo'))).toEqual([expect.stringContaining('the logo logo.gif is not a .png, .jpg, .webp or .svg file')]);
+  });
+
   it('a missing engine line names the variables the engine gives it', async () => {
     const dir = folder({ 'identity.yaml': IDENTITY.replace(', 2: ', ''), 'prompts.yaml': without('ack_intent') });
     const problems = await lines(dir);

@@ -8,7 +8,8 @@ import type { App, ConsoleFact, ConsoleLink, ServiceNoteWording } from '../../co
  * page is served with it inlined, and /dashboard/boot answers it too.
  */
 export interface ConsoleMeta {
-  brand: { name: string; mark: string; key: string };
+  /** `accent`: the brand's accent colour (app.yaml's brand.colors.accent, "#rrggbb"), only where it gives one. */
+  brand: { name: string; mark: string; key: string; accent?: string };
   /** Each form's slots, in prompt order (App.forms). */
   formSlots: Record<string, string[]>;
   /** Every slot, in the order shown outside a form. */
@@ -97,7 +98,12 @@ function chipStyleOf(app: App): ConsoleMeta['chipStyle'] {
 export function consoleMetaOf(app: App): ConsoleMeta {
   const c = app.console ?? {};
   return {
-    brand: { name: app.brand?.name ?? app.id, mark: app.brand?.mark ?? app.id.slice(0, 2).toUpperCase(), key: app.brand?.key ?? app.id },
+    brand: {
+      name: app.brand?.name ?? app.id,
+      mark: app.brand?.mark ?? app.id.slice(0, 2).toUpperCase(),
+      key: app.brand?.key ?? app.id,
+      ...(app.brand?.colors?.accent !== undefined && /^#[0-9a-fA-F]{6}$/.test(app.brand.colors.accent) ? { accent: app.brand.colors.accent } : {}),
+    },
     formSlots: Object.fromEntries(Object.entries(app.forms).map(([id, f]) => [id, [...f.slots]])),
     slotOrder: [...(c.slotOrder ?? defaultSlotOrder(app))],
     stepUp: [...identityOf(app).factorSlots],
@@ -151,5 +157,8 @@ export function renderConsolePage(template: string, meta: ConsoleMeta, options: 
   const values: Record<string, string> = { name, mark, links, meta: json };
   // One pass over the template, so a value that itself contains a placeholder (a brand named
   // "{{meta}}") is never read as one.
-  return template.replace(/\{\{(name|mark|links|meta)\}\}/g, (_m, key: string) => values[key]!);
+  const page = template.replace(/\{\{(name|mark|links|meta)\}\}/g, (_m, key: string) => values[key]!);
+  // The brand's accent (a checked hex code), on the console's accent and its mark; none, the console's own.
+  const accent = meta.brand.accent;
+  return accent === undefined ? page : page.replace('</style></head>', `  :root { --accent:${accent}; } .brand .mark { background:${accent}; }\n</style></head>`);
 }

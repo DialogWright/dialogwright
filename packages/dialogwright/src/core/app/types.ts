@@ -1110,6 +1110,24 @@ export interface AppBrand {
    * survive (e.g. "example-parcels"). Default: the app id.
    */
   readonly key?: string;
+  /** A few words under the name on the chat page ("Mobile Detailing"). */
+  readonly tagline?: string;
+  /** The chat page's logo: its file, an absolute path (app.yaml gives it from the app folder). */
+  readonly logo?: string;
+  /** The brand's colours, each "#rrggbb": the chat page's, and the console's accent. */
+  readonly colors?: { readonly accent?: string; readonly background?: string; readonly text?: string };
+}
+
+/**
+ * The app's chat page, the engine's (app.yaml's chat.page; server/chatPage.ts): whether and where it is
+ * served, a line under the name, ways to start, and the variable holding a number to call.
+ */
+export interface ChatPageConfig {
+  readonly serve: 'off' | 'local' | 'public';
+  readonly intro?: string;
+  readonly starters?: readonly string[];
+  /** The variable (env.<NAME>'s name) holding the number its "Prefer to talk?" button calls. */
+  readonly phone?: string;
 }
 
 /**
@@ -1468,7 +1486,7 @@ export interface App {
    * What a web chat shows beside the lines (app.yaml's `chat`): `replies: 'on'`, answer buttons under a
    * question with a known set of answers (core/replies.ts). Absent: none.
    */
-  chat?: { readonly replies?: 'on' | 'off' };
+  chat?: { readonly replies?: 'on' | 'off'; readonly page?: ChatPageConfig };
   /**
    * Where a frustrated caller is answered (app.yaml `frustration`): `forms`, the forms in which the
    * frustration ladder runs (the acknowledgement, then a person offered, then a person): while one is

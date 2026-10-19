@@ -225,7 +225,7 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 | `app` | `data-app` | none | On a server of several apps ([14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)), the app to chat with, by its id: the widget connects to `<endpoint>/<app>`. None is the endpoint as given, the default app's chat. |
 | `locale` | `data-locale` | the page's `<html lang>`, else none | The language asked for; the server answers in the app's closest one. |
 | `title` | `data-title` | "Chat with us" | The panel's heading. |
-| `strings` | `data-strings` (JSON) | English | Any of the widget's 24 words (`packages/widget/src/strings.ts`). |
+| `strings` | `data-strings` (JSON) | English | Any of the widget's 27 words (`packages/widget/src/strings.ts`). |
 | `position` | `data-position` | `bottom-right` | `bottom-right`, `bottom-left`, or `inline` (inside `container`, always open). |
 | `container` | `data-container` (a CSS selector) | none | Where an `inline` widget goes. |
 | `startOpen` | `data-start-open` | `false` | Open, and connect, on load; otherwise it connects when first opened. |
@@ -239,6 +239,44 @@ The server must list the site's origin in `CHAT_ALLOWED_ORIGINS`, and, for `getT
 **Theming.** The panel renders in a shadow root on a `dialogwright-chat` element, so a site's CSS cannot break it; it is themed with CSS custom properties on that element: `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-user-bg`, `--dw-agent-bg`, `--dw-radius`, `--dw-font` and `--dw-z`. Colours a site leaves unset follow the visitor's light or dark scheme.
 
 **Behaviour.** A dropped chat reconnects after each step of `backoffMs` and resumes, for as long as the page is open unless `maxReconnects` says otherwise; what is typed meanwhile is sent once it is back. A chat that never starts (an origin the server refuses, an endpoint it cannot reach, a full server) is tried once per step of `backoffMs`, then the panel says `unavailable`, with no loop. A chat whose session has ended starts afresh (`restarted`), signed in again with the site's token if it was signed in. A site that wants its own interface uses the client alone, `createChatClient`, and draws a formatted line's `rich` with `renderRich(blocks)` (also `DialogWright.renderRich` on a page with the script), which returns the line's paragraphs and lists as elements, every word a text node, or null with nothing to draw (then show `text`); its `say` event's `replies` are the answer buttons to offer, each sent with `send()` on a tap. The package's [README](../../packages/widget/README.md) has the events, the words and the accessibility notes.
+
+#### The conversation, full size: `mountConversation`
+
+For a page whose main thing is the conversation (an app's chat page, a booking page), `DialogWright.mountConversation(element, options)` draws it in place of a panel in a corner: the line's words large and plain, the earlier ones dimmed, the person's beside them, a sign it is thinking, ways to start (`starters`, buttons that send their words, shown until the first message), a question's answer buttons and formatted lines, a status (online, connecting), Start over, and a new conversation after one ends. It connects as it is mounted. Its options are the panel's that apply (`endpoint`, `app`, `locale`, `context`, `strings`, `onTransfer`, `onEvent`, `backoffMs`, `maxReconnects`) and `starters`; it returns `send(text)`, `startOver()` and `destroy()`. It renders in a shadow root on a `dialogwright-conversation` element, themed with `--dw-accent`, `--dw-accent-fg`, `--dw-bg`, `--dw-fg`, `--dw-muted`, `--dw-user-bg`, `--dw-user-fg`, `--dw-border`, `--dw-radius`, `--dw-font`, `--dw-size` (the line's words), `--dw-shadow` and `--dw-height`; a page puts its own brand around it.
+
+```html
+<main id="talk"></main>
+<script src="/widget.js"></script>
+<script>
+  DialogWright.mountConversation('#talk', { endpoint: '/chat', starters: ['Book a detail', 'Check on my booking'] });
+</script>
+```
+
+#### The app's chat page: `chat.page`
+
+With app.yaml's `chat.page`, the server serves the app a chat page of its own at `/<app id>/chat`: its brand (app.yaml's `brand`: `logo`, `name`, `tagline`, `colors`) above the conversation (`mountConversation`), an `intro` in the chat formatting, ways to start, and a "Prefer to talk?" button where `phone` names a number. It needs `CHAT=on` and `WIDGET=on` (the page loads `/widget.js`); without either the server says so as it starts and serves no page.
+
+```yaml
+brand:
+  name: Example Detailing
+  mark: ED
+  tagline: Mobile Detailing
+  logo: assets/logo.png             # .png, .jpg, .webp or .svg in the app folder, at most 512 KB
+  colors: { accent: "#5aa9ff", background: "#0d131c", text: "#e9edf2" }
+chat:
+  replies: on
+  page:
+    serve: public                   # off | local (the server's machine only) | public
+    intro: "We come to you."
+    starters: [Book a detail, Check on my booking]   # default: the labels of the forms and informational intents
+    phone: env.BOOKING_LINE         # optional: the number its button calls
+```
+
+- **`serve`**: `public` to anyone who reaches the server, `local` on the server's machine only (as the console is), `off` not at all. The app's own `CHAT_PAGE` setting (`off`, `local` or `public`, in its settings file) overrides it, such as `CHAT_PAGE=off` once a demo is over.
+- **Starters**: `starters`, or by default the labels of the app's forms and of its informational intents that say something ("Book a detail"), a capital first, at most six.
+- **Colours**: each a hex code; those the brand leaves out follow the visitor's light or dark scheme. The accent is the console's too.
+- **Safety**: every value is written into the page as text (the intro's formatting drawn as elements), the page is served with a strict content security policy, and an SVG logo is served sandboxed. `pnpm check` checks the logo (its type, that it is there, its size) and the intro's formatting.
+- **An app's own page**: an app that serves a page of its own at `/chat` (code.pages) keeps it: the engine's gives way. A page that wants more than this (pictures, its services, a layout of its own) is its own page around `mountConversation` ([the design](../designs/2026-10-18-chat-page.md)).
 
 ### 13.8 A caller who had not finished, and how a word is said
 

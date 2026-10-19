@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { CHAT_PAGE_PATH, chatPageRoutes } from './chatPage';
 import { applyEnvFile, envFilePathsOf } from './envFile';
 import { SIGNAL_REPEAT_MS } from './signals';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -54,7 +55,7 @@ import { PostgresNotices } from './stores/notices';
 import { openSweeps } from './stores/sweeps';
 import { chatTraceMeta } from './traceMeta';
 import type { ServiceUrls } from './services';
-import { appPagesBase, mountAppPages, validateRoutes, type AppPagesFactory, type AppRoute, type AppRoutesFactory } from './appRoutes';
+import { appPagesBase, mountAppPages, routeOwns, validateRoutes, type AppPagesFactory, type AppRoute, type AppRoutesFactory } from './appRoutes';
 import { localOnlyPaths } from './localOnly';
 import { safeFileStem } from './fileStem';
 import { VOICE_RELAY } from '../channel/caps';
@@ -687,17 +688,26 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   const pageWarnings: string[] = [];
   const pages = appsRun.flatMap((a) => {
     const factory = a.app.pages as AppPagesFactory | undefined;
-    if (factory === undefined) return [];
     const base = appPagesBase(a.id);
+    const chatPath = host ? `${CHAT_PATH}/${a.id}` : CHAT_PATH;
+    // The engine's chat page (app.yaml's chat.page), unless the app serves a page of its own at its path.
+    const ownPage = (routes: readonly AppRoute[]): boolean => routes.some((r) => routeOwns(r, CHAT_PAGE_PATH) || routeOwns({ path: CHAT_PAGE_PATH }, r.path));
+    const builtIn = (own: readonly AppRoute[]): AppRoute[] => {
+      if (ownPage(own)) return [];
+      const made = forApp(a.id, () => chatPageRoutes({ app: a.app, base, chatPath, env: (name: string) => a.settings[name], chat: config.chat !== undefined, widget: config.widget !== undefined }));
+      for (const w of made.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
+      return forApp(a.id, () => mountAppPages(base, made.routes));
+    };
+    if (factory === undefined) return builtIn([]);
     const built = forApp(a.id, () => factory({
       config, client: clientOf(a.id), thresholds, todayIso, tools: toolsOf(a.id), audit: auditOf(a.id), bus, traceDir: traceDirOf(a.id), serviceUrls: serviceUrlsOf(a.id), log, now,
       anthropicApiKey: config.anthropicApiKey, handoffSummaryOn: config.handoffSummary, summarizeHandoff: overrides.summarizeHandoff,
-      app: a.app, base, chatPath: host ? `${CHAT_PATH}/${a.id}` : CHAT_PATH,
+      app: a.app, base, chatPath,
       ...(config.chat ? { chat: host ? forApp(a.id, () => chatSettingsOf(config.chat!, a.env)) : config.chat } : {}),
       env: (name: string) => a.settings[name],
     }));
     for (const w of built.warnings ?? []) pageWarnings.push(`${tag(a.id)}${w}`);
-    return forApp(a.id, () => mountAppPages(base, built.routes));
+    return [...forApp(a.id, () => mountAppPages(base, built.routes)), ...builtIn(built.routes)];
   });
   const routes = [...mounted.routes, ...pages];
   validateRoutes(routes);

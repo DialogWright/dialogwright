@@ -28,6 +28,9 @@ const NUMBER_LOCALE_KEY = new RegExp(`(?:${E164.source})|(?:${ENV_REFERENCE.sour
  */
 const FIXTURES_DIR = /^(?![/\\])(?![A-Za-z]:)(?!(?:.*[/\\])?\.\.(?:[/\\]|$)).+$/;
 
+/** A colour as a hex code, "#2f5bd3": the only form, so a value is never CSS of its own. */
+const hexColor = () => matching(/^#[0-9a-fA-F]{6}$/, 'is not a hex colour', 'write it as # and six hex digits, like #2f5bd3');
+
 const brand = z
   .strictObject({
     name: text().describe('The app\'s name, as the console\'s title and its speaker labels show it (for example "Example Parcels").'),
@@ -35,8 +38,20 @@ const brand = z
     key: text()
       .optional()
       .describe('The prefix of the console\'s browser storage keys. Keep it stable and a browser\'s saved choices survive. Default: the app id.'),
+    tagline: text().optional().describe('A few words under the name on the chat page (chat.page), such as "Mobile Detailing". Default: none.'),
+    logo: matching(FIXTURES_DIR, 'is not a path inside the app folder', 'give a path relative to the app folder, such as assets/logo.png')
+      .optional()
+      .describe('The logo the chat page shows above the name: a .png, .jpg, .webp or .svg file in the app folder, at most 512 KB, served at /<app id>/chat/logo. Default: none (the name alone).'),
+    colors: z
+      .strictObject({
+        accent: hexColor().optional().describe('Buttons, the line\'s mark and the console\'s mark ("#2f5bd3").'),
+        background: hexColor().optional().describe('The chat page\'s background ("#0d131c"). Default: the visitor\'s light or dark scheme.'),
+        text: hexColor().optional().describe('The chat page\'s words, on the background ("#e9edf2"). Default: the visitor\'s light or dark scheme.'),
+      })
+      .optional()
+      .describe('The brand\'s colours, each a hex colour like "#2f5bd3": the chat page\'s, and the console\'s accent. Default: the engine\'s.'),
   })
-  .describe('How the app is named on the operator console and in its browser storage.');
+  .describe('How the app is named and looks: on the operator console, in its browser storage, and on its chat page.');
 
 /** A fact the console reads off a turn's audit rows: one shape per `kind`. */
 const consoleFact = z.discriminatedUnion(
@@ -580,6 +595,26 @@ export const appSchema = z
           .describe(
             'Answer buttons on a chat: "on" shows, under a question with a known set of answers, each answer as a button whose tap sends its words as the person\'s message, read as typed words are (a yes-or-no question: Yes and No, or prompts.yaml\'s reply_yes and reply_no; a choice slot\'s question: its options, each its `button` or its `say`; a record slot\'s: its records, as its `display` says them). Never for an identity factor, and only for two to eight answers. "off", the default: no buttons.',
           ),
+        page: z
+          .strictObject({
+            serve: z
+              .enum(['off', 'local', 'public'])
+              .describe('Whether the server serves the app\'s chat page at /<app id>/chat (with CHAT=on and WIDGET=on): "public" to anyone who can reach the server, "local" on the server\'s own machine only, "off" not at all. The app\'s CHAT_PAGE setting (in its own settings file) overrides it, such as CHAT_PAGE=off after a demo. A page the app serves itself at that path (code.pages) is served in its place.'),
+            intro: text()
+              .optional()
+              .describe('A line under the name, in the chat formatting (paragraphs, lists, **bold**, *italic*): what the page is for ("Book a detail, or check on one you have."). Default: none.'),
+            starters: z
+              .array(text().max(60, { error: 'is too long for a button: at most 60 characters' }), { error: 'must be a list of phrases' })
+              .min(1, { error: 'must give at least one phrase, or be left out' })
+              .max(8, { error: 'has more than eight: a page shows at most eight' })
+              .optional()
+              .describe('Ways to start, each a button that sends its words as the person\'s first message. Default: the labels of the app\'s forms and informational intents ("Book a detail"), at most six.'),
+            phone: envTarget()
+              .optional()
+              .describe('A "Prefer to talk?" button that calls a number: the variable holding it (env.<NAME>, an E.164 number), read from the app\'s settings. Default: none.'),
+          })
+          .optional()
+          .describe('A chat page the engine serves for the app, branded with app.yaml\'s brand: its logo, name, tagline and colours, the conversation front and centre (the widget\'s mountConversation), ways to start, and a number to call. Default: none.'),
       })
       .optional()
       .describe('What a web chat shows beside the lines (a call is unchanged). Default: nothing more.'),

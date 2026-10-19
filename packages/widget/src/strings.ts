@@ -43,6 +43,10 @@ export const DEFAULT_STRINGS = {
   error: 'Something went wrong. Please try again.',
   /** The label of a question's answer buttons (the app's chat.replies), for screen readers. */
   replies: 'Answers',
+  /** The full-size conversation's (mountConversation): its button that starts a new one, and its status while connected or not. */
+  startOver: 'Start over',
+  online: 'Online',
+  offline: 'Offline',
 };
 
 export type WidgetStrings = typeof DEFAULT_STRINGS;

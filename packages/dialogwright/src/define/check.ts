@@ -1,7 +1,8 @@
 import { ROTATING_LINES, rotatesLine } from '../core/wordings';
+import { LOGO_MAX_BYTES, LOGO_TYPES } from '../server/chatPage';
 import { chatProblems, chatVariables } from '../prompts/rich';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handoffPromptId } from '../prompts/render';
 import { VAR } from '../prompts/segments';
@@ -354,6 +355,7 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
       warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
     });
   }
+  problems.push(...chatPageProblems(config, dir, locate));
   chatVariableWarnings(config, (file, path, message, fix) => {
     const at = locate(file, path) ?? { line: 1, column: 1 };
     warnings.push({ file, line: at.line, column: at.column, path: formatPath(path), message, fix });
@@ -1401,6 +1403,29 @@ function checkChatVersions(locale: string | null, prompts: LoadedConfig['prompts
     }
     for (const problem of chatProblems(p.chat)) add(`${line}'s chat version has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
   }
+  return problems;
+}
+
+/**
+ * The chat page's parts in app.yaml (server/chatPage.ts): the brand's logo a file of a type the page shows
+ * (.png, .jpg, .webp, .svg), at most LOGO_MAX_BYTES; the intro in the chat formatting's subset.
+ */
+function chatPageProblems(config: LoadedConfig, dir: string, locate: LoadResult['locate']): Problem[] {
+  const problems: Problem[] = [];
+  const add = (path: (string | number)[], message: string, fix: string): void => {
+    const at = locate('app.yaml', path) ?? { line: 1, column: 1 };
+    problems.push({ file: 'app.yaml', ...at, path: formatPath(path), message, fix });
+  };
+  const logo = config.app.brand?.logo;
+  if (logo !== undefined) {
+    const file = resolve(dir, logo);
+    const type = LOGO_TYPES[extname(logo).toLowerCase()];
+    if (type === undefined) add(['brand', 'logo'], `the logo ${logo} is not a .png, .jpg, .webp or .svg file`, 'give a .png, .jpg, .webp or .svg file');
+    else if (!existsSync(file) || !statSync(file).isFile()) add(['brand', 'logo'], `the logo ${logo} is not a file in the app folder`, 'add the file, or correct the path (from the app folder)');
+    else if (statSync(file).size > LOGO_MAX_BYTES) add(['brand', 'logo'], `the logo ${logo} is ${Math.ceil(statSync(file).size / 1024)} KB, over the ${LOGO_MAX_BYTES / 1024} KB a page serves`, 'make it smaller');
+  }
+  const intro = config.app.chat?.page?.intro;
+  if (intro !== undefined) for (const problem of chatProblems(intro)) add(['chat', 'page', 'intro'], `the chat page's intro has ${problem}`, 'write it with paragraphs, lists (- or 1.), **bold** and *italic* only');
   return problems;
 }
 

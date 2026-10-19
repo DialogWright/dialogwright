@@ -29,6 +29,38 @@
           "description": "The prefix of the console's browser storage keys. Keep it stable and a browser's saved choices survive. Default: the app id.",
           "type": "string",
           "minLength": 1
+        },
+        "tagline": {
+          "description": "A few words under the name on the chat page (chat.page), such as \"Mobile Detailing\". Default: none.",
+          "type": "string",
+          "minLength": 1
+        },
+        "logo": {
+          "description": "The logo the chat page shows above the name: a .png, .jpg, .webp or .svg file in the app folder, at most 512 KB, served at /<app id>/chat/logo. Default: none (the name alone).",
+          "type": "string",
+          "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$)).+$"
+        },
+        "colors": {
+          "description": "The brand's colours, each a hex colour like \"#2f5bd3\": the chat page's, and the console's accent. Default: the engine's.",
+          "type": "object",
+          "properties": {
+            "accent": {
+              "description": "Buttons, the line's mark and the console's mark (\"#2f5bd3\").",
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "background": {
+              "description": "The chat page's background (\"#0d131c\"). Default: the visitor's light or dark scheme.",
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "text": {
+              "description": "The chat page's words, on the background (\"#e9edf2\"). Default: the visitor's light or dark scheme.",
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
@@ -36,7 +68,7 @@
         "mark"
       ],
       "additionalProperties": false,
-      "description": "How the app is named on the operator console and in its browser storage."
+      "description": "How the app is named and looks: on the operator console, in its browser storage, and on its chat page."
     },
     "console": {
       "type": "object",
@@ -950,6 +982,46 @@
             "on",
             "off"
           ]
+        },
+        "page": {
+          "description": "A chat page the engine serves for the app, branded with app.yaml's brand: its logo, name, tagline and colours, the conversation front and centre (the widget's mountConversation), ways to start, and a number to call. Default: none.",
+          "type": "object",
+          "properties": {
+            "serve": {
+              "type": "string",
+              "enum": [
+                "off",
+                "local",
+                "public"
+              ],
+              "description": "Whether the server serves the app's chat page at /<app id>/chat (with CHAT=on and WIDGET=on): \"public\" to anyone who can reach the server, \"local\" on the server's own machine only, \"off\" not at all. The app's CHAT_PAGE setting (in its own settings file) overrides it, such as CHAT_PAGE=off after a demo. A page the app serves itself at that path (code.pages) is served in its place."
+            },
+            "intro": {
+              "description": "A line under the name, in the chat formatting (paragraphs, lists, **bold**, *italic*): what the page is for (\"Book a detail, or check on one you have.\"). Default: none.",
+              "type": "string",
+              "minLength": 1
+            },
+            "starters": {
+              "description": "Ways to start, each a button that sends its words as the person's first message. Default: the labels of the app's forms and informational intents (\"Book a detail\"), at most six.",
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              }
+            },
+            "phone": {
+              "description": "A \"Prefer to talk?\" button that calls a number: the variable holding it (env.<NAME>, an E.164 number), read from the app's settings. Default: none.",
+              "type": "string",
+              "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
+            }
+          },
+          "required": [
+            "serve"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
