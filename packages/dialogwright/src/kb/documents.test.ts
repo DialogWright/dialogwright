@@ -412,7 +412,7 @@ describe('the answer worded from the sections, checked against them', () => {
       // The next turn's state and section questions read it.
       expect(buildTurnState(first.result.session, { text: NEXT, isFinal: true, dtmf: null }, 0).earlierQuestion).toBe(FIRST);
       const questions = slotSpecOf(app, 'libraryTopic').questions({ ...slotContext(first.result.session, NEXT, call(app).t), sections: sectionsOf(app, 'visitor-guide#printing'), earlier: FIRST } as never);
-      expect(String((questions.libraryTopicSection1 as { instructions: string }).instructions)).toMatch(/^Read asr.text and earlierQuestion, the caller's earlier question on this call\. Would this section of the Example Town Library Visitor Guide answer the caller's question, read with their earlier one where it continues it\? Printing and copies: /);
+      expect(String((questions.libraryTopicSection1 as { instructions: string }).instructions)).toMatch(/^Read asr.text, the caller's question\. Would this section of the Example Town Library Visitor Guide answer it\? Only where asr.text cannot be understood on its own \(as "what about for a family\?" cannot\), read it as continuing earlierQuestion, the caller's earlier question on this call\. Printing and copies: /);
       const next = asked(app, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], first.result.session);
       const ack = 'acks' in next.result.decision ? next.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(ack?.vars).toMatchObject({ answerQuestion: NEXT, answerEarlier: FIRST });

@@ -12,7 +12,7 @@ Context, never a second call:
 
 1. **The earlier question is kept.** After an answer from the knowledge base, the session keeps the caller's question (the topic slot's heard words; never words said at a sensitive question): `Session.kbEarlier`, absent in an app that does not read follow-ups.
 2. **Two rankings, merged.** The next question's sections are found for its words alone and for the earlier question with its words, twice as deep, and merged by reciprocal rank fusion (`mergeRanked`). One more local embedding, no model.
-3. **The decision model reads with it, in the same request.** The turn state carries `earlierQuestion`, and each section's question becomes "Read asr.text and earlierQuestion, the caller's earlier question on this call. Would this section of the {document} answer the caller's question, read with their earlier one where it continues it?" Whether the turn is a follow-up is the model's judgment within the reading it already makes: no rule of the engine's decides it.
+3. **The decision model reads with it, in the same request.** The turn state carries `earlierQuestion`, and each section's question becomes "Read asr.text, the caller's question. Would this section of the {document} answer it? Only where asr.text cannot be understood on its own (as "what about for a family?" cannot), read it as continuing earlierQuestion, the caller's earlier question on this call." Whether the turn is a follow-up is the model's judgment within the reading it already makes: no rule of the engine's decides it. The question is the caller's own first, the earlier one only for what cannot stand alone (measured below: a wording that asked the model to read the two together cost the questions that stand alone).
 4. **The wording, the drift judge and the lines picker are given it** (`answer.earlier`), with instructions that name it, so the answer and its check are about what the follow-up continues.
 5. **Off by default** (kb.yaml `documents.followUps: on`): without it, or without an earlier question, every request is word for word what it was, and every recording replays.
 
@@ -28,6 +28,20 @@ Context, never a second call:
 | Merged, the words weighted 1.2 | 78.6% | 97.5% |
 
 Joining finds every follow-up and costs a fifth of the questions that stand alone; merging keeps them where they were. On the same booklet by keywords and meaning (hybrid), the single questions fell a little (93.4% to 92.6%; by keywords alone 83.5% to 80.0%): each app measures its own before turning it on.
+
+## Measured with the decision model
+
+The booklet's demo, recorded against the decision model: the 42 follow-ups as calls of two questions, and 24 calls of an unrelated question then one that stands alone (each the second turn's answer: its sections, or the not-found reply).
+
+| | Off | On, "read with their earlier one" | On, the caller's question first (the decision) |
+|---|---|---|---|
+| Follow-ups answered from a right section | 21 of 42 | 33 | **34** |
+| Follow-ups found nothing | 7 | 5 | **2** |
+| Follow-ups answered from another section | 14 | 4 | 6 |
+| Questions on their own answered from a right section | 18 of 24 | **8** | **18** |
+| Questions on their own found nothing | 4 | 11 | 4 |
+
+The first wording asked the model to read the two questions together, and every section's reading of a question that stands alone fell (0.15 to 0.4 lower): the second turn of 10 of 24 calls found nothing. Reading the caller's question first, and the earlier one only where the question cannot be understood without it, kept those questions exactly where they were (the same answers on 24 of 24) and answered more follow-ups. Retrieval took 3 ms more on such a turn (median 7 ms, on a laptop), the decision model's request the same (median 120 ms either way): no second request.
 
 ## Not now
 
