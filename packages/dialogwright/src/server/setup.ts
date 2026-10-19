@@ -509,16 +509,14 @@ async function wizard(flags: Flags, io: SetupIo, interactive: boolean, root: str
     })();
     sections.push(
       {
-        comment: ['This computer only: nothing public reaches localhost, so no carrier calls it and its secret is never used.'],
+        comment: ['This computer only: nothing public reaches localhost, so no phone line (VOICE_PROVIDERS=none): the web chat and the console.'],
         lines: [
           { name: 'PUBLIC_HOST', value: 'localhost' },
           { name: 'PORT', value: port },
-          { name: 'VOICE_PROVIDERS', value: 'twilio' },
-          { name: 'TWILIO_AUTH_TOKEN', value: 'not-used-on-a-laptop' },
-          { name: 'SIGNATURE_CHECK', value: 'on' },
+          { name: 'VOICE_PROVIDERS', value: 'none' },
         ],
       },
-      { comment: ['Where a call goes when the caller wants a person (E.164).'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
+      { comment: ['Where a call goes when the caller wants a person (E.164), once the app has a phone line; a chat\'s handoff goes to the page.'], lines: [{ name: 'HANDOFF_NUMBER', value: handoff }] },
       ...numberSections,
       mode === 'model'
         ? { comment: ['The decision model, which reads what callers say. The regression records the app against it (regress --client record).'], lines: modelLines }

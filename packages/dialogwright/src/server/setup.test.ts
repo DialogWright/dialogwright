@@ -127,15 +127,15 @@ describe('pnpm configure, answering its questions', () => {
     const env = settings(join(w.dir('alpha'), '.env'));
     expect(env).toMatchObject({
       PUBLIC_HOST: 'localhost',
-      VOICE_PROVIDERS: 'twilio',
-      SIGNATURE_CHECK: 'on',
+      VOICE_PROVIDERS: 'none',
       HANDOFF_NUMBER: '+15555550123',
       JEV_CLIENT: 'heuristic',
       CHAT: 'on',
       CHAT_ALLOWED_ORIGINS: 'http://localhost:3000',
     });
-    // A carrier secret the laptop never uses, since nothing public reaches it.
-    expect(env.TWILIO_AUTH_TOKEN).toBe('not-used-on-a-laptop');
+    // No phone line, so no carrier's secret: nothing public reaches a laptop.
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined();
+    expect(env.SIGNATURE_CHECK).toBeUndefined();
     expect(o.lines.join('\n')).toContain('http://localhost:3000/dashboard');
     expect(o.lines.join('\n')).toContain('pnpm --filter @example/alpha cli --client heuristic');
   });
@@ -173,8 +173,9 @@ describe('pnpm configure, a decision model and no phone line (to record the app)
     expect(mode(file)).toBe(0o600);
     const env = settings(file);
     expect(env).toMatchObject({ PUBLIC_HOST: 'localhost', HANDOFF_NUMBER: '+15555550123', JEV_CLIENT: 'jev', JEV_PROVIDER: 'typesafe', TYPESAFE_API_KEY: MODEL_KEY, CHAT: 'on' });
-    // No carrier of its own: the laptop's placeholder, which nothing public ever checks.
-    expect(env.TWILIO_AUTH_TOKEN).toBe('not-used-on-a-laptop');
+    // No carrier: no phone line on a laptop.
+    expect(env.VOICE_PROVIDERS).toBe('none');
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined();
     expect(env.TELNYX_PUBLIC_KEY).toBeUndefined();
     expect(prompt.asked.filter((a) => a.secret).map((a) => a.question)).toEqual([expect.stringContaining('TypeSafe key')]);
     // The model's question offers no "none": this mode is for a model.

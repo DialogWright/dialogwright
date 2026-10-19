@@ -404,7 +404,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
   } else {
     const carriers = config.voiceProviders.map((id) => id.charAt(0).toUpperCase() + id.slice(1)).join(', ');
-    log(`clips: off (every prompt spoken by the carrier's TTS voice: ${carriers})`);
+    log(carriers === '' ? 'clips: off (no phone line)' : `clips: off (every prompt spoken by the carrier's TTS voice: ${carriers})`);
   }
   const noInputMs = overrides.noInputMs ?? config.noInputMs;
   log(noInputMs > 0 ? `no-input: ${noInputMs} ms after playback (${durations.size} clip durations)` : 'no-input: off');
@@ -1373,7 +1373,7 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     const base = publicBase(config, running.port);
     const webhooks = config.voiceProviders.map((id) => `${base}/voice/${id}`).join(', ');
     const legacy = config.voiceProviders.includes('twilio') ? ' (Twilio also on /voice)' : '';
-    console.log(`[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
+    console.log(config.voiceProviders.length === 0 ? `[server] listening on ${running.port}; no phone line (VOICE_PROVIDERS=none): the web chat alone` : `[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
     const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
     if (running.bus) console.log(config.consoleAuth ? `[server] console ${base}/dashboard (sign in: pnpm console:link prints a link)` : `[server] console ${consoleBase}/dashboard`);
     for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);

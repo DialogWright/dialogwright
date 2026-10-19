@@ -183,7 +183,7 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     results.push({ id: 'config', status: 'fail', message: e instanceof Error ? e.message : String(e), fix: 'fix it in the settings file (pnpm configure writes one)' });
     return results;
   }
-  const summary = `port ${config.port}, ${config.voiceProviders.join(' and ')}, JEV_CLIENT ${config.jevClient}`;
+  const summary = `port ${config.port}, ${config.voiceProviders.length === 0 ? 'no phone line (the web chat alone)' : config.voiceProviders.join(' and ')}, JEV_CLIENT ${config.jevClient}`;
   results.push(
     quick
       ? { id: 'config', status: 'warn', message: `config loads (${summary}), but PUBLIC_HOST is not set: pnpm start --tunnel quick sets it each run, a new hostname every time`, fix: "for a hostname that stays, set PUBLIC_HOST to a named tunnel's or your own domain's" }
@@ -257,7 +257,9 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   }
 
   // 4. The carriers' secrets.
-  if (laptop) {
+  if (config.voiceProviders.length === 0) {
+    results.push({ id: 'carrier', status: 'skip', message: 'VOICE_PROVIDERS is none: no phone line, so no carrier secret is needed' });
+  } else if (laptop) {
     results.push({ id: 'carrier', status: 'skip', message: `PUBLIC_HOST is ${host}: no carrier reaches a laptop` });
   } else {
     const said: string[] = [];
@@ -299,9 +301,11 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
     );
   }
 
-  // 6. The handoff number.
+  // 6. The handoff number (none needed without a phone line: a chat's handoff goes to the page).
   results.push(
-    FICTIONAL.test(config.handoffNumber)
+    config.handoffNumber === ''
+      ? { id: 'handoff', status: 'skip', message: 'HANDOFF_NUMBER unset: no phone line, so a handoff goes to the chat page (the widget\'s onTransfer)' }
+      : FICTIONAL.test(config.handoffNumber)
       ? { id: 'handoff', status: 'warn', message: `HANDOFF_NUMBER ${config.handoffNumber} is a 555 number: calls handed off will go nowhere`, fix: 'set it to a phone a person answers' }
       : { id: 'handoff', status: 'ok', message: `HANDOFF_NUMBER ${config.handoffNumber}` },
   );
@@ -880,8 +884,9 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
         ? { id: 'variables', status: 'ok', message: `host.yaml's services.${name} reads ${variable}: set, ${parsed.host}` }
         : { id: 'variables', status: 'warn', message: `host.yaml's services.${name} reads ${variable}, which is ${url ? 'not an http(s) URL' : 'not set'}: the service's requests are answered with no result`, fix: `set ${variable} to the service's URL in the app's own settings file` }));
     }
-    // With several apps, one with no transfer targets and no HANDOFF_NUMBER of its own hands off to the server's.
-    if (host.apps.length > 1 && !hasTransfer(app.dir) && !read.own.includes('HANDOFF_NUMBER')) {
+    // With several apps, one with no transfer targets and no HANDOFF_NUMBER of its own hands off to the server's
+    // (on a phone line: with none, VOICE_PROVIDERS=none, a handoff goes to the chat page).
+    if (host.apps.length > 1 && server?.voiceProviders.length !== 0 && !hasTransfer(app.dir) && !read.own.includes('HANDOFF_NUMBER')) {
       out.push(tag({ id: 'handoff', status: 'warn', message: 'no transfer targets and no HANDOFF_NUMBER of its own: its handoffs go to the server\'s HANDOFF_NUMBER', fix: 'set HANDOFF_NUMBER in the app\'s own settings file, or give it transfer targets (app.yaml)' }));
     }
     if (signIn) {

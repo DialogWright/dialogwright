@@ -339,8 +339,23 @@ describe('voice providers', () => {
 
   it('refuses an unknown provider and an empty list', () => {
     expect(() => loadConfig({ ...base, VOICE_PROVIDERS: 'twilio,acme' })).toThrow('VOICE_PROVIDERS must name providers from twilio, telnyx, got "acme"');
-    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ' ' })).toThrow('VOICE_PROVIDERS must name at least one provider');
-    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ',' })).toThrow('VOICE_PROVIDERS must name at least one provider');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ' ' })).toThrow('VOICE_PROVIDERS must name at least one provider, or be none (the web chat alone)');
+    expect(() => loadConfig({ ...base, VOICE_PROVIDERS: ',' })).toThrow('VOICE_PROVIDERS must name at least one provider, or be none (the web chat alone)');
+  });
+
+  it('takes none: a server of the web chat alone, with no carrier secret and the handoff number optional, and needs CHAT=on', () => {
+    const chat = { PUBLIC_HOST: 'chat.example.com', VOICE_PROVIDERS: 'none', CHAT: 'on', CHAT_ALLOWED_ORIGINS: 'https://www.example.com' };
+    const c = loadConfig(chat);
+    expect(c.voiceProviders).toEqual([]);
+    expect(c.providerSecrets).toEqual({});
+    expect(c.handoffNumber).toBe('');
+    expect(describeConfig(c)).toContain('voice providers none (the web chat alone)');
+    expect(describeConfig(c)).toContain('handoff none (no phone line)');
+    expect(loadConfig({ ...chat, HANDOFF_NUMBER: '+15551234567' }).handoffNumber).toBe('+15551234567');
+    expect(() => loadConfig({ ...chat, HANDOFF_NUMBER: '555-1234' })).toThrow('HANDOFF_NUMBER must be an E.164 number');
+    const { CHAT: _c, ...noChat } = chat;
+    expect(() => loadConfig(noChat)).toThrow('VOICE_PROVIDERS=none serves no phone line, so the server needs CHAT=on (the web chat)');
+    expect(() => loadConfig({ ...chat, VOICE_PROVIDERS: 'none,twilio' })).toThrow('VOICE_PROVIDERS is none (no phone line) or a list of providers, never both');
   });
 
   it('describes the providers, and each secret by its length only', () => {

@@ -8,7 +8,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 
 | Choice | Where it is set | Default | When to choose otherwise |
 |---|---|---|---|
-| Which carriers answer | `VOICE_PROVIDERS` (env), a comma list of `twilio`, `telnyx` | `twilio` | Add `telnyx` to answer Telnyx numbers too, or name it alone. |
+| Which carriers answer | `VOICE_PROVIDERS` (env), a comma list of `twilio`, `telnyx`, or `none` | `twilio` | Add `telnyx` to answer Telnyx numbers too, or name it alone. `none` is a server of the web chat alone: no phone line, no carrier's secret, `HANDOFF_NUMBER` optional (a chat's handoff goes to the page), and `CHAT=on` required. `pnpm configure` writes it for this computer. |
 | A carrier's secret | `TWILIO_AUTH_TOKEN`, `TELNYX_PUBLIC_KEY` (env) | none; required for a listed carrier only | Always, for each carrier listed. The Telnyx key is the account's base64 Ed25519 public key. |
 | Webhook signatures | `SIGNATURE_CHECK` (env), `on` or `off` | `on` | `off` only to post webhooks by hand on a laptop. |
 | Twilio's voice | `TTS_PROVIDER` and `TTS_VOICE` (env), set together | Twilio's default voice | To choose the voice of the app's default locale on Twilio (`Google`, `en-US-Neural2-F`). |

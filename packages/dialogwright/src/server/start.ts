@@ -156,7 +156,8 @@ export async function main(argv: readonly string[], deps: StartDeps): Promise<nu
     deps.out(e instanceof Error ? e.message : String(e));
     return 1;
   }
-  const carriers = (settings.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  // The carriers whose webhooks to print; none for VOICE_PROVIDERS=none (the web chat alone).
+  const carriers = (settings.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter((s) => s !== '' && s !== 'none');
   say(`${target.name}, settings from ${files.join(', ')}`);
 
   // The stop handler goes in before anything is started: a Ctrl-C while the tunnel opens stops cloudflared

@@ -68,10 +68,12 @@ export interface ServerConfig {
   /**
    * VOICE_PROVIDERS, default `twilio`: the carriers this deployment answers, by id (server/voice/registry.ts),
    * each on `/voice/<id>`, `/cr-action/<id>` and `/conversation/<id>`. The unprefixed paths are Twilio's.
+   * Empty for `none`: a server of the web chat alone (CHAT=on), with no phone line and no carrier's secret.
    */
   voiceProviders: readonly string[];
   /** Each enabled carrier's secret, by id: TWILIO_AUTH_TOKEN for twilio, TELNYX_PUBLIC_KEY for telnyx. Required only for an enabled carrier. */
   providerSecrets: Readonly<Record<string, string>>;
+  /** HANDOFF_NUMBER: where a call is put through to a person. The empty string with VOICE_PROVIDERS=none, where it is optional (a chat's handoff goes to the page). */
   handoffNumber: string;
   jevClient: ClientKind;
   /**
@@ -624,10 +626,14 @@ function timeZone(env: Env): string {
   return raw;
 }
 
-/** VOICE_PROVIDERS as ids, trimmed, lower-cased and without repeats; default Twilio alone. */
+/** VOICE_PROVIDERS as ids, trimmed, lower-cased and without repeats; default Twilio alone; none for `none` (a chat-only server). */
 function voiceProvidersOf(env: Env): string[] {
   const ids = (env.VOICE_PROVIDERS ?? 'twilio').split(',').map((s) => s.trim().toLowerCase()).filter((s) => s !== '');
-  if (ids.length === 0) throw new Error('VOICE_PROVIDERS must name at least one provider');
+  if (ids.length === 0) throw new Error('VOICE_PROVIDERS must name at least one provider, or be none (the web chat alone)');
+  if (ids.includes('none')) {
+    if (ids.length > 1) throw new Error(`VOICE_PROVIDERS is none (no phone line) or a list of providers, never both: got "${env.VOICE_PROVIDERS}"`);
+    return [];
+  }
   for (const id of ids) {
     if (!KNOWN_VOICE_PROVIDERS.includes(id)) throw new Error(`VOICE_PROVIDERS must name providers from ${KNOWN_VOICE_PROVIDERS.join(', ')}, got "${id}"`);
   }
@@ -652,8 +658,9 @@ export function loadConfig(env: Env): ServerConfig {
   if (/[/?:]/.test(publicHost)) throw new Error(`PUBLIC_HOST must be a bare hostname, got "${publicHost}"`);
   const voiceProviders = voiceProvidersOf(env);
   const providerSecrets = providerSecretsOf(env, voiceProviders);
-  const handoffNumber = required(env, 'HANDOFF_NUMBER');
-  if (!/^\+\d{8,15}$/.test(handoffNumber)) throw new Error(`HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${handoffNumber}"`);
+  // With no phone line a handoff number is optional: a chat's handoff goes to the page (its onTransfer).
+  const handoffNumber = voiceProviders.length === 0 && !env.HANDOFF_NUMBER?.trim() ? '' : required(env, 'HANDOFF_NUMBER');
+  if (handoffNumber !== '' && !/^\+\d{8,15}$/.test(handoffNumber)) throw new Error(`HANDOFF_NUMBER must be an E.164 number like +15551234567, got "${handoffNumber}"`);
   const port = integer(env, 'PORT', 3000);
   if (port < 0 || port > 65535) throw new Error(`PORT must be between 0 and 65535, got "${env.PORT}"`);
   const jevClientRaw = env.JEV_CLIENT ?? 'stub';
@@ -703,6 +710,7 @@ export function loadConfig(env: Env): ServerConfig {
   }
   const telnyxEvents = telnyxEventTokens.length > 0 ? telnyxEventTokens.join(' ') : null;
   const chat = chatOf(env, publicHost);
+  if (voiceProviders.length === 0 && chat === undefined) throw new Error('VOICE_PROVIDERS=none serves no phone line, so the server needs CHAT=on (the web chat): set CHAT=on, or name a provider in VOICE_PROVIDERS');
   const widget = widgetOf(env);
   const consoleAuth = consoleAuthOf(env, dash === 'on');
   return {
@@ -1085,10 +1093,10 @@ export function describeConfig(c: ServerConfig): string {
   return [
     `port ${c.port}`,
     `public host ${c.publicHost}`,
-    `handoff ${c.handoffNumber}`,
+    `handoff ${c.handoffNumber === '' ? 'none (no phone line)' : c.handoffNumber}`,
     `client ${c.jevClient}`,
     `api key ${mask(c.jevProvider?.apiKey ?? null)}`,
-    `voice providers ${c.voiceProviders.join(', ')}`,
+    `voice providers ${c.voiceProviders.length === 0 ? 'none (the web chat alone)' : c.voiceProviders.join(', ')}`,
     ...c.voiceProviders.map((id) => `${secretLabelOf(id)} ${mask(c.providerSecrets[id] ?? null)}`),
     `signature check ${c.signatureCheck ? 'on' : 'OFF'}`,
     `today ${c.todayOverride ?? 'wall clock'}`,
