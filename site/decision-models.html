@@ -130,21 +130,18 @@
         <h2 id="asking-title">How DialogWright asks one</h2>
         <p>
           Each turn, the engine sends the caller's words, the state of the call and every question the moment needs,
-          in one request. The model answers them together, and none sees another's answer. The questions come from
-          three places:
+          in one request. The model answers them together; none sees another's answer.
         </p>
-        <ul>
-          <li><strong>The intents.</strong> One choice over everything a caller can ask for, each option described by its <code>criteria</code> in <code>intents.yaml</code>.</li>
-          <li><strong>The slots.</strong> Each slot type asks its own: whether a value was given, which part of the words it is, whether it is complete, which option was meant.</li>
-          <li><strong>The engine's own checks.</strong> Whether the caller is talking to the line, whether the words could be made out, whether they finished, whether they want a person, how frustrated or urgent they are, whether they switched language, and a screen for an attempt to steer the agent.</li>
+        <ul class="minis">
+          <li><strong>The intents</strong>One choice over everything a caller can ask for, each option described by its <code>criteria</code>.</li>
+          <li><strong>The slots</strong>Each slot type asks its own: was a value given, which words, which option.</li>
+          <li><strong>The engine's own checks</strong>Talking to the line? Understood? Finished? Wants a person? Frustrated, urgent, another language, an attempt to steer it?</li>
         </ul>
-        <p>
-          On a turn of the front desk, that is about 20 questions. A second request is made only in a narrow case: a
-          question for the knowledge base asked in the middle of a task, whose topic is asked once the turn has been
-          read as one. A generated line's checks are asked after it is worded. Each request has a budget,
-          <code>JEV_TIMEOUT_MS</code> (1500 ms by default), with one retry inside it; a turn the model never answers
-          gets the slow-turn line, and is handed to a person if it fails again.
-        </p>
+        <ul class="stats">
+          <li><b>~20</b><span>questions on a turn of the front desk, in one request</span></li>
+          <li><b>1500 ms</b><span>a request's budget (<code>JEV_TIMEOUT_MS</code>), one retry inside it; then the slow-turn line</span></li>
+          <li><b>1</b><span>more request, only for a knowledge question asked in the middle of a task</span></li>
+        </ul>
         <figure class="wrapped">
           <figcaption>An intent's criteria, sent to the model as written: <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/intents.yaml">apps/secretary/intents.yaml</a> (excerpt)</figcaption>
 <pre data-from="apps/secretary/intents.yaml"><code>  urgent:
@@ -178,12 +175,14 @@
       <section id="gaps" aria-labelledby="gaps-title">
         <h2 id="gaps-title">Known gaps</h2>
         <p>
-          A known gap is a line where the real model, in a recorded run, reads a borderline case differently from what
-          the caller meant. Almost all are short: a single word, a fragment, a bare name. Each is tagged in its app's
-          corpus with the reason and the outcome the model is known to produce, and none of the current ones leads to a
-          wrong action: each ends in a re-ask, a reasonable different question, or a person. The usual fix is the
-          question's words or a rule of context in code, not a different model.
+          A line where the real model, in a recorded run, reads a borderline case differently from what the caller meant.
         </p>
+        <ul class="minis">
+          <li><strong>Almost all are short</strong>A single word, a fragment, a bare name.</li>
+          <li><strong>None leads to a wrong action</strong>Each ends in a re-ask, a reasonable different question, or a person.</li>
+          <li><strong>Tagged and tracked</strong>Each sits in its app's corpus with its reason and the outcome the model gives.</li>
+          <li><strong>Fixed in the question</strong>Its words, or a rule of context in code; not a different model.</li>
+        </ul>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/known-gaps.md">The known gaps</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md#174-a-score-near-05-is-a-coin-toss-suspect-the-question-first">A score near 0.5: suspect the question first</a>
@@ -192,17 +191,11 @@
 
       <section id="jev" aria-labelledby="jev-title">
         <h2 id="jev-title">Jev, the default</h2>
-        <p>
-          The default decision model is Jev, TypeSafe's System One model (<code>jev-1.13</code>). It is reached
-          through TypeSafe, the default, or through OpenRouter or the Vercel AI Gateway, which serve the same model.
-          The engine's thresholds were measured on Jev, and every example app is recorded against it.
-        </p>
-        <p>
-          The perceiver is pluggable. Any model that speaks the same System One API (a state, typed questions, typed
-          answers) can take Jev's place. Its probabilities are not calibrated like Jev's, so a run on one says so at
-          start, its answers are recorded into a cassette of their own, and the app's thresholds are checked against
-          that recording before they are trusted.
-        </p>
+        <ul class="minis">
+          <li><strong>TypeSafe's System One model</strong><code>jev-1.13</code>, through TypeSafe, OpenRouter or the Vercel AI Gateway.</li>
+          <li><strong>Measured on it</strong>The engine's thresholds, and every example app's recordings.</li>
+          <li><strong>Pluggable</strong>Any model that speaks the System One API can take its place: recorded into its own cassette, its thresholds checked before they are trusted.</li>
+        </ul>
       </section>
 
       <section id="measured" aria-labelledby="measured-title">
@@ -211,11 +204,12 @@
           A decision model writes no text, only a few probabilities, so a turn pays almost only for reading it. From
           the maintainer's recordings on 2026-10-14:
         </p>
-        <ul>
-          <li><strong>Speed.</strong> A turn's batch of about 20 questions was answered in about 90 to 150 ms at the median (p50), and about 150 to 250 ms at p95.</li>
-          <li><strong>Cost.</strong> A recorded run of 309 requests to Jev, the front desk's recording, cost about $0.046: about $0.00015 a turn.</li>
-          <li>Microsoft-Decision-1's public price has no charge for output.</li>
+        <ul class="stats">
+          <li><b>90–150 ms</b><span>a turn's ~20 questions answered, at the median (p50)</span></li>
+          <li><b>150–250 ms</b><span>the same, at p95</span></li>
+          <li><b>$0.00015</b><span>a turn: 309 requests to Jev for about $0.046, the front desk's recording</span></li>
         </ul>
+        <p class="note">Microsoft-Decision-1's public price has no charge for output.</p>
       </section>
 
       <section id="judge" aria-labelledby="judge-title">

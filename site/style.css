@@ -399,3 +399,46 @@ pre.answers .q { color: var(--term-prompt); }
 .guide figure { max-width: 100%; }
 pre.answers { font-size: 0.8rem; }
 .guide table.settings th[scope="row"] code { overflow-wrap: normal; white-space: nowrap; }
+/* A process in steps: numbered tiles, a row of three (or six) from a laptop's width. */
+.flow { list-style: none; counter-reset: flow; display: grid; gap: 0.75rem; padding: 0; margin: 0 0 2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.flow li { counter-increment: flow; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem 0.9rem; }
+.flow li strong { display: flex; align-items: center; gap: 0.5rem; color: var(--heading); margin-bottom: 0.25rem; }
+.flow li strong::before {
+  content: counter(flow); flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; background: var(--button-bg); color: var(--button-text);
+}
+.flow li span { color: var(--muted); font-size: 0.95rem; line-height: 1.45; display: block; }
+.flow li.last strong::before { background: var(--accent); }
+/* Measured numbers: a big figure over what it counts. */
+.stats { list-style: none; display: grid; gap: 0.75rem; padding: 0; margin: 0 0 2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.stats li { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 10px; padding: 0.85rem 1rem 0.9rem; }
+.stats b { display: block; font-size: clamp(1.6rem, 1.3rem + 1vw, 2.1rem); line-height: 1.1; color: var(--heading); letter-spacing: -0.01em; }
+.stats span { display: block; color: var(--muted); font-size: 0.92rem; line-height: 1.4; margin-top: 0.35rem; }
+/* Short facts in cards of three, a title over a line. */
+.minis { list-style: none; display: grid; gap: 0.75rem; padding: 0; margin: 0 0 2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.minis li { border-left: 3px solid var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; color: var(--muted); font-size: 0.97rem; line-height: 1.45; }
+.minis li strong { display: block; color: var(--heading); }
+/* A bar chart, drawn in the page's own tokens. */
+.chart { margin: 0 0 2rem; max-width: 36rem; }
+.chart svg { display: block; width: 100%; height: auto; font-family: var(--sans); }
+.ch-before { fill: var(--line); }
+.ch-after { fill: var(--accent); }
+.ch-label { fill: var(--text); font-size: 13px; }
+.ch-value { fill: var(--heading); font-size: 13px; font-weight: 700; }
+.ch-note { fill: var(--muted); font-size: 12px; }
+.ch-axis { stroke: var(--line); stroke-width: 1; }
+@media (min-width: 900px) { .code-grid.even { grid-template-columns: 1fr 1fr; } }
+/* A screenshot beside what it shows: side by side from a laptop's width. */
+.showcase { display: grid; gap: 1.5rem 2.5rem; align-items: start; margin: 0 0 2rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .showcase { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
+.showcase .minis { grid-template-columns: minmax(0, 1fr); margin: 0; }
+.shot { margin: 0; }
+.shot img { border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25); }
+.shot figcaption { margin: 0.6rem 0 0; }
+/* Four figures: one column on a phone, two by two, then a row of four; never three and one. */
+.stats.four { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .stats.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .stats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.flow.four { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .flow.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .flow.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

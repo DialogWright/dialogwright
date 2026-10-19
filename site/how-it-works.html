@@ -240,13 +240,14 @@ apps/utility: ok</code></pre>
         <div class="callout">
           <h3>We tried it</h3>
           <p>
-            Two fresh assistants, with no context from the people who built the framework, were each given one
-            paragraph (a fictional electric utility, a fictional transit agency) and told to use the skill. Each built
-            a working app, in about 15 and 11 minutes by their own count, with <code>pnpm check</code> and the scripted
-            calls green. Both caught the same real hole in their own policy by reading the policy matrix: a delegate
-            could have had a one-time code texted to someone else's phone. The engine now refuses that for every app.
-            Every stumble they logged was fixed or recorded with its reason.
+            Two fresh assistants, with no context from us, were each given one paragraph (a fictional electric utility,
+            a fictional transit agency) and told to use the skill.
           </p>
+          <ul class="stats">
+            <li><b>15 and 11 min</b><span>to a working app, by their own count, check and scripted calls green</span></li>
+            <li><b>1 real hole</b><span>found by both in the policy matrix: a code texted to someone else's phone. Now refused for every app</span></li>
+            <li><b>Every stumble</b><span>they logged, fixed or recorded with its reason</span></li>
+          </ul>
           <p><a href="https://github.com/DialogWright/dialogwright/blob/main/docs/trials/README.md">Read the trials and their logs</a></p>
         </div>
       </section>
@@ -332,49 +333,76 @@ apps/utility: ok</code></pre>
       <section id="knowledge" aria-labelledby="knowledge-title">
         <h2 id="knowledge-title">Answers from a knowledge base</h2>
         <p>
-          Callers ask questions a document answers: is this covered, how long do I have, are you open on Saturday.
-          An app answers them from a knowledge base in its folder: topics, and for each a passage written from a
-          section of a source document, which a person has read against that section and approved. Nothing is said
-          that no one approved: a passage whose source changes, or that is edited after its approval, is withheld
-          until a person approves it again.
+          Callers ask what a document answers. Nothing is said that a person has not approved, and you choose, topic by
+          topic, how much a model may word.
         </p>
-        <figure class="wrapped">
-          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/passages/deadline-adv-2026.yaml">apps/harbor/kb/passages/deadline-adv-2026.yaml</a> (excerpt): a passage, its source section and its approval</figcaption>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead><tr><th scope="col">Level</th><th scope="col">The caller hears</th><th scope="col">If a check fails</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Prescribed <span class="note">(the default)</span></th><td data-label="The caller hears">The approved passage, word for word</td><td data-label="If a check fails">Nothing to check</td></tr>
+              <tr><th scope="row">Worded for the question <code>risk: low</code></th><td data-label="The caller hears">The passage, worded for what was asked</td><td data-label="If a check fails">The passage, word for word</td></tr>
+              <tr><th scope="row">From approved documents <code>documents</code></th><td data-label="The caller hears">An answer written from the approved sections</td><td data-label="If a check fails">The document's own lines, under their heading</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>How a generated answer stays grounded</h3>
+        <ol class="flow">
+          <li><strong>Find</strong><span>An embedding model on your own machine offers the closest sections. No API call.</span></li>
+          <li><strong>Read</strong><span>The decision model answers yes or no for each: would it answer the question?</span></li>
+          <li><strong>Write</strong><span>A model words the answer from the chosen sections alone.</span></li>
+          <li><strong>Check</strong><span>Code refuses any figure the sections do not contain.</span></li>
+          <li><strong>Judge</strong><span>The decision model refuses an answer that adds, changes or drops anything.</span></li>
+          <li class="last"><strong>Fall back</strong><span>Refused again: the document's own lines, word for word.</span></li>
+        </ol>
+        <h3>Measured on Harbor Mutual's member line</h3>
+        <ul class="stats four">
+          <li><b>95.8%</b><span>the right topic found, on 120 questions it never saw</span></li>
+          <li><b>97.5%</b><span>the right handbook section offered, on 80 held-out questions</span></li>
+          <li><b>20 of 20</b><span>unfaithful answers refused by the judge</span></li>
+          <li><b>20 of 20</b><span>faithful answers passed by the judge</span></li>
+        </ul>
+        <h3>Follow-up questions</h3>
+        <p>
+          "What about for a family?" after "what's my deductible?" is read with the earlier question, with no second
+          model call. An option, measured per app with <code>pnpm kb:bakeoff --follow-ups</code>.
+        </p>
+        <figure class="chart">
+          <svg viewBox="0 0 420 232" role="img" aria-labelledby="fu-title fu-desc">
+            <title id="fu-title">Follow-up questions, read alone and read with the earlier question</title>
+            <desc id="fu-desc">On a 123-page benefit booklet, against the decision model: follow-ups answered from a right section went from 21 of 42 to 38 of 43; follow-ups that found nothing went from 7 of 42 to none of 43; questions that stand alone were answered right 18 of 24 times either way.</desc>
+            <rect class="ch-before" x="0" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="18" y="12">Each question read alone</text>
+            <rect class="ch-after" x="190" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="208" y="12">With the earlier one</text>
+            <text class="ch-label" x="0" y="44">Follow-ups answered right</text>
+            <rect class="ch-before" x="0" y="52" width="165" height="14" rx="3"/><text class="ch-value" x="171" y="63">21 of 42</text>
+            <rect class="ch-after" x="0" y="70" width="292" height="14" rx="3"/><text class="ch-value" x="298" y="81">38 of 43</text>
+            <text class="ch-label" x="0" y="116">Follow-ups that found nothing</text>
+            <rect class="ch-before" x="0" y="124" width="55" height="14" rx="3"/><text class="ch-value" x="61" y="135">7 of 42</text>
+            <rect class="ch-after" x="0" y="142" width="3" height="14" rx="1"/><text class="ch-value" x="9" y="153">none</text>
+            <text class="ch-label" x="0" y="188">Questions that stand alone</text>
+            <rect class="ch-before" x="0" y="196" width="248" height="14" rx="3"/><text class="ch-value" x="254" y="207">18 of 24</text>
+            <rect class="ch-after" x="0" y="214" width="248" height="14" rx="3"/><text class="ch-value" x="254" y="225">18 of 24</text>
+          </svg>
+          <figcaption>On a 123-page benefit booklet, against the decision model. The questions that stand alone gave the same answers either way.</figcaption>
+        </figure>
+        <ul class="minis">
+          <li><strong>Withheld when it changes</strong>A passage whose source changes, or that is edited, waits for a person to approve it again.</li>
+          <li><strong>Depends on who is asking</strong>A passage applies by facts read from the system of record, never from what the caller said.</li>
+          <li><strong>Gaps ranked</strong><code>pnpm kb:gaps</code> ranks what callers asked that nothing answered, with the section that would.</li>
+          <li><strong>Runs anywhere, offline too</strong>Where the model's native runtime can't load, it runs on WebAssembly from the local cache.</li>
+        </ul>
+        <div class="code-grid even">
+          <figure class="wrapped">
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/passages/deadline-adv-2026.yaml">A passage</a>, its source and its approval</figcaption>
 <pre data-from="apps/harbor/kb/passages/deadline-adv-2026.yaml"><code>topic: filing_deadline
 applies: { plan: advantage }
 source: { document: accident-advantage-member-guide-2026, section: "1 Filing a claim" }
 answer: "You have 180 days from the date of your accident to tell us about a claim. You can file it in the member portal, in the Harbor Mutual app, or by calling member services, and you'll need the date of the accident, a short description of what happened, and the bills or a statement from the doctor who treated you. Claims sent after 180 days may still be reviewed, but payment isn't guaranteed, so it's best to file as soon as you can. You can send any documents you don't have yet later."
 approval:
   owner: Benefits Content</code></pre>
-        </figure>
-        <ul>
-          <li><strong>Found on your own machine.</strong> Retrieval matches the caller's words to the topics by their keywords and by their meaning, with a small embedding model that runs locally, with no API call. Its settings are chosen offline, on paraphrases the topics have never seen: Harbor Mutual finds the right topic among the first eight for 95.8% of 120 of them. A larger model can be pinned for long documents; where its native runtime has no build for the machine, or a restarted server cannot reach the model's repository, the same files run on WebAssembly from the local cache.</li>
-          <li><strong>The decision model chooses; it never writes.</strong> It is asked which of the topics found the caller asked about, whether they asked something none of them answers, or nothing yet. A question nothing answers is told so, in the app's own words, with what can be asked.</li>
-          <li><strong>Three levels, chosen topic by topic.</strong> <em>Prescribed:</em> an answer is its approved passage, word for word. <em>Worded, with a prescribed fallback:</em> where the app marks the topic <code>risk: low</code>, the passage may be worded for what the caller asked, held to the passage by the same checks and judge as any generated line, and the passage is said whenever a check fails or the wording is late. <em>Generated from approved documents:</em> where no topic answers, a model writes the answer from the sections of documents a person approved for summarizing, and when a check fails the caller hears the document's own lines that answer the question, word for word, under their section's heading. Past a line's budget the caller hears a hold line first.</li>
-          <li><strong>Grounded in the documents.</strong> For an answer from documents, the decision model reads each section retrieval offers and answers one yes-or-no question for each: would it answer the caller's question? A model words the answer from the chosen sections alone; code refuses any figure the sections do not contain, and the drift judge refuses an answer that adds, changes or drops anything that bears on the question. On Harbor Mutual's member handbook the right section is offered for 97.5% of 80 held-out questions, and the judge refused all 20 unfaithful answers in its labelled set and passed all 20 faithful ones.</li>
-          <li><strong>Follow-up questions.</strong> "What about for a family?" after "what's my deductible?" is read with the earlier question, with no second model call: the sections are found for the follow-up's words alone and with the earlier question, the earlier answer's sections and those under them are offered too, and the decision model reads the caller's question first and the earlier one only where the new one cannot stand alone. On a 123-page benefit booklet, follow-ups answered from a right section went from 21 of 42 to 38 of 43, none found nothing (7 before), and questions that stand on their own gave the same answers as before. It is an option, measured per app with <code>pnpm kb:bakeoff --follow-ups</code>.</li>
-          <li><strong>Answers can depend on who is asking.</strong> A passage applies by facts code reads from the system of record (the member's plan), never from what the caller said, and a gated action can add the caller's own data after it ("You've used 4 of them this year.").</li>
-          <li><strong>What nothing answered is ranked.</strong> <code>pnpm kb:gaps</code> reads the calls' traces and ranks the questions the knowledge base did not answer, each with its fix: words for a topic, a new passage, a section of a source to draft one from. For an answer from documents it also lists the sections that were not offered on the call but rank for the question now, so a hint goes to the section that answers, not the one that came nearest.</li>
-        </ul>
-        <figure class="wrapped">
-          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/topics.yaml">apps/harbor/kb/topics.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/prompts.yaml">prompts.yaml</a> (excerpts): a topic marked low risk, and the answer line that words it</figcaption>
-<pre data-from="apps/harbor/kb/topics.yaml"><code>filing_deadline:
-  title: Deadline to file a claim
-  asks:
-    - How long do I have to file a claim?
-    - Is there a deadline to file a claim?
-  risk: low</code></pre>
-<pre data-from="apps/harbor/prompts.yaml"><code>  coverage_answer:
-    text: "{answer}"
-    generate:
-      answer:
-        from: answer
-        goal: Answer the member's question from their plan's passage, in a sentence or two, keeping anything the passage says that changes the answer.
-  kb_hold:
-    text: One moment while I gather that information.</code></pre>
-        </figure>
-        <figure class="wrapped">
-          <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/kb.yaml">apps/harbor/kb/kb.yaml</a> and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/prompts.yaml">prompts.yaml</a> (excerpts): answers from the approved member handbook, and the line that words them</figcaption>
+          </figure>
+          <figure class="wrapped">
+            <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/kb/kb.yaml">Answers from the approved handbook</a>, and <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/prompts.yaml">the line that words them</a></figcaption>
 <pre data-from="apps/harbor/kb/kb.yaml"><code>documents:
   summarize: on
   cap: 3
@@ -390,9 +418,11 @@ approval:
         from: sections
         retry: 1
         goal: Answer the member's question from the handbook sections, in a sentence or two, keeping anything they say that changes the answer.</code></pre>
-        </figure>
+          </figure>
+        </div>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/12-the-knowledge-base.md">Guide, chapter 12: the knowledge base</a>
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-10-19-follow-ups.md">Follow-ups, measured</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/harbor/README.md">Harbor Mutual</a>
         </p>
       </section>
@@ -400,18 +430,23 @@ approval:
       <section id="web" aria-labelledby="web-title">
         <h2 id="web-title">On the web, too</h2>
         <p>
-          The app that answers the phone answers a web chat with the same intents, forms, policy and knowledge
-          base. A site embeds the widget, one script with no dependencies, or the engine serves the app a chat
-          page of its own. A chat can show more than a call can say, so each of these is an option of the app's,
-          and a call is unchanged by it.
+          The app that answers the phone answers a web chat: the same intents, forms, policy and knowledge base. A chat
+          can show more than a call can say, so each of these is an option, and a call is unchanged by it.
         </p>
-        <ul>
-          <li><strong>A chat page of its own.</strong> app.yaml's <code>brand</code> (a logo, a tagline, colours) and <code>chat.page</code>: the conversation front and centre, ways to start, a number to call, and sections under it that say what the line does.</li>
-          <li><strong>Formatted where a chat can show it.</strong> A line may give its words on a chat (lists, bold, italic) while a call says its text. Every value is filled in as plain text after the line is read, so nothing a caller or a system says can become formatting.</li>
-          <li><strong>Answer buttons.</strong> With <code>chat.replies</code>, a question with a known set of answers (yes or no, a choice, one of the caller's records) shows them as buttons. A tap sends its words as typed words are sent: the buttons decide nothing.</li>
-          <li><strong>Where an answer comes from.</strong> With <code>chat.sources</code>, an answer from the knowledge base shows the document, the section as the document prints it, and the page, under the answer.</li>
-          <li><strong>A chat-only server.</strong> <code>VOICE_PROVIDERS=none</code> runs the web chat with no carrier, no phone number and no carrier's secret.</li>
+        <div class="showcase">
+          <figure class="shot">
+            <img src="img/chat-page.jpg" width="800" height="727" alt="A detailing company's chat page: the company's name over the conversation, a formatted list of what each clean includes, the question which service the caller would like, and three answer buttons: Light clean, Standard clean, Deep clean." loading="lazy">
+            <figcaption>A mobile detailer's booking line: its own page around the widget's conversation, a formatted answer, and answer buttons.</figcaption>
+          </figure>
+          <ul class="minis">
+          <li><strong>A chat page of its own</strong>The app's brand, the conversation front and centre, ways to start, a number to call.</li>
+          <li><strong>Or the widget</strong>One script with no dependencies, on any site.</li>
+          <li><strong>Formatted answers</strong>Lists and bold where a chat can show them; values always plain text.</li>
+          <li><strong>Answer buttons</strong>Yes and no, a choice, one of the caller's records. A tap is typed words: it decides nothing.</li>
+          <li><strong>Where each answer comes from</strong>The document, the section and the page, under a knowledge answer.</li>
+          <li><strong>Chat only</strong>No carrier, no phone number, no carrier's secret: <code>VOICE_PROVIDERS=none</code>.</li>
         </ul>
+        </div>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/13-channels.md">Guide, chapter 13: channels</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/packages/widget/README.md">The web chat widget</a>
@@ -421,15 +456,9 @@ approval:
       <section id="wording" aria-labelledby="wording-title">
         <h2 id="wording-title">Generated wording, where you opt in</h2>
         <p>
-          Every line is said word for word unless the app asks for a generated one, a line at a time
-          (<code>mode: generative</code>) or a form at a time (<code>wording: generative</code>). What is regulated is
-          the app designer's call: a line marked <code>prescribed: true</code> is never generated, and the policy card
-          lists every generated and every prescribed line. The model chooses the words, never the content: the core
-          has decided before any line is worded.
-        </p>
-        <p>
-          To summarize what a caller said, the app frames it: the line is fixed and says whose words follow, and only
-          a span of it is generated. The front desk's read-back is the example:
+          Every line is said word for word unless the app asks for a generated one. The model chooses the words, never
+          the content: the core has decided before any line is worded. A summary of what the caller said is framed: the
+          line is fixed, and only a span of it is generated.
         </p>
         <figure class="wrapped">
           <figcaption><a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/prompts.yaml">apps/secretary/prompts.yaml</a> (excerpt): only <code>{summary}</code> is generated</figcaption>
@@ -443,15 +472,24 @@ approval:
         speaks: to-caller
         names: [recipient]</code></pre>
         </figure>
-        <ul>
-          <li><strong>Checked before anyone hears it.</strong> Code holds the span to its data and shape: every value word for word, no figure it was not given, its word budget, one sentence. What it means is the drift judge's: the decision model, asked whether the span, heard in its sentence, is a faithful summary, and a summary that names anyone or anything the caller did not is not. That is a judgment, not a guarantee, and it is measured (<a href="decision-models.html#judge">the judge</a>).</li>
-          <li><strong>Any failure says the exact words.</strong> A check that fails, a slow model or an error, and the caller hears their own message word for word, in the line's other frame.</li>
-          <li><strong>Within a budget.</strong> A line's wording has 900 ms on a call and 1500 ms in a chat by default, and its checks 500 ms and 1000 ms; past either, the fixed text is said.</li>
-          <li><strong>The model is yours to choose.</strong> The examples word their lines with Gemini 3.1 Flash-Lite (a preview, through OpenRouter), named in the app's <code>style.yaml</code>. In the front desk's bake-off of four models on the same requests it wrote the summaries fastest, in 491 ms at the median and 841 ms at p95, and no summary turned who does what. A line is about 500 tokens in and 40 out: a month of the maintainer's recordings with it, every generated line of the front desk and Harbor Mutual recorded again and again, came to about 2 cents in all. <code>pnpm render:bakeoff</code> compares models on an app's own lines.</li>
-          <li><strong>The message itself is never changed.</strong> The caller's yes covers what the slots hold, and the message is delivered as they said it.</li>
+        <ol class="flow four">
+          <li><strong>Opt in, line by line</strong><span><code>mode: generative</code>, or a form at a time. A line marked <code>prescribed</code> never is.</span></li>
+          <li><strong>Checked by code</strong><span>Every value word for word, no figure it was not given, its word budget.</span></li>
+          <li><strong>Judged for meaning</strong><span>The decision model refuses a summary that adds, drops or turns anything around.</span></li>
+          <li class="last"><strong>Exact words on failure</strong><span>A failed check, a slow model or an error: the caller's own words, as they said them.</span></li>
+        </ol>
+        <ul class="stats">
+          <li><b>491 ms</b><span>median to word a summary (841 ms at p95), Gemini 3.1 Flash-Lite</span></li>
+          <li><b>900 ms</b><span>a line's budget on a call by default (1500 ms in a chat); past it, the fixed text</span></li>
+          <li><b>~2 cents</b><span>a month of recordings of every generated line, recorded again and again</span></li>
         </ul>
+        <p class="note">
+          The model is yours to choose, in the app's <code>style.yaml</code>; <code>pnpm render:bakeoff</code> compares models on
+          your own lines. The policy card lists every generated and every prescribed line.
+        </p>
         <p class="links">
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/16-generated-wording.md">Guide, chapter 16: generated wording</a>
+          <a href="decision-models.html#judge">The judge, measured</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/apps/secretary/README.md">The front desk</a>
         </p>
       </section>
