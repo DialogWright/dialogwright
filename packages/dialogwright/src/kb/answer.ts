@@ -8,7 +8,7 @@ import type { Session } from '../core/session';
 import type { TurnContext } from '../core/turn';
 import { isAnonymous } from '../gate/types';
 import { VAR } from '../prompts/segments';
-import { answerSpanOf, DEFAULT_DOCUMENTS_WORDS, KB_ACCOUNT_VAR, KB_QUESTION_VAR } from '../render/config';
+import { answerSpanOf, DEFAULT_DOCUMENTS_WORDS, KB_ACCOUNT_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR } from '../render/config';
 import { collapseWhitespace } from './hash';
 import { documentsSourceOf, kbAuditRow, kbSourceOf } from './record';
 import { resolveSections, sectionKeysOf, sectionOfKey, sentencesOf } from './sectionTexts';
@@ -230,6 +230,12 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     if (!('answer' in result)) return unavailableCompletion(c, unavailablePrompt);
     // An answer said: the not-found replies in a row start again (core/turn.ts notFoundReply).
     if (s.kbNotFound !== undefined) s.kbNotFound = { ...s.kbNotFound, row: 0 };
+    // A follow-up is read with the caller's earlier question (kb.yaml documents.followUps): the one before
+    // this answer goes beside it, and this question is kept for the next.
+    const followUps = app.knowledge?.kb?.settings.documents?.followUps === 'on';
+    const asked = s.slots[opts.slot]?.heard;
+    const earlier = followUps && s.kbEarlier !== undefined && s.kbEarlier.question !== asked ? s.kbEarlier.question : undefined;
+    if (followUps && asked !== undefined && asked !== '') s.kbEarlier = { question: asked };
     // An answer from sections of approved documents (kb.yaml documents): the line's fixed text is what is
     // said when it cannot be worded (onFail: the not-found line, or the best section's opening), and the
     // sections go beside it, for the wording alone (render/turn.ts).
@@ -244,7 +250,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
       // answer cannot be worded (render/turn.ts); the opening is said where it picks none.
       const lines = onFail === 'lines' ? sectionLinesOf(result.sections ?? [{ heading: '', sentences: result.sentences ?? [] }]) : [];
       const linesVars: Record<string, string> = lines.length > 0 ? { [KB_LINES_VAR]: lines.map((l) => l.text).join('\n'), [KB_LINE_HEADINGS_VAR]: lines.map((l) => l.heading).join('\n') } : {};
-      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, ...linesVars, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard } : {}) } }] };
+      return { kind: 'said', acks: [...c.acks, { promptId: line, vars: { [KB_ANSWER_VAR]: fallback, [KB_SOURCE_VAR]: result.answer, ...linesVars, [KB_HOLD_VAR]: holdWording(app, s), ...holdMoreVars(app, s), ...(heard !== undefined && heard !== '' ? { [KB_QUESTION_VAR]: heard, ...(earlier !== undefined ? { [KB_EARLIER_VAR]: earlier } : {}) } : {}) } }] };
     }
     const defaultLocale = defaultLocaleOf(app);
     const locale = result.source.locale ?? s.locale ?? defaultLocale;

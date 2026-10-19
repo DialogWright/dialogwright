@@ -93,6 +93,8 @@ const KB_ANSWER_LINE_DEFAULT = 'kb_answer';
  */
 export const KB_ACCOUNT_VAR = 'answerAccountLine';
 export const KB_QUESTION_VAR = 'answerQuestion';
+/** The variable an answer from documents carries the caller's earlier question in, where the app reads follow-ups (kb.yaml documents.followUps): given to the wording, the judge and the lines picker beside the question. */
+export const KB_EARLIER_VAR = 'answerEarlier';
 
 /** How each of style.yaml's `figures` is told to the model, as the line's style. */
 export const FIGURES: Readonly<Record<'symbols' | 'words', string>> = {

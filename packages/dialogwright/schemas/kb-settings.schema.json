@@ -147,6 +147,14 @@
             "revision"
           ],
           "additionalProperties": false
+        },
+        "followUps": {
+          "description": "on: a question is read with the caller's earlier one on the call (the last question answered from the knowledge base, or found nothing for), so a follow-up (\"what about out of network?\") finds and answers what it continues: sections are found for the words alone and for the earlier question with them, merged (no model asked; a question that stands on its own keeps its sections), and the decision model, reading each section, the wording model and the drift judge are each given the earlier question beside it. Default off: each question on its own. Measure it with pnpm kb:bakeoff --sections --follow-ups.",
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
         }
       },
       "additionalProperties": false

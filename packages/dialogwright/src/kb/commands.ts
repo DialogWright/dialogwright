@@ -4,8 +4,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { loadAppFolder, loadKnowledgeFolder } from '../define/load';
 import { formatProblem } from '../define/problems';
 import { approveDocument, approveOne, formatApproveResult, placeOf, statusLines, notAPerson, type KbPlace } from './approval';
-import { bakeoff, formatResults, formatSweep, parseParaphrases, parseSectionParaphrases, sweepSections, sweep } from './bakeoff';
-import { SectionRetriever, summarizableSections, summarizing } from './sections';
+import { bakeoff, followUpBakeoff, formatFollowUps, formatResults, formatSweep, parseFollowUps, parseParaphrases, parseSectionParaphrases, sweepSections, sweep } from './bakeoff';
+import { SectionRetriever, summarizableSections, summarizing, type SectionRetrieverOptions } from './sections';
 import { DEFAULT_SECTIONS_CAP } from './schema';
 import { downloadModel, loadPinnedModel, modelDir, modelPresent, STATIC_MODELS, DEFAULT_EMBEDDER, type PinnedModel } from './embed/model';
 import type { Embedder } from './embed/types';
@@ -196,7 +196,7 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
 
 /** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date] [--onnx-revision commit]`: each retriever's recall, candidates and latency (onnx only with its package and a pinned revision). */
 /** kb:bakeoff --sections: the section retriever, by keywords and by meaning, on paraphrases of sections; every document's sections, approved or not. */
-async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, todayArg: string | undefined, io: KbIo): Promise<number> {
+async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, todayArg: string | undefined, io: KbIo, followUpsFile?: string): Promise<number> {
   const found = findKb(resolve(io.cwd, dirArg), dirArg, undefined);
   if (!found.kb) {
     for (const line of found.problems) io.err(line);
@@ -220,7 +220,7 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
   const cap = kb.settings.documents?.cap ?? DEFAULT_SECTIONS_CAP;
   const counted = Object.values(paraphrases.topics).reduce((n, l) => n + l.length, 0);
   io.out(`${found.label}: ${keys.length} sections that may be summarized (approved or not), cap ${cap}; ${counted} paraphrases of ${Object.keys(paraphrases.topics).length} sections and ${paraphrases.none.length} lines about none`);
-  const runs: { name: string; retriever: SectionRetriever }[] = [{ name: 'keyword', retriever: new SectionRetriever(kb, { all: true, cap }) }];
+  const runs: { name: string; retriever: SectionRetriever; options: SectionRetrieverOptions }[] = [{ name: 'keyword', retriever: new SectionRetriever(kb, { all: true, cap }), options: { all: true, cap } }];
   const env = io.env ?? process.env;
   const own = kb.settings.documents?.embedder;
   let modelId: string;
@@ -232,8 +232,8 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
       const embedder = await (io.onnxEmbedderFor ?? ((s: DocumentsEmbedder) => onnx.OnnxEmbedder.create({ model: s.onnx, revision: s.revision, pooling: s.pooling, dtype: s.dtype, ...(kb.folder !== undefined ? { from: dirname(kb.folder) } : {}) })))(own);
       const built = await buildIndex(kb, embedder, null, sectionsIndexTexts(kb));
       const floor = kb.settings.documents?.floor ?? onnx.ONNX_DEFAULT_FLOOR;
-      runs.push({ name: `hybrid (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
-      runs.push({ name: `dense (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }) });
+      runs.push({ name: `hybrid (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }), options: { all: true, cap, dense: { embedder, vectors: built.data, floor } } });
+      runs.push({ name: `dense (${own.onnx}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }), options: { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false } });
     } catch (error) {
       io.out(`${own.onnx}: skipped, ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -244,14 +244,26 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
       const embedder = loadPinnedModel(model, env);
       const built = await buildIndex(kb, embedder);
       const floor = kb.settings.documents?.floor ?? kb.settings.retrieval.floor ?? model.floor;
-      runs.push({ name: `hybrid (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }) });
-      runs.push({ name: `dense (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }) });
+      runs.push({ name: `hybrid (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor } }), options: { all: true, cap, dense: { embedder, vectors: built.data, floor } } });
+      runs.push({ name: `dense (${model.id}, floor ${floor})`, retriever: new SectionRetriever(kb, { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false }), options: { all: true, cap, dense: { embedder, vectors: built.data, floor }, keywords: false } });
     } else io.out(`hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
   }
   const results = [];
   for (const run of runs) results.push(await bakeoff(run.retriever, paraphrases, locale, today, run.name));
   io.out('');
   for (const line of formatResults(results)) io.out(line);
+  if (followUpsFile !== undefined) {
+    let followUps;
+    try {
+      followUps = parseFollowUps(readFileSync(resolve(io.cwd, followUpsFile), 'utf8'), keys);
+    } catch (error) {
+      io.err(`dialogwright kb:bakeoff: ${followUpsFile}: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+    io.out('');
+    io.out(`follow-ups (${followUpsFile}): each read alone, and with its earlier question (kb.yaml documents.followUps on):`);
+    for (const run of runs) for (const line of formatFollowUps(run.name, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true }), followUps, paraphrases, locale, today))) io.out(line);
+  }
   const hybrid = runs[1]?.retriever;
   if (doSweep && hybrid) {
     io.out('');
@@ -262,12 +274,12 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
 }
 
 export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--paraphrases', '--sections', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
+  const parsed = parseArgs(args, { values: ['--paraphrases', '--sections', '--follow-ups', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
   if (typeof parsed === 'string' || parsed.positional.length !== 1 || (parsed.values['--paraphrases'] === undefined) === (parsed.values['--sections'] === undefined)) {
-    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file> (the sections of documents)'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]\n       dialogwright kb:bakeoff <dir> --sections <file> [--sweep] [--today YYYY-MM-DD]   (kb.yaml documents: summarize on; every document's sections, approved or not)`);
+    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file> (the sections of documents)'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]\n       dialogwright kb:bakeoff <dir> --sections <file> [--follow-ups <file>] [--sweep] [--today YYYY-MM-DD]   (kb.yaml documents: summarize on; every document's sections, approved or not)`);
     return 2;
   }
-  if (parsed.values['--sections'] !== undefined) return sectionsBakeoff(parsed.positional[0]!, parsed.values['--sections'], parsed.flags.has('--sweep'), parsed.values['--today'], io);
+  if (parsed.values['--sections'] !== undefined) return sectionsBakeoff(parsed.positional[0]!, parsed.values['--sections'], parsed.flags.has('--sweep'), parsed.values['--today'], io, parsed.values['--follow-ups']);
   const dir = resolve(io.cwd, parsed.positional[0]!);
   const found = findKb(dir, parsed.positional[0]!, undefined);
   if (!found.kb) {

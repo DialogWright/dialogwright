@@ -141,8 +141,17 @@ export function sentenceSaid(act: Pick<SpanAct, 'sentence'>, said: string): stri
 }
 
 /** What a model is told for `act`: a whole line's instructions, or a span's. */
+/**
+ * SECTIONS_INSTRUCTIONS for a question that may continue the caller's earlier one (kb.yaml documents.followUps):
+ * the same, with "answer.earlier" named beside the question, so a follow-up is answered for what it continues.
+ */
+export const SECTIONS_INSTRUCTIONS_EARLIER = SECTIONS_INSTRUCTIONS.replace(
+  '"answer.question", the caller\'s question in their own words, quoted;',
+  '"answer.question", the caller\'s question in their own words, quoted, and "answer.earlier", their earlier question on the call, quoted, which this one may continue ("what about for a family?" asks about what the earlier one did);',
+).replace('Write the answer so it does what "goal" says for the caller\'s question,', 'Write the answer so it does what "goal" says for the caller\'s question, read with their earlier one where it continues it,');
+
 export function instructionsOf(act: RenderAct): string {
-  if (isSpanAct(act)) return act.answer?.from === 'sections' ? SECTIONS_INSTRUCTIONS : act.answer !== undefined ? ANSWER_INSTRUCTIONS : act.speaks === 'to-caller' ? SPAN_INSTRUCTIONS_TO_CALLER : SPAN_INSTRUCTIONS;
+  if (isSpanAct(act)) return act.answer?.from === 'sections' ? (act.answer.earlier !== undefined ? SECTIONS_INSTRUCTIONS_EARLIER : SECTIONS_INSTRUCTIONS) : act.answer !== undefined ? ANSWER_INSTRUCTIONS : act.speaks === 'to-caller' ? SPAN_INSTRUCTIONS_TO_CALLER : SPAN_INSTRUCTIONS;
   return act.acknowledge === false ? RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT : RENDER_INSTRUCTIONS;
 }
 

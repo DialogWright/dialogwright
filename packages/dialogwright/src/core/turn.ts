@@ -303,6 +303,8 @@ export function slotContext(session: Session, text: string, tc: TurnContext): Sl
     // they always have.
     ...(tc.knowledge !== undefined ? { nominated: tc.knowledge.nominated } : {}),
     ...(tc.knowledge?.sections !== undefined ? { sections: tc.knowledge.sections } : {}),
+    // The earlier question a follow-up is read with (kb.yaml documents.followUps), only beside sections.
+    ...(tc.knowledge?.sections !== undefined && session.kbEarlier !== undefined ? { earlier: session.kbEarlier.question } : {}),
   };
 }
 

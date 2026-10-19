@@ -29,6 +29,11 @@ export const TOPIC_PARTS = textParts('topic', {
     vars: ['document', 'heading', 'text'],
     about: 'With answers from documents (kb.yaml documents), the yes-or-no asked of each nominated section beside the topic question: {document} is its document\'s title, {heading} its heading, {text} its text. Unlike the other parts, an app\'s own wording is a template over the same three, filled for each section, so it shows the model the section: write {heading}: {text} where the section goes.',
   },
+  sectionEarlier: {
+    template: "Read asr.text and earlierQuestion, the caller's earlier question on this call. Would this section of the {document} answer the caller's question, read with their earlier one where it continues it? {heading}: {text}",
+    vars: ['document', 'heading', 'text'],
+    about: 'With follow-ups (kb.yaml documents.followUps) and an earlier question on the call, the yes-or-no asked of each nominated section in place of `section`: the same, read with the caller\'s earlier question (the turn state\'s earlierQuestion). A template over {document}, {heading} and {text}, as `section` is.',
+  },
   sectionScore: {
     template: 'Read asr.text. How much of what the caller asks does this section of the {document} answer? {heading}: {text}',
     vars: ['document', 'heading', 'text'],

@@ -11,7 +11,7 @@ import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
 import { ANSWER_DRIFT_QUESTION_ID, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
-import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
+import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
 import { atLeast, type Thresholds } from '../core/thresholds';
@@ -326,7 +326,7 @@ function planDocumentsAnswer(app: App, input: RenderInput, line: GeneratedLine, 
     channel,
     language: locale ?? defaultLocale ?? 'en-US',
     style: { persona: style.persona, words: span.words, avoid: [...style.avoid], ...(style.figures !== undefined ? { figures: style.figures } : {}) },
-    answer: { question, from: 'sections' },
+    answer: { question, from: 'sections', ...(said.vars[KB_EARLIER_VAR] !== undefined && said.vars[KB_EARLIER_VAR]!.trim() !== '' ? { earlier: said.vars[KB_EARLIER_VAR]! } : {}) },
   };
   return { ...base, act };
 }
@@ -612,7 +612,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (left <= 0) return null;
     const c = checker(left);
     try {
-      const r = await c.check(drift.ask({ state: answerLinesState(act.answer?.question ?? '', lines) as unknown as JsonValue, questions: answerLinesQuestions(lines.length), timeoutMs: c.left(), signal: abort.signal }));
+      const r = await c.check(drift.ask({ state: answerLinesState(act.answer?.question ?? '', lines, act.answer?.earlier) as unknown as JsonValue, questions: answerLinesQuestions(lines.length, act.answer?.earlier !== undefined), timeoutMs: c.left(), signal: abort.signal }));
       if (r === 'late') return null;
       used(r.usage);
       const chosen: number[] = [];
@@ -652,7 +652,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const c = checker(Math.max(checkBudget, answerLimit - (performance.now() - t0)));
     try {
       const state = fromSections ? renderDocumentsDriftState(act, text) : renderAnswerDriftState(act, text);
-      const r = await c.check(drift.ask({ state: state as unknown as JsonValue, questions: fromSections ? renderDocumentsDriftQuestion() : renderAnswerDriftQuestion(), timeoutMs: c.left(), signal: abort.signal }));
+      const r = await c.check(drift.ask({ state: state as unknown as JsonValue, questions: fromSections ? renderDocumentsDriftQuestion(act.answer?.earlier !== undefined) : renderAnswerDriftQuestion(), timeoutMs: c.left(), signal: abort.signal }));
       if (r === 'late') return { fallback: 'timeout', refused: text, gen };
       used(r.usage);
       const a = r.answers[fromSections ? DOCUMENTS_DRIFT_QUESTION_ID : ANSWER_DRIFT_QUESTION_ID];

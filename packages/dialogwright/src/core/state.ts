@@ -36,6 +36,8 @@ export interface TurnState {
   candidateSpans: string[];
   /** the model sees 'intent', 'form', 'transfer', 'consent' (the consent to text for the whole call), or the slot id */
   pendingConfirmation: { target: 'intent' | 'form' | 'transfer' | 'consent' | SlotId; value: string } | null;
+  /** The caller's earlier question on the call, which this turn may continue (kb.yaml documents.followUps); absent otherwise. */
+  earlierQuestion?: string;
 }
 
 /**
@@ -106,5 +108,7 @@ export function buildTurnState(session: Session, input: TurnInput, nowMs: number
     // The number spans in the session's language, as the slots read them (core/turn.ts slotContext).
     candidateSpans: candidateSpans(input.text, slotLocaleOf(session)),
     pendingConfirmation: pendingState(app, session),
+    // Only where the app reads follow-ups and one was asked before: every other turn's state is as it was.
+    ...(session.kbEarlier !== undefined ? { earlierQuestion: session.kbEarlier.question } : {}),
   };
 }

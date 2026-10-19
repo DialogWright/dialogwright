@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { main } from '../define/cli';
 import { FIXTURES, libraryKb, TODAY } from './__fixtures__/library';
 import { syntheticEmbedder } from './__fixtures__/syntheticModel';
-import { bakeoff, formatResults, formatSweep, parseParaphrases, sweep } from './bakeoff';
+import { bakeoff, followUpBakeoff, formatFollowUps, formatResults, formatSweep, parseFollowUps, parseParaphrases, sweep } from './bakeoff';
+import type { Retriever } from './types';
 import { DenseRetriever } from './hybrid';
 import { KeywordRetriever } from './keyword';
 import { buildIndex } from './vectorIndex';
@@ -59,5 +60,32 @@ describe('the bake-off', () => {
     expect(err[0]).toContain('give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file>');
     expect(await main(['kb:index', '--wat'], io)).toBe(2);
     expect(err[1]).toBe('dialogwright kb:index: --wat is not an option');
+  });
+});
+
+describe('follow-ups in the bake-off (--sections --follow-ups)', () => {
+  const KEYS = ['guide#fees', 'guide#hours', 'guide#parking'];
+
+  it('reads a follow-up file, naming an entry that is not one and a section that may not be summarized', () => {
+    expect(parseFollowUps('- after: what are the fees\n  say: and for a child?\n  sections: [guide#fees]\n', KEYS)).toEqual([{ after: 'what are the fees', say: 'and for a child?', sections: ['guide#fees'] }]);
+    expect(() => parseFollowUps('after: x', KEYS)).toThrow('a follow-up file is a list');
+    expect(() => parseFollowUps('- say: and for a child?\n  sections: [guide#fees]\n', KEYS)).toThrow('entry 1 is not');
+    expect(() => parseFollowUps('- after: x\n  say: y\n  sections: [guide#gone]\n', KEYS)).toThrow('entry 1 names sections that may not be summarized: guide#gone');
+  });
+
+  it('counts each follow-up alone and read with its earlier question, and each paraphrase after unrelated earlier questions', async () => {
+    // Alone, a follow-up's words find nothing; read with an earlier question, the earlier question's section.
+    const sectionOf = (text: string): string[] => (/fee/.test(text) ? ['guide#fees'] : /hour|open/.test(text) ? ['guide#hours'] : /park/.test(text) ? ['guide#parking'] : []);
+    const plain: Retriever = { id: 'plain', nominate: ({ text }) => sectionOf(text).map((topic) => ({ topic, title: topic, score: 1, via: 'keyword' })) };
+    const withEarlier: Retriever = { id: 'with', nominate: ({ text, earlier }) => [...new Set([...sectionOf(text), ...(earlier !== undefined ? sectionOf(earlier) : [])])].map((topic) => ({ topic, title: topic, score: 1, via: 'keyword' })) };
+    const followUps = parseFollowUps('- after: what are the fees\n  say: and for a child?\n  sections: [guide#fees]\n- after: when are you open\n  say: and on Sunday?\n  sections: [guide#hours]\n', KEYS);
+    const paraphrases = { topics: { 'guide#parking': ['where do I park'] }, none: [] };
+    const r = await followUpBakeoff(plain, withEarlier, followUps, paraphrases, 'en-US', TODAY);
+    expect(r).toEqual({ followUps: { n: 2, alone: 0, read: 2 }, singles: { n: 2, alone: 2, read: 2 } });
+    expect(formatFollowUps('test', r)).toEqual([
+      'test:',
+      '  follow-ups (2): alone 0.0% (0), read with the earlier question 100.0% (2)',
+      '  questions on their own after an unrelated earlier one (2): alone 100.0%, read with it 100.0%',
+    ]);
   });
 });

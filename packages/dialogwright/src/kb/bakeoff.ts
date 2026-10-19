@@ -300,3 +300,76 @@ export function formatSweep(points: readonly SweepPoint[]): string[] {
   }
   return lines;
 }
+
+/** One follow-up of a follow-up file (kb:bakeoff --follow-ups): the caller's earlier question, the follow-up, and the sections that answer it read with the earlier one (any of them a hit). */
+export interface FollowUp {
+  readonly after: string;
+  readonly say: string;
+  readonly sections: readonly string[];
+}
+
+/** A follow-up file: a list of `{ after, say, sections: [<document>#<section>, ...] }`, each section one that may be summarized. */
+export function parseFollowUps(text: string, keys: readonly string[]): FollowUp[] {
+  const data = parse(text) as unknown;
+  if (!Array.isArray(data)) throw new Error('a follow-up file is a list of { after, say, sections }');
+  return data.map((v, i) => {
+    const o = (typeof v === 'object' && v !== null ? v : {}) as { after?: unknown; say?: unknown; sections?: unknown };
+    if (typeof o.after !== 'string' || o.after.trim() === '' || typeof o.say !== 'string' || o.say.trim() === '' || !Array.isArray(o.sections) || o.sections.length === 0 || o.sections.some((k) => typeof k !== 'string')) {
+      throw new Error(`entry ${i + 1} is not { after: <earlier question>, say: <follow-up>, sections: [<document>#<section>, ...] }`);
+    }
+    const unknown = (o.sections as string[]).filter((k) => !keys.includes(k));
+    if (unknown.length > 0) throw new Error(`entry ${i + 1} names sections that may not be summarized: ${unknown.join(', ')}`);
+    return { after: o.after, say: o.say, sections: [...(o.sections as string[])] };
+  });
+}
+
+/** A follow-up measurement: hits at the cap of `n`, for the words alone and read with the earlier question. */
+export interface FollowUpCount {
+  readonly n: number;
+  readonly alone: number;
+  readonly read: number;
+}
+
+/**
+ * Follow-ups measured (kb:bakeoff --sections --follow-ups): how often a follow-up's sections are among those
+ * offered, by its words alone (`plain`, as with follow-ups off) and read with the earlier question
+ * (`withEarlier`, a retriever with follow-ups on); and, so context costs nothing, how often each paraphrase
+ * finds its sections alone and read with an unrelated earlier question (the file's earlier questions whose
+ * sections are not its own, four at most each).
+ */
+export async function followUpBakeoff(plain: Retriever, withEarlier: Retriever, followUps: readonly FollowUp[], paraphrases: Paraphrases, locale: string, todayIso: string): Promise<{ followUps: FollowUpCount; singles: FollowUpCount }> {
+  const keysOf = async (r: Retriever, text: string, earlier?: string): Promise<string[]> => (await r.nominate({ text, locale, todayIso, ...(earlier !== undefined ? { earlier } : {}) })).map((n) => n.topic);
+  let alone = 0;
+  let read = 0;
+  for (const f of followUps) {
+    if ((await keysOf(plain, f.say)).some((k) => f.sections.includes(k))) alone += 1;
+    if ((await keysOf(withEarlier, f.say, f.after)).some((k) => f.sections.includes(k))) read += 1;
+  }
+  const earlier = [...new Map(followUps.map((f) => [f.after, f.sections])).entries()];
+  let n = 0;
+  let sAlone = 0;
+  let sRead = 0;
+  for (const [topic, lines] of Object.entries(paraphrases.topics)) {
+    for (const line of lines) {
+      const want = [topic, ...(paraphrases.also?.[`${topic}\u0000${line}`] ?? [])];
+      const unrelated = earlier.filter(([, sections]) => !sections.some((k) => want.includes(k))).slice(0, 4);
+      const hitAlone = (await keysOf(plain, line)).some((k) => want.includes(k));
+      for (const [after] of unrelated) {
+        n += 1;
+        if (hitAlone) sAlone += 1;
+        if ((await keysOf(withEarlier, line, after)).some((k) => want.includes(k))) sRead += 1;
+      }
+    }
+  }
+  return { followUps: { n: followUps.length, alone, read }, singles: { n, alone: sAlone, read: sRead } };
+}
+
+/** A follow-up measurement as report lines. */
+export function formatFollowUps(name: string, r: { followUps: FollowUpCount; singles: FollowUpCount }): string[] {
+  const pct = (x: number, n: number): string => (n === 0 ? '-' : `${((100 * x) / n).toFixed(1)}%`);
+  return [
+    `${name}:`,
+    `  follow-ups (${r.followUps.n}): alone ${pct(r.followUps.alone, r.followUps.n)} (${r.followUps.alone}), read with the earlier question ${pct(r.followUps.read, r.followUps.n)} (${r.followUps.read})`,
+    `  questions on their own after an unrelated earlier one (${r.singles.n}): alone ${pct(r.singles.alone, r.singles.n)}, read with it ${pct(r.singles.read, r.singles.n)}`,
+  ];
+}

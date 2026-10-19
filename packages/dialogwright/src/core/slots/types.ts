@@ -75,6 +75,11 @@ export interface SlotContext {
    * the caller asked. Present only where nominated was and the app summarizes documents.
    */
   sections?: readonly SectionNomination[];
+  /**
+   * The caller's earlier question on the call (Session.kbEarlier), where the app reads follow-ups (kb.yaml
+   * documents.followUps) and sections were nominated: a topic slot asks of each section read with it.
+   */
+  earlier?: string;
 }
 
 export interface SlotCandidate {

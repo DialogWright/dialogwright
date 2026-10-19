@@ -31,6 +31,8 @@ export interface KbSettings {
     readonly retrieval?: 'hybrid' | 'dense';
     /** The sections' own embedding model (an ONNX model), its vectors in an index of their own. */
     readonly embedder?: DocumentsEmbedder;
+    /** A question read with the caller's earlier one (kb.yaml documents.followUps): its sections found with it too, and the decision model shown it. */
+    readonly followUps?: 'on' | 'off';
   };
 }
 
@@ -209,6 +211,8 @@ export interface NominateInput {
   readonly text: string;
   readonly locale: string;
   readonly todayIso: string;
+  /** The caller's earlier question on the call (Session.kbEarlier), for a retriever that reads a follow-up with it (kb.yaml documents.followUps); others ignore it. */
+  readonly earlier?: string;
 }
 
 /**

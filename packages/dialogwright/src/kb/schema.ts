@@ -101,6 +101,10 @@ export const kbSettingsSchema = z
           })
           .optional()
           .describe('A contextual embedding model of its own for the sections (an ONNX model, run by the optional package @huggingface/transformers, which the app installs): their vectors are in an index of their own (kb/.index/<model>.json, pnpm kb:index), and the topics keep retrieval.embedder. Opt-in: the package is large, and its vectors can differ in their last digits from one machine to another, which can move a section near the floor in or out of the nominations. Default: the sections are in retrieval.embedder\'s index.'),
+        followUps: z
+          .enum(['on', 'off'])
+          .optional()
+          .describe('on: a question is read with the caller\'s earlier one on the call (the last question answered from the knowledge base, or found nothing for), so a follow-up ("what about out of network?") finds and answers what it continues: sections are found for the words alone and for the earlier question with them, merged (no model asked; a question that stands on its own keeps its sections), and the decision model, reading each section, the wording model and the drift judge are each given the earlier question beside it. Default off: each question on its own. Measure it with pnpm kb:bakeoff --sections --follow-ups.'),
       })
       .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP, retrieval: 'hybrid' })
       .describe('Answers from approved documents, where no topic answers: off by default.'),

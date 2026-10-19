@@ -62,7 +62,7 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
         questions[sectionQuestionIdOf(slot, i)] = { type: 'score', instructions: renderTemplate(template, vars, `the topic slot ${slot}'s text.sectionScore`), levels: SECTION_LEVEL_PARTS.map(([label, part]) => ({ label, description: TOPIC_PARTS.render(part, o.text, {}) })) };
         return;
       }
-      const template = o.text?.section ?? TOPIC_PARTS.defs.section.template;
+      const template = ctx.earlier !== undefined ? (o.text?.sectionEarlier ?? TOPIC_PARTS.defs.sectionEarlier.template) : (o.text?.section ?? TOPIC_PARTS.defs.section.template);
       questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, vars, `the topic slot ${slot}'s text.section`) };
     });
     // With sections and no topic offered (an app that answers from documents alone), the question is

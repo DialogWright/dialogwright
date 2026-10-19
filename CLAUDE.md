@@ -71,7 +71,7 @@ pnpm --filter dialogwright exec tsx src/define/cli.ts policy:convert <absolute f
 pnpm --filter dialogwright slot-docs   # regenerate docs/slots/*.md after a slot type's options, README or examples change
 pnpm kb:model                 # download the pinned embedding model (potion-base-8M) into ~/.cache/dialogwright/models, checking its SHA-256
 pnpm kb:index [dir...]        # write a knowledge base's vector index (kb/.index/<embedder>.json) after its topics change; commit it
-pnpm kb:bakeoff <dir> --paraphrases <file> [--sweep]   # compare the retrievers on paraphrases offline; pick kb.yaml's floor and cap here (--sections <file>: the sections of documents, by the app's own section model, hybrid and dense; a line's also: names the other sections that answer it)
+pnpm kb:bakeoff <dir> --paraphrases <file> [--sweep]   # compare the retrievers on paraphrases offline; pick kb.yaml's floor and cap here (--sections <file>: the sections of documents, by the app's own section model, hybrid and dense; a line's also: names the other sections that answer it; --follow-ups <file>: follow-ups found alone and read with their earlier question, for kb.yaml documents.followUps)
 pnpm kb:approve <id...> --by "<your name>" [--owner "<team>"] [--dir <app folder>]   # approve a passage or a draft after reading it against its source: a person does this at their terminal (it asks them to confirm), never an assistant or a tool
 pnpm kb:status [dir...]       # the passages by state (fresh, stale, edited, never approved, drafts), each with its fix
 pnpm kb:ingest <folder | file | url> --dir <app folder> [--depth N] [--include <glob>] [--dry-run]   # documents or a website into kb/sources/<doc>.yaml, by section with provenance (packages/kb-author)

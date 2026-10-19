@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { DEFAULT_SECTIONS_CAP } from './schema';
 import { LazyOnnxEmbedder, ONNX_DEFAULT_FLOOR } from './onnx';
-import { fuse, HybridRetriever } from './hybrid';
+import { fuse, HybridRetriever, RRF_K } from './hybrid';
 import { KeywordRetriever } from './keyword';
 import { MemoryVectorIndex } from './embed/memory';
 import type { Embedder, VectorEntry } from './embed/types';
@@ -59,7 +59,7 @@ export function defaultSectionRetriever(kb: KnowledgeBase, topics: Retriever | u
     if (hybrid && vectors) dense = { embedder: hybrid.dense.embedder, vectors, floor: settings.floor ?? kb.settings.retrieval.floor ?? hybrid.dense.floor };
     if (index && 'hash' in index) indexHash = index.hash;
   }
-  const retriever = new SectionRetriever(kb, { ...(dense ? { dense } : {}), keywords: settings.retrieval !== 'dense' || dense === undefined, ...(indexHash !== undefined && dense ? { indexHash } : {}), ...(options.cap !== undefined ? { cap: options.cap } : {}) });
+  const retriever = new SectionRetriever(kb, { ...(dense ? { dense } : {}), keywords: settings.retrieval !== 'dense' || dense === undefined, ...(indexHash !== undefined && dense ? { indexHash } : {}), ...(options.cap !== undefined ? { cap: options.cap } : {}), ...(settings.followUps === 'on' ? { followUps: true } : {}) });
   return retriever.sections.length > 0 ? retriever : null;
 }
 
@@ -74,6 +74,27 @@ export interface SectionRetrieverOptions {
   readonly keywords?: boolean;
   /** The hash of the index its vectors are from, recorded with its nominations. */
   readonly indexHash?: string;
+  /** Whether a question is read with the caller's earlier one (kb.yaml documents.followUps on; NominateInput.earlier). Default false. */
+  readonly followUps?: boolean;
+}
+
+/**
+ * Two rankings merged into one, at most `cap` (reciprocal rank fusion, equal weights): the sections found
+ * for a follow-up's words alone and for the earlier question with them. Each keeps the way it was first
+ * found; its score is its fused one, rounded as retrieval rounds.
+ */
+export function mergeRanked(lists: readonly (readonly Nomination[])[], cap: number): Nomination[] {
+  const by = new Map<string, { n: Nomination; score: number }>();
+  for (const list of lists) {
+    list.forEach((n, i) => {
+      const had = by.get(n.topic);
+      by.set(n.topic, { n: had?.n ?? n, score: (had?.score ?? 0) + 1 / (RRF_K + i + 1) });
+    });
+  }
+  return [...by.values()]
+    .sort((a, b) => b.score - a.score || (a.n.topic < b.n.topic ? -1 : a.n.topic > b.n.topic ? 1 : 0))
+    .slice(0, cap)
+    .map(({ n, score }) => ({ ...n, score: Math.round(score * 1e6) / 1e6 }));
 }
 
 /**
@@ -91,6 +112,7 @@ export class SectionRetriever implements Retriever {
   private readonly keyword: KeywordRetriever;
   private readonly dense?: { readonly embedder: Embedder; readonly index: MemoryVectorIndex; readonly floor: number };
   private readonly titles: ReadonlyMap<string, string>;
+  private readonly followUps: boolean;
 
   constructor(kb: Pick<KnowledgeBase, 'settings' | 'sources' | 'passages' | 'defaultLocale'> & Partial<Pick<KnowledgeBase, 'sectionHints' | 'glossary'>>, options: SectionRetrieverOptions = {}) {
     this.sections = summarizableSections(kb, { approved: options.all !== true });
@@ -105,6 +127,7 @@ export class SectionRetriever implements Retriever {
     this.keywords = options.keywords !== false || this.dense === undefined;
     this.id = this.dense ? `sections:${this.keywords ? 'hybrid' : 'dense'}:${this.dense.embedder.id}` : 'sections:keyword';
     if (options.indexHash !== undefined) this.indexHash = options.indexHash;
+    this.followUps = options.followUps === true;
   }
 
   /** Loads an embedding model that loads on first use (the sections' own, documents.embedder): true once loaded (`{ wasm }`, with why, where it runs on WebAssembly), false when there is none to load. */
@@ -128,15 +151,25 @@ export class SectionRetriever implements Retriever {
     return dense.index.search({ vector: v[0]!, limit: this.sections.length, floor });
   }
 
-  nominate({ text, locale }: NominateInput): Nomination[] | Promise<Nomination[]> {
+  nominate({ text, locale, earlier }: NominateInput): Nomination[] | Promise<Nomination[]> {
     if (this.sections.length === 0) return [];
+    const before = this.followUps ? earlier?.trim() : undefined;
+    if (before === undefined || before === '') return this.ranked(text, locale, this.cap);
+    // A follow-up: the sections for its words alone and for the earlier question with them, twice as deep,
+    // merged, so a question that stands on its own keeps its own sections near the top.
+    const both = [this.ranked(text, locale, this.cap * 2), this.ranked(`${before} ${text}`, locale, this.cap * 2)];
+    return both.some((x) => x instanceof Promise) ? Promise.all(both).then((lists) => mergeRanked(lists, this.cap)) : mergeRanked(both as Nomination[][], this.cap);
+  }
+
+  /** The sections for `text`, at most `cap`. */
+  private ranked(text: string, locale: string, cap: number): Nomination[] | Promise<Nomination[]> {
     const titleOf = (key: string): string => this.titles.get(key) ?? key;
     const dense = this.dense;
-    if (!dense) return this.keyword.nominate({ text, locale, todayIso: '' });
+    if (!dense) return cap === this.cap ? this.keyword.nominate({ text, locale, todayIso: '' }) : fuse(this.keyword.scores(text, locale), [], cap, titleOf);
     const kw = this.keyword.scores(text, locale);
-    const search = (q: Float64Array) => fuse(this.keywords ? kw : [], dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[], this.cap, titleOf);
+    const search = (q: Float64Array) => fuse(this.keywords ? kw : [], dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[], cap, titleOf);
     const embedded = dense.embedder.embed([text]);
     // A model that cannot be loaded (its package not installed) leaves the keywords.
-    return embedded instanceof Promise ? embedded.then((v) => search(v[0]!), () => fuse(kw, [], this.cap, titleOf)) : search(embedded[0]!);
+    return embedded instanceof Promise ? embedded.then((v) => search(v[0]!), () => fuse(kw, [], cap, titleOf)) : search(embedded[0]!);
   }
 }

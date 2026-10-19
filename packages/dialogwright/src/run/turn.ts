@@ -218,7 +218,7 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
   if (followUp === null) return { tc, answers, run: null, retrieved: null, ms: null };
   const knowledge = appOf(session).knowledge;
   const retrieved = knowledge !== undefined && tc.knowledge === undefined
-    ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
+    ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session) }, opts.retrieveBudgetMs)
     : null;
   const known: TurnContext = retrieved ? { ...tc, knowledge: knowledgeOf(retrieved) } : tc;
   const questions = followUpQuestions(session, followUp, words, known);
@@ -234,6 +234,9 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
   const added = Object.fromEntries(Object.entries(asked.value.answers).filter(([id]) => Object.hasOwn(questions, id) && !Object.hasOwn(answers, id)));
   return { tc: known, answers: { ...answers, ...added }, run: { followUp, questions, response: asked.value, error: null }, retrieved, ms };
 }
+
+/** The caller's earlier question, for a retriever that reads a follow-up with it (kb.yaml documents.followUps); nothing where none was kept. */
+const earlierOf = (session: Session): { earlier?: string } => (session.kbEarlier !== undefined ? { earlier: session.kbEarlier.question } : {});
 
 /** What retrieval gives the turn (TurnContext.knowledge): the topics, and the sections where the app nominates any. */
 function knowledgeOf(retrieved: Retrieved): TurnKnowledge {
@@ -360,7 +363,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // Only when a topic slot is listening (an app with a knowledge base, words, such a slot active): any
   // other turn's context, and so its request, is exactly as it was.
   const retrieved = topicsListening(session, event, base.duringService)
-    ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso }, opts.retrieveBudgetMs)
+    ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session) }, opts.retrieveBudgetMs)
     : null;
   const tc: TurnContext = retrieved ? { ...base, knowledge: knowledgeOf(retrieved) } : base;
   const t0 = performance.now();

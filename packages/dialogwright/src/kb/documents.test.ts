@@ -11,7 +11,11 @@ import { HeuristicStubClient } from '../jev/heuristicStub';
 import { noulAnswer } from '../jev/distributions';
 import type { AnswerMap, JevClient } from '../jev/types';
 import { FakeRenderClient, type FakeRenderOptions } from '../render/fake';
-import { SECTIONS_INSTRUCTIONS, instructionsOf } from '../render/prompt';
+import { SECTIONS_INSTRUCTIONS, SECTIONS_INSTRUCTIONS_EARLIER, instructionsOf } from '../render/prompt';
+import { buildTurnState } from '../core/state';
+import { slotContext } from '../core/turn';
+import { slotSpecOf } from '../core/app/lookup';
+import { mergeRanked } from './sections';
 import { renderTurn, type RenderedTurn } from '../render/turn';
 import type { Renderer, SpanAct } from '../render/types';
 import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
@@ -92,13 +96,13 @@ function sectionsOf(app: App, ...keys: string[]): SectionNomination[] {
 interface Turn { before: Session; event: SessionEvent; result: TurnResult }
 
 /** A question at the open, its topic question read as `topic`, and each nominated section's yes-or-no as `sections`. */
-function asked(app: App, text: string, topic: Record<string, number>, sections: Record<string, number>, topics: string[] = ['opening_hours']): Turn {
+function asked(app: App, text: string, topic: Record<string, number>, sections: Record<string, number>, topics: string[] = ['opening_hours'], after?: Session): Turn {
   const c = call(app);
   const keys = Object.keys(sections);
   const answers: AnswerMap = { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice(topic) };
   keys.forEach((_, i) => { answers[`libraryTopicSection${i + 1}`] = noul(Object.values(sections)[i]!); });
   const event = speechEvent(text, true);
-  const before = c.last.session;
+  const before = after ?? c.last.session;
   const result = resolve(before, event, answers, { ...c.t, knowledge: { nominated: nominated(...topics), sections: sectionsOf(app, ...keys) } });
   return { before, event, result: { ...result, screen: { value: 0.02, fired: false, error: null } } };
 }
@@ -390,6 +394,63 @@ describe('the answer worded from the sections, checked against them', () => {
       const opening = asked(documentsApp('library-documents-opening-nolines', { onFail: 'opening' }), 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
       const ack = 'acks' in opening.result.decision ? opening.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(ack?.vars.answerLines).toBeUndefined();
+    });
+  });
+
+  describe('follow-ups (kb.yaml documents.followUps on): a question read with the caller\'s earlier one', () => {
+    let built: App | undefined;
+    const followApp = (): App => (built ??= documentsApp('library-documents-follow-ups', { edits: { 'kb/kb.yaml': (t: string) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n  followUps: on\n` } }));
+    const FIRST = 'how much is printing';
+    const NEXT = 'what about in color';
+
+    it('keeps the question answered, and gives the next answer it, the turn state and each section\'s question reading the follow-up with it', () => {
+      const app = followApp();
+      const first = asked(app, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
+      expect(first.result.session.kbEarlier).toEqual({ question: FIRST });
+      const firstAck = 'acks' in first.result.decision ? first.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      expect(firstAck?.vars).not.toHaveProperty('answerEarlier');
+      // The next turn's state and section questions read it.
+      expect(buildTurnState(first.result.session, { text: NEXT, isFinal: true, dtmf: null }, 0).earlierQuestion).toBe(FIRST);
+      const questions = slotSpecOf(app, 'libraryTopic').questions({ ...slotContext(first.result.session, NEXT, call(app).t), sections: sectionsOf(app, 'visitor-guide#printing'), earlier: FIRST } as never);
+      expect(String((questions.libraryTopicSection1 as { instructions: string }).instructions)).toMatch(/^Read asr.text and earlierQuestion, the caller's earlier question on this call\. Would this section of the Example Town Library Visitor Guide answer the caller's question, read with their earlier one where it continues it\? Printing and copies: /);
+      const next = asked(app, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], first.result.session);
+      const ack = 'acks' in next.result.decision ? next.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
+      expect(ack?.vars).toMatchObject({ answerQuestion: NEXT, answerEarlier: FIRST });
+      expect(next.result.session.kbEarlier).toEqual({ question: NEXT });
+    });
+
+    it('the wording, the judge and the lines picker are given the earlier question, with instructions that name it', async () => {
+      const app = followApp();
+      const first = asked(app, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
+      const next = asked(app, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], first.result.session);
+      const r = renderer();
+      const asks: { questions: string[]; state: unknown }[] = [];
+      const watching: JevClient = { ask: async (req) => { asks.push({ questions: Object.keys(req.questions), state: req.state }); return at(0.9).ask(req); } };
+      await rendered(app, next, r, watching);
+      const act = r.client.askedSpans[0]!.act;
+      expect(act.answer).toMatchObject({ question: NEXT, earlier: FIRST });
+      expect(instructionsOf(act)).toBe(SECTIONS_INSTRUCTIONS_EARLIER);
+      expect(SECTIONS_INSTRUCTIONS_EARLIER).toContain('"answer.earlier", their earlier question on the call');
+      const drift = asks.find((a) => a.questions.includes(DOCUMENTS_DRIFT_QUESTION_ID))!;
+      expect(drift.state).toMatchObject({ answer: { question: NEXT, earlier: FIRST } });
+      // Without follow-ups (the default), none of it: the first answer of any app, and every request as it was.
+      const plain = asked(APP, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], asked(APP, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }).result.session);
+      expect(plain.result.session.kbEarlier).toBeUndefined();
+      const p = renderer();
+      await rendered(APP, plain, p, at(0.1));
+      expect(p.client.askedSpans[0]!.act.answer).not.toHaveProperty('earlier');
+      expect(instructionsOf(p.client.askedSpans[0]!.act)).toBe(SECTIONS_INSTRUCTIONS);
+    });
+
+    it('the section retriever finds a follow-up\'s sections with the earlier question too, merged, only with follow-ups on', async () => {
+      const on = followApp().knowledge!.sections as SectionRetriever;
+      const off = APP.knowledge!.sections as SectionRetriever;
+      const keys = async (r: SectionRetriever, earlier?: string) => (await r.nominate({ text: 'and how much would that be', locale: 'en-US', todayIso: TODAY, ...(earlier !== undefined ? { earlier } : {}) })).map((n) => n.topic);
+      // Its words alone find nothing about printing; read with the earlier question, they do.
+      expect(await keys(on)).not.toContain('visitor-guide#printing');
+      expect(await keys(on, 'can I print at the library')).toContain('visitor-guide#printing');
+      expect(await keys(off, 'can I print at the library')).toEqual(await keys(off));
+      expect(mergeRanked([[{ topic: 'a', title: 'A', score: 1, via: 'dense' }, { topic: 'b', title: 'B', score: 0.5, via: 'dense' }], [{ topic: 'b', title: 'B', score: 1, via: 'keyword' }]], 1)).toEqual([{ topic: 'b', title: 'B', score: 0.032522, via: 'dense' }]);
     });
   });
 
