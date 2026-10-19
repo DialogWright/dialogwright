@@ -51,12 +51,20 @@ function write(path: string, text: string): void {
   writeFileSync(path, text);
 }
 
-function fakeFolder({ runtime = true }: { runtime?: boolean } = {}): void {
+/** The embedder's package as it fails: its import (no native runtime for the machine), building the pipeline (offline), or its first embedding (a tokenizer built empty). */
+type NativeFault = 'import' | 'offline' | 'empty-tokenizer';
+const NATIVE: Record<NativeFault, string> = {
+  import: "throw new Error('no native runtime for this machine');",
+  offline: "exports.env = {}; exports.pipeline = async () => { throw new Error('fetch failed: getaddrinfo ENOTFOUND huggingface.co'); };",
+  'empty-tokenizer': "exports.env = {}; exports.pipeline = async () => async () => { throw new TypeError('this.tokenizer is not a function'); };",
+};
+
+function fakeFolder({ runtime = true, native = 'import' }: { runtime?: boolean; native?: NativeFault } = {}): void {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'dialogwright-onnx-wasm-')));
   write(join(root, 'package.json'), '{"name":"app","private":true}');
   pkg = join(root, 'node_modules', '@huggingface', 'transformers');
   write(join(pkg, 'package.json'), '{"name":"@huggingface/transformers","main":"index.js"}');
-  write(join(pkg, 'index.js'), "throw new Error('no native runtime for this machine');");
+  write(join(pkg, 'index.js'), NATIVE[native]);
   if (runtime) {
     const ort = join(root, 'node_modules', 'onnxruntime-web');
     write(join(ort, 'package.json'), '{"name":"onnxruntime-web","main":"dist/ort.node.js"}');
@@ -159,6 +167,7 @@ describe('the ONNX embedder on WebAssembly (kb/onnxWasm)', async () => {
     expect(mod.runtime).toBe('wasm');
     const embedder = await OnnxEmbedder.create({ model: MODEL, revision: REVISION, from: root, localOnly: true });
     expect(embedder.runtime).toBe('wasm');
+    expect(embedder.whyWasm).toBe('its native runtime does not load on this machine');
     expect(embedder.dim).toBe(2);
     const [v] = await embedder.embed(['When are you open?']);
     expect(Math.hypot(...v!)).toBeCloseTo(1, 6);
@@ -174,4 +183,29 @@ describe('the ONNX embedder on WebAssembly (kb/onnxWasm)', async () => {
     expect((error as Error).message).not.toContain('pnpm add');
   });
 
+
+  for (const fault of ['offline', 'empty-tokenizer'] as const) {
+    it.skipIf(nativeHere)(`where the native runtime imports but cannot load the model (${fault}), loads it from the cache on WebAssembly, and says why`, async () => {
+      rmSync(root, { recursive: true, force: true });
+      fakeFolder({ native: fault });
+      expect((await loadTransformers(root)).runtime).toBeUndefined();
+      const embedder = await OnnxEmbedder.create({ model: MODEL, revision: REVISION, from: root });
+      expect(embedder.runtime).toBe('wasm');
+      expect(embedder.whyWasm).toBe(`its native runtime could not load the model (${fault === 'offline' ? 'fetch failed: getaddrinfo ENOTFOUND huggingface.co' : 'this.tokenizer is not a function'})`);
+      const [v] = await embedder.embed(['When are you open?']);
+      expect(Math.hypot(...v!)).toBeCloseTo(1, 6);
+    });
+  }
+
+  it.skipIf(nativeHere)('where neither loads the model, says both; with no runtime beside it, the native runtime\'s own error', async () => {
+    rmSync(root, { recursive: true, force: true });
+    fakeFolder({ native: 'offline' });
+    rmSync(join(cache, 'onnx', 'model.onnx'));
+    await expect(OnnxEmbedder.create({ model: MODEL, revision: REVISION, from: root, localOnly: true })).rejects.toThrow(
+      `the ONNX model ${MODEL} did not load on its native runtime (fetch failed: getaddrinfo ENOTFOUND huggingface.co), nor on WebAssembly (the model file onnx/model.onnx of ${MODEL} at ${REVISION} is not in the cache`,
+    );
+    rmSync(root, { recursive: true, force: true });
+    fakeFolder({ native: 'empty-tokenizer', runtime: false });
+    await expect(OnnxEmbedder.create({ model: MODEL, revision: REVISION, from: root })).rejects.toThrow('this.tokenizer is not a function');
+  });
 });

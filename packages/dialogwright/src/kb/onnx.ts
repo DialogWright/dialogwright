@@ -63,7 +63,14 @@ interface TransformersModule {
   env?: { cacheDir?: string; allowRemoteModels?: boolean };
   /** `wasm` where the model runs on WebAssembly (kb/onnxWasm.ts); absent on the package itself. */
   runtime?: 'wasm';
+  /** Why it runs on WebAssembly (`runtime: 'wasm'`), as the server's log says it. */
+  whyWasm?: string;
+  /** The package's folder, where it was found: the WebAssembly runtime is looked for beside it. */
+  packageDir?: string;
 }
+
+/** Why the model runs on WebAssembly, where the package's native runtime does not import. */
+const NO_NATIVE = 'its native runtime does not load on this machine';
 
 /**
  * The package, imported on first use. Where it is installed but does not load (its native runtime,
@@ -90,17 +97,23 @@ export async function loadTransformers(from?: string): Promise<TransformersModul
       continue;
     }
     try {
-      return (await import(pathToFileURL(resolved).href)) as TransformersModule;
+      return { ...((await import(pathToFileURL(resolved).href)) as TransformersModule), packageDir: packageDirOf(resolved) };
     } catch (error) {
       failed ??= { dir: packageDirOf(resolved), error };
     }
   }
   if (failed !== null) {
-    if (wasmRuntimeBeside(failed.dir)) return { ...wasmTransformers(failed.dir), runtime: 'wasm' } as TransformersModule;
+    if (wasmRuntimeBeside(failed.dir)) return { ...wasmTransformers(failed.dir), runtime: 'wasm', whyWasm: NO_NATIVE, packageDir: failed.dir } as TransformersModule;
     throw new OnnxUnavailableError(failed.error, failed.dir);
   }
   throw new OnnxUnavailableError(missing);
 }
+
+/** The package environments an embedder turned remote models off in (OnnxEmbedderOptions.localOnly). */
+const LOCAL_ONLY = new WeakSet<object>();
+
+/** An error's first line, to say it in another's. */
+const firstLine = (error: unknown): string => (error instanceof Error ? error.message : String(error)).split('\n')[0]!;
 
 /** Whether the package can be imported here. */
 export async function onnxAvailable(): Promise<boolean> {
@@ -140,13 +153,16 @@ export class OnnxEmbedder implements Embedder {
   readonly revision: string;
   readonly sha256: string;
   readonly dim: number;
-  /** Where the model runs: the package's native runtime, or WebAssembly where that has no build for the machine. */
+  /** Where the model runs: the package's native runtime, or WebAssembly where that does not load or cannot load the model. */
   readonly runtime: 'native' | 'wasm';
+  /** Why it runs on WebAssembly (`runtime: 'wasm'`): the native runtime does not load here, or could not load the model (offline, say). */
+  readonly whyWasm?: string;
   private readonly extract: (texts: string[], options: { pooling: 'cls' | 'mean'; normalize: boolean }) => Promise<{ tolist(): number[][] }>;
   private readonly pooling: 'cls' | 'mean';
 
-  private constructor(fields: { id: string; revision: string; sha256: string; dim: number; pooling: 'cls' | 'mean'; runtime: 'native' | 'wasm'; extract: OnnxEmbedder['extract'] }) {
+  private constructor(fields: { id: string; revision: string; sha256: string; dim: number; pooling: 'cls' | 'mean'; runtime: 'native' | 'wasm'; whyWasm?: string; extract: OnnxEmbedder['extract'] }) {
     this.runtime = fields.runtime;
+    if (fields.whyWasm !== undefined) this.whyWasm = fields.whyWasm;
     this.id = fields.id;
     this.revision = fields.revision;
     this.sha256 = fields.sha256;
@@ -161,20 +177,48 @@ export class OnnxEmbedder implements Embedder {
     if (typeof revision !== 'string' || !PINNED_REVISION.test(revision)) {
       throw new Error(`the ONNX embedder needs a pinned revision: the commit of the model's repository to load (40 hex characters), not ${revision === undefined ? 'none' : JSON.stringify(revision)}; a branch such as "main" moves, and an index built by one model would be read by another`);
     }
-    const mod = await loadTransformers(options.from);
+    let mod = await loadTransformers(options.from);
     const model = options.model ?? ONNX_DEFAULT_MODEL;
     const dtype = options.dtype ?? 'fp32';
     const pooling = options.pooling ?? 'cls';
-    if (mod.env) {
-      if (options.cacheDir !== undefined) mod.env.cacheDir = options.cacheDir;
-      if (options.localOnly) mod.env.allowRemoteModels = false;
+    const load = async (m: TransformersModule, cacheDir: string | undefined) => {
+      if (m.env) {
+        if (cacheDir !== undefined) m.env.cacheDir = cacheDir;
+        // The package's environment is shared by every embedder in the process: local-only is this one's,
+        // so one that turned it off turns it back on for the next that does not ask for it.
+        if (options.localOnly) {
+          m.env.allowRemoteModels = false;
+          LOCAL_ONLY.add(m.env);
+        } else if (LOCAL_ONLY.has(m.env)) {
+          m.env.allowRemoteModels = true;
+          LOCAL_ONLY.delete(m.env);
+        }
+      }
+      const extract = await m.pipeline('feature-extraction', model, { revision, dtype });
+      const probe = (await extract(['dimension probe'], { pooling, normalize: true })).tolist();
+      const dim = probe[0]?.length ?? 0;
+      if (dim === 0) throw new Error(`the model ${model} gave an empty vector`);
+      return { extract, dim };
+    };
+    let loaded: Awaited<ReturnType<typeof load>>;
+    try {
+      loaded = await load(mod, options.cacheDir);
+    } catch (native) {
+      // The native runtime imported but could not load or run the model: offline, where the package checks
+      // the model repository before reading its cache, or a tokenizer it built empty. The same files from the
+      // cache on WebAssembly, where its runtime is beside the package; the native runtime's error otherwise.
+      if (mod.runtime === 'wasm' || mod.packageDir === undefined || !wasmRuntimeBeside(mod.packageDir)) throw native;
+      const cacheDir = options.cacheDir ?? mod.env?.cacheDir;
+      const wasm: TransformersModule = { ...wasmTransformers(mod.packageDir), runtime: 'wasm', whyWasm: `its native runtime could not load the model (${firstLine(native)})`, packageDir: mod.packageDir };
+      try {
+        loaded = await load(wasm, cacheDir);
+      } catch (error) {
+        throw new Error(`the ONNX model ${model} did not load on its native runtime (${firstLine(native)}), nor on WebAssembly (${firstLine(error)})`);
+      }
+      mod = wasm;
     }
-    const extract = await mod.pipeline('feature-extraction', model, { revision, dtype });
-    const probe = (await extract(['dimension probe'], { pooling, normalize: true })).tolist();
-    const dim = probe[0]?.length ?? 0;
-    if (dim === 0) throw new Error(`the model ${model} gave an empty vector`);
     const sha256 = onnxSha256(model, revision, dtype, pooling);
-    return new OnnxEmbedder({ id: options.id ?? `onnx:${model}`, revision, sha256, dim, pooling, runtime: mod.runtime ?? 'native', extract });
+    return new OnnxEmbedder({ id: options.id ?? `onnx:${model}`, revision, sha256, dim: loaded.dim, pooling, runtime: mod.runtime ?? 'native', ...(mod.whyWasm !== undefined ? { whyWasm: mod.whyWasm } : {}), extract: loaded.extract });
   }
 
   async embed(texts: readonly string[]): Promise<Float64Array[]> {

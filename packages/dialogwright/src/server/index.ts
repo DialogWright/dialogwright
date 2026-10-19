@@ -1069,7 +1069,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   for (const a of appsRun) {
     try {
       const warmed = await a.app.knowledge?.sections?.warm?.();
-      if (warmed) log(`knowledge: ${a.id}: the sections' embedding model is loaded${warmed === 'wasm' ? ' (on WebAssembly: its native runtime has no build for this machine)' : ''}`);
+      if (warmed) log(`knowledge: ${a.id}: the sections' embedding model is loaded${typeof warmed === 'object' ? ` (on WebAssembly: ${warmed.wasm})` : ''}`);
     } catch (err) {
       log(`knowledge: ${a.id}: the sections' embedding model could not be loaded, so sections are found by their keywords: ${err instanceof Error ? err.message : String(err)}`);
     }
