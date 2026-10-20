@@ -1,4 +1,4 @@
-import { anchorOf, type PlacedLine, type Span, type TableGrid } from './grid';
+import { anchorOf, linesIn, type PlacedLine, type Span, type TableGrid } from './grid';
 import type { Rule } from './rules';
 
 /**
@@ -196,16 +196,7 @@ export function borderTables(lines: readonly PlacedLine[], rules: readonly Rule[
     if (ruled === null) continue;
     const grid = withOuterColumns(ruled, lines);
     if (grid.columns.length < 2) continue;
-    const [x0, x1] = [grid.columns[0]![0], grid.columns[grid.columns.length - 1]![1]];
-    const [top, bottom] = [grid.rows[0]![0], grid.rows[grid.rows.length - 1]![1]];
-    const members = lines
-      .map((l, i) => ({ l, i }))
-      .filter(({ l }) => (l.runs ?? []).some((r) => {
-        if (r.text.trim() === '') return false;
-        const at = anchorOf(l, r);
-        return at.x >= x0 && at.x <= x1 && at.y <= top && at.y >= bottom;
-      }))
-      .map(({ i }) => i);
+    const members = linesIn({ ...grid, headRows: 0 }, lines);
     if (members.length === 0) continue;
     found.push({ members, grid: { ...grid, headRows: headRowsOf(grid, members.map((i) => lines[i]!)) } });
   }

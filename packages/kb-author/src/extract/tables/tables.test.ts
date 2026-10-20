@@ -10,6 +10,7 @@ import { borderTables } from './borders';
 import { checkTable, WEAK } from './check';
 import { fillGrid, type TableGrid } from './grid';
 import { readLabels } from './labels';
+import { gridOfModel, HttpModelTableReader, MODEL_MAX_TOKENS, MODEL_TABLE_INSTRUCTIONS, pageLayout } from './model';
 import { rulesOf, type Rule } from './rules';
 import { comparable, scorePages } from './score';
 
@@ -189,7 +190,7 @@ describe('kb:tables', () => {
     writeFileSync(join(t.io.cwd, 'rights-notice.tables.yaml'), LABELS.replace('fees.pdf', 'rights-notice.pdf'));
     expect(await tablesCommand(['.'], t.io)).toBe(0);
     expect(t.out[0]).toBe('# Table readers scored on 1 labelled document, 1 table');
-    expect(t.out).toContain('| rights-notice.pdf | 1 | Fees | not found | 0/6 (0%) | 0/2 (0%) | 0/3 (0%) |  |');
+    expect(t.out).toContain('| rights-notice.pdf | 1 | Fees | not found | 0/6 (0%) | 0/2 (0%) | 0/3 (0%) |  |  |');
   });
 
   it('refuses labels that do not read or name no PDF beside them, and a command line with nothing to score', async () => {
@@ -270,5 +271,62 @@ describe('a table found by its borders', () => {
     expect(table!.grid.rows).toHaveLength(4);
     expect(table!.grid.headRows).toBe(2);
     expect(readTables(lines(withCaption), captioned).lines[0]!.text).toBe('Costs for each service');
+  });
+});
+
+describe('a table a model proposes', () => {
+  it('is checked before it is read: edges in order, two columns and two rows at least, its cells within it and apart', () => {
+    expect(gridOfModel(1, { columns: [40, 160, 400], rows: [700, 680, 600], headRows: 1 })).toMatchObject({ reader: 'model', columns: [[40, 160], [160, 400]], rows: [[700, 680], [680, 600]], headRows: 1, spans: [] });
+    expect(gridOfModel(1, { columns: [40, 400], rows: [700, 680, 600], headRows: 0 })).toBe('fewer than two columns or two rows');
+    expect(gridOfModel(1, { columns: [40, 30, 400], rows: [700, 680, 600], headRows: 0 })).toBe('column edges not in order');
+    expect(gridOfModel(1, { columns: [40, 160, 400], rows: [600, 680, 700], headRows: 0 })).toBe('row edges not in order, top to bottom');
+    const spans = gridOfModel(1, { columns: [40, 160, 280, 400], rows: [700, 680, 660, 600], headRows: 9, spans: [{ row: 0, col: 1, rows: 1, cols: 2 }, { row: 0, col: 2, rows: 2, cols: 1 }, { row: 2, col: 0, rows: 5, cols: 1 }] });
+    // A heading count past the table is none; a span over another, or past the table, is left out.
+    expect(spans).toMatchObject({ headRows: 0, spans: [{ row: 0, col: 1, rows: 1, cols: 2 }] });
+  });
+
+  it('is asked of the page as text: each line\'s runs where they are, bold marked, then the lines the page draws', () => {
+    expect(pageLayout(lines(fees.slice(0, 5)), [{ dir: 'h', at: 690, from: 40, to: 450 }]).split('\n')).toEqual([
+      'y=700 size=10 | 50-70 b "Item" | 200-215 b "Fee" | 320-345 b "Notes"',
+      'y=680 size=10 | 50-130 "Replacement card" | 200-210 "$5"',
+      '',
+      'Drawn lines (h: across at y, from x to x; v: down at x, from y to y):',
+      'h 690 40-450',
+    ]);
+  });
+
+  it('is asked of OpenRouter or Anthropic with the author\'s key from the environment, and refused with why', async () => {
+    const sent: { url: string; init: RequestInit }[] = [];
+    const answering = (body: unknown, status = 200) => (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({ url: String(url), init: init! });
+      return new Response(JSON.stringify(body), { status });
+    }) as typeof fetch;
+    const tables = { tables: [{ columns: [40, 160, 400], rows: [700, 680, 600], headRows: 1, spans: [] }] };
+    const or = new HttpModelTableReader('openrouter:anthropic/claude-haiku-5.5', { OPENROUTER_API_KEY: 'sk-or-test-1234' }, answering({ choices: [{ message: { content: JSON.stringify(tables) } }], usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 } }));
+    expect(await or.propose(1, 'y=700 ...')).toEqual(tables.tables);
+    expect(sent[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(JSON.parse(String(sent[0]!.init.body))).toMatchObject({ model: 'anthropic/claude-haiku-5.5', messages: [{ role: 'system', content: MODEL_TABLE_INSTRUCTIONS }, { role: 'user', content: 'Page 1:\ny=700 ...' }] });
+    expect(or.spent).toEqual({ requests: 1, inputTokens: 100, outputTokens: 20, costUsd: 0.001 });
+    const an = new HttpModelTableReader('anthropic:claude-haiku-5-5', { ANTHROPIC_API_KEY: 'sk-ant-test-1234' }, answering({ content: [{ type: 'text', text: JSON.stringify(tables) }], usage: { input_tokens: 90, output_tokens: 10 } }));
+    expect(await an.propose(2, 'y=700 ...')).toEqual(tables.tables);
+    expect(sent[1]!.url).toBe('https://api.anthropic.com/v1/messages');
+    expect((sent[1]!.init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-test-1234');
+    await expect(new HttpModelTableReader('openrouter:x/y', {}).propose(1, '')).rejects.toThrow('OPENROUTER_API_KEY is not set');
+    expect(() => new HttpModelTableReader('azure:x', {})).toThrow('a model is <openrouter|anthropic>:<model id>');
+    const refused = new HttpModelTableReader('openrouter:x/y', { OPENROUTER_API_KEY: 'sk-or-test-1234' }, answering({ error: { message: 'bad key sk-or-test-1234' } }, 401));
+    await expect(refused.propose(1, '')).rejects.toThrow('openrouter answered 401: bad key [key]');
+    const cut = new HttpModelTableReader('openrouter:x/y', { OPENROUTER_API_KEY: 'sk-or-test-1234' }, answering({ choices: [{ finish_reason: 'length', message: { content: null } }] }));
+    await expect(cut.propose(1, '')).rejects.toThrow(`openrouter:x/y's answer is not the JSON asked for (cut off at ${MODEL_MAX_TOKENS} tokens)`);
+  });
+
+  it('is read where it scores better than the readings by where the text is, and every reading is returned', () => {
+    // Columns too close for a gutter: where the text is, the table is one column; the model's grid parts them.
+    const close = [run('Tier 1', 50, 700), run('$10', 90, 700, 10, 'R', 18), run('Tier 2', 50, 690), run('$25', 90, 690, 10, 'R', 18), run('Tier 3', 50, 680), run('$40', 90, 680, 10, 'R', 18)];
+    const grid = gridOfModel(1, { columns: [45, 85, 115], rows: [706, 696, 686, 676], headRows: 0 });
+    if (typeof grid === 'string') throw new Error(grid);
+    const read = readTables(lines(close), [], [grid]);
+    expect(read.tables.map((t) => t.table.grid.reader)).toEqual(['model']);
+    expect(read.lines.map((l) => l.text)).toEqual(['Tier 1: $10', 'Tier 2: $25', 'Tier 3: $40']);
+    expect(read.proposed.map((t) => t.table.grid.reader)).toContain('model');
   });
 });

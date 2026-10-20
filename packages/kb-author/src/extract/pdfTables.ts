@@ -2,7 +2,7 @@ import { alignmentTables, type Proposal } from './tables/alignment';
 import { rowsOfTable } from './tables/assemble';
 import { borderTables } from './tables/borders';
 import { checkTable, type TableCheck } from './tables/check';
-import { fillGrid, type FilledTable, type PlacedLine, type RowLine } from './tables/grid';
+import { fillGrid, linesIn, type FilledTable, type PlacedLine, type RowLine, type TableGrid } from './tables/grid';
 import type { Rule } from './tables/rules';
 
 export { columnsOf } from './tables/alignment';
@@ -34,14 +34,18 @@ export interface TableRead {
 
 /**
  * A page's lines with each table's lines read as its rows (see the file's comment), in the page's order,
- * and the tables read; `rules` are the lines the page draws (./tables/rules.ts).
+ * and the tables read; `rules` are the lines the page draws (./tables/rules.ts), and `proposed` grids a
+ * reader of its own gives (a model's, ./tables/model.ts), each holding the lines inside it. `proposed` in
+ * the result is every reader's reading, read or not (kb:tables scores each).
  */
-export function readTables<L extends PlacedLine>(lines: readonly L[], rules: readonly Rule[] = []): { lines: (L | RowLine)[]; tables: TableRead[] } {
-  const found: { members: number[]; proposals: readonly Proposal[]; borders: boolean }[] = [
-    ...borderTables(lines, rules).map(({ members, grid }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], borders: true })),
-    ...alignmentTables(lines).map((f) => ({ ...f, borders: false })),
+export function readTables<L extends PlacedLine>(lines: readonly L[], rules: readonly Rule[] = [], proposed: readonly TableGrid[] = []): { lines: (L | RowLine)[]; tables: TableRead[]; proposed: TableRead[] } {
+  // Ties go to drawn lines, then a model's grid, then where the text is.
+  const found: { members: number[]; proposals: readonly Proposal[]; rank: number }[] = [
+    ...borderTables(lines, rules).map(({ members, grid }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], rank: 2 })),
+    ...proposed.map((grid) => ({ grid, members: linesIn(grid, lines) })).filter((p) => p.members.length > 0).map(({ grid, members }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], rank: 1 })),
+    ...alignmentTables(lines).map((f) => ({ ...f, rank: 0 })),
   ];
-  if (found.length === 0) return { lines: [...lines], tables: [] };
+  if (found.length === 0) return { lines: [...lines], tables: [], proposed: [] };
   // Each proposal filled, checked and said; a region's score is its tables' least.
   const regions = found.map((f) => {
     const reads = f.proposals.map((p): TableRead => {
@@ -51,7 +55,7 @@ export function readTables<L extends PlacedLine>(lines: readonly L[], rules: rea
     return { ...f, reads, score: Math.min(...reads.map((r) => r.check.score)) };
   });
   // The best first; one holding a line a better one holds is not read.
-  regions.sort((a, b) => b.score - a.score || Number(b.borders) - Number(a.borders));
+  regions.sort((a, b) => b.score - a.score || b.rank - a.rank);
   const taken = new Set<number>();
   const tables: TableRead[] = [];
   const read: { at: number; rows: RowLine[] }[] = [];
@@ -67,7 +71,7 @@ export function readTables<L extends PlacedLine>(lines: readonly L[], rules: rea
     if (table) out.push(...table.rows);
     if (!taken.has(i)) out.push(l);
   });
-  return { lines: out, tables };
+  return { lines: out, tables, proposed: regions.flatMap((r) => r.reads) };
 }
 
 /** A page's lines with each table's lines read as its rows, in the page's order. */

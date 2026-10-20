@@ -107,6 +107,19 @@ export const boxOf = (grid: TableGrid): { x0: number; x1: number; top: number; b
   bottom: grid.rows[grid.rows.length - 1]![1],
 });
 
+/** The indexes of `lines` with text whose anchor is inside a grid's box: the lines a grid proposed by its edges alone holds. */
+export function linesIn(grid: TableGrid, lines: readonly PlacedLine[]): number[] {
+  const box = boxOf(grid);
+  return lines
+    .map((l, i) => ({ l, i }))
+    .filter(({ l }) => (l.runs ?? []).some((r) => {
+      if (r.text.trim() === '') return false;
+      const at = anchorOf(l, r);
+      return at.x >= box.x0 && at.x <= box.x1 && at.y <= box.top && at.y >= box.bottom;
+    }))
+    .map(({ i }) => i);
+}
+
 /** The first of `ranges` whose edges hold `v` (low to high, or high to low), or -1. */
 const indexIn = (ranges: readonly (readonly [number, number])[], v: number): number =>
   ranges.findIndex(([a, b]) => v >= Math.min(a, b) && v <= Math.max(a, b));

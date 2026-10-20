@@ -2,6 +2,8 @@ import { readTables, type TableRead } from '../pdfTables';
 import { bodyLines, pdfPages, type PageLines } from '../pdf';
 import { joinCell } from './grid';
 import type { LabelCell, LabelFile, LabelTable } from './labels';
+import { gridOfModel, pageLayout, type ModelTableReader } from './model';
+import type { TableGrid } from './grid';
 
 /**
  * The tables read from a document scored on its labels (./labels.ts): for each labelled table, the
@@ -27,6 +29,8 @@ export interface TableScore {
   readonly heads: Tally;
   /** The first cells it has wrong: the label, and the row it was matched with as read. */
   readonly misses: readonly { readonly label: string; readonly row: string | null }[];
+  /** Each reader's best on it, read or not: its cells right. */
+  readonly readers?: Readonly<Record<string, Tally>>;
 }
 
 export interface DocumentScore {
@@ -34,6 +38,8 @@ export interface DocumentScore {
   readonly tables: readonly TableScore[];
   /** Labelled words not found in the page's text (a slip in the labels, or a word the page draws as a picture). */
   readonly unseen: readonly { readonly page: number; readonly words: string }[];
+  /** What a model reader could not give, by page (its error, or a grid refused and why). */
+  readonly model?: readonly { readonly page: number; readonly problem: string }[];
 }
 
 const MISSES = 3;
@@ -118,32 +124,67 @@ function scoreAgainst(table: LabelTable, read: TableRead): Omit<TableScore, 'pag
   };
 }
 
-/** The tables read from `pages` scored on `labels` (see the file's comment). */
-export function scorePages(pages: readonly PageLines[], labels: LabelFile): DocumentScore {
+/** A model reader's grids for each labelled page, and what it could not give. */
+async function modelGrids(pages: readonly PageLines[], labels: LabelFile, model: ModelTableReader): Promise<{ grids: Map<number, TableGrid[]>; problems: { page: number; problem: string }[] }> {
+  const body = bodyLines(pages);
+  const grids = new Map<number, TableGrid[]>();
+  const problems: { page: number; problem: string }[] = [];
+  for (const page of [...new Set(labels.tables.map((t) => t.page))]) {
+    const lines = body.filter((l) => l.page === page);
+    try {
+      const tables = await model.propose(page, pageLayout(lines, pages.find((p) => p.page === page)?.rules ?? []));
+      const ok: TableGrid[] = [];
+      for (const t of tables) {
+        const g = gridOfModel(page, t);
+        if (typeof g === 'string') problems.push({ page, problem: `a grid refused: ${g}` });
+        else ok.push(g);
+      }
+      grids.set(page, ok);
+    } catch (error) {
+      problems.push({ page, problem: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { grids, problems };
+}
+
+/** The tables read from `pages` scored on `labels` (see the file's comment); with `model`, its grids proposed beside the other readers'. */
+export function scorePages(pages: readonly PageLines[], labels: LabelFile, model?: { grids: Map<number, TableGrid[]>; problems: { page: number; problem: string }[] }): DocumentScore {
   const body = bodyLines(pages);
   const readOn = new Map<number, TableRead[]>();
+  const proposedOn = new Map<number, TableRead[]>();
   const tables: TableScore[] = [];
   const unseen: { page: number; words: string }[] = [];
   for (const table of labels.tables) {
-    if (!readOn.has(table.page)) readOn.set(table.page, readTables(body.filter((l) => l.page === table.page), pages.find((p) => p.page === table.page)?.rules).tables);
+    if (!readOn.has(table.page)) {
+      const read = readTables(body.filter((l) => l.page === table.page), pages.find((p) => p.page === table.page)?.rules, model?.grids.get(table.page) ?? []);
+      readOn.set(table.page, read.tables);
+      proposedOn.set(table.page, read.proposed);
+    }
     const reads = readOn.get(table.page)!;
+    // Each reader's best on this table, among all it proposed on the page, read or not.
+    const readers: Record<string, Tally> = {};
+    for (const r of proposedOn.get(table.page) ?? []) {
+      const s = scoreAgainst(table, r);
+      const name = r.table.grid.reader;
+      if (readers[name] === undefined || s.cells.right > readers[name]!.right) readers[name] = s.cells;
+    }
     // The read table with most of its cells; none when no read table has any of them (not found).
     const scored = reads.map((r) => scoreAgainst(table, r)).filter((s) => s.cells.right > 0).sort((a, b) => b.cells.right - a.cells.right)[0];
     const of = table.rows.reduce((n, row) => n + row.length, 0);
     const heads = labelHeads(table);
     const none = { cells: { right: 0, of }, rows: { right: 0, of: table.rows.length }, heads: { right: 0, of: heads.columnHeads.length + heads.spanHeads.length }, misses: [] };
-    tables.push({ page: table.page, name: table.name, ...(scored ?? none) });
+    tables.push({ page: table.page, name: table.name, ...(scored ?? none), readers });
     // The labelled words the page's text does not have.
     const page = pages.find((p) => p.page === table.page);
     const text = comparable((page?.lines ?? []).map((l) => l.text).join(' '));
     const words = [...table.heads, ...table.rows].flat().flatMap((c) => c.text.split(/\s+/)).filter((w) => w !== '' && !text.includes(comparable(w)));
     if (words.length > 0) unseen.push({ page: table.page, words: [...new Set(words)].join(' ') });
   }
-  return { document: labels.document, tables, unseen };
+  return { document: labels.document, tables, unseen, ...(model !== undefined ? { model: model.problems } : {}) };
 }
 
-/** A PDF's tables scored on its labels. */
-export async function scorePdf(bytes: Uint8Array, labels: LabelFile): Promise<DocumentScore> {
+/** A PDF's tables scored on its labels; with a model reader, its grids proposed too. */
+export async function scorePdf(bytes: Uint8Array, labels: LabelFile, model?: ModelTableReader): Promise<DocumentScore> {
   const { pages } = await pdfPages(bytes);
-  return scorePages(pages, labels);
+  return scorePages(pages, labels, model === undefined ? undefined : await modelGrids(pages, labels, model));
 }

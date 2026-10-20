@@ -1,6 +1,6 @@
 # Table readers: one format, several readers, measured on labelled documents
 
-Date: 2026-10-20. Status: **steps 1 and 2 built** (the format, the filling, the checker, the scorer; the alignment reader moved onto them, then a reader from a table's drawn borders); step 3 (a model that reads the page) to come, measured the same way.
+Date: 2026-10-20. Status: **steps 1 to 3 built and measured** (the format, the filling, the checker, the scorer; the alignment reader moved onto them, then a reader from a table's drawn borders); step 3 (a model that reads the page) to come, measured the same way.
 
 ## Why
 
@@ -49,7 +49,23 @@ Twelve of the fifteen tables are read 90% right or better, ten of them perfectly
 
 The alignment reader also changed: two of its tables that share lines are read once, together (one ended early and the next reached back into it). Before, both were read, so the booklet said several tables twice, once without their headings, and one table of decision times lost the times on its last rows. On the booklet, every line that changes from step 1 is a fix: the duplicates gone, the decision times whole, four numbered items that were said as their number alone said with their text. The claims table, drawn with inner rules only, reads as before through the border reader. The checker still calls two of the booklet's tables weak, both misread before and after (a numbered item read as a table's row; one row of a table of programs swallowing several services and a heading). The utility app's two documents read exactly as before.
 
+## Step 3: a model that reads where the tables are
+
+`tables/model.ts` asks a model where a page's tables are, given the page as text: each baseline's runs with where they start and end, their size and weight, and the lines the page draws (no image: nothing to render, and the positions are what a grid needs). It answers each table's column and row edges, heading rows and cells over several columns or rows, as JSON; code checks the grid and fills it from the page's own runs, so a model can misplace an edge but never change a word. Where its table and another reader's hold the same lines, the checker's better score is read (drawn lines first on a tie, then the model, then the alignment).
+
+Measured on the same fifteen tables with `kb:tables --model`:
+
+| | Cells right | Whole rows | Headings | The 14 pages cost |
+|---|---|---|---|---|
+| Borders and alignment (step 2) | 247 of 390 (63%) | 67 of 101 | 59 of 74 | nothing |
+| With Claude Sonnet 5.5 (OpenRouter) | 387 (99%) | 98 | 68 | $0.35 |
+| With Claude Haiku 5.5 (OpenRouter) | 387 (99%) | 98 | 69 | $0.04 |
+| With Gemini 3.8 Flash (OpenRouter) | 253 (65%) | 70 | 59 | $0.33 |
+
+The model read the three tables neither reader could (the rate table ruled only at its outline: 98 of 98 cells; its vintages beside their rates: 38 of 38; the rates with no rules at all: 9 of 9). Alone, Haiku read 377 cells and Sonnet 387; with the others and the checker choosing, both 387. A model that reasons needs room to: Sonnet spent 4,000 tokens thinking about the rate table before it answered, so a page may take 16,000. Gemini 3.8 Flash ran out of even those on that page. In no run did the checker call a table read well weak; with Gemini, it called both tables Gemini read badly weak.
+
 ## Next
 
-- **Step 3, a model that reads the page**, for the tables neither reader reads (no borders, two columns of prose): given the page's image and its runs, it proposes a grid; the filling keeps the words the page's own. Run by the author with their own key, once per document (cached by its hash), never on a call or in CI; measured on the same labels, and possibly an off-the-shelf table-structure model beside it.
+- **The model reader in `kb:ingest`**, opt-in (`--tables <provider:model>`), on the pages where a reader finds a table, its grids kept beside the knowledge base so a re-import with no key reads the same.
+
 - The labelled set grows each time a document breaks. It lives outside the repository for now (its documents are other publishers'); the format and the scorer are here.

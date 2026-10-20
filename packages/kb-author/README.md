@@ -72,10 +72,12 @@ A folder is read recursively in name order. Hidden entries and `node_modules` ar
 ## Measuring the table readers
 
 ```sh
-pnpm kb:tables <labels file | folder>... [--out <file>] [--json]
+pnpm kb:tables <labels file | folder>... [--model <openrouter|anthropic>:<model id>] [--out <file>] [--json]
 ```
 
 A person labels a document's tables in `<name>.tables.yaml` beside it: each table's page, its heading rows and its rows, cell by cell in the words printed (`~` for a place another cell covers, `{ text, span: N }` for a cell over N columns; `src/extract/tables/labels.ts` has the format). `kb:tables` reads each labelled PDF and scores the tables read on the labels: for each table, how many of its cells, whole rows and headings were read right (compared without case or spacing), the checker's score of it, and the first cells read wrong with the row they were matched with; then the totals, how many labelled tables were not found at all, and how many of those read badly the checker calls weak. It also lists any labelled word the page's text does not have, which is a slip in the labels. A folder is searched for labels files. Exit codes: 0 a report written, 1 a labels file that does not read or a document not found, 2 a command line not understood.
+
+`--model` adds a third reader (`src/extract/tables/model.ts`): it asks that model, with your own key (`OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`; never in CI), where each labelled page's tables are, given the page as text (each baseline's runs where they are, their size and weight, and the lines the page draws) and answered as each table's column and row edges, heading rows and cells over several columns or rows: a grid, never words. The grid is checked (edges in order, two columns and two rows at least, its cells within it and apart) and filled from the page's own runs like every reader's, and where its table and another reader's hold the same lines the checker's better score is read. The report gives each reader's best on each table beside the one read, and what the model spent. On the labelled set, `openrouter:anthropic/claude-haiku-5.5` read 99% of the cells (387 of 390, with the other readers) for about a quarter of a cent a page.
 
 It is how a change to a reader, or a new one, is measured: run it before and after on the same labelled documents. Keep the labelled set wherever suits the documents' owners; nothing in this repository needs it.
 

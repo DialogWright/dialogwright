@@ -4,6 +4,7 @@ import { parseArgs } from '../args';
 import type { Io } from '../cli';
 import { WEAK } from '../extract/tables/check';
 import { readLabels } from '../extract/tables/labels';
+import { HttpModelTableReader, ModelReaderError, type ModelTableReader } from '../extract/tables/model';
 import { scorePdf, type DocumentScore, type Tally } from '../extract/tables/score';
 
 /**
@@ -19,10 +20,11 @@ import { scorePdf, type DocumentScore, type Tally } from '../extract/tables/scor
  */
 
 export const TABLES_USAGE = [
-  'usage: kb:tables <labels file | folder>... [--out <file>] [--json]',
+  'usage: kb:tables <labels file | folder>... [--model <openrouter|anthropic>:<model id>] [--out <file>] [--json]',
   '  scores the PDF table readers on documents whose tables a person labelled (<name>.tables.yaml beside each document):',
   '  each table\'s cells, whole rows and headings read right, the checker\'s score of it and the first cells read wrong, then the totals.',
   '  A folder is searched for labels files; --out writes the report to a file; --json prints JSON for tools.',
+  '  --model asks that model where each labelled page\'s tables are (OPENROUTER_API_KEY or ANTHROPIC_API_KEY, your own; never in CI), its grids read beside the others\'.',
 ].join('\n');
 
 /** The labels files under a folder, or the file itself. */
@@ -46,9 +48,10 @@ const cell = (s: string) => s.replace(/\|/g, '\\|');
 export function formatTables(scores: readonly DocumentScore[]): string[] {
   const all = scores.flatMap((d) => d.tables.map((t) => ({ d, t })));
   const lines = [`# Table readers scored on ${scores.length} labelled document${scores.length === 1 ? '' : 's'}, ${all.length} table${all.length === 1 ? '' : 's'}`, ''];
-  lines.push('| Document | Page | Table | Reader | Cells right | Whole rows | Headings | Check |', '|---|---|---|---|---|---|---|---|');
+  lines.push('| Document | Page | Table | Reader | Cells right | Whole rows | Headings | Check | Each reader\'s cells |', '|---|---|---|---|---|---|---|---|---|');
   for (const { d, t } of all) {
-    lines.push(`| ${cell(d.document)} | ${t.page} | ${cell(t.name)} | ${t.reader ?? 'not found'} | ${share(t.cells)} | ${share(t.rows)} | ${share(t.heads)} | ${t.check === undefined ? '' : t.check.toFixed(2)} |`);
+    const each = Object.entries(t.readers ?? {}).map(([name, c]) => `${name} ${c.right}`).join(', ');
+    lines.push(`| ${cell(d.document)} | ${t.page} | ${cell(t.name)} | ${t.reader ?? 'not found'} | ${share(t.cells)} | ${share(t.rows)} | ${share(t.heads)} | ${t.check === undefined ? '' : t.check.toFixed(2)} | ${each} |`);
   }
   const cells = sum(all.map(({ t }) => t.cells));
   lines.push('', `Cells ${share(cells)}; whole rows ${share(sum(all.map(({ t }) => t.rows)))}; headings ${share(sum(all.map(({ t }) => t.heads)))}.`);
@@ -69,6 +72,11 @@ export function formatTables(scores: readonly DocumentScore[]): string[] {
       for (const m of t.misses) lines.push(`  - "${m.label}": the row read: ${m.row === null ? 'none matched' : `"${m.row.length > 200 ? `${m.row.slice(0, 200)}…` : m.row}"`}`);
     }
   }
+  const failed = scores.flatMap((d) => (d.model ?? []).map((m) => ({ d, m })));
+  if (failed.length > 0) {
+    lines.push('', '## What the model could not give', '');
+    for (const { d, m } of failed) lines.push(`- ${d.document} p${m.page}: ${m.problem}`);
+  }
   const unseen = scores.flatMap((d) => d.unseen.map((u) => ({ d, u })));
   if (unseen.length > 0) {
     lines.push('', '## Labelled words not in the page\'s text (check the labels)', '');
@@ -78,7 +86,7 @@ export function formatTables(scores: readonly DocumentScore[]): string[] {
 }
 
 export async function tablesCommand(args: readonly string[], io: Io): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--out'], lists: [], flags: ['--json'] });
+  const parsed = parseArgs(args, { values: ['--out', '--model'], lists: [], flags: ['--json'] });
   if (typeof parsed === 'string') {
     io.err(`kb:tables: ${parsed}\n${TABLES_USAGE}`);
     return 2;
@@ -100,6 +108,20 @@ export async function tablesCommand(args: readonly string[], io: Io): Promise<nu
     io.err('kb:tables: no labels files (<name>.tables.yaml) found');
     return 1;
   }
+  let model: ModelTableReader | undefined;
+  if (parsed.values['--model'] !== undefined) {
+    const env = io.env ?? process.env;
+    if (env.CI !== undefined && env.CI !== '' && env.CI !== 'false') {
+      io.err('kb:tables: --model does not run in CI: it asks a model with your own key, on your machine');
+      return 2;
+    }
+    try {
+      model = new HttpModelTableReader(parsed.values['--model'], env, io.fetch);
+    } catch (error) {
+      io.err(`kb:tables: ${error instanceof ModelReaderError ? error.message : String(error)}`);
+      return 2;
+    }
+  }
   const scores: DocumentScore[] = [];
   for (const file of files) {
     const where = relative(io.cwd, file);
@@ -113,9 +135,13 @@ export async function tablesCommand(args: readonly string[], io: Io): Promise<nu
       io.err(`kb:tables: ${where}: ${labels.document} is not a PDF beside it`);
       return 1;
     }
-    scores.push(await scorePdf(new Uint8Array(readFileSync(document)), labels));
+    scores.push(await scorePdf(new Uint8Array(readFileSync(document)), labels, model));
   }
   const text = parsed.flags.has('--json') ? [JSON.stringify(scores, null, 2)] : formatTables(scores);
+  if (model?.spent !== undefined && !parsed.flags.has('--json')) {
+    const s = model.spent;
+    text.push('', `${model.id}: ${s.requests} request${s.requests === 1 ? '' : 's'}, ${s.inputTokens.toLocaleString('en-US')} tokens in and ${s.outputTokens.toLocaleString('en-US')} out${s.costUsd !== undefined ? `, $${s.costUsd.toFixed(4)}` : ''}.`);
+  }
   const out = parsed.values['--out'];
   if (out !== undefined) {
     writeFileSync(resolve(io.cwd, out), `${text.join('\n')}\n`);
