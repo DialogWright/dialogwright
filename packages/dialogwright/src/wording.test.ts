@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
  * the docs, the scaffold's templates, the authoring package (its code and fixtures), the web chat
  * widget, the create-app skill, the CI, the landing page (site/) and the root's own pages. One name
  * this repository never carries is refused everywhere here (written in pieces so that this file keeps
- * to the rule it checks), and no file has an em dash. An app's own words are its own: a foundation
+ * to the rule it checks), and no file has an em dash but a model's recording. An app's own words are its own: a foundation
  * repair line's warranty claim or a clinic's insurance card is that app's business.
  */
 
@@ -67,7 +67,9 @@ describe('the wording of the apps, the docs, the templates, the skill and the si
   });
 
   it('has no em dash', () => {
-    const dashed = files().filter((file) => readFileSync(file, 'utf8').includes('\u2014')).map(pathOf);
+    // A recording (fixtures/recorded/) is a model's own output kept as it came, so a replay says what was said or
+    // refused: a wording with an em dash, which an app's style.yaml avoid refuses, stays in it.
+    const dashed = files().filter((file) => !pathOf(file).includes('/fixtures/recorded/') && readFileSync(file, 'utf8').includes('\u2014')).map(pathOf);
     expect(dashed).toEqual([]);
   });
 });
