@@ -10,9 +10,6 @@ persona: a friendly, plain-spoken member services agent at an insurance company
 avoid:
   - unfortunately
   - I apologize for the inconvenience
-  # mercury-3 writes an em dash in about one wording in ten (2026-10-19): told to avoid it, and a wording with one
-  # is not said
-  - "\u2014"
 # The model that words the answers: inception/mercury-3 (a diffusion model; no reasoning setting). Measured
 # 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low reasoning (render:bakeoff, 43 lines):
 # p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around 2 of 144 for both, a third of the cost.
