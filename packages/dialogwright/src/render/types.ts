@@ -127,6 +127,8 @@ export interface SpanAct {
     readonly from?: 'sections';
     /** A second wording's (a span's `retry`): the wording before it, which the drift judge refused. Absent on a first. */
     readonly refused?: string;
+    /** A second wording's after the first ran over the answer's word budget (a span's `retryLong`); absent otherwise. */
+    readonly tooLong?: true;
     /** The caller's earlier question on the call, which this one may continue (kb.yaml documents.followUps); absent otherwise. */
     readonly earlier?: string;
   };

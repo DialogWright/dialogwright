@@ -11,7 +11,7 @@ import { HeuristicStubClient } from '../jev/heuristicStub';
 import { noulAnswer } from '../jev/distributions';
 import type { AnswerMap, JevClient } from '../jev/types';
 import { FakeRenderClient, type FakeRenderOptions } from '../render/fake';
-import { SECTIONS_INSTRUCTIONS, SECTIONS_INSTRUCTIONS_EARLIER, instructionsOf } from '../render/prompt';
+import { SECTIONS_INSTRUCTIONS, SECTIONS_INSTRUCTIONS_EARLIER, TOO_LONG_INSTRUCTIONS, instructionsOf } from '../render/prompt';
 import { buildTurnState } from '../core/state';
 import { slotContext } from '../core/turn';
 import { slotSpecOf } from '../core/app/lookup';
@@ -62,9 +62,9 @@ const DOCUMENTS_LINES = `
 `;
 
 /** The library with its visitor guide approved for summarizing and summarizing on; `retry` on its documents line. */
-function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; retryGoal?: string; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
+function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; retryGoal?: string; retryLong?: boolean; retryWords?: number; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
   const prompts = (t: string): string => {
-    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', `        retry: 1\n${options.retryGoal !== undefined ? `        retryGoal: ${options.retryGoal}\n` : ''}        goal: Answer`) : DOCUMENTS_LINES;
+    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', `        retry: 1\n${options.retryGoal !== undefined ? `        retryGoal: ${options.retryGoal}\n` : ''}${options.retryLong ? '        retryLong: true\n' : ''}${options.retryWords !== undefined ? `        retryWords: ${options.retryWords}\n` : ''}        goal: Answer`) : DOCUMENTS_LINES;
     return `${APP_EDITS['prompts.yaml']!(t)}${lines}`;
   };
   const forms = (t: string): string => {
@@ -250,6 +250,32 @@ describe('the answer worded from the sections, checked against them', () => {
     const over = await rendered(app, t, long);
     expect(long.client.askedSpans).toHaveLength(1);
     expect(docLine(over)).toMatchObject({ mode: 'fixed', fallback: 'words' });
+    // With retryLong it is, told it ran long (its instructions say so only then: a first wording's key is as it was).
+    const app2 = documentsApp('library-documents-retry-long', { retry: true, retryLong: true });
+    const t2 = asked(app2, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const tooLong = Array.from({ length: 70 }, () => 'free').join(' ');
+    const again = renderer({ eachSpan: () => (again.client.askedSpans.length === 1 ? tooLong : 'Every branch has free Wi-Fi.') });
+    const shorter = await rendered(app2, t2, again);
+    expect(again.client.askedSpans).toHaveLength(2);
+    expect((again.client.askedSpans[1]!.act as SpanAct).answer).toMatchObject({ refused: tooLong, tooLong: true });
+    expect(instructionsOf(again.client.askedSpans[1]!.act)).toBe(`${SECTIONS_INSTRUCTIONS} ${TOO_LONG_INSTRUCTIONS}`);
+    expect(instructionsOf(again.client.askedSpans[0]!.act)).toBe(SECTIONS_INSTRUCTIONS);
+    expect(docLine(shorter)).toMatchObject({ mode: 'generated', said: 'Every branch has free Wi-Fi.', retried: { fallback: 'words' } });
+    // With retryWords, a wording over words that fits the longer budget is checked and judged again as it is,
+    // and said, with no second wording; one longer still is asked again at that budget (with retryLong).
+    const app3 = documentsApp('library-documents-retry-words', { retry: true, retryLong: true, retryWords: 80 });
+    const t3 = asked(app3, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const seventy = Array.from({ length: 70 }, () => 'free').join(' ');
+    const fits = renderer({ eachSpan: () => seventy });
+    const kept = await rendered(app3, t3, fits);
+    expect(fits.client.askedSpans).toHaveLength(1);
+    expect(docLine(kept)).toMatchObject({ mode: 'generated', said: seventy, retried: { fallback: 'words', refused: seventy } });
+    const ninety = Array.from({ length: 90 }, () => 'free').join(' ');
+    const longer = renderer({ eachSpan: () => (longer.client.askedSpans.length === 1 ? ninety : 'Every branch has free Wi-Fi.') });
+    const asked2 = await rendered(app3, t3, longer);
+    expect(longer.client.askedSpans).toHaveLength(2);
+    expect((longer.client.askedSpans[1]!.act as SpanAct)).toMatchObject({ style: { words: 80 }, answer: { tooLong: true } });
+    expect(docLine(asked2)).toMatchObject({ mode: 'generated', said: 'Every branch has free Wi-Fi.' });
   });
 
   it('a documents cutoff of its own (style.yaml judge.documentsRefuseAt) holds answers from documents alone', async () => {

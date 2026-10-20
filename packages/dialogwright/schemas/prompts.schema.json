@@ -143,6 +143,16 @@
                   "minimum": 0,
                   "maximum": 1
                 },
+                "retryLong": {
+                  "description": "An answer span with retry only: whether a wording over the span's word budget (words) is asked again too, told only that its last ran over it. A long answer (a table's many rows) often cannot be said shorter without leaving out what bears on the question, so measure it beside a larger words. Default false: a wording too long is not asked again.",
+                  "type": "boolean"
+                },
+                "retryWords": {
+                  "description": "An answer span only: a longer word budget for a wording over words. The wording is held to it instead, checked and judged again where it fits, with no second wording asked; with retryLong, one longer still is asked again at this budget. The model is told words; a long answer (a table's many rows) that cannot be said within it is said at up to retryWords rather than not at all. Default: none, a wording over words is not said.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                },
                 "retryGoal": {
                   "description": "An answer span with retry only: the goal its second wording is given in place of goal, the app's own words (a stricter one: \"only what the sections say\"). The second wording is judged as the first. Default: goal.",
                   "type": "string",

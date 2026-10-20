@@ -150,8 +150,15 @@ export const SECTIONS_INSTRUCTIONS_EARLIER = SECTIONS_INSTRUCTIONS.replace(
   '"answer.question", the caller\'s question in their own words, quoted, and "answer.earlier", their earlier question on the call, quoted, which this one may continue ("what about for a family?" asks about what the earlier one did);',
 ).replace('Write the answer so it does what "goal" says for the caller\'s question,', 'Write the answer so it does what "goal" says for the caller\'s question, read with their earlier one where it continues it,');
 
+/** Said after a knowledge answer's instructions on its second wording when the first ran over its word budget (SpanAct.answer.tooLong). */
+export const TOO_LONG_INSTRUCTIONS = '"answer.tooLong" says your earlier wording, "answer.refused", used more than style.words words.';
+
 export function instructionsOf(act: RenderAct): string {
-  if (isSpanAct(act)) return act.answer?.from === 'sections' ? (act.answer.earlier !== undefined ? SECTIONS_INSTRUCTIONS_EARLIER : SECTIONS_INSTRUCTIONS) : act.answer !== undefined ? ANSWER_INSTRUCTIONS : act.speaks === 'to-caller' ? SPAN_INSTRUCTIONS_TO_CALLER : SPAN_INSTRUCTIONS;
+  if (isSpanAct(act)) {
+    const answer = act.answer?.from === 'sections' ? (act.answer.earlier !== undefined ? SECTIONS_INSTRUCTIONS_EARLIER : SECTIONS_INSTRUCTIONS) : act.answer !== undefined ? ANSWER_INSTRUCTIONS : null;
+    if (answer !== null) return act.answer?.tooLong === true ? `${answer} ${TOO_LONG_INSTRUCTIONS}` : answer;
+    return act.speaks === 'to-caller' ? SPAN_INSTRUCTIONS_TO_CALLER : SPAN_INSTRUCTIONS;
+  }
   return act.acknowledge === false ? RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT : RENDER_INSTRUCTIONS;
 }
 

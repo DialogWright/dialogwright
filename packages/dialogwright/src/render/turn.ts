@@ -592,16 +592,25 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
   // (checkAnswer), and asked of the drift judge whether it says only what the passage says for the
   // question; its checks have the line's budget, or what is left of the answer's limit where that is more.
-  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly SectionLine[], retryGoal?: string): Promise<Attempt> => {
+  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly SectionLine[], retryGoal?: string, retryLong = false, retryWords?: number): Promise<Attempt> => {
     const flagged = await screened([{ name: 'question', value: first.answer!.question }], checker());
     if (flagged !== null) return flagged;
     let got = await wordAnswer(promptId, span, first);
-    // A wording that said more than its source (the drift judge refused it, or it has a figure the source
-    // does not): asked again (the span's `retry`), told only that its last was refused, within what is
-    // left of the answer's limit; each draw is checked and judged again. The first refusal is kept on the line.
     const firstGot = got;
-    for (let n = 0; n < retries && 'fallback' in got && RETRIED.has(got.fallback) && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
-      got = await wordAnswer(promptId, span, { ...first, ...(retryGoal !== undefined ? { goal: retryGoal } : {}), answer: { ...first.answer!, refused: got.refused } }, got);
+    // A wording over its word budget, where the span gives a longer one (its retryWords): held to that from
+    // here on, and the wording itself checked and judged again where it fits it, with no second wording asked.
+    const act = retryWords !== undefined && retryWords > first.style.words ? { ...first, style: { ...first.style, words: retryWords } } : first;
+    if (act !== first && 'fallback' in got && got.fallback === 'words' && got.refused !== undefined && got.gen !== undefined && wordCount(got.refused) <= act.style.words) {
+      got = await judgeAnswer(got.refused, act, got.gen);
+    }
+    // A wording that said more than its source (the drift judge refused it, or it has a figure the source
+    // does not), or with retryLong one over its word budget: asked again (the span's `retry`), told only that
+    // its last was refused (or ran long), within what is left of the answer's limit; each draw is checked and
+    // judged again. The first refusal is kept on the line.
+    const again = (g: Attempt): boolean => 'fallback' in g && (RETRIED.has(g.fallback) || (retryLong && g.fallback === 'words'));
+    for (let n = 0; n < retries && again(got) && 'fallback' in got && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
+      const tooLong = got.fallback === 'words' ? { tooLong: true as const } : {};
+      got = await wordAnswer(promptId, span, { ...act, ...(retryGoal !== undefined ? { goal: retryGoal } : {}), answer: { ...act.answer!, refused: got.refused, ...tooLong } }, got);
     }
     if (got !== firstGot && 'fallback' in firstGot) {
       got = { ...got, retried: { fallback: firstGot.fallback, ...(firstGot.refused !== undefined ? { refused: firstGot.refused } : {}), ...(firstGot.judge !== undefined ? { judge: firstGot.judge } : {}) } };
@@ -609,7 +618,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     // Not worded, with onFail: lines: the lines of the sections that answer the question, if the decision
     // model says which in what is left of the answer's limit; else the opening, the line's fixed text.
     if ('fallback' in got && lines !== undefined && lines.length > 0) {
-      const picked = await pickLines(first, lines);
+      const picked = await pickLines(act, lines);
       if (picked !== null) got = { ...got, lines: picked };
     }
     return got;
@@ -660,6 +669,11 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     // The passage back word for word: said as the passage, with nothing more asked. Not for an answer from
     // documents, whose fixed text is its fallback, not the sections: the sections back whole are checked as any wording.
     if (!fromSections && sameWords(text, passage)) return { unchanged: true, gen };
+    return judgeAnswer(text, act, gen);
+  };
+  // A wording held to its source's data and shape (checkAnswer), then asked of the drift judge.
+  const judgeAnswer = async (text: string, act: SpanAct, gen: Generation): Promise<Attempt> => {
+    const fromSections = act.answer?.from === 'sections';
     const failed = checkAnswer(text, act);
     if (failed !== null) return { fallback: failed, refused: text, gen };
     const c = checker(Math.max(checkBudget, answerLimit - (performance.now() - t0)));
@@ -687,7 +701,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   };
   // The answers start with the rest, and have till their own limit.
   const answerDeadline = answers.some((a) => 'act' in a.plan) ? after(answerLimit) : deadline;
-  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0, a.plan.lines, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retryGoal), answerDeadline) : null));
+  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0, a.plan.lines, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retryGoal, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retryLong === true, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retryWords), answerDeadline) : null));
   const [settled, settledSpans] = await Promise.all([
     Promise.all(planned.map(async (p) => {
       if (!('act' in p.plan)) return null;

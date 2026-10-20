@@ -54,6 +54,8 @@ function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
     ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}),
     ...(s.retry !== undefined && s.retry > 0 ? { retry: s.retry } : {}),
     ...(s.retryGoal !== undefined ? { retryGoal: s.retryGoal } : {}),
+    ...(s.retryLong === true ? { retryLong: true as const } : {}),
+    ...(s.retryWords !== undefined ? { retryWords: s.retryWords } : {}),
   }]));
 }
 

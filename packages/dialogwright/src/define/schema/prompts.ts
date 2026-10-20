@@ -74,6 +74,16 @@ const span = z
       .max(1, { error: 'must be 0 or 1' })
       .optional()
       .describe('An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, or the wording has a figure its source does not, within the answer\'s limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.'),
+    retryLong: z
+      .boolean()
+      .optional()
+      .describe('An answer span with retry only: whether a wording over the span\'s word budget (words) is asked again too, told only that its last ran over it. A long answer (a table\'s many rows) often cannot be said shorter without leaving out what bears on the question, so measure it beside a larger words. Default false: a wording too long is not asked again.'),
+    retryWords: z
+      .int({ error: 'must be a whole number' })
+      .min(1, { error: 'must be at least 1' })
+      .max(300, { error: 'must be at most 300' })
+      .optional()
+      .describe('An answer span only: a longer word budget for a wording over words. The wording is held to it instead, checked and judged again where it fits, with no second wording asked; with retryLong, one longer still is asked again at this budget. The model is told words; a long answer (a table\'s many rows) that cannot be said within it is said at up to retryWords rather than not at all. Default: none, a wording over words is not said.'),
     retryGoal: text()
       .optional()
       .describe('An answer span with retry only: the goal its second wording is given in place of goal, the app\'s own words (a stricter one: "only what the sections say"). The second wording is judged as the first. Default: goal.'),

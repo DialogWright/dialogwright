@@ -1847,6 +1847,10 @@ export interface GeneratedSpan {
   readonly retry?: number;
   /** The goal its second wording is given in place of `goal` (prompts.yaml's `retryGoal`); absent: the same goal. */
   readonly retryGoal?: string;
+  /** With `retry`, whether a wording over the span's word budget is asked again too, told it ran long (prompts.yaml's `retryLong`); absent: it is not. */
+  readonly retryLong?: true;
+  /** A longer word budget for a wording over `words` (prompts.yaml's `retryWords`): it is held to that one, checked and judged again where it fits it. */
+  readonly retryWords?: number;
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
