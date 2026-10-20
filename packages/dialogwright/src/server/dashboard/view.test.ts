@@ -150,7 +150,8 @@ describe('reduce', () => {
     const keyed = events.filter((e) => e.type === 'dtmf').map((e) => (e as { digit: string }).digit);
     expect(keyed).toEqual(['•', '•', '•', '•', '•', '•']);
     expect(reduce(events).lines.map((l) => l.text)).toContain('keypad ••••••');
-    expect(JSON.stringify(events)).not.toContain(CODE);
+    // Every field but the clock (`at`, milliseconds, which holds any six digits now and then).
+    expect(JSON.stringify(events, (k, v: unknown) => (k === 'at' ? undefined : v))).not.toContain(CODE);
   });
 
   it('renders silence markers with how long the caller was quiet', async () => {

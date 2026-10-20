@@ -1542,9 +1542,9 @@ describe('the keypad code on the wire', () => {
     d.store.get('CA1')!.session = sessionAtCode();
     for (const digit of '123456') await handleSocketMessage(d, sock, ctx, JSON.stringify({ type: 'dtmf', digit }));
     expect(events.filter((e) => e.type === 'dtmf').map((e) => (e as { digit: string }).digit)).toEqual(['3', '•', '•', '•', '•', '•', '•']);
-    // The code passed, and nothing the page was sent carries it.
+    // The code passed, and nothing the page was sent carries it (but the clock, `at`, which holds any six digits now and then).
     expect(d.store.get('CA1')!.session.principal.level).toBe(2);
-    expect(JSON.stringify(events)).not.toContain('123456');
+    expect(JSON.stringify(events, (k, v: unknown) => (k === 'at' ? undefined : v))).not.toContain('123456');
     // Nor does the frame log, nor the trace: each digit of the code is logged as keyed.
     const logged = frameLines(d.dir).filter((f) => f.dir === 'in' && f.msg.type === 'dtmf').map((f) => f.msg.digit);
     expect(logged).toEqual(['3', '•', '•', '•', '•', '•', '•']);
