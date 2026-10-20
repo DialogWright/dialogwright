@@ -118,6 +118,7 @@ async function readFiles(input: string, appDir: string): Promise<{ kind: 'folder
         title: read.title ?? titleFromName(name.slice(0, name.length - ext.length - 1)),
         ...idsOfPath(segments, ext, 'document'),
         sections: read.sections,
+        ...(read.notes === undefined ? {} : { notes: read.notes }),
       });
     } catch (error) {
       skipped.push({ what: rel, reason: `could not be read (${error instanceof Error ? error.message : String(error)})` });
@@ -176,7 +177,7 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
       }
       const u = new URL(d.url);
       const name = u.pathname.split('/').filter(Boolean).pop() ?? u.host;
-      inputs.push({ provenance: { url: d.url, crawl: crawled }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections });
+      inputs.push({ provenance: { url: d.url, crawl: crawled }, title: d.document.title ?? titleFromName(name.replace(/\.[^.]*$/, '')), ...idsOfUrl(d.url, startHost), sections: d.document.sections, ...(d.document.notes === undefined ? {} : { notes: d.document.notes }) });
     }
     report = { input: options.input, kind: 'site', documents: [], skipped, notSeen: [], crawl: { requests: result.requests, robots: result.robots } };
     mine = (p) => {
@@ -233,6 +234,7 @@ export function formatReport(report: IngestReport, labels: { input: string; sour
         else if (s.status === 'removed') lines.push(`    - ${s.id}`);
       }
     }
+    for (const note of d.notes ?? []) lines.push(`    ! ${note}`);
   }
   if (report.notSeen.length > 0) lines.push(`  not read this time (left as they are): ${report.notSeen.join(', ')}`);
   for (const s of report.skipped) lines.push(`  skipped   ${s.what}: ${s.reason}`);

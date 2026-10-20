@@ -1,6 +1,7 @@
 import { getDocumentProxy } from 'unpdf';
 import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../sections';
-import { withTables, type PlacedRun, type RowLine } from './pdfTables';
+import { readTables, type PlacedRun, type RowLine } from './pdfTables';
+import { WEAK } from './tables/check';
 
 /**
  * PDF to sections, with unpdf (pdf.js built for servers: pure JavaScript, no canvas, no native code).
@@ -342,11 +343,23 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
   return out;
 }
 
-/** A document's pages read to sections: its furniture dropped, its cover read apart, its body cut at its headings. */
+/**
+ * A document's pages read to sections: its furniture dropped, its cover read apart, its body cut at its
+ * headings; and a note for each table its check found weak (./tables/check.ts), for the author to read
+ * against the page.
+ */
 export function readPages(pages: readonly PageLines[]): ExtractedDocument {
   const body = bodyLines(pages);
   const tabled: Line[] = [];
-  for (const p of pages) tabled.push(...(withTables(body.filter((l) => l.page === p.page)) as Line[]));
+  const notes: string[] = [];
+  for (const p of pages) {
+    const read = readTables(body.filter((l) => l.page === p.page));
+    tabled.push(...(read.lines as Line[]));
+    for (const t of read.tables.filter((t) => t.check.score < WEAK)) {
+      const { grid } = t.table;
+      notes.push(`page ${p.page}: a table of ${grid.columns.length} columns and ${grid.rows.length - grid.headRows} rows read weakly (${t.check.score.toFixed(2)}): ${t.check.problems.join('; ')}`);
+    }
+  }
   const cover = coverOf(tabled);
   const blocks: Block[] = [
     ...cover.text.map((text): Block => ({ kind: 'para', text, page: Math.min(...pages.map((p) => p.page)) })),
@@ -362,7 +375,7 @@ export function readPages(pages: readonly PageLines[]): ExtractedDocument {
   }
   const read = sectionsOf(kept, { paged: true, ...(cover.title === undefined ? {} : { titled: true }) });
   const title = cover.title ?? read.title;
-  return { ...(title === undefined ? {} : { title }), sections: read.sections };
+  return { ...(title === undefined ? {} : { title }), sections: read.sections, ...(notes.length === 0 ? {} : { notes }) };
 }
 
 /** A PDF's pages as lines, and its metadata title (refused over `maxPages`, default 500). */
@@ -415,5 +428,5 @@ export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number
   const { pages, count, metaTitle } = await pdfPages(bytes, options);
   const read = readPages(pages);
   const title = read.title ?? metaTitle;
-  return { ...(title === undefined ? {} : { title }), sections: read.sections, pages: count };
+  return { ...(title === undefined ? {} : { title }), sections: read.sections, ...(read.notes === undefined ? {} : { notes: read.notes }), pages: count };
 }

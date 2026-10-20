@@ -46,6 +46,8 @@ export interface SourceInput {
   /** The id to try next when `id` is another document's (the slug with its extension). */
   altId?: string;
   sections: readonly ExtractedSection[];
+  /** What the author should read against it (./extract: a table read weakly). */
+  notes?: readonly string[];
 }
 
 export type SectionStatus = 'added' | 'changed' | 'unchanged' | 'removed';
@@ -73,6 +75,8 @@ export interface DocumentChange {
   refused?: string;
   /** The text written (or that would be, on a dry run); undefined when unchanged. */
   yaml?: string;
+  /** What the author should read against the document (a table read weakly), said under it. */
+  notes?: readonly string[];
 }
 
 /** The largest file the app folder loader reads. */
@@ -219,7 +223,7 @@ export function planSources(inputs: readonly SourceInput[], options: { sourcesDi
     const { retrieved: _retrieved, ...before } = previous?.provenance ?? {};
     const sameProvenance = canonical(before) === canonical(input.provenance);
     const same = previous !== null && previous.document === input.title && sameOrder && sameProvenance && sections.every((s) => s.status === 'unchanged');
-    const change: DocumentChange = { id, file: `sources/${id}.yaml`, title: input.title, provenance: input.provenance, status: previous === null ? 'added' : same ? 'unchanged' : 'changed', sections };
+    const change: DocumentChange = { id, file: `sources/${id}.yaml`, title: input.title, provenance: input.provenance, status: previous === null ? 'added' : same ? 'unchanged' : 'changed', sections, ...(input.notes === undefined ? {} : { notes: input.notes }) };
     if (change.status === 'unchanged') return change;
     const yaml = sourceYaml({ title: input.title, provenance: input.provenance, retrieved: options.today, sections: input.sections }, schemaPath, previous !== null ? mine?.text : undefined);
     if (Buffer.byteLength(yaml, 'utf8') > MAX_SOURCE_BYTES) {

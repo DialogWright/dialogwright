@@ -47,6 +47,8 @@ export interface ExtractedDocument {
   /** Its title, when the document gives one (its title heading, or its metadata). */
   readonly title?: string;
   readonly sections: readonly ExtractedSection[];
+  /** What the author should read against the document: a table read weakly, with why. */
+  readonly notes?: readonly string[];
 }
 
 /** Characters that are never text: soft hyphens, zero-width spaces and joiners, byte-order marks. */

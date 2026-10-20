@@ -492,7 +492,7 @@ describe('kb:gaps, the command', () => {
   it('is named in the usage of an unknown command', async () => {
     const out: string[] = [];
     expect(await main(['kb:other'], { out: () => {}, err: (l) => out.push(l), cwd: dir })).toBe(2);
-    expect(out[0]).toContain('kb:refresh and kb:gaps');
+    expect(out[0]).toContain('kb:refresh, kb:gaps and kb:tables');
   });
 });
 
