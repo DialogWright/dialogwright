@@ -1,7 +1,8 @@
-import { getDocumentProxy } from 'unpdf';
+import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../sections';
 import { readTables, type PlacedRun, type RowLine } from './pdfTables';
 import { WEAK } from './tables/check';
+import { rulesOf, type Rule } from './tables/rules';
 
 /**
  * PDF to sections, with unpdf (pdf.js built for servers: pure JavaScript, no canvas, no native code).
@@ -78,11 +79,12 @@ export interface Line {
   kind?: RowLine['kind'];
 }
 
-/** A page's lines, with its height (where its top and bottom strips are). */
+/** A page's lines, with its height (where its top and bottom strips are) and the lines it draws (a table's borders). */
 export interface PageLines {
   page: number;
   height: number;
   lines: readonly Line[];
+  rules?: readonly Rule[];
 }
 
 /** How much larger than the body a line must be to be a heading. */
@@ -353,7 +355,7 @@ export function readPages(pages: readonly PageLines[]): ExtractedDocument {
   const tabled: Line[] = [];
   const notes: string[] = [];
   for (const p of pages) {
-    const read = readTables(body.filter((l) => l.page === p.page));
+    const read = readTables(body.filter((l) => l.page === p.page), p.rules);
     tabled.push(...(read.lines as Line[]));
     for (const t of read.tables.filter((t) => t.check.score < WEAK)) {
       const { grid } = t.table;
@@ -382,18 +384,22 @@ export function readPages(pages: readonly PageLines[]): ExtractedDocument {
 export async function pdfPages(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<{ pages: PageLines[]; count: number; metaTitle?: string }> {
   const maxPages = options.maxPages ?? MAX_PDF_PAGES;
   const pdf = await getDocumentProxy(new Uint8Array(bytes), { ...PDF_OPEN_OPTIONS } as Parameters<typeof getDocumentProxy>[1]);
+  const { OPS } = (await getResolvedPDFJS()) as unknown as { OPS: Record<string, number> };
   try {
     if (pdf.numPages > maxPages) throw new PdfLimitError(`it has ${pdf.numPages} pages, over the ${maxPages} read`);
     const pages: PageLines[] = [];
     for (let n = 1; n <= pdf.numPages; n += 1) {
       const page = await pdf.getPage(n);
       const content = await page.getTextContent();
-      // The fonts' names (which say which are bold) are known once the page's operators are read.
+      // The fonts' names (which say which are bold) are known once the page's operators are read; the
+      // operators also draw the page's lines (a table's borders).
       const bold = new Map<string, boolean>();
+      let rules: Rule[] = [];
       try {
-        await page.getOperatorList();
+        const ops = await page.getOperatorList();
+        rules = rulesOf(ops.fnArray, ops.argsArray, OPS);
       } catch {
-        // No weights for this page: its lines are read by their size alone.
+        // No weights or lines for this page: its lines are read by their size alone, its tables by where their text is.
       }
       const isBold = (fontName: string): boolean => {
         if (!bold.has(fontName)) {
@@ -407,7 +413,7 @@ export async function pdfPages(bytes: Uint8Array, options: { maxPages?: number }
         }
         return bold.get(fontName)!;
       };
-      pages.push({ page: n, height: page.getViewport({ scale: 1 }).height, lines: linesOf(content.items as unknown as Run[], n, isBold) });
+      pages.push({ page: n, height: page.getViewport({ scale: 1 }).height, lines: linesOf(content.items as unknown as Run[], n, isBold), ...(rules.length === 0 ? {} : { rules }) });
       page.cleanup();
     }
     let metaTitle: string | undefined;

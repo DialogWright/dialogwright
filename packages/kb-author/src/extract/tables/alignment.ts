@@ -9,7 +9,7 @@ import { anchorOf, joinCell, type PlacedLine, type PlacedRun, type Span, type Ta
  *   size) sits in a table. A table is the run of such lines, in the page's order from the top, with
  *   the lines between them and the lines just above the first and below the last that reach into one
  *   of its columns at most (a cell's first and last lines); a line as wide as most of the page with
- *   nothing beside it ends it (the prose after it).
+ *   nothing beside it ends it (the prose after it). Two tables that share lines so are one table.
  * - Its columns are found from its gutters: the places across the table no line's text covers but a
  *   one in twenty, one at least and two at most, in a table of eight lines or more (a heading over
  *   several columns, as "Your cost" is over "In network" and "Out of network"). A table has two columns
@@ -299,7 +299,7 @@ export function alignmentTables(lines: readonly PlacedLine[]): { members: number
     if (mate) mates += 1;
   }
   close();
-  const found: { members: number[]; proposals: Proposal[] }[] = [];
+  const regions: Box[][] = [];
   for (const table of tables) {
     const columns = columnsOf(table);
     if (columns.length < 2) continue;
@@ -321,7 +321,19 @@ export function alignmentTables(lines: readonly PlacedLine[]): { members: number
       members.push(b);
       lowest = b.line.y;
     }
-    const proposals = gridsOf(members.map((m) => m.line));
+    regions.push(members);
+  }
+  // Tables that share lines are one table (one ended early and the next reached back into it): read once, together.
+  const joined: Box[][] = [];
+  for (const region of regions) {
+    const meeting = joined.filter((j) => j.some((b) => region.includes(b)));
+    const all = [...new Set([...meeting.flat(), ...region])];
+    for (const m of meeting) joined.splice(joined.indexOf(m), 1);
+    joined.push(all);
+  }
+  const found: { members: number[]; proposals: Proposal[] }[] = [];
+  for (const members of joined) {
+    const proposals = gridsOf([...members].sort((x, y) => x.at - y.at).map((m) => m.line));
     if (proposals === null) continue;
     found.push({ members: members.map((m) => m.at), proposals });
   }

@@ -1,6 +1,6 @@
 # Table readers: one format, several readers, measured on labelled documents
 
-Date: 2026-10-20. Status: **step 1 built** (the format, the filling, the checker, the scorer, today's reader moved onto them); step 2 (a reader from a table's drawn borders) and step 3 (a model that reads the page) to come, each measured.
+Date: 2026-10-20. Status: **steps 1 and 2 built** (the format, the filling, the checker, the scorer; the alignment reader moved onto them, then a reader from a table's drawn borders); step 3 (a model that reads the page) to come, measured the same way.
 
 ## Why
 
@@ -34,8 +34,22 @@ The labels' every word is in its page's text. The checker's blind spot that rema
 
 On the booklet, the checker calls two tables weak, and both are misread today: a numbered list item read as a table's row, and a table of decision times split in two so that some rows lost their times (in the knowledge base as ingested). Neither was seen before.
 
+## Step 2: a reader from borders
+
+`tables/rules.ts` takes the lines a page draws from pdf.js's operator list (already read for the fonts' weights): thin filled rectangles along their length (a word processor's borders) and straight stroked pieces, through the transform in force. A larger filled shape is not a rule: the first version took a shading's edges and cut every cell in two, because these documents fill a box behind each line of a cell's text. `tables/borders.ts` makes a table of each set of crossing rules: edges where the rules are, one cell where no rule parts two places (a heading over two columns, a label over three rows), the text beyond rules drawn only inside a table its outer columns (a style with no frame), a top row over every column its caption, the first all-bold rows its heading. Where both readers find a table, the checker's better score is read, the borders' on a tie.
+
+| On the eight documents | Alignment only (step 1) | With borders (step 2) |
+|---|---|---|
+| Cells right | 32 of 390 (8%) | 247 of 390 (63%) |
+| Whole rows | 1 of 101 | 67 of 101 |
+| Headings | 11 of 74 | 59 of 74 |
+| Tables found | 8 of 15 | 15 of 15 |
+
+Twelve of the fifteen tables are read 90% right or better, ten of them perfectly. The three that are not: a rate table ruled only at its outline, with its tiers, seasons and years aligned inside it (two tables), and a block of rates with no rules at all. Their rows are 1.2 times their text apart, closer than the alignment reader's row gap, so neither reader can tell them apart, and a rule that splits short aligned lines into rows also split wrapped prose in the benefit summaries. They are step 3's. The checker now calls two of the three weak (a label stacking short lines beside another cell's: several rows read as one; and two columns' text side by side, weighed double) and none of the twelve read well.
+
+The alignment reader also changed: two of its tables that share lines are read once, together (one ended early and the next reached back into it). Before, both were read, so the booklet said several tables twice, once without their headings, and one table of decision times lost the times on its last rows. On the booklet, every line that changes from step 1 is a fix: the duplicates gone, the decision times whole, four numbered items that were said as their number alone said with their text. The claims table, drawn with inner rules only, reads as before through the border reader. The checker still calls two of the booklet's tables weak, both misread before and after (a numbered item read as a table's row; one row of a table of programs swallowing several services and a heading). The utility app's two documents read exactly as before.
+
 ## Next
 
-- **Step 2, a reader from borders.** Each of these grids is drawn: the pages carry hundreds of path operations each, the cells' rules. A reader that takes the rules from pdf.js's operator list proposes the grid they draw; filling, checking and saying the rows are as they are. Measured with `kb:tables` against today's 8%, and where both readers find a table, the checker's better score is taken.
 - **Step 3, a model that reads the page**, for the tables neither reader reads (no borders, two columns of prose): given the page's image and its runs, it proposes a grid; the filling keeps the words the page's own. Run by the author with their own key, once per document (cached by its hash), never on a call or in CI; measured on the same labels, and possibly an off-the-shelf table-structure model beside it.
 - The labelled set grows each time a document breaks. It lives outside the repository for now (its documents are other publishers'); the format and the scorer are here.

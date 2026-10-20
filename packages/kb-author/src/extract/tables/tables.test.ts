@@ -6,9 +6,11 @@ import { FOLDER } from '../../__fixtures__/server';
 import { tablesCommand } from '../../tables/command';
 import { linesOf, type PageLines, type Run } from '../pdf';
 import { readTables } from '../pdfTables';
+import { borderTables } from './borders';
 import { checkTable, WEAK } from './check';
 import { fillGrid, type TableGrid } from './grid';
 import { readLabels } from './labels';
+import { rulesOf, type Rule } from './rules';
 import { comparable, scorePages } from './score';
 
 /**
@@ -196,5 +198,77 @@ describe('kb:tables', () => {
     expect(await tablesCommand(['a.tables.yaml'], t.io)).toBe(1);
     expect(t.err).toEqual(['kb:tables: a.tables.yaml: missing.pdf is not a PDF beside it']);
     expect(await tablesCommand([], io().io)).toBe(2);
+  });
+});
+
+describe('the lines a page draws', () => {
+  const OPS = { save: 10, restore: 11, transform: 12, constructPath: 91, stroke: 20, eoFill: 23, endPath: 28 };
+  const path = (paint: number, ...data: number[]) => [paint, [Float32Array.from(data)], [0, 0, 0, 0]];
+  it('are thin filled shapes along their length and straight stroked pieces, where the transform puts them; a clip, a curve\'s bend and a shading are none', () => {
+    const fn = [OPS.constructPath, OPS.save, OPS.transform, OPS.constructPath, OPS.restore, OPS.constructPath, OPS.constructPath];
+    const args = [
+      // A border drawn as a thin rectangle: a rule across at its middle.
+      path(OPS.eoFill, 0, 40, 699.5, 1, 400, 699.5, 1, 400, 700.5, 1, 40, 700.5, 4),
+      null,
+      [1, 0, 0, 1, 100, 0],
+      // A stroked line down, moved 100 across by the transform in force.
+      path(OPS.stroke, 0, 60, 600, 1, 60, 700),
+      null,
+      // A clip, and a cell's shading: no rules.
+      path(OPS.endPath, 0, 0, 0, 1, 612, 0, 1, 612, 792, 1, 0, 792, 4),
+      path(OPS.eoFill, 0, 40, 600, 1, 400, 600, 1, 400, 650, 1, 40, 650, 4),
+    ];
+    expect(rulesOf(fn, args, OPS)).toEqual([
+      { dir: 'h', at: 700, from: 40, to: 400 },
+      { dir: 'v', at: 160, from: 600, to: 700 },
+    ]);
+  });
+});
+
+/** A table drawn whole: a frame, rules between its rows and columns, and none between its second and third columns in its first row. */
+const across = (at: number, from = 40, to = 400): Rule => ({ dir: 'h', at, from, to });
+const down = (at: number, from = 600, to = 700): Rule => ({ dir: 'v', at, from, to });
+const drawnRules = [across(700), across(680), across(660), across(630), across(600), down(40), down(160, 600, 700), down(280, 600, 680), down(400)];
+const drawnText = [
+  run('Service', 50, 688, 10, 'B'),
+  run('What you pay', 230, 688, 10, 'B', 60),
+  run('In network', 170, 668, 10, 'B'),
+  run('Out of network', 290, 668, 10, 'B'),
+  run('Office visit', 50, 640),
+  run('$20', 170, 640, 10, 'R', 18),
+  run('$60', 290, 640, 10, 'R', 18),
+  run('Lab work', 50, 610),
+  run('No charge', 170, 610),
+  run('40%', 290, 610, 10, 'R', 18),
+];
+
+describe('a table found by its borders', () => {
+  it('has its columns and rows where its rules are, a cell over the places no rule parts, and its bold rows as its heading', () => {
+    const [found] = borderTables(lines(drawnText), drawnRules);
+    expect(found!.grid).toMatchObject({ reader: 'borders', columns: [[40, 160], [160, 280], [280, 400]], rows: [[700, 680], [680, 660], [660, 630], [630, 600]], headRows: 2 });
+    expect(found!.grid.spans).toEqual([{ row: 0, col: 1, rows: 1, cols: 2 }]);
+    expect(found!.members).toHaveLength(drawnText.length);
+  });
+
+  it('is read over the same text found by where it is, and says its heading over two columns around their cells', () => {
+    const read = readTables(lines(drawnText), drawnRules);
+    expect(read.tables.map((t) => t.table.grid.reader)).toEqual(['borders']);
+    expect(read.lines.map((l) => l.text)).toEqual([
+      'Office visit: What you pay (In network: $20; Out of network: $60)',
+      'Lab work: What you pay (In network: No charge; Out of network: 40%)',
+    ]);
+  });
+
+  it('reaches past rules drawn only inside it to the text level with its rows beyond them, and leaves a caption over every column as the page\'s text', () => {
+    // Inner rules only: no frame, and the rules across stop at the outer columns.
+    const inner = [across(700, 160, 280), across(680, 160, 280), across(660, 160, 280), across(630, 160, 280), across(600, 160, 280), down(160), down(280)];
+    const [found] = borderTables(lines(drawnText), inner);
+    expect(found!.grid.columns.map(([a, b]) => [Math.round(a), Math.round(b)])).toEqual([[49, 160], [160, 280], [280, 361]]);
+    const captioned = [across(720), ...drawnRules, down(40, 600, 720), down(400, 600, 720)];
+    const withCaption = [run('Costs for each service', 50, 708), ...drawnText];
+    const [table] = borderTables(lines(withCaption), captioned);
+    expect(table!.grid.rows).toHaveLength(4);
+    expect(table!.grid.headRows).toBe(2);
+    expect(readTables(lines(withCaption), captioned).lines[0]!.text).toBe('Costs for each service');
   });
 });

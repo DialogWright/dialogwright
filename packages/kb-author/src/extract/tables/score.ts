@@ -125,7 +125,7 @@ export function scorePages(pages: readonly PageLines[], labels: LabelFile): Docu
   const tables: TableScore[] = [];
   const unseen: { page: number; words: string }[] = [];
   for (const table of labels.tables) {
-    if (!readOn.has(table.page)) readOn.set(table.page, readTables(body.filter((l) => l.page === table.page)).tables);
+    if (!readOn.has(table.page)) readOn.set(table.page, readTables(body.filter((l) => l.page === table.page), pages.find((p) => p.page === table.page)?.rules).tables);
     const reads = readOn.get(table.page)!;
     // The read table with most of its cells; none when no read table has any of them (not found).
     const scored = reads.map((r) => scoreAgainst(table, r)).filter((s) => s.cells.right > 0).sort((a, b) => b.cells.right - a.cells.right)[0];

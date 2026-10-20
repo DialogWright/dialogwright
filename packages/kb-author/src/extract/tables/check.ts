@@ -11,7 +11,11 @@ import { anchorOf, boxOf, type FilledTable, type PlacedLine } from './grid';
  * - Rows whose first cell has a break in it, a blank line's worth between two of its lines (several
  *   rows run together into one: a whole column read as one cell).
  * - Cells holding text side by side on a line, a gutter apart (two columns read as one, their lines
- *   interleaved).
+ *   interleaved); this weighs double.
+ * - Rows whose label (their first cell) stacks short lines (STACKED or more, SHORT words or fewer each)
+ *   on the baselines of short lines in another cell of the row: several rows read as one (a list of
+ *   years beside their rates). Only the label: a cost wrapped in two columns side by side stacks short
+ *   lines on the same baselines too.
  * - Body rows with text but nothing in their first cell (rows split where the label is not).
  *
  * The score multiplies what is left of each: a table with none of these scores 1. Under WEAK it is
@@ -20,6 +24,9 @@ import { anchorOf, boxOf, type FilledTable, type PlacedLine } from './grid';
 
 /** A table scoring under this is weak. */
 export const WEAK = 0.8;
+/** A cell of this many short lines or more on another cell's baselines is several rows; a short line is this many words or fewer. */
+const STACKED = 3;
+const SHORT = 4;
 
 export interface TableCheck {
   readonly score: number;
@@ -53,8 +60,17 @@ export function checkTable(table: FilledTable, pageLines: readonly PlacedLine[])
   const cellsOfBody = body.flat().filter((c) => c.text !== '');
   const sideBySide = cellsOfBody.length === 0 ? 0 : cellsOfBody.filter((c) => c.sideBySide).length / cellsOfBody.length;
   if (sideBySide > 0) problems.push(`${pct(sideBySide)} of its cells hold text side by side on a line (two columns read as one)`);
+  const stacked = (row: (typeof body)[number]): boolean => {
+    const label = row[0]!;
+    if (label.covered === true || (label.span !== undefined && label.span.rows > 1)) return false;
+    const short = label.lines.filter((l) => l.words <= SHORT);
+    if (short.length < STACKED) return false;
+    return row.slice(1).some((other) => other.covered !== true && short.filter((l) => other.lines.some((o) => o.words <= SHORT && Math.abs(o.y - l.y) <= 1.5)).length >= STACKED);
+  };
+  const stackedRows = body.length === 0 ? 0 : body.filter(stacked).length / body.length;
+  if (stackedRows > 0) problems.push(`${pct(stackedRows)} of its rows stack short lines beside another cell's (several rows read as one)`);
   const unlabelled = body.length === 0 ? 0 : body.filter((row) => row[0]!.text === '' && row[0]!.covered !== true).length / body.length;
   if (unlabelled > 0) problems.push(`${pct(unlabelled)} of its rows have nothing in their first cell`);
-  const score = (1 - left) * (1 - straddle) * (1 - runTogether) * (1 - sideBySide) * (1 - unlabelled / 2);
+  const score = (1 - left) * (1 - straddle) * (1 - runTogether) * Math.max(0, 1 - 2 * sideBySide) * (1 - stackedRows) * (1 - unlabelled / 2);
   return { score, problems };
 }

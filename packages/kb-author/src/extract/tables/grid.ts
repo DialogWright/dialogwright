@@ -71,6 +71,8 @@ export interface FilledCell {
   readonly breaks: number;
   /** Whether a line of it has two of its runs a gutter apart (SIDE times their size): two columns' text in one cell. */
   readonly sideBySide: boolean;
+  /** Its lines, top to bottom: each one's baseline and how many words it has in the cell. */
+  readonly lines: readonly { readonly y: number; readonly words: number }[];
 }
 
 /** A grid with its cells filled. */
@@ -153,7 +155,7 @@ export function fillGrid(grid: TableGrid, lines: readonly PlacedLine[]): FilledT
   const cells = grid.rows.map((_, r) =>
     grid.columns.map((_, c): FilledCell => {
       const span = spanAt(grid, r, c);
-      if (span !== undefined && (span.row !== r || span.col !== c)) return { text: '', bold: true, span, covered: true, breaks: 0, sideBySide: false };
+      if (span !== undefined && (span.row !== r || span.col !== c)) return { text: '', bold: true, span, covered: true, breaks: 0, sideBySide: false, lines: [] };
       const here = [...runs[r]![c]!].sort((a, b) => b.line.y - a.line.y || a.run.x - b.run.x);
       const lines = [...new Set(here.map((h) => h.line))];
       const breaks = lines.slice(1).filter((l, i) => lines[i]!.y - l.y > Math.min(l.size, lines[i]!.size) * BREAK).length;
@@ -168,6 +170,7 @@ export function fillGrid(grid: TableGrid, lines: readonly PlacedLine[]): FilledT
         ...(span === undefined ? {} : { span }),
         breaks,
         sideBySide,
+        lines: lines.map((l) => ({ y: l.y, words: here.filter((h) => h.line === l).reduce((n, h) => n + h.run.text.trim().split(/\s+/).length, 0) })),
       };
     }),
   );
