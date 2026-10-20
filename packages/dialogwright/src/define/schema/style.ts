@@ -55,7 +55,7 @@ export const styleSchema = z
         provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves) or anthropic.'),
         id: text()
           .optional()
-          .describe('The model id, as the provider names it ("google/gemini-3.1-flash-lite-preview" on OpenRouter, "claude-haiku-5-5" on Anthropic). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
+          .describe('The model id, as the provider names it ("google/gemini-3.5-flash-lite" on OpenRouter, "claude-haiku-5-5" on Anthropic). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
         thinking: z
           .enum(RENDER_THINKING_MODES)
           .optional()

@@ -10,9 +10,13 @@ persona: a friendly, plain-spoken member services agent at an insurance company
 avoid:
   - unfortunately
   - I apologize for the inconvenience
+# gemini-3.1-flash-lite-preview was shut down by Google on 2026-05-25; 3.5 Flash-Lite at low reasoning (it refuses
+# reasoning off) measured as fast on the booklet demo (render:bakeoff, 2026-10-19).
 model:
   provider: openrouter
-  id: google/gemini-3.1-flash-lite-preview
+  id: google/gemini-3.5-flash-lite
+  thinking: adaptive
+  effort: low
 # The drift judge refuses a wording it doubts at 0.3 or more, below the engine's 0.5: on Harbor's
 # labelled answer cases (fixtures/judge/answers.jsonl, `pnpm render:judge-eval`), the two unfaithful
 # wordings the default let by were exclusions dropped on low-risk topics (0.45, 0.35), and no faithful
