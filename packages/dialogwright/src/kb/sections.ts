@@ -160,11 +160,21 @@ export class SectionRetriever implements Retriever {
     if (this.sections.length === 0) return [];
     const before = this.followUps ? earlier?.trim() : undefined;
     if (before === undefined || before === '') return this.ranked(text, locale, this.cap);
-    // A follow-up: the sections for its words alone and for the earlier question with them, twice as deep,
-    // and the earlier answer's sections with the sections under them, merged, so a question that stands on
-    // its own keeps its own sections near the top.
+    // A follow-up: its own sections, as if it stood alone, and beside them, never in their place, at most
+    // half the cap more from the sections for its words alone and for the earlier question with them (twice
+    // as deep) and the earlier answer's sections with the sections under them, merged. Merged alone, two of
+    // the three lists spoke for the earlier subject and its sections took a new question's places (a
+    // question on urgent care after one on prescriptions offered the pharmacy's sections, not urgent care's).
     const lists = [this.ranked(text, locale, this.cap * 2), this.ranked(`${before} ${text}`, locale, this.cap * 2), this.near(earlierSections ?? [], text)];
-    return lists.some((x) => x instanceof Promise) ? Promise.all(lists).then((l) => mergeRanked(l, this.cap)) : mergeRanked(lists as Nomination[][], this.cap);
+    const alone = this.ranked(text, locale, this.cap);
+    const beside = (own: readonly Nomination[], merged: readonly Nomination[]): Nomination[] => [
+      ...own,
+      ...merged.filter((n) => !own.some((o) => o.topic === n.topic)).slice(0, Math.floor(this.cap / 2)),
+    ];
+    if (alone instanceof Promise || lists.some((x) => x instanceof Promise)) {
+      return Promise.all([alone, Promise.all(lists)]).then(([own, l]) => beside(own, mergeRanked(l, this.cap)));
+    }
+    return beside(alone, mergeRanked(lists as Nomination[][], this.cap));
   }
 
   /**

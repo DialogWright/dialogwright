@@ -481,6 +481,13 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(withoutAnswer).not.toContain('visitor-guide#printing/posters');
       const read = await r.nominate({ text: 'and how much would that be', locale: 'en-US', todayIso: TODAY, earlier: 'what else can I do there', earlierSections: ['visitor-guide#printing'] });
       expect(read.find((n) => n.topic === 'visitor-guide#printing/posters')).toMatchObject({ via: 'earlier' });
+      // A question that stands on its own keeps every section it finds alone, first; the earlier question's
+      // come beside them, at most half the cap more, never in their place.
+      const alone = (await r.nominate({ text: 'can I print at the library', locale: 'en-US', todayIso: TODAY })).map((n) => n.topic);
+      const after = (await r.nominate({ text: 'can I print at the library', locale: 'en-US', todayIso: TODAY, earlier: 'where can I park', earlierSections: ['visitor-guide#parking'] })).map((n) => n.topic);
+      expect(after.slice(0, alone.length)).toEqual(alone);
+      expect(after.length - alone.length).toBeGreaterThan(0);
+      expect(after.length - alone.length).toBeLessThanOrEqual(Math.floor(r.cap / 2));
       expect(mergeRanked([[{ topic: 'a', title: 'A', score: 1, via: 'dense' }, { topic: 'b', title: 'B', score: 0.5, via: 'dense' }], [{ topic: 'b', title: 'B', score: 1, via: 'keyword' }]], 1)).toEqual([{ topic: 'b', title: 'B', score: 0.032522, via: 'dense' }]);
     });
   });

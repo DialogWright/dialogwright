@@ -60,3 +60,20 @@ A live chat's "diabetes", right after an answer about an MRI, was read as contin
 | The decision | 11, 1 | 3, 2 | 38, 4 | 21, 1 |
 
 Five more right answers for one more wrong; the bare follow-ups it now gets wrong ("cost" after continuing coverage read as the out-of-pocket maximum) are the next to measure. Half the misses before were the same few: a bare word read as about the earlier subject, every section below 0.45.
+
+## 2026-10-20: a new question's places kept
+
+A long live chat answered several questions from its fallback lines (the document's own lines) the first time and with a worded answer when asked again. Asked first, each came right after an unrelated question, and the merged candidates were mostly the earlier subject's: two of the three rankings (the earlier question with the new words, and the earlier answer's sections) speak for it, so with six places a question on urgent care after one on prescriptions was offered both pharmacy sections and not the urgent care centers', hearing aids after acupuncture the acupuncture sections and not the hearing aids', physical therapy after a hospital stay the inpatient section and not physical therapy's. The model worded from what it was given, and the judge refused it or a check found a figure the sections did not have. Asked again, the earlier question was the same one, and every place spoke for it.
+
+A follow-up's candidates are now offered beside the question's own, never in their place: every section the question finds alone, then at most half the cap more from the merged rankings. Measured by meaning on the booklet's demo (follow-ups found among the sections offered; questions on their own read after an unrelated earlier question with the two sections a live answer keeps; the five live first asks):
+
+| | Follow-ups (43) | On their own after an unrelated one (501) | Sections offered | Live first asks (5) |
+|---|---|---|---|---|
+| Follow-ups off | 26 | 97.6% | 5.9 | 5 |
+| Merged (before) | 42 | 94.4% | 6.0 | 4 |
+| Its own, and two beside them | 40 | 97.8% | 7.7 | 5 |
+| **Its own, and three beside them (the decision)** | **42** | **98.0%** | **8.1** | **5** |
+| Its own four, and two from the merge | 40 | 96.0% | 6.0 | 5 |
+
+It costs about two more sections for the decision model to read on a turn after an earlier question. Two of the five first asks had the right section all along and were refused for their wording (an answer adding advice the sections did not give, "so that's your best bet"; a claim form's website they did not name): the judge was right, and the fallback said the right lines.
+
