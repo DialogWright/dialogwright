@@ -21,7 +21,13 @@ import { cleanText } from '../sections';
  *   one in twenty, one at least and two at most, in a table of eight lines or more (a heading over
  *   several columns, as "Your cost" is over "In network" and "Out of network"). A table has two columns at least.
  * - Its first rows set wholly in bold, each with words in more than one column, are its heading: each
- *   column's words (a heading over several columns is left out) are that column's heading.
+ *   column's words are that column's heading. A heading over several columns ("Your cost" over "In
+ *   network" and "Out of network") is over the columns whose own headings are in the rows under it, each
+ *   such column under the nearest of the row's headings over several columns; a row says their cells
+ *   within it ("Your cost (In network: $20; Out of network: $60)"), so what its figures are is kept.
+ * - A band set in bold under its rows that says again words of its heading's (but its first column's: a
+ *   second table's own heading, "Your cost" over its columns again) starts a table of its own, read apart
+ *   with its own columns: read as a row of the first, it ran its heading into the rows above it.
  * - A row whose only cell is its first, set in bold, names the rows under it: it is a heading of its
  *   own (level 3). Any other row with one cell is said as it is (a note under a row).
  * - A cell that is only a check mark (a symbol font's private-use character, or ✓) says "yes".
@@ -171,6 +177,9 @@ function rowsOf(lines: readonly PlacedLine[]): RowLine[] | null {
   // The heading: the first bands set wholly in bold.
   let first = 0;
   const heads = columns.map(() => '');
+  // The heading band each column's own words are first in, and the headings over several columns by band.
+  const headBand = columns.map(() => -1);
+  const over: { band: number; text: string; mid: number }[] = [];
   // A heading's band has words in more than one column, or over several (a group's bold row under it has not).
   const across = (band: readonly PlacedLine[]): boolean => {
     const runs = runsIn(band, null, false);
@@ -178,9 +187,41 @@ function rowsOf(lines: readonly PlacedLine[]): RowLine[] | null {
   };
   while (first < bands.length - 1 && allBold(bands[first]!) && across(bands[first]!)) {
     cellsOf(bands[first]!, true).forEach((c, i) => {
-      if (c !== '') heads[i] = joinCell(heads[i]!, c);
+      if (c === '') return;
+      heads[i] = joinCell(heads[i]!, c);
+      if (headBand[i] === -1) headBand[i] = first;
     });
+    for (const r of runsIn(bands[first]!, null, false).filter((r) => spans(columns, r))) over.push({ band: first, text: cleanText(r.text), mid: (r.x + r.end) / 2 });
     first += 1;
+  }
+  // Each heading over several columns, and the columns under it: those headed in a band below its own
+  // (never the first, the rows' own labels), each under the nearest of its band's.
+  const groups: { text: string; from: number; to: number }[] = [];
+  for (const band of [...new Set(over.map((o) => o.band))]) {
+    const inBand = over.filter((o) => o.band === band);
+    const under = new Map<number, number[]>();
+    columns.forEach(([a, b], k) => {
+      if (k === 0 || headBand[k]! <= band) return;
+      const mid = (a + b) / 2;
+      const nearest = inBand.reduce((best, o, i) => (Math.abs(o.mid - mid) < Math.abs(inBand[best]!.mid - mid) ? i : best), 0);
+      under.set(nearest, [...(under.get(nearest) ?? []), k]);
+    });
+    under.forEach((ks, i) => {
+      const from = Math.min(...ks);
+      const to = Math.max(...ks);
+      if (to > from && !groups.some((g) => g.from <= to && from <= g.to)) groups.push({ text: inBand[i]!.text, from, to });
+    });
+  }
+  // A second table under this one's rows: a bold band saying again words of the heading (but its first
+  // column's) starts it, and each is read on its own (its own columns).
+  if (first > 0) {
+    const said = new Set(bands.slice(0, first).flatMap((b) => runsIn(b, null, false)).filter((r) => columnAt(columns, (r.x + r.end) / 2) > 0).map((r) => r.text.trim()).filter((t) => t !== ''));
+    const again = bands.findIndex((b, j) => j > first && allBold(b) && runsIn(b, null, false).some((r) => said.has(r.text.trim())));
+    if (again > 0) {
+      const upper = bands.slice(0, again).flat();
+      const lower = bands.slice(again).flat();
+      return [...(rowsOf(upper) ?? []), ...(rowsOf(lower) ?? [])];
+    }
   }
   // The rows: each band with words in the first column, and the bands without beside it, split between
   // the rows above and below them at the largest gap (a label set level with the middle of its text).
@@ -246,7 +287,18 @@ function rowsOf(lines: readonly PlacedLine[]): RowLine[] | null {
       rows.push({ ...at, text: row[0]!, kind: allBold(band) ? 'group' : 'row' });
       return;
     }
-    const said = row.map((c, k) => (k === 0 || c === '' ? '' : heads[k] !== '' ? `${heads[k]}: ${c}` : c)).filter((c) => c !== '');
+    const cell = (k: number): string => (row[k] === '' ? '' : heads[k] !== '' ? `${heads[k]}: ${row[k]}` : row[k]!);
+    const said: string[] = [];
+    for (let k = 1; k < row.length; k += 1) {
+      const group = groups.find((g) => g.from === k);
+      if (group === undefined) {
+        if (cell(k) !== '') said.push(cell(k));
+        continue;
+      }
+      const within = Array.from({ length: group.to - group.from + 1 }, (_, j) => cell(group.from + j)).filter((c) => c !== '');
+      if (within.length > 0) said.push(`${group.text} (${within.join('; ')})`);
+      k = group.to;
+    }
     rows.push({ ...at, text: row[0] !== '' ? `${row[0]}: ${said.join('; ')}` : said.join('; '), kind: 'row' });
   });
   return rows;

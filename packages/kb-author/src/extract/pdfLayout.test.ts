@@ -170,8 +170,51 @@ describe('a table', () => {
     const got = withTables(lines(benefits));
     expect(got.map((l) => [('kind' in l && l.kind) || null, l.text])).toEqual([
       ['group', 'Imaging services'],
-      ['row', 'Laboratory center: Using an in-network: 20%; Deductible applies: yes; Using an out-of-network: 40%'],
-      ['row', 'Hospital outpatient: Using an in-network: 20%; Using an out-of-network: 40% Subject to a maximum of $300 a day'],
+      // "Your cost" is over the columns headed in the rows under it: their cells said within it, so a row
+      // says whose cost its figures are (a booklet's "Your payment", lost before, let a worded answer turn
+      // who pays around).
+      ['row', 'Laboratory center: Your cost (Using an in-network: 20%; Deductible applies: yes; Using an out-of-network: 40%)'],
+      ['row', 'Hospital outpatient: Your cost (Using an in-network: 20%; Using an out-of-network: 40% Subject to a maximum of $300 a day)'],
+    ]);
+  });
+
+  it('reads a second table on the page, its own heading over several columns under the first table\'s rows, as a table of its own', () => {
+    // The second table's heading row read as a row of the first ran its heading into every row above it,
+    // and a wide cell of its own blurred a gutter of the first (a booklet's mental health and pharmacy tables).
+    const second = benefits.map((r) => ({ ...r, transform: [r.transform[0]!, 0, 0, r.transform[3]!, r.transform[4]! - 5, r.transform[5]! - 200] as number[] }));
+    const both = [...benefits, ...second.filter((r) => r.str !== 'Benefits'), run('Pharmacy benefits', 41, 526, 10, 'B'), run('Tier 1 drugs', 64, 350), run('$10', 323, 350, 10, 'R', 18), run('Applicable copayment', 430, 350, 10, 'R', 80)];
+    const got = texts(withTables(lines(both)));
+    expect(got.filter((t) => t.includes('Your cost (')).length).toBe(got.filter((t) => t.includes(': ')).length);
+    expect(got).toContain('Tier 1 drugs: Your cost (Using an in-network: $10; Using an out-of-network: Applicable copayment)');
+    expect(got.some((t) => /Your cost Deductible|Pharmacy benefits:/.test(t))).toBe(false);
+  });
+
+  it('says the cells under each of several headings over columns within it, each column under the nearest; a column headed beside them is under none', () => {
+    const twoGroups = [
+      run('Service', 46, 726, 10, 'B'),
+      run('In network', 310, 726, 10, 'B', 80),
+      run('Out of network', 470, 726, 10, 'B', 70),
+      run('Notes', 600, 726, 10, 'B', 25),
+      run('Copay', 300, 705, 10, 'B', 30),
+      run('Deductible', 370, 705, 10, 'B', 45),
+      run('Copay', 450, 705, 10, 'B', 30),
+      run('Deductible', 520, 705, 10, 'B', 45),
+      run('Office visit', 46, 680),
+      run('$20', 305, 680, 10, 'R', 18),
+      run('no', 380, 680, 10, 'R', 12),
+      run('$60', 455, 680, 10, 'R', 18),
+      run('yes', 525, 680, 10, 'R', 15),
+      run('per visit', 600, 680, 10, 'R', 40),
+      run('Urgent care', 46, 660),
+      run('$40', 305, 660, 10, 'R', 18),
+      run('no', 380, 660, 10, 'R', 12),
+      run('$80', 455, 660, 10, 'R', 18),
+      run('yes', 525, 660, 10, 'R', 15),
+      run('per visit', 600, 660, 10, 'R', 40),
+    ];
+    expect(texts(withTables(lines(twoGroups)))).toEqual([
+      'Office visit: In network (Copay: $20; Deductible: no); Out of network (Copay: $60; Deductible: yes); Notes: per visit',
+      'Urgent care: In network (Copay: $40; Deductible: no); Out of network (Copay: $80; Deductible: yes); Notes: per visit',
     ]);
   });
 
