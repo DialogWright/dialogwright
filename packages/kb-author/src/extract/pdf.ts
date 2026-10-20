@@ -3,6 +3,9 @@ import { cleanText, sectionsOf, type Block, type ExtractedDocument } from '../se
 import { readTables, type PlacedRun, type RowLine } from './pdfTables';
 import { WEAK } from './tables/check';
 import { rulesOf, type Rule } from './tables/rules';
+import { layoutKey, type TablesCache } from './tables/cache';
+import type { TableGrid } from './tables/grid';
+import { gridOfModel, pageLayout, type ModelTableReader } from './tables/model';
 
 /**
  * PDF to sections, with unpdf (pdf.js built for servers: pure JavaScript, no canvas, no native code).
@@ -350,12 +353,12 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
  * headings; and a note for each table its check found weak (./tables/check.ts), for the author to read
  * against the page.
  */
-export function readPages(pages: readonly PageLines[]): ExtractedDocument {
+export function readPages(pages: readonly PageLines[], proposed: ReadonlyMap<number, readonly TableGrid[]> = new Map(), modelNotes: readonly string[] = []): ExtractedDocument {
   const body = bodyLines(pages);
   const tabled: Line[] = [];
-  const notes: string[] = [];
+  const notes: string[] = [...modelNotes];
   for (const p of pages) {
-    const read = readTables(body.filter((l) => l.page === p.page), p.rules);
+    const read = readTables(body.filter((l) => l.page === p.page), p.rules, proposed.get(p.page) ?? []);
     tabled.push(...(read.lines as Line[]));
     for (const t of read.tables.filter((t) => t.check.score < WEAK)) {
       const { grid } = t.table;
@@ -429,10 +432,60 @@ export async function pdfPages(bytes: Uint8Array, options: { maxPages?: number }
   }
 }
 
-/** A PDF's bytes to sections, with its metadata title when it has one (refused over `maxPages`, default 500). */
-export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number } = {}): Promise<ExtractedDocument & { pages: number }> {
+/**
+ * A model's tables for a PDF (./tables/model.ts): the cache of grids a model gave for pages before (by
+ * their layout), and the model to ask for a page with a table the cache does not have; without a model,
+ * the cache alone.
+ */
+export interface PdfTablesOptions {
+  readonly cache: TablesCache;
+  readonly reader?: ModelTableReader;
+  /** Counted as pages are asked or found in the cache, for the report. */
+  readonly counts?: { asked: number; cached: number };
+}
+
+/**
+ * Each page's grids from a model, where a reader finds a table on it: from the cache by the page's layout,
+ * else asked of the model and kept; and what could not be had, as notes.
+ */
+async function modelGridsOf(pages: readonly PageLines[], tables: PdfTablesOptions): Promise<{ grids: Map<number, TableGrid[]>; notes: string[] }> {
+  const body = bodyLines(pages);
+  const grids = new Map<number, TableGrid[]>();
+  const notes: string[] = [];
+  for (const p of pages) {
+    const lines = body.filter((l) => l.page === p.page);
+    // Only a page where a reader finds a table: the model reads it better, it does not look for tables in prose.
+    if (readTables(lines, p.rules).tables.length === 0) continue;
+    const layout = pageLayout(lines, p.rules ?? []);
+    const key = layoutKey(layout);
+    let answer = tables.cache.get(key)?.tables;
+    if (answer !== undefined) {
+      if (tables.counts) tables.counts.cached += 1;
+    } else if (tables.reader !== undefined) {
+      try {
+        answer = await tables.reader.propose(p.page, layout);
+        tables.cache.set(key, tables.reader.id, answer);
+        if (tables.counts) tables.counts.asked += 1;
+      } catch (error) {
+        notes.push(`page ${p.page}: the model could not read its tables (${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+    const ok: TableGrid[] = [];
+    for (const t of answer ?? []) {
+      const g = gridOfModel(p.page, t);
+      if (typeof g === 'string') notes.push(`page ${p.page}: a table the model gave was not used: ${g}`);
+      else ok.push(g);
+    }
+    if (ok.length > 0) grids.set(p.page, ok);
+  }
+  return { grids, notes };
+}
+
+/** A PDF's bytes to sections, with its metadata title when it has one (refused over `maxPages`, default 500); with `tables`, a model's tables read beside the others'. */
+export async function extractPdf(bytes: Uint8Array, options: { maxPages?: number; tables?: PdfTablesOptions } = {}): Promise<ExtractedDocument & { pages: number }> {
   const { pages, count, metaTitle } = await pdfPages(bytes, options);
-  const read = readPages(pages);
+  const model = options.tables !== undefined ? await modelGridsOf(pages, options.tables) : { grids: new Map<number, TableGrid[]>(), notes: [] };
+  const read = readPages(pages, model.grids, model.notes);
   const title = read.title ?? metaTitle;
   return { ...(title === undefined ? {} : { title }), sections: read.sections, ...(read.notes === undefined ? {} : { notes: read.notes }), pages: count };
 }

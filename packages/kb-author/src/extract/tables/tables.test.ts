@@ -1,16 +1,19 @@
-import { mkdtempSync, copyFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FOLDER } from '../../__fixtures__/server';
 import { tablesCommand } from '../../tables/command';
-import { linesOf, type PageLines, type Run } from '../pdf';
+import { ingestCommand } from '../../cli';
+import { formatReport } from '../../ingest';
+import { extractPdf, linesOf, type PageLines, type Run } from '../pdf';
 import { readTables } from '../pdfTables';
 import { borderTables } from './borders';
 import { checkTable, WEAK } from './check';
 import { fillGrid, type TableGrid } from './grid';
 import { readLabels } from './labels';
-import { gridOfModel, HttpModelTableReader, MODEL_MAX_TOKENS, MODEL_TABLE_INSTRUCTIONS, pageLayout } from './model';
+import { gridOfModel, HttpModelTableReader, MODEL_MAX_TOKENS, MODEL_TABLE_INSTRUCTIONS, pageLayout, type ModelTable, type ModelTableReader } from './model';
+import { TABLES_DIR, TABLES_FILE, TablesCache } from './cache';
 import { rulesOf, type Rule } from './rules';
 import { comparable, scorePages } from './score';
 
@@ -328,5 +331,91 @@ describe('a table a model proposes', () => {
     expect(read.tables.map((t) => t.table.grid.reader)).toEqual(['model']);
     expect(read.lines.map((l) => l.text)).toEqual(['Tier 1: $10', 'Tier 2: $25', 'Tier 3: $40']);
     expect(read.proposed.map((t) => t.table.grid.reader)).toContain('model');
+  });
+});
+
+/** A one-page PDF of text runs, each at (x, y) in Helvetica at 10 points, written out by hand with its cross-reference table. */
+function pdfWithRuns(runs: readonly { text: string; x: number; y: number }[]): Uint8Array {
+  const content = runs.map((r) => `BT /F1 10 Tf ${r.x} ${r.y} Td (${r.text.replace(/[()\\]/g, (c) => `\\${c}`)}) Tj ET`).join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((n) => `${String(n).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
+
+describe('a model\'s tables in a PDF\'s reading', () => {
+  const table = pdfWithRuns([
+    { text: 'Late fees', x: 72, y: 700 },
+    { text: 'Item', x: 72, y: 660 }, { text: 'Fee', x: 250, y: 660 }, { text: 'Notes', x: 400, y: 660 },
+    { text: 'Replacement card', x: 72, y: 640 }, { text: '$5', x: 250, y: 640 }, { text: 'Once a year free', x: 400, y: 640 },
+    { text: 'Late return', x: 72, y: 620 }, { text: '$0.25 a day', x: 250, y: 620 }, { text: 'Per item', x: 400, y: 620 },
+    { text: 'Lost book', x: 72, y: 600 }, { text: 'Its price', x: 250, y: 600 }, { text: 'Plus $3', x: 400, y: 600 },
+  ]);
+  const fake = (tables: ModelTable[] | Error) => {
+    const asked: number[] = [];
+    const reader: ModelTableReader = {
+      id: 'fake:model',
+      propose: async (page) => {
+        asked.push(page);
+        if (tables instanceof Error) throw tables;
+        return tables;
+      },
+    };
+    return { reader, asked };
+  };
+
+  it('asks the model of a page where a reader finds a table, keeps its answer by the page\'s layout, and reads the same from the cache with no model', async () => {
+    const plain = await extractPdf(table);
+    const grid: ModelTable = { columns: [60, 240, 390, 520], rows: [672, 652, 632, 612, 592], headRows: 1, spans: [] };
+    const { reader, asked } = fake([grid]);
+    const cache = new TablesCache();
+    const counts = { asked: 0, cached: 0 };
+    const withModel = await extractPdf(table, { tables: { cache, reader, counts } });
+    expect(asked).toEqual([1]);
+    expect(counts).toEqual({ asked: 1, cached: 0 });
+    // The model's grid reads as the alignment's does here, so the alignment's is read (a tie), and the words are the page's.
+    expect(withModel.sections).toEqual(plain.sections);
+    const dir = mkdtempSync(join(tmpdir(), 'kb-tables-cache-'));
+    cache.save(dir);
+    const again = { asked: 0, cached: 0 };
+    const cached = await extractPdf(table, { tables: { cache: TablesCache.load(dir), counts: again } });
+    expect(again).toEqual({ asked: 0, cached: 1 });
+    expect(cached.sections).toEqual(withModel.sections);
+    // One page kept, by its layout's key, with the model that gave it.
+    expect(Object.values(JSON.parse(readFileSync(join(dir, TABLES_DIR, TABLES_FILE), 'utf8')).pages)).toEqual([{ model: 'fake:model', tables: [grid] }]);
+  });
+
+  it('says so in a note when the model cannot be asked or gives a grid that is not one, and reads the page without it', async () => {
+    const down = fake(new Error('openrouter answered 503'));
+    const read = await extractPdf(table, { tables: { cache: new TablesCache(), reader: down.reader } });
+    expect(read.notes).toContain('page 1: the model could not read its tables (openrouter answered 503)');
+    const bad = fake([{ columns: [60, 520], rows: [672, 592], headRows: 0 }]);
+    const refused = await extractPdf(table, { tables: { cache: new TablesCache(), reader: bad.reader } });
+    expect(refused.notes).toContain('page 1: a table the model gave was not used: fewer than two columns or two rows');
+    expect(refused.sections).toEqual((await extractPdf(table)).sections);
+  });
+});
+
+describe('kb:ingest --tables', () => {
+  it('does not run in CI, and the report says what the model read and what came from kb/.tables', async () => {
+    const err: string[] = [];
+    const code = await ingestCommand(['folder', '--tables', 'openrouter:anthropic/claude-haiku-5.5'], { out: () => {}, err: (l) => err.push(l), cwd: tmpdir(), env: { CI: 'true' } });
+    expect(code).toBe(2);
+    expect(err).toEqual(['kb:ingest: --tables does not run in CI: it asks a model with your own key, on your machine']);
+    const lines = formatReport({ input: 'docs', kind: 'folder', documents: [], skipped: [], notSeen: [], tables: { model: 'openrouter:anthropic/claude-haiku-5.5', asked: 3, cached: 44, costUsd: 0.0123 } }, { input: 'docs', sources: 'kb/sources' });
+    expect(lines).toContain('  tables: 3 pages read by openrouter:anthropic/claude-haiku-5.5 ($0.0123), 44 from kb/.tables (commit it with the sources)');
   });
 });

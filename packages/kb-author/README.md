@@ -13,11 +13,11 @@ It is a pipeline of five commands:
 ## Ingesting
 
 ```sh
-pnpm kb:ingest <folder | file | url> [--dir <app folder>] [--dry-run] [--json]
+pnpm kb:ingest <folder | file | url> [--dir <app folder>] [--tables <openrouter|anthropic>:<model>] [--dry-run] [--json]
 pnpm kb:ingest https://example.org/help/ --dir apps/my-app --depth 2 [--include '/help/**'] [--include '*.pdf'] [--max-pages 50] [--rate 1000] [--allow-host docs.example.org] [--allow-private]
 ```
 
-`--dir` is the app folder (or its `kb/` folder); without it, the folder the command is run in, when that is an app folder. Relative paths are from where you run it. It prints one line per document, `added`, `changed` (with each section added `+`, changed `~` or removed `-`) or `unchanged`, then what it skipped and why. `--dry-run` writes nothing; `--json` prints the report as JSON. Exit codes: 0 done, 1 a problem, 2 a command line not understood.
+`--tables` asks a model where the tables are on each PDF page where a reader finds one (below, *Measuring the table readers*), with your own key (`OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`; never in CI): its grid is read only where it checks better than the others', so a model never turns a table read well into one read worse. Its answers are kept in `kb/.tables/grids.json` by the hash of each page's layout, and every later `kb:ingest` and `kb:refresh` reads them with no key and no model: commit the file with the sources. A page whose text or placing changed is asked again on the next `--tables` run, and the report says how many pages the model read and what it cost, and how many came from the file. `--dir` is the app folder (or its `kb/` folder); without it, the folder the command is run in, when that is an app folder. Relative paths are from where you run it. It prints one line per document, `added`, `changed` (with each section added `+`, changed `~` or removed `-`) or `unchanged`, then what it skipped and why. `--dry-run` writes nothing; `--json` prints the report as JSON. Exit codes: 0 done, 1 a problem, 2 a command line not understood.
 
 ## What a source file holds
 

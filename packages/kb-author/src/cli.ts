@@ -7,6 +7,7 @@ import type { Resolver } from './crawl/net';
 import type { Drafter } from './draft/drafter';
 import { draftCommand } from './draft/command';
 import { gapsCommand } from './gaps/command';
+import { HttpModelTableReader, type ModelTableReader } from './extract/tables/model';
 import { formatReport, ingest, IngestError, isUrl } from './ingest';
 import { todayUtc } from './args';
 import { refreshCommand } from './refresh/command';
@@ -63,14 +64,16 @@ export const USER_AGENT = `dialogwright-kb-ingest/${VERSION} (+https://github.co
 const MIN_RATE_MS = 100;
 
 const USAGE = [
-  'usage: kb:ingest <folder | file | url> [--dir <app folder>] [--dry-run] [--json]',
+  'usage: kb:ingest <folder | file | url> [--dir <app folder>] [--tables <openrouter|anthropic>:<model>] [--dry-run] [--json]',
   '       for a url: [--depth N] [--include <glob>]... [--max-pages M] [--rate <ms>] [--allow-host <host>]... [--allow-private]',
   '  reads PDF, DOCX, HTML, Markdown and text files (a folder recursively), or a website to a link depth,',
   '  and writes each document to <app>/kb/sources/<doc>.yaml with its sections and provenance;',
   `  a crawl stays on the start page's host, follows robots.txt, waits --rate ms between requests (default ${DEFAULT_RATE_MS})`,
   `  and reads at most --max-pages pages (default ${DEFAULT_MAX_PAGES}); --depth is how many links from the start page (default 1);`,
   '  --include narrows what is fetched beyond the start page by URL path (/help/**, *.pdf);',
-  '  a crawl reads only public addresses: --allow-private reads a site on a private network (loopback, RFC 1918, link-local)',
+  '  a crawl reads only public addresses: --allow-private reads a site on a private network (loopback, RFC 1918, link-local);',
+  '  --tables asks that model where the tables are on each PDF page that has one (OPENROUTER_API_KEY or ANTHROPIC_API_KEY, your own;',
+  '  never in CI), keeping its answers in <kb>/.tables/grids.json, which every later ingest and refresh reads: commit it'
 ].join('\n');
 
 const stdio = (): Io => ({
@@ -95,7 +98,7 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i]!;
     if (a === '--dry-run' || a === '--json' || a === '--allow-private') flags.add(a);
-    else if (['--dir', '--depth', '--max-pages', '--rate', '--include', '--allow-host'].includes(a)) {
+    else if (['--dir', '--depth', '--max-pages', '--rate', '--include', '--allow-host', '--tables'].includes(a)) {
       const v = args[i + 1];
       if (v === undefined || v.startsWith('--')) {
         io.err(`kb:ingest: ${a} needs a value\n${USAGE}`);
@@ -135,6 +138,20 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
     }
   }
 
+  let tables: ModelTableReader | undefined;
+  if (values['--tables'] !== undefined) {
+    const env = io.env ?? process.env;
+    if (env.CI !== undefined && env.CI !== '' && env.CI !== 'false') {
+      io.err('kb:ingest: --tables does not run in CI: it asks a model with your own key, on your machine');
+      return 2;
+    }
+    try {
+      tables = new HttpModelTableReader(values['--tables'], env, io.fetch);
+    } catch (error) {
+      io.err(`kb:ingest: ${error instanceof Error ? error.message : String(error)}\n${USAGE}`);
+      return 2;
+    }
+  }
   const place = placeOf(resolve(io.cwd, values['--dir'] ?? '.'));
   if (typeof place === 'string') {
     io.err(`kb:ingest: ${place}`);
@@ -151,6 +168,7 @@ export async function ingestCommand(args: readonly string[], io: Io): Promise<nu
       kbDir: place.kbDir,
       today: (io.today ?? todayUtc)(),
       dryRun: flags.has('--dry-run'),
+      ...(tables !== undefined ? { tables } : {}),
       ...(url
         ? {
             crawl: {

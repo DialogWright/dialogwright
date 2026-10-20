@@ -14,9 +14,10 @@ export type { Rule } from './tables/rules';
  *
  * 1. Readers propose each table's grid: its columns, its rows, its heading rows and its cells over
  *    several of either. One finds tables by the lines the page draws around their cells
- *    (./tables/borders.ts), one by where their text is (./tables/alignment.ts). Where two proposals
- *    hold the same lines, the one the checker scores higher is read (the borders' on a tie: drawn lines
- *    say where a cell is), and the other is not.
+ *    (./tables/borders.ts), one by where their text is (./tables/alignment.ts), and a model's grids may be
+ *    given beside them (./tables/model.ts). Where two proposals hold the same lines, the one the checker
+ *    scores higher is read (on a tie the borders', then the alignment's, then the model's: drawn lines say
+ *    where a cell is, and a model's is read only where it does better), and the other is not.
  * 2. The grid's cells are filled with the page's own runs, each in the cell its anchor is in
  *    (./tables/grid.ts): the words are the page's, whoever found the table.
  * 3. The table is checked against its page (./tables/check.ts): text left out, text across a column's
@@ -39,11 +40,13 @@ export interface TableRead {
  * the result is every reader's reading, read or not (kb:tables scores each).
  */
 export function readTables<L extends PlacedLine>(lines: readonly L[], rules: readonly Rule[] = [], proposed: readonly TableGrid[] = []): { lines: (L | RowLine)[]; tables: TableRead[]; proposed: TableRead[] } {
-  // Ties go to drawn lines, then a model's grid, then where the text is.
+  // Ties go to drawn lines, then where the text is, then a model's grid: a model's is read only where it
+  // checks strictly better (the checker cannot see a heading put over the wrong columns, which a model's
+  // grid can do where the alignment's reads the same).
   const found: { members: number[]; proposals: readonly Proposal[]; rank: number }[] = [
     ...borderTables(lines, rules).map(({ members, grid }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], rank: 2 })),
-    ...proposed.map((grid) => ({ grid, members: linesIn(grid, lines) })).filter((p) => p.members.length > 0).map(({ grid, members }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], rank: 1 })),
-    ...alignmentTables(lines).map((f) => ({ ...f, rank: 0 })),
+    ...proposed.map((grid) => ({ grid, members: linesIn(grid, lines) })).filter((p) => p.members.length > 0).map(({ grid, members }) => ({ members, proposals: [{ grid, lines: members.map((i) => lines[i]!) }], rank: 0 })),
+    ...alignmentTables(lines).map((f) => ({ ...f, rank: 1 })),
   ];
   if (found.length === 0) return { lines: [...lines], tables: [], proposed: [] };
   // Each proposal filled, checked and said; a region's score is its tables' least.

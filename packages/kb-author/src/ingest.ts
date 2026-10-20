@@ -4,6 +4,9 @@ import { crawl, type CrawlOptions, type CrawlResult } from './crawl/crawl';
 import { hostOf } from './crawl/url';
 import { EXTENSIONS, extract, formatOfName } from './extract/index';
 import { slugOf } from './sections';
+import type { PdfTablesOptions } from './extract/pdf';
+import { TablesCache } from './extract/tables/cache';
+import type { ModelTableReader } from './extract/tables/model';
 import { existingSources, planSources, writeSources, type CrawlProvenance, type DocumentChange, type SourceInput } from './write';
 
 /**
@@ -28,6 +31,11 @@ export interface IngestOptions {
   dryRun?: boolean;
   /** For a URL: the crawl's settings. */
   crawl?: Omit<CrawlOptions, 'start'>;
+  /**
+   * A model that reads where a PDF page's tables are (extract/tables/model.ts), asked for each page with a
+   * table that kb/.tables/grids.json does not have yet. Without one, the grids already there are read.
+   */
+  tables?: ModelTableReader;
 }
 
 export interface IngestReport {
@@ -41,6 +49,8 @@ export interface IngestReport {
   notSeen: string[];
   /** For a site: the requests made and each host's robots.txt. */
   crawl?: { requests: CrawlResult['requests']; robots: CrawlResult['robots'] };
+  /** PDF pages whose tables a model read: asked this run (and what it cost, where the provider says), and found in kb/.tables. */
+  tables?: { model?: string; asked: number; cached: number; costUsd?: number };
 }
 
 export class IngestError extends Error {}
@@ -81,7 +91,7 @@ function walk(root: string, at: string, files: string[], skipped: IngestReport['
 }
 
 /** A folder's or a file's documents. */
-async function readFiles(input: string, appDir: string): Promise<{ kind: 'folder' | 'file'; inputs: SourceInput[]; skipped: IngestReport['skipped']; under: string }> {
+async function readFiles(input: string, appDir: string, pdfTables: PdfTablesOptions): Promise<{ kind: 'folder' | 'file'; inputs: SourceInput[]; skipped: IngestReport['skipped']; under: string }> {
   let stat;
   try {
     stat = statSync(input);
@@ -105,7 +115,7 @@ async function readFiles(input: string, appDir: string): Promise<{ kind: 'folder
     const format = formatOfName(rel)!;
     const file = join(root, rel);
     try {
-      const read = await extract(format, new Uint8Array(readFileSync(file)));
+      const read = await extract(format, new Uint8Array(readFileSync(file)), { tables: pdfTables });
       const name = rel.split('/').pop()!;
       const ext = name.slice(name.lastIndexOf('.') + 1);
       if (read.sections.length === 0) {
@@ -149,13 +159,16 @@ function idsOfUrl(url: string, startHost: string): { id: string; altId?: string 
 /** Reads the input and writes (unless a dry run) its documents into the knowledge base's sources. */
 export async function ingest(options: IngestOptions): Promise<IngestReport> {
   const sourcesDir = join(options.kbDir, 'sources');
+  // The grids a model gave before, read by every PDF; asked of the model for a page they do not have.
+  const counts = { asked: 0, cached: 0 };
+  const pdfTables: PdfTablesOptions = { cache: TablesCache.load(options.kbDir), ...(options.tables !== undefined ? { reader: options.tables } : {}), counts };
   let report: IngestReport;
   let inputs: SourceInput[];
   let mine: (provenance: { url?: unknown; file?: unknown } | undefined) => boolean;
 
   if (isUrl(options.input)) {
     if (!options.crawl) throw new IngestError('a URL needs the crawl settings');
-    const result = await crawl({ ...options.crawl, start: options.input });
+    const result = await crawl({ ...options.crawl, start: options.input, pdfTables });
     const startHost = hostOf(result.requests[0]?.url ?? options.input);
     const hosts = new Set([startHost, ...(options.crawl.allowHosts ?? []).map((h) => h.toLowerCase())]);
     inputs = [];
@@ -189,7 +202,7 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
       }
     };
   } else {
-    const read = await readFiles(options.input, options.appDir);
+    const read = await readFiles(options.input, options.appDir, pdfTables);
     inputs = read.inputs;
     report = { input: options.input, kind: read.kind, documents: [], skipped: read.skipped, notSeen: [] };
     mine = (p) => typeof p?.file === 'string' && (read.kind === 'file' ? p.file === read.under : p.file.startsWith(read.under === '' ? '' : `${read.under}/`));
@@ -201,7 +214,14 @@ export async function ingest(options: IngestOptions): Promise<IngestReport> {
     .filter((e) => !read.has(e.id) && mine(e.data?.provenance))
     .map((e) => e.id)
     .sort();
-  if (!options.dryRun) writeSources(report.documents, sourcesDir);
+  if (!options.dryRun) {
+    writeSources(report.documents, sourcesDir);
+    pdfTables.cache.save(options.kbDir);
+  }
+  if (counts.asked > 0 || counts.cached > 0 || options.tables !== undefined) {
+    const spent = options.tables?.spent;
+    report.tables = { ...(options.tables !== undefined ? { model: options.tables.id } : {}), asked: counts.asked, cached: counts.cached, ...(spent?.costUsd !== undefined ? { costUsd: spent.costUsd } : {}) };
+  }
   return report;
 }
 
@@ -235,6 +255,10 @@ export function formatReport(report: IngestReport, labels: { input: string; sour
       }
     }
     for (const note of d.notes ?? []) lines.push(`    ! ${note}`);
+  }
+  if (report.tables !== undefined) {
+    const t = report.tables;
+    lines.push(`  tables: ${t.asked} page${t.asked === 1 ? '' : 's'} read by ${t.model ?? 'a model'}${t.costUsd !== undefined ? ` ($${t.costUsd.toFixed(4)})` : ''}, ${t.cached} from kb/.tables (commit it with the sources)`);
   }
   if (report.notSeen.length > 0) lines.push(`  not read this time (left as they are): ${report.notSeen.join(', ')}`);
   for (const s of report.skipped) lines.push(`  skipped   ${s.what}: ${s.reason}`);

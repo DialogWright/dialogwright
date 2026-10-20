@@ -64,8 +64,12 @@ Measured on the same fifteen tables with `kb:tables --model`:
 
 The model read the three tables neither reader could (the rate table ruled only at its outline: 98 of 98 cells; its vintages beside their rates: 38 of 38; the rates with no rules at all: 9 of 9). Alone, Haiku read 377 cells and Sonnet 387; with the others and the checker choosing, both 387. A model that reasons needs room to: Sonnet spent 4,000 tokens thinking about the rate table before it answered, so a page may take 16,000. Gemini 3.8 Flash ran out of even those on that page. In no run did the checker call a table read well weak; with Gemini, it called both tables Gemini read badly weak.
 
-## Next
+## In kb:ingest
 
-- **The model reader in `kb:ingest`**, opt-in (`--tables <provider:model>`), on the pages where a reader finds a table, its grids kept beside the knowledge base so a re-import with no key reads the same.
+`kb:ingest --tables <provider:model>` asks the model of each PDF page where a reader finds a table, and keeps its answers in `kb/.tables/grids.json` by the hash of the page's layout; every later ingest and refresh reads them with no key. On the booklet's 123 pages, Haiku read the 47 with a table in nine minutes (one page at a time) for seven cents.
+
+Its first reading changed thirteen sections, some better (a definition that had carried another's text now its own; the limits under a table's rows on their rows; a list of exclusions its own section) and some worse: where its grid and the alignment's both checked 1.0, the tie went to the model, whose grid put the heading over several columns over the wrong ones ("When using a Participating Provider: 20%; Your payment (CYD applies: yes; ...") and ran a bulleted cell's items into one row. The checker cannot see a heading over the wrong columns. So the model's grid is now read only where it checks strictly better than the others' (on a tie: the drawn lines', then the alignment's, then the model's): on the booklet, one section added and three changed, each a fix (the exclusions apart, both definitions with their own text), and on the labelled set the cells read are as before (387 of 390), the model's grid read for the three tables the others cannot read. The cost is the gains a tie hides (the limits on their rows).
+
+## Next
 
 - The labelled set grows each time a document breaks. It lives outside the repository for now (its documents are other publishers'); the format and the scorer are here.

@@ -2,7 +2,7 @@ import type { ExtractedDocument } from '../sections';
 import { extractDocx } from './docx';
 import { extractHtml } from './html';
 import { extractMarkdown, extractText } from './markdown';
-import { extractPdf } from './pdf';
+import { extractPdf, type PdfTablesOptions } from './pdf';
 
 /** The formats read, by kind. */
 export type Format = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
@@ -27,9 +27,9 @@ export function formatOfName(name: string): Format | undefined {
 }
 
 /** A document's bytes to sections, by its format. */
-export async function extract(format: Format, bytes: Uint8Array): Promise<ExtractedDocument> {
+export async function extract(format: Format, bytes: Uint8Array, options: { tables?: PdfTablesOptions } = {}): Promise<ExtractedDocument> {
   if (format === 'pdf') {
-    const { pages: _pages, ...read } = await extractPdf(bytes);
+    const { pages: _pages, ...read } = await extractPdf(bytes, options.tables !== undefined ? { tables: options.tables } : {});
     return read;
   }
   if (format === 'docx') return extractDocx(bytes);
