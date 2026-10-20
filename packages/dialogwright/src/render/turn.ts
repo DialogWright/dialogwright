@@ -138,7 +138,10 @@ export interface RenderInput {
 }
 
 /** A line's attempt: said, or fallen back (with the wording a check refused, and what was paid for: a generation's usage, or a late one's estimate). */
-type Attempt = { said: string; gen: Generation; judge?: RenderJudge } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']>; judge?: RenderJudge; lines?: { chosen: number[]; of: number; text: string } };
+type Attempt = ({ said: string; gen: Generation; judge?: RenderJudge } | { unchanged: true; gen: Generation } | { fallback: RenderFallback; refused?: string; gen?: Generation; usage?: RenderUsage; error?: NonNullable<RenderLine['error']>; judge?: RenderJudge; lines?: { chosen: number[]; of: number; text: string } }) & {
+  /** A knowledge answer worded again after its first wording was refused: that first refusal (RenderLine.retried). */
+  retried?: NonNullable<RenderLine['retried']>;
+};
 
 /** The drift judge's reading of an attempt, for its line (RenderLine.judge): absent where the judge was not asked or gave no reading. */
 function judgeOf(got: Attempt): { judge?: RenderJudge } {
@@ -481,6 +484,10 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   const drift = renderer.drift ?? input.client;
   // Where the drift judge refuses a wording (style.yaml's judge.refuseAt), default DRIFT_FIRE.
   const refuseAt = generated.style.refuseAt ?? DRIFT_FIRE;
+  // The temperature every wording is asked at (style.yaml's model.temperature); none sent where the app gives none.
+  const temperature = generated.model?.temperature;
+  // A request's cassette key and temperature: a wording at a temperature is recorded apart from one at the model's own.
+  const at = (key: string, t: number | undefined): { key: string; temperature?: number } => (t === undefined ? { key } : { key: `${key}@t${t}`, temperature: t });
   let checkUsage: JevUsage | null = null;
   const used = (u: JevUsage): void => {
     checkUsage = {
@@ -523,7 +530,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (flagged !== null) return flagged;
     let gen: Generation;
     try {
-      const wording = await raceDeadline(renderer.client.generate({ promptId, act, key: renderKey(promptId, act) }, abort.signal), after(budget));
+      const wording = await raceDeadline(renderer.client.generate({ promptId, act, ...at(renderKey(promptId, act), temperature) }, abort.signal), after(budget));
       if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
       gen = wording;
     } catch (e) {
@@ -556,7 +563,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     if (flagged !== null) return flagged;
     let gen: Generation;
     try {
-      const wording = await raceDeadline(renderer.client.generate({ promptId, span, act, key: spanKey(promptId, span, act) }, abort.signal), after(budget));
+      const wording = await raceDeadline(renderer.client.generate({ promptId, span, act, ...at(spanKey(promptId, span, act), temperature) }, abort.signal), after(budget));
       if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
       gen = wording;
     } catch (e) {
@@ -585,15 +592,19 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   // it on), the passage worded for it within the answer's limit, held to the passage's data and shape
   // (checkAnswer), and asked of the drift judge whether it says only what the passage says for the
   // question; its checks have the line's budget, or what is left of the answer's limit where that is more.
-  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly SectionLine[]): Promise<Attempt> => {
+  const attemptAnswer = async (promptId: string, span: string, first: SpanAct, retries: number, lines?: readonly SectionLine[], retryGoal?: string): Promise<Attempt> => {
     const flagged = await screened([{ name: 'question', value: first.answer!.question }], checker());
     if (flagged !== null) return flagged;
     let got = await wordAnswer(promptId, span, first);
     // A wording that said more than its source (the drift judge refused it, or it has a figure the source
     // does not): asked again (the span's `retry`), told only that its last was refused, within what is
-    // left of the answer's limit; each draw is checked and judged again.
+    // left of the answer's limit; each draw is checked and judged again. The first refusal is kept on the line.
+    const firstGot = got;
     for (let n = 0; n < retries && 'fallback' in got && RETRIED.has(got.fallback) && got.refused !== undefined && performance.now() - t0 < answerLimit - checkBudget; n++) {
-      got = await wordAnswer(promptId, span, { ...first, answer: { ...first.answer!, refused: got.refused } }, got);
+      got = await wordAnswer(promptId, span, { ...first, ...(retryGoal !== undefined ? { goal: retryGoal } : {}), answer: { ...first.answer!, refused: got.refused } }, got);
+    }
+    if (got !== firstGot && 'fallback' in firstGot) {
+      got = { ...got, retried: { fallback: firstGot.fallback, ...(firstGot.refused !== undefined ? { refused: firstGot.refused } : {}), ...(firstGot.judge !== undefined ? { judge: firstGot.judge } : {}) } };
     }
     // Not worded, with onFail: lines: the lines of the sections that answer the question, if the decision
     // model says which in what is left of the answer's limit; else the opening, the line's fixed text.
@@ -636,7 +647,9 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     let gen: Generation;
     try {
       const left = Math.max(1, answerLimit - checkBudget - (performance.now() - t0));
-      const wording = await raceDeadline(renderer.client.generate({ promptId, span, act, key: spanKey(promptId, span, act) }, abort.signal), after(left));
+      // A second wording, after the first was refused, at the retry's temperature where the app gives one.
+      const t = before !== undefined ? (generated.model?.retryTemperature ?? temperature) : temperature;
+      const wording = await raceDeadline(renderer.client.generate({ promptId, span, act, ...at(spanKey(promptId, span, act), t) }, abort.signal), after(left));
       if (wording === 'late') return { fallback: 'timeout', usage: requestUsage(act) };
       gen = withPrior(wording);
     } catch (e) {
@@ -674,7 +687,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
   };
   // The answers start with the rest, and have till their own limit.
   const answerDeadline = answers.some((a) => 'act' in a.plan) ? after(answerLimit) : deadline;
-  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0, a.plan.lines), answerDeadline) : null));
+  const answering = answers.map((a) => ('act' in a.plan ? timed(a.plan.act, () => attemptAnswer(a.said.promptId, a.plan.name, (a.plan as { act: SpanAct }).act, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retry ?? 0, a.plan.lines, app.generated?.lines[a.said.promptId]?.spans?.[a.plan.name]?.retryGoal), answerDeadline) : null));
   const [settled, settledSpans] = await Promise.all([
     Promise.all(planned.map(async (p) => {
       if (!('act' in p.plan)) return null;
@@ -830,7 +843,7 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const paid: RenderUsage | undefined = gen !== undefined ? { ...gen.usage } : 'usage' in got ? got.usage : undefined;
     pay(paid);
     if (gen !== undefined) model = gen.model;
-    const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}) };
+    const meta = { situations, ms, ...(paid !== undefined ? { usage: paid } : {}), ...(gen !== undefined ? { source: gen.source } : {}), ...(got.retried !== undefined ? { retried: got.retried } : {}) };
     if ('said' in got) {
       const was = actions[index] as Say;
       actions[index] = keepChatExtras(was, promptSay(app, promptId, { ...a.said.vars }, was.interruptible, input.clips ?? null, result.session.locale, { [a.plan.name]: got.said }));

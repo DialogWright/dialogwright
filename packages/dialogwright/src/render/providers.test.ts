@@ -171,6 +171,10 @@ describe('ModelRenderClient', () => {
     expect(JSON.parse(String(sent[0]!.init.body)).messages[0]).toEqual({ role: 'system', content: RENDER_INSTRUCTIONS });
     // Reasoning off, in OpenRouter's documented form.
     expect(JSON.parse(String(sent[0]!.init.body)).reasoning).toEqual({ effort: 'none' });
+    // No temperature unless the request has one (style.yaml's model.temperature, or retryTemperature on a second wording).
+    expect(JSON.parse(String(sent[0]!.init.body))).not.toHaveProperty('temperature');
+    await client.generate({ ...req, temperature: 0.2 }, signal);
+    expect(JSON.parse(String(sent[1]!.init.body)).temperature).toBe(0.2);
   });
 
   it('a failed request, a refusal or an answer with no line rejects with an error that names no key', async () => {

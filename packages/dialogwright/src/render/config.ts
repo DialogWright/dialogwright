@@ -53,6 +53,7 @@ function spansOf(p: PromptYaml): Record<string, GeneratedSpan> | undefined {
     ...(s.from === KB_ANSWER_SOURCE && s.words === undefined ? { sizedToPassage: true as const } : {}),
     ...(s.speaks === 'to-caller' ? { speaks: 'to-caller' as const } : {}), ...(s.names !== undefined ? { names: [...s.names] } : {}),
     ...(s.retry !== undefined && s.retry > 0 ? { retry: s.retry } : {}),
+    ...(s.retryGoal !== undefined ? { retryGoal: s.retryGoal } : {}),
   }]));
 }
 
@@ -198,7 +199,7 @@ export function generatedWordingOf(input: {
     localeGoals,
     ...(Object.keys(localeSpanGoals).length > 0 ? { localeSpanGoals } : {}),
     // The model the app names (style.yaml's `model`): only where it names one, so every other App is as it was.
-    ...(input.style?.model !== undefined ? { model: { provider: input.style.model.provider, ...(input.style.model.id !== undefined ? { id: input.style.model.id } : {}), ...(input.style.model.thinking !== undefined ? { thinking: input.style.model.thinking } : {}), ...(input.style.model.effort !== undefined ? { effort: input.style.model.effort } : {}) } } : {}),
+    ...(input.style?.model !== undefined ? { model: { provider: input.style.model.provider, ...(input.style.model.id !== undefined ? { id: input.style.model.id } : {}), ...(input.style.model.thinking !== undefined ? { thinking: input.style.model.thinking } : {}), ...(input.style.model.effort !== undefined ? { effort: input.style.model.effort } : {}), ...(input.style.model.temperature !== undefined ? { temperature: input.style.model.temperature } : {}), ...(input.style.model.retryTemperature !== undefined ? { retryTemperature: input.style.model.retryTemperature } : {}) } } : {}),
     // Only where a form's answer line words its answer, so every other App is as it was.
     ...(answerSlots.length > 0 ? { answerSlots } : {}),
   };

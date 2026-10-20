@@ -606,6 +606,7 @@ prompts:
       answer:
         from: sections
         retry: 1          # once more when the judge refuses, or a figure is not in the sections (measure it first: below)
+        retryGoal: Answer only with what the sections say, adding no advice or comparison they do not make.   # optional: the second wording's goal
         goal: Answer the caller's question from the sections, in a sentence or two.
 ```
 

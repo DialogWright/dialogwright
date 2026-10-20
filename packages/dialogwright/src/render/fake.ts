@@ -132,14 +132,14 @@ export class FakeRenderClient implements RenderClient {
   readonly model = FAKE_RENDER_MODEL;
   /** The acts it was asked to word, in order, with their prompt ids: what a test reads back. */
   readonly asked: { promptId: string; act: SpeechAct }[] = [];
-  /** The framed lines' spans it was asked to word, in order: what a test reads back. */
-  readonly askedSpans: { promptId: string; span: string; act: SpanAct }[] = [];
+  /** The framed lines' spans it was asked to word, in order, with the temperature asked where one was: what a test reads back. */
+  readonly askedSpans: { promptId: string; span: string; act: SpanAct; temperature?: number }[] = [];
 
   constructor(private readonly opts: FakeRenderOptions = {}) {}
 
   async generate(req: RenderRequest, signal: AbortSignal): Promise<Generation> {
     const { promptId, act } = req;
-    if (isSpanAct(act)) this.askedSpans.push({ promptId, span: req.span ?? '', act });
+    if (isSpanAct(act)) this.askedSpans.push({ promptId, span: req.span ?? '', act, ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) });
     else this.asked.push({ promptId, act });
     if (this.opts.delayMs !== undefined && this.opts.delayMs > 0) {
       await new Promise<void>((resolve, reject) => {

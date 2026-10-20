@@ -183,6 +183,8 @@ export interface RenderRequest {
   readonly key: string;
   /** The span of the line it words (a framed line's `generate`), by name; absent for a line worded whole. */
   readonly span?: string;
+  /** The temperature to word it at (style.yaml's model.temperature, or retryTemperature for a second wording); absent: none sent. */
+  readonly temperature?: number;
 }
 
 /**
@@ -281,6 +283,12 @@ export interface RenderLine {
    * not tried) or gave no reading (`drift-error`). Two numbers, never any words.
    */
   judge?: RenderJudge;
+  /**
+   * A knowledge answer asked again (its span's `retry`) after its first wording was refused: why the first
+   * was refused, the words refused, and the judge's reading of them where it gave one. The line's own
+   * fields are the last wording's.
+   */
+  retried?: { fallback: RenderFallback; refused?: string; judge?: RenderJudge };
   /** How long the line's generation and checks took, ms. */
   ms?: number;
   usage?: RenderUsage;

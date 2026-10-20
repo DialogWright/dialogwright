@@ -423,10 +423,10 @@ export class ModelRenderClient implements RenderClient {
     const anthropic = this.p.provider === 'anthropic';
     const thinking: RenderThinking = this.p.thinking ?? { mode: 'disabled', overridden: false };
     const body = anthropic
-      ? { model: this.p.model, max_tokens: mayThink(thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, system, messages: [{ role: 'user', content }], ...anthropicThinkingBody(thinking) }
+      ? { model: this.p.model, max_tokens: mayThink(thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, system, messages: [{ role: 'user', content }], ...anthropicThinkingBody(thinking), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) }
       // OpenRouter's own setting turns a model's reasoning off where it has one (a line, not a page; unconfirmed
       // per model), unless RENDER_THINKING or RENDER_EFFORT asks for it (openRouterReasoningBody).
-      : { model: this.p.model, max_tokens: mayThink(this.p.thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, ...openRouterReasoningBody(this.p.thinking), messages: [{ role: 'system', content: system }, { role: 'user', content }] };
+      : { model: this.p.model, max_tokens: mayThink(this.p.thinking) ? THINKING_MAX_TOKENS : MAX_TOKENS, ...openRouterReasoningBody(this.p.thinking), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}), messages: [{ role: 'system', content: system }, { role: 'user', content }] };
     const headers: Record<string, string> = anthropic
       ? { 'x-api-key': this.p.apiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
       : { authorization: `Bearer ${this.p.apiKey!}`, 'content-type': 'application/json' };

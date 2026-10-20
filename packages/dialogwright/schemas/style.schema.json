@@ -96,6 +96,18 @@
             "medium",
             "high"
           ]
+        },
+        "temperature": {
+          "description": "How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app's generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. Default: none sent, the model's own.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "retryTemperature": {
+          "description": "The temperature of a knowledge answer's second wording, asked after its first was refused (a span's retry): lower keeps it closer to what the sections say. Default: temperature, else none sent.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
         }
       },
       "required": [

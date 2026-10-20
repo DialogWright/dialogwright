@@ -62,9 +62,9 @@ const DOCUMENTS_LINES = `
 `;
 
 /** The library with its visitor guide approved for summarizing and summarizing on; `retry` on its documents line. */
-function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
+function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; retryGoal?: string; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
   const prompts = (t: string): string => {
-    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', '        retry: 1\n        goal: Answer') : DOCUMENTS_LINES;
+    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', `        retry: 1\n${options.retryGoal !== undefined ? `        retryGoal: ${options.retryGoal}\n` : ''}        goal: Answer`) : DOCUMENTS_LINES;
     return `${APP_EDITS['prompts.yaml']!(t)}${lines}`;
   };
   const forms = (t: string): string => {
@@ -214,6 +214,27 @@ describe('the answer worded from the sections, checked against them', () => {
     const once = renderer();
     await rendered(APP, asked(APP, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 }), once, at(0.9));
     expect(once.client.askedSpans).toHaveLength(1);
+  });
+
+  it('with retry: 1, the second wording is asked at style.yaml\'s retryTemperature and with the span\'s retryGoal, and the line keeps the first refusal', async () => {
+    const style = '# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\nmodel:\n  provider: openrouter\n  temperature: 0.7\n  retryTemperature: 0.1\n';
+    const app = documentsApp('library-documents-retry-temperature', {
+      retry: true,
+      retryGoal: 'Answer only with what the guide says.',
+      edits: { 'style.yaml': style },
+    });
+    const t = asked(app, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    let n = 0;
+    const r = renderer({ eachSpan: () => (r.client.askedSpans.length === 1 ? 'Wi-Fi is free and needs no password, all day and night.' : 'Every branch has free Wi-Fi.') });
+    const out = await rendered(app, t, r, at(() => (n++ === 0 ? 0.9 : 0.05)));
+    expect(r.client.askedSpans.map((s) => s.temperature)).toEqual([0.7, 0.1]);
+    expect(r.client.askedSpans.map((s) => (s.act as SpanAct).goal)).toEqual([expect.stringMatching(/^Answer/), 'Answer only with what the guide says.']);
+    expect(docLine(out)).toMatchObject({ mode: 'generated', said: 'Every branch has free Wi-Fi.', retried: { fallback: 'drift', refused: 'Wi-Fi is free and needs no password, all day and night.', judge: { score: 0.9 } } });
+    // Without a temperature in style.yaml none is sent, and a first wording that passes keeps no `retried`.
+    const plain = renderer({ eachSpan: () => 'Every branch has free Wi-Fi.' });
+    const passed = await rendered(APP, asked(APP, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 }), plain, at(0.05));
+    expect(plain.client.askedSpans[0]!.temperature).toBeUndefined();
+    expect(docLine(passed)).not.toHaveProperty('retried');
   });
 
   it('with retry: 1, a wording with a figure the sections do not have is asked once more too; one too long is not', async () => {

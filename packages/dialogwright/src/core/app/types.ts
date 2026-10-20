@@ -1845,6 +1845,8 @@ export interface GeneratedSpan {
    * that its last wording was judged to say more than its source does for the question. Absent: none.
    */
   readonly retry?: number;
+  /** The goal its second wording is given in place of `goal` (prompts.yaml's `retryGoal`); absent: the same goal. */
+  readonly retryGoal?: string;
 }
 
 /** How a generated line sounds (style.yaml), with its defaults filled in. */
@@ -1879,6 +1881,10 @@ export interface RenderModelChoice {
   readonly thinking?: 'disabled' | 'between-tools' | 'adaptive' | 'omit';
   /** How hard it thinks, as RENDER_EFFORT would say it (with thinking that is not `disabled`). */
   readonly effort?: 'low' | 'medium' | 'high';
+  /** The temperature sent with every wording (0 to 2); none sent where absent, the model's own. */
+  readonly temperature?: number;
+  /** The temperature of a knowledge answer's second wording, after its first was refused; `temperature` where absent. */
+  readonly retryTemperature?: number;
 }
 
 /** An app's generated wording (App.generated). */

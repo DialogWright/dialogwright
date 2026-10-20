@@ -64,10 +64,25 @@ export const styleSchema = z
           .enum(RENDER_EFFORTS)
           .optional()
           .describe('How hard it thinks, as RENDER_EFFORT says it: low, medium or high (not with thinking: disabled). Measure the choice with render:bakeoff (provider:model:thinking:effort): reasoning adds to every line\'s wait. Default: the model\'s own.'),
+        temperature: z
+          .number()
+          .min(0)
+          .max(2)
+          .optional()
+          .describe('How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app\'s generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. Default: none sent, the model\'s own.'),
+        retryTemperature: z
+          .number()
+          .min(0)
+          .max(2)
+          .optional()
+          .describe('The temperature of a knowledge answer\'s second wording, asked after its first was refused (a span\'s retry): lower keeps it closer to what the sections say. Default: temperature, else none sent.'),
       })
       .superRefine((m, ctx) => {
         if (m.thinking === 'disabled' && m.effort !== undefined) ctx.addIssue({ code: 'custom', path: ['effort'], message: 'effort asks for reasoning, which thinking: disabled turns off', params: { fix: 'remove effort, or set thinking: adaptive' } });
         if (m.thinking === 'between-tools' && m.provider !== 'anthropic') ctx.addIssue({ code: 'custom', path: ['thinking'], message: 'between-tools is Claude Sonnet 5.5\'s on anthropic', params: { fix: 'on openrouter use disabled, adaptive or omit' } });
+        for (const key of ['temperature', 'retryTemperature'] as const) {
+          if (m[key] !== undefined && m.provider === 'anthropic' && (m.thinking === 'adaptive' || m.thinking === 'omit')) ctx.addIssue({ code: 'custom', path: [key], message: `anthropic takes no ${key === 'temperature' ? 'temperature' : 'retryTemperature'} while the model thinks (thinking: ${m.thinking})`, params: { fix: `remove ${key}, or set thinking: disabled` } });
+        }
       })
       .optional()
       .describe(

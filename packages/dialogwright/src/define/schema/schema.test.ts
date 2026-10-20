@@ -162,6 +162,11 @@ describe('mistakes get a precise error', () => {
     expect(issuesOf('style', 'model: { provider: openrouter, thinking: between-tools }\n').map((i) => i.path)).toEqual(['model.thinking']);
     expect(issuesOf('style', 'model: { provider: anthropic, id: claude-sonnet-5-5, thinking: between-tools }\n')).toEqual([]);
     expect(issuesOf('style', 'model: { provider: openrouter, effort: max }\n').map((i) => i.path)).toEqual(['model.effort']);
+    // A temperature, and a retry's own, from 0 to 2; not on anthropic while the model thinks.
+    expect(issuesOf('style', 'model: { provider: openrouter, id: inception/mercury-3, temperature: 0.7, retryTemperature: 0.2 }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: openrouter, temperature: 3 }\n').map((i) => i.path)).toEqual(['model.temperature']);
+    expect(issuesOf('style', 'model: { provider: anthropic, thinking: adaptive, retryTemperature: 0.2 }\n').map((i) => i.path)).toEqual(['model.retryTemperature']);
+    expect(issuesOf('style', 'model: { provider: anthropic, thinking: disabled, temperature: 0.2 }\n')).toEqual([]);
   });
 
   it('policy levels, attempts and role access are bounded', () => {

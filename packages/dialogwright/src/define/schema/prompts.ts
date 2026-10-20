@@ -74,6 +74,9 @@ const span = z
       .max(1, { error: 'must be 0 or 1' })
       .optional()
       .describe('An answer span only (from: answer, or from: sections): how many times more the model is asked when the drift judge refuses its wording, or the wording has a figure its source does not, within the answer\'s limit, told only that its last wording was judged to say more than its source does for the question (never how to word it). Each draw is judged again, so a second draw is a second chance for an unfaithful wording to pass: measure it with pnpm render:judge-eval before turning it on. Default 0.'),
+    retryGoal: text()
+      .optional()
+      .describe('An answer span with retry only: the goal its second wording is given in place of goal, the app\'s own words (a stricter one: "only what the sections say"). The second wording is judged as the first. Default: goal.'),
     names: unique(identifier(), 'variable')
       .min(1, { error: 'must name at least one variable' })
       .optional()
