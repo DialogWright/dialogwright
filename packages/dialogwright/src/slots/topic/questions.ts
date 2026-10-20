@@ -1,6 +1,7 @@
 import type { SlotContext } from '../../core/slots/types';
 import type { QuestionMap } from '../../jev/types';
 import type { Nomination } from '../../kb/types';
+import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
 import { renderTemplate } from '../parts/template';
 import { renderCriterion } from './criterion';
 import { TOPIC_PARTS, UNANSWERED_DEFAULTS, type TopicOptions } from './options';
@@ -48,7 +49,8 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
   const unanswered = TOPIC_PARTS.render('unanswered', o.text, {});
   return (ctx) => {
     const offered = offeredTopics(ctx.nominated, cap);
-    const sections = retry ? (ctx.sections ?? []) : [];
+    // At most as many as the slot declares a question for (MAX_SECTIONS_OFFERED), whatever retrieval gave.
+    const sections = retry ? (ctx.sections ?? []).slice(0, MAX_SECTIONS_OFFERED) : [];
     if (offered.length === 0 && sections.length === 0) return {};
     const questions: QuestionMap = {};
     // The sections of approved documents nominated beside the topics (kb.yaml documents): whether each

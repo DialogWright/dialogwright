@@ -36,6 +36,15 @@ export const DEFAULT_RETRIEVAL_CAP = 8;
 /** How many sections of approved documents retrieval nominates at most, unless kb.yaml's documents.cap says. */
 export const DEFAULT_SECTIONS_CAP = 4;
 
+/** The most kb.yaml's documents.cap may be. */
+export const MAX_SECTIONS_CAP = 8;
+
+/**
+ * The most sections a turn may offer: the cap's most, and with follow-ups (documents.followUps) half as many
+ * again beside a question's own (kb/sections.ts nominate). Each is a yes-or-no the topic slot asks.
+ */
+export const MAX_SECTIONS_OFFERED = MAX_SECTIONS_CAP + Math.floor(MAX_SECTIONS_CAP / 2);
+
 /** A SHA-256, 64 lowercase hex characters. */
 const sha256 = () => matching(/^[0-9a-f]{64}$/, 'is not a SHA-256 hash: it must be 64 lowercase hex characters', 'leave the hashes to pnpm kb:approve, which writes them');
 
@@ -89,7 +98,7 @@ export const kbSettingsSchema = z
     documents: z
       .strictObject({
         summarize: z.enum(['on', 'off']).default('off').describe('on: where no topic answers a question, the line may answer it from the sections of the documents in kb/sources that a person approved for summarizing (pnpm kb:approve --document), worded by a model from the sections the decision model chose, held to them by the checks and the drift judge. A section a passage cites, and one marked summarize: false, is never summarized. Default off: only topics answer.'),
-        cap: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(8, { error: 'must be at most 8' }).default(DEFAULT_SECTIONS_CAP).describe(`How many sections retrieval nominates at most, each asked whether it says what the caller asked. Default ${DEFAULT_SECTIONS_CAP}.`),
+        cap: z.number({ error: 'must be a number' }).int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).max(MAX_SECTIONS_CAP, { error: `must be at most ${MAX_SECTIONS_CAP}` }).default(DEFAULT_SECTIONS_CAP).describe(`How many sections retrieval nominates at most, each asked whether it says what the caller asked. Default ${DEFAULT_SECTIONS_CAP}.`),
         floor: z.number({ error: 'must be a number' }).min(0, { error: 'must be between 0 and 1' }).max(1, { error: 'must be between 0 and 1' }).optional().describe('The cosine similarity below which a section found by its meaning is not nominated; a keyword match always counts. Default: retrieval.floor, else the embedder\'s own (pnpm kb:bakeoff --sections sweeps it).'),
         retrieval: z.enum(['hybrid', 'dense']).default('hybrid').describe('How sections are found for a caller\'s words: hybrid (the default), by their keywords and their meaning fused; dense, by their meaning alone (on a long document, keywords on common words can crowd the right section out: measure both with pnpm kb:bakeoff --sections). Dense needs an embedder: retrieval.embedder, or documents.embedder.'),
         embedder: z

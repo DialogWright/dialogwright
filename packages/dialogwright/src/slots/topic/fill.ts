@@ -4,6 +4,7 @@ import { isChoice, rankProbabilities, type Ranked } from '../../jev/types';
 import type { TopicCatalog } from '../../kb/types';
 import { meetsThreshold } from '../parts/thresholds';
 import { SECTION_LEVELS, type TopicOptions } from './options';
+import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
 import { offeredTopics, sectionQuestionIdOf, SECTIONS_VALUE_PREFIX } from './questions';
 import { noulValue } from '../../jev/types';
 
@@ -78,6 +79,7 @@ export function topicFill(
       if (!ctx.prompted && !meetsThreshold(ctx.thresholds, 'KB_UNANSWERED', 1 - (typeof nothing === 'number' ? nothing : 0))) return out;
     }
     const answering = (ctx.sections ?? [])
+      .slice(0, MAX_SECTIONS_OFFERED)
       .map((s, i) => ({ s, p: sectionAnswers(answers, sectionQuestionIdOf(slot, i), o.sections.from) }))
       .filter((x) => meetsThreshold(ctx.thresholds, 'KB_SECTION_ANSWERS', x.p))
       .sort((x, y) => y.p - x.p)

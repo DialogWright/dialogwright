@@ -16,6 +16,7 @@ import { buildTurnState } from '../core/state';
 import { slotContext } from '../core/turn';
 import { slotSpecOf } from '../core/app/lookup';
 import { mergeRanked } from './sections';
+import { MAX_SECTIONS_OFFERED } from './schema';
 import { renderTurn, type RenderedTurn } from '../render/turn';
 import type { Renderer, SpanAct } from '../render/types';
 import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
@@ -488,6 +489,14 @@ describe('the answer worded from the sections, checked against them', () => {
       expect(after.slice(0, alone.length)).toEqual(alone);
       expect(after.length - alone.length).toBeGreaterThan(0);
       expect(after.length - alone.length).toBeLessThanOrEqual(Math.floor(r.cap / 2));
+      // The topic slot declares a question for every section a turn may offer (the cap's most, and a
+      // follow-up's beside a question's own), and asks of no more than that, whatever it is given: a live
+      // turn that offered nine sections failed when the slot declared eight.
+      const spec = slotSpecOf(APP, 'libraryTopic');
+      const many = Array.from({ length: MAX_SECTIONS_OFFERED + 3 }, () => sectionsOf(APP, 'visitor-guide#printing')[0]!);
+      const asked = Object.keys(spec.questions({ ...slotContext(call(APP).last.session, 'can I print at the library', call(APP).t), sections: many } as never));
+      expect(asked.filter((id) => id.startsWith('libraryTopicSection'))).toHaveLength(MAX_SECTIONS_OFFERED);
+      expect(asked.every((id) => spec.questionIds?.includes(id))).toBe(true);
       expect(mergeRanked([[{ topic: 'a', title: 'A', score: 1, via: 'dense' }, { topic: 'b', title: 'B', score: 0.5, via: 'dense' }], [{ topic: 'b', title: 'B', score: 1, via: 'keyword' }]], 1)).toEqual([{ topic: 'b', title: 'B', score: 0.032522, via: 'dense' }]);
     });
   });

@@ -6,6 +6,7 @@ import type { SlotType } from '../types';
 import { topicDisplay } from './display';
 import { topicFill } from './fill';
 import { DEFAULT_CAP, topicOptions, type TopicOptions } from './options';
+import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
 import { sectionQuestionIdOf, topicIdOf, topicQuestions } from './questions';
 
 export {
@@ -45,8 +46,9 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
       ...readBackOf(o.confirm ?? 'summary'),
       nominates: true,
       ...(o.unanswered === 'retry' ? { notFound: { counts: o.notFound.counts, remind: o.notFound.remind } } : {}),
-      // The topic question, and with answers from documents the yes-or-no of each nominated section (at most kb.yaml documents.cap's most, 8).
-      questionIds: [questionId, ...(o.unanswered === 'retry' ? Array.from({ length: 8 }, (_, i) => sectionQuestionIdOf(id, i)) : [])],
+      // The topic question, and with answers from documents the yes-or-no of each section a turn may offer
+      // (MAX_SECTIONS_OFFERED: the cap's most, and a follow-up's beside a question's own).
+      questionIds: [questionId, ...(o.unanswered === 'retry' ? Array.from({ length: MAX_SECTIONS_OFFERED }, (_, i) => sectionQuestionIdOf(id, i)) : [])],
       prompts: promptsOf(id, o),
       thresholds: [o.fillAt, ...(o.unanswered === 'retry' ? (['KB_UNANSWERED', 'KB_SECTION_ANSWERS'] as const) : [])],
       questions: topicQuestions(id, o, cap),

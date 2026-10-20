@@ -12,6 +12,7 @@ import { runSlotConformance } from '../conformance/run';
 import { buildSlot, defineSlot } from '../defineSlot';
 import { defineSlots } from '../defineSlots';
 import { topicType } from './index';
+import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
 
 /** The `topic` type: the conformance kit over its examples, then what the kit does not cover. */
 runSlotConformance(topicType, { describe, it, locales: ['en-US', 'es'] });
@@ -36,7 +37,7 @@ describe('a topic slot built from the defaults', () => {
   it('reads nominations, asks one question (the slot\'s id followed by Topic) and leads to the disambiguation line', () => {
     expect(subject.nominates).toBe(true);
     expect(subject.spokenConfirm).toBe('summary');
-    expect(subject.questionIds).toEqual(['subjectTopic', ...Array.from({ length: 8 }, (_, i) => `subjectSection${i + 1}`)]);
+    expect(subject.questionIds).toEqual(['subjectTopic', ...Array.from({ length: MAX_SECTIONS_OFFERED }, (_, i) => `subjectSection${i + 1}`)]);
     expect(subject.prompts).toEqual([{ id: 'disambiguate_subject', why: 'the caller could mean either of two topics and is asked which', vars: ['a', 'b'] }]);
     expect(subject.thresholds).toEqual(['SLOT_CHOICE_FILL', 'KB_UNANSWERED', 'KB_SECTION_ANSWERS']);
   });
@@ -189,7 +190,7 @@ describe('its options', () => {
       text: { instructions: 'Which one?', none: 'Neither', unanswered: 'Something else' },
       ids: { choice: 'helpTopic' },
     });
-    expect(kept.questionIds).toEqual(['helpTopic', ...Array.from({ length: 8 }, (_, i) => `helpTopicSection${i + 1}`)]);
+    expect(kept.questionIds).toEqual(['helpTopic', ...Array.from({ length: MAX_SECTIONS_OFFERED }, (_, i) => `helpTopicSection${i + 1}`)]);
     expect(kept.questions(ctx('x', { nominated: [nom('parking')] }))).toEqual({
       helpTopic: { type: 'choice', instructions: 'Which one?', criteria: { parking: 'Is about Parking (parking)', unanswered: 'Something else', none: 'Neither' } },
     });
