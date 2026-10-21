@@ -72,7 +72,7 @@ describe('a cover', () => {
 describe('headings', () => {
   const line = (text: string, y: number, size = 11, b = false, p = 1): Line => ({ page: p, text, size, y, ...(b ? { bold: true } : {}) });
 
-  it('are larger lines, and bold ones at the body size that are no run-in ("Benefits include:"), each style a level', () => {
+  it('are larger lines, and bold ones at the body size, each style a level; a bold label first under its heading is its text ("Benefits include:")', () => {
     const blocks = blocksOfLines([
       line('Your benefits', 700, 14, true),
       line('Ambulance services', 680, 12, true),
@@ -87,6 +87,40 @@ describe('headings', () => {
       ['heading', 3, 'Air ambulance'],
       ['para', null, 'Benefits include: Transport to the nearest hospital.'],
       ['para', null, 'A plain paragraph of body text that runs on.'],
+    ]);
+  });
+
+  it('are bold labels ending in a colon, alone or opening a line, where their section has text before them and they have text of their own', () => {
+    const runIn = (label: string, rest: string, y: number): Line => ({
+      page: 1, text: `${label} ${rest}`, size: 11, y,
+      runs: [{ x: 46, end: 200, text: label, bold: true }, { x: 200, end: 204, text: ' ', bold: false }, { x: 204, end: 500, text: rest, bold: false }],
+    });
+    const blocks = blocksOfLines([
+      line('Your benefits', 700, 14, true),
+      line('Hospice care: 20% coinsurance', 680, 11, false),
+      line('Excluded Services & Other Covered Services:', 650, 11, true),
+      line('Acupuncture, cosmetic surgery and hearing aids.', 636),
+      runIn('Your Rights to Continue Coverage:', 'There are agencies that can help', 610),
+      line('if you want to continue your coverage.', 596),
+      runIn('Your Appeal Rights:', 'There are agencies that can help if', 582),
+      line('a claim is denied.', 568),
+      line('Plan Year:', 540, 11, true),
+      line('Plan facts', 520, 14, true),
+      line('A section whose first words are a label.', 500),
+    ]);
+    expect(blocks.map((b) => [b.kind, 'level' in b ? b.level : null, b.text])).toEqual([
+      ['heading', 1, 'Your benefits'],
+      ['para', null, 'Hospice care: 20% coinsurance'],
+      ['heading', 2, 'Excluded Services & Other Covered Services'],
+      ['para', null, 'Acupuncture, cosmetic surgery and hearing aids.'],
+      ['heading', 3, 'Your Rights to Continue Coverage'],
+      ['para', null, 'There are agencies that can help if you want to continue your coverage.'],
+      ['heading', 3, 'Your Appeal Rights'],
+      ['para', null, 'There are agencies that can help if a claim is denied.'],
+      // A label with no text of its own is a line of its section's text.
+      ['para', null, 'Plan Year:'],
+      ['heading', 1, 'Plan facts'],
+      ['para', null, 'A section whose first words are a label.'],
     ]);
   });
 

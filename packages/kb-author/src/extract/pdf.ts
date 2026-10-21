@@ -30,7 +30,12 @@ import { gridOfModel, pageLayout, type ModelTableReader } from './tables/model';
  *   document's title, and the rest is the first section's text (a plan's name, a number, a date).
  * - The body size is the size most of the document's characters are set in. A line of at most 120
  *   characters set at least 15% larger is a heading; so is a line of at most 80 set in bold at the body
- *   size or larger that does not end in a colon or a stop (a run-in "Benefits include:" is not). On a page
+ *   size or larger that does not end in a stop. A label (a bold line ending in a colon, or a line's bold
+ *   words ending in a colon before plain text: "Your Grievance and Appeals Rights: There are agencies ...",
+ *   a heading at the lowest level) is a heading, its colon dropped, where its section has text before it
+ *   and it has text of its own: one first under its heading ("Benefits include:") or with no text under
+ *   it ("Plan Year:" before the next heading) is text, and it joins a heading above it only as that
+ *   heading's next line. On a page
  *   set smaller than the document's body (a summary of benefits before a booklet), such a line at that
  *   page's own body size is a heading too where it starts at the page's left margin, no other line is
  *   within a line's height of it, and text of its own follows it (not a heading at its level or above). The
@@ -224,8 +229,26 @@ function headingTest(body: number): (l: Line) => boolean {
   return (l) => l.text.length <= MAX_HEADING_CHARS && (l.size >= body * HEADING_RATIO || boldHeading(l, body));
 }
 
-/** A bold line at `body` size or larger, short, that does not end in a colon or a stop. */
-const boldHeading = (l: Line, body: number): boolean => l.bold === true && l.size >= body && l.text.length <= MAX_BOLD_HEADING_CHARS && !/[:.;,]$/.test(l.text);
+/** A bold line at `body` size or larger, short, that does not end in a stop (one ending in a colon is a label: see `blocksOfLines`). */
+const boldHeading = (l: Line, body: number): boolean => l.bold === true && l.size >= body && l.text.length <= MAX_BOLD_HEADING_CHARS && !/[.;,]$/.test(l.text);
+
+/** A label: words ending in a colon. */
+const LABEL = /:$/;
+
+/**
+ * The bold label a line opens with, ending in a colon, before text that is not bold ("Your Grievance and
+ * Appeals Rights: There are agencies ..."), where it has one: at most 80 characters.
+ */
+function runInOf(l: Line): string | undefined {
+  if (l.bold === true || l.runs === undefined) return undefined;
+  let lead = '';
+  for (const r of l.runs) {
+    if (!r.bold && r.text.trim() !== '') break;
+    lead += r.text;
+  }
+  const label = cleanText(lead);
+  return LABEL.test(label) && label.length > 1 && label.length <= MAX_BOLD_HEADING_CHARS && l.text.startsWith(label) && l.text.length > label.length ? label : undefined;
+}
 
 /** Where a line starts on its page, where its runs say. */
 const leftOf = (l: Line): number | undefined => l.runs?.[0]?.x;
@@ -291,14 +314,29 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
   // A table's own headings (a group's row, a label over several rows): headings by the table's shape, kept
   // as headings whatever their length or their last stop (a label that says where to read more ends in one).
   const fromTable = new WeakSet<Block>();
+  // The headings that are labels (a bold line ending in a colon, or a line's bold label before its text):
+  // each must have text of its own under it (below), and its colon is dropped.
+  const labels = new WeakSet<Block>();
   const styles = [...new Map(lines.filter(isHeading).map((l) => [styleOf(l), l])).values()]
     .sort((x, y) => y.size - x.size || Number(y.bold === true) - Number(x.bold === true))
     .map(styleOf);
   const levelOf = (l: Line): 1 | 2 | 3 => Math.min(styles.indexOf(styleOf(l)) + 1, 3) as 1 | 2 | 3;
   const blocks: Block[] = [];
   let prev: Line | null = null;
+  // The lines read as headings (a label first under its heading is not one).
+  const headed = new WeakSet<Line>();
   for (const line of lines) {
     const last = blocks[blocks.length - 1];
+    // A label first under its heading is its section's first words ("Benefits include:"), not a heading.
+    const underHeading = last?.kind === 'heading';
+    const runIn = line.kind === undefined && !underHeading && !isHeading(line) ? runInOf(line) : undefined;
+    if (runIn !== undefined) {
+      const heading: Block = { kind: 'heading', level: 3, text: runIn, page: line.page };
+      labels.add(heading);
+      blocks.push(heading, { kind: 'para', text: line.text.slice(runIn.length).trim(), page: line.page });
+      prev = line;
+      continue;
+    }
     if (line.kind === 'row') {
       blocks.push({ kind: 'para', text: line.text, page: line.page });
       prev = null;
@@ -311,18 +349,23 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
       prev = null;
       continue;
     }
-    if (isHeading(line)) {
-      if (last?.kind === 'heading' && prev && isHeading(prev) && styleOf(prev) === styleOf(line) && prev.page === line.page) {
+    // A label joins the heading above it only as its next line (a heading over two lines), not set apart under it.
+    const joins = last?.kind === 'heading' && prev !== null && headed.has(prev) && styleOf(prev) === styleOf(line) && prev.page === line.page && (!LABEL.test(line.text) || prev.y - line.y <= line.size * PARAGRAPH_GAP);
+    if (isHeading(line) && (joins || !(underHeading && LABEL.test(line.text)))) {
+      headed.add(line);
+      if (joins) {
         const joined: Block = { ...last, text: `${last.text} ${line.text}` };
         if (byPage.has(last)) byPage.add(joined);
+        if (LABEL.test(line.text)) labels.add(joined);
         blocks[blocks.length - 1] = joined;
       } else {
         const heading: Block = { kind: 'heading', level: levelOf(line), text: line.text, page: line.page };
         if (!plain(line)) byPage.add(heading);
+        if (LABEL.test(line.text)) labels.add(heading);
         blocks.push(heading);
       }
     } else {
-      const continues = last?.kind === 'para' && prev !== null && !isHeading(prev) && prev.page === line.page && prev.y - line.y <= line.size * PARAGRAPH_GAP;
+      const continues = last?.kind === 'para' && prev !== null && !headed.has(prev) && prev.page === line.page && prev.y - line.y <= line.size * PARAGRAPH_GAP;
       if (continues) blocks[blocks.length - 1] = { ...last, text: joinLine(last.text, line.text) };
       else blocks.push({ kind: 'para', text: line.text, page: line.page });
     }
@@ -341,10 +384,11 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
     // above, or none) is a line of its page's text: a plan's name or a date set in bold over a summary.
     const next = blocks[i + 1];
     const empty = next === undefined || (next.kind === 'heading' && next.level <= b.level);
-    if (!fromTable.has(b) && (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text) || (byPage.has(b) && empty))) {
+    if (!fromTable.has(b) && (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text) || ((byPage.has(b) || labels.has(b)) && empty))) {
       out.push({ kind: 'para', text: b.text, ...(b.page === undefined ? {} : { page: b.page }) });
       return;
     }
+    if (labels.has(b)) b = { ...b, text: b.text.replace(/\s*:$/, '') };
     if (open[b.level] !== undefined && open[b.level] === sameHeading(b.text)) return;
     open[b.level] = sameHeading(b.text);
     open.length = b.level + 1;
