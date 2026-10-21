@@ -316,6 +316,11 @@ export interface RenderJudge {
   score: number;
   /** The cutoff it was held to: refused at or above it. */
   refuseAt: number;
+  /**
+   * With style.yaml judge.documentsAsk `both`: the added reading beside the drift one (how likely the wording
+   * adds something of its own, and its cutoff); the wording is refused only where both reach their cutoffs.
+   */
+  added?: { score: number; refuseAt: number };
 }
 
 /**

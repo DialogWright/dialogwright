@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
 import { stubAnswerDrift, stubDocumentsDrift, stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
+import { ADDED_FIRE, addedReading, DRIFT_ALONE_FIRE, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
 import { answerWordBudget, DEFAULT_DOCUMENTS_WORDS } from './config';
 import { spanSentence } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
@@ -154,20 +154,31 @@ export function actOf(c: JudgeCase): SpanAct {
 }
 
 /** The question a case's judge is asked, by its id: a knowledge answer's, or a span's. */
-const questionIdOf = (c: JudgeCase): string => (c.speaks === 'documents' ? DOCUMENTS_DRIFT_QUESTION_ID : c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
+const questionIdOf = (c: JudgeCase, documentsAsk: DocumentsAsk = 'drift'): string => (c.speaks === 'documents' ? (documentsAsk === 'added' ? DOCUMENTS_ADDED_QUESTION_ID : DOCUMENTS_DRIFT_QUESTION_ID) : c.speaks === 'answer' ? ANSWER_DRIFT_QUESTION_ID : SPAN_DRIFT_QUESTION_ID);
+
+/** What the documents judge asks (style.yaml judge.documentsAsk): the drift yes-or-no, how much of the wording is its own, or both. */
+export type DocumentsAsk = 'drift' | 'added' | 'both';
 
 /** The judge's request for a case: exactly what a call sends for this span (its state and its question). */
-export function judgeRequest(c: JudgeCase): { state: JsonValue; questions: ReturnType<typeof renderSpanDriftQuestion> } {
+export function judgeRequest(c: JudgeCase, documentsAsk: DocumentsAsk = 'drift'): { state: JsonValue; questions: ReturnType<typeof renderSpanDriftQuestion> } {
   const act = actOf(c);
-  if (c.speaks === 'documents') return { state: renderDocumentsDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderDocumentsDriftQuestion(c.earlier !== undefined) };
+  if (c.speaks === 'documents') {
+    const earlier = c.earlier !== undefined;
+    const questions = documentsAsk === 'added' ? renderDocumentsAddedQuestion(earlier) : documentsAsk === 'both' ? { ...renderDocumentsDriftQuestion(earlier), ...renderDocumentsAddedQuestion(earlier) } : renderDocumentsDriftQuestion(earlier);
+    return { state: renderDocumentsDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions };
+  }
   if (c.speaks === 'answer') return { state: renderAnswerDriftState(act, cleanAnswer(c.span, act)) as unknown as JsonValue, questions: renderAnswerDriftQuestion() };
   return { state: renderSpanDriftState(act, cleanSpan(c.span)) as unknown as JsonValue, questions: renderSpanDriftQuestion(act.speaks) };
 }
 
 /** What the shape checks make of a span: a check's name (refused), `unchanged` (the content's own words, said as they are), or null (passed). */
 export type CodeVerdict = RenderFallback | 'unchanged' | null;
-/** The real judge's answer: its probability that the span is unfaithful, or why there is none. */
-export type JudgeVerdict = { p: number } | { missing: string } | { error: string };
+/**
+ * The real judge's answer: its probability that the span is unfaithful (with the added judge, that it adds
+ * anything; refused at `fire`, DRIFT_FIRE where absent), with `both` the added reading beside it (refused only
+ * where both reach their cutoffs), or why there is none.
+ */
+export type JudgeVerdict = { p: number; fire?: number; added?: { p: number; fire: number; alone: number } } | { missing: string } | { error: string };
 
 export interface CaseResult {
   readonly case: JudgeCase;
@@ -193,9 +204,9 @@ function codeVerdict(c: JudgeCase): CodeVerdict {
   return checkSpan(text, act, { conflicts: c.conflicts ?? [] });
 }
 
-/** Whether a reader refuses the span (the data checks: a check's name; the judge: at or above DRIFT_FIRE). */
+/** Whether a reader refuses the span (the data checks: a check's name; the judge: at or above its cutoff, DRIFT_FIRE unless it says). */
 export const refusedByCode = (v: CodeVerdict): boolean => v !== null && v !== 'unchanged';
-export const refusedByJudge = (v: JudgeVerdict): boolean | null => ('p' in v ? v.p >= DRIFT_FIRE : null);
+export const refusedByJudge = (v: JudgeVerdict): boolean | null => ('p' in v ? (v.added !== undefined && v.p >= v.added.alone) || (v.p >= (v.fire ?? DRIFT_FIRE) && (v.added === undefined || v.added.p >= v.added.fire)) : null);
 
 export interface EvalProgress {
   (line: string): void;
@@ -207,20 +218,26 @@ export interface EvalProgress {
  * that are not misses stop the asking (a key refused, the endpoint down): the cases after are `error` too.
  * `redact` is applied to every error text kept (the command passes the key, so it is never printed).
  */
-export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClient, opts: { timeoutMs?: number; redact?: (s: string) => string; progress?: EvalProgress } = {}): Promise<CaseResult[]> {
+export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClient, opts: { timeoutMs?: number; redact?: (s: string) => string; progress?: EvalProgress; documentsAsk?: DocumentsAsk } = {}): Promise<CaseResult[]> {
+  const ask = opts.documentsAsk ?? 'drift';
   const redact = opts.redact ?? ((s: string) => s);
   const out: CaseResult[] = [];
   let failedRunning = 0;
   let stopped: string | null = null;
   for (const [i, c] of cases.entries()) {
-    const req = judgeRequest(c);
+    const req = judgeRequest(c, ask);
     let verdict: JudgeVerdict;
     if (stopped !== null) verdict = { error: stopped };
     else {
       try {
         const r = await judge.ask({ ...req, ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}) });
-        const a = r.answers[questionIdOf(c)];
-        verdict = isNoul(a) ? { p: a.noul } : { error: 'the answer was not a probability' };
+        const a = r.answers[questionIdOf(c, ask)];
+        const documents = c.speaks === 'documents';
+        const p = documents && ask === 'added' ? addedReading(a) : isNoul(a) ? a.noul : null;
+        const addedP = documents && ask === 'both' ? addedReading(r.answers[DOCUMENTS_ADDED_QUESTION_ID]) : undefined;
+        verdict = p === null || addedP === null
+          ? { error: 'the answer was not a probability' }
+          : { p, ...(documents && ask === 'added' ? { fire: ADDED_FIRE } : {}), ...(addedP !== undefined ? { added: { p: addedP, fire: ADDED_FIRE, alone: DRIFT_ALONE_FIRE } } : {}) };
         failedRunning = 0;
       } catch (e) {
         const message = redact(e instanceof Error ? e.message : String(e));
@@ -298,6 +315,8 @@ export interface JudgeEvalReport {
   readonly replay: boolean;
   readonly cassette: string;
   readonly results: readonly CaseResult[];
+  /** What the documents judge was asked (style.yaml judge.documentsAsk); absent: drift. */
+  readonly documentsAsk?: DocumentsAsk;
   /** How long the judge took, timed on the requests this run sent it (none when every answer was replayed). */
   readonly latency?: JudgeLatency;
 }
@@ -356,7 +375,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   const lines: string[] = [
     '# The span drift judge and the data checks',
     '',
-    `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
+    `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above${report.documentsAsk === 'added' ? `, and an answer from documents is asked how much of it is its own (judge.documentsAsk: added), refused where the probability that it adds anything is ${ADDED_FIRE} or above` : report.documentsAsk === 'both' ? `, and an answer from documents is asked that and how much of it is its own (judge.documentsAsk: both), refused where the first is ${DRIFT_FIRE} or above and the probability that it adds anything ${ADDED_FIRE} or above, or the first alone ${DRIFT_ALONE_FIRE} or above` : ''}. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
     ...(report.latency
       ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']
@@ -454,6 +473,7 @@ export function judgeEvalJson(report: JudgeEvalReport): string {
     replay: report.replay,
     cassette: report.cassette,
     fire: DRIFT_FIRE,
+    ...(report.documentsAsk !== undefined && report.documentsAsk !== 'drift' ? { documentsAsk: report.documentsAsk, addedFire: ADDED_FIRE } : {}),
     ...(report.latency ? { latency: report.latency } : {}),
     realisticSaid: saidRates(realFaithful),
     unfaithful: tally('unfaithful', report.results.filter((r) => r.case.expected === 'unfaithful')),

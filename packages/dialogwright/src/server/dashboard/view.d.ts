@@ -84,7 +84,7 @@ export interface WordingLine {
 }
 
 /** Generated wording on a turn (TraceRecord.render), for the console. */
-export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string; judge?: { score: number; refuseAt: number }; lines?: { chosen: number[]; of: number; said: string } }[] }): WordingLine[];
+export function wordingOf(render: { lines: readonly { promptId: string; span?: string; answer?: { passageId: string; topic: string }; mode: 'generated' | 'fixed'; fixed: string; fallback?: string; skipped?: string; unchanged?: true; refused?: string; judge?: { score: number; refuseAt: number; added?: { score: number; refuseAt: number } }; lines?: { chosen: number[]; of: number; said: string } }[] }): WordingLine[];
 
 export interface StageCell {
   state: 'pass' | 'fail' | 'warn' | 'skip' | 'idle';

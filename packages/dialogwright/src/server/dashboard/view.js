@@ -127,7 +127,8 @@ function judgeNumber(x) {
 function judgeText(l) {
   const j = l.judge;
   if (j === null || typeof j !== 'object' || typeof j.score !== 'number' || !Number.isFinite(j.score) || typeof j.refuseAt !== 'number' || !Number.isFinite(j.refuseAt)) return {};
-  const at = `${judgeNumber(j.score)} (cutoff ${judgeNumber(j.refuseAt)})`;
+  const added = j.added !== null && typeof j.added === 'object' && typeof j.added.score === 'number' && typeof j.added.refuseAt === 'number' ? `; added ${judgeNumber(j.added.score)} (cutoff ${judgeNumber(j.added.refuseAt)})` : '';
+  const at = `${judgeNumber(j.score)} (cutoff ${judgeNumber(j.refuseAt)})${added}`;
   if (l.mode === 'generated') return { judge: `the judge passed it at ${at}` };
   return l.fallback === 'drift' ? { judge: `refused at ${at}` } : {};
 }

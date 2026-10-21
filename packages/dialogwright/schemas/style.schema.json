@@ -57,6 +57,27 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1
+        },
+        "documentsAsk": {
+          "description": "What the documents judge asks of an answer worded from sections of approved documents (a span from: sections). drift (the default): one yes-or-no, whether it says anything other than what the sections say for the question, refused at documentsRefuseAt (default refuseAt). added: one score, how much of what it tells the caller is something the sections do not say, refused where the probability that it adds anything is at documentsAddedAt or above (default 0.3). both: the two in one request, refused where both reach their cutoffs, or where the drift reading alone reaches documentsDriftAloneAt. Measured on a booklet's 132 labelled answers (pnpm render:judge-eval --documents-ask): drift refused 12 of 79 faithful and caught 42 of 53 unfaithful, added 4 and 42, both 1 and 41; live, drift and added each refuse faithful answers the other passes (cost answers to \"is it covered?\"; \"yes, it is covered\" where a section says benefits are available).",
+          "type": "string",
+          "enum": [
+            "drift",
+            "added",
+            "both"
+          ]
+        },
+        "documentsAddedAt": {
+          "description": "With documentsAsk added or both: the probability that a wording adds something of its own at or above which the added reading refuses it. Default 0.3. Above it, less cautious (pnpm check warns).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "documentsDriftAloneAt": {
+          "description": "With documentsAsk both: the drift reading at or above which a wording is refused whatever the added reading says (a condition stretched or a figure moved adds nothing of its own). Default 0.75. Above it, less cautious (pnpm check warns).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
         }
       },
       "additionalProperties": false

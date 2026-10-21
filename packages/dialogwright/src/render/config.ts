@@ -2,7 +2,7 @@ import type { FormId, GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyl
 import type { FormsYaml, PromptYaml, StyleYaml } from '../define/schema/index';
 import { DEFAULT_SPAN_WORDS } from '../define/schema/prompts';
 import { DEFAULT_WORDS } from '../define/schema/style';
-import { DRIFT_FIRE } from './checks';
+import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from './checks';
 import { SPAN_GAP } from './types';
 
 /** The persona a generated line has when style.yaml names none. */
@@ -115,6 +115,9 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     // Only where style.yaml says one, so an app that says none has the App it had (the turn uses DRIFT_FIRE).
     ...(style?.judge?.refuseAt !== undefined ? { refuseAt: style.judge.refuseAt } : {}),
     ...(style?.judge?.documentsRefuseAt !== undefined ? { documentsRefuseAt: style.judge.documentsRefuseAt } : {}),
+    ...(style?.judge?.documentsAsk !== undefined ? { documentsAsk: style.judge.documentsAsk } : {}),
+    ...(style?.judge?.documentsAddedAt !== undefined ? { documentsAddedAt: style.judge.documentsAddedAt } : {}),
+    ...(style?.judge?.documentsDriftAloneAt !== undefined ? { documentsDriftAloneAt: style.judge.documentsDriftAloneAt } : {}),
   };
 }
 
@@ -640,6 +643,14 @@ export function generatedWordingWarnings(input: {
   const documentsRefuseAt = input.style?.judge?.documentsRefuseAt;
   if (documentsRefuseAt !== undefined && documentsRefuseAt > DRIFT_FIRE) {
     out.push({ file: 'style.yaml', path: ['judge', 'documentsRefuseAt'], message: `judge.documentsRefuseAt is ${documentsRefuseAt}, less cautious than the default (${DRIFT_FIRE}): the documents drift judge lets by an answer from documents it holds up to ${Math.round(documentsRefuseAt * 100)}% likely to be unfaithful (the app's choice; the policy card says so)`, fix: `lower it to ${DRIFT_FIRE} or below, or keep it if that is the owner's choice` });
+  }
+  const documentsDriftAloneAt = input.style?.judge?.documentsDriftAloneAt;
+  if (documentsDriftAloneAt !== undefined && documentsDriftAloneAt > DRIFT_ALONE_FIRE) {
+    out.push({ file: 'style.yaml', path: ['judge', 'documentsDriftAloneAt'], message: `judge.documentsDriftAloneAt is ${documentsDriftAloneAt}, less cautious than the default (${DRIFT_ALONE_FIRE}): with documentsAsk both, the drift judge refuses on its own only an answer it holds ${Math.round(documentsDriftAloneAt * 100)}% likely to be unfaithful (the app's choice)`, fix: `lower it to ${DRIFT_ALONE_FIRE} or below, or keep it if that is the owner's choice` });
+  }
+  const documentsAddedAt = input.style?.judge?.documentsAddedAt;
+  if (documentsAddedAt !== undefined && documentsAddedAt > ADDED_FIRE) {
+    out.push({ file: 'style.yaml', path: ['judge', 'documentsAddedAt'], message: `judge.documentsAddedAt is ${documentsAddedAt}, less cautious than the default (${ADDED_FIRE}): the added reading lets by an answer from documents it holds up to ${Math.round(documentsAddedAt * 100)}% likely to add something of its own (the app's choice)`, fix: `lower it to ${ADDED_FIRE} or below, or keep it if that is the owner's choice` });
   }
   const refuseAt = input.style?.judge?.refuseAt;
   if (refuseAt !== undefined && refuseAt > DRIFT_FIRE) {

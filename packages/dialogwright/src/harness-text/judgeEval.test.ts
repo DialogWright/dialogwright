@@ -5,8 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { main } from '../define/cli';
 import { loadCassette } from '../jev/cassette';
 import type { JevClient, JevRequest } from '../jev/types';
-import { renderDocumentsDriftQuestion, renderSpanDriftQuestion, renderSpanDriftState } from '../render/checks';
-import { actOf, DEFAULT_CASES_FILE, evaluateCases, judgeLatency, judgeRequest, loadJudgeCases, REALISTIC, saidRates, type JudgeCase } from '../render/judgeEval';
+import { DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, renderDocumentsDriftQuestion, renderSpanDriftQuestion, renderSpanDriftState } from '../render/checks';
+import { actOf, DEFAULT_CASES_FILE, evaluateCases, judgeLatency, judgeRequest, loadJudgeCases, REALISTIC, refusedByJudge, saidRates, type JudgeCase } from '../render/judgeEval';
 import { judgeCassettePath, judgeEvalCommand } from './judgeEvalCommand';
 
 /**
@@ -311,6 +311,18 @@ describe('documents cases (speaks: documents; an answer worded from sections), w
     expect(req.questions).toEqual(renderDocumentsDriftQuestion(true));
     expect(actOf(alone!).answer).toEqual({ question: 'what about in color', from: 'sections' });
     expect(judgeRequest(alone!).questions).toEqual(renderDocumentsDriftQuestion());
+  });
+
+  it('with --documents-ask added, ask a documents case how much of it is its own, read as the probability it adds anything, refused at 0.3', async () => {
+    const [follow, alone] = loadJudgeCases(file([docCase('follow', { earlier: 'how much is printing' }), docCase('alone')]));
+    expect(judgeRequest(follow!, 'added').questions).toEqual(renderDocumentsAddedQuestion(true));
+    expect(judgeRequest(alone!, 'added').questions).toEqual(renderDocumentsAddedQuestion());
+    const scored = (none: number): JevClient => ({ ask: async () => ({ answers: { [DOCUMENTS_ADDED_QUESTION_ID]: { type: 'score', score: 0, probabilities: { none, minorly: 1 - none, moderately: 0, majorly: 0, completely: 0 }, confidence: 1 } }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' }) });
+    const [kept] = await evaluateCases([alone!], scored(0.8), { documentsAsk: 'added' });
+    expect(kept!.judge).toEqual({ p: expect.closeTo(0.2, 5), fire: 0.3 });
+    expect(refusedByJudge(kept!.judge)).toBe(false);
+    const [refused] = await evaluateCases([alone!], scored(0.6), { documentsAsk: 'added' });
+    expect(refusedByJudge(refused!.judge)).toBe(true);
   });
 
   it('only a documents case has an earlier question', () => {

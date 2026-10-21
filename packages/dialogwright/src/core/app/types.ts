@@ -1876,6 +1876,12 @@ export interface RenderStyle {
   readonly refuseAt?: number;
   /** Where the documents drift judge refuses an answer from documents (style.yaml's `judge.documentsRefuseAt`); default refuseAt. */
   readonly documentsRefuseAt?: number;
+  /** What the documents judge asks (style.yaml's `judge.documentsAsk`): the drift yes-or-no, how much of the wording is its own, or both; default drift. */
+  readonly documentsAsk?: 'drift' | 'added' | 'both';
+  /** Where the added reading refuses (style.yaml's `judge.documentsAddedAt`); default ADDED_FIRE. */
+  readonly documentsAddedAt?: number;
+  /** With documentsAsk both, the drift reading that refuses alone (style.yaml's `judge.documentsDriftAloneAt`); default DRIFT_ALONE_FIRE. */
+  readonly documentsDriftAloneAt?: number;
 }
 
 /**

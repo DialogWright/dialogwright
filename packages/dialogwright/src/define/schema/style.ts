@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { text, unique } from './common';
-import { DRIFT_FIRE } from '../../render/checks';
+import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from '../../render/checks';
 import { RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
 
 /**
@@ -47,6 +47,22 @@ export const styleSchema = z
           .max(1, { error: 'must be at most 1' })
           .optional()
           .describe(`Where the documents drift judge refuses an answer worded from sections of approved documents (a span from: sections), in place of refuseAt for those answers alone: an app that holds its worded passages to a stricter cutoff may hold its answers from documents to another, measured on its own cases (pnpm render:judge-eval, speaks: documents). Default: refuseAt. Above ${DRIFT_FIRE}, less cautious than the default (pnpm check warns).`),
+        documentsAsk: z
+          .enum(['drift', 'added', 'both'])
+          .optional()
+          .describe(`What the documents judge asks of an answer worded from sections of approved documents (a span from: sections). drift (the default): one yes-or-no, whether it says anything other than what the sections say for the question, refused at documentsRefuseAt (default refuseAt). added: one score, how much of what it tells the caller is something the sections do not say, refused where the probability that it adds anything is at documentsAddedAt or above (default ${ADDED_FIRE}). both: the two in one request, refused where both reach their cutoffs, or where the drift reading alone reaches documentsDriftAloneAt. Measured on a booklet's 132 labelled answers (pnpm render:judge-eval --documents-ask): drift refused 12 of 79 faithful and caught 42 of 53 unfaithful, added 4 and 42, both 1 and 41; live, drift and added each refuse faithful answers the other passes (cost answers to "is it covered?"; "yes, it is covered" where a section says benefits are available).`),
+        documentsAddedAt: z
+          .number({ error: 'must be a number' })
+          .gt(0, { error: 'must be more than 0' })
+          .max(1, { error: 'must be at most 1' })
+          .optional()
+          .describe(`With documentsAsk added or both: the probability that a wording adds something of its own at or above which the added reading refuses it. Default ${ADDED_FIRE}. Above it, less cautious (pnpm check warns).`),
+        documentsDriftAloneAt: z
+          .number({ error: 'must be a number' })
+          .gt(0, { error: 'must be more than 0' })
+          .max(1, { error: 'must be at most 1' })
+          .optional()
+          .describe(`With documentsAsk both: the drift reading at or above which a wording is refused whatever the added reading says (a condition stretched or a figure moved adds nothing of its own). Default ${DRIFT_ALONE_FIRE}. Above it, less cautious (pnpm check warns).`),
       })
       .optional()
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),

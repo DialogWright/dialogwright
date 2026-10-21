@@ -10,7 +10,7 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { ANSWER_DRIFT_QUESTION_ID, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { ADDED_FIRE, addedReading, DRIFT_ALONE_FIRE, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
@@ -679,16 +679,31 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
     const c = checker(Math.max(checkBudget, answerLimit - (performance.now() - t0)));
     try {
       const state = fromSections ? renderDocumentsDriftState(act, text) : renderAnswerDriftState(act, text);
-      const r = await c.check(drift.ask({ state: state as unknown as JsonValue, questions: fromSections ? renderDocumentsDriftQuestion(act.answer?.earlier !== undefined) : renderAnswerDriftQuestion(), timeoutMs: c.left(), signal: abort.signal }));
+      // What an answer from documents is asked (style.yaml judge.documentsAsk): the drift yes-or-no, how much
+      // of it is its own (added), or both in one request, refused only where both reach their cutoffs.
+      const ask = fromSections ? (generated.style.documentsAsk ?? 'drift') : 'drift';
+      const earlier = act.answer?.earlier !== undefined;
+      const questions = !fromSections
+        ? renderAnswerDriftQuestion()
+        : ask === 'added' ? renderDocumentsAddedQuestion(earlier) : ask === 'both' ? { ...renderDocumentsDriftQuestion(earlier), ...renderDocumentsAddedQuestion(earlier) } : renderDocumentsDriftQuestion(earlier);
+      const r = await c.check(drift.ask({ state: state as unknown as JsonValue, questions, timeoutMs: c.left(), signal: abort.signal }));
       if (r === 'late') return { fallback: 'timeout', refused: text, gen };
       used(r.usage);
-      const a = r.answers[fromSections ? DOCUMENTS_DRIFT_QUESTION_ID : ANSWER_DRIFT_QUESTION_ID];
-      if (!isNoul(a)) return { fallback: 'drift-error', refused: text, gen };
+      const d = r.answers[fromSections ? DOCUMENTS_DRIFT_QUESTION_ID : ANSWER_DRIFT_QUESTION_ID];
+      const driftScore = ask === 'added' ? null : isNoul(d) ? d.noul : null;
+      const addedScore = ask === 'drift' ? null : addedReading(r.answers[DOCUMENTS_ADDED_QUESTION_ID]);
+      if ((ask !== 'added' && driftScore === null) || (ask !== 'drift' && addedScore === null)) return { fallback: 'drift-error', refused: text, gen };
       // The judge's reading, kept on the line whether it passed or refused it (RenderLine.judge); an answer
-      // from documents at its own cutoff where style.yaml gives one (judge.documentsRefuseAt).
-      const cutoff = fromSections ? (generated.style.documentsRefuseAt ?? refuseAt) : refuseAt;
-      const judge: RenderJudge = { score: a.noul, refuseAt: cutoff };
-      if (a.noul >= cutoff) return { fallback: 'drift', refused: text, gen, judge };
+      // from documents at its own cutoffs where style.yaml gives them (judge.documentsRefuseAt, documentsAddedAt).
+      const driftCut = fromSections ? (generated.style.documentsRefuseAt ?? refuseAt) : refuseAt;
+      const addedCut = generated.style.documentsAddedAt ?? ADDED_FIRE;
+      const judge: RenderJudge = ask === 'added'
+        ? { score: addedScore!, refuseAt: addedCut }
+        : { score: driftScore!, refuseAt: driftCut, ...(ask === 'both' ? { added: { score: addedScore!, refuseAt: addedCut } } : {}) };
+      // With both, a drift reading at documentsDriftAloneAt refuses alone: what is stretched or moved adds nothing of its own.
+      const aloneCut = generated.style.documentsDriftAloneAt ?? DRIFT_ALONE_FIRE;
+      const refused = ask === 'added' ? addedScore! >= addedCut : ask === 'both' ? driftScore! >= aloneCut || (driftScore! >= driftCut && addedScore! >= addedCut) : driftScore! >= driftCut;
+      if (refused) return { fallback: 'drift', refused: text, gen, judge };
       return { said: text, gen, judge };
     } catch {
       return { fallback: 'drift-error', refused: text, gen };

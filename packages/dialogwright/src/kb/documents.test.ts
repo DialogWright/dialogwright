@@ -19,7 +19,7 @@ import { mergeRanked } from './sections';
 import { MAX_SECTIONS_OFFERED } from './schema';
 import { renderTurn, type RenderedTurn } from '../render/turn';
 import type { Renderer, SpanAct } from '../render/types';
-import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
+import { ANSWER_LINE_QUESTION_PREFIX, DOCUMENTS_ADDED_QUESTION_ID, DOCUMENTS_DRIFT_QUESTION_ID } from '../render/checks';
 import { choice, noul } from '../testing/answers';
 import { approveDocument, placeOf } from './approval';
 import { frameViolations } from '../testing/adversarial/run';
@@ -306,6 +306,59 @@ describe('the answer worded from the sections, checked against them', () => {
     const plain = documentsApp('library-documents-cutoff-plain', { edits: { 'style.yaml': "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  refuseAt: 0.3\n" } });
     const u = asked(plain, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
     expect(docLine(await rendered(plain, u, renderer(), at(0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { refuseAt: 0.3 } });
+  });
+
+  it('with judge.documentsAsk: added, the judge is asked how much of the wording is its own, and refuses where it likely adds anything (0.3)', async () => {
+    const style = "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  documentsAsk: added\n";
+    const app = documentsApp('library-documents-added', { edits: { 'style.yaml': style } });
+    const t = asked(app, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const asks: string[][] = [];
+    /** A judge that reads the wording as adding nothing with probability `none`. */
+    const added = (none: number): JevClient => {
+      const base = judge(APP);
+      return { ask: async (req) => {
+        asks.push(Object.keys(req.questions));
+        if (!Object.hasOwn(req.questions, DOCUMENTS_ADDED_QUESTION_ID)) return base.ask(req);
+        const rest = (1 - none) / 4;
+        return { answers: { [DOCUMENTS_ADDED_QUESTION_ID]: { type: 'score', score: 4 * rest * 2.5, probabilities: { none, minorly: rest, moderately: rest, majorly: rest, completely: rest }, confidence: 0.9 } }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+      } };
+    };
+    const passed = await rendered(app, t, renderer(), added(0.8));
+    expect(asks.flat()).toContain(DOCUMENTS_ADDED_QUESTION_ID);
+    expect(asks.flat()).not.toContain(DOCUMENTS_DRIFT_QUESTION_ID);
+    expect(docLine(passed)).toMatchObject({ mode: 'generated', judge: { refuseAt: 0.3 } });
+    expect(docLine(passed).judge!.score).toBeCloseTo(0.2);
+    expect(docLine(await rendered(app, t, renderer(), added(0.6)))).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { refuseAt: 0.3 } });
+    // Its own cutoff where style.yaml gives one.
+    const own = documentsApp('library-documents-added-cutoff', { edits: { 'style.yaml': `${style}  documentsAddedAt: 0.45\n` } });
+    const u = asked(own, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    expect(docLine(await rendered(own, u, renderer(), added(0.6)))).toMatchObject({ mode: 'generated', judge: { refuseAt: 0.45 } });
+  });
+
+  it('with judge.documentsAsk: both, the two are asked in one request, and the wording refused where both reach their cutoffs or the drift reading alone reaches 0.75', async () => {
+    const style = "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  documentsAsk: both\n";
+    const app = documentsApp('library-documents-both', { edits: { 'style.yaml': style } });
+    const t = asked(app, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const asks: string[][] = [];
+    const both = (drift: number, none: number): JevClient => {
+      const base = judge(APP);
+      return { ask: async (req) => {
+        if (!Object.hasOwn(req.questions, DOCUMENTS_ADDED_QUESTION_ID)) return base.ask(req);
+        asks.push(Object.keys(req.questions).sort());
+        const rest = (1 - none) / 4;
+        return { answers: { [DOCUMENTS_DRIFT_QUESTION_ID]: noulAnswer(drift), [DOCUMENTS_ADDED_QUESTION_ID]: { type: 'score', score: 1, probabilities: { none, minorly: rest, moderately: rest, majorly: rest, completely: rest }, confidence: 0.9 } }, model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+      } };
+    };
+    // The drift judge refuses, the added reading does not: said, both readings kept.
+    const one = await rendered(app, t, renderer(), both(0.6, 0.9));
+    expect(asks[0]).toEqual([DOCUMENTS_ADDED_QUESTION_ID, DOCUMENTS_DRIFT_QUESTION_ID].sort());
+    expect(docLine(one)).toMatchObject({ mode: 'generated', judge: { score: 0.6, refuseAt: 0.5, added: { refuseAt: 0.3 } } });
+    // A drift reading at documentsDriftAloneAt (0.75) refuses alone, whatever the added reading.
+    expect(docLine(await rendered(app, t, renderer(), both(0.8, 0.9)))).toMatchObject({ mode: 'fixed', fallback: 'drift' });
+    // The added reading refuses, the drift judge does not: said.
+    expect(docLine(await rendered(app, t, renderer(), both(0.2, 0.4)))).toMatchObject({ mode: 'generated' });
+    // Both: refused.
+    expect(docLine(await rendered(app, t, renderer(), both(0.8, 0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift' });
   });
 
   it('how figures are written (style.yaml figures) goes to the model with the style, and nothing where the app says none', async () => {
