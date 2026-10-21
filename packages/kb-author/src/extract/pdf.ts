@@ -288,6 +288,9 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
   const isHeading = (l: Line): boolean => l.kind === undefined && (plain(l) || onPage(l));
   // The headings found by their page's body alone: each must have text of its own under it (below).
   const byPage = new WeakSet<Block>();
+  // A table's own headings (a group's row, a label over several rows): headings by the table's shape, kept
+  // as headings whatever their length or their last stop (a label that says where to read more ends in one).
+  const fromTable = new WeakSet<Block>();
   const styles = [...new Map(lines.filter(isHeading).map((l) => [styleOf(l), l])).values()]
     .sort((x, y) => y.size - x.size || Number(y.bold === true) - Number(x.bold === true))
     .map(styleOf);
@@ -302,7 +305,9 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
       continue;
     }
     if (line.kind === 'group') {
-      blocks.push({ kind: 'heading', level: 3, text: line.text, page: line.page });
+      const heading: Block = { kind: 'heading', level: 3, text: line.text, page: line.page };
+      fromTable.add(heading);
+      blocks.push(heading);
       prev = null;
       continue;
     }
@@ -336,7 +341,7 @@ export function blocksOfLines(lines: readonly Line[]): Block[] {
     // above, or none) is a line of its page's text: a plan's name or a date set in bold over a summary.
     const next = blocks[i + 1];
     const empty = next === undefined || (next.kind === 'heading' && next.level <= b.level);
-    if (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text) || (byPage.has(b) && empty)) {
+    if (!fromTable.has(b) && (b.text.length > MAX_HEADING_CHARS || /[.;]$/.test(b.text) || (byPage.has(b) && empty))) {
       out.push({ kind: 'para', text: b.text, ...(b.page === undefined ? {} : { page: b.page }) });
       return;
     }

@@ -6,7 +6,7 @@ import { FOLDER } from '../../__fixtures__/server';
 import { tablesCommand } from '../../tables/command';
 import { ingestCommand } from '../../cli';
 import { formatReport } from '../../ingest';
-import { extractPdf, linesOf, type PageLines, type Run } from '../pdf';
+import { blocksOfLines, extractPdf, linesOf, type PageLines, type Run } from '../pdf';
 import { readTables } from '../pdfTables';
 import { borderTables } from './borders';
 import { checkTable, WEAK } from './check';
@@ -417,5 +417,45 @@ describe('kb:ingest --tables', () => {
     expect(err).toEqual(['kb:ingest: --tables does not run in CI: it asks a model with your own key, on your machine']);
     const lines = formatReport({ input: 'docs', kind: 'folder', documents: [], skipped: [], notSeen: [], tables: { model: 'openrouter:anthropic/claude-haiku-5.5', asked: 3, cached: 44, costUsd: 0.0123 } }, { input: 'docs', sources: 'kb/sources' });
     expect(lines).toContain('  tables: 3 pages read by openrouter:anthropic/claude-haiku-5.5 ($0.0123), 44 from kb/.tables (commit it with the sources)');
+  });
+});
+
+describe('a table whose first column holds labels over several rows', () => {
+  it('says each label as a heading over its rows, and each row by its second cell, a heading over several columns kept', () => {
+    // Event | Service | What you pay (In network | Out of network); "Office visits" over two rows, no rule between them in the first column.
+    const rules = [across(720, 40, 520), across(700, 40, 520), across(680, 40, 520), across(650, 160, 520), across(620, 40, 520), across(590, 40, 520), down(40, 590, 720), down(160, 590, 720), down(280, 590, 720), down(400, 590, 700), down(520, 590, 720)];
+    const text = [
+      run('Event', 50, 708, 10, 'B'), run('Service', 170, 708, 10, 'B'), run('What you pay', 380, 708, 10, 'B', 60),
+      run('In network', 290, 688, 10, 'B'), run('Out of network', 410, 688, 10, 'B'),
+      run('Office visits', 50, 660), run('Primary care', 170, 660), run('$20', 290, 660, 10, 'R', 18), run('40%', 410, 660, 10, 'R', 18),
+      run('Specialist', 170, 630), run('$50', 290, 630, 10, 'R', 18), run('40%', 410, 630, 10, 'R', 18),
+      run('A test', 50, 600), run('X-ray', 170, 600), run('$0', 290, 600, 10, 'R', 12), run('20%', 410, 600, 10, 'R', 18),
+    ];
+    const read = readTables(lines(text), rules);
+    expect(read.lines.map((l) => [('kind' in l && l.kind) || null, l.text])).toEqual([
+      ['group', 'Office visits'],
+      ['row', 'Primary care: What you pay (In network: $20; Out of network: 40%)'],
+      ['row', 'Specialist: What you pay (In network: $50; Out of network: 40%)'],
+      ['group', 'A test'],
+      ['row', 'X-ray: What you pay (In network: $0; Out of network: 20%)'],
+    ]);
+  });
+});
+
+describe('a table\'s own headings', () => {
+  it('stay headings whatever their length or last stop, where a line set as a heading that reads as a sentence is a paragraph', () => {
+    const label = 'If you need drugs to treat your illness More information is available at example.com.';
+    const blocks = blocksOfLines([
+      { page: 1, text: label, size: 10, y: 700, kind: 'group' },
+      { page: 1, text: 'Tier 1: $10', size: 10, y: 680, kind: 'row' },
+      { page: 1, text: 'A bold line that ends in a stop.', size: 10, y: 660, bold: true },
+      { page: 1, text: 'Body text under it.', size: 10, y: 640 },
+    ]);
+    expect(blocks.map((b) => [b.kind, b.text])).toEqual([
+      ['heading', label],
+      ['para', 'Tier 1: $10'],
+      ['para', 'A bold line that ends in a stop.'],
+      ['para', 'Body text under it.'],
+    ]);
   });
 });
