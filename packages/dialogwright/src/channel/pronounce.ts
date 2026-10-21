@@ -16,9 +16,9 @@
  * frames, and one app speaks on both. A respelling works on every carrier and every voice; markup a
  * carrier does not read would be spoken aloud. So a respelling may hold no `<` or `>`.
  *
- * A web address may be listed too ("blueshieldca.com: blue shield c a dot com"): written with or without its
- * scheme and `www.`, it is matched with or without them (http://www.blueshieldca.com, www.blueshieldca.com,
- * blueshieldca.com), whole: not as the start of a longer address (blueshieldca.com/pharmacy is listed on its
+ * A web address may be listed too ("example.com: example dot com"): written with or without its
+ * scheme and `www.`, it is matched with or without them (http://www.example.com, www.example.com,
+ * example.com), whole: not as the start of a longer address (example.com/pharmacy is listed on its
  * own). An address no list has is sent as written, for the voice to read.
  *
  * A locale may have a list of its own (voice.locales.<tag>.pronounce), which replaces the app's for
