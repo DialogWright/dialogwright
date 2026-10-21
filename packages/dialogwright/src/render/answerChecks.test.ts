@@ -93,6 +93,15 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
     expect(checkAnswer('Prescriptions are not covered by this plan.', act())).toBeNull();
   });
 
+  it('gives a web address the passage has, word for word, and refuses one it does not', () => {
+    const SITE = 'File an appeal at www.example.com/appeals, or by mail. Forms are at example.org/ forms.';
+    expect(checkAnswer('You can file an appeal at www.example.com/appeals.', act(SITE, 'how do I appeal'))).toBeNull();
+    expect(checkAnswer('Forms are at example.org/forms, and appeals at WWW.EXAMPLE.COM/APPEALS.', act(SITE, 'where are the forms'))).toBeNull();
+    expect(checkAnswer('You can file an appeal at www.example.com/claims.', act(SITE, 'how do I appeal'))).toBe('foreign');
+    expect(checkAnswer('You can file an appeal at https://appeals.example.net.', act(SITE, 'how do I appeal'))).toBe('foreign');
+    expect(checkAnswer('Prescriptions are not covered; see www.example.com.', act())).toBe('foreign');
+  });
+
   it('refuses one over its budget, a question, a phrase to avoid, markup and a line break', () => {
     expect(checkAnswer('Prescriptions are not covered by this plan at all.', act(PASSAGE, 'q', { style: { persona: 'p', words: 5, avoid: [] } }))).toBe('words');
     expect(checkAnswer('Prescriptions are not covered. Anything else?', act())).toBe('question');

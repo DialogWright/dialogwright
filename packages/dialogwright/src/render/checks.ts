@@ -334,8 +334,9 @@ export function cleanAnswer(text: string, act: Pick<SpanAct, 'sentence'>): strin
 /**
  * The first check a knowledge answer's wording fails (a span `from: answer`), or null when it passes them
  * all (the drift check aside). It is held to its data and shape against the approved passage (its
- * content), as a span is against its content: no markup, no link, no line break, and no longer than the
- * passage or MAX_CHARS, whichever is more (`format`); no question (`question`: an answer asks nothing); no
+ * content), as a span is against its content: no markup, no line break, and no longer than the passage or
+ * MAX_CHARS, whichever is more (`format`); no web address the passage does not have word for word
+ * (`foreign`: one it gives may be given, as its figures may); no question (`question`: an answer asks nothing); no
  * four words running of its sentence's own fixed words the passage does not have (`frame`); its word
  * budget (`words`); style.yaml's phrases (`avoid`); and no figure (a digit, a number, amount or date word,
  * a currency sign) that is not in the passage (`foreign`): the caller's question is no source of facts. A
@@ -346,7 +347,8 @@ export function cleanAnswer(text: string, act: Pick<SpanAct, 'sentence'>): strin
 export function checkAnswer(text: string, act: SpanAct): RenderFallback | null {
   if (text.trim() === '') return 'empty';
   const passage = act.content.map((c) => c.value).join(' ');
-  if (text.length > Math.max(MAX_CHARS, passage.length) || /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text) || /\bhttps?:|www\./i.test(text)) return 'format';
+  if (text.length > Math.max(MAX_CHARS, passage.length) || /[\r\n]/.test(text) || /[*_#`<>{}[\]|\\]/.test(text)) return 'format';
+  if (foreignAddress(text, passage)) return 'foreign';
   if (copiesFrame(text, act)) return 'frame';
   if (text.includes('?')) return 'question';
   if (wordCount(text) > act.style.words) return 'words';
@@ -354,6 +356,24 @@ export function checkAnswer(text: string, act: SpanAct): RenderFallback | null {
   if (act.style.avoid.some((phrase) => folded.includes(fold(phrase)))) return 'avoid';
   if (foreignFigure(text, [passage])) return 'foreign';
   return null;
+}
+
+/**
+ * A web address: one with its scheme or `www.`, or a domain with a path (example.com/visit). Its last
+ * stop or bracket is the sentence's, not its own.
+ */
+const ADDRESS = /(?<![\p{L}\p{N}@.-])(?:https?:\/\/\S+|www\.\S+|[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}\/\S*)/giu;
+
+/** The web addresses `text` gives. */
+export const addressesIn = (text: string): string[] => (text.match(ADDRESS) ?? []).map((a) => a.replace(/[.,;:!?)\]"'”]+$/u, ''));
+
+/**
+ * Whether `text` gives a web address `source` does not have word for word (whatever its case, and however
+ * its spaces fall: a document's line may break one after its slash).
+ */
+export function foreignAddress(text: string, source: string): boolean {
+  const own = source.toLowerCase().replace(/\s+/g, '');
+  return addressesIn(text).some((a) => !own.includes(a.toLowerCase()));
 }
 
 /** The answer drift check's question id, asked of the decision model on its own request. */

@@ -64,6 +64,20 @@ describe('pronounce: the words the voice says another way (voice.pronounce)', ()
     expect(pronounceFor(undefined, 'en-US')).toBeUndefined();
   });
 
+  it('respells a web address, written with or without its scheme and www., matched with or without them, whole', () => {
+    const sites = { 'example.com': 'example dot com', 'http://www.example.org/visit': 'example dot org slash visit' };
+    expect(pronounce('Visit http://www.example.com, or call.', sites)).toBe('Visit example dot com, or call.');
+    expect(pronounce('See www.example.com. Or example.com/ and EXAMPLE.COM', sites)).toBe('See example dot com. Or example dot com and example dot com');
+    expect(pronounce('Go to example.org/visit today', sites)).toBe('Go to example dot org slash visit today');
+    // Not part of a longer address, nor another domain that ends the same way.
+    expect(pronounce('See example.com/plans and myexample.com and example.com.au', sites)).toBe('See example.com/plans and myexample.com and example.com.au');
+    // Mapped back to the address as listed.
+    expect(unpronounce('Visit example dot com', sites)).toBe('Visit example.com');
+    expect(pronounceProblems(sites)).toEqual([]);
+    expect(pronounceProblems({ 'example.com': 'x', 'https://www.Example.com/': 'y' }).map((p) => p.at)).toEqual(['word']);
+    expect(pronounceProblems({ 'example.com/a b': 'x' }).map((p) => p.at)).toEqual(['word']);
+  });
+
   it('finds the problems pnpm check and validateApp refuse', () => {
     expect(pronounceProblems(list)).toEqual([]);
     expect(pronounceProblems({ Alder: 'All-der', ALDER: 'All-dur' })).toEqual([{ word: 'ALDER', at: 'word', message: '"ALDER" is listed twice, but for case ("Alder")', fix: 'delete one of the two: a word is matched whatever its case' }]);

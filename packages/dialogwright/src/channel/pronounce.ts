@@ -16,6 +16,11 @@
  * frames, and one app speaks on both. A respelling works on every carrier and every voice; markup a
  * carrier does not read would be spoken aloud. So a respelling may hold no `<` or `>`.
  *
+ * A web address may be listed too ("blueshieldca.com: blue shield c a dot com"): written with or without its
+ * scheme and `www.`, it is matched with or without them (http://www.blueshieldca.com, www.blueshieldca.com,
+ * blueshieldca.com), whole: not as the start of a longer address (blueshieldca.com/pharmacy is listed on its
+ * own). An address no list has is sent as written, for the voice to read.
+ *
  * A locale may have a list of its own (voice.locales.<tag>.pronounce), which replaces the app's for
  * the lines said in that locale, as a locale's hints replace the app's: a respelling is written for
  * one language's voice. `{}` there says nothing another way in that locale.
@@ -36,6 +41,12 @@ export const PRONOUNCE_MAX_SAY = 120;
 const WORD = /^[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}' ’.-]*[\p{L}\p{M}\p{N}.])?$/u;
 /** What a word must not touch on either side to be matched whole. */
 const WORD_CHAR = String.raw`[\p{L}\p{M}\p{N}]`;
+/** A web address: a domain of two parts or more, with or without its scheme, `www.` and a path. */
+const ADDRESS = /^(?:https?:\/\/)?(?:www\.)?[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+(?:\/[^\s<>]*)?$/iu;
+/** An address as it is matched: its scheme and `www.` taken off, and a closing slash. */
+const coreOf = (address: string): string => address.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
+/** Whether a listed word is a web address (it has a dot between two parts and no space). */
+const isAddress = (word: string): boolean => /\.[\p{L}\p{N}]/u.test(word) && !/\s/.test(word) && ADDRESS.test(word);
 
 /** One problem with a list, on a word (`at: 'word'`, the key) or its respelling (`at: 'say'`). */
 export interface PronounceProblem {
@@ -50,16 +61,16 @@ export function pronounceProblems(list: PronounceList): PronounceProblem[] {
   const problems: PronounceProblem[] = [];
   const seen = new Map<string, string>();
   for (const [word, say] of Object.entries(list)) {
-    if (!WORD.test(word) || word.length > PRONOUNCE_MAX_WORD) {
+    if ((!WORD.test(word) && !isAddress(word)) || word.length > PRONOUNCE_MAX_WORD) {
       problems.push({
         word, at: 'word',
-        message: `"${word}" is not a word or a few words of at most ${PRONOUNCE_MAX_WORD} characters (letters and digits, with spaces, apostrophes, hyphens or periods between them)`,
-        fix: 'write the word as the lines spell it, for example Alder or St. Ives',
+        message: `"${word}" is not a word or a few words, or a web address, of at most ${PRONOUNCE_MAX_WORD} characters (letters and digits, with spaces, apostrophes, hyphens or periods between them)`,
+        fix: 'write the word as the lines spell it, for example Alder, St. Ives or example.com',
       });
     } else {
-      const before = seen.get(keyOf(word));
+      const before = seen.get(isAddress(word) ? keyOf(coreOf(word)) : keyOf(word));
       if (before !== undefined) problems.push({ word, at: 'word', message: `"${word}" is listed twice, but for case ("${before}")`, fix: 'delete one of the two: a word is matched whatever its case' });
-      else seen.set(keyOf(word), word);
+      else seen.set(isAddress(word) ? keyOf(coreOf(word)) : keyOf(word), word);
     }
     if (typeof say !== 'string' || say.trim() === '') {
       problems.push({ word, at: 'say', message: 'the respelling is empty', fix: 'write the word as it should sound, for example All-der' });
@@ -104,13 +115,19 @@ function compileReplacer(pairs: readonly (readonly [from: string, to: string])[]
   const usable = pairs.filter(([from]) => from.length > 0);
   if (usable.length === 0) return null;
   const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Each written both composed and decomposed, so an accent matches however the line encodes it.
-  const forms = [...new Set(usable.flatMap(([from]) => [from.normalize('NFC'), from.normalize('NFD')]))];
-  const alternatives = forms.sort((a, b) => b.length - a.length).map(escape);
+  // Each written both composed and decomposed, so an accent matches however the line encodes it; a web
+  // address by its core, with its scheme and www. optional, and not where a longer address goes on.
+  const forms = [...new Set(usable.flatMap(([from]) => (isAddress(from) ? [coreOf(from)] : [from.normalize('NFC'), from.normalize('NFD')])))];
+  const alternatives = forms
+    .sort((a, b) => b.length - a.length)
+    .map((f) => (isAddress(f) ? `(?<![\\p{L}\\p{N}./:@-])(?:https?:\\/\\/)?(?:www\\.)?${escape(f)}\\/?(?![\\p{L}\\p{N}/@_-]|\\.[\\p{L}\\p{N}])` : `(?<!${WORD_CHAR})${escape(f)}(?!${WORD_CHAR})`));
   const says = new Map<string, string>();
-  for (const [from, to] of usable) if (!says.has(keyOf(from))) says.set(keyOf(from), to);
+  for (const [from, to] of usable) {
+    const key = isAddress(from) ? keyOf(coreOf(from)) : keyOf(from);
+    if (!says.has(key)) says.set(key, to);
+  }
   return {
-    pattern: new RegExp(`(?<!${WORD_CHAR})(?:${alternatives.join('|')})(?!${WORD_CHAR})`, 'giu'),
+    pattern: new RegExp(alternatives.join('|'), 'giu'),
     says,
     entries: usable.map(([from, to]) => [new RegExp(`^${escape(from.normalize('NFC'))}$`, 'iu'), to]),
   };
@@ -119,7 +136,7 @@ function compileReplacer(pairs: readonly (readonly [from: string, to: string])[]
 function replaceWith(c: Compiled, text: string): string {
   return text.replace(c.pattern, (found) => {
     const key = keyOf(found);
-    return c.says.get(key) ?? c.entries.find(([re]) => re.test(found.normalize('NFC')))?.[1] ?? found;
+    return c.says.get(key) ?? (isAddress(found) ? c.says.get(keyOf(coreOf(found))) : undefined) ?? c.entries.find(([re]) => re.test(found.normalize('NFC')))?.[1] ?? found;
   });
 }
 
