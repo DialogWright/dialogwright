@@ -1,4 +1,4 @@
-import { joinCell, type FilledTable, type RowLine } from './grid';
+import { joinCell, type FilledCell, type FilledTable, type RowLine } from './grid';
 
 /**
  * A filled table's rows as lines (./grid.ts), whichever reader found it: each row says its cells with
@@ -15,6 +15,12 @@ import { joinCell, type FilledTable, type RowLine } from './grid';
  * - A row whose only cell is its first, set in bold, names the rows under it: it is a heading of its
  *   own (level 3). Any other row with one cell is said as it is (a note under a row).
  * - A cell that is only a check mark (a symbol font's private-use character, or ✓) says "yes".
+ * - A table whose body cells are all list items (each starts with a bullet, or is a bullet alone) is a list
+ *   set in columns, not a table: a summary of benefits' "Services Your Plan Generally Does NOT Cover" over
+ *   three columns of bullets. It is said as one line, its heading rows' words (its caption) then its items
+ *   down each column in turn ("Services ... NOT Cover: Acupuncture; Bariatric surgery; ..."), so no item is
+ *   read as another's label and what the list is stays with every item of it. Rows at its end with no list
+ *   item in them are its notes (a footnote under the list), each said as a line after it.
  * - A table whose first column holds labels over several rows (a summary of benefits' "If you visit a
  *   health care provider's office or clinic" beside its services) groups its rows: each label is a heading
  *   of its own (level 3) over the rows beside it, and each row is said by its second cell ("Specialist
@@ -27,8 +33,50 @@ const TERM_SHARE = 0.8;
 
 const CHECK = /^[\u{E000}-\u{F8FF}✓✔☑]+$/u;
 
+/** A bullet that starts a list item. */
+const BULLET = /^[•●▪◦·]/u;
+const BULLETS = /\s*[•●▪◦·]\s*/u;
+
+/** A list set in columns said as one line, then its notes (see the file's comment), or null where the table is not one. */
+function listOfTable(table: FilledTable): RowLine[] | null {
+  const { grid, cells } = table;
+  const shown = (row: readonly FilledCell[]) => row.filter((c) => c.covered !== true && c.text !== '');
+  const rows = cells.slice(grid.headRows);
+  // Its notes: the rows at its end with no list item in them.
+  let end = rows.length;
+  while (end > 0 && !shown(rows[end - 1]!).some((c) => BULLET.test(c.text))) end -= 1;
+  const body = rows.slice(0, end);
+  const filled = body.flatMap(shown);
+  if (filled.length < 2 || !filled.every((c) => BULLET.test(c.text))) return null;
+  const items: string[] = [];
+  for (let k = 0; k < grid.columns.length; k += 1) {
+    for (const row of body) {
+      const cell = row[k];
+      if (cell === undefined || cell.covered === true) continue;
+      items.push(...cell.text.split(BULLETS).filter((t) => t !== ''));
+    }
+  }
+  if (items.length === 0) return null;
+  const caption = cells
+    .slice(0, grid.headRows)
+    .flatMap((row) => row.filter((c) => c.covered !== true && c.text !== '').map((c) => c.text))
+    .join(' ');
+  const top = table.tops.find((t) => t !== null);
+  if (top === undefined || top === null) return null;
+  const said = items.join('; ');
+  const at = { page: top.page, size: table.size };
+  const notes = rows.slice(end).flatMap((row, i) => {
+    const text = shown(row).map((c) => c.text).join(' ');
+    const noteTop = table.tops[grid.headRows + end + i];
+    return text === '' ? [] : [{ ...at, y: noteTop?.y ?? top.y, text, kind: 'row' as const }];
+  });
+  return [{ ...at, y: top.y, text: caption === '' ? said : `${caption.replace(/:$/, '')}: ${said}`, kind: 'row' }, ...notes];
+}
+
 /** A filled table's rows as lines (see the file's comment). */
 export function rowsOfTable(table: FilledTable): RowLine[] {
+  const list = listOfTable(table);
+  if (list !== null) return list;
   const { grid, cells } = table;
   const width = grid.columns.length;
   // Each column's heading, and the heading row its own words are first in.

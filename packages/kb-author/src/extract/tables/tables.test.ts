@@ -11,6 +11,7 @@ import { readTables } from '../pdfTables';
 import { borderTables } from './borders';
 import { checkTable, WEAK } from './check';
 import { fillGrid, type TableGrid } from './grid';
+import { rowsOfTable } from './assemble';
 import { readLabels } from './labels';
 import { gridOfModel, HttpModelTableReader, MODEL_MAX_TOKENS, MODEL_TABLE_INSTRUCTIONS, pageLayout, type ModelTable, type ModelTableReader } from './model';
 import { TABLES_DIR, TABLES_FILE, TablesCache } from './cache';
@@ -456,6 +457,33 @@ describe('a table\'s own headings', () => {
       ['para', 'Tier 1: $10'],
       ['para', 'A bold line that ends in a stop.'],
       ['para', 'Body text under it.'],
+    ]);
+  });
+});
+
+describe('a list set in columns', () => {
+  it('is said as one line: its caption, then its items down each column in turn, where every cell is a list item; its notes after it', () => {
+    // A caption over three columns, then bullets in three columns; one cell holds a bullet alone, one holds two items.
+    const text = [
+      run('Services your plan does NOT cover', 50, 700, 10, 'B', 200),
+      run('• Acupuncture', 50, 680), run('• Dental care (child)', 200, 680), run('• Foot care', 350, 680),
+      run('• Bariatric surgery', 50, 660), run('• Glasses', 200, 660), run('•', 350, 660, 10, 'R', 5),
+      run('• Cosmetic surgery • Long-term care', 50, 640, 10, 'R', 140),
+      run('1 Except where it treats an injury', 50, 620, 10, 'R', 200),
+    ];
+    const grid: TableGrid = {
+      page: 1,
+      reader: 'hand',
+      columns: [[40, 190], [190, 340], [340, 500]],
+      rows: [[712, 690], [690, 670], [670, 650], [650, 630], [630, 610]],
+      headRows: 1,
+      spans: [{ row: 0, col: 0, rows: 1, cols: 3 }, { row: 4, col: 0, rows: 1, cols: 3 }],
+    };
+    const rows = rowsOfTable(fillGrid(grid, lines(text)));
+    expect(rows.map((r) => [r.kind, r.text])).toEqual([
+      ['row', 'Services your plan does NOT cover: Acupuncture; Bariatric surgery; Cosmetic surgery; Long-term care; Dental care (child); Glasses; Foot care'],
+      // A row at its end with no list item in it is a note under the list.
+      ['row', '1 Except where it treats an injury'],
     ]);
   });
 });
