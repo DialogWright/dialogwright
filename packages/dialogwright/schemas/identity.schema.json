@@ -66,7 +66,7 @@
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             },
             "ways": {
-              "description": "More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way's factor is asked the rest of that way, and one who misses a way's question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. Not with callerId.",
+              "description": "More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way's factor is asked the rest of that way, and one who misses a way's question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. With callerId, the way it identifies factors of is asked first.",
               "minItems": 2,
               "type": "array",
               "items": {
@@ -106,7 +106,7 @@
               "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
             },
             "callerId": {
-              "description": "A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors (\"I see an account associated with the number you're calling from. To access it, please tell me your date of birth, or say different account.\"). Never identity on its own: the other factors verify it. Needs app.yaml's callerNumber lookup and the code's facts.callerMatch. A no, \"different account\" or a failed check falls back to asking every factor.",
+              "description": "A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors (\"I see an account associated with the number you're calling from. To access it, please tell me your date of birth, or say different account.\"). Never identity on its own: the other factors verify it. With ways, the factors it identifies are all of one way, which is asked first, and it leaves at least one of that way's factors to ask. Needs app.yaml's callerNumber lookup and the code's facts.callerMatch. A no, \"different account\" or a failed check falls back to asking every factor.",
               "type": "object",
               "properties": {
                 "identifies": {

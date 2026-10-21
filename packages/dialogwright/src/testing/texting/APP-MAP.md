@@ -56,4 +56,4 @@ flowchart LR
 
 ## Dangling references
 
-- no form reaches the action `findCallerByPhone`, and the identity flow does not call it
+None: every intent reaches a form or a line, and every action is reached by a form or the identity flow.

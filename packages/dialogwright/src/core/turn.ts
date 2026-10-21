@@ -44,7 +44,7 @@ import { defaultLocaleOf, matchLocale, slotLocaleOf, speechLanguagesOf } from '.
 import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
-import { nextWayAfter, waysOf } from './identityWays';
+import { callerMatchAsks, callerMatchWay, nextWayAfter, waysOf } from './identityWays';
 
 export interface TurnContext {
   /**
@@ -785,13 +785,17 @@ function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, 
   if (awaitingSignIn(s)) return prompt('signin_reminder', 'intent', {}, acks);
   if (target === 'otp') return codeReask(s, io, acks, 'ask_otp');
   // A missed answer to a way's question while identity is asked (identity.yaml's `ways`: "I don't know
-  // the code"): the next way, with no attempt counted, after its line, where it has one.
-  const nextWay = target !== 'intent' && plain !== true && s.stepUp !== null && isAnonymous(s.principal) ? nextWayAfter(io.app, target) : null;
+  // the code"): the next way, with no attempt counted, after its line, where it has one. A miss at the
+  // caller-ID question ("I don't know the house number") sets the match aside and moves to the first of
+  // the other ways, after its line, or `identity_caller_declined` where it has none.
+  const fromMatch = callerMatchAsked(s);
+  const nextWay = target !== 'intent' && plain !== true && s.stepUp !== null && isAnonymous(s.principal) ? nextWayAfter(io.app, target, fromMatch) : null;
   if (nextWay !== null) {
     const way = waysOf(io.app)[nextWay]!;
     s.identityWay = nextWay;
+    if (fromMatch) noteCallerMatch(s, io.out, 'declined');
     const first = way.factorSlots.find((id) => s.slots[id]!.value === null) ?? way.factorSlots[0]!;
-    const lead = way.sayPromptId !== undefined ? [{ promptId: way.sayPromptId, vars: {} }] : [];
+    const lead = way.sayPromptId !== undefined ? [{ promptId: way.sayPromptId, vars: {} }] : fromMatch ? declinedAck(io.app) : [];
     return askSlot(s, first, s.slots[first]!.window, [...acks, ...lead]);
   }
   const attempts = target === 'intent' ? ++s.intentAttempts : ++s.slots[target]!.attempts;
@@ -2828,9 +2832,12 @@ function callerMatchAtGreeting(s: Session, io: TurnIO): PromptDecision | null {
   const identity = io.app.identity;
   if (!s.caps.speech || identity?.callerId?.ask !== 'greeting') return null;
   const match = callerMatchOf(s);
-  const slot = match === null ? undefined : identity.factorSlots.find((id) => !Object.hasOwn(match, id));
+  const slot = match === null ? undefined : callerMatchAsks(io.app).find((id) => !Object.hasOwn(match, id));
   if (slot === undefined) return null;
-  s.stepUp = { call: { tool: identity.verifyTool, params: {} }, need: 1, at: 'greeting' };
+  // The way the match stands in for factors of (one, for a level with one set of factors) is asked, and its tool checks it.
+  const at = callerMatchWay(io.app) ?? 0;
+  if (waysOf(io.app).length > 1) s.identityWay = at;
+  s.stepUp = { call: { tool: waysOf(io.app)[at]!.verifyTool, params: {} }, need: 1, at: 'greeting' };
   return askCallerMatch(s, slot, io.out, [{ promptId: greetingOfferPromptId(io.app), vars: {} }]);
 }
 

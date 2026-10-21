@@ -63,8 +63,9 @@ export function danglingReferences(app: App): DanglingReference[] {
     for (const tool of form.calls ?? []) if (!Object.hasOwn(actions, tool)) add('form-calls-unlisted', id, `the form ${code(id)} calls ${code(tool)}, which the policy does not list`);
     for (const check of form.checks ?? []) if (!Object.hasOwn(actions, check.action)) add('form-calls-unlisted', id, `the form ${code(id)} checks ${code(check.action)}, which the policy does not list`);
   }
-  // The start hook's calls (app.yaml's onStart.calls) are reached as the call starts, by no form.
-  const atStart = new Set(app.startCalls ?? []);
+  // The start hook's calls (app.yaml's onStart.calls) and the call-start lookup (app.yaml's callerNumber.lookup)
+  // are reached as the call starts, by no form.
+  const atStart = new Set([...(app.startCalls ?? []), ...(app.callerNumber?.lookup !== undefined ? [app.callerNumber.lookup] : [])]);
   for (const tool of unreachedActions(Object.keys(actions).filter((t) => !atStart.has(t)), app.forms, app.identity)) add('action-unreached', tool, `no form reaches the action ${code(tool)}, and the identity flow does not call it`);
   return out;
 }

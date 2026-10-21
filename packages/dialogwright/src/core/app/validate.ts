@@ -505,10 +505,14 @@ export function validateApp(app: App): void {
     // A caller-ID match as the identifier (callerId): factors of level 1 it stands in for, never all
     // of them (the match alone would verify), on a call the start-of-call lookup matched, read by the
     // app's facts.callerMatch.
+    // With ways, its factors are all of one way, never all of that way's.
     const callerId = identity.callerId;
     if (callerId !== undefined) {
       for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
-      if (identity.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of level 1, so the caller-ID match alone would verify; leave at least one factor to be asked');
+      const ways = identity.ways ?? [{ factorSlots: identity.factorSlots, verifyTool: identity.verifyTool }];
+      const way = ways.find((w) => callerId.identifies.every((slot) => w.factorSlots.includes(slot)));
+      if (way === undefined) fail('identity callerId identifies factors of more than one way; name factors of one way only');
+      else if (way.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of its way, so the caller-ID match alone would verify; leave at least one factor to be asked');
       if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
       if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { lookup })');
       if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');

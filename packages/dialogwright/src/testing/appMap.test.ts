@@ -50,6 +50,16 @@ describe('the app map: what it cannot connect', () => {
     expect(map).toContain('- no form reaches the action `listLoans`, and the identity flow does not call it');
   });
 
+  it('counts the call-start lookup (app.yaml callerNumber.lookup) as reached, as the call starts', () => {
+    const forms = {
+      renew_loan: { ...libraryApp.forms.renew_loan!, calls: ['renewLoan'] },
+      check_hold: { ...libraryApp.forms.check_hold!, calls: ['findHold'] },
+      check_loans: { ...libraryApp.forms.check_loans!, calls: [] },
+    };
+    const app: App = { ...libraryApp, forms, callerNumber: { ...libraryApp.callerNumber, lookup: 'listLoans' } };
+    expect(danglingReferences(app)).toEqual([]);
+  });
+
   it('draws an intent that switches the language, alone or with its line, and finds nothing dangling in it', () => {
     const app: App = {
       ...libraryApp,

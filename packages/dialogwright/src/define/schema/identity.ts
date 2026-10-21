@@ -73,7 +73,7 @@ const callerId = z
       .describe('When the caller-ID question is asked: "on-need" (the default), when something first needs level 1; "greeting", right after the greeting, before the open question (in place of a greeting proposal, which is then made at its slot).'),
   })
   .optional()
-  .describe('A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors ("I see an account associated with the number you\'re calling from. To access it, please tell me your date of birth, or say different account."). Never identity on its own: the other factors verify it. Needs app.yaml\'s callerNumber lookup and the code\'s facts.callerMatch. A no, "different account" or a failed check falls back to asking every factor.');
+  .describe('A caller-ID match as the identifier: on a call from a number the call-start lookup matched to one account, the caller is asked only for the other factors ("I see an account associated with the number you\'re calling from. To access it, please tell me your date of birth, or say different account."). Never identity on its own: the other factors verify it. With ways, the factors it identifies are all of one way, which is asked first, and it leaves at least one of that way\'s factors to ask. Needs app.yaml\'s callerNumber lookup and the code\'s facts.callerMatch. A no, "different account" or a failed check falls back to asking every factor.');
 
 /** One way to prove level 1 (a level's `ways`): its factors and the tool that checks them. */
 const way = z
@@ -100,7 +100,7 @@ const level1 = z
       .array(way)
       .min(2, { error: 'must list at least two ways (one way is `factors` and `verify`)' })
       .optional()
-      .describe('More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way\'s factor is asked the rest of that way, and one who misses a way\'s question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. Not with callerId.'),
+      .describe('More than one way to prove the level, in place of `factors` and `verify` (a booking by its code, or by the phone number and zip code on it): the first way is asked; a caller who gives another way\'s factor is asked the rest of that way, and one who misses a way\'s question is moved to the next (its `say`, then its first factor), with no attempt counted. The first way whose factors are all given is checked by its own tool. Failed checks share one count of attempts. With callerId, the way it identifies factors of is asked first.'),
     failedPrompt: identifier().optional().describe('The prompt said before the factors are asked again after a failed match. Default "identity_failed".'),
     callerId,
   })
@@ -108,7 +108,6 @@ const level1 = z
     const single = l.factors !== undefined || l.verify !== undefined;
     if (l.ways !== undefined && single) ctx.addIssue({ code: 'custom', path: ['ways'], message: 'level 1 names both ways and factors (or verify)', params: { fix: 'keep ways, and delete factors and verify: each way names its own' } });
     if (l.ways === undefined && (l.factors === undefined || l.verify === undefined)) ctx.addIssue({ code: 'custom', path: [], message: 'level 1 needs factors and verify, or ways', params: { fix: 'add "factors: [...]" and "verify: <tool>", or "ways:" with each way\'s factors and verify' } });
-    if (l.ways !== undefined && l.callerId !== undefined) ctx.addIssue({ code: 'custom', path: ['callerId'], message: 'a level with ways takes no callerId: the caller-ID match stands in for one set of factors', params: { fix: 'delete callerId, or write one way as factors and verify' } });
     if (l.ways !== undefined) {
       const seen = new Map<string, number>();
       l.ways.forEach((w, i) => w.factors.forEach((f) => {

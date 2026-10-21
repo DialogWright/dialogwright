@@ -4,7 +4,7 @@ import { raise } from '../gate/principal';
 import { isAnonymous, isParty, sayableParty, type GateDecision, type GateFacts, type ToolCall } from '../gate/types';
 import { codeLengthOf, formOf, gateOf, hasCode, identityOf, isCheckAction, toolOf } from './app/lookup';
 import { typedHere } from './typedFactors';
-import { wayInUse, waysOf } from './identityWays';
+import { callerMatchWay, wayInUse, waysOf } from './identityWays';
 export { factorsAsked } from './typedFactors';
 import { appOf } from './app/registry';
 import type { App, AppContext, Completion, CompletionContext, FormId, Refused, SlotId, ToolName, VerifyOutcome } from './app/types';
@@ -694,13 +694,23 @@ function nextFactor(s: Session, tc: TurnContext, out: TurnOut, acks: Ack[]): Dec
     // their own) is unused again: every factor is asked, and every factor listens.
     if (match === null && s.callerMatch === 'offered') delete s.callerMatch;
     // More than one way to prove the level (identity.yaml's `ways`): the way in use is asked, and
-    // checked once all of its factors are given.
+    // checked once all of its factors are given. With a caller-ID match, the way it stands in for
+    // factors of is asked first, with the caller-ID question in place of its first factor left to ask,
+    // unless the caller has given another way's factors.
     const ways = waysOf(appOf(s));
     if (ways.length > 1) {
+      const matchWay = match === null ? null : callerMatchWay(appOf(s));
+      if (matchWay !== null && s.identityWay === undefined) s.identityWay = matchWay;
       const at = wayInUse(s);
       if (at !== 0 || s.identityWay !== undefined) s.identityWay = at;
-      const left = ways[at]!.factorSlots.find((id) => s.slots[id]!.value === null);
-      if (left) return askSlot(s, left, s.slots[left]!.window, acks);
+      const byMatch = match !== null && at === matchWay ? match : null;
+      const left = ways[at]!.factorSlots.find((id) => s.slots[id]!.value === null && (byMatch === null || !Object.hasOwn(byMatch, id)));
+      if (left) {
+        const window = s.slots[left]!.window;
+        if (byMatch !== null && window === null) return askCallerMatch(s, left, out, acks);
+        return askSlot(s, left, window, acks);
+      }
+      if (byMatch !== null) fillFromCallerMatch(s, byMatch);
       return verifyFactors(s, tc, out, acks) ?? ensureEntry(s, tc, out, acks);
     }
     const missing = askedFactors(s, match).find((id) => s.slots[id]!.value === null);

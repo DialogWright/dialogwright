@@ -3,6 +3,7 @@ import { defaultAppId, getApp } from '../core/app/registry';
 import { identityOf } from '../core/app/lookup';
 import { callerNumberSlots } from '../core/callerNumber';
 import { factsOfferSlots, greetingOfferSlots } from '../core/factsOffer';
+import { callerMatchAsks } from '../core/identityWays';
 import type { App, CorpusSlotLabels, FormId, Intent, SlotId } from '../core/app/types';
 import { ENGINE_QUESTION_IDS } from '../core/questions';
 
@@ -219,7 +220,8 @@ export function atTextConsent(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 
 export function atCallerMatch(entry: Pick<CorpusEntry, 'prompted' | 'confirm' | 'context'>, app: App = corpusApp()): entry is { prompted: SlotId; confirm: 'yes' | 'no' | 'unanswered'; context: CorpusContext } {
   const callerId = app.identity?.callerId;
   if (callerId === undefined || entry.confirm === undefined || entry.prompted === undefined) return false;
-  const first = identityOf(app).factorSlots.find((id) => !callerId.identifies.includes(id));
+  // The first factor its way leaves to ask (identity.yaml's ways: the way the match stands in for a factor of).
+  const first = callerMatchAsks(app)[0];
   if (entry.prompted !== first) return false;
   if (entry.context === 'no_form') return callerId.ask === 'greeting';
   return contextForm(entry.context, app) !== null && confirmForm(entry.context, app) === null && !offerTransfer(entry.context);

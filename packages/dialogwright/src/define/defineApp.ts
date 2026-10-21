@@ -867,12 +867,18 @@ export function crossLink(
   // code that reads it (facts.callerMatch).
   const callerId = config.identity?.levels[1].callerId;
   if (callerId !== undefined) {
+    // The factors of the way the match stands in for factors of: level 1's, or, with ways, the way its
+    // first identified factor is in (each factor is in one way).
     const one = config.identity!.levels[1];
+    const ways = one.ways ?? [{ factors: one.factors ?? [], verify: one.verify ?? '' }];
+    const all = ways.flatMap((w) => w.factors);
+    const way = ways.find((w) => callerId.identifies.some((slot) => w.factors.includes(slot)));
     callerId.identifies.forEach((slot, i) => {
-      if (!one.factors.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is not one of level 1's factors (${one.factors.join(', ')}), so the caller-ID match has nothing of it to stand in for`, `${renameHint(slot, one.factors)}name a factor of level 1, such as the account number`);
+      if (!all.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is not one of level 1's factors (${all.join(', ')}), so the caller-ID match has nothing of it to stand in for`, `${renameHint(slot, all)}name a factor of level 1, such as the account number`);
+      else if (way !== undefined && !way.factors.includes(slot)) yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies', i], `"${slot}" is a factor of another way than "${callerId.identifies[0]}", and the caller-ID match stands in for factors of one way`, `name factors of one way only (${way.factors.join(', ')})`);
     });
-    if (one.factors.every((slot) => callerId.identifies.includes(slot))) {
-      yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], 'callerId identifies every factor of level 1, so the caller-ID match alone would verify the caller, and a caller ID can be forged', 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
+    if (way !== undefined && way.factors.every((slot) => callerId.identifies.includes(slot))) {
+      yaml('identity.yaml', ['levels', '1', 'callerId', 'identifies'], `callerId identifies every factor of ${one.ways ? `the way checked by ${way.verify}` : 'level 1'}, so the caller-ID match alone would verify the caller, and a caller ID can be forged`, 'leave at least one factor to be asked (such as the date of birth); an app that means to take the match alone writes a verify tool that ignores a factor');
     }
     if (lookup === undefined) {
       yaml('identity.yaml', ['levels', '1', 'callerId'], 'callerId takes the match from the call-start lookup, but app.yaml has no callerNumber lookup, so there is never a match', 'add "callerNumber: { lookup: <tool> }" to app.yaml, or delete "callerId"');

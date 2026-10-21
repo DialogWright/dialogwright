@@ -1,6 +1,7 @@
 import { dirname, relative } from 'node:path';
 import { gateOf, identityOf, topLevelOf } from '../core/app/lookup';
 import type { App, AuditMask, GeneratedLine, RenderSituation, RoleAccess, ToolName } from '../core/app/types';
+import { callerMatchAsks, callerMatchWay, waysOf } from '../core/identityWays';
 import { recordingOf } from '../core/recording';
 import { answerSpanOf, isSectionsSpan, spanNameVars, summarizedFields } from '../render/config';
 import { DEFAULT_HOLD_TEXT, KB_HOLD_PROMPT } from '../render/turn';
@@ -316,9 +317,13 @@ function identitySection(app: App, source: PolicySource): string[] {
   // factors, checked by the same check. Only for an app that sets it, so every other card is as it was.
   const callerId = identity.callerId;
   if (callerId !== undefined) {
-    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
+    const asked = callerMatchAsks(app);
+    const tool = waysOf(app)[callerMatchWay(app) ?? 0]!.verifyTool;
     const when = callerId.ask === 'greeting' ? 'right after the greeting' : 'when an action first needs level 1';
-    out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(identity.verifyTool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, and the caller gives their ${factors}.`);
+    const fallback = identity.ways !== undefined
+      ? `and the caller is asked the ways as above (a miss at its question moves them to another way)`
+      : `and the caller gives their ${factors}`;
+    out.push(`- On a call from a number the call-start lookup matched to one ${identity.subjectKind}'s account, the ${slotsInWords(app, callerId.identifies)} is taken from the match, never said, and the caller is asked ${when} only for their ${slotsInWords(app, asked)}, checked by the same check (${code(tool)}): the caller ID never verifies on its own. "Different account", a no or a failed check (one try) sets the match aside for the call, ${fallback}.`);
   }
   out.push(identity.signInLevel === undefined
     ? identity.typedFactors === 'ask'
@@ -347,8 +352,8 @@ function ladderDiagram(app: App, source: PolicySource): string[] {
   }
   const callerId = identity.callerId;
   if (callerId !== undefined) {
-    const asked = identity.factorSlots.filter((id) => !callerId.identifies.includes(id));
-    out.push(`  L0 -->|${mermaidLabel(`caller ID matched, gives ${slotsInWords(app, asked)}`, `checked by: ${actionLabel(source, identity.verifyTool)}`)}| L1`);
+    const tool = waysOf(app)[callerMatchWay(app) ?? 0]!.verifyTool;
+    out.push(`  L0 -->|${mermaidLabel(`caller ID matched, gives ${slotsInWords(app, callerMatchAsks(app))}`, `checked by: ${actionLabel(source, tool)}`)}| L1`);
   }
   if (top === 2) {
     out.push(`  L1 -->|${mermaidLabel(`gives a ${identity.codeLength ?? 6}-digit one-time code`, `sent by: ${actionLabel(source, identity.sendCodeTool!)}`, `checked by: ${actionLabel(source, identity.codeTool!)}`)}| L2`);

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { appTurnContext, askTextConsent, CALLER_LOOKUP_PURPOSE, renderSummary, summaryVars, type TurnContext, type TurnResult } from '../core/turn';
 import { cloneSession, emptySlot, missingSlots, newSession, noteTaskClosed, setForm, type Session } from '../core/session';
 import { untilReplied, type ToolMemo } from '../core/toolWait';
-import { waysOf } from '../core/identityWays';
+import { callerMatchWay, waysOf } from '../core/identityWays';
 import { CALLER_MATCH_PROMPT, callTool, continueIdentity, ensureEntry, newTurnOut, type GateEvent } from '../core/lifecycle';
 import { atCallerMatch, atCallerOffer, atGreetingOffer, atTextConsent, confirmForm, contextForm, normalizeText, offerTransfer, promptsIdentity, type CorpusEntry, type KnownGap, type PinnedOutcome } from '../jev/corpus';
 import { scenarioGapProblems } from './scenarioGap';
@@ -326,8 +326,9 @@ function seedCallerMatch(session: Session, entry: CorpusEntry & { prompted: Slot
   const out = newTurnOut();
   let asked: Decision | Refused | null;
   if (entry.context === 'no_form') {
-    const identity = identityOf(app);
-    session.stepUp = { call: { tool: identity.verifyTool, params: {} }, need: 1, at: 'greeting' };
+    const at = callerMatchWay(app) ?? 0;
+    if (waysOf(app).length > 1) session.identityWay = at;
+    session.stepUp = { call: { tool: waysOf(app)[at]!.verifyTool, params: {} }, need: 1, at: 'greeting' };
     asked = continueIdentity(session, tc, out, [{ promptId: greetingOfferPromptId(app), vars: {} }]);
   } else {
     setForm(session, contextForm(entry.context, app)!);

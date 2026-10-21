@@ -6,6 +6,7 @@ import type { Principal } from '../gate/types';
 import { appOf } from './app/registry';
 import type { App, FormId, SlotId } from './app/types';
 import { activeSlots, questionCtx } from './fia';
+import { callerMatchAsks } from './identityWays';
 import { ENGINE_QUESTION_IDS } from './questionIds';
 import type { Session } from './session';
 
@@ -259,7 +260,7 @@ export function callerMatchAsked(session: Session): boolean {
   const identity = appOf(session).identity;
   const asked = session.promptedFor;
   if (session.callerMatch !== 'offered' || identity?.callerId === undefined || session.principal.level !== 0 || asked === null) return false;
-  return identity.factorSlots.includes(asked) && !identity.callerId.identifies.includes(asked);
+  return callerMatchAsks(appOf(session)).includes(asked);
 }
 
 /**
