@@ -6,7 +6,7 @@ import { KeywordRetriever } from './keyword';
 import { MemoryVectorIndex } from './embed/memory';
 import type { Embedder, VectorEntry } from './embed/types';
 import type { KbIndexData } from './vectorIndex';
-import { sentencesOf, summarizableSections, type KbSection } from './sectionTexts';
+import { appliesTo, sentencesOf, summarizableSections, type KbSection } from './sectionTexts';
 import type { KbTopic, KnowledgeBase, Nomination, NominateInput, Retriever } from './types';
 
 export { sectionIndexTexts, sectionKeyOf, sectionOfKey, sentencesOf, summarizableSections, summarizing, type KbSection } from './sectionTexts';
@@ -156,17 +156,20 @@ export class SectionRetriever implements Retriever {
     return dense.index.search({ vector: v[0]!, limit: this.sections.length, floor });
   }
 
-  nominate({ text, locale, earlier, earlierSections }: NominateInput): Nomination[] | Promise<Nomination[]> {
+  nominate({ text, locale, earlier, earlierSections, facts }: NominateInput): Nomination[] | Promise<Nomination[]> {
     if (this.sections.length === 0) return [];
+    // With the caller's facts, only the sections of the documents that apply to them (another plan's never).
+    const allowed = facts === undefined ? undefined : new Set(this.sections.filter((s) => appliesTo(s, facts)).map((s) => s.key));
+    if (allowed !== undefined && allowed.size === 0) return [];
     const before = this.followUps ? earlier?.trim() : undefined;
-    if (before === undefined || before === '') return this.ranked(text, locale, this.cap);
+    if (before === undefined || before === '') return this.ranked(text, locale, this.cap, allowed);
     // A follow-up: its own sections, as if it stood alone, and beside them, never in their place, at most
     // half the cap more from the sections for its words alone and for the earlier question with them (twice
     // as deep) and the earlier answer's sections with the sections under them, merged. Merged alone, two of
     // the three lists spoke for the earlier subject and its sections took a new question's places (a
     // question on urgent care after one on prescriptions offered the pharmacy's sections, not urgent care's).
-    const lists = [this.ranked(text, locale, this.cap * 2), this.ranked(`${before} ${text}`, locale, this.cap * 2), this.near(earlierSections ?? [], text)];
-    const alone = this.ranked(text, locale, this.cap);
+    const lists = [this.ranked(text, locale, this.cap * 2, allowed), this.ranked(`${before} ${text}`, locale, this.cap * 2, allowed), this.near((earlierSections ?? []).filter((k) => allowed === undefined || allowed.has(k)), text, allowed)];
+    const alone = this.ranked(text, locale, this.cap, allowed);
     const beside = (own: readonly Nomination[], merged: readonly Nomination[]): Nomination[] => [
       ...own,
       ...merged.filter((n) => !own.some((o) => o.topic === n.topic)).slice(0, Math.floor(this.cap / 2)),
@@ -183,11 +186,12 @@ export class SectionRetriever implements Retriever {
    * first by meaning where the retriever has an embedder (else in the document's order), at most twice the
    * cap: a detail of what was answered is often a section under it.
    */
-  private near(keys: readonly string[], text: string): Nomination[] | Promise<Nomination[]> {
+  private near(keys: readonly string[], text: string, allowed?: ReadonlySet<string>): Nomination[] | Promise<Nomination[]> {
     if (keys.length === 0 || !this.followUpsNear) return [];
     const found: Nomination[] = [];
     for (const key of keys) {
       for (const s of this.sections) {
+        if (allowed !== undefined && !allowed.has(s.key)) continue;
         const under = s.key.startsWith(`${key}/`) && !s.key.slice(key.length + 1).includes('/');
         if ((s.key === key || under) && !found.some((n) => n.topic === s.key)) found.push({ topic: s.key, title: s.heading, score: 0, via: 'earlier' });
       }
@@ -203,13 +207,14 @@ export class SectionRetriever implements Retriever {
     return embedded instanceof Promise ? embedded.then((v) => order(v[0]!), () => found.slice(0, this.cap * 2)) : order(embedded[0]!);
   }
 
-  /** The sections for `text`, at most `cap`. */
-  private ranked(text: string, locale: string, cap: number): Nomination[] | Promise<Nomination[]> {
+  /** The sections for `text`, at most `cap`; with `allowed`, those alone. */
+  private ranked(text: string, locale: string, cap: number, allowed?: ReadonlySet<string>): Nomination[] | Promise<Nomination[]> {
     const titleOf = (key: string): string => this.titles.get(key) ?? key;
     const dense = this.dense;
-    if (!dense) return cap === this.cap ? this.keyword.nominate({ text, locale, todayIso: '' }) : fuse(this.keyword.scores(text, locale), [], cap, titleOf);
-    const kw = this.keyword.scores(text, locale);
-    const search = (q: Float64Array) => fuse(this.keywords ? kw : [], dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[], cap, titleOf);
+    const only = <T extends { topic: string }>(hits: readonly T[]): T[] => (allowed === undefined ? [...hits] : hits.filter((h) => allowed.has(h.topic)));
+    if (!dense) return cap === this.cap && allowed === undefined ? this.keyword.nominate({ text, locale, todayIso: '' }) : fuse(only(this.keyword.scores(text, locale)), [], cap, titleOf);
+    const kw = only(this.keyword.scores(text, locale));
+    const search = (q: Float64Array) => fuse(this.keywords ? kw : [], only(dense.index.search({ vector: q, limit: this.sections.length, floor: dense.floor }) as readonly { topic: string }[]), cap, titleOf);
     const embedded = dense.embedder.embed([text]);
     // A model that cannot be loaded (its package not installed) leaves the keywords.
     return embedded instanceof Promise ? embedded.then((v) => search(v[0]!), () => fuse(kw, [], cap, titleOf)) : search(embedded[0]!);

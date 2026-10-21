@@ -1025,6 +1025,73 @@
               "type": "string",
               "pattern": "^env\\.([A-Z][A-Z0-9_]*)$"
             },
+            "choose": {
+              "description": "A choice above the conversation, as pills: the one chosen is sent as the chat's start context (chat.<key>), and choosing another ends the chat and starts a new one with it, so nothing said under one choice is read under the next. The app reads it as call data (callData: { <name>: { from: chat.<key> } }). Default: none.",
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                  "description": "The key of the chat's start context the choice sets (chat.<key> in callData, which must name it)."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "What is chosen, beside the pills (\"Plan document\")."
+                },
+                "options": {
+                  "minItems": 2,
+                  "maxItems": 12,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+                        "description": "The value the chat starts with (chat.<key>)."
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "The pill's words."
+                      },
+                      "detail": {
+                        "description": "A line shown under the pills while this option is chosen.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "starters": {
+                        "description": "This option's own ways to start, in place of the page's.",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        }
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>)."
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "options"
+              ],
+              "additionalProperties": false
+            },
             "about": {
               "description": "Sections under the conversation, each a heading and its text in the chat formatting: what the line does and how (\"How answers are checked\"). Default: none.",
               "minItems": 1,

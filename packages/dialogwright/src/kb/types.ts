@@ -1,5 +1,6 @@
 import type { Glossary } from './glossary';
 import type { KbSource } from '../core/lifecycle';
+import type { Session } from '../core/session';
 import type { KbIndexRead } from './vectorIndex';
 
 /**
@@ -216,6 +217,12 @@ export interface NominateInput {
   readonly earlier?: string;
   /** The sections that answered the earlier question (their keys), where one did: a follow-up's candidates are those and the sections under them too. */
   readonly earlierSections?: readonly string[];
+  /**
+   * The caller's facts for kb.yaml's applies, where the app gives them (App.knowledge.facts): a retriever of
+   * sections offers only those whose document applies to the caller (a plan's own document, not another
+   * plan's). Absent: every section, as before.
+   */
+  readonly facts?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -293,6 +300,12 @@ export interface KbKnowledge {
    */
   readonly sections?: Retriever;
   readonly topics?: undefined;
+  /**
+   * The caller's facts for kb.yaml's applies, read by the app's code (its code's `knowledge.facts`): what
+   * retrieval offers sections for (NominateInput.facts) and, unless its own `facts` says otherwise, what
+   * kbAnswerTool answers for. Null where the caller has none. Absent: no facts, as before.
+   */
+  readonly facts?: (s: Readonly<Session>) => Readonly<Record<string, string | undefined>> | null;
 }
 
 /** Knowledge without a knowledge base: the topics the app's own retriever nominates (answers resolved in its own code), and that retriever. */
@@ -301,6 +314,7 @@ export interface CodeKnowledge {
   readonly sections?: undefined;
   readonly topics: readonly CatalogTopic[];
   readonly retriever: Retriever;
+  readonly facts?: undefined;
 }
 
 /** Why no passage can be said. */

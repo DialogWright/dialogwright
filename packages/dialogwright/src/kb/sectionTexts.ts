@@ -107,6 +107,14 @@ export function summarizableSections(kb: Pick<KnowledgeBase, 'settings' | 'sourc
 /** Why no answer may be drawn from sections: one is not (or no longer) summarizable, none is for this caller, or the call is in another language. */
 export type SectionsUnavailable = 'unknown-topic' | 'stale' | 'no-facts' | 'no-translation';
 
+/** Whether a section's document applies to a caller with these facts: each fact its applies names must have one of its values (none named: every caller). */
+export function appliesTo(section: Pick<KbSection, 'applies'>, facts: Readonly<Record<string, string | undefined>>): boolean {
+  return Object.entries(section.applies ?? {}).every(([fact, values]) => {
+    const value = Object.hasOwn(facts, fact) ? facts[fact] : undefined;
+    return value !== undefined && values.includes(value);
+  });
+}
+
 /**
  * The sections named by `keys` as they may be summarized now for a caller with these facts, in the
  * language of the call: each must still be summarizable (its document approved and unchanged, not cited,
@@ -120,10 +128,7 @@ export function resolveSections(kb: Pick<KnowledgeBase, 'settings' | 'sources' |
   const now = new Map(summarizableSections(kb).map((s) => [s.key, s]));
   const named = keys.map((k) => now.get(k)).filter((s): s is KbSection => s !== undefined);
   if (named.length === 0) return { unavailable: keys.some((k) => summarizableSections(kb, { approved: false }).some((s) => s.key === k)) ? 'stale' : 'unknown-topic' };
-  const forCaller = named.filter((s) => Object.entries(s.applies ?? {}).every(([fact, values]) => {
-    const value = Object.hasOwn(facts, fact) ? facts[fact] : undefined;
-    return value !== undefined && values.includes(value);
-  }));
+  const forCaller = named.filter((s) => appliesTo(s, facts));
   return forCaller.length > 0 ? { sections: forCaller } : { unavailable: 'no-facts' };
 }
 

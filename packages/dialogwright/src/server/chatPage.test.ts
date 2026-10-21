@@ -62,6 +62,20 @@ describe('the chat page\'s parts', () => {
     expect(html.indexOf('<section class="about">')).toBeGreaterThan(html.indexOf('<main id="talk">'));
     expect(chatPageHtml(base)).not.toContain('class="about"');
   });
+
+  it('draws a choice as pills above the conversation, the first pressed, each value its start context; a page without one mounts as before', () => {
+    const base = { name: 'Acme', logo: null, colors: {}, starters: ['Hi'], phone: null, chatPath: '/chat', lang: 'en' };
+    const choose = { key: 'plan', label: 'Plan <document>', options: [{ value: 'ppo', label: 'PPO & more', detail: 'The PPO summary' }, { value: 'hmo', label: 'HMO', starters: ['What does a visit cost?'] }] };
+    const html = chatPageHtml({ ...base, choose });
+    expect(html).toContain('<nav class="choose" aria-label="Plan &lt;document&gt;"><span class="choose-label">Plan &lt;document&gt;</span><button type="button" class="pill" data-value="ppo" aria-pressed="true">PPO &amp; more</button><button type="button" class="pill" data-value="hmo" aria-pressed="false">HMO</button></nav>');
+    expect(html.indexOf('<nav class="choose"')).toBeLessThan(html.indexOf('<main id="talk">'));
+    // The options go to the page's script as JSON, with no "<" that could close the script.
+    expect(html).toContain('var choice = {"key":"plan","label":"Plan \\u003cdocument>"');
+    expect(html).toContain('context[choice.key] = option.value;');
+    expect(html).toContain('if (conversation) conversation.destroy();');
+    expect(chatPageHtml(base)).toContain("DialogWright.mountConversation('#talk', { endpoint: \"/chat\", starters: [\"Hi\"] });");
+    expect(chatPageHtml(base)).not.toContain('class="choose"');
+  });
 });
 
 const TARGETS = { MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALLBACK_DESK: '+15555550103', SECURITY_DESK: '+15555550104' };

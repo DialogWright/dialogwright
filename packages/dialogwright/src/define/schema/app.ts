@@ -616,6 +616,36 @@ export const appSchema = z
             phone: envTarget()
               .optional()
               .describe('A "Prefer to talk?" button that calls a number: the variable holding it (env.<NAME>, an E.164 number), read from the app\'s settings. Default: none.'),
+            choose: z
+              .strictObject({
+                key: z
+                  .string()
+                  .regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, { error: 'must be a context key: a letter, then letters, digits or _, 64 at most' })
+                  .describe('The key of the chat\'s start context the choice sets (chat.<key> in callData, which must name it).'),
+                label: text().max(40, { error: 'is too long: at most 40 characters' }).describe('What is chosen, beside the pills ("Plan document").'),
+                options: z
+                  .array(
+                    z.strictObject({
+                      value: z
+                        .string()
+                        .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/, { error: 'must be a short value: letters, digits, _ . -, 64 at most' })
+                        .describe('The value the chat starts with (chat.<key>).'),
+                      label: text().max(40, { error: 'is too long for a pill: at most 40 characters' }).describe('The pill\'s words.'),
+                      detail: text().max(200, { error: 'is too long: at most 200 characters' }).optional().describe('A line shown under the pills while this option is chosen.'),
+                      starters: z
+                        .array(text().max(60, { error: 'is too long for a button: at most 60 characters' }))
+                        .min(1)
+                        .max(8)
+                        .optional()
+                        .describe('This option\'s own ways to start, in place of the page\'s.'),
+                    }),
+                  )
+                  .min(2, { error: 'must give two options at least' })
+                  .max(12, { error: 'has more than twelve: a page shows at most twelve' })
+                  .describe('The options, each a pill; the first is chosen when the page opens, unless its address names another (?<key>=<value>).'),
+              })
+              .optional()
+              .describe('A choice above the conversation, as pills: the one chosen is sent as the chat\'s start context (chat.<key>), and choosing another ends the chat and starts a new one with it, so nothing said under one choice is read under the next. The app reads it as call data (callData: { <name>: { from: chat.<key> } }). Default: none.'),
             about: z
               .array(
                 z.strictObject({

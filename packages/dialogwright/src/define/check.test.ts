@@ -229,6 +229,14 @@ describe('checkApp: the prompts every locale needs', () => {
     expect((await lines(folder({ 'app.yaml': page('logo.gif', 'Hi') }))).filter((l) => l.includes('brand.logo'))).toEqual([expect.stringContaining('the logo logo.gif is not a .png, .jpg, .webp or .svg file')]);
   });
 
+  it('a chat page\'s choice sets a start context key that callData reads as chat.<key>, or check says the server keeps nothing of it', async () => {
+    const choose = `chat:\n  page:\n    serve: local\n    choose:\n      key: branch\n      label: Branch\n      options:\n        - { value: main, label: Main }\n        - { value: east, label: East }\n`;
+    const unread = await lines(folder({ 'app.yaml': (t: string) => `${t}${choose}` }));
+    expect(unread.filter((l) => l.includes('chat.page.choose'))).toEqual([expect.stringContaining('the choice sets the chat\'s start context "branch", which no callData key reads: the server keeps nothing of it  ->  add callData: { branch: { from: chat.branch, redact: keep } }')]);
+    const read = await lines(folder({ 'app.yaml': (t: string) => `${t}${choose}callData:\n  branch: { from: chat.branch, redact: keep }\n` }));
+    expect(read.filter((l) => l.includes('chat.page.choose'))).toEqual([]);
+  });
+
   it('a missing engine line names the variables the engine gives it', async () => {
     const dir = folder({ 'identity.yaml': IDENTITY.replace(', 2: ', ''), 'prompts.yaml': without('ack_intent') });
     const problems = await lines(dir);

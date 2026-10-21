@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { App } from '../core/app/types';
+import type { App, ChatPageChoice } from '../core/app/types';
 import type { ChatBlock, ChatInline } from '../channel/actions';
 import { chatLine } from '../prompts/rich';
 import type { AppRoute, AppRoutes } from './appRoutes';
@@ -86,6 +86,8 @@ export interface ChatPageContent {
   chatPath: string;
   /** The page's language (the app's default locale). */
   lang: string;
+  /** A choice above the conversation, as pills (app.yaml's chat.page.choose). */
+  choose?: ChatPageChoice;
 }
 
 /** The page's HTML. */
@@ -102,6 +104,33 @@ export function chatPageHtml(c: ChatPageContent): string {
     ? ''
     : `<section class="about">${c.about.map((s) => `<div class="about-part"><h2>${escapeHtml(s.title)}</h2>${blocksHtml(chatLine(s.text, {}).blocks)}</div>`).join('')}</section>`;
   const call = c.phone === null ? '' : `<a class="call" href="tel:${escapeHtml(c.phone.tel)}"><span>Prefer to talk?</span> ${escapeHtml(c.phone.shown)}</a>`;
+  // The choice, as pills: each sends its value as the chat's start context; another starts a new chat.
+  const choose = c.choose === undefined
+    ? ''
+    : `<nav class="choose" aria-label="${escapeHtml(c.choose.label)}"><span class="choose-label">${escapeHtml(c.choose.label)}</span>${c.choose.options.map((o, i) => `<button type="button" class="pill" data-value="${escapeHtml(o.value)}" aria-pressed="${i === 0 ? 'true' : 'false'}">${escapeHtml(o.label)}</button>`).join('')}</nav><p class="choose-detail" id="choose-detail"></p>`;
+  const mount = c.choose === undefined
+    ? `DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: ${inlineJson(c.starters)} });`
+    : `(function () {
+    var choice = ${inlineJson(c.choose)};
+    var starters = ${inlineJson(c.starters)};
+    var talk = document.getElementById('talk');
+    var detail = document.getElementById('choose-detail');
+    var pills = Array.prototype.slice.call(document.querySelectorAll('.choose .pill'));
+    var conversation = null;
+    function choose(value, keep) {
+      var option = choice.options.filter(function (o) { return o.value === value; })[0] || choice.options[0];
+      pills.forEach(function (p) { p.setAttribute('aria-pressed', p.getAttribute('data-value') === option.value ? 'true' : 'false'); });
+      detail.textContent = option.detail || '';
+      if (conversation) conversation.destroy();
+      talk.textContent = '';
+      var context = {};
+      context[choice.key] = option.value;
+      conversation = DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: option.starters || starters, context: context });
+      if (!keep) { var q = new URLSearchParams(location.search); q.set(choice.key, option.value); history.replaceState(null, '', location.pathname + '?' + q.toString()); }
+    }
+    pills.forEach(function (p) { p.addEventListener('click', function () { if (p.getAttribute('aria-pressed') !== 'true') choose(p.getAttribute('data-value'), false); }); });
+    choose(new URLSearchParams(location.search).get(choice.key), true);
+  })();`;
   return `<!doctype html>
 <html lang="${escapeHtml(c.lang)}">
 <head>
@@ -131,6 +160,12 @@ export function chatPageHtml(c: ChatPageContent): string {
     --dw-user-bg: color-mix(in srgb, var(--accent) 22%, var(--page-bg));
     --dw-border: color-mix(in srgb, var(--page-fg) 14%, transparent);
   }
+  .choose { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: 760px; margin: 0 auto 6px; padding: 0 16px; }
+  .choose-label { font-size: .9rem; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); margin-right: 4px; }
+  .pill { font: inherit; font-size: .92rem; padding: 7px 14px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--page-fg) 22%, transparent); background: transparent; color: var(--page-fg); cursor: pointer; }
+  .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choose-detail { text-align: center; max-width: 640px; margin: 4px auto 14px; padding: 0 16px; font-size: .9rem; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); min-height: 1.2em; }
   .call { display: block; width: fit-content; margin: 22px auto 0; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--accent); color: var(--page-fg); text-decoration: none; font-weight: 600; }
   .call span { font-weight: 400; color: color-mix(in srgb, var(--page-fg) 70%, var(--page-bg)); }
   .about { max-width: 760px; margin: 40px auto 0; padding: 0 16px; line-height: 1.55; }
@@ -150,13 +185,14 @@ export function chatPageHtml(c: ChatPageContent): string {
   ${c.tagline === undefined ? '' : `<p class="tagline">${escapeHtml(c.tagline)}</p>`}
   ${intro}
 </header>
+${choose}
 <main id="talk"></main>
 ${call}
 ${about}
 <footer>${name}</footer>
 <script src="/widget.js"></script>
 <script>
-  DialogWright.mountConversation('#talk', { endpoint: ${inlineJson(c.chatPath)}, starters: ${inlineJson(c.starters)} });
+  ${mount}
 </script>
 </body>
 </html>
@@ -225,6 +261,7 @@ export function chatPageRoutes(deps: ChatPageDeps): AppRoutes {
     phone,
     chatPath: deps.chatPath,
     lang: app.locales?.default ?? 'en',
+    ...(page?.choose !== undefined ? { choose: page.choose } : {}),
   });
   const route: AppRoute = {
     label: 'chat page',

@@ -548,6 +548,34 @@ describe('the answer worded from the sections, checked against them', () => {
     });
   });
 
+  it('offers only the sections of the documents that apply to the caller, where the app gives its facts (knowledge.facts)', async () => {
+    // The visitor guide for adult cards, and a guide of its own for junior cards: printing in each, at its own price.
+    const junior = VISITOR_GUIDE.replace('document: Example Town Library Visitor Guide', 'document: Example Town Library Junior Guide\napplies: { card: junior }').replace('file: visitor-guide.pdf', 'file: junior-guide.pdf').replace('cost 15 cents a page', 'cost 5 cents a page on a junior card');
+    const dir = folder('library-documents-by-card', {
+      ...{ 'prompts.yaml': (t: string) => `${APP_EDITS['prompts.yaml']!(t)}${DOCUMENTS_LINES}` },
+      'kb/kb.yaml': (t: string) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n`,
+      'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('document: Example Town Library Visitor Guide', 'document: Example Town Library Visitor Guide\napplies: { card: adult }'),
+      'kb/sources/junior-guide.yaml': junior,
+    });
+    const place = placeOf(dir, 'library');
+    if (typeof place === 'string') throw new Error(place);
+    for (const doc of ['visitor-guide', 'junior-guide']) expect(approveDocument(place, doc, { by: 'Riley Moreno', owner: 'Branch Services', today: TODAY })).toMatchObject({ outcome: 'approved' });
+    let card = 'junior';
+    const base = codeFor(dir);
+    const app = defineApp(dir, { ...base, knowledge: { ...base.knowledge, facts: () => ({ card }) } });
+    registerApp(app);
+    const r = app.knowledge!.sections as SectionRetriever;
+    const docsOf = async (facts?: Record<string, string>) => [...new Set((await r.nominate({ text: 'how much is printing', locale: 'en-US', todayIso: TODAY, ...(facts ? { facts } : {}) })).map((n) => n.topic.split('#')[0]))].sort();
+    expect(await docsOf({ card: 'junior' })).toEqual(['junior-guide']);
+    expect(await docsOf({ card: 'adult' })).toEqual(['visitor-guide']);
+    // Without facts, every document, as before; with facts no document applies to, none.
+    expect(await docsOf()).toEqual(['junior-guide', 'visitor-guide']);
+    expect(await docsOf({ card: 'staff' })).toEqual([]);
+    expect(app.knowledge!.facts!(call(app).last.session)).toEqual({ card: 'junior' });
+    card = 'adult';
+    expect(app.knowledge!.facts!(call(app).last.session)).toEqual({ card: 'adult' });
+  });
+
   it('the not-found fallback says the next of its wordings each time it is chosen', () => {
     const c = call(APP);
     let session = c.last.session;

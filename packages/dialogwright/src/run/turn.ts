@@ -218,7 +218,7 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
   if (followUp === null) return { tc, answers, run: null, retrieved: null, ms: null };
   const knowledge = appOf(session).knowledge;
   const retrieved = knowledge !== undefined && tc.knowledge === undefined
-    ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session) }, opts.retrieveBudgetMs)
+    ? await retrieve(knowledge, { text: words, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session), ...factsOf(session) }, opts.retrieveBudgetMs)
     : null;
   const known: TurnContext = retrieved ? { ...tc, knowledge: knowledgeOf(retrieved) } : tc;
   const questions = followUpQuestions(session, followUp, words, known);
@@ -237,6 +237,12 @@ async function askFollowUp(session: Session, event: SessionEvent, words: string,
 
 /** The caller's earlier question, for a retriever that reads a follow-up with it (kb.yaml documents.followUps); nothing where none was kept. */
 const earlierOf = (session: Session): { earlier?: string; earlierSections?: readonly string[] } => (session.kbEarlier !== undefined ? { earlier: session.kbEarlier.question, ...(session.kbEarlier.sections !== undefined ? { earlierSections: session.kbEarlier.sections } : {}) } : {});
+/** The caller's facts for kb.yaml's applies, where the app gives them (App.knowledge.facts): retrieval offers the sections of the documents for them alone. */
+const factsOf = (session: Session): { facts?: Readonly<Record<string, string | undefined>> } => {
+  const k = appOf(session).knowledge;
+  if (k?.kb === undefined || k.facts === undefined) return {};
+  return { facts: k.facts(session) ?? {} };
+};
 
 /** What retrieval gives the turn (TurnContext.knowledge): the topics, and the sections where the app nominates any. */
 function knowledgeOf(retrieved: Retrieved): TurnKnowledge {
@@ -363,7 +369,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   // Only when a topic slot is listening (an app with a knowledge base, words, such a slot active): any
   // other turn's context, and so its request, is exactly as it was.
   const retrieved = topicsListening(session, event, base.duringService)
-    ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session) }, opts.retrieveBudgetMs)
+    ? await retrieve(appOf(session).knowledge!, { text: words!, locale: localeOf(session), todayIso: opts.todayIso, ...earlierOf(session), ...factsOf(session) }, opts.retrieveBudgetMs)
     : null;
   const tc: TurnContext = retrieved ? { ...base, knowledge: knowledgeOf(retrieved) } : base;
   const t0 = performance.now();

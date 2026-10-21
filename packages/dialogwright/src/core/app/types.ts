@@ -1136,6 +1136,15 @@ export interface ChatPageConfig {
   readonly phone?: string;
   /** Sections under the conversation, each a heading and its text in the chat formatting. */
   readonly about?: readonly { readonly title: string; readonly text: string }[];
+  /** A choice above the conversation, as pills: the chosen option's value is the chat's start context `key`; another ends the chat and starts a new one. */
+  readonly choose?: ChatPageChoice;
+}
+
+/** A chat page's choice (app.yaml's chat.page.choose): the start context key it sets, its label, and its options. */
+export interface ChatPageChoice {
+  readonly key: string;
+  readonly label: string;
+  readonly options: readonly { readonly value: string; readonly label: string; readonly detail?: string; readonly starters?: readonly string[] }[];
 }
 
 /**

@@ -430,7 +430,9 @@ export function kbAnswerTool(opts: KbAnswerToolOptions = {}): ToolDef {
     run(call, sys, { s, tc }) {
       const kb = appOf(s).knowledge?.kb;
       if (kb === undefined) return { value: { unavailable: 'no-answer' } satisfies KbAnswer, summary: 'no knowledge base' };
-      const facts = opts.facts ? opts.facts(call.params, sys, tc) : {};
+      // The tool's own facts where it is given them, else the app's (App.knowledge.facts), else none.
+      const knowledge = appOf(s).knowledge;
+      const facts = opts.facts ? opts.facts(call.params, sys, tc) : knowledge?.kb !== undefined && knowledge.facts !== undefined ? knowledge.facts(s) : {};
       if (facts === null) return { value: { unavailable: 'no-facts' } satisfies KbAnswer, summary: 'no passage (no-facts)' };
       const locale = opts.locale?.(s) ?? s.locale ?? kb.defaultLocale;
       // Sections of approved documents (kb.yaml documents), named by the topic slot's value.

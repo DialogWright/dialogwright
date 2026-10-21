@@ -30,7 +30,7 @@ import { WHOLE_FILE, closest, formatPath, formatProblem, keyPositionOf, type Dat
 import { FOLDER_FILES, FORM_HOOKS, SLOTS_FILE, type AppYaml, type FormHook } from './schema/index';
 import { kbLinkProblems } from '../kb/rules';
 import { checkProblems } from './formChecks';
-import type { Retriever } from '../kb/types';
+import type { KbKnowledge, Retriever } from '../kb/types';
 import { kbCatalog } from '../kb/catalog';
 import { defaultRetriever } from '../kb/hybrid';
 import { defaultSectionRetriever } from '../kb/sections';
@@ -124,8 +124,13 @@ export interface AppCode {
   testing?: App['testing'];
   /** identity.yaml's code: the one-time code call's params (IdentityConfig.sendCodeParams). Only with an identity.yaml. */
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
-  /** The knowledge base's code: a retriever of the app's own (App.knowledge.retriever), in place of the engine's default (kb/hybrid.ts defaultRetriever). Only with a kb/ folder. */
-  knowledge?: { retriever?: Retriever };
+  /**
+   * The knowledge base's code: a retriever of the app's own (App.knowledge.retriever), in place of the
+   * engine's default (kb/hybrid.ts defaultRetriever); and the caller's facts for kb.yaml's applies
+   * (App.knowledge.facts), read from the session (its call data, its facts), which retrieval and the
+   * answer read. Only with a kb/ folder.
+   */
+  knowledge?: { retriever?: Retriever; facts?: KbKnowledge['facts'] };
 }
 
 /**
@@ -604,6 +609,13 @@ export function crossLink(
       if (p.unknownSlot !== undefined) slotExists('app.yaml', p.path, p.unknownSlot);
       else yaml('app.yaml', p.path, p.message, p.fix);
     }
+  }
+
+  // A chat page's choice sets a start context key: callData must read it as chat.<key>, or the server keeps
+  // nothing of it and the choice changes nothing.
+  const choice = app.chat?.page?.choose;
+  if (choice !== undefined && !Object.values(app.callData ?? {}).some((d) => d.from === `chat.${choice.key}`)) {
+    yaml('app.yaml', ['chat', 'page', 'choose', 'key'], `the choice sets the chat's start context "${choice.key}", which no callData key reads: the server keeps nothing of it`, `add callData: { ${choice.key}: { from: chat.${choice.key}, redact: keep } }`);
   }
 
   // The app's own conditions (code.predicates), each a function, named by routes.yaml and transfer's { named }.
@@ -1139,6 +1151,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
       ...(a.chat.page.starters !== undefined ? { starters: [...a.chat.page.starters] } : {}),
       ...(a.chat.page.phone !== undefined ? { phone: a.chat.page.phone.replace(/^env\./, '') } : {}),
       ...(a.chat.page.about !== undefined ? { about: a.chat.page.about.map((x) => ({ title: x.title, text: x.text })) } : {}),
+      ...(a.chat.page.choose !== undefined ? { choose: { key: a.chat.page.choose.key, label: a.chat.page.choose.label, options: a.chat.page.choose.options.map((o) => ({ value: o.value, label: o.label, ...(o.detail !== undefined ? { detail: o.detail } : {}), ...(o.starters !== undefined ? { starters: [...o.starters] } : {}) })) } } : {}),
     } } : {}),
   });
   put(app, 'waiting', a.waiting === undefined ? undefined : {
@@ -1199,7 +1212,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
     const retriever = code.knowledge?.retriever ?? defaultRetriever(config.knowledge).retriever;
     // The sections of approved documents, with summarizing on (kb.yaml documents; ../kb/sections.ts).
     const sections = defaultSectionRetriever(config.knowledge, retriever);
-    app.knowledge = { kb: config.knowledge, retriever, ...(sections ? { sections } : {}) };
+    app.knowledge = { kb: config.knowledge, retriever, ...(sections ? { sections } : {}), ...(code.knowledge?.facts !== undefined ? { facts: code.knowledge.facts } : {}) };
     warnFallback(app.knowledge.retriever, `app "${app.id}"`);
   }
   // The folder's content hashes: what the engine records on each call (call_started, the trace).
