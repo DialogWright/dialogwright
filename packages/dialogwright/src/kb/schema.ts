@@ -256,6 +256,9 @@ export type KbPendingYaml = z.infer<typeof kbPendingSchema>;
 export const kbSourceSchema = z
   .strictObject({
     document: text().describe('The document\'s title, as a person would cite it.'),
+    title: text()
+      .optional()
+      .describe('A person\'s title for the document, in place of the one read from it (document:), which a re-read writes again: kb:ingest and kb:refresh keep this one. Callers hear it, an answer cites it, and its approval holds it. Default: document.'),
     provenance: z
       .strictObject({
         url: text().optional().describe('Where it was read from on the web.'),

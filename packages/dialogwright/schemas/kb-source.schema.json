@@ -7,6 +7,11 @@
       "minLength": 1,
       "description": "The document's title, as a person would cite it."
     },
+    "title": {
+      "description": "A person's title for the document, in place of the one read from it (document:), which a re-read writes again: kb:ingest and kb:refresh keep this one. Callers hear it, an answer cites it, and its approval holds it. Default: document.",
+      "type": "string",
+      "minLength": 1
+    },
     "provenance": {
       "description": "Where the text came from.",
       "type": "object",

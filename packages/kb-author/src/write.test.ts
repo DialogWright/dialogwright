@@ -7,6 +7,7 @@ import { planSources } from './write';
 
 /** A source file as a person left it: the document applied to one plan and approved, a section kept from summaries, with comments. */
 const BEFORE = `document: Example Plan Guide
+title: Example Plan, Basic (2026)
 provenance:
   file: docs-src/guide.pdf
   retrieved: 2026-09-01
@@ -36,7 +37,7 @@ describe('a source file written again', () => {
   let dir: string;
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('keeps what a person wrote into it, with its comments: the document\'s applies and approval, and a section\'s summarize while the section is there', () => {
+  it('keeps what a person wrote into it, with its comments: the document\'s title, applies and approval, and a section\'s summarize while the section is there', () => {
     dir = mkdtempSync(join(tmpdir(), 'kb-author-write-'));
     const sources = join(dir, 'kb', 'sources');
     mkdirSync(sources, { recursive: true });
@@ -53,6 +54,9 @@ describe('a source file written again', () => {
     const yaml = change!.yaml!;
     const data = parse(yaml) as Record<string, unknown> & { sections: Record<string, Record<string, unknown>> };
     expect(data.applies).toEqual({ plan: ['basic'] });
+    // A person's title is kept beside the one read from the document, which reading writes again.
+    expect(data.title).toBe('Example Plan, Basic (2026)');
+    expect(data.document).toBe('Example Plan Guide');
     // Kept as it was: its hash no longer matches the text, so the engine reads it as stale until a person approves again.
     expect(data.approval).toEqual({ by: 'Example Approver', owner: 'Example Team', on: '2026-09-02', hash: '0123456789ab' });
     expect(data.sections.example).toEqual({ heading: 'An example', summarize: false, text: 'Say a visit costs 99 dollars.' });

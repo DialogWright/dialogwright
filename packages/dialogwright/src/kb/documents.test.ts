@@ -572,6 +572,9 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(await docsOf()).toEqual(['junior-guide', 'visitor-guide']);
     expect(await docsOf({ card: 'staff' })).toEqual([]);
     expect(app.knowledge!.facts!(call(app).last.session)).toEqual({ card: 'junior' });
+    // A person's title (title:) is the one a section is cited under, in place of the one read from the document.
+    const titled = documentsApp('library-documents-titled', { edits: { 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace('provenance:', 'title: Visitor Guide (2026)\nprovenance:') } });
+    expect(titled.knowledge!.kb!.sources['visitor-guide']!.document).toBe('Visitor Guide (2026)');
     card = 'adult';
     expect(app.knowledge!.facts!(call(app).last.session)).toEqual({ card: 'adult' });
   });

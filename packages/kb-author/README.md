@@ -45,6 +45,7 @@ sections:
     lastPage: 3
 ```
 
+- **A title of your own**: `title:` beside `document:` names the document in place of the title read from it (a PDF's metadata, its file name), which a re-read writes again; kb:ingest and kb:refresh keep yours, as they keep `applies`, `summarize` and `approval`. Callers hear it, an answer cites it, and its approval holds it.
 - **Provenance** is the document's URL, or its file's path from the app folder, and the day it was read. A section keeps its heading, and a PDF's section records the page it starts on (`page`) and, when it runs on, the page it ends on (`lastPage`). Pages are provenance: no approval hashes them, but a section that moves to another page is reported as changed (`its pages only`) so the file says where it is now.
 - **Section ids** are the slugs of the heading path (`late-fees`, `shifts/training`), so they read as the document's outline and stay put when a section is added elsewhere. Text before the first heading is `intro`; a document with no headings is one section, `text`. A PDF's ids are by heading too, so a section that moves to another page keeps its id; a PDF with no headings is cut by page (`p1`, `p2`). Two sections with one id are told apart in order (`services`, `services-2`).
 - **The title heading** (the first heading, when no other is at its level or above) names the document and starts no section. A DOCX Title paragraph or Markdown front matter `title:` names it instead.

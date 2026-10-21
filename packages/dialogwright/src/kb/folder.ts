@@ -277,11 +277,13 @@ export function readKbFolder({ base, folder, defaultLocale, io, problems }: Read
 export function sourceOf(id: string, doc: KbSourceYaml, glossary?: Glossary): KbSourceDocument {
   // What callers hear: the sections with the glossary's words (./glossary.ts); with no glossary, as written.
   const said = (s: string | undefined): string | undefined => (s === undefined ? s : applyGlossary(s, glossary));
-  const hash = documentHashOf({ id, document: doc.document, applies: doc.applies, sections: Object.entries(doc.sections).map(([sid, s]) => ({ id: sid, heading: said(s.heading), text: said(s.text)!, summarize: s.summarize })) });
+  // A person's title, where the file has one (title:), in place of the one read from the document.
+  const title = doc.title ?? doc.document;
+  const hash = documentHashOf({ id, document: title, applies: doc.applies, sections: Object.entries(doc.sections).map(([sid, s]) => ({ id: sid, heading: said(s.heading), text: said(s.text)!, summarize: s.summarize })) });
   const freshness = doc.approval === undefined ? 'unapproved' : doc.approval.hash === hash ? 'fresh' : 'edited';
   return {
     id,
-    document: doc.document,
+    document: title,
     ...(doc.provenance ? { provenance: doc.provenance } : {}),
     sections: doc.sections,
     ...(doc.summarize === false ? { summarize: false as const } : {}),

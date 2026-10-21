@@ -196,7 +196,13 @@ export async function kbIndexCommand(args: readonly string[], io: KbIo, discover
 
 /** `kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today date] [--onnx-revision commit]`: each retriever's recall, candidates and latency (onnx only with its package and a pinned revision). */
 /** kb:bakeoff --sections: the section retriever, by keywords and by meaning, on paraphrases of sections; every document's sections, approved or not. */
-async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, todayArg: string | undefined, io: KbIo, followUpsFile?: string): Promise<number> {
+/** A retriever that searches as a caller with `facts` does (NominateInput.facts): only the documents that apply to them. */
+function withFacts<R extends Retriever>(r: R, facts: Readonly<Record<string, string>> | undefined): R {
+  if (facts === undefined) return r;
+  return new Proxy(r, { get: (t, k, rcv) => (k === 'nominate' ? (input: Parameters<R['nominate']>[0]) => t.nominate({ ...input, facts }) : Reflect.get(t, k, rcv)) });
+}
+
+async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, todayArg: string | undefined, io: KbIo, followUpsFile?: string, facts?: Readonly<Record<string, string>>): Promise<number> {
   const found = findKb(resolve(io.cwd, dirArg), dirArg, undefined);
   if (!found.kb) {
     for (const line of found.problems) io.err(line);
@@ -249,7 +255,7 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
     } else io.out(`hybrid: skipped, ${model.id} is not in the cache (run pnpm kb:model)`);
   }
   const results = [];
-  for (const run of runs) results.push(await bakeoff(run.retriever, paraphrases, locale, today, run.name));
+  for (const run of runs) results.push(await bakeoff(withFacts(run.retriever, facts), paraphrases, locale, today, run.name));
   io.out('');
   for (const line of formatResults(results)) io.out(line);
   if (followUpsFile !== undefined) {
@@ -263,8 +269,8 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
     io.out('');
     io.out(`follow-ups (${followUpsFile}): each read alone, and with its earlier question (kb.yaml documents.followUps on):`);
     for (const run of runs) {
-      for (const line of formatFollowUps(run.name, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true }), followUps, paraphrases, locale, today))) io.out(line);
-      for (const line of formatFollowUps(`${run.name}, without the earlier answer's sections`, await followUpBakeoff(run.retriever, new SectionRetriever(kb, { ...run.options, followUps: true, followUpsNear: false }), followUps, paraphrases, locale, today))) io.out(line);
+      for (const line of formatFollowUps(run.name, await followUpBakeoff(withFacts(run.retriever, facts), withFacts(new SectionRetriever(kb, { ...run.options, followUps: true }), facts), followUps, paraphrases, locale, today))) io.out(line);
+      for (const line of formatFollowUps(`${run.name}, without the earlier answer's sections`, await followUpBakeoff(withFacts(run.retriever, facts), withFacts(new SectionRetriever(kb, { ...run.options, followUps: true, followUpsNear: false }), facts), followUps, paraphrases, locale, today))) io.out(line);
     }
   }
   const hybrid = runs[1]?.retriever;
@@ -277,12 +283,21 @@ async function sectionsBakeoff(dirArg: string, file: string, doSweep: boolean, t
 }
 
 export async function kbBakeoffCommand(args: readonly string[], io: KbIo): Promise<number> {
-  const parsed = parseArgs(args, { values: ['--paraphrases', '--sections', '--follow-ups', '--locale', '--today', '--onnx-revision'], flags: ['--sweep'] });
+  const parsed = parseArgs(args, { values: ['--paraphrases', '--sections', '--follow-ups', '--locale', '--today', '--onnx-revision', '--facts'], flags: ['--sweep'] });
   if (typeof parsed === 'string' || parsed.positional.length !== 1 || (parsed.values['--paraphrases'] === undefined) === (parsed.values['--sections'] === undefined)) {
-    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file> (the sections of documents)'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]\n       dialogwright kb:bakeoff <dir> --sections <file> [--follow-ups <file>] [--sweep] [--today YYYY-MM-DD]   (kb.yaml documents: summarize on; every document's sections, approved or not)`);
+    io.err(`dialogwright kb:bakeoff: ${typeof parsed === 'string' ? parsed : 'give one knowledge base (an app folder, or a kb folder) and either --paraphrases <file> (topics) or --sections <file> (the sections of documents)'}\nusage: dialogwright kb:bakeoff <dir> --paraphrases <file> [--sweep] [--locale tag] [--today YYYY-MM-DD] [--onnx-revision <commit>]\n       dialogwright kb:bakeoff <dir> --sections <file> [--follow-ups <file>] [--facts <fact>=<value>[,...]] [--sweep] [--today YYYY-MM-DD]   (kb.yaml documents: summarize on; every document's sections, approved or not; --facts: only those of the documents that apply to a caller with these facts)`);
     return 2;
   }
-  if (parsed.values['--sections'] !== undefined) return sectionsBakeoff(parsed.positional[0]!, parsed.values['--sections'], parsed.flags.has('--sweep'), parsed.values['--today'], io, parsed.values['--follow-ups']);
+  let facts: Record<string, string> | undefined;
+  if (parsed.values['--facts'] !== undefined) {
+    const pairs = parsed.values['--facts'].split(',').map((p) => p.split('='));
+    if (pairs.some((p) => p.length !== 2 || p[0]!.trim() === '' || p[1]!.trim() === '')) {
+      io.err('dialogwright kb:bakeoff: --facts is <fact>=<value>, comma-separated: plan=ppo');
+      return 2;
+    }
+    facts = Object.fromEntries(pairs.map(([k, v]) => [k!.trim(), v!.trim()]));
+  }
+  if (parsed.values['--sections'] !== undefined) return sectionsBakeoff(parsed.positional[0]!, parsed.values['--sections'], parsed.flags.has('--sweep'), parsed.values['--today'], io, parsed.values['--follow-ups'], facts);
   const dir = resolve(io.cwd, parsed.positional[0]!);
   const found = findKb(dir, parsed.positional[0]!, undefined);
   if (!found.kb) {
