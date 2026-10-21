@@ -432,6 +432,13 @@ export interface Session {
    */
   identityWay?: number;
   /**
+   * The caller asked for a moment (the `wait` intent: "hold on, let me grab a pen") and was told to take
+   * their time (`wait_ack`): the voice adapter waits CALLER_WAIT_MS for them in place of NO_INPUT_MS, and
+   * the next turn that answers nothing (a silence, "okay, I'm ready") hears the question they were on
+   * again, with no attempt counted. Cleared by the next turn, whatever it is. Absent: no wait asked for.
+   */
+  takingTime?: true;
+  /**
    * The nos the caller has said to each of the open form's checks' read-backs (a check outcome's
    * `confirm`), by action: a second no to one goes to a person. Absent until the first no, and gone
    * when the form closes or another is entered, as `checked` is.

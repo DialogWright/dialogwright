@@ -199,6 +199,8 @@ interface TurnIO {
   turnState?: TurnState;
   /** The slot this turn's answer to the greeting's proposal filled: the request said with it opens its form without filling it again. */
   kept?: SlotId;
+  /** The caller asked for a moment on the turn before (Session.takingTime): a turn that answers nothing hears the question again, uncounted. */
+  tookTime?: true;
   /** The gates' rows when a turn at the greeting's proposal read its words again as an opening turn (openingAfterOffer), for the debug table. */
   openingRows?: GateRow[];
   /** The forms this turn left or entered by a move (`next`, or an outcome's `then: form`): one entered again goes to a person (moveLoops). */
@@ -771,6 +773,8 @@ function codeReask(s: Session, io: TurnIO, acks: Ack[], promptId: 'ask_otp' | 'a
  * the caller was asked instead (`anything_else`, App.anythingElseSilence).
  */
 function failAttempt(s: Session, target: 'intent' | 'confirm' | 'otp' | SlotId, io: TurnIO, acks: Ack[] = [], plain: boolean | 'frustration' | 'reask' = false, retryPromptId: string | null = null, intentQuestion = 'ask_intent'): Decision {
+  // Back from the moment they asked for ("okay, I'm ready"): the question they were on again, uncounted.
+  if (io.tookTime === true && target !== 'otp') return { kind: 'replay', text: s.lastPromptText };
   const t = io.tc.thresholds;
   // A guard, not a path anything takes today: `nomatch` re-asks a pending confirmation before it
   // gets here and `proceed` maps a confirm target to a slot. Should a confirm turn reach it, the
@@ -1195,6 +1199,8 @@ const NO_INPUT_ACK: Ack = { promptId: 'no_input', vars: {} };
  */
 function handleSilence(s: Session, io: TurnIO): Decision {
   if (s.promptedFor === null) return { kind: 'ignore' };
+  // The wait the caller asked for ran out (the `wait` intent): the question they were on, uncounted.
+  if (io.tookTime === true) return { kind: 'replay', text: s.lastPromptText };
   // Keys held at an offer that takes a yes or a no only: the keys have stopped, so they are settled.
   const offered = s.pendingConfirmation;
   if (s.dtmfBuffer !== '' && yesNoOffer(io.app, offered) && keyedAt(s, offered)) return settleKeys(s, offered, io);
@@ -2085,6 +2091,12 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       if (pc?.target === 'form' && pc.askedChange === true && formOf(io.app, pc.form).summaryOnNo === 'read-back' && s.lastPromptId === 'ask_change') {
         return { decision: readBackExact(s, pc.form, []), events: [] };
       }
+      // The caller asked for a moment ("hold on, let me grab a pen"): told to take their time, and waited
+      // for (Session.takingTime); the question they were on stays theirs.
+      if (verdict.wait === true && Object.hasOwn(io.app.prompts.manifest, WAIT_PROMPT)) {
+        s.takingTime = true;
+        return { decision: { kind: 'replay', text: promptText(io.app, WAIT_PROMPT, {}, s.locale, { shown: !s.caps.speech }) }, events: [] };
+      }
       return { decision: { kind: 'replay', text: s.lastPromptText }, events: [] };
     }
     case 'inform': {
@@ -2916,6 +2928,8 @@ function declinedAck(app: App): Ack[] {
   return Object.hasOwn(app.prompts.manifest, CALLER_DECLINED_PROMPT) ? [{ promptId: CALLER_DECLINED_PROMPT, vars: {} }] : [];
 }
 const CALLER_DECLINED_PROMPT = 'identity_caller_declined';
+/** What the caller hears when they ask for a moment (the `wait` intent): "Sure, take your time." */
+const WAIT_PROMPT = 'wait_ack';
 
 /**
  * A slot's question asked again as it was first asked: the caller-ID question where that was it (the
@@ -3116,6 +3130,11 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
   const s = cloneSession(session);
   const tc = appTurnContext(appOf(s), turnContext);
   const io: TurnIO = { app: appOf(s), tc, out: newTurnOut(), prefix: [] };
+  // A moment asked for on the turn before is this turn's to read, and over after it.
+  if (s.takingTime === true) {
+    io.tookTime = true;
+    delete s.takingTime;
+  }
   // The turn's actions: what it asks first (a language switch), then its decision's lines in the session's locale, as it is now.
   // A handoff's transfer target is chosen again at the turn's moment (its hours, the number called, a predicate).
   const act = (decision: Decision): Action[] => {

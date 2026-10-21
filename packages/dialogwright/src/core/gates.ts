@@ -43,7 +43,8 @@ export type Verdict =
   | ({ kind: 'rejected'; queue?: FormId } & Frustrated)
   | ({ kind: 'confirm_unanswered'; queue?: FormId } & Frustrated)
   | ({ kind: 'change_slot'; slot: SlotId; queue?: FormId } & Frustrated)
-  | { kind: 'replay' }
+  /** The prompt said again (repeat_prompt); `wait`: the caller asked for a moment (the `wait` intent), and is given it. */
+  | { kind: 'replay'; wait?: true }
   /** An informational intent: its prompt (`promptId`) or its knowledge-base passage (`passage`) is said, and the call resumes. */
   | ({ kind: 'inform' } & Informs & Frustrated)
   /**
@@ -359,6 +360,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
   if (activeForm === null) {
     if (label === 'agent' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
+    else if (label === 'wait' && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'replay', wait: true }; outcome = 'wait'; }
     else if (informs !== undefined && atLeast(top.p, t.INTENT_IMPLICIT)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (isRoutable(app, label) && atLeast(top.p, t.INTENT_ROUTE)) { routeVerdict = { kind: 'route', intent: label, confirm: 'none' }; outcome = 'route'; }
     // Every form entry is acknowledged now, so this band no longer earns the
@@ -399,6 +401,7 @@ export function evaluateGates(session: Session, ts: TurnState, answers: AnswerMa
 
     if (label === 'agent' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'handoff', reason: 'live-agent' }; outcome = 'agent'; }
     else if (label === 'repeat_prompt' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay' }; outcome = 'replay'; }
+    else if (label === 'wait' && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'replay', wait: true }; outcome = 'wait'; }
     else if (informs !== undefined && atLeast(top.p, t.INTENT_SWITCH)) { routeVerdict = { kind: 'inform', ...informs }; outcome = 'inform'; }
     else if (mode === 'answering') { routeVerdict = { kind: 'proceed' }; outcome = 'answering'; }
     else if (mode === 'adding') {
@@ -612,7 +615,7 @@ function priorityReading(app: App, ranked: readonly { label: string; p: number }
 function intentActedOn(v: Verdict, top: Intent): string | null {
   switch (v.kind) {
     case 'handoff': return 'agent';
-    case 'replay': return 'repeat_prompt';
+    case 'replay': return v.wait === true ? 'wait' : 'repeat_prompt';
     case 'inform': return top;
     case 'route': case 'queue': return v.intent;
     default: return null;

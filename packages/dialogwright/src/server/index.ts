@@ -976,6 +976,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       ...(config.relayPingMs !== undefined ? { pingMs: config.relayPingMs } : {}),
       ...(config.sessionStore ? { resumedAfterMs: config.resumedAfterMs ?? DEFAULT_RESUMED_AFTER_MS } : {}),
       ...(config.noInputAfterSpeechMs !== undefined ? { noInputAfterSpeechMs: config.noInputAfterSpeechMs } : {}),
+      ...(config.callerWaitMs !== undefined ? { callerWaitMs: config.callerWaitMs } : {}),
       ...(config.keyWaitMs !== undefined ? { keyWaitMs: config.keyWaitMs } : {}),
       ...(config.resumeAfterPauseMs !== undefined ? { resumeAfterPauseMs: config.resumeAfterPauseMs } : {}),
       ...(config.resumeIntoReplyMs !== undefined ? { resumeIntoReplyMs: config.resumeIntoReplyMs } : {}),

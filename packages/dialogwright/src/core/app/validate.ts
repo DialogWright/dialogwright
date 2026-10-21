@@ -72,11 +72,12 @@ const LINK_ID = /^[a-z][a-z0-9-]*$/;
 export const REQUIRED_CONTROL_INTENTS = ['agent', 'repeat_prompt'] as const;
 
 /**
- * The intents the engine reads by name: the required ones, and `done` (the caller is finished, and
- * the call ends with the goodbye), which an app may leave out: its calls then end at a completion,
- * a handoff or a hang-up.
+ * The intents the engine reads by name: the required ones, `done` (the caller is finished, and the call
+ * ends with the goodbye), which an app may leave out: its calls then end at a completion, a handoff or a
+ * hang-up; and `wait` (the caller asks for a moment: "hold on, let me grab a pen"), which an app may
+ * add: `wait_ack` is said, and the line waits CALLER_WAIT_MS for them before the question again.
  */
-export const CONTROL_INTENTS = [...REQUIRED_CONTROL_INTENTS, 'done'] as const;
+export const CONTROL_INTENTS = [...REQUIRED_CONTROL_INTENTS, 'done', 'wait'] as const;
 
 /** An outcome that names `goodbye` (whether the goodbye follows its line) and does not end the call: a goodbye only follows an ending. */
 function goodbyeOffEnd(outcome: { then: string }): boolean {

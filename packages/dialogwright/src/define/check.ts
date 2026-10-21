@@ -243,6 +243,7 @@ export function enginePrompts(config: LoadedConfig, code?: AppCode): EngineNeed[
     }
   }
   if (code?.portal) needs.push(...PORTAL_PROMPTS);
+  if (Object.hasOwn(config.intents.intents, 'wait')) needs.push({ id: 'wait_ack', why: 'a caller asks for a moment (the wait intent: "hold on, let me grab a pen"), and is told to take their time' });
   const seen = new Set<string>();
   return needs.filter(({ id }) => !seen.has(id) && seen.add(id));
 }

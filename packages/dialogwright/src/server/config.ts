@@ -194,6 +194,11 @@ export interface ServerConfig {
   /** Silence after a prompt's estimated playback before the caller is asked again; 0 disables. */
   noInputMs: number;
   /**
+   * CALLER_WAIT_MS, default 30000 (DEFAULT_CALLER_WAIT_MS): the wait in place of noInputMs after a caller asked
+   * for a moment (an app's `wait` intent). Optional in the type only, for a config made by hand.
+   */
+  callerWaitMs?: number;
+  /**
    * NO_INPUT_AFTER_SPEECH_MS, default 2500 (DEFAULT_NO_INPUT_AFTER_SPEECH_MS). On a carrier that reports
    * the caller's voice (Telnyx with TELNYX_EVENTS speaker-events), the no-input wait is held while the
    * caller speaks, and runs at least this long after they stop, so the transcript of what they said
@@ -744,6 +749,7 @@ export function loadConfig(env: Env): ServerConfig {
     ...bargeInOf(env, voiceProviders),
     ...endAfterPlaybackOf(env),
     noInputMs: integer(env, 'NO_INPUT_MS', 7_000),
+    callerWaitMs: integer(env, 'CALLER_WAIT_MS', 30_000),
     noInputAfterSpeechMs: integer(env, 'NO_INPUT_AFTER_SPEECH_MS', DEFAULT_NO_INPUT_AFTER_SPEECH_MS),
     keyWaitMs: keyWaitOf(env),
     ...resumeOf(env),

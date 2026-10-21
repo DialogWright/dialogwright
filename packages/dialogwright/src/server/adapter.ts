@@ -258,6 +258,19 @@ export function forgetNoInput(callSid: string): void {
   finishWords(callSid, 'closed');
 }
 
+/** How long the line waits for a caller who asked for a moment (CALLER_WAIT_MS, the `wait` intent): 30 seconds. */
+export const DEFAULT_CALLER_WAIT_MS = 30_000;
+
+/**
+ * The no-input wait after a line: NO_INPUT_MS (0: no wait), or, where the caller asked for a moment (the `wait`
+ * intent, Session.takingTime), CALLER_WAIT_MS, never less than the usual wait.
+ */
+export function noInputWaitOf(deps: Pick<AdapterDeps, 'noInputMs' | 'callerWaitMs'>, session: Pick<Session, 'takingTime'>): number {
+  const base = deps.noInputMs ?? 0;
+  if (base <= 0) return 0;
+  return session.takingTime === true ? Math.max(base, deps.callerWaitMs ?? DEFAULT_CALLER_WAIT_MS) : base;
+}
+
 /**
  * Arm the no-input timer: `noInputMs` after the frames have (approximately) finished playing.
  * When it fires the silence turn goes through the same per-call queue as a socket message, so it
@@ -271,7 +284,7 @@ export function forgetNoInput(callSid: string): void {
  * wait is held from the start, and their stop resumes it (onCallerSpeech).
  */
 function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly OutboundFrame[]): void {
-  const wait = deps.noInputMs ?? 0;
+  const wait = noInputWaitOf(deps, entry.session);
   if (wait <= 0) return;
   clearNoInput(entry.callSid);
   const nowMs = Date.now();
@@ -1354,6 +1367,11 @@ export interface AdapterDeps {
   endCloseGraceMs?: number;
   /** Silence after a prompt's estimated playback before a silence turn runs; 0 (the default) disables. */
   noInputMs?: number;
+  /**
+   * CALLER_WAIT_MS: the wait in place of noInputMs after the caller asked for a moment (the `wait` intent,
+   * Session.takingTime: "hold on, let me grab a pen"). Absent: DEFAULT_CALLER_WAIT_MS. Never shorter than noInputMs.
+   */
+  callerWaitMs?: number;
   /**
    * NO_INPUT_AFTER_SPEECH_MS: on a carrier that reports the caller's voice, the least a held no-input wait
    * runs after the caller stops speaking, for the transcript to arrive (resumeNoInput). Absent:
