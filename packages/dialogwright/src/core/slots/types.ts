@@ -89,7 +89,11 @@ export interface SlotCandidate {
 
 export type SlotOutcome =
   | { kind: 'absent' }
-  | { kind: 'filled'; value: string; display: string; confidence: number; confirm: 'none' | 'implicit' }
+  /**
+   * `continues`: a topic slot filled from sections whose question the model read as continuing the caller's
+   * earlier one (kb.yaml documents.followUpWording: continued), so its answer is worded with that question.
+   */
+  | { kind: 'filled'; value: string; display: string; confidence: number; confirm: 'none' | 'implicit'; continues?: true }
   | { kind: 'disambiguate'; a: SlotCandidate; b: SlotCandidate }
   | { kind: 'window'; window: SlotPartial; confidence: number }
   /**

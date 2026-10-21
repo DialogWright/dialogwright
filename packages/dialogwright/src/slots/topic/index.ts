@@ -7,7 +7,7 @@ import { topicDisplay } from './display';
 import { topicFill } from './fill';
 import { DEFAULT_CAP, topicOptions, type TopicOptions } from './options';
 import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
-import { sectionQuestionIdOf, topicIdOf, topicQuestions } from './questions';
+import { continuesIdOf, sectionQuestionIdOf, topicIdOf, topicQuestions } from './questions';
 
 export {
   topicOptions, TOPIC_PARTS, TOPIC_QUESTIONS, ACCEPT, DEFAULT_CAP, DEFAULT_CRITERION, DEFAULT_MISS_REASON, FILL_AT, MAX_CAP,
@@ -48,10 +48,11 @@ export const topicType: SlotType<TopicOptions> = defineSlotType<TopicOptions>({
       ...(o.unanswered === 'retry' ? { notFound: { counts: o.notFound.counts, remind: o.notFound.remind } } : {}),
       // The topic question, and with answers from documents the yes-or-no of each section a turn may offer
       // (MAX_SECTIONS_OFFERED: the cap's most, and a follow-up's beside a question's own).
-      questionIds: [questionId, ...(o.unanswered === 'retry' ? Array.from({ length: MAX_SECTIONS_OFFERED }, (_, i) => sectionQuestionIdOf(id, i)) : [])],
+      // With follow-ups worded only where they continue (kb.yaml documents.followUpWording), whether one does.
+      questionIds: [questionId, ...(o.unanswered === 'retry' ? Array.from({ length: MAX_SECTIONS_OFFERED }, (_, i) => sectionQuestionIdOf(id, i)) : []), ...(o.unanswered === 'retry' && catalog?.followUpWording === 'continued' ? [continuesIdOf(id)] : [])],
       prompts: promptsOf(id, o),
-      thresholds: [o.fillAt, ...(o.unanswered === 'retry' ? (['KB_UNANSWERED', 'KB_SECTION_ANSWERS'] as const) : [])],
-      questions: topicQuestions(id, o, cap),
+      thresholds: [o.fillAt, ...(o.unanswered === 'retry' ? (['KB_UNANSWERED', 'KB_SECTION_ANSWERS'] as const) : []), ...(o.unanswered === 'retry' && catalog?.followUpWording === 'continued' ? (['KB_FOLLOW_UP'] as const) : [])],
+      questions: topicQuestions(id, o, cap, catalog?.followUpWording === 'continued'),
       fill: topicFill(o, questionId, cap, catalog, display, id),
       display,
     };

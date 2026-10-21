@@ -114,6 +114,10 @@ export const kbSettingsSchema = z
           .enum(['on', 'off'])
           .optional()
           .describe('on: a question is read with the caller\'s earlier one on the call (the last question answered from the knowledge base, or found nothing for), so a follow-up ("what about out of network?") finds and answers what it continues: sections are found for the words alone and for the earlier question with them, merged (no model asked; a question that stands on its own keeps its sections), and the decision model, reading each section, the wording model and the drift judge are each given the earlier question beside it. Default off: each question on its own. Measure it with pnpm kb:bakeoff --sections --follow-ups.'),
+        followUpWording: z
+          .enum(['always', 'continued', 'never'])
+          .optional()
+          .describe('With followUps on, when the wording model and the drift judge are given the caller\'s earlier question beside their question. always (the default): every time, so a new question after another may be answered with the earlier one\'s subject too, which the judge then refuses. continued: only where the decision model reads the question as continuing the earlier one ("what about for a family?"), one more yes-or-no in the same request (the topic slot\'s <slot>Continues, at KB_FOLLOW_UP). never: the question alone (sections are still found and read with the earlier question).'),
       })
       .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP, retrieval: 'hybrid' })
       .describe('Answers from approved documents, where no topic answers: off by default.'),

@@ -97,10 +97,10 @@ function sectionsOf(app: App, ...keys: string[]): SectionNomination[] {
 interface Turn { before: Session; event: SessionEvent; result: TurnResult }
 
 /** A question at the open, its topic question read as `topic`, and each nominated section's yes-or-no as `sections`. */
-function asked(app: App, text: string, topic: Record<string, number>, sections: Record<string, number>, topics: string[] = ['opening_hours'], after?: Session): Turn {
+function asked(app: App, text: string, topic: Record<string, number>, sections: Record<string, number>, topics: string[] = ['opening_hours'], after?: Session, more: AnswerMap = {}): Turn {
   const c = call(app);
   const keys = Object.keys(sections);
-  const answers: AnswerMap = { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice(topic) };
+  const answers: AnswerMap = { ...BASE, intent: choice({ ask_library: 0.95, none: 0.05 }), libraryTopicTopic: choice(topic), ...more };
   keys.forEach((_, i) => { answers[`libraryTopicSection${i + 1}`] = noul(Object.values(sections)[i]!); });
   const event = speechEvent(text, true);
   const before = after ?? c.last.session;
@@ -482,6 +482,32 @@ describe('the answer worded from the sections, checked against them', () => {
       const ack = 'acks' in next.result.decision ? next.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined;
       expect(ack?.vars).toMatchObject({ answerEarlier: 'can I borrow a telescope' });
       expect(asked(APP, 'can I borrow a telescope', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.05 }).result.session.kbEarlier).toBeUndefined();
+    });
+
+    it('with followUpWording continued, asks whether a question continues the earlier one, and words it with that only where it does (KB_FOLLOW_UP); never, not at all', () => {
+      const withWording = (name: string, wording: string): App => documentsApp(name, { edits: { 'kb/kb.yaml': (t: string) => `${t.trimEnd()}\ndocuments:\n  summarize: on\n  followUps: on\n  followUpWording: ${wording}\n` } });
+      const app = withWording('library-documents-follow-ups-continued', 'continued');
+      const first = asked(app, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
+      const ctx = (s: Session, earlier?: string) => ({ ...slotContext(s, NEXT, call(app).t), sections: sectionsOf(app, 'visitor-guide#printing'), ...(earlier !== undefined ? { earlier } : {}) }) as never;
+      // Asked beside the sections only with an earlier question, and only by an app that words follow-ups so.
+      expect(slotSpecOf(app, 'libraryTopic').questionIds).toContain('libraryTopicContinues');
+      expect(String((slotSpecOf(app, 'libraryTopic').questions(ctx(first.result.session, FIRST)).libraryTopicContinues as { instructions: string }).instructions)).toMatch(/^Read asr.text, the caller's question, and earlierQuestion, their earlier question on this call\. Does asr.text continue earlierQuestion/);
+      expect(slotSpecOf(app, 'libraryTopic').questions(ctx(first.result.session))).not.toHaveProperty('libraryTopicContinues');
+      expect(slotSpecOf(followApp(), 'libraryTopic').questions(ctx(first.result.session, FIRST))).not.toHaveProperty('libraryTopicContinues');
+      const answerVars = (t: Turn) => ('acks' in t.result.decision ? t.result.decision.acks.find((x) => x.promptId === 'kb_documents_answer') : undefined)?.vars;
+      // Read as continuing it at KB_FOLLOW_UP (0.2) or above: worded with it.
+      const continued = asked(app, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], first.result.session, { libraryTopicContinues: noul(0.3) });
+      expect(answerVars(continued)).toMatchObject({ answerQuestion: NEXT, answerEarlier: FIRST });
+      // Below it, a question of its own: worded alone, and still kept for the next.
+      const own = asked(app, 'is there wifi', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 }, ['opening_hours'], first.result.session, { libraryTopicContinues: noul(0.1) });
+      expect(answerVars(own)).toMatchObject({ answerQuestion: 'is there wifi' });
+      expect(answerVars(own)).not.toHaveProperty('answerEarlier');
+      expect(own.result.session.kbEarlier).toMatchObject({ question: 'is there wifi' });
+      // never: the question alone, whatever the reading.
+      const never = withWording('library-documents-follow-ups-never', 'never');
+      const firstNever = asked(never, FIRST, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
+      expect(slotSpecOf(never, 'libraryTopic').questionIds).not.toContain('libraryTopicContinues');
+      expect(answerVars(asked(never, NEXT, { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }, ['opening_hours'], firstNever.result.session))).not.toHaveProperty('answerEarlier');
     });
 
     it('the wording, the judge and the lines picker are given the earlier question, with instructions that name it', async () => {

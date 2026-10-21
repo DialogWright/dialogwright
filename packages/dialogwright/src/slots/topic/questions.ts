@@ -14,6 +14,9 @@ export const sectionQuestionIdOf = (slot: string, i: number): string => `${slot}
 
 export { SECTIONS_VALUE_PREFIX, sectionKeysOf } from '../../kb/sectionTexts';
 
+/** The id of the yes-or-no whether a topic slot's question continues the caller's earlier one: the slot's id and `Continues`. */
+export const continuesIdOf = (slot: string): string => `${slot}Continues`;
+
 /** The id of a topic slot's question: the slot's id followed by `Topic`, unless `ids.choice` says otherwise. */
 export const topicIdOf = (slot: string, o: Pick<TopicOptions, 'ids'>): string => o.ids?.choice ?? `${slot}Topic`;
 
@@ -41,7 +44,7 @@ export function offeredTopics(nominated: readonly Nomination[] | undefined, cap:
  * and `none`. With nothing nominated (no retrieval this turn, or nothing found) the slot asks nothing, so
  * a turn with no plausible topic costs nothing.
  */
-export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx: SlotContext) => QuestionMap {
+export function topicQuestions(slot: string, o: TopicOptions, cap: number, continued = false): (ctx: SlotContext) => QuestionMap {
   const id = topicIdOf(slot, o);
   const retry = o.unanswered === 'retry';
   const instructions = retry && o.text?.instructions === undefined ? UNANSWERED_DEFAULTS.instructions : TOPIC_PARTS.render('instructions', o.text, {});
@@ -67,6 +70,9 @@ export function topicQuestions(slot: string, o: TopicOptions, cap: number): (ctx
       const template = ctx.earlier !== undefined ? (o.text?.sectionEarlier ?? TOPIC_PARTS.defs.sectionEarlier.template) : (o.text?.section ?? TOPIC_PARTS.defs.section.template);
       questions[sectionQuestionIdOf(slot, i)] = { type: 'noul', instructions: renderTemplate(template, vars, `the topic slot ${slot}'s text.section`) };
     });
+    // With follow-ups worded only where they continue (kb.yaml documents.followUpWording: continued) and an
+    // earlier question on the call: whether this one continues it.
+    if (continued && ctx.earlier !== undefined && sections.length > 0) questions[continuesIdOf(slot)] = { type: 'noul', instructions: TOPIC_PARTS.render('continues', o.text, {}) };
     // With sections and no topic offered (an app that answers from documents alone), the question is
     // still asked, with its two labels: whether the caller asked something none of them answers, or
     // asked nothing, so a question nothing answers hears the not-found reply.

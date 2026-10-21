@@ -2500,7 +2500,7 @@
             ]
           },
           "text": {
-            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, section, sectionEarlier, sectionScore, sectionNone, sectionLittle, sectionPartly, sectionMostly, sectionCompletely, unanswered.",
+            "description": "Text to say to the model in place of a default, word for word, by part: instructions, none, section, sectionEarlier, continues, sectionScore, sectionNone, sectionLittle, sectionPartly, sectionMostly, sectionCompletely, unanswered.",
             "type": "object",
             "properties": {
               "instructions": {
@@ -2523,6 +2523,12 @@
               },
               "sectionEarlier": {
                 "description": "With follow-ups (kb.yaml documents.followUps) and an earlier question on the call, the yes-or-no asked of each nominated section in place of `section`: the same, read with the caller's earlier question (the turn state's earlierQuestion). A template over {document}, {heading} and {text}, as `section` is.",
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              },
+              "continues": {
+                "description": "With follow-ups and kb.yaml documents.followUpWording `continued`, the yes-or-no asked beside the sections when there is an earlier question on the call: whether the caller's question continues it, so its answer is worded with it (at KB_FOLLOW_UP or above).",
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001f\\u007f]*$"

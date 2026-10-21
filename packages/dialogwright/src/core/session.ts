@@ -53,6 +53,13 @@ export interface SlotState {
    */
   heard?: string;
   /**
+   * The caller's question the slot was filled from continues their earlier one (SlotOutcome filled
+   * `continues`: a topic slot with kb.yaml documents.followUpWording `continued`), so its answer is worded
+   * with the earlier question. Absent on every other slot (so a session of every other app is as it was),
+   * and gone when the slot is emptied or filled from a question that does not.
+   */
+  continues?: true;
+  /**
    * A miss said before the slot was asked (SlotOutcome invalid `held`: a topic slot's question no topic
    * answers, asked with the request that opened the form), with the line the slot gave for it: when the
    * form comes to the slot, the miss is said and counted in place of its question, once. Absent on every

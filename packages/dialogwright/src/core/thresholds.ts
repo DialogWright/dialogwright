@@ -75,6 +75,12 @@ export const DEFAULT_THRESHOLDS = {
   // only at this or above (slots/topic/fill.ts): a held reply says nothing was found, so it must be sure the
   // caller asked something (a bare "coverage" read unanswered 0.55 against none 0.40, Harbor, 2026-10-17)
   KB_UNANSWERED: 0.65,
+  // knowledge: with kb.yaml documents.followUpWording `continued`, a question is worded and judged with the
+  // caller's earlier one only where the model reads it as continuing it at this or above (slots/topic/fill.ts).
+  // Low, as the reading runs low on a follow-up that names something of its own ("what about acupuncture?"):
+  // on a booklet's 56 follow-ups and 53 questions that stand on their own after another, 0.2 kept the earlier
+  // question for 49 follow-ups and left it off 49 of the others (0.5: 34 and 52), 2026-10-21
+  KB_FOLLOW_UP: 0.2,
   // confirmations and menus
   CONFIRM_YES: 0.7,
   CONFIRM_NO: 0.7,

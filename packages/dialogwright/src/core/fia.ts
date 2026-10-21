@@ -391,6 +391,11 @@ export function fillSlots(session: Session, answers: AnswerMap, ctx: SlotContext
         delete slot.missed;
         // A topic slot whose answer the app words for the caller's question keeps the words it was heard in.
         if (isNew) keepHeard(session, spec.id, slot, ctx.text);
+        // And whether that question continues the caller's earlier one (SlotState.continues).
+        if (isNew) {
+          if (outcome.continues === true) slot.continues = true;
+          else delete slot.continues;
+        }
         if (policy === 'by-confidence' && outcome.confirm === 'implicit') acks.push({ promptId: `ack_${spec.id}`, vars: { [spec.id]: outcome.display } });
         if (isNew) progress = true;
         break;

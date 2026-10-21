@@ -34,6 +34,8 @@ export interface KbSettings {
     readonly embedder?: DocumentsEmbedder;
     /** A question read with the caller's earlier one (kb.yaml documents.followUps): its sections found with it too, and the decision model shown it. */
     readonly followUps?: 'on' | 'off';
+    /** With followUps, when the wording and its judge are given the earlier question (kb.yaml documents.followUpWording; absent: always). */
+    readonly followUpWording?: 'always' | 'continued' | 'never';
   };
 }
 
@@ -275,6 +277,8 @@ export interface TopicCatalog {
   readonly topics: readonly CatalogTopic[];
   /** How many nominated topics a turn offers, when the knowledge says (kb.yaml's retrieval.cap). */
   readonly cap?: number;
+  /** kb.yaml documents.followUpWording `continued`: a topic slot asks whether a question continues the caller's earlier one. */
+  readonly followUpWording?: 'continued';
 }
 
 /**

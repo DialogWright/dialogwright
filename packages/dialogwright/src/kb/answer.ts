@@ -232,9 +232,13 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     if (s.kbNotFound !== undefined) s.kbNotFound = { ...s.kbNotFound, row: 0 };
     // A follow-up is read with the caller's earlier question (kb.yaml documents.followUps): the one before
     // this answer goes beside it, and this question is kept for the next.
+    // Its wording and judge are given the earlier question as kb.yaml documents.followUpWording says: always,
+    // only where the decision model read this one as continuing it (SlotState.continues), or never.
     const followUps = app.knowledge?.kb?.settings.documents?.followUps === 'on';
+    const wording = app.knowledge?.kb?.settings.documents?.followUpWording ?? 'always';
     const asked = s.slots[opts.slot]?.heard;
-    const earlier = followUps && s.kbEarlier !== undefined && s.kbEarlier.question !== asked ? s.kbEarlier.question : undefined;
+    const worded = wording === 'always' || (wording === 'continued' && s.slots[opts.slot]?.continues === true);
+    const earlier = followUps && worded && s.kbEarlier !== undefined && s.kbEarlier.question !== asked ? s.kbEarlier.question : undefined;
     if (followUps && asked !== undefined && asked !== '') s.kbEarlier = { question: asked, ...(result.source.from === 'documents' && (result.source.sections ?? []).length > 0 ? { sections: [...result.source.sections!] } : {}) };
     // An answer from sections of approved documents (kb.yaml documents): the line's fixed text is what is
     // said when it cannot be worded (onFail: the not-found line, or the best section's opening), and the

@@ -155,6 +155,15 @@
             "on",
             "off"
           ]
+        },
+        "followUpWording": {
+          "description": "With followUps on, when the wording model and the drift judge are given the caller's earlier question beside their question. always (the default): every time, so a new question after another may be answered with the earlier one's subject too, which the judge then refuses. continued: only where the decision model reads the question as continuing the earlier one (\"what about for a family?\"), one more yes-or-no in the same request (the topic slot's <slot>Continues, at KB_FOLLOW_UP). never: the question alone (sections are still found and read with the earlier question).",
+          "type": "string",
+          "enum": [
+            "always",
+            "continued",
+            "never"
+          ]
         }
       },
       "additionalProperties": false

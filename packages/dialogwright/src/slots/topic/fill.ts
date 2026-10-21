@@ -5,7 +5,7 @@ import type { TopicCatalog } from '../../kb/types';
 import { meetsThreshold } from '../parts/thresholds';
 import { SECTION_LEVELS, type TopicOptions } from './options';
 import { MAX_SECTIONS_OFFERED } from '../../kb/schema';
-import { offeredTopics, sectionQuestionIdOf, SECTIONS_VALUE_PREFIX } from './questions';
+import { continuesIdOf, offeredTopics, sectionQuestionIdOf, SECTIONS_VALUE_PREFIX } from './questions';
 import { noulValue } from '../../jev/types';
 
 /**
@@ -86,7 +86,9 @@ export function topicFill(
       .slice(0, MAX_ANSWER_SECTIONS);
     if (answering.length === 0) return out;
     const value = `${SECTIONS_VALUE_PREFIX}${answering.map((x) => x.s.key).join('|')}`;
-    return { kind: 'filled', value, display: display(value, ctx.locale), confidence: answering[0]!.p, confirm: 'none' };
+    // A question read as continuing the caller's earlier one (asked only with followUpWording: continued).
+    const continues = ctx.earlier !== undefined && answers[continuesIdOf(slot)] !== undefined && meetsThreshold(ctx.thresholds, 'KB_FOLLOW_UP', noulValue(answers, continuesIdOf(slot)));
+    return { kind: 'filled', value, display: display(value, ctx.locale), confidence: answering[0]!.p, confirm: 'none', ...(continues ? { continues: true as const } : {}) };
   };
 }
 

@@ -34,6 +34,11 @@ export const TOPIC_PARTS = textParts('topic', {
     vars: ['document', 'heading', 'text'],
     about: 'With follow-ups (kb.yaml documents.followUps) and an earlier question on the call, the yes-or-no asked of each nominated section in place of `section`: the same, read with the caller\'s earlier question (the turn state\'s earlierQuestion). A template over {document}, {heading} and {text}, as `section` is.',
   },
+  continues: {
+    template: "Read asr.text, the caller's question, and earlierQuestion, their earlier question on this call. Does asr.text continue earlierQuestion, so that it cannot be understood without it (as \"what about for a family?\" or \"and out of network?\" continue it), rather than ask something that stands on its own (a whole new question, or the name of something new, even on a related subject)?",
+    vars: [],
+    about: 'With follow-ups and kb.yaml documents.followUpWording `continued`, the yes-or-no asked beside the sections when there is an earlier question on the call: whether the caller\'s question continues it, so its answer is worded with it (at KB_FOLLOW_UP or above).',
+  },
   sectionScore: {
     template: 'Read asr.text. How much of what the caller asks does this section of the {document} answer? {heading}: {text}',
     vars: ['document', 'heading', 'text'],
