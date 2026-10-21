@@ -128,7 +128,11 @@ function judgeText(l) {
   const j = l.judge;
   if (j === null || typeof j !== 'object' || typeof j.score !== 'number' || !Number.isFinite(j.score) || typeof j.refuseAt !== 'number' || !Number.isFinite(j.refuseAt)) return {};
   const added = j.added !== null && typeof j.added === 'object' && typeof j.added.score === 'number' && typeof j.added.refuseAt === 'number' ? `; added ${judgeNumber(j.added.score)} (cutoff ${judgeNumber(j.added.refuseAt)})` : '';
-  const at = `${judgeNumber(j.score)} (cutoff ${judgeNumber(j.refuseAt)})${added}`;
+  const c = j.compare;
+  const compared = c !== null && typeof c === 'object' && typeof c.figure === 'string' && typeof c.score === 'number' && Array.isArray(c.lines)
+    ? `; ${c.figure}: the wording says ${c.said} (${judgeNumber(c.score)}), the sections ${c.lines.join(', ')}`
+    : '';
+  const at = `${judgeNumber(j.score)} (cutoff ${judgeNumber(j.refuseAt)})${added}${compared}`;
   if (l.mode === 'generated') return { judge: `the judge passed it at ${at}` };
   return l.fallback === 'drift' ? { judge: `refused at ${at}` } : {};
 }

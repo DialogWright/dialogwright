@@ -321,6 +321,8 @@ export interface RenderJudge {
    * adds something of its own, and its cutoff); the wording is refused only where both reach their cutoffs.
    */
   added?: { score: number; refuseAt: number };
+  /** With style.yaml judge.compareFigures: the figure whose picks differed (the wording's, at its probability, and the lines'), where one did. */
+  compare?: { figure: string; said: string; score: number; lines: readonly string[]; refuseAt: number };
 }
 
 /**

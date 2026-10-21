@@ -1,3 +1,4 @@
+import { styleSchema } from '../define/schema/style';
 import { describe, expect, it } from 'vitest';
 import type { FormsYaml, PromptYaml } from '../define/schema/index';
 import { DRIFT_FIRE } from './checks';
@@ -524,5 +525,29 @@ describe('a knowledge answer worded for the caller\'s question (from: answer; th
     expect(warn({ kb_answer: framedAnswer() }, { es: esFramed })).toEqual([expect.stringMatching(/^locale\/es\/prompts\.yaml: the line "kb_answer" words its answer in es, which has no kb_hold of its own/)]);
     expect(warn({ kb_answer: framedAnswer(), kb_hold: line('Hold on.') }, { es: { ...esFramed, kb_hold: line('Un momento.') } })).toEqual([]);
     expect(warn({ kb_answer: framedAnswer() }, {}, 'es-MX')).toEqual([expect.stringMatching(/^prompts\.yaml: the line "kb_answer" words its answer, and prompts\.yaml \(es-MX\) has no kb_hold/)]);
+  });
+});
+
+describe('the documents judge\'s settings (style.yaml judge.documentsAsk, documentsAddedAt, documentsDriftAloneAt, compareFigures)', () => {
+  it('are carried to the turn where style.yaml gives them, the comparison with its default cutoff', () => {
+    expect(styleOf(null)).not.toHaveProperty('documentsAsk');
+    const cmp = { question: 'who pays {figure}?', options: { caller: 'The caller pays {figure}', unsaid: 'It does not say' }, unsaid: 'unsaid' };
+    expect(styleOf({ judge: { documentsAsk: 'both', documentsAddedAt: 0.25, documentsDriftAloneAt: 0.7, compareFigures: cmp } })).toMatchObject({ documentsAsk: 'both', documentsAddedAt: 0.25, documentsDriftAloneAt: 0.7, compareFigures: { ...cmp, refuseAt: 0.5 } });
+  });
+
+  it('warn where a cutoff is less cautious than its default', () => {
+    const warned = (judge: Record<string, number>) => generatedWordingWarnings({ prompts: {}, forms: {}, localePrompts: {}, style: { judge } }).map((w) => w.path.join('.'));
+    expect(warned({ documentsAddedAt: 0.4 })).toEqual(['judge.documentsAddedAt']);
+    expect(warned({ documentsDriftAloneAt: 0.8 })).toEqual(['judge.documentsDriftAloneAt']);
+    expect(warned({ documentsAddedAt: 0.3, documentsDriftAloneAt: 0.75 })).toEqual([]);
+  });
+
+  it('refuse a comparison whose unsaid option is not one of its options, or that has one option', () => {
+    const judge = (compareFigures: unknown) => styleSchema.safeParse({ judge: { compareFigures } });
+    expect(judge({ question: 'who pays {figure}?', options: { caller: 'a', other: 'b', unsaid: 'c' }, unsaid: 'unsaid' }).success).toBe(true);
+    const bad = judge({ question: 'who pays {figure}?', options: { caller: 'a', other: 'b' }, unsaid: 'none' });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues.map((i) => i.message)).toContain('"none" is not one of the options');
+    expect(judge({ question: 'q', options: { unsaid: 'c' }, unsaid: 'unsaid' }).error?.issues.map((i) => i.message)).toContain('has fewer than two options');
   });
 });

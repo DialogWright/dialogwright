@@ -361,6 +361,34 @@ describe('the answer worded from the sections, checked against them', () => {
     expect(docLine(await rendered(app, t, renderer(), both(0.8, 0.4)))).toMatchObject({ mode: 'fixed', fallback: 'drift' });
   });
 
+  it('with judge.compareFigures, each figure is asked of the wording alone and of the lines that give it, in a request of its own, and a mismatch refuses the wording', async () => {
+    const style = "# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\njudge:\n  compareFigures:\n    question: who pays {figure}?\n    options:\n      reader: The reader pays {figure}\n      other: Someone else pays {figure}\n      unsaid: It does not say who pays {figure}\n    unsaid: unsaid\n";
+    const printing = '    text: Printing and copying cost 15 cents a page in black and white and 50 cents a page in color. Print from a branch computer, or send a file to print@library.example.com and collect it at the desk within two days.\n';
+    expect(VISITOR_GUIDE).toContain(printing);
+    const app = documentsApp('library-documents-compare', { edits: { 'style.yaml': style, 'kb/sources/visitor-guide.yaml': VISITOR_GUIDE.replace(printing, '    text: "Printing: Your payment (A page in black and white: $0.15; A page in color: $0.50)"\n') } });
+    const t = asked(app, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 });
+    const states: unknown[] = [];
+    const comparing = (said: string): JevClient => {
+      const base = at(0.05);
+      return { ask: async (req) => {
+        if (!Object.keys(req.questions).some((id) => id.startsWith('renderCompare'))) return base.ask(req);
+        states.push(req.state);
+        const pick = (label: string) => ({ type: 'choice' as const, choice: label, probabilities: { [label]: 0.8 }, confidence: 0.8 });
+        return { answers: Object.fromEntries(Object.keys(req.questions).map((id) => [id, pick(id.endsWith('Said') ? said : 'reader')])), model: 'stub', usage: { inputTokens: 1, outputTokens: 1, estimated: false }, latencyMs: 0, source: 'stub:heuristic' };
+      } };
+    };
+    const wording = 'The library pays $0.50 a page for color printing.';
+    const out = await rendered(app, t, renderer({ eachSpan: () => wording }), comparing('other'));
+    expect(states[0]).toEqual({ answer: { said: wording } });
+    expect(docLine(out)).toMatchObject({ mode: 'fixed', fallback: 'drift', judge: { score: 0.05, compare: { figure: '$0.50', said: 'other', lines: ['reader'], refuseAt: 0.5 } } });
+    // The same pick: said.
+    expect(docLine(await rendered(app, t, renderer({ eachSpan: () => wording }), comparing('reader')))).toMatchObject({ mode: 'generated' });
+    // Without the setting, nothing is compared.
+    states.length = 0;
+    await rendered(APP, asked(APP, 'how much is color printing', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#printing': 0.93 }), renderer({ eachSpan: () => wording }), comparing('other'));
+    expect(states).toEqual([]);
+  });
+
   it('how figures are written (style.yaml figures) goes to the model with the style, and nothing where the app says none', async () => {
     const symbols = documentsApp('library-documents-figures', { edits: { 'style.yaml': '# yaml-language-server: $schema=../../../../packages/dialogwright/schemas/style.schema.json\nfigures: symbols\n' } });
     const t = asked(symbols, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });

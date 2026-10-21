@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { text, unique } from './common';
+import { checkAlways, identifier, text, unique } from './common';
 import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from '../../render/checks';
 import { RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
 
@@ -57,6 +57,29 @@ export const styleSchema = z
           .max(1, { error: 'must be at most 1' })
           .optional()
           .describe(`With documentsAsk added or both: the probability that a wording adds something of its own at or above which the added reading refuses it. Default ${ADDED_FIRE}. Above it, less cautious (pnpm check warns).`),
+        compareFigures: z
+          .strictObject({
+            question: text().describe('The question asked of each figure, with {figure} where it goes: "who pays {figure}?".'),
+            options: z
+              .record(identifier(), text())
+              .describe('Its options by label, each a template with {figure}: caller: "The caller pays {figure}", other: "Someone else pays {figure}", unsaid: "It does not say who pays {figure}".'),
+            unsaid: identifier().describe('The option that says nothing either way: a pick of it is never a mismatch.'),
+            refuseAt: z
+              .number({ error: 'must be a number' })
+              .gt(0, { error: 'must be more than 0' })
+              .max(1, { error: 'must be at most 1' })
+              .optional()
+              .describe('The probability of the wording\'s pick at or above which a mismatch refuses it. Default 0.5.'),
+          })
+          .check(checkAlways((value, ctx) => {
+            const v = value as { options?: Record<string, unknown>; unsaid?: unknown };
+            if (typeof v !== 'object' || v === null || typeof v.options !== 'object' || v.options === null) return;
+            const labels = Object.keys(v.options);
+            if (labels.length < 2) ctx.addIssue({ code: 'custom', path: ['options'], message: 'has fewer than two options', params: { fix: 'give two options at least, one of them the unsaid one' } });
+            if (typeof v.unsaid === 'string' && !labels.includes(v.unsaid)) ctx.addIssue({ code: 'custom', path: ['unsaid'], message: `"${v.unsaid}" is not one of the options`, params: { fix: `name one of ${labels.join(', ')}` } });
+          }))
+          .optional()
+          .describe('A question asked of each figure (an amount or a percentage) an answer from documents gives, and of each line of the sections that gives it, read apart with the same options; the wording is refused where its pick, other than unsaid, is at refuseAt or above and differs from every line\'s that says something. Off by default; the app\'s own question, as what a figure is about is the app\'s domain: on a booklet\'s 134 labelled answers, "who pays {figure}?" caught 3 of the 5 that turned who pays around and refused no faithful one (pnpm render:judge-eval --style <style.yaml>).'),
         documentsDriftAloneAt: z
           .number({ error: 'must be a number' })
           .gt(0, { error: 'must be more than 0' })

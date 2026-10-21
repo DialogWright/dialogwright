@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, cleanAnswer, foreignFigure, renderAnswerDriftQuestion, renderAnswerDriftState, spelledNumbers, wordCount } from './checks';
+import { ANSWER_DRIFT_QUESTION_ID, checkAnswer, compareQuestions, compareReading, figuresToCompare, sectionLines, cleanAnswer, foreignFigure, renderAnswerDriftQuestion, renderAnswerDriftState, spelledNumbers, wordCount } from './checks';
 import { stubAnswerDrift } from '../jev/heuristicStub';
 import { fakeAnswerWording } from './fake';
 import { ANSWER_INSTRUCTIONS, instructionsOf, spanSentence } from './prompt';
@@ -108,6 +108,8 @@ describe('checkAnswer: the wording held to the passage\'s data and shape', () =>
     expect(checkAnswer('Unfortunately, prescriptions are not covered.', act())).toBe('avoid');
     expect(checkAnswer('**No**, prescriptions are not covered.', act())).toBe('format');
     expect(checkAnswer('No.\nPrescriptions are not covered.', act())).toBe('format');
+    // Its first words lost (live, 2026-10-21: ", your plan covers physical therapy").
+    expect(checkAnswer(', prescriptions are not covered by this plan.', act())).toBe('format');
     expect(checkAnswer('', act())).toBe('empty');
   });
 });
@@ -137,5 +139,33 @@ describe('the fake renderer\'s answer (a test double)', () => {
     expect(fakeAnswerWording(act())).toBe('Prescriptions are not covered by this plan.');
     expect(fakeAnswerWording(act(DEADLINE, 'how long do i have to file a claim'))).toBe(DEADLINE);
     expect(fakeAnswerWording(act('We are open every day. The cafe closes at noon.', 'when do you open'))).toBe('We are open every day. The cafe closes at noon.');
+  });
+});
+
+describe('the figure comparison (style.yaml judge.compareFigures)', () => {
+  const SECTIONS = ['Fees: Late return: Your payment (Before the due date: $0; After the due date: $1 a day; With a waiver: 50%) Lost item: Your payment (Any day: $25)', 'A note on renewals: renewals cost $0.'];
+  const cmp = { question: 'who pays {figure}?', options: { borrower: 'The borrower pays {figure}', other: 'Someone else pays {figure}', unsaid: 'It does not say who pays {figure}' }, unsaid: 'unsaid', refuseAt: 0.5 };
+  const choice = (label: string, p = 0.9) => ({ type: 'choice' as const, choice: label, probabilities: { [label]: p }, confidence: p });
+
+  it('reads the sections as lines (a table\'s rows apart) and finds each amount or percentage the wording gives in them, by its digits', () => {
+    expect(sectionLines(SECTIONS)).toEqual(['Fees: Late return: Your payment (Before the due date: $0; After the due date: $1 a day; With a waiver: 50%)', 'Lost item: Your payment (Any day: $25)', 'A note on renewals: renewals cost $0.']);
+    const found = figuresToCompare('A late return costs $1 a day, half (50%) with a waiver, and a lost item $25; 3 notices are sent.', SECTIONS);
+    expect(found.map((f) => [f.figure, f.lines.length])).toEqual([['$1', 1], ['50%', 1], ['$25', 1]]);
+    // A figure no line gives is the figure check's (foreign), not compared.
+    expect(figuresToCompare('It costs $99.', SECTIONS)).toEqual([]);
+  });
+
+  it('asks the wording and each line the same question with the same options, and refuses only where the wording\'s pick differs from every line\'s that says something', () => {
+    const figures = figuresToCompare('The library pays the $25 for a lost item.', SECTIONS);
+    const qs = compareQuestions(cmp, figures);
+    expect(Object.keys(qs)).toEqual(['renderCompare0Said', 'renderCompare0Line0']);
+    expect(qs.renderCompare0Said).toMatchObject({ type: 'choice', criteria: { borrower: 'The borrower pays $25', unsaid: 'It does not say who pays $25' } });
+    expect(String((qs.renderCompare0Said as { instructions: string }).instructions)).toContain('According to answer.said, who pays $25?');
+    expect(String((qs.renderCompare0Line0 as { instructions: string }).instructions)).toContain('Lost item: Your payment (Any day: $25) According to this line, who pays $25?');
+    expect(compareReading(cmp, figures, { renderCompare0Said: choice('other', 0.8), renderCompare0Line0: choice('borrower') })).toEqual({ figure: '$25', said: 'other', score: 0.8, lines: ['borrower'] });
+    // The same pick, the wording saying nothing, or every line saying nothing: no mismatch.
+    expect(compareReading(cmp, figures, { renderCompare0Said: choice('borrower'), renderCompare0Line0: choice('borrower') })).toBeNull();
+    expect(compareReading(cmp, figures, { renderCompare0Said: choice('unsaid'), renderCompare0Line0: choice('borrower') })).toBeNull();
+    expect(compareReading(cmp, figures, { renderCompare0Said: choice('other'), renderCompare0Line0: choice('unsaid') })).toBeNull();
   });
 });

@@ -73,6 +73,46 @@
           "exclusiveMinimum": 0,
           "maximum": 1
         },
+        "compareFigures": {
+          "description": "A question asked of each figure (an amount or a percentage) an answer from documents gives, and of each line of the sections that gives it, read apart with the same options; the wording is refused where its pick, other than unsaid, is at refuseAt or above and differs from every line's that says something. Off by default; the app's own question, as what a figure is about is the app's domain: on a booklet's 134 labelled answers, \"who pays {figure}?\" caught 3 of the 5 that turned who pays around and refused no faithful one (pnpm render:judge-eval --style <style.yaml>).",
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The question asked of each figure, with {figure} where it goes: \"who pays {figure}?\"."
+            },
+            "options": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Its options by label, each a template with {figure}: caller: \"The caller pays {figure}\", other: \"Someone else pays {figure}\", unsaid: \"It does not say who pays {figure}\"."
+            },
+            "unsaid": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "description": "The option that says nothing either way: a pick of it is never a mismatch."
+            },
+            "refuseAt": {
+              "description": "The probability of the wording's pick at or above which a mismatch refuses it. Default 0.5.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "question",
+            "options",
+            "unsaid"
+          ],
+          "additionalProperties": false
+        },
         "documentsDriftAloneAt": {
           "description": "With documentsAsk both: the drift reading at or above which a wording is refused whatever the added reading says (a condition stretched or a figure moved adds nothing of its own). Default 0.75. Above it, less cautious (pnpm check warns).",
           "type": "number",

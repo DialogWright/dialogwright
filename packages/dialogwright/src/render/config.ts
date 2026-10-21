@@ -2,7 +2,7 @@ import type { FormId, GeneratedLine, GeneratedSpan, GeneratedWording, RenderStyl
 import type { FormsYaml, PromptYaml, StyleYaml } from '../define/schema/index';
 import { DEFAULT_SPAN_WORDS } from '../define/schema/prompts';
 import { DEFAULT_WORDS } from '../define/schema/style';
-import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from './checks';
+import { ADDED_FIRE, COMPARE_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from './checks';
 import { SPAN_GAP } from './types';
 
 /** The persona a generated line has when style.yaml names none. */
@@ -118,6 +118,7 @@ export function styleOf(style: StyleYaml | null | undefined): RenderStyle {
     ...(style?.judge?.documentsAsk !== undefined ? { documentsAsk: style.judge.documentsAsk } : {}),
     ...(style?.judge?.documentsAddedAt !== undefined ? { documentsAddedAt: style.judge.documentsAddedAt } : {}),
     ...(style?.judge?.documentsDriftAloneAt !== undefined ? { documentsDriftAloneAt: style.judge.documentsDriftAloneAt } : {}),
+    ...(style?.judge?.compareFigures !== undefined ? { compareFigures: { ...style.judge.compareFigures, refuseAt: style.judge.compareFigures.refuseAt ?? COMPARE_FIRE } } : {}),
   };
 }
 

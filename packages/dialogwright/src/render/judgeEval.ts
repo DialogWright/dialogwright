@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { CASSETTE_MISS } from '../jev/cassette';
 import { stubAnswerDrift, stubDocumentsDrift, stubSpanDrift } from '../jev/heuristicStub';
 import { isNoul, type JevClient, type JsonValue } from '../jev/types';
-import { ADDED_FIRE, addedReading, DRIFT_ALONE_FIRE, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
+import { ADDED_FIRE, addedReading, compareQuestions, compareReading, compareState, DRIFT_ALONE_FIRE, figuresToCompare, type FigureComparison, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkSpan, cleanAnswer, cleanSpan, DRIFT_FIRE, renderAnswerDriftQuestion, renderAnswerDriftState, renderSpanDriftQuestion, renderSpanDriftState, sameWords, SPAN_DRIFT_QUESTION_ID, wordCount } from './checks';
 import { answerWordBudget, DEFAULT_DOCUMENTS_WORDS } from './config';
 import { spanSentence } from './prompt';
 import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, type RenderFallback, type SpanAct } from './types';
@@ -178,7 +178,7 @@ export type CodeVerdict = RenderFallback | 'unchanged' | null;
  * anything; refused at `fire`, DRIFT_FIRE where absent), with `both` the added reading beside it (refused only
  * where both reach their cutoffs), or why there is none.
  */
-export type JudgeVerdict = { p: number; fire?: number; added?: { p: number; fire: number; alone: number } } | { missing: string } | { error: string };
+export type JudgeVerdict = { p: number; fire?: number; added?: { p: number; fire: number; alone: number }; compare?: { figure: string; said: string; p: number; lines: readonly string[]; fire: number } } | { missing: string } | { error: string };
 
 export interface CaseResult {
   readonly case: JudgeCase;
@@ -206,7 +206,8 @@ function codeVerdict(c: JudgeCase): CodeVerdict {
 
 /** Whether a reader refuses the span (the data checks: a check's name; the judge: at or above its cutoff, DRIFT_FIRE unless it says). */
 export const refusedByCode = (v: CodeVerdict): boolean => v !== null && v !== 'unchanged';
-export const refusedByJudge = (v: JudgeVerdict): boolean | null => ('p' in v ? (v.added !== undefined && v.p >= v.added.alone) || (v.p >= (v.fire ?? DRIFT_FIRE) && (v.added === undefined || v.added.p >= v.added.fire)) : null);
+export const refusedByJudge = (v: JudgeVerdict): boolean | null =>
+  'p' in v ? (v.added !== undefined && v.p >= v.added.alone) || (v.p >= (v.fire ?? DRIFT_FIRE) && (v.added === undefined || v.added.p >= v.added.fire)) || (v.compare !== undefined && v.compare.p >= v.compare.fire) : null;
 
 export interface EvalProgress {
   (line: string): void;
@@ -218,14 +219,20 @@ export interface EvalProgress {
  * that are not misses stop the asking (a key refused, the endpoint down): the cases after are `error` too.
  * `redact` is applied to every error text kept (the command passes the key, so it is never printed).
  */
-export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClient, opts: { timeoutMs?: number; redact?: (s: string) => string; progress?: EvalProgress; documentsAsk?: DocumentsAsk } = {}): Promise<CaseResult[]> {
+export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClient, opts: { timeoutMs?: number; redact?: (s: string) => string; progress?: EvalProgress; documentsAsk?: DocumentsAsk; compareFigures?: FigureComparison } = {}): Promise<CaseResult[]> {
   const ask = opts.documentsAsk ?? 'drift';
   const redact = opts.redact ?? ((s: string) => s);
   const out: CaseResult[] = [];
   let failedRunning = 0;
   let stopped: string | null = null;
   for (const [i, c] of cases.entries()) {
-    const req = judgeRequest(c, ask);
+    const base = judgeRequest(c, ask);
+    // An app's question of each figure (judge.compareFigures), asked as a call asks it, for an answer from documents.
+    const cmp = c.speaks === 'documents' ? opts.compareFigures : undefined;
+    const figures = cmp !== undefined ? figuresToCompare(cleanAnswer(c.span, actOf(c)), c.content.split('\n\n')) : [];
+    const req = base;
+    // The comparison is a request of its own, the wording alone in its state, as a call sends it.
+    const compareReq = cmp !== undefined && figures.length > 0 ? { state: compareState(cleanAnswer(c.span, actOf(c))) as unknown as JsonValue, questions: compareQuestions(cmp, figures) } : null;
     let verdict: JudgeVerdict;
     if (stopped !== null) verdict = { error: stopped };
     else {
@@ -235,9 +242,16 @@ export async function evaluateCases(cases: readonly JudgeCase[], judge: JevClien
         const documents = c.speaks === 'documents';
         const p = documents && ask === 'added' ? addedReading(a) : isNoul(a) ? a.noul : null;
         const addedP = documents && ask === 'both' ? addedReading(r.answers[DOCUMENTS_ADDED_QUESTION_ID]) : undefined;
+        const compared = compareReq !== null ? await judge.ask({ ...compareReq, ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}) }) : null;
+        const mismatch = cmp !== undefined && compared !== null ? compareReading(cmp, figures, compared.answers) : null;
         verdict = p === null || addedP === null
           ? { error: 'the answer was not a probability' }
-          : { p, ...(documents && ask === 'added' ? { fire: ADDED_FIRE } : {}), ...(addedP !== undefined ? { added: { p: addedP, fire: ADDED_FIRE, alone: DRIFT_ALONE_FIRE } } : {}) };
+          : {
+              p,
+              ...(documents && ask === 'added' ? { fire: ADDED_FIRE } : {}),
+              ...(addedP !== undefined ? { added: { p: addedP, fire: ADDED_FIRE, alone: DRIFT_ALONE_FIRE } } : {}),
+              ...(mismatch !== null && cmp !== undefined ? { compare: { figure: mismatch.figure, said: mismatch.said, p: mismatch.score, lines: mismatch.lines, fire: cmp.refuseAt } } : {}),
+            };
         failedRunning = 0;
       } catch (e) {
         const message = redact(e instanceof Error ? e.message : String(e));
@@ -317,6 +331,8 @@ export interface JudgeEvalReport {
   readonly results: readonly CaseResult[];
   /** What the documents judge was asked (style.yaml judge.documentsAsk); absent: drift. */
   readonly documentsAsk?: DocumentsAsk;
+  /** The app's question of each figure (style.yaml judge.compareFigures), where it was asked. */
+  readonly compareFigures?: FigureComparison;
   /** How long the judge took, timed on the requests this run sent it (none when every answer was replayed). */
   readonly latency?: JudgeLatency;
 }
@@ -375,7 +391,7 @@ export function formatJudgeEval(report: JudgeEvalReport): string[] {
   const lines: string[] = [
     '# The span drift judge and the data checks',
     '',
-    `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above${report.documentsAsk === 'added' ? `, and an answer from documents is asked how much of it is its own (judge.documentsAsk: added), refused where the probability that it adds anything is ${ADDED_FIRE} or above` : report.documentsAsk === 'both' ? `, and an answer from documents is asked that and how much of it is its own (judge.documentsAsk: both), refused where the first is ${DRIFT_FIRE} or above and the probability that it adds anything ${ADDED_FIRE} or above, or the first alone ${DRIFT_ALONE_FIRE} or above` : ''}. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
+    `${all.length} cases (${unfaithful.length} unfaithful, ${faithful.length} faithful) from ${report.casesFile}. The judge: ${report.model} (${report.provider}), ${report.replay ? 'replayed from' : 'recorded into'} ${report.cassette}; it refuses at ${DRIFT_FIRE} or above${report.documentsAsk === 'added' ? `, and an answer from documents is asked how much of it is its own (judge.documentsAsk: added), refused where the probability that it adds anything is ${ADDED_FIRE} or above` : report.documentsAsk === 'both' ? `, and an answer from documents is asked that and how much of it is its own (judge.documentsAsk: both), refused where the first is ${DRIFT_FIRE} or above and the probability that it adds anything ${ADDED_FIRE} or above, or the first alone ${DRIFT_ALONE_FIRE} or above` : ''}${report.compareFigures !== undefined ? `; each figure of an answer from documents is also asked "${report.compareFigures.question}" of the answer and of each line that gives it, refused where the answer's pick is ${report.compareFigures.refuseAt} or more likely and differs from every line's` : ''}. ${answered} of ${all.length} answered${missing > 0 ? `, ${missing} not recorded (record them: the command without --replay)` : ''}${errors.length > 0 ? `, ${errors.length} failed` : ''}.`,
     '',
     ...(report.latency
       ? [`The judge's latency, timed on the ${report.latency.measured} requests this run sent it (the connection opened first; answers replayed from the cassette are not timed): p50 ${report.latency.p50} ms, p95 ${report.latency.p95} ms, max ${report.latency.max} ms. On a call it has RENDER_CHECK_TIMEOUT_MS after the wording (default ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.voice} ms by voice, ${DEFAULT_RENDER_CHECK_TIMEOUT_MS.chat} ms in a chat); a judge that answers later leaves the fixed text said.`, '']

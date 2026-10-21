@@ -1,4 +1,7 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
+import { styleSchema } from '../define/schema/style';
+import { COMPARE_FIRE, type FigureComparison } from '../render/checks';
 import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { inCi } from '../define/ci';
@@ -10,7 +13,7 @@ import { loadHarnessEnv } from '../server/envFile';
 import { DEFAULT_CASES_FILE, evaluateCases, formatJudgeEval, judgeEvalJson, judgeLatency, loadJudgeCases, type JudgeEvalReport } from '../render/judgeEval';
 
 /**
- * `dialogwright render:judge-eval [--replay] [--cases <file>] [--documents-ask <drift|added|both>] [--out <file.md>] [--json]` (../render/judgeEval.ts):
+ * `dialogwright render:judge-eval [--replay] [--cases <file>] [--documents-ask <drift|added|both>] [--style <style.yaml>] [--out <file.md>] [--json]` (../render/judgeEval.ts):
  * the span drift judge measured against the span's shape checks on a set of labelled cases. Recording
  * (the default) asks the decision model, with the maintainer's own key, only what its cassette does not
  * have yet (`recorded/<model>.jsonl` beside the case file), and refuses in CI; `--replay` tables the
@@ -19,12 +22,13 @@ import { DEFAULT_CASES_FILE, evaluateCases, formatJudgeEval, judgeEvalJson, judg
  */
 
 export const JUDGE_EVAL_USAGE = [
-  'usage: dialogwright render:judge-eval [--replay] [--cases <file>] [--documents-ask <drift|added|both>] [--out <file.md>] [--json]',
+  'usage: dialogwright render:judge-eval [--replay] [--cases <file>] [--documents-ask <drift|added|both>] [--style <style.yaml>] [--out <file.md>] [--json]',
   '  puts each case (a caller\'s message, a summary of it, labelled faithful or unfaithful) to the span\'s shape checks (full and core), the stub\'s judge and the real drift judge, and tables what each catches and wrongly refuses',
   '  --cases: a JSON Lines file of cases (default: the engine\'s, src/render/judgeCases/spans.jsonl; a knowledge answer\'s cases say speaks: answer, with the passage as content, the caller\'s question and the wording, such as apps/harbor/fixtures/judge/answers.jsonl); the judge\'s answers are kept in recorded/<model>.jsonl beside it',
   '  records what the cassette lacks with the decision model\'s key (TYPESAFE_API_KEY, or JEV_PROVIDER\'s; from the environment, ENV_FILE or a .env where it is run), refused in CI;',
   '  --replay: table the cassette alone, asking nothing; --out: also write the report as Markdown; --json: the results as JSON on stdout',
   '  --documents-ask added|both: answers from documents (speaks: documents) asked how much of each is its own (alone, or beside the drift question), as style.yaml judge.documentsAsk asks on a call',
+  '  --style <style.yaml>: an app\'s judge settings, its documentsAsk (unless --documents-ask says) and its compareFigures, asked as its calls ask them',
 ].join('\n');
 
 export interface JudgeEvalIo {
@@ -53,6 +57,7 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
         cases: { type: 'string' },
         out: { type: 'string' },
         'documents-ask': { type: 'string' },
+        style: { type: 'string' },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -71,7 +76,19 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   const say = json ? io.err : io.out;
   const casesFile = args.cases === undefined ? DEFAULT_CASES_FILE : resolve(io.invokedFrom, args.cases);
   const out = args.out === undefined ? null : resolve(io.invokedFrom, args.out);
-  const documentsAsk = args['documents-ask'] ?? 'drift';
+  // An app's judge settings (its style.yaml), read as a call reads them.
+  let styleJudge: { documentsAsk?: string; compareFigures?: FigureComparison } = {};
+  if (args.style !== undefined) {
+    const path = resolve(io.invokedFrom, args.style);
+    const parsed = styleSchema.safeParse(parseYaml(readFileSync(path, 'utf8')) ?? {});
+    if (!parsed.success) {
+      io.err(`dialogwright render:judge-eval: ${args.style} is not a style.yaml that reads: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
+      return 2;
+    }
+    const j = parsed.data.judge;
+    styleJudge = { ...(j?.documentsAsk !== undefined ? { documentsAsk: j.documentsAsk } : {}), ...(j?.compareFigures !== undefined ? { compareFigures: { ...j.compareFigures, refuseAt: j.compareFigures.refuseAt ?? COMPARE_FIRE } } : {}) };
+  }
+  const documentsAsk = args['documents-ask'] ?? styleJudge.documentsAsk ?? 'drift';
   if (documentsAsk !== 'drift' && documentsAsk !== 'added' && documentsAsk !== 'both') {
     io.err(`dialogwright render:judge-eval: --documents-ask is drift, added or both, not "${documentsAsk}"`);
     return 2;
@@ -141,9 +158,9 @@ export async function judgeEvalCommand(argv: readonly string[], io: JudgeEvalIo)
   say(`${cases.length} cases from ${shown(casesFile)}; the judge ${jev.model} from ${jev.provider}, ${replay ? 'replayed from' : 'recording what is missing into'} ${shown(cassette)}`);
   // The connection opened before the first case, so the first request is not timed with its setup.
   if (live?.warm) await live.warm().catch(() => undefined);
-  const results = await evaluateCases(cases, judge, { timeoutMs: 15_000, redact, progress: io.err, documentsAsk });
+  const results = await evaluateCases(cases, judge, { timeoutMs: 15_000, redact, progress: io.err, documentsAsk, ...(styleJudge.compareFigures !== undefined ? { compareFigures: styleJudge.compareFigures } : {}) });
   const latency = judgeLatency(timings);
-  const report: JudgeEvalReport = { casesFile: shown(casesFile), model: jev.model, provider: jev.provider, replay, cassette: shown(cassette), results, ...(latency ? { latency } : {}), ...(documentsAsk !== 'drift' ? { documentsAsk } : {}) };
+  const report: JudgeEvalReport = { casesFile: shown(casesFile), model: jev.model, provider: jev.provider, replay, cassette: shown(cassette), results, ...(latency ? { latency } : {}), ...(documentsAsk !== 'drift' ? { documentsAsk } : {}), ...(styleJudge.compareFigures !== undefined ? { compareFigures: styleJudge.compareFigures } : {}) };
   const markdown = formatJudgeEval(report);
   if (json) io.out(judgeEvalJson(report));
   else {

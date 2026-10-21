@@ -10,7 +10,7 @@ import type { Session } from '../core/session';
 import type { TurnResult } from '../core/turn';
 import { isNoul, type JevClient, type JevUsage, type JsonValue } from '../jev/types';
 import { lineLang, localePromptEntry, promptSay, promptText, renderTemplate, saidLineOf, type RenderContext, type SaidLine } from '../prompts/render';
-import { ADDED_FIRE, addedReading, DRIFT_ALONE_FIRE, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
+import { ADDED_FIRE, addedReading, compareQuestions, compareReading, compareState, DRIFT_ALONE_FIRE, figuresToCompare, ANSWER_DRIFT_QUESTION_ID, DOCUMENTS_ADDED_QUESTION_ID, renderDocumentsAddedQuestion, ANSWER_LINE_QUESTION_PREFIX, answerLinesQuestions, answerLinesState, DOCUMENTS_DRIFT_QUESTION_ID, renderDocumentsDriftQuestion, renderDocumentsDriftState, checkAnswer, checkGenerated, checkSpan, cleanAnswer, cleanGenerated, cleanSpan, decisionQuestionOf, renderAnswerDriftQuestion, renderAnswerDriftState, sameWords, wordCount, DRIFT_FIRE, DRIFT_QUESTION_ID, renderDriftQuestion, renderDriftState, renderSpanDriftQuestion, renderSpanDriftState, SPAN_DRIFT_QUESTION_ID } from './checks';
 import { answerSpanOf, answerWordBudget, generatesLines, identifierVarsFrom, isFramed, isSectionsSpan, KB_ACCOUNT_VAR, KB_ANSWER_LINE_VAR, KB_EARLIER_VAR, KB_QUESTION_VAR, lineVars, saysKbAnswer, spanNameVars, speaksToCallerIn, summarizedVarsFrom } from './config';
 import { actMessage, instructionsOf, renderKey, spanKey, spanSentence } from './prompt';
 import { screenQuestions, screenState } from '../core/screen';
@@ -683,12 +683,21 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       // of it is its own (added), or both in one request, refused only where both reach their cutoffs.
       const ask = fromSections ? (generated.style.documentsAsk ?? 'drift') : 'drift';
       const earlier = act.answer?.earlier !== undefined;
-      const questions = !fromSections
+      const judged = !fromSections
         ? renderAnswerDriftQuestion()
         : ask === 'added' ? renderDocumentsAddedQuestion(earlier) : ask === 'both' ? { ...renderDocumentsDriftQuestion(earlier), ...renderDocumentsAddedQuestion(earlier) } : renderDocumentsDriftQuestion(earlier);
-      const r = await c.check(drift.ask({ state: state as unknown as JsonValue, questions, timeoutMs: c.left(), signal: abort.signal }));
+      // The app's question of each figure the wording gives, and of the lines that give it (judge.compareFigures):
+      // a request of its own, beside the judge's and at the same time, whose state is the wording alone, so the
+      // wording is read as it is. Late or failing, it reads nothing: the judge has decided.
+      const cmp = fromSections ? generated.style.compareFigures : undefined;
+      const figures = cmp !== undefined ? figuresToCompare(text, act.content.map((x) => x.value)) : [];
+      const comparing = cmp !== undefined && figures.length > 0
+        ? c.check(drift.ask({ state: compareState(text) as unknown as JsonValue, questions: compareQuestions(cmp, figures), timeoutMs: c.left(), signal: abort.signal })).catch(() => null)
+        : Promise.resolve(null);
+      const [r, compared] = await Promise.all([c.check(drift.ask({ state: state as unknown as JsonValue, questions: judged, timeoutMs: c.left(), signal: abort.signal })), comparing]);
       if (r === 'late') return { fallback: 'timeout', refused: text, gen };
       used(r.usage);
+      if (compared !== null && compared !== 'late') used(compared.usage);
       const d = r.answers[fromSections ? DOCUMENTS_DRIFT_QUESTION_ID : ANSWER_DRIFT_QUESTION_ID];
       const driftScore = ask === 'added' ? null : isNoul(d) ? d.noul : null;
       const addedScore = ask === 'drift' ? null : addedReading(r.answers[DOCUMENTS_ADDED_QUESTION_ID]);
@@ -697,12 +706,18 @@ export async function renderTurn(input: RenderInput): Promise<RenderedTurn | nul
       // from documents at its own cutoffs where style.yaml gives them (judge.documentsRefuseAt, documentsAddedAt).
       const driftCut = fromSections ? (generated.style.documentsRefuseAt ?? refuseAt) : refuseAt;
       const addedCut = generated.style.documentsAddedAt ?? ADDED_FIRE;
-      const judge: RenderJudge = ask === 'added'
-        ? { score: addedScore!, refuseAt: addedCut }
-        : { score: driftScore!, refuseAt: driftCut, ...(ask === 'both' ? { added: { score: addedScore!, refuseAt: addedCut } } : {}) };
+      // A figure whose picks differ: the wording's, other than unsaid, at its cutoff and unlike every line's.
+      const mismatch = cmp !== undefined && compared !== null && compared !== 'late' ? compareReading(cmp, figures, compared.answers) : null;
+      const judge: RenderJudge = {
+        ...(ask === 'added'
+          ? { score: addedScore!, refuseAt: addedCut }
+          : { score: driftScore!, refuseAt: driftCut, ...(ask === 'both' ? { added: { score: addedScore!, refuseAt: addedCut } } : {}) }),
+        ...(mismatch !== null && cmp !== undefined ? { compare: { ...mismatch, refuseAt: cmp.refuseAt } } : {}),
+      };
       // With both, a drift reading at documentsDriftAloneAt refuses alone: what is stretched or moved adds nothing of its own.
       const aloneCut = generated.style.documentsDriftAloneAt ?? DRIFT_ALONE_FIRE;
-      const refused = ask === 'added' ? addedScore! >= addedCut : ask === 'both' ? driftScore! >= aloneCut || (driftScore! >= driftCut && addedScore! >= addedCut) : driftScore! >= driftCut;
+      const refused = (ask === 'added' ? addedScore! >= addedCut : ask === 'both' ? driftScore! >= aloneCut || (driftScore! >= driftCut && addedScore! >= addedCut) : driftScore! >= driftCut)
+        || (mismatch !== null && cmp !== undefined && mismatch.score >= cmp.refuseAt);
       if (refused) return { fallback: 'drift', refused: text, gen, judge };
       return { said: text, gen, judge };
     } catch {

@@ -13,6 +13,7 @@ import type { GateDecision, GateLookups, Level, Party, Principal, RuleContext, R
 import type { CompiledPolicy } from '../../gate/compiled';
 import type { Condition } from '../conditions';
 import type { HoursConfig } from '../hours';
+import type { FigureComparison } from '../../render/checks';
 
 /** Engine id types: plain strings. An app defines which values exist; the engine never hard-codes them. */
 export type SlotId = string;
@@ -1880,6 +1881,8 @@ export interface RenderStyle {
   readonly documentsAsk?: 'drift' | 'added' | 'both';
   /** Where the added reading refuses (style.yaml's `judge.documentsAddedAt`); default ADDED_FIRE. */
   readonly documentsAddedAt?: number;
+  /** A question asked of each figure of an answer from documents and of its source lines, compared (style.yaml's `judge.compareFigures`); none by default. */
+  readonly compareFigures?: FigureComparison;
   /** With documentsAsk both, the drift reading that refuses alone (style.yaml's `judge.documentsDriftAloneAt`); default DRIFT_ALONE_FIRE. */
   readonly documentsDriftAloneAt?: number;
 }
