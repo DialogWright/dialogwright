@@ -62,9 +62,9 @@ const DOCUMENTS_LINES = `
 `;
 
 /** The library with its visitor guide approved for summarizing and summarizing on; `retry` on its documents line. */
-function documentsApp(id: string, options: { approve?: boolean; retry?: boolean; retryGoal?: string; retryLong?: boolean; retryWords?: number; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
+function documentsApp(id: string, options: { approve?: boolean; retry?: boolean | 2; retryGoal?: string; retryLong?: boolean; retryWords?: number; onFail?: 'opening' | 'lines'; edits?: Record<string, Edit> } = {}): App {
   const prompts = (t: string): string => {
-    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', `        retry: 1\n${options.retryGoal !== undefined ? `        retryGoal: ${options.retryGoal}\n` : ''}${options.retryLong ? '        retryLong: true\n' : ''}${options.retryWords !== undefined ? `        retryWords: ${options.retryWords}\n` : ''}        goal: Answer`) : DOCUMENTS_LINES;
+    const lines = options.retry ? DOCUMENTS_LINES.replace('        goal: Answer', `        retry: ${options.retry === 2 ? 2 : 1}\n${options.retryGoal !== undefined ? `        retryGoal: ${options.retryGoal}\n` : ''}${options.retryLong ? '        retryLong: true\n' : ''}${options.retryWords !== undefined ? `        retryWords: ${options.retryWords}\n` : ''}        goal: Answer`) : DOCUMENTS_LINES;
     return `${APP_EDITS['prompts.yaml']!(t)}${lines}`;
   };
   const forms = (t: string): string => {
@@ -214,6 +214,24 @@ describe('the answer worded from the sections, checked against them', () => {
     const once = renderer();
     await rendered(APP, asked(APP, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 }), once, at(0.9));
     expect(once.client.askedSpans).toHaveLength(1);
+  });
+
+  it('with retry: 2, a wording refused twice is asked a third time, each told the last refused; and it stops at the first that passes', async () => {
+    const app = documentsApp('library-documents-retry-two', { retry: 2 });
+    const t = asked(app, 'is there wifi at the library', { unanswered: 0.9, none: 0.1 }, { 'visitor-guide#wifi': 0.93 });
+    const wordings = ['Wi-Fi is free and needs no password, all day and night.', 'Wi-Fi is free everywhere in town.', 'Every branch has free Wi-Fi.'];
+    let n = 0;
+    const twiceRefused = at(() => (n++ < 2 ? 0.9 : 0.05));
+    const r = renderer({ eachSpan: () => wordings[r.client.askedSpans.length - 1]! });
+    const out = await rendered(app, t, r, twiceRefused);
+    expect(r.client.askedSpans).toHaveLength(3);
+    expect((r.client.askedSpans[2]!.act as SpanAct).answer).toMatchObject({ refused: wordings[1] });
+    expect(docLine(out)).toMatchObject({ mode: 'generated', said: wordings[2], retried: { fallback: 'drift', refused: wordings[0] } });
+    // Passed on its second wording: no third asked.
+    let m = 0;
+    const r2 = renderer({ eachSpan: () => wordings[r2.client.askedSpans.length - 1]! });
+    await rendered(app, t, r2, at(() => (m++ === 0 ? 0.9 : 0.05)));
+    expect(r2.client.askedSpans).toHaveLength(2);
   });
 
   it('with retry: 1, the second wording is asked at style.yaml\'s retryTemperature and with the span\'s retryGoal, and the line keeps the first refusal', async () => {
