@@ -117,7 +117,7 @@ export const kbSettingsSchema = z
         followUpWording: z
           .enum(['always', 'continued', 'never'])
           .optional()
-          .describe('With followUps on, when the wording model and the drift judge are given the caller\'s earlier question beside their question. always (the default): every time, so a new question after another may be answered with the earlier one\'s subject too, which the judge then refuses. continued: only where the decision model reads the question as continuing the earlier one ("what about for a family?"), one more yes-or-no in the same request (the topic slot\'s <slot>Continues, at KB_FOLLOW_UP). never: the question alone (sections are still found and read with the earlier question).'),
+          .describe('With followUps on, when the wording model and the drift judge are given the caller\'s earlier question beside their question. continued (the default, the maintainer\'s decision, 2026-10-21): only where the decision model reads the question as continuing the earlier one ("what about for a family?"), one more yes-or-no in the same request (the topic slot\'s <slot>Continues, at KB_FOLLOW_UP). always: every time, as before, so a new question after another may be answered with the earlier one\'s subject too, which the judge then refuses. never: the question alone (sections are still found and read with the earlier question).'),
       })
       .default({ summarize: 'off', cap: DEFAULT_SECTIONS_CAP, retrieval: 'hybrid' })
       .describe('Answers from approved documents, where no topic answers: off by default.'),

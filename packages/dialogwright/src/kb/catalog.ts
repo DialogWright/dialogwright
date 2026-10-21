@@ -17,5 +17,5 @@ export function kbCatalog(kb: KnowledgeBase): TopicCatalog {
     const titles = Object.fromEntries(Object.entries(t.locales).flatMap(([tag, w]) => (w.title !== undefined ? [[tag, w.title]] : [])));
     return { id: t.id, title: t.title, ...(Object.keys(titles).length > 0 ? { titles } : {}) };
   });
-  return { topics, cap: kb.settings.retrieval.cap, ...(kb.settings.documents?.followUps === 'on' && kb.settings.documents.followUpWording === 'continued' ? { followUpWording: 'continued' as const } : {}) };
+  return { topics, cap: kb.settings.retrieval.cap, ...(kb.settings.documents?.followUps === 'on' && (kb.settings.documents.followUpWording ?? 'continued') === 'continued' ? { followUpWording: 'continued' as const } : {}) };
 }

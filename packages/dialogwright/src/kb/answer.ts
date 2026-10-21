@@ -235,7 +235,7 @@ export function kbCompletion(opts: KbCompletionOptions): (c: CompletionContext) 
     // Its wording and judge are given the earlier question as kb.yaml documents.followUpWording says: always,
     // only where the decision model read this one as continuing it (SlotState.continues), or never.
     const followUps = app.knowledge?.kb?.settings.documents?.followUps === 'on';
-    const wording = app.knowledge?.kb?.settings.documents?.followUpWording ?? 'always';
+    const wording = app.knowledge?.kb?.settings.documents?.followUpWording ?? 'continued';
     const asked = s.slots[opts.slot]?.heard;
     const worded = wording === 'always' || (wording === 'continued' && s.slots[opts.slot]?.continues === true);
     const earlier = followUps && worded && s.kbEarlier !== undefined && s.kbEarlier.question !== asked ? s.kbEarlier.question : undefined;

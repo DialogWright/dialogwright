@@ -34,7 +34,7 @@ export interface KbSettings {
     readonly embedder?: DocumentsEmbedder;
     /** A question read with the caller's earlier one (kb.yaml documents.followUps): its sections found with it too, and the decision model shown it. */
     readonly followUps?: 'on' | 'off';
-    /** With followUps, when the wording and its judge are given the earlier question (kb.yaml documents.followUpWording; absent: always). */
+    /** With followUps, when the wording and its judge are given the earlier question (kb.yaml documents.followUpWording; absent: continued). */
     readonly followUpWording?: 'always' | 'continued' | 'never';
   };
 }
