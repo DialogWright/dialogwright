@@ -352,7 +352,7 @@ apps/utility: ok</code></pre>
           <li><strong>Read</strong><span>The decision model answers yes or no for each: would it answer the question?</span></li>
           <li><strong>Write</strong><span>A model words the answer from the chosen sections alone.</span></li>
           <li><strong>Check</strong><span>Code refuses any figure the sections do not contain.</span></li>
-          <li><strong>Judge</strong><span>The decision model refuses an answer that adds, changes or drops anything.</span></li>
+          <li><strong>Judge</strong><span>The decision model reads it two ways: does it say anything new, and how much is its own. An app may also ask about each figure.</span></li>
           <li class="last"><strong>Fall back</strong><span>Refused again: the document's own lines, word for word.</span></li>
         </ol>
         <h3>Measured on Harbor Mutual's member line</h3>
@@ -361,6 +361,43 @@ apps/utility: ok</code></pre>
           <li><b>97.5%</b><span>the right handbook section offered, on 80 held-out questions</span></li>
           <li><b>20 of 20</b><span>unfaithful answers refused by the judge</span></li>
           <li><b>20 of 20</b><span>faithful answers passed by the judge</span></li>
+        </ul>
+        <h3>Judging answers from documents, with fast models</h3>
+        <p>
+          The premise: a fast decision model and a fast writing model, asked the right questions, do this for a
+          fraction of the time and money a large reasoning model needs. Measured on a 123-page benefit booklet.
+        </p>
+        <ul class="stats four">
+          <li><b>2 of 79</b><span>right answers refused by the judge, where one yes-or-no refused 12</span></li>
+          <li><b>44 of 55</b><span>wrong answers caught, 83% of what a top reasoning model catches</span></li>
+          <li><b>7 of 120</b><span>answers fell back to the document's own lines, from 13</span></li>
+          <li><b>0.1 s</b><span>to judge an answer; about $0.0003 an answer, every model included</span></li>
+        </ul>
+        <figure class="chart">
+          <svg viewBox="0 0 420 310" role="img" aria-labelledby="judge-chart-title judge-chart-desc">
+            <title id="judge-chart-title">The fast models' judge beside a large reasoning model's</title>
+            <desc id="judge-chart-desc">On 134 labelled answers from a benefit booklet: wrong answers caught, 44 of 55 by the fast models and 53 of 55 by Claude Sonnet 5.5 as the judge; right answers refused, 2 of 79 and 3 of 79; seconds to judge an answer, about 0.1 and about 2.8; model cost an answer, about $0.0003 for every model and about $0.005 for Sonnet's judging alone.</desc>
+            <rect class="ch-after" x="0" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="18" y="12">Decision model + Mercury 3</text>
+            <rect class="ch-before" x="210" y="2" width="12" height="12" rx="2"/><text class="ch-note" x="228" y="12">Claude Sonnet 5.5 as judge</text>
+            <text class="ch-label" x="0" y="44">Wrong answers caught, of 55</text>
+            <rect class="ch-after" x="0" y="52" width="234" height="14" rx="3"/><text class="ch-value" x="240" y="63">44</text>
+            <rect class="ch-before" x="0" y="70" width="281" height="14" rx="3"/><text class="ch-value" x="287" y="81">53</text>
+            <text class="ch-label" x="0" y="116">Right answers refused, of 79</text>
+            <rect class="ch-after" x="0" y="124" width="7" height="14" rx="2"/><text class="ch-value" x="13" y="135">2</text>
+            <rect class="ch-before" x="0" y="142" width="11" height="14" rx="2"/><text class="ch-value" x="17" y="153">3</text>
+            <text class="ch-label" x="0" y="188">Seconds to judge an answer</text>
+            <rect class="ch-after" x="0" y="196" width="10" height="14" rx="2"/><text class="ch-value" x="16" y="207">0.1</text>
+            <rect class="ch-before" x="0" y="214" width="272" height="14" rx="3"/><text class="ch-value" x="278" y="225">2.8</text>
+            <text class="ch-label" x="0" y="260">Model cost an answer</text>
+            <rect class="ch-after" x="0" y="268" width="18" height="14" rx="2"/><text class="ch-value" x="24" y="279">$0.0003</text>
+            <rect class="ch-before" x="0" y="286" width="292" height="14" rx="3"/><text class="ch-value" x="298" y="297">$0.005</text>
+          </svg>
+          <figcaption>On 134 labelled answers. The fast models' cost is every model of an answer; Sonnet's is its judging alone.</figcaption>
+        </figure>
+        <ul class="minis">
+          <li><strong>Not tuned to one document</strong>Six other insurers' public summaries of benefits import and are questioned the same way. The logic and questions are general.</li>
+          <li><strong>Room to tune</strong>Tuning to a document's own content should narrow the gap to large, slow models further, or close it. Left for later.</li>
+          <li><strong>Who pays, compared</strong><code>judge.compareFigures</code> asks an app's own question of each figure, in the answer and the document, read apart.</li>
         </ul>
         <h3>Follow-up questions</h3>
         <p>

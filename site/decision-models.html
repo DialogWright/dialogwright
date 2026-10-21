@@ -260,7 +260,51 @@
           Neither follows who "you" is in a summary spoken to the caller. Jev stayed the judge, as the stricter and the
           faster. A refused summary is never lost: the caller hears their exact words instead.
         </p>
+        <h3>Judging answers from documents</h3>
+        <p>
+          An answer worded from approved documents is judged against them. On 2026-10-21 the maintainer measured the
+          documents judge on 134 labelled answers from a 123-page benefit booklet, and a large reasoning model asked the same question:
+        </p>
+        <div class="table-wrap">
+          <table class="stack">
+            <thead>
+              <tr>
+                <th scope="col">Judge</th>
+                <th scope="col">Wrong answers caught</th>
+                <th scope="col">Right answers refused</th>
+                <th scope="col">Time an answer</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Jev, one yes-or-no (<code>documentsAsk: drift</code>, the default)</th>
+                <td data-label="Wrong answers caught">43 of 55</td>
+                <td data-label="Right answers refused">12 of 79</td>
+                <td data-label="Time an answer">about 0.1 s</td>
+              </tr>
+              <tr>
+                <th scope="row">Jev, two readings and who pays (<code>documentsAsk: both</code>, <code>compareFigures</code>)</th>
+                <td data-label="Wrong answers caught">44 of 55</td>
+                <td data-label="Right answers refused">2 of 79</td>
+                <td data-label="Time an answer">about 0.1 s</td>
+              </tr>
+              <tr>
+                <th scope="row">Claude Sonnet 5.5, reasoning</th>
+                <td data-label="Wrong answers caught">53 of 55</td>
+                <td data-label="Right answers refused">3 of 79</td>
+                <td data-label="Time an answer">about 2.8 s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The one yes-or-no folded in whether an answer replies to the question asked, which refused right answers and
+          told right from wrong no better than chance; asked apart, Jev refused 2 right answers where it refused 12.
+          Sonnet catches most of what Jev misses (a figure moved to another row, a procedure the document never names)
+          for about 3 seconds and $0.005 an answer, where the fast models answer in about a second for about $0.0003.
+        </p>
         <p class="links">
+          <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-10-21-documents-judge.md">The documents judge, taken apart</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/16-generated-wording.md#1613-measuring-the-judge">Measuring the judge (guide 16.13)</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/guide/17-tuning-with-live-calls.md#1711-choosing-models-by-measurement">Choosing models by measurement (guide 17.11)</a>
           <a href="https://github.com/DialogWright/dialogwright/blob/main/docs/designs/2026-10-13-live-findings.md#item-27-measured-the-maintainers-recordings-2026-10-14">The measurement</a>
