@@ -58,6 +58,7 @@ Said in fixed words, never worded by a model:
 | `greeting_chat` | Hi, this is Example Wheel Works. What can I help with? |
 | `handoff_live_agent` | I'll have Sam call you back as soon as he's free. |
 | `goodbye` | Thanks for calling Example Wheel Works. |
+| `goodbye_chat` | Thanks for chatting with Example Wheel Works. Goodbye. |
 | `booking_for_accounts` | Bookings are for our dealership accounts; I can send Sam a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
 | `price` | Sam quotes every job from a photo, because the price depends on the damage. Once I've sent him your request, you'll get a text with a link to send one, and he'll get back to you with a price and confirm your drop-off. |

@@ -45,7 +45,7 @@ export const AGENT_HANDOFF_LINES: readonly string[] = [
   'handoff_identity',
 ];
 
-/** The lines a call and a chat end on: business.yaml's `closing`, unless `lines` gives them. */
+/** The lines a call and a chat end on: business.yaml's `closing` (a string the call's, the chat's its default; or each channel's), unless `lines` gives them. */
 export const AGENT_CLOSING_LINES: readonly string[] = ['goodbye', 'goodbye_chat'];
 
 /** Every engine line business.yaml's `lines` may give in the business's words. */

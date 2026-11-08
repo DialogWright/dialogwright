@@ -182,7 +182,17 @@ export const businessSchema = z
       .optional()
       .describe('The opening line, in fixed words: a string is the line a call opens on (a chat opens on the chat default), or { call, chat }, each channel\'s own. Default: "Thanks for calling <says>. How can I help?" on a call, "Hi, this is <says>. What can I help with?" in a chat.'),
     handoff: text().describe('The line said when a caller asks for a person, in fixed words: a callback, not a transfer. A statement, not a question ("I\'ll have someone from the desk call you back."): it is said where nothing waits for an answer, and the callback form, where there is one, asks for the number.'),
-    closing: text().describe('The line a call ends on, in fixed words.'),
+    closing: z
+      .union([
+        text(),
+        z
+          .strictObject({
+            call: text().optional().describe('The line a call ends on. Default: "Thanks for calling <says>."'),
+            chat: text().optional().describe('The line a web chat ends on. Default: "Thanks for chatting with <says>. Goodbye."'),
+          })
+          .describe('The closing line of each channel, each with its own default.'),
+      ])
+      .describe('The closing line, in fixed words: a string is the line a call ends on (a chat ends on the chat default), or { call, chat }, each channel\'s own. The call\'s is also the closing the agent model is told of. Default within { call, chat }: "Thanks for calling <says>." on a call, "Thanks for chatting with <says>. Goodbye." in a chat.'),
     owner: z
       .strictObject({
         notify: z.enum(['text', 'print']).describe('How the owner hears of each request and booking: "text", a text message (printed until texting is registered), or "print", printed only.'),

@@ -711,9 +711,30 @@
       "description": "The line said when a caller asks for a person, in fixed words: a callback, not a transfer. A statement, not a question (\"I'll have someone from the desk call you back.\"): it is said where nothing waits for an answer, and the callback form, where there is one, asks for the number."
     },
     "closing": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The line a call ends on, in fixed words."
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The line a call ends on. Default: \"Thanks for calling <says>.\"",
+              "type": "string",
+              "minLength": 1
+            },
+            "chat": {
+              "description": "The line a web chat ends on. Default: \"Thanks for chatting with <says>. Goodbye.\"",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "The closing line of each channel, each with its own default."
+        }
+      ],
+      "description": "The closing line, in fixed words: a string is the line a call ends on (a chat ends on the chat default), or { call, chat }, each channel's own. The call's is also the closing the agent model is told of. Default within { call, chat }: \"Thanks for calling <says>.\" on a call, \"Thanks for chatting with <says>. Goodbye.\" in a chat."
     },
     "owner": {
       "description": "Where requests and bookings go: the owner's number and the summary sent. For the app's own tools.",

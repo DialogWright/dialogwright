@@ -1,5 +1,5 @@
 import { buildSlot } from '../slots/defineSlot';
-import { ACCOUNT_SLOT, businessForms, greetingsOf, optionKey, readsThroughHook, slotIdOf } from './business';
+import { ACCOUNT_SLOT, businessForms, closingsOf, greetingsOf, optionKey, readsThroughHook, slotIdOf } from './business';
 export { optionKey };
 import { ACCOUNTS_ONLY_PROMPT, AGENT_ACCOUNTS_ONLY_LINE, AGENT_CLOSING_LINES, AGENT_DEFAULT_LINES, AGENT_HANDOFF_LINES, AGENT_NOT_RECOGNIZED_LINE, AGENT_OFFER_LINE } from './businessLines';
 import { NOT_RECOGNIZED_PROMPT } from '../core/lifecycle';
@@ -191,14 +191,15 @@ export function businessFiles(b: BusinessYaml, app: AppYaml): BusinessFiles {
   // prompts.yaml: every line word for word.
   const line = (text: string): { text: string; interruptible: boolean } => ({ text: text.trim(), interruptible: true });
   const prompts: Record<string, { text: string; interruptible: boolean }> = {};
-  // The opening line of each channel: a string greeting is the call's, and a chat opens on its own default.
-  const says = (b.business.says ?? b.business.name).trim();
+  // The opening and closing lines of each channel: a string is the call's, and a chat has its own default.
   const greeting = greetingsOf(b);
-  prompts.greeting = line(greeting.call ?? `Thanks for calling ${says}. How can I help?`);
-  prompts.greeting_chat = line(greeting.chat ?? `Hi, this is ${says}. What can I help with?`);
+  prompts.greeting = line(greeting.call);
+  prompts.greeting_chat = line(greeting.chat);
   for (const [id, text] of Object.entries(AGENT_DEFAULT_LINES)) prompts[id] = line(text);
   for (const id of AGENT_HANDOFF_LINES) prompts[id] = line(b.handoff);
-  for (const id of AGENT_CLOSING_LINES) prompts[id] = { text: b.closing.trim(), interruptible: false };
+  const closing = closingsOf(b);
+  prompts.goodbye = { text: closing.call.trim(), interruptible: false };
+  prompts.goodbye_chat = { text: closing.chat.trim(), interruptible: false };
   for (const [id, text] of Object.entries(b.lines ?? {})) prompts[id] = { ...line(text), ...(AGENT_CLOSING_LINES.includes(id) ? { interruptible: false } : {}) };
   if (b.prices !== undefined) prompts[PRICE_PROMPT] = line(b.prices.say);
   // The account is recognized by the number calling, never asked: it has no question. A caller the

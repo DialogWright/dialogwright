@@ -241,9 +241,33 @@ describe('business.yaml', () => {
     ]);
   });
 
-  it('each channel\'s greeting names no {placeholder}', () => {
-    const dir = copy({ 'business.yaml': (t) => `${t}greeting:\n  call: Hello from {name}.\n  chat: Hi {first}.\n` });
+  it('a chat ends on its own closing: the chat default for a string closing, each channel\'s own in { call, chat }', () => {
+    const closings = (dir: string): [string | undefined, string | undefined, string | undefined] => {
+      const loaded = loadAppFolder(dir);
+      expect(loaded.problems).toEqual([]);
+      const prompts = loaded.config!.prompts[loaded.config!.defaultLocale]!;
+      return [prompts.goodbye?.text, prompts.goodbye_chat?.text, factsOf(loaded.config!.business!).fixed.closing];
+    };
+    // A string is the call's closing (and the one the agent model is told of); the chat ends on its default.
+    expect(closings(copy())).toEqual(['Thanks for calling Example Library.', 'Thanks for chatting with Example Library. Goodbye.', 'Thanks for calling Example Library.']);
+    // Each channel's own, and one left out keeps its default.
+    expect(closings(copy({ 'business.yaml': replacing('closing: Thanks for calling Example Library.', 'closing:\n  chat: Thanks for writing to the library desk.') }))).toEqual([
+      'Thanks for calling Example Library.',
+      'Thanks for writing to the library desk.',
+      'Thanks for calling Example Library.',
+    ]);
+    expect(closings(copy({ 'business.yaml': replacing('closing: Thanks for calling Example Library.', 'closing:\n  call: Goodbye from the library desk.\n  chat: Thanks for writing to the library desk.') }))).toEqual([
+      'Goodbye from the library desk.',
+      'Thanks for writing to the library desk.',
+      'Goodbye from the library desk.',
+    ]);
+  });
+
+  it('each channel\'s greeting and closing names no {placeholder}', () => {
+    const dir = copy({ 'business.yaml': (t) => `${replacing('closing: Thanks for calling Example Library.', 'closing:\n  call: Bye from {name}.\n  chat: Bye, {first}.')(t)}greeting:\n  call: Hello from {name}.\n  chat: Hi {first}.\n` });
     expect(problemsOf(dir).map((p) => `${p.path}: ${p.message}`)).toEqual([
+      'closing.call: the line names {name}, which it is never given, so it would be said with the braces in it',
+      'closing.chat: the line names {first}, which it is never given, so it would be said with the braces in it',
       'greeting.call: the line names {name}, which it is never given, so it would be said with the braces in it',
       'greeting.chat: the line names {first}, which it is never given, so it would be said with the braces in it',
     ]);

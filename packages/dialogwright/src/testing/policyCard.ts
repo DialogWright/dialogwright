@@ -311,7 +311,7 @@ function agentSection(app: App, source: PolicySource): string[] {
     }
     out.push('');
   }
-  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
+  const fixedIds = Object.keys(app.prompts.manifest).filter((id) => /^(readback|done)_/.test(id) || ['price', 'greeting', 'greeting_chat', 'goodbye', 'goodbye_chat', 'handoff_live_agent', NOT_RECOGNIZED_PROMPT, ...Object.values(app.forms).flatMap((f) => (f.recognizedOnly !== undefined ? [f.recognizedOnly.say] : []))].includes(id));
   out.push('Said in fixed words, never worded by a model:', '', '| Line | Said |', '| --- | --- |');
   for (const id of fixedIds) out.push(`| ${code(id)} | ${cell(app.prompts.manifest[id]!.text)} |`);
   const identity = app.identity;

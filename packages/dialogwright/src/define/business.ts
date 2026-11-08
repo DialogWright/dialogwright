@@ -40,9 +40,24 @@ export function businessForms(b: BusinessYaml): { name: BusinessFormName; form: 
   return BUSINESS_FORMS.flatMap((name) => (b[name] !== undefined ? [{ name, form: b[name] as BusinessFormYaml }] : []));
 }
 
-/** The opening line each channel's greeting gives, where business.yaml words it: a string is the call's. */
-export function greetingsOf(b: BusinessYaml): { call?: string; chat?: string } {
-  return typeof b.greeting === 'string' ? { call: b.greeting } : (b.greeting ?? {});
+/** The line of each channel a greeting or a closing gives, where business.yaml words it: a string is the call's. */
+export function byChannel(line: string | { call?: string; chat?: string } | undefined): { call?: string; chat?: string } {
+  return typeof line === 'string' ? { call: line } : (line ?? {});
+}
+
+/** The name the business's lines say: business.says, else its name. */
+export const saysOf = (b: BusinessYaml): string => (b.business.says ?? b.business.name).trim();
+
+/** The opening lines, each channel's business.yaml's words or its default. */
+export function greetingsOf(b: BusinessYaml): { call: string; chat: string } {
+  const own = byChannel(b.greeting);
+  return { call: own.call ?? `Thanks for calling ${saysOf(b)}. How can I help?`, chat: own.chat ?? `Hi, this is ${saysOf(b)}. What can I help with?` };
+}
+
+/** The closing lines, each channel's business.yaml's words or its default. */
+export function closingsOf(b: BusinessYaml): { call: string; chat: string } {
+  const own = byChannel(b.closing);
+  return { call: own.call ?? `Thanks for calling ${saysOf(b)}.`, chat: own.chat ?? `Thanks for chatting with ${saysOf(b)}. Goodbye.` };
 }
 
 /** The {placeholders} of a line. */
@@ -225,9 +240,8 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
   // Every line said in fixed words names only what it is given: the business's own lines nothing, each engine line its own.
   const fixedLines: [DataPath, string, readonly string[]][] = [
     [['handoff'], b.handoff, []],
-    [['closing'], b.closing, []],
-    // The greeting of each channel: a string is the call's, at the key itself.
-    ...Object.entries(greetingsOf(b)).map(([channel, text]): [DataPath, string, readonly string[]] => [typeof b.greeting === 'string' ? ['greeting'] : ['greeting', channel], text, []]),
+    // The greeting and the closing of each channel the file words: a string is the call's, at the key itself.
+    ...(['greeting', 'closing'] as const).flatMap((key) => Object.entries(byChannel(b[key])).map(([channel, text]): [DataPath, string, readonly string[]] => [typeof b[key] === 'string' ? [key] : [key, channel], text, []])),
     ...(b.prices !== undefined ? [[['prices', 'say'], b.prices.say, []] as [DataPath, string, readonly string[]]] : []),
     ...forms.flatMap(({ name, form }) => form.fields.map((f, i): [DataPath, string, readonly string[]] => [[name, 'fields', i, 'question'], f.question, []])),
   ];
@@ -341,7 +355,8 @@ export function factsOf(b: BusinessYaml): AgentFacts {
   const fixed: Record<string, string> = {};
   if (b.prices !== undefined) fixed.price = b.prices.say.trim();
   fixed.handoff = b.handoff.trim();
-  fixed.closing = b.closing.trim();
+  // The call's closing: the facts are the app's, sent alike on either channel.
+  fixed.closing = closingsOf(b).call.trim();
   return {
     name: (b.business.says ?? b.business.name).trim(),
     voice: b.business.voice.trim(),

@@ -57,6 +57,7 @@ Said in fixed words, never worded by a model:
 | `greeting_chat` | Hi, this is Example Library. What can I help with? |
 | `handoff_live_agent` | I'll have someone from the desk call you back. |
 | `goodbye` | Thanks for calling Example Library. |
+| `goodbye_chat` | Thanks for chatting with Example Library. Goodbye. |
 | `price` | Fees are explained at the desk, by the person who looks at your account. |
 | `identity_not_recognized` | That's for our account holders, recognized by the number they call from. |
 | `booking_for_accounts` | Bookings are for our account holders; I can send a request instead. |
