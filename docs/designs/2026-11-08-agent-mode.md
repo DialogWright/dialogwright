@@ -363,20 +363,24 @@ owner:
 
 ## Measured (2026-11-09, `pnpm agent:bakeoff`, plan Task 2)
 
-The run covered 7 calls and 18 caller turns, each asked 3 times. The figures assume the drift judge adds 200 ms (Jev's p50 on spans, 2026-10-14). The bar is p50 ≤ 1.0 s, p95 ≤ 1.8 s, valid JSON 98%, values right 90%.
+The run covered 7 calls and 18 caller turns, each asked 3 times. The cases are in `apps/wheelshop/fixtures/agent/cases.yaml`, with the recordings beside them. The figures assume the drift judge adds 200 ms (Jev's p50 on spans, 2026-10-14). The bar is p50 ≤ 1.0 s, p95 ≤ 1.8 s, valid JSON 98%, values right 90%.
 
-| model | prompt | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
-|---|---|---|---|---|---|---|---|---|
-| Mercury 3, Inception API, `instant`, realtime | examples | 98% | 91% | 85% | 0 | 509 / 766 | 709 / 966 | met |
-| Mercury 3, Inception API, `instant`, realtime | no examples | 100% | 92% | 83% | 4 | 513 / 758 | 713 / 958 | met |
-| Mercury 3, Inception API, `low`, realtime | examples | 100% | 99% | 98% | 0 | 2476 / 4799 | 2676 / 4999 | missed |
-| Mercury 3, Inception API, `low`, realtime | no examples | 98% | 93% | 93% | 0 | 2352 / 4981 | 2552 / 5181 | missed |
+The table is the last of three recordings: after the review's scoring fixes, and after the prompt said a text value is the whole value so far.
 
-**Chosen:** Mercury 3 on Inception's API at `instant`, realtime, with the owner's sample replies. Without them, four replies said a figure the facts don't hold; with them, none did. `AGENT_TIMEOUT_VOICE_MS` defaults to 1100 (p95 + 300, rounded) and `AGENT_TIMEOUT_CHAT_MS` to 2800.
+| Mercury 3 on Inception's API, `instant`, realtime | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
+|---|---|---|---|---|---|---|---|
+| with the owner's sample replies | 100% | 94% | 85% | 0 | 482 / 889 | 682 / 1089 | met |
+| without them | 98% | 96% | 80% | 3 | 502 / 650 | 702 / 850 | met |
+
+At `low`, the first recording had values right 99% but p50 2.5 s and p95 4.8 s, far over the bar for voice.
+
+**Chosen:** `instant`, realtime, with the owner's sample replies. They gave no reply with a figure the facts don't hold, against three without them. `AGENT_TIMEOUT_VOICE_MS` defaults to 1200 (p95 + 300, rounded) and `AGENT_TIMEOUT_CHAT_MS` to 3000.
 
 What the measurement showed, for the tasks that follow:
-- **OpenRouter no longer serves `inception/mercury-3`** (HTTP 404). Gemini 3.5 Flash Lite on OpenRouter refuses reasoning off ("Reasoning is mandatory"), so the bake-off's OpenRouter rows asked nothing. The agent's provider is Inception's API.
+- **OpenRouter no longer serves `inception/mercury-3`** (HTTP 404), so the agent's provider is Inception's API. The apps' wording moved to Inception too, on a branch of its own (`render-inception`).
 - **Most action misses are `send_photo_link` proposed before the request is done.** That is harmless, since the action is gated, but Task 6 should decide when it may go.
-- **A `text` field built over several turns** (the dealership's cars) was given as only this turn's part ("Accord front right"). The prompt or Task 6 must say a text value is the whole value.
+- **The model reads values back in its reply** ("Let me read it back to you... Does that sound right?") and calls a window free when it has seen no availability ("Thursday morning works"). The engine says the read-back, so Task 7's judge and checks must refuse a reply that confirms values or availability the engine hasn't.
+- **It sometimes computes a figure** ("That's seven wheels total"). The figure check refuses it.
 - **One reply ended "...What's your name?values"**, a piece of the JSON shape leaking into the words. Task 7's checks should refuse a reply that names a field of the answer's shape.
-- **Once, the model introduced itself as the owner** ("Hi, this is Sam at Example Wheel Works"). The judge (Task 7) must refuse the line speaking as a person it is not, and the persona says it is the line.
+- **Once, the model introduced itself as the owner** ("Hi, this is Sam at Example Wheel Works"). The judge (Task 7) must refuse the line speaking as a person it is not.
+- **With no form chosen yet, the prompt lists no fields**, so a request said over the greeting can give no value. Task 6 sends the fields of the forms the caller may open, or opens one first.
