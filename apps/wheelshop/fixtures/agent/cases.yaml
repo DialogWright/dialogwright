@@ -368,11 +368,12 @@ calls:
             has:
               - curb
             as: curb rash
+        # The make alone: the vehicle field asks for the make and model, so an answer may hold it now or ask for the model first.
+        may:
           vehicle:
             has:
               - audi
             as: Audi
-        may:
           wheels: one
         line: Curb rash on an Audi, Sam can sort that out. How many wheels need work?
     form: request

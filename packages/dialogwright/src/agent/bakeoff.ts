@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { cassetteFileName } from '../jev/provider';
-import { digitRuns, foreignFigure, spelledNumbers } from '../render/checks';
+import { DATE_WORDS, digitRuns, foreignFigure, spelledNumbers, words } from '../render/checks';
 import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRenderProvider, type RenderEffort, type RenderThinkingMode } from '../render/providers';
 import type { RenderPrice, RenderUsage } from '../render/types';
 import type { BakeoffCall, BakeoffCases, BakeoffTurn, TextLabel, ValueLabel } from './bakeoffCases';
@@ -296,10 +296,12 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const actions = t.turn.action === undefined ? [NO_ACTION] : typeof t.turn.action === 'string' ? [t.turn.action] : t.turn.action;
   s.actionRight = actions.includes(a.action);
   if (!s.actionRight) s.mistakes.push(`action ${a.action}, wanted ${actions.join(' or ')}`);
-  // A figure is the facts', the fixed lines', the caller's (any number they said on the call so far, which a reply may say back:
-  // CLAUDE.md allows a figure from the caller's words in an acknowledgement), or a value's: one collected, or one given this turn
-  // that its label holds right (with the caller's words it cites, and a date as it is said). A text value is never a source in its
-  // own right: it is the model's own short version. A figure made from the caller's (a sum of theirs) is in none of these.
+  // A figure is the facts', the fixed lines', the caller's (any number, date or time word they said on the call so far, which a reply
+  // may say back: CLAUDE.md allows a figure from the caller's words in an acknowledgement; never on a noFigure turn), or a value's: one
+  // collected, or one given this turn that its label holds right (with the caller's words it cites, and a date as it is said). A text
+  // value is never a source in its own right: it is the model's own short version. A figure made from the caller's (a sum of theirs)
+  // is in none of these.
+  const strict = t.turn.noFigure === true;
   const right = (field: string, value: string): boolean => {
     const label = labels[field] ?? may[field];
     return label !== undefined && label !== '*' && typeOf(field) !== 'text' && !twice.has(field) && matches(label, value, typeOf(field));
@@ -307,11 +309,11 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const sources = [
     ...t.ctx.facts.says,
     ...Object.values(t.ctx.facts.fixed),
-    figuresIn(t.said).join(' '),
+    ...(strict ? [] : [[...figuresIn(t.said), ...words(t.said).filter((w) => DATE_WORDS.has(w))].join(' ')]),
     ...Object.entries(t.collected).filter(([f]) => typeOf(f) !== 'text').flatMap(([f, v]) => [v, ...(typeOf(f) === 'date' ? dateWords(v, t.call.today) : [])]),
     ...a.values.filter((v) => right(v.field, v.value)).flatMap((v) => [v.value, ...(hasWords(t.said, v.words) ? [v.words] : []), ...(typeOf(v.field) === 'date' ? dateWords(v.value, t.call.today) : [])]),
   ];
-  if (t.turn.noFigure === true && numbersNotIn(a.reply, Object.values(t.ctx.facts.fixed)).length > 0) {
+  if (strict && numbersNotIn(a.reply, Object.values(t.ctx.facts.fixed)).length > 0) {
     s.figure = true;
     s.mistakes.push(`a number on a turn that may say none: "${a.reply}"`);
   } else if (foreignFigure(a.reply, sources)) {

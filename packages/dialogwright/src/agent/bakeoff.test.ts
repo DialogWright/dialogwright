@@ -95,6 +95,24 @@ describe('scoreAnswer', () => {
     expect(scoreAnswer(reply(t, "That's 7 copies of the 2020 edition."), t).figure).toBe(true);
   });
 
+  it('a reply may say back a date or time the caller said, but not on a turn that may say no number', () => {
+    const asked = (noFigure: boolean) => {
+      const c = parseBakeoffCases({
+        facts: { name: 'Example Library', voice: 'Brief.' },
+        forms: { hold: { about: 'a hold', fields: [{ name: 'title', type: 'text' }] } },
+        calls: [{ id: 'c', about: 'a call', form: 'hold', today: '2026-11-09', turns: [{ caller: 'Hold it for me Thursday, or tomorrow at 7am, and tell me the fee.', line: 'Sure.', ...(noFigure ? { noFigure: true } : {}) }] }],
+      });
+      return askedTurns(c, c.calls[0]!, 'no examples')[0]!;
+    };
+    const t = asked(false);
+    expect(scoreAnswer(reply(t, "I can't confirm tomorrow at 7am, but Thursday is fine."), t).figure).toBe(false);
+    expect(scoreAnswer(reply(t, 'How about Friday?'), t).figure).toBe(true);
+    const strict = asked(true);
+    expect(scoreAnswer(reply(strict, "I can't confirm tomorrow at 7am."), strict).figure).toBe(true);
+    expect(scoreAnswer(reply(strict, "I can't confirm that for Thursday."), strict).figure).toBe(true);
+    expect(scoreAnswer(reply(strict, 'The fee is explained at the desk.'), strict).figure).toBe(false);
+  });
+
   it('a value is a figure\'s source only when its label holds it right, and a text value never is', () => {
     const t = turnOf('hold-request', 0);
     expect(scoreAnswer(reply(t, 'Two copies it is.', [{ field: 'copies', value: 'two', words: 'two copies' }]), t).figure).toBe(false);
