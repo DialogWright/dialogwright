@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { agentCassetteName, agentRequestOf, askedTurns, formatAgentBakeoff, formatAgentBakeoffMarkdown, labelValue, liveAgentClient, meetsBar, parseAgentModelSpecs, printedTurn, recordedDirFor, runAgentBakeoff, saysANumber, scoreAnswer, variantsOf, warmedUp, WARM_UP_CONTEXT, type AskedTurn } from './bakeoff';
+import { agentCassetteName, agentRequestOf, askedTurns, formatAgentBakeoff, formatAgentBakeoffMarkdown, labelValue, liveAgentClient, meetsBar, numbersNotIn, parseAgentModelSpecs, printedTurn, recordedDirFor, runAgentBakeoff, scoreAnswer, variantsOf, warmedUp, WARM_UP_CONTEXT, type AskedTurn } from './bakeoff';
 import { loadBakeoffCases, parseBakeoffCases, type BakeoffTurn } from './bakeoffCases';
 import { AGENT_CASSETTE_MISS, cassetteAgent } from './cassette';
 import { fakeAgent, type FakeAgentFailure } from './fake';
@@ -73,11 +73,26 @@ describe('the cases file', () => {
 });
 
 describe('scoreAnswer', () => {
-  it('on a turn that may say no number, any number is a figure, in digits or in words', () => {
+  it('on a turn that may say no number, any number the fixed lines do not say is a figure, in digits or in words, the caller\'s own too', () => {
     const t = turnOf('hold-request', 1);
-    for (const text of ['It would be about four hundred.', 'Around eight, usually.', "It's under a hundred bucks.", 'Maybe $2 a day.']) expect(scoreAnswer(reply(t, text), t).figure, text).toBe(true);
+    for (const text of ['It would be about four hundred.', 'Around eight, usually.', "It's under a hundred bucks.", 'Maybe $2 a day.', 'Two copies, so no fee.']) expect(scoreAnswer(reply(t, text), t).figure, text).toBe(true);
     expect(scoreAnswer(reply(t, 'Fees are explained at the desk.'), t).figure).toBe(false);
-    expect(saysANumber('someone at the desk')).toBe(false);
+    expect(numbersNotIn('someone at the desk', [])).toEqual([]);
+    expect(numbersNotIn('It is 2 dollars, or about four hundred', ['The fee is $2.'])).toEqual(['400']);
+  });
+
+  it('a reply may say back a figure the caller said, a year among them, but not one it makes from theirs', () => {
+    const counted = parseBakeoffCases({
+      facts: { name: 'Example Library', voice: 'Brief.' },
+      forms: { hold: { about: 'a hold', fields: [{ name: 'copies', type: 'choice', options: ['seven'] }, { name: 'title', type: 'text' }] } },
+      calls: [{ id: 'c', about: 'a call', form: 'hold', today: '2026-11-09', turns: [{ caller: 'Three copies of the 2019 edition for me and four for my sister, and call me before 9am.', line: 'Sure.' }] }],
+    });
+    const t = askedTurns(counted, counted.calls[0]!, 'no examples')[0]!;
+    expect(scoreAnswer(reply(t, 'The 2019 edition, got it.'), t).figure).toBe(false);
+    expect(scoreAnswer(reply(t, 'Three for you and four for your sister.'), t).figure).toBe(false);
+    expect(scoreAnswer(reply(t, "I can't confirm 9am, sorry."), t).figure).toBe(false);
+    expect(scoreAnswer(reply(t, "That's seven copies total."), t).figure).toBe(true);
+    expect(scoreAnswer(reply(t, "That's 7 copies of the 2020 edition."), t).figure).toBe(true);
   });
 
   it('a value is a figure\'s source only when its label holds it right, and a text value never is', () => {

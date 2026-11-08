@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { cassetteFileName } from '../jev/provider';
-import { foreignFigure, spelledNumbers } from '../render/checks';
+import { digitRuns, foreignFigure, spelledNumbers } from '../render/checks';
 import { openRouterThinkingOf, RENDER_EFFORTS, RENDER_THINKING_MODES, resolveRenderProvider, type RenderEffort, type RenderThinkingMode } from '../render/providers';
 import type { RenderPrice, RenderUsage } from '../render/types';
 import type { BakeoffCall, BakeoffCases, BakeoffTurn, TextLabel, ValueLabel } from './bakeoffCases';
@@ -204,9 +204,19 @@ function dateWords(iso: string, today: string): string[] {
   return [`${DAYS[d.getUTCDay()]!} ${MONTHS[d.getUTCMonth()]!} ${d.getUTCDate()}`, ...(days === 0 ? ['today'] : days === 1 ? ['tomorrow'] : [])];
 }
 
-/** Whether a reply says any number at all, in digits or in words ("about four hundred", "around eight", "under a hundred bucks"). */
-export function saysANumber(reply: string): boolean {
-  return /\d/.test(reply) || spelledNumbers(reply).length > 0;
+/** The numbers a text says, in digits or in words, as digits ("about four hundred" is 400, "the 2019 edition" 2019), as foreignFigure reads them. */
+export function figuresIn(text: string): string[] {
+  return [...digitRuns(text), ...spelledNumbers(text)];
+}
+
+/**
+ * The numbers a reply says that none of `allowed` says (in digits or in words): on a turn marked
+ * `noFigure`, `allowed` is the facts' fixed lines alone, so a reply may say the price line's own numbers
+ * and nothing else ("about four hundred", "around eight", "under a hundred bucks" all refuse).
+ */
+export function numbersNotIn(reply: string, allowed: readonly string[]): string[] {
+  const held = new Set(allowed.flatMap(figuresIn));
+  return figuresIn(reply).filter((n) => !held.has(n));
 }
 
 /** One turn's answer held to its labels. */
@@ -286,8 +296,10 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const actions = t.turn.action === undefined ? [NO_ACTION] : typeof t.turn.action === 'string' ? [t.turn.action] : t.turn.action;
   s.actionRight = actions.includes(a.action);
   if (!s.actionRight) s.mistakes.push(`action ${a.action}, wanted ${actions.join(' or ')}`);
-  // A figure is the facts', the fixed lines', or a value's: one collected, or one given this turn that its label holds right (with the
-  // caller's words it cites, and a date as it is said). A text value is never a source: it is the model's own short version.
+  // A figure is the facts', the fixed lines', the caller's (any number they said on the call so far, which a reply may say back:
+  // CLAUDE.md allows a figure from the caller's words in an acknowledgement), or a value's: one collected, or one given this turn
+  // that its label holds right (with the caller's words it cites, and a date as it is said). A text value is never a source in its
+  // own right: it is the model's own short version. A figure made from the caller's (a sum of theirs) is in none of these.
   const right = (field: string, value: string): boolean => {
     const label = labels[field] ?? may[field];
     return label !== undefined && label !== '*' && typeOf(field) !== 'text' && !twice.has(field) && matches(label, value, typeOf(field));
@@ -295,10 +307,11 @@ export function scoreAnswer(a: AgentAnswer, t: Pick<AskedTurn, 'call' | 'turn' |
   const sources = [
     ...t.ctx.facts.says,
     ...Object.values(t.ctx.facts.fixed),
+    figuresIn(t.said).join(' '),
     ...Object.entries(t.collected).filter(([f]) => typeOf(f) !== 'text').flatMap(([f, v]) => [v, ...(typeOf(f) === 'date' ? dateWords(v, t.call.today) : [])]),
     ...a.values.filter((v) => right(v.field, v.value)).flatMap((v) => [v.value, ...(hasWords(t.said, v.words) ? [v.words] : []), ...(typeOf(v.field) === 'date' ? dateWords(v.value, t.call.today) : [])]),
   ];
-  if (t.turn.noFigure === true && saysANumber(a.reply)) {
+  if (t.turn.noFigure === true && numbersNotIn(a.reply, Object.values(t.ctx.facts.fixed)).length > 0) {
     s.figure = true;
     s.mistakes.push(`a number on a turn that may say none: "${a.reply}"`);
   } else if (foreignFigure(a.reply, sources)) {

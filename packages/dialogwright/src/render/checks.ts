@@ -161,7 +161,8 @@ export function words(text: string): string[] {
 export const straight = (text: string): string => text.replace(/[\u2018\u2019\u02BC]/g, "'");
 
 /** The digit runs of `text`, separators taken out ("1,200.50" is "120050"). */
-function digitRuns(text: string): string[] {
+/** The numbers a text writes in digits, as digits ("1,250" is "1250", "7:30" is "730"). */
+export function digitRuns(text: string): string[] {
   return (text.match(/\d(?:[\d,.:]*\d)?/g) ?? []).map((d) => d.replace(/[,.:]/g, ''));
 }
 
