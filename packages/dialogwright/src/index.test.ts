@@ -9,6 +9,8 @@ describe('the package entry', () => {
       'validateApp', 'formOf', 'slotSpecOf', 'toolOf',
       // the app definition: a folder's YAML joined with the app's code
       'defineApp', 'AppDefinitionError', 'isAppDefinitionError', 'formatProblem', 'checkApp', 'loadAppFolder',
+      // an app in agent mode's business.yaml, for its own code
+      'loadBusiness', 'optionKey',
       // the languages an app speaks
       'DEFAULT_LOCALE', 'defaultLocaleOf', 'localesOf', 'matchLocale', 'localeOf',
       'serviceResultEvent', 'speechEvent', 'sayAction', 'endAction', 'transferAction', 'VOICE_RELAY', 'WEB_CHAT',

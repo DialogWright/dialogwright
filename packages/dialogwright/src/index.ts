@@ -46,6 +46,10 @@ export { loadAppFolder } from './define/load';
 export type { LoadedConfig, LoadResult } from './define/load';
 export { formatProblem } from './define/problems';
 export type { Problem } from './define/problems';
+// An app in agent mode's business.yaml, read and checked, for its own code (a window's capacity, the owner's number and summary).
+export { loadBusiness, optionKey } from './define/business';
+export type { BusinessFile } from './define/business';
+export type { BusinessYaml } from './define/schema/business';
 
 // The knowledge base (an app folder's kb/, App.knowledge): approved passages, resolved for the
 // caller and the day and said word for word; defineKnowledge for an app that is not a folder.

@@ -92,6 +92,18 @@ describe('a scripted call of an app in agent mode', () => {
     expect(r.mismatches).toContain('agent: turn 1 has no answer in the agent cassette (a miss): record it with --client record');
   });
 
+  it('a step heard over a line is marked so: an answer that understood nothing is set aside, one with values is taken', async () => {
+    const HOLD = 'I would like a hold on The Quiet Harbor';
+    const over = (step: Scenario['steps'][number]): Scenario => ({ id: 'over', steps: [step], expect: { decision: 'prompt' } });
+    const nothing = await runScenario(over({ say: 'um so yeah', overLine: true, agent: { reply: '' } }), opts());
+    expect(nothing.runs.at(-1)!.result.setAside).toBeDefined();
+    const taken = await runScenario(over({ say: HOLD, overLine: true, agent: { reply: '', values: [{ field: 'title', value: 'The Quiet Harbor', words: 'The Quiet Harbor' }] } }), opts());
+    expect(taken.runs.at(-1)!.result.setAside).toBeUndefined();
+    expect(taken.runs.at(-1)!.result.session.slots.request_title?.value).toBe('The Quiet Harbor');
+    // Typed text is never over a line.
+    await expect(runScenario({ ...over({ say: HOLD, overLine: true }), as: 'web' }, opts())).rejects.toThrow(/overLine: true\) needs a channel with speech/);
+  });
+
   it('the steps\' agent answers and the properties are held to their shape when the calls are read', () => {
     expect(isScriptedAgentStep({ reply: 'Sure.', values: [{ field: 'day', value: '2026-11-12', words: 'Thursday' }], action: 'submit' })).toBe(true);
     expect(isScriptedAgentStep([{ reply: 'Sure.' }, { fail: 'timeout' }])).toBe(true);

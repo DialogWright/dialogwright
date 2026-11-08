@@ -489,8 +489,10 @@ export async function runSeeded(entry: CorpusEntry, opts: ScenarioRunOptions, ho
  * `serviceDown` is not a turn: it makes the next service effect answer as though the service did not
  * (serviceResultEvent(service, null)), as a timeout or an error would. `signIn` (a subject's id) is the web
  * visitor signing in through the portal: the server's `auth.signed_in` event, at the level a sign-in proves (identity.yaml's `signIn`).
+ * A spoken step (`say`) heard over a line the caller could not interrupt is `overLine: true`: its event is
+ * marked as the voice server marks it under SPEECH_OVER_LINE (UserSpeech.overLine), on a call with speech only.
  */
-export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean; agent?: ScriptedAgentStep } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
+export type ScenarioStep = { say: string; fail?: boolean; partial?: boolean; overLine?: boolean; agent?: ScriptedAgentStep } | { dtmf: string } | { silence: true } | { serviceDown: true } | { signIn: string };
 
 /**
  * A scripted call's expectation: its end (the decision, the prompt, the gate, ...), and, for an app in agent
@@ -699,7 +701,7 @@ export async function runScenario(scenario: Scenario, opts: ScenarioRunOptions):
     const events: SessionEvent[] = 'dtmf' in step ? keyEvents(step.dtmf)
       : 'silence' in step ? [silenceEvent()]
       : 'signIn' in step ? [signedInEvent(signedInSubject(scenario.id, step.signIn))]
-      : [saidEvent(session, step.say, step.partial !== true)];
+      : [overLineOf(saidEvent(session, step.say, step.partial !== true), step.overLine === true)];
     failNext = 'say' in step && step.fail === true;
     stepped?.step(index, 'say' in step ? step.agent : undefined);
     for (const event of events) {
@@ -783,6 +785,13 @@ export function checkExpectation(outcome: Outcome, expected: ScenarioExpectation
   return out;
 }
 
+/** A spoken step's event marked as heard over a line (ScenarioStep `overLine`): speech only, since typed text is never over a line. */
+function overLineOf(event: SessionEvent, over: boolean): SessionEvent {
+  if (!over) return event;
+  if (event.type !== 'user.speech') throw new Error('a step heard over a line (overLine: true) needs a channel with speech; this session is typed text');
+  return { ...event, overLine: true };
+}
+
 /** An object of strings (a scenario's callData). */
 function isStringMap(v: unknown): v is Record<string, string> {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string');
@@ -807,6 +816,7 @@ function isValidScenario(s: unknown): s is Scenario {
     ((s as Scenario).as === undefined || (s as Scenario).as === WEB_VISITOR || signedInDelegate(String((s as Scenario).as)) !== null) &&
     // An agent-mode call's steps' agent answers and its properties, well formed.
     (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('agent' in step) || isScriptedAgentStep((step as { agent?: unknown }).agent)) &&
+    (s as Scenario).steps.every((step) => typeof step !== 'object' || step === null || !('overLine' in step) || typeof (step as { overLine?: unknown }).overLine === 'boolean') &&
     validAgentProperties((s as Scenario).expect as unknown as Record<string, unknown>)
   );
 }
@@ -818,7 +828,7 @@ export function loadScenarios(dir: string): Scenario[] {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, file), 'utf8'));
     if (!Array.isArray(parsed)) throw new Error(`scenarios ${file}: expected an array`);
     for (const [index, s] of parsed.entries()) {
-      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a step's agent answer or an agent property not in its shape, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
+      if (!isValidScenario(s)) throw new Error(`scenarios ${file}: entry ${index} is missing id, steps, or expect, has a step's agent answer or an agent property not in its shape, a step's overLine that is not true or false, has a locale that is not a language tag (a non-empty string), a callerNumber or calledNumber that is not a string, a callData or env that is not an object of strings, a now that is not a date and time, a todayIso that is not YYYY-MM-DD, a renderDelayMs that is not a whole number of ms from 0 to 30000, or names no ${identityOf(getApp(defaultAppId())).delegateKind ?? 'delegate'} in as`);
       if (seen.has(s.id)) throw new Error(`scenario ${s.id}: duplicate id`);
       const [gapProblem] = scenarioGapProblems(s);
       if (gapProblem !== undefined) throw new Error(`scenarios ${file}: ${gapProblem.message}`);
