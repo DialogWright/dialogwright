@@ -42,9 +42,10 @@ export interface SlotState {
   /**
    * `caller-id`: a factor the caller-ID match identifies (identity.yaml's `callerId`), filled from the
    * match just before the check rather than said, with a value and no display. Absent on every other
-   * slot, and gone when the slot is emptied.
+   * slot, and gone when the slot is emptied. `agent`: understood by the agent model of an app in agent
+   * mode (core/agentTurn.ts) and checked by the slot type's `check`, never filled by the slot itself.
    */
-  by?: 'caller-id';
+  by?: 'caller-id' | 'agent';
   /**
    * The caller's words the value was heard in: kept only for a topic slot whose form's answer line words
    * its answer for the caller's question (App.generated.answerSlots), and never from words said at a
@@ -312,6 +313,14 @@ export interface Session {
    * the call. Absent until the first, so every other session, and one saved before it, is as it was.
    */
   frustrationHigh?: true;
+  /**
+   * An app in agent mode's own (core/agentTurn.ts): the conversation so far, the caller's words and what
+   * the line said, in order, as the agent model is sent it (each earlier line masked there by what the
+   * records hide); and how many turns in a row the agent model failed (a timeout, an answer not in its
+   * shape, an error), two of which end the call with the handoff line. Absent for every other app, so
+   * every other session, and one saved before it, is as it was.
+   */
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];
@@ -593,6 +602,7 @@ export function cloneSession(s: Session): Session {
     completed: [...s.completed],
     ...(s.acknowledged ? { acknowledged: [...s.acknowledged] } : {}),
     lastInterrupt: s.lastInterrupt ? { ...s.lastInterrupt } : null,
+    ...(s.agent ? { agent: { conversation: s.agent.conversation.map((u) => ({ ...u })), failures: s.agent.failures } } : {}),
   };
 }
 

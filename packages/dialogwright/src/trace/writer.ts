@@ -68,6 +68,8 @@ export interface TraceInput {
   pricePerMtok: number;
   /** What generated wording did on the turn (TraceRecord.render); null or absent when it did nothing. */
   render?: RenderRecord | null;
+  /** What the turn made of the agent model's answer, and what it was sent (TraceRecord.agent); absent on every other turn. */
+  agent?: TraceRecord['agent'];
   /** The decision model's usage on the drift checks of generated lines, added into the record's usage; null or absent when none was asked. */
   driftUsage?: JevUsage | null;
   /** The turn's second request (TraceRecord.followUp), its usage added into the record's; null or absent when it made none. */
@@ -150,6 +152,8 @@ export function buildTraceRecord(input: TraceInput): TraceRecord {
     audit: [...result.audit],
     // Only for an app that generates a line, on a run with a renderer: every other record is as it was.
     ...(input.render ? { render: input.render } : {}),
+    // Only on a turn of an app in agent mode that asked its agent model: every other record is as it was.
+    ...(input.agent ? { agent: input.agent } : {}),
     timing,
     usage: {
       inputTokens,

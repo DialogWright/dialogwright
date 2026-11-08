@@ -45,6 +45,8 @@ import type { TurnKnowledge } from './knowledge';
 import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
+import type { AgentResult } from '../agent/types';
+import { agentDropped, agentWords, noteConversation, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -115,6 +117,12 @@ export interface TurnContext {
    * (run/continuation.ts). Unset, the session the turn ran on.
    */
   setAsideAs?: Session;
+  /**
+   * The agent model's answer to this turn's words, for an app in agent mode (core/agentTurn.ts): asked by
+   * the runner beside the decision model (run/turn.ts), or a failure where it was not ready in time, not in
+   * its shape, or no client is set. Absent on every turn that does not ask it, and for every other app.
+   */
+  agent?: AgentResult;
 }
 
 /**
@@ -194,8 +202,8 @@ export function digitAtRun(session: Session, event: SessionEvent, tc: DigitArriv
   return now;
 }
 
-/** One turn's context and its outputs beside the decision, threaded through the handlers together. */
-interface TurnIO {
+/** One turn's context and its outputs beside the decision, threaded through the handlers together (core/agentTurn.ts takes it too). */
+export interface TurnIO {
   /** The session's app, resolved once for the turn. */
   app: App;
   tc: TurnContext;
@@ -230,6 +238,8 @@ interface TurnIO {
   missed?: true;
   /** The form's own summary hook said lines in answer (FormDef.onSummaryAnswer): a reply, never a miss, whatever is counted. */
   replied?: true;
+  /** What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts). */
+  agent?: AgentTurnRecord;
 }
 
 export interface Plan {
@@ -296,6 +306,12 @@ export interface TurnResult {
   setAside?: 'speech-over-line';
   /** what this turn tells the audit log, in order; the runner appends them to the chain (core/audit.ts) */
   audit: AuditDraft[];
+  /**
+   * What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts): each value's
+   * check, the action and what became of it, whether the reply was said, or why the answer was dropped
+   * or failed. Only on a turn that asked the agent; absent on every other turn and for every other app.
+   */
+  agent?: AgentTurnRecord;
 }
 
 /** What the slot specs see of a turn's words and the session (exported for tests). */
@@ -3193,6 +3209,16 @@ function overLineMiss(before: Session, after: Session, event: SessionEvent, verd
   return events.every((e) => e.outcome.kind === 'invalid' || e.outcome.kind === 'absent');
 }
 
+/** The scripted turn's steps an agent turn takes (core/agentTurn.ts ScriptedSteps). */
+const SCRIPTED_STEPS: ScriptedSteps = {
+  handleVerdict,
+  personForm,
+  askSummary,
+  askChange,
+  reaskConfirmation,
+  continueForm,
+};
+
 /**
  * `screen` is the injection screen's reading of a speech or text event's words, asked beside perception;
  * null (or absent) when it was not asked. It is only read on a words turn, and only after the
@@ -3236,7 +3262,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     return withSources(io.app, withReplies(io.app, decision, actions, { shown: !s.caps.speech, locale: s.locale, ctx: () => slotContext(s, '', tc) }), io.out.kb, { shown: !s.caps.speech });
   };
   // Read at return time, not here: the handlers below fill `io.out` as the turn runs.
-  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false });
+  const base = () => ({ session: s, turnState: null, rows: [] as GateRow[], verdict: null, fillEvents: [], ...io.out, screen, quarantined: false, ...(io.agent !== undefined ? { agent: io.agent } : {}) });
   // A reply that did not pass its tool's check this turn ends the turn with a person, whatever the
   // app's code made of the null value it was given (uncheckedHandoff); then the decision is kept.
   const settle = (decision: Decision, label: string): Decision => {
@@ -3244,6 +3270,8 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
     // A slot's own question with the values its lines may say (a record slot's {choices}).
     withQuestionVars(io.app, settled, () => slotContext(s, '', tc));
     bookkeep(s, settled, label);
+    // An app in agent mode keeps the conversation for its agent model: the caller's words (not a quarantined turn's) and the line's.
+    if (io.app.mode === 'agent') noteConversation(s, event, settled, label !== 'screen');
     return settled;
   };
   if (s.ended) return { ...base(), decision: { kind: 'ignore' }, actions: [] };
@@ -3382,12 +3410,14 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       const screened: GateRow[] = screen ? [screenRow(screen, tc.thresholds)] : [];
       // Quarantine does not wait on perception: its answers are discarded whether or not they came.
       if (screen?.fired) {
+        io.agent = agentDropped(tc.agent, 'screen');
         const decided = readSummary(s, quarantine(s), io);
         const decision = settle(decided, 'screen');
         s.lastInterrupt = null;
         return { ...base(), turnState, rows: screened, decision, actions: act(decision), quarantined: true };
       }
       if (error || answers === null) {
+        io.agent = agentDropped(tc.agent, 'decision-model-failed');
         const decided = handleFailure(s);
         const decision = settle(decided, 'error');
         // The turn state above already reported the barge-in, failed ask or not.
@@ -3407,7 +3437,10 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
       if (rung === 'ack' || rung === 'offer') s.frustratedTurns += 1;
       // Acknowledged, the frustration was caught: where the turn would be a miss it is not (caughtFrustration).
       if ((rung === 'ack' || rung === 'ack_only') && frustrationMissOf(io.app) === 'ignore') io.caught = true;
-      const { decision: resolved, events } = handleVerdict(s, verdict, answers, ctx, io);
+      // An app in agent mode: the agent turn (core/agentTurn.ts), which takes the scripted turn's own steps where it is the scripted one.
+      const { decision: resolved, events } = io.app.mode === 'agent' && io.app.agent !== undefined
+        ? agentWords(s, verdict, answers, ctx, io, SCRIPTED_STEPS, event.text)
+        : handleVerdict(s, verdict, answers, ctx, io);
       // Speech over a line the caller could not interrupt that would be a miss is set aside, as side speech
       // is: nothing said, nothing counted, the session as it was (overLineMiss). The rows say what was read.
       if (overLineMiss(session, s, event, verdict, events, io)) {
@@ -3418,6 +3451,7 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
         return {
           session: kept, turnState, rows: [...screened, ...read.map((r) => (r.decided ? { ...r, decided: false } : r)), OVER_LINE_ROW],
           verdict: { kind: 'ignore' }, fillEvents: [], ...newTurnOut(), decision: { kind: 'ignore' }, actions: [], screen, quarantined: false, setAside: 'speech-over-line',
+          ...(io.agent !== undefined ? { agent: { ...io.agent, use: 'dropped' as const, dropped: 'speech-over-line', values: [], replySaid: false } } : {}),
         };
       }
       // A frustration-only turn caught is kept for the next (Session.frustrationOnly); any other turn the

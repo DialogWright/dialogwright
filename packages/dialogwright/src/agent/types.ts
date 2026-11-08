@@ -188,3 +188,23 @@ export interface AgentApp {
   /** The model, from style.yaml's `agent` (Mercury 3 on Inception at instant by default). */
   model: AgentModelChoice;
 }
+
+/**
+ * The agent model as a run reaches it (RunOptions.agent): its client, and how long a turn waits for its
+ * answer on each channel (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS; server/config.ts agentSettings).
+ * The server builds it from style.yaml's `agent`, as it builds the renderer; a test passes a fake.
+ */
+export interface AgentRunner {
+  client: AgentClient;
+  /** Absent: DEFAULT_AGENT_TIMEOUT_MS. */
+  timeoutMs?: { voice: number; chat: number };
+}
+
+/**
+ * How long a turn waits for the agent's answer by default, ms: 1200 on a call (the measured p95 and 300
+ * ms, rounded; the agent-mode design, "Measured") and 3000 in a chat.
+ */
+export const DEFAULT_AGENT_TIMEOUT_MS: Readonly<{ voice: number; chat: number }> = Object.freeze({ voice: 1200, chat: 3000 });
+
+/** The range an agent budget may be set in, ms. */
+export const AGENT_TIMEOUT_RANGE: Readonly<{ min: number; max: number }> = Object.freeze({ min: 300, max: 15_000 });

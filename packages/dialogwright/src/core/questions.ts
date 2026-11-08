@@ -274,8 +274,19 @@ function heldByCallerMatch(session: Session): SlotSpec[] {
   return (app.identity?.callerId?.identifies ?? []).map((id) => slotSpecOf(app, id));
 }
 
+/**
+ * What the decision model is asked on a turn of an app in agent mode (core/agentTurn.ts): only what it
+ * reads on every turn (side speech, words made out, a person asked for, frustration, the language, the
+ * request), and at a pending confirmation the yes or the no, since that decides what is done. No field's
+ * question: the agent model understands the values, and each field's slot type checks them.
+ */
+function agentModeQuestions(app: App, session: Session): QuestionMap {
+  return { ...alwaysOn(app), ...(session.pendingConfirmation ? confirmation(app) : {}) };
+}
+
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {
   const app = appOf(session);
+  if (app.mode === 'agent') return agentModeQuestions(app, session);
   const q: QuestionMap = { ...alwaysOn(app) };
   // Which slot asks each slot question this turn: a slot's question that took another's id, or one
   // of the engine's, would replace it unseen, so it throws instead. A slot that declares its ids

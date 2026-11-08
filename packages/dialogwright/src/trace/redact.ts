@@ -526,7 +526,26 @@ function scrubVars(d: TraceRecord['decision'], scrub: Scrub | null): TraceRecord
   if ('acks' in d && Array.isArray(d.acks)) out.acks = d.acks.map((a) => (isObject(a) ? { ...a, vars: vars(a.vars) } : a));
   // A repeat's words (a replay decision's text, the line said again) are our line too.
   if ('text' in d && typeof d.text === 'string') out.text = scrub(d.text);
+  // An agent line's reply (PromptDecision.agent) is our line too.
+  if ('agent' in d && isObject(d.agent) && typeof d.agent.reply === 'string') out.agent = { ...d.agent, reply: scrub(d.agent.reply) };
   return out as TraceRecord['decision'];
+}
+
+/**
+ * What an agent turn records (TraceRecord.agent), masked where it carries a redacted slot's value: each
+ * accepted value's `shown` as its slot masks it, and what it was sent (its fields' values masked when sent
+ * already) scrubbed of the turn's redacted values (`scrub`): the conversation, the caller's latest words
+ * among it, which held a value the turn then understood.
+ */
+function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | null, mode: StatementMode): TraceRecord['agent'] {
+  if (!isObject(agent)) return agent;
+  const values = Array.isArray(agent.values)
+    ? agent.values.map((v) => (isObject(v) && typeof v.shown === 'string' && typeof v.slot === 'string' ? { ...v, shown: maskValue(app, v.slot, v.shown, mode) ?? v.shown } : v))
+    : agent.values;
+  const sent = isObject(agent.sent) && scrub !== null && Array.isArray(agent.sent.conversation)
+    ? { ...agent.sent, conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)) }
+    : agent.sent;
+  return { ...agent, values, ...(sent !== undefined ? { sent } : {}) };
 }
 
 /** A say action's text parts, scrubbed. */
@@ -635,6 +654,7 @@ export function redactRecordSlots(record: TraceRecord, mode: StatementMode, app:
   const pc = record.pendingConfirmation;
   if (pc && pc.target === 'slot') out.pendingConfirmation = { ...pc, value: maskValue(app, pc.slot, pc.value, mode) ?? pc.value, display: maskValue(app, pc.slot, pc.display, mode) ?? pc.display };
   out.decision = scrubVars(redactDecision(app, record.decision, mode), scrub);
+  if (record.agent !== undefined) out.agent = redactAgent(app, record.agent, scrub, mode);
   if (record.effects !== undefined) out.effects = redactEffects(app, record.effects, mode);
   // A transfer hands over what the call collected, identity slots included.
   if (Array.isArray(record.actions)) {

@@ -14,6 +14,8 @@ import type { SlotExhausted } from '../core/outcome';
 import type { RouteTaken } from '../core/routes';
 import type { RenderRecord } from '../render/types';
 
+import type { AgentSentRecord, AgentTurnRecord } from '../core/agentTurn';
+
 export type TraceSource = AnswerSource | 'dtmf' | 'silence' | 'error' | 'none';
 
 export interface TraceTiming {
@@ -23,6 +25,8 @@ export interface TraceTiming {
   renderMs?: number;
   /** How long the turn's second request took (TraceRecord.followUp), its retrieval not included (that is `retrieveMs`); only on a turn that asked for one. */
   followUpMs?: number;
+  /** How long the agent model took (TraceRecord.agent), asked beside the decision model, so within `askMs`; only on a turn of an app in agent mode that asked it. */
+  agentMs?: number;
   planMs: number;
   askMs: number;
   resolveMs: number;
@@ -219,6 +223,15 @@ export interface TraceRecord {
    * call's first turn and each turn that says such a line; absent on every other record.
    */
   render?: RenderRecord;
+  /**
+   * What the turn made of the agent model's answer (an app in agent mode, core/agentTurn.ts
+   * AgentTurnRecord): each value's check (an accepted one with its `shown`, masked as the records mask its
+   * field), the action and what became of it, whether the reply was said, or why the answer was dropped or
+   * failed (`fallback`, the agent's fallback); and what it was sent (`sent`: the fields masked as sent, the
+   * conversation with what the records hide masked once understood, never an identity factor). Only on a
+   * turn that asked the agent; absent on every other record and for every other app.
+   */
+  agent?: AgentTurnRecord & { sent?: AgentSentRecord };
 }
 
 /** What a turn waited on (TraceRecord.waited). */

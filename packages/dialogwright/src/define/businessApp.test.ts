@@ -15,6 +15,7 @@ import type { LibrarySlotSpec } from '../slots/types';
 import { parseCorpus } from '../jev/corpus';
 import { mockCodeVerifier } from '../core/tools';
 import { FixtureStubClient } from '../jev/fixtureStub';
+import { fakeAgent } from '../agent/fake';
 import { HeuristicStubClient } from '../jev/heuristicStub';
 import type { JevClient } from '../jev/types';
 import { runScenario, type ScenarioRun } from '../harness-text/runner';
@@ -177,9 +178,17 @@ describe('a call through the core', () => {
     '{"id":"pp-01","text":"can I talk to a person","intent":"agent","context":"no_form"}',
   ].join('\n'), app);
   const client: JevClient = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: TODAY }) });
+  // The agent model, scripted by the caller's words (agent mode: the values are the agent's, the decision model reads the turn).
+  const agent = fakeAgent((ctx) => {
+    const words = ctx.conversation.at(-1)!.text;
+    if (words.startsWith('I would like to book the study room for four of us tomorrow morning')) {
+      return { reply: 'Lovely.', values: [{ field: 'people', value: 'four', words: 'four of us' }, { field: 'day', value: '2026-11-10', words: 'tomorrow' }, { field: 'window', value: 'morning', words: 'morning' }], action: 'none', fromFacts: false };
+    }
+    return { reply: '', values: [], action: 'none', fromFacts: false };
+  });
   const call = (callerNumber: string | undefined, ...said: string[]): Promise<ScenarioRun> => runScenario(
     { id: 'call', steps: said.map((say) => ({ say })), expect: { decision: 'any' }, ...(callerNumber !== undefined ? { callerNumber } : {}) },
-    { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier } },
+    { client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier }, agent: { client: agent } },
   );
   const promptOf = (t: TurnResult): string | undefined => ('promptId' in t.decision ? t.decision.promptId : undefined);
   const heard = (t: TurnResult): string => spokenText(app, t.decision);

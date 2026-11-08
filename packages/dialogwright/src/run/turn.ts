@@ -26,6 +26,8 @@ import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
+import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, type AgentSentRecord } from '../core/agentTurn';
+import { DEFAULT_AGENT_TIMEOUT_MS, type AgentResult, type AgentRunner } from '../agent/types';
 
 export interface TurnObserver {
   /**
@@ -128,6 +130,13 @@ export interface RunOptions {
    * clip once the last should have played. Unset (a chat, the harness), no sound is played.
    */
   playMs?: (actions: readonly Action[]) => number;
+  /**
+   * The agent model of an app in agent mode (core/agentTurn.ts): its client and its budgets per channel
+   * (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). Asked beside the decision model on each turn of words
+   * it can answer, so it adds no wait of its own beyond the slower of the two. Unset on a run of an app in
+   * agent mode, every such turn says its fixed fallback (no agent client); every other app never asks it.
+   */
+  agent?: AgentRunner | null;
 }
 
 /**
@@ -272,6 +281,22 @@ function clientFailure(reason: unknown): TurnError {
   return { name: reason.name, message: reason.message };
 }
 
+/**
+ * The agent model asked for a turn, within its channel's budget (AgentRunner.timeoutMs, else
+ * DEFAULT_AGENT_TIMEOUT_MS): its answer, or why there is none. A client never rejects; one that does is an
+ * error all the same, its kind and never its message. No client set: NO_AGENT_CLIENT, at once.
+ */
+async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner['client']['answer']>[0], speech: boolean): Promise<AgentResult> {
+  if (runner === null) return NO_AGENT_CLIENT;
+  const budget = (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
+  const t0 = performance.now();
+  try {
+    return await runner.client.answer(ctx, budget);
+  } catch (err) {
+    return { ok: false, reason: 'error', detail: `the agent client threw (${err instanceof Error ? err.name : 'error'})`, ms: Math.round(performance.now() - t0) };
+  }
+}
+
 /** The separate screen's error when it had not answered SCREEN_GRACE_MS after perception did. */
 export const SCREEN_LATE = 'screen late';
 
@@ -379,61 +404,70 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const t0 = performance.now();
   const p = plan(session, event, tc);
   const t1 = performance.now();
-  let response: JevResponse | null = null;
-  let error: TurnError | null = null;
-  let screenResponse: JevResponse | null = null;
-  let screen: ScreenResult | null = null;
-  if (p.needsModel && words !== null) {
-    try {
-      opts.observe?.asked(p.questions!, p.turnState as TurnState, now());
-    } catch {
-      /* observers are best effort */
-    }
-    const timeoutMs = opts.thresholds.JEV_TIMEOUT_MS;
-    if ((opts.screen ?? DEFAULT_SCREEN_MODE) === 'inline') {
-      // The screen's question rides in perception's request: one request, one timeout. The model
-      // answers each question on its own, and the screen's is told to read asr.text alone, the same
-      // words the separate screen is given. A failed request fails both: the turn takes its
-      // client-failure path, and the screen reports the same error (fails open, as ever).
-      const screenQs = inlineScreenQuestions(appOf(session));
-      const asked = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: withInlineScreen(p.questions!, screenQs), timeoutMs }));
-      if (asked.status === 'fulfilled') {
-        const split = splitInlineAnswers(asked.value.answers, screenQs);
-        response = { ...asked.value, answers: split.perception };
-        screen = screenResult(split.screen, null, opts.thresholds, true);
-      } else {
-        error = clientFailure(asked.reason);
-        screen = screenResult(null, error.message, opts.thresholds, true);
+  // Typed by cast, not narrowed: askJev, below, sets them.
+  let response = null as JevResponse | null;
+  let error = null as TurnError | null;
+  let screenResponse = null as JevResponse | null;
+  let screen = null as ScreenResult | null;
+  // The agent model, for a turn of an app in agent mode it can answer: asked now, beside the decision model.
+  const agentCtx = agentAsks(session, event, base) ? agentContextOf(session, event, base) : null;
+  const agentSent: AgentSentRecord | null = agentCtx !== null ? agentSentRecord(agentCtx) : null;
+  const agentAsked: Promise<AgentResult | null> = agentCtx === null ? Promise.resolve(null) : askAgent(opts.agent ?? null, agentCtx, session.caps.speech);
+  const askJev = async (): Promise<void> => {
+    if (p.needsModel && words !== null) {
+      try {
+        opts.observe?.asked(p.questions!, p.turnState as TurnState, now());
+      } catch {
+        /* observers are best effort */
       }
-    } else {
-      // The injection screen goes out beside perception, so it costs no latency. Its request holds
-      // the caller's words and nothing else: no session state can sway it. A keypad turn
-      // never gets here, so a digit of the code is never screened. Settled as it is made, so a screen
-      // left behind as late never surfaces as an unhandled rejection.
-      const screening = settle(opts.client.ask({ state: screenState(words), questions: screenQuestions(appOf(session)), timeoutMs }));
-      const perceived = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: p.questions!, timeoutMs }));
-      if (perceived.status === 'fulfilled') response = perceived.value;
-      else error = clientFailure(perceived.reason);
-      // Once perception is back the screen gets SCREEN_GRACE_MS more, not the full timeout: the
-      // caller is waiting on it. The screen fails open: a failed or late screen leaves the turn to
-      // perception and the gate, and says so in the trace.
-      const screened = await settledWithin(screening, opts.thresholds.SCREEN_GRACE_MS);
-      if (screened === 'late') {
-        screen = screenResult(null, SCREEN_LATE, opts.thresholds);
-      } else if (screened.status === 'fulfilled') {
-        screenResponse = screened.value;
-        screen = screenResult(screened.value.answers, null, opts.thresholds);
+      const timeoutMs = opts.thresholds.JEV_TIMEOUT_MS;
+      if ((opts.screen ?? DEFAULT_SCREEN_MODE) === 'inline') {
+        // The screen's question rides in perception's request: one request, one timeout. The model
+        // answers each question on its own, and the screen's is told to read asr.text alone, the same
+        // words the separate screen is given. A failed request fails both: the turn takes its
+        // client-failure path, and the screen reports the same error (fails open, as ever).
+        const screenQs = inlineScreenQuestions(appOf(session));
+        const asked = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: withInlineScreen(p.questions!, screenQs), timeoutMs }));
+        if (asked.status === 'fulfilled') {
+          const split = splitInlineAnswers(asked.value.answers, screenQs);
+          response = { ...asked.value, answers: split.perception };
+          screen = screenResult(split.screen, null, opts.thresholds, true);
+        } else {
+          error = clientFailure(asked.reason);
+          screen = screenResult(null, error.message, opts.thresholds, true);
+        }
       } else {
-        screen = screenResult(null, clientFailure(screened.reason).message, opts.thresholds);
+        // The injection screen goes out beside perception, so it costs no latency. Its request holds
+        // the caller's words and nothing else: no session state can sway it. A keypad turn
+        // never gets here, so a digit of the code is never screened. Settled as it is made, so a screen
+        // left behind as late never surfaces as an unhandled rejection.
+        const screening = settle(opts.client.ask({ state: screenState(words), questions: screenQuestions(appOf(session)), timeoutMs }));
+        const perceived = await settle(opts.client.ask({ state: p.turnState as unknown as JsonValue, questions: p.questions!, timeoutMs }));
+        if (perceived.status === 'fulfilled') response = perceived.value;
+        else error = clientFailure(perceived.reason);
+        // Once perception is back the screen gets SCREEN_GRACE_MS more, not the full timeout: the
+        // caller is waiting on it. The screen fails open: a failed or late screen leaves the turn to
+        // perception and the gate, and says so in the trace.
+        const screened = await settledWithin(screening, opts.thresholds.SCREEN_GRACE_MS);
+        if (screened === 'late') {
+          screen = screenResult(null, SCREEN_LATE, opts.thresholds);
+        } else if (screened.status === 'fulfilled') {
+          screenResponse = screened.value;
+          screen = screenResult(screened.value.answers, null, opts.thresholds);
+        } else {
+          screen = screenResult(null, clientFailure(screened.reason).message, opts.thresholds);
+        }
       }
     }
-  }
+  };
+  // The decision model and the agent at once: the turn waits for the slower, never the two in turn.
+  const [, agentResult] = await Promise.all([askJev(), agentAsked]);
   const t2 = performance.now();
   // A second request on the same words, when the answers turn out to need one (askFollowUp).
   const second = response !== null && words !== null && p.turnState !== null
     ? await askFollowUp(session, event, words, p.turnState, response.answers, tc, screen, opts, t1)
     : null;
-  const turnTc = second?.tc ?? tc;
+  const turnTc: TurnContext = { ...(second?.tc ?? tc), ...(agentResult !== null ? { agent: agentResult } : {}) };
   const t2f = performance.now();
   // The core, run again while a tool it called is still to reply (core/toolWait.ts), with the app's hold
   // line and thinking sound said while it waits (run/waiting.ts); once for a turn whose tools reply at once.
@@ -480,10 +514,12 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
         : { planMs: t1 - t0, askMs: t2 - t1, resolveMs: t3 - t2f, totalMs: t3 - t0 }),
       ...(second?.retrieved?.ms != null ? { retrieveMs: second.retrieved.ms } : {}),
       ...(second?.ms != null ? { followUpMs: second.ms } : {}),
+      ...(agentResult !== null ? { agentMs: agentResult.ms } : {}),
       // A turn that rendered a generated line counts its rendering too.
       ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
     },
     render: rendered?.record ?? null,
+    ...(result.agent !== undefined ? { agent: { ...result.agent, ...(agentSent !== null ? { sent: agentSent } : {}) } } : {}),
     driftUsage: rendered?.driftUsage ?? null,
     retrieval: retrievedAny?.record ?? null,
     followUp: second?.run ? followUpRecord(second.run) : null,

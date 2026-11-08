@@ -34,6 +34,19 @@ export interface PromptDecision {
    * `summary.onNo: read-back`). A generated line is said fixed (render/turn.ts, skip `exact`). Absent on every other prompt.
    */
   exact?: true;
+  /**
+   * An agent line (an app in agent mode, core/agentTurn.ts): the agent model's reply is said in place of
+   * this prompt's own line, which is its fixed fallback (a field's question, the open question, "What
+   * should I change?"). The prompt's id, target and variables stand for the turn's bookkeeping as for any
+   * prompt. The render layer holds the reply to the facts and says the fallback when it fails. Absent on
+   * every other prompt.
+   */
+  agent?: AgentLine;
+}
+
+/** The agent model's reply as a turn says it (PromptDecision.agent): the words, as the model gave them. */
+export interface AgentLine {
+  readonly reply: string;
 }
 
 export interface CompleteDecision {

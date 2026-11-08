@@ -25,11 +25,15 @@ import { NO_ACTION } from './types';
 /** Text from the call (the caller's words, a value, a tool's result) as data inside a section: it cannot close one or open another. */
 export const escapeText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** A field's value as it is sent: masked as the records mask it where they hide it, and escaped. */
-function shownValue(f: AgentField): string {
+/** A field's value as it is sent, before escaping: masked as the records mask it where they hide it (a trace keeps it so, core/agentTurn.ts agentSentRecord). */
+export function fieldValueSent(f: Pick<AgentField, 'value' | 'redact'>): string {
   const v = f.value ?? '';
-  const masked = f.redact === 'last4' ? maskLast4(v) : f.redact === 'mask' ? maskToYear(v) : f.redact === 'length' ? `<${v.length} chars>` : v;
-  return escapeText(masked);
+  return f.redact === 'last4' ? maskLast4(v) : f.redact === 'mask' ? maskToYear(v) : f.redact === 'length' ? `<${v.length} chars>` : v;
+}
+
+/** A field's value as it is sent: masked, and escaped. */
+function shownValue(f: AgentField): string {
+  return escapeText(fieldValueSent(f));
 }
 
 const tag = (name: string, body: string): string => `<${name}>\n${body.trim()}\n</${name}>`;

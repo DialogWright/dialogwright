@@ -225,6 +225,11 @@ export interface SaidLine {
   readonly role: LineRole;
   /** The decision asks for this line word for word (PromptDecision.exact). */
   readonly exact?: true;
+  /**
+   * The line said is the agent model's reply in place of this prompt's own (PromptDecision.agent): the
+   * prompt is its fixed fallback. Absent on every other line.
+   */
+  readonly agent?: { readonly reply: string };
 }
 
 const SAID_LINES = new WeakMap<Say, SaidLine>();
@@ -254,7 +259,15 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
       return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
       const actions: Action[] = decision.acks.map((a) => ack(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
-      actions.push(sayAs('ask', decision.exact === true)(decision.promptId, decision.vars, promptEntry(app, decision.promptId, locale).interruptible));
+      const interruptible = promptEntry(app, decision.promptId, locale).interruptible;
+      if (decision.agent !== undefined) {
+        // An agent line: the model's reply, said in place of its fallback (the prompt), as TTS text.
+        const line = sayAction([{ text: decision.agent.reply }], interruptible, lineLang(app, locale));
+        SAID_LINES.set(line, { promptId: decision.promptId, vars: decision.vars, role: 'ask', agent: { reply: decision.agent.reply } });
+        actions.push(line);
+        return actions;
+      }
+      actions.push(sayAs('ask', decision.exact === true)(decision.promptId, decision.vars, interruptible));
       return actions;
     }
     case 'complete':
@@ -306,7 +319,7 @@ export function spokenText(app: App, decision: Decision, locale?: string, channe
     case 'replay':
       return decision.text;
     case 'prompt':
-      return [...decision.acks.map((a) => text(a.promptId, a.vars)), text(decision.promptId, decision.vars)].join(' ');
+      return [...decision.acks.map((a) => text(a.promptId, a.vars)), decision.agent !== undefined ? decision.agent.reply : text(decision.promptId, decision.vars)].join(' ');
     case 'complete':
       return [
         ...decision.acks.map((a) => text(a.promptId, a.vars)),

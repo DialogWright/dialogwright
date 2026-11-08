@@ -63,7 +63,8 @@ export function repliesOf(app: App, decision: PromptDecision, locale: string | u
  * only on a channel that shows words (a chat), only for a prompt. The actions themselves otherwise.
  */
 export function withReplies(app: App, decision: Decision, actions: Action[], on: { readonly shown: boolean; readonly locale: string | undefined; readonly ctx: () => SlotContext }): Action[] {
-  if (!on.shown || decision.kind !== 'prompt') return actions;
+  // An agent line asks what the model asked, not its fallback's question: no buttons of the fallback's answers.
+  if (!on.shown || decision.kind !== 'prompt' || decision.agent !== undefined) return actions;
   const replies = repliesOf(app, decision, on.locale, on.ctx);
   const asks = actions.at(-1);
   if (replies !== null && asks?.type === 'say') asks.replies = replies;
