@@ -83,12 +83,17 @@ export interface Text {
   status: string;
 }
 
-/** A request on file for the number a caller may text from: who, which car, and when it was sent. */
+/** A request on file for the number a caller may text from: who, which car, whether they said yes to being texted, and when it was sent. */
 export interface OnFile {
   name: string;
   vehicle: string;
+  /** The request's textOk ("yes" or "no"): only a yes is ever texted back. */
+  textOk: string;
   atMs: number;
 }
+
+/** The most characters a text forwarded to the shop carries: under a long SMS's 1,600, the caller's words cut to fit. */
+export const FORWARD_MAX = 1500;
 
 /** How long a request is matched to a text from its number: a week. */
 export const ON_FILE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -245,7 +250,7 @@ export const TOOLS: Record<string, ToolDef> = {
         s.requests.push({ ...call.params, ref });
         // On file by its callback number, so a photo texted in from it is matched to this request.
         const number = tenDigits(call.params.callbackNumber ?? '');
-        if (number !== '') s.onFile.set(number, { name: nameWords(call.params.callerName ?? ''), vehicle: call.params.vehicle ?? '', atMs: tc.nowMs });
+        if (number !== '') s.onFile.set(number, { name: nameWords(call.params.callerName ?? ''), vehicle: call.params.vehicle ?? '', textOk: call.params.textOk ?? '', atMs: tc.nowMs });
         return `request ${ref} for ${call.params.day ?? ''} ${call.params.window ?? ''}`;
       });
     },
@@ -333,8 +338,9 @@ export const TOOLS: Record<string, ToolDef> = {
 
 /**
  * A text that came in to the shop's number (App.onText): sent on to the shop's phone as it came, its photos
- * attached by their URLs (the engine fetches none). From a number with a request on file in the last week,
- * with a line naming the request, and, where it brought a photo, the caller thanked in the shop's words; from
+ * attached by their URLs (the engine fetches none), the caller's words cut to FORWARD_MAX. From a number with
+ * a request on file in the last week, with a line naming the request, and, where it brought a photo and the
+ * request said yes to being texted, the caller thanked in the shop's words; from
  * any other number, as a text with no request on file. A text with no photo is sent on too, and not answered,
  * so a word like STOP is never answered with a promise of a price (Twilio answers STOP and HELP itself). With no
  * sender, or no SHOP_PHONE, each is printed.
@@ -347,10 +353,12 @@ export async function onText(m: IncomingText, ctx: TextContext): Promise<void> {
   const vars = { name: recent?.name ?? '', last4: m.from.replace(/\D/g, '').slice(-4), vehicle: recent?.vehicle ?? '' };
   const line = recent === undefined ? textLine('unknownForward', vars) : textLine(media.length > 0 ? 'photoForward' : 'textForward', vars);
   // The caller's own words follow the shop's line, as they came; the record keeps the line alone.
-  const body = m.body.trim() === '' ? line : `${line}: ${m.body.trim()}`;
+  const words = m.body.trim();
+  const room = FORWARD_MAX - line.length - 2;
+  const body = words === '' ? line : `${line}: ${words.length > room ? `${words.slice(0, room - 1)}…` : words}`;
   const ref = `T${101 + s.texts.length}`;
   await sendText(s, ctx.texts, ref, ctx.env(SHOP_PHONE) ?? '', body, line, { media });
-  if (recent !== undefined && media.length > 0) await sendText(s, ctx.texts, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
+  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0) await sendText(s, ctx.texts, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
 }
 
 /** A request's values, as the gate grid sends them (its textOk given by each case). */

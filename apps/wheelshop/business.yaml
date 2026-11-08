@@ -234,9 +234,10 @@ owner: # assumption: the owner corrects these (a text summary of every request a
 # The texts the app's own code sends, in the shop's fixed words (never a generated line, never said on a call),
 # with the placeholders the code fills. A caller's own text forwarded to the shop follows its line after a colon.
 texts:
-  # To the caller, once the request is confirmed and only with their yes to being texted.
-  photoRequest: Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price.
-  # To the caller, when their photo has come in.
+  # To the caller, once the request is confirmed and only with their yes to being texted. The first text to a
+  # number says how to opt out (assumption: the owner corrects these; Twilio answers STOP itself).
+  photoRequest: Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price. Reply STOP to opt out.
+  # To the caller, when their photo has come in, only where their request said yes to being texted.
   photoThanks: Got it, thanks. We'll text you a price soon.
   # To the shop's phone (SHOP_PHONE), with the caller's photos attached.
   photoForward: Photo from {name}, ...{last4}, for their {vehicle} request.

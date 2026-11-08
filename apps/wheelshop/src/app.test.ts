@@ -1,8 +1,10 @@
 import { fileURLToPath } from 'node:url';
-import { checkApp, formatProblem, type IncomingText, type TextContext, type Texts, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
-import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, fakeTextProvider, policyInvariants, runRuleExamples, type FakeSent } from 'dialogwright/testing';
+import { join } from 'node:path';
+import { checkApp, DEFAULT_THRESHOLDS, FixtureStubClient, formatProblem, HeuristicStubClient, loadCorpus, loadScenarios, mockCodeVerifier, type IncomingText, type TextContext, type Texts, type ToolCall, type ToolDef, type ToolReply } from 'dialogwright';
+import { danglingReferences, expectAppMap, expectPolicyCard, expectPolicyMatrix, fakeTextProvider, policyInvariants, runRuleExamples, runScenario, TextKeys, type FakeSent } from 'dialogwright/testing';
 import { describe, expect, it } from 'vitest';
-import { APP_DIR, ON_FILE_MS, Systems, TOOLS, app, code, onText, ownerSummary } from './app';
+import { APP_DIR, FORWARD_MAX, ON_FILE_MS, Systems, TOOLS, app, code, onText, ownerSummary } from './app';
+import { registerThisApp } from './index';
 
 describe('the app folder', () => {
   it('passes dialogwright check: business.yaml, the code and the corpus agree', async () => {
@@ -166,14 +168,22 @@ describe('the writes and the texts', () => {
     const sys = new Systems();
     const { texts, sent } = sender();
     const reply = await run(sys, 'send_photo_link', REQUEST, 'k-1', { texts });
-    expect(sent).toEqual([{ from: '+15555550100', to: '5555550177', body: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price.", key: 'k-1' }]);
+    expect(sent).toEqual([{ from: '+15555550100', to: '5555550177', body: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price. Reply STOP to opt out.", key: 'k-1' }]);
     expect(reply.summary).toBe('text to ...0177: queued');
+  });
+
+  it('a text the sender\'s limits refuse is reported in the tool\'s summary, not retried', async () => {
+    const sys = new Systems();
+    const texts: Texts = { send: async () => ({ id: null, status: 'limited', error: 'limit: 3 texts to one number in 24 hours (TEXT_LIMIT_PER_NUMBER)' }) };
+    const reply = await run(sys, 'send_photo_link', REQUEST, 'k-1', { texts });
+    expect(reply.summary).toBe('text to ...0177: limited (limit: 3 texts to one number in 24 hours (TEXT_LIMIT_PER_NUMBER))');
+    expect(TOOLS.send_photo_link!.check!(reply.value)).toBe(true);
   });
 
   it('with no sender, prints the text rather than send it', async () => {
     const sys = new Systems();
     const reply = await run(sys, 'send_photo_link', REQUEST, 'k-1');
-    expect(sys.texts).toEqual([{ ref: 'P101', to: '5555550177', text: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price.", status: 'printed' }]);
+    expect(sys.texts).toEqual([{ ref: 'P101', to: '5555550177', text: "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price. Reply STOP to opt out.", status: 'printed' }]);
     expect(reply.summary).toMatch(/^text to \.\.\.0177 \(printed, not sent\)/);
   });
 
@@ -210,6 +220,26 @@ describe('the writes and the texts', () => {
     expect(sys.callbacks).toEqual([{ callbackNumber: '5555550177', ref: 'C101' }]);
     expect(sent).toEqual([{ from: '+15555550100', to: SHOP, body: 'Call back 5555550177 (callback note C101).', key: 'k-1' }]);
     expect(reply.summary).toBe('callback note C101 for ...0177');
+  });
+});
+
+describe('a declined consent, end to end (call 46)', () => {
+  it('the caller who says no to texts is sent nothing: the gate refuses the photo request, and no text goes out', async () => {
+    registerThisApp();
+    const scenario = loadScenarios(join(APP_DIR, 'fixtures/scenarios')).find((x) => x.id === 'consent-declined')!;
+    const corpus = loadCorpus(join(APP_DIR, 'fixtures/corpus.jsonl'), app);
+    const client = new FixtureStubClient(corpus, { sharpness: DEFAULT_THRESHOLDS.STUB_SHARPNESS, fallback: new HeuristicStubClient({ todayIso: scenario.todayIso ?? '2026-11-09' }) });
+    const provider = fakeTextProvider();
+    const r = await runScenario(scenario, {
+      client, thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: scenario.todayIso ?? '2026-11-09', now: () => 0, tools: { ...app.systems(), codes: mockCodeVerifier }, agentSteps: true,
+      texts: { provider, from: '+15555550100', keys: new TextKeys() },
+    });
+    expect(r.pass, r.mismatches.join('; ')).toBe(true);
+    const verdicts = r.runs.flatMap((x) => x.result.gateEvents).map((e) => `${e.decision.call.tool}:${e.decision.verdict}${e.decision.reason !== undefined ? `:${e.decision.reason}` : ''}`);
+    expect(verdicts).toEqual(expect.arrayContaining(['request:ALLOW', 'send_photo_link:BLOCK:no-consent', 'notify_owner_request:ALLOW']));
+    // Nothing was sent: not to the caller (no consent), and not to the shop (SHOP_PHONE unset, so its summary is printed).
+    expect(provider.sent).toEqual([]);
+    expect(r.runs.flatMap((x) => x.record.texts ?? [])).toEqual([]);
   });
 });
 
@@ -255,6 +285,22 @@ describe('a text that comes in (onText)', () => {
       { from: '+15555550100', to: SHOP, body: 'Text from ...0133 (no request on file).', media: [PHOTO] },
       { from: '+15555550100', to: SHOP, body: 'Text from ...0177 (no request on file).', media: [PHOTO] },
     ]);
+  });
+
+  it('the caller is thanked only where their request said yes to being texted (call 46): a no gets no text back', async () => {
+    const sys = new Systems();
+    await run(sys, 'request', { ...REQUEST, textOk: 'no' }, 'k-1');
+    const { texts, sent } = sender();
+    await onText(message('+15555550177', '', [PHOTO]), ctx(sys, texts));
+    expect(sent.map((t) => t.to)).toEqual([SHOP]);
+  });
+
+  it('a long text is cut so the forward stays under 1,600 characters', async () => {
+    const sys = new Systems();
+    const { texts, sent } = sender();
+    await onText(message('+15555550133', 'x'.repeat(5000)), ctx(sys, texts));
+    expect(sent[0]!.body.length).toBeLessThanOrEqual(FORWARD_MAX);
+    expect(sent[0]!.body.endsWith('…')).toBe(true);
   });
 
   it('with no sender, prints what it would send', async () => {
