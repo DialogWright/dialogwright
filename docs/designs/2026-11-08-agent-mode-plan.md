@@ -45,7 +45,7 @@ The agent's request follows [Inception's prompt guide](https://docs.inceptionlab
 - **Parameters:** temperature 0.6 (the guide's value for structured and tool work; Mercury accepts 0.5 to 1.0 and silently resets anything else); `reasoning_effort` `instant` or `low`, chosen in Task 2; `realtime: true` on Inception's own API.
 - **Pronunciation stays in the engine** (`sayAs`, `voice.pronounce`), not in the prompt: the values are said by the read-back, not by the model.
 
-**If Mercury 3 is not fast enough, the next step is Mercury Voice.** Mercury Voice is Inception's voice-tuned model, with tool calling and structured outputs. It is offered to enterprise customers only, through Inception's own OpenAI-compatible API (`https://api.inceptionlabs.ai/v1`), not OpenRouter, and access is by contacting Inception's sales. So the agent's provider speaks to Inception's API directly as well as through OpenRouter (Task 1), and Task 2 measures Mercury 3 on both.
+**Inception's own API is the agent's default provider** (the maintainer's key, `INCEPTION_API_KEY` in the root `.env`, 2026-11-08); OpenRouter stays as the other provider. **If Mercury 3 is not fast enough, the next step is Mercury Voice.** Mercury Voice is Inception's voice-tuned model, with tool calling and structured outputs. It is offered to enterprise customers only, through Inception's own OpenAI-compatible API (`https://api.inceptionlabs.ai/v1`), not OpenRouter, and access is by contacting Inception's sales. So the agent's provider speaks to Inception's API directly as well as through OpenRouter (Task 1), and Task 2 measures Mercury 3 on both.
 
 ## Review focus
 
@@ -352,7 +352,7 @@ The inputs the spec implies but no single task obviously owns, most likely first
 
 **Files:**
 - Create:
-  - `apps/wheelshop/`: `app.yaml` (`mode: agent`, `testing: { adversarial: on }`), `business.yaml` (the spec's appendix, with its schema line), `style.yaml` (`model: { provider: openrouter, id: inception/mercury-3 }`), `src/app.ts`, `src/app.test.ts`, `fixtures/scenarios/*.yaml`, `CLAUDE.md`, `DESIGN.md`, `.env.example`, `package.json`, and the generated `POLICY.md`, `policy.matrix` and `APP-MAP.md`;
+  - `apps/wheelshop/`: `app.yaml` (`mode: agent`, `testing: { adversarial: on }`), `business.yaml` (the spec's appendix, with its schema line), `style.yaml` (`agent: { provider: inception, model: mercury-3 }`, with the effort Task 2 chose), `src/app.ts`, `src/app.test.ts`, `fixtures/scenarios/*.yaml`, `CLAUDE.md`, `DESIGN.md`, `.env.example`, `package.json`, and the generated `POLICY.md`, `policy.matrix` and `APP-MAP.md`;
   - the tools in `src/app.ts`: `availability` (the stand-in windows of the appendix, with check `{ day: isoDate, windows: oneOf(morning, afternoon)[] }`), `book`, `request`, `send_photo_link` (printed), `notify_owner` (printed with the summary template), `callback`.
 - Modify: `.github/workflows` (the wheelshop stub regression beside the other apps'), `docs/README.md`.
 
