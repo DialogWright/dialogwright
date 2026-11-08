@@ -46,7 +46,7 @@ import type { Nomination, SectionNomination } from '../kb/types';
 import type { ToolMemo } from './toolWait';
 import { callerMatchAsks, callerMatchWay, matchAloneVerifies, nextWayAfter, waysOf } from './identityWays';
 import type { AgentResult, SeenResult } from '../agent/types';
-import { agentDropped, agentLed, agentWords, noteConversation, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
+import { agentDropped, agentLed, agentWords, noteConversation, requiredFilled, scriptedFromNow, type AgentTurnRecord, type ScriptedSteps } from './agentTurn';
 
 export interface TurnContext {
   /**
@@ -2362,7 +2362,9 @@ function handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: Sl
       // A check's refusal read back, and the caller says it was misheard: the slots it reads are asked again.
       if (pc.target === 'check') return checkDeclined(s, pc, answers, ctx, io);
       // Declining a mid-form switch means "stay where we were", so resume the form
-      // rather than counting an intent failure against the caller.
+      // rather than counting an intent failure against the caller. In agent mode (a person the agent model
+      // alone asked for, checked: checkPerson) a form whose required fields are all filled is at its read-back.
+      if (s.form && agentLed(s) && requiredFilled(io.app, s, s.form)) return { decision: askSummary(s, s.form, [], io), events: [] };
       if (s.form) return { decision: continueForm(s, io, [], null), events: [] };
       return { decision: failAttempt(s, 'intent', io), events: [] };
     }
@@ -3235,10 +3237,22 @@ function overLineMiss(before: Session, after: Session, event: SessionEvent, verd
   return events.every((e) => e.outcome.kind === 'invalid' || e.outcome.kind === 'absent');
 }
 
+/**
+ * A person asked for by the agent model alone, the decision model not reading one (agent mode: a `callback`
+ * proposed on words the gates did not hand off on): checked with the caller first, as a request the
+ * decision model is unsure of is ("Just to check, do you want to speak with someone?"). A yes opens the
+ * person form (the `agent` intent's yes); a no goes back to the form where it stood, nothing lost.
+ */
+function checkPerson(s: Session, answers: AnswerMap, ctx: SlotContext, acks: Ack[], io: TurnIO): PromptDecision {
+  s.pendingConfirmation = { target: 'intent', intent: 'agent', answers, text: ctx.text };
+  return prompt('confirm_intent_explicit', 'intent', { intentLabel: intentLabel(io.app, 'agent', s.locale) }, acks, ['yes', 'no']);
+}
+
 /** The scripted turn's steps an agent turn takes (core/agentTurn.ts ScriptedSteps). */
 const SCRIPTED_STEPS: ScriptedSteps = {
   handleVerdict,
   personForm,
+  checkPerson,
   askSummary,
   summaryPrompt,
   askChange,

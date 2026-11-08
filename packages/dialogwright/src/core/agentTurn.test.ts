@@ -226,11 +226,62 @@ describe('the agent turn: the read-back', () => {
     expect(c.last.result.gateEvents).toEqual([]);
   });
 
-  it('a callback proposed opens the callback note, as a person asked for does', async () => {
-    const c = await call({ [HOLD]: HOLD_ANSWER, 'can you just have her ring me back': said('Of course.', [], 'callback') }, [HOLD, 'can you just have her ring me back']);
+  it('a callback the decision model reads too opens the callback note, as a person asked for does', async () => {
+    // The decision model reads the callback note's request (its verdict routes to the person form, at the open question).
+    const stub = jev();
+    const reads: JevClient = {
+      async ask(req) {
+        const r = await stub.ask(req);
+        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '').toLowerCase();
+        const intent = req.questions.intent;
+        if (/ring me back/.test(text) && intent !== undefined && intent.type === 'choice') return { ...r, answers: { ...r.answers, intent: choiceAnswer(sharp(Object.keys(intent.criteria), 'callback', 0.9)) } };
+        return r;
+      },
+    };
+    const c = await call({ 'can you just have her ring me back': said('Of course.', [], 'callback') }, ['can you just have her ring me back'], { jev: reads });
     expect(c.last.result.session.form).toBe('callback');
     expect(heard(c.last)).toBe("I'll have someone from the desk call you back. Is the number you're calling from, ending in 0199, the best one to reach you?");
     expect(c.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'taken' });
+  });
+
+  it('a callback the decision model reads no sign of is not taken: the form goes on, the values kept, the reply not said', async () => {
+    // The wheelshop recording: "Could I bring it Thursday?" read by the model as a callback ("I'll have Sam call
+    // you back to confirm"), the decision model reading wantsHuman 0.02: the request is never left on the model's word.
+    const THURSDAY = 'could I bring it Thursday';
+    const c = await call({ [HOLD]: HOLD_ANSWER, [THURSDAY]: said('Thursday works, someone will call you back to confirm.', [['day', '2026-11-12', 'Thursday']], 'callback') }, [HOLD, THURSDAY]);
+    expect(c.last.result.session.form).toBe('request');
+    expect(promptOf(c.last)).toBe('ask_request_patronName');
+    expect(heard(c.last)).toBe("What's your name?");
+    expect(value(c.last, 'request_day')).toBe('2026-11-12');
+    expect(c.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'ignored', replySaid: false });
+  });
+
+  it('a callback the decision model reads some sign of is checked with the caller: a yes opens the note, a no goes back to the form, its values kept', async () => {
+    const THURSDAY = 'could I bring it Thursday, or could she call me';
+    // The decision model's wantsHuman at 0.5: over the bar a scripted app checks an unsure request at (INTENT_EXPLICIT), under its handoff.
+    const stub = jev();
+    const unsure: JevClient = {
+      async ask(req) {
+        const r = await stub.ask(req);
+        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '').toLowerCase();
+        return /call me/.test(text) ? { ...r, answers: { ...r.answers, wantsHuman: noulAnswer(0.5) } } : r;
+      },
+    };
+    const script = { [HOLD]: HOLD_ANSWER, [THURSDAY]: said('Thursday works, someone will call you back to confirm.', [['day', '2026-11-12', 'Thursday']], 'callback') };
+    const asked = await call(script, [HOLD, THURSDAY], { jev: unsure });
+    expect(promptOf(asked.last)).toBe('confirm_intent_explicit');
+    expect(heard(asked.last)).toBe('Just to check, do you want to speak with someone?');
+    expect(asked.last.result.session.form).toBe('request');
+    expect(value(asked.last, 'request_day')).toBe('2026-11-12');
+    expect(asked.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'checked', replySaid: false });
+    const yes = await call(script, [HOLD, THURSDAY, 'yes'], { jev: unsure });
+    expect(yes.last.result.session.form).toBe('callback');
+    expect(promptOf(yes.last)).toBe('offer_callback_callbackNumber');
+    const no = await call(script, [HOLD, THURSDAY, 'no'], { jev: unsure });
+    expect(no.last.result.session.form).toBe('request');
+    expect(promptOf(no.last)).toBe('ask_request_patronName');
+    expect(value(no.last, 'request_day')).toBe('2026-11-12');
+    expect(no.sys.notes).toEqual([]);
   });
 });
 
@@ -440,6 +491,31 @@ describe('the review of Task 6', () => {
     const c = await call({ ...toReadBack, 'yes, and ring me afterwards': said('Sure.', [], 'callback') }, [HOLD, DETAILS, 'yes, and ring me afterwards']);
     expect(c.sys.holds).toHaveLength(1);
     expect(c.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'ignored' });
+  });
+
+  it('at a read-back, a callback the decision model reads some sign of is checked first: a no reads the read-back again, nothing done; one it reads none of is not taken, its reply not said', async () => {
+    const LATER = 'actually can she ring me later about it';
+    const script = { ...toReadBack, [LATER]: said('Sure, she will call you back.', [], 'callback') };
+    const unread = await call(script, [HOLD, DETAILS, LATER]);
+    expect(promptOf(unread.last)).toBe('readback_request');
+    expect(heard(unread.last)).toBe(READ_BACK);
+    expect(unread.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'ignored', replySaid: false });
+    const stub = jev();
+    const unsure: JevClient = {
+      async ask(req) {
+        const r = await stub.ask(req);
+        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '').toLowerCase();
+        return /ring me later/.test(text) ? { ...r, answers: { ...r.answers, wantsHuman: noulAnswer(0.5) } } : r;
+      },
+    };
+    const asked = await call(script, [HOLD, DETAILS, LATER], { jev: unsure });
+    expect(promptOf(asked.last)).toBe('confirm_intent_explicit');
+    expect(asked.last.record.agent).toMatchObject({ action: 'callback', actionOutcome: 'checked' });
+    const no = await call(script, [HOLD, DETAILS, LATER, 'no'], { jev: unsure });
+    expect(promptOf(no.last)).toBe('readback_request');
+    expect(heard(no.last)).toBe(READ_BACK);
+    expect(no.sys.holds).toEqual([]);
+    expect(no.sys.notes).toEqual([]);
   });
 
   it('a second bare no reads the read-back again on its ladder', async () => {

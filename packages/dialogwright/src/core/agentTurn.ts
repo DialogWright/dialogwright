@@ -3,7 +3,7 @@ import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
 import { NO_ACTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
-import type { AnswerMap } from '../jev/types';
+import { isChoice, noulValue, type AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import type { BuiltSlotSpec, ValueCheck } from '../slots/types';
 import { isFormIntent } from './app/intents';
@@ -13,6 +13,7 @@ import type { App, FormId, SlotId } from './app/types';
 import { handoff, prompt, type Decision, type PromptDecision } from './decision';
 import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
+import { atLeast, type Thresholds } from './thresholds';
 import { localeOf, slotLocaleOf } from './locale';
 import { setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
@@ -39,7 +40,8 @@ import type { RenderLine } from '../render/types';
  *    values are corrections, checked and stored: a value that changes reads the read-back again, a refused
  *    one walks its slot's ladder. With none, the decision model's yes completes the form (its
  *    engine-written `complete` hook calls its `then` through the gate), whatever the answer proposed; a
- *    `callback` opens the person form; a no asks what to change (`ask_change`) and a second no reads it
+ *    `callback` opens the person form (checked with the caller first where the decision model read no
+ *    person asked for, step 6); a no asks what to change (`ask_change`) and a second no reads it
  *    again on its ladder; a question answered from the facts is an aside, the reply and then the read-back
  *    again as it stands, uncounted; anything else (words neither a yes nor a no) asks the read-back again
  *    on its ladder, counted, the reply before it as an aside (after "What should I change?", that
@@ -72,8 +74,14 @@ import type { RenderLine } from '../render/types';
  *    the action was not taken, a form only a recognized caller may open said its line, or the form open is
  *    not the one the reply was written for, the fixed question is said alone.
  * 6. **Actions**: the model may propose `submit` and `callback` only (or none). `callback` opens the person
- *    form (App.personForm). A form's `then` tools are the engine's, called only by the yes at its read-back;
- *    the model never runs a tool.
+ *    form (App.personForm) where the decision model read the turn as a request for it too (its verdict
+ *    routes there); where it read some sign of one, short of that (personSupported: at the bar a scripted
+ *    app checks an unsure request at), it is checked with the caller first ("Just to check, do you want to
+ *    speak with someone?": the `agent` intent's explicit check), its values kept: a yes opens the person
+ *    form, a no goes back to the form where it stood; where it read none, the callback is not taken, and its
+ *    reply is not said (the recording of apps/wheelshop: the model read "I'll have Sam call you back to
+ *    confirm" as a callback, mid-request, the decision model reading wantsHuman 0.02).
+ *    A form's `then` tools are the engine's, called only by the yes at its read-back; the model never runs a tool.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
  *    says why (`fallback`); the second such turn in a row ends the call with the handoff line. A call with
  *    no agent client (no key) runs as a scripted app from that turn for the rest of the call
@@ -105,8 +113,14 @@ export interface AgentTurnRecord {
   reply?: string;
   /** The action the answer proposed (`none` where it proposed none, or there was no answer). */
   action: string;
-  /** What the turn did with it: `taken`, or `ignored` (a `submit` with a field empty, a `callback` against a yes at the read-back, an action the turn had no use for). Absent with no action. */
-  actionOutcome?: 'taken' | 'ignored';
+  /**
+   * What the turn did with it: `taken`; `checked`, a `callback` the decision model read only some sign of a
+   * person asked for on, asked of the caller first ("do you want to speak with someone?"); or `ignored` (a
+   * `submit` with a field empty, a `callback` the decision model read no sign of or against a yes at the
+   * read-back, an action the turn had no use for).
+   * Absent with no action.
+   */
+  actionOutcome?: 'taken' | 'checked' | 'ignored';
   /** Whether the answer said it answers from the facts. */
   fromFacts?: boolean;
   /** Whether the reply was said, as an agent line in place of its fallback or before it. */
@@ -223,7 +237,7 @@ function actionsFor(app: App, session: Session): AgentActionChoice[] {
   const out: AgentActionChoice[] = [];
   const form = session.form;
   if (form !== null) out.push({ name: SUBMIT_ACTION, about: 'every required field is filled: the line reads back what it understood for the caller to confirm' });
-  if (app.personForm !== undefined && form !== app.personForm.form) out.push({ name: CALLBACK_ACTION, about: 'the caller wants a person to call them back: the line takes a callback note' });
+  if (app.personForm !== undefined && form !== app.personForm.form) out.push({ name: CALLBACK_ACTION, about: 'the caller asks to speak with a person rather than go on: the line takes a callback note in place of what it was doing. Never for a call or a text the business makes anyway (a quote, a confirmation)' });
   return out;
 }
 
@@ -332,6 +346,8 @@ export interface Handled {
 export interface ScriptedSteps {
   handleVerdict(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO): Handled;
   personForm(s: Session, reason: string, answers: AnswerMap, ctx: SlotContext, io: TurnIO): Handled | null;
+  /** A person the agent model alone asked for, checked with the caller: a yes opens the person form, a no goes back to the form. */
+  checkPerson(s: Session, answers: AnswerMap, ctx: SlotContext, acks: Ack[], io: TurnIO): PromptDecision;
   askSummary(s: Session, form: FormId, acks: Ack[], io: TurnIO): Decision;
   /** The pending read-back said again as it stands: its attempts and its "What should I change?" kept. */
   summaryPrompt(s: Session, form: FormId, acks: Ack[]): PromptDecision;
@@ -365,7 +381,7 @@ export function agentDropped(agent: AgentResult | undefined, dropped: string): A
 }
 
 /** The required fields of a form all hold a value. */
-function requiredFilled(app: App, s: Session, form: FormId): boolean {
+export function requiredFilled(app: App, s: Session, form: FormId): boolean {
   return (app.agent!.forms[form]?.fields ?? []).every((f) => !f.required || s.slots[f.slot]?.value != null);
 }
 
@@ -628,7 +644,7 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   s.agent = { ...s.agent, conversation, failures };
   const failedTwice = answer === null && !none && failures >= 2;
   const action = record.action;
-  const actionDone = (outcome: 'taken' | 'ignored'): void => {
+  const actionDone = (outcome: 'taken' | 'checked' | 'ignored'): void => {
     if (action !== NO_ACTION) record.actionOutcome = outcome;
   };
 
@@ -638,7 +654,7 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
 }
 
 /** The words turn once the answer is recorded (agentWords): the read-back's, or the form's (steps 1 to 6 at the top). */
-function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
+function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
   const app = io.app;
   const pc = s.pendingConfirmation;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
@@ -648,8 +664,9 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   // 1. At a read-back.
   if (pc !== null && pc.target === 'form') return atReadBack(s, verdict, answers, ctx, io, steps, said, pc, record, actionDone, failed);
 
-  // A callback asked for: the person form, as a person asked for is (App.personForm).
-  if (action === CALLBACK_ACTION) {
+  // A callback asked for, where the decision model read the person form's request too: the person form, as
+  // a person asked for is (App.personForm). Asked for by the agent model alone, it is checked below.
+  if (action === CALLBACK_ACTION && personRead(app, verdict)) {
     const person = steps.personForm(s, 'live-agent', answers, ctx, io);
     if (person !== null) {
       actionDone('taken');
@@ -686,6 +703,14 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     actionDone('ignored');
     return { decision: steps.failAttempt(s, applied.refused, io, acks), events: applied.events };
   }
+  if (action === CALLBACK_ACTION && personCheckable(app, s) && personSupported(app, answers, io.tc.thresholds)) {
+    // 6. A callback the agent model proposed that the decision model read some sign of, not enough to
+    // act on: the caller is asked first, so a model's misreading never takes them off what they were
+    // doing; the values the answer gave are kept, and a no goes back to the form where it stood. One it
+    // read no sign of is not taken (below: ignored, its reply not said).
+    actionDone('checked');
+    return { decision: steps.checkPerson(s, answers, ctx, acks, io), events: applied.events };
+  }
   if (form !== null && requiredFilled(app, s, form)) {
     // 4. Every required field filled: the read-back, in the business's fixed words.
     actionDone(action === SUBMIT_ACTION ? 'taken' : 'ignored');
@@ -706,8 +731,38 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   return { decision: replyOrAside(prompt('ask_intent', 'intent', {}, acks), reply, record), events: applied.events };
 }
 
+/**
+ * Whether the decision model read the turn as a request for the person form (the `callback` the agent
+ * proposed is then the caller's, read twice): its verdict routes to that form. A person asked for outright
+ * (wantsHuman, the `agent` intent) is a handoff the gates settle before the agent's answer is read.
+ */
+function personRead(app: App, verdict: Verdict): boolean {
+  return app.personForm !== undefined && verdict.kind === 'route' && verdict.intent === app.personForm.form;
+}
+
+/**
+ * Whether the decision model read some sign of a person asked for, short of acting on it: its wantsHuman,
+ * or its request read as a person or the person form (the `agent` intent and the person form's together),
+ * at the bar a scripted app checks an unsure request at ("Just to check, do you want to ...?",
+ * INTENT_EXPLICIT). Under it the decision model reads none, and the agent model's `callback` alone is not
+ * taken: the recording of apps/wheelshop read wantsHuman 0.02 on every turn the model proposed one
+ * mid-request ("I'll have Sam call you back to confirm"), and a person asked for outright the gates hand
+ * off on at GATE_WANTS_HUMAN, before the answer is read.
+ */
+function personSupported(app: App, answers: AnswerMap, t: Thresholds): boolean {
+  const wants = noulValue(answers, 'wantsHuman') ?? 0;
+  const intent = answers.intent;
+  const asked = isChoice(intent) ? (intent.probabilities.agent ?? 0) + (app.personForm !== undefined ? (intent.probabilities[app.personForm.form] ?? 0) : 0) : 0;
+  return atLeast(Math.max(wants, asked), t.INTENT_EXPLICIT);
+}
+
+/** Whether a person the agent model asked for can be checked with the caller: the app's person form, not open, and the `agent` intent its yes opens it by. */
+function personCheckable(app: App, s: Session): boolean {
+  return app.personForm !== undefined && s.form !== app.personForm.form && app.intents.agent !== undefined;
+}
+
 /** The read-back's turn (step 1 at the top). */
-function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
+function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string, pc: Extract<PendingConfirmation, { target: 'form' }>, record: AgentTurnRecord, actionDone: (o: 'taken' | 'checked' | 'ignored') => void, failed: { none: boolean; failedTwice: boolean; fixed: boolean }): Handled {
   const app = io.app;
   const answer = io.tc.agent?.ok === true ? io.tc.agent.answer : null;
   // Asides in a row at the read-back: only the first is uncounted (below), so questions alone never hold it open.
@@ -745,13 +800,19 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     actionDone('ignored');
     return steps.handleVerdict(s, verdict, answers, ctx, io);
   }
-  // A callback asked for instead: the person form.
-  if (record.action === CALLBACK_ACTION) {
+  // A callback asked for instead: the person form, where the decision model read it too; the agent model's
+  // alone, checked with the caller first (a no reads the read-back again).
+  if (record.action === CALLBACK_ACTION && personRead(app, verdict)) {
     const person = steps.personForm(s, 'live-agent', answers, ctx, io);
     if (person !== null) {
       actionDone('taken');
       return person;
     }
+  }
+  if (record.action === CALLBACK_ACTION && personCheckable(app, s) && personSupported(app, answers, io.tc.thresholds)) {
+    actionDone('checked');
+    s.pendingHash = null;
+    return { decision: steps.checkPerson(s, answers, ctx, [], io), events: applied.events };
   }
   actionDone('ignored');
   if (verdict.kind === 'rejected') {
@@ -763,18 +824,21 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
   // attempts and its "What should I change?" kept), uncounted: the first in a row only, and only with
   // something said in answer. A second in a row, or one with nothing to say, counts as any other turn (the
   // review of Task 7), so a caller who only asks still reaches the keypad and a person.
+  // A callback not taken (the decision model read no sign of a person asked for): its reply, written as if
+  // it were, is never said; the turn goes on as one with nothing to say.
+  const spoken = record.action === CALLBACK_ACTION ? null : (answer?.reply ?? null);
   const isAside = answer !== null && answer.values.length === 0 && (answer.fromFacts || failed.fixed);
-  const answeredSomething = failed.fixed || replyOf(answer?.reply) !== null;
+  const answeredSomething = failed.fixed || replyOf(spoken) !== null;
   if (isAside && answeredSomething && !asideBefore) {
     pc.aside = true;
-    return { decision: withAside(steps.summaryPrompt(s, pc.form, []), answer!.reply, record), events: applied.events };
+    return { decision: withAside(steps.summaryPrompt(s, pc.form, []), spoken, record), events: applied.events };
   }
   // Anything else, neither a yes nor a no ("um", "the day" after "What should I change?"): the read-back
   // asked again on its ladder, counted, so words that settle nothing reach the keypad and then a person.
   // The reply is said before it, as an aside (held to the facts as every agent line is); after "What should
   // I change?" the re-ask's rung is that question with the reply in its place.
   const again = steps.reaskConfirmation(s, io);
-  const reply = answer?.reply ?? null;
+  const reply = spoken;
   // An aside counted: the next in a row is counted too.
   if (isAside && s.pendingConfirmation?.target === 'form') s.pendingConfirmation.aside = true;
   if (again.kind !== 'prompt') return { decision: again, events: applied.events };
