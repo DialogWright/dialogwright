@@ -210,6 +210,10 @@ export function agentCassetteMissed(run: Pick<TurnRun, 'record'>): boolean {
  *   line understood (with the words a digits or name value was cited from, and a text value's figures that
  *   are in its words too, as the agent line's check reads them) or the results it was shown do not (the
  *   caller's other words are no source: a figure the caller proposes is not the line's to state);
+ * - `said.lines`: each line named (a prompt id: `booking_for_accounts`) was said on some turn, as the turn's
+ *   own line or before it;
+ * - `levelHeld`: nothing ran above the level the caller had once greeted (levelViolations: recognition is at
+ *   the call's start only, so nothing a caller says raises it);
  * - `readBackSaid`: the turn before each write (or before the read-back's keypad rung) said its form's
  *   read-back, in its fixed words, with the values the write carries, and a call with no write said one;
  * - `nothingDoneBefore: "confirm"`: no write ran but on the turn whose words confirmed its form's read-back.
@@ -221,13 +225,14 @@ export type ExpectedValue = string | { has: readonly string[] };
 export interface AgentProperties {
   values?: Record<string, ExpectedValue>;
   action?: string | { not: string };
-  said?: { notFigure?: boolean };
+  said?: { notFigure?: boolean; lines?: string[] };
+  levelHeld?: boolean;
   readBackSaid?: boolean;
   nothingDoneBefore?: 'confirm';
 }
 
 /** The property keys of a scripted call's expectation (AgentProperties). */
-export const AGENT_PROPERTY_KEYS = ['values', 'action', 'said', 'readBackSaid', 'nothingDoneBefore'] as const;
+export const AGENT_PROPERTY_KEYS = ['values', 'action', 'said', 'levelHeld', 'readBackSaid', 'nothingDoneBefore'] as const;
 
 /** Whether `v` holds only well-formed properties (a scripted call's JSON). */
 export function validAgentProperties(v: Record<string, unknown>): boolean {
@@ -235,8 +240,8 @@ export function validAgentProperties(v: Record<string, unknown>): boolean {
     || (typeof x === 'object' && x !== null && !Array.isArray(x) && Object.keys(x).length === 1 && Array.isArray((x as { has?: unknown }).has) && (x as { has: unknown[] }).has.length > 0 && (x as { has: unknown[] }).has.every((w) => typeof w === 'string' && w.trim() !== ''));
   const values = v.values === undefined || (typeof v.values === 'object' && v.values !== null && !Array.isArray(v.values) && Object.values(v.values).every(expected));
   const action = v.action === undefined || typeof v.action === 'string' || (typeof v.action === 'object' && v.action !== null && typeof (v.action as { not?: unknown }).not === 'string');
-  const said = v.said === undefined || (typeof v.said === 'object' && v.said !== null && Object.entries(v.said).every(([k, x]) => k === 'notFigure' && typeof x === 'boolean'));
-  return values && action && said && (v.readBackSaid === undefined || typeof v.readBackSaid === 'boolean') && (v.nothingDoneBefore === undefined || v.nothingDoneBefore === 'confirm');
+  const said = v.said === undefined || (typeof v.said === 'object' && v.said !== null && Object.entries(v.said).every(([k, x]) => (k === 'notFigure' && typeof x === 'boolean') || (k === 'lines' && Array.isArray(x) && x.length > 0 && x.every((l) => typeof l === 'string' && l !== ''))));
+  return values && action && said && (v.levelHeld === undefined || typeof v.levelHeld === 'boolean') && (v.readBackSaid === undefined || typeof v.readBackSaid === 'boolean') && (v.nothingDoneBefore === undefined || v.nothingDoneBefore === 'confirm');
 }
 
 /** A form's write: the first tool of its `then`, by tool. */
@@ -357,6 +362,14 @@ export function agentPropertyMismatches(app: App, expect: AgentProperties, turns
     }
   }
   if (expect.said?.notFigure === true) for (const v of figureViolations(app, turns, today)) out.push(`said.notFigure: ${v}`);
+  for (const line of expect.said?.lines ?? []) {
+    const spoke = turns.some((r) => {
+      const d = r.result.decision;
+      return 'promptId' in d && (d.promptId === line || ('acks' in d && d.acks.some((a) => a.promptId === line)));
+    });
+    if (!spoke) out.push(`said.lines: no turn said ${line}`);
+  }
+  if (expect.levelHeld === true) for (const v of levelViolations(app, turns)) out.push(`levelHeld: ${v}`);
   if (expect.readBackSaid === true) {
     const said = (turn: number, form: string): boolean => {
       const d = turns[turn]?.result.decision;

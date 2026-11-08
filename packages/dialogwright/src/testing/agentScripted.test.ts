@@ -92,6 +92,20 @@ describe('a scripted call of an app in agent mode', () => {
     expect(unconfirmed.mismatches).toEqual(['action: expected bookRoom to run, but the gate never allowed it']);
   });
 
+  it('said.lines holds a line to having been said on some turn, and levelHeld the level to the one greeted', async () => {
+    const claim: Scenario = {
+      id: 'claimed',
+      callerNumber: '+15555550199',
+      steps: [{ say: 'This is Rivergate Book Club, I would like the study room for four people on Thursday morning', agent: { reply: 'Lovely.', values: BOOK_VALUES, action: 'submit' } }],
+      expect: { decision: 'prompt', form: 'request', principalLevel: 0, action: { not: 'bookRoom' }, said: { lines: ['booking_for_accounts'] }, levelHeld: true },
+    };
+    expect((await runScenario(claim, opts())).mismatches).toEqual([]);
+    const never = await runScenario({ ...claim, expect: { ...claim.expect, said: { lines: ['readback_booking'] } } }, opts());
+    expect(never.mismatches).toEqual(['said.lines: no turn said readback_booking']);
+    expect(validAgentProperties({ said: { lines: [] } })).toBe(false);
+    expect(validAgentProperties({ levelHeld: true, said: { lines: ['x'], notFigure: true } })).toBe(true);
+  });
+
   it('values may name words a value holds, in any case and order, rather than the value exactly', async () => {
     const HOLD = 'a hold on The Quiet Harbor, the second volume';
     const call = (values: Scenario['expect']['values']): Scenario => ({
