@@ -54,3 +54,26 @@ export function isDirectLocalRequest(req: IncomingMessage, _publicHost: string):
   // Only a name for this machine: a tunnel that adds no header, or a page whose name was pointed at 127.0.0.1, names something else.
   return isLoopbackHost(host);
 }
+
+/** A header's one value (a repeated header's first), as a form check reads it. */
+function oneHeader(req: IncomingMessage, name: string): string | undefined {
+  const v = req.headers[name];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/**
+ * Whether a form post comes from this server's own page (the console's sign-in and sign-out, and an app
+ * page's own forms): Sec-Fetch-Site, when sent, is same-origin (or none, typed or bookmarked); and the Origin
+ * is absent, `null` (a page under no-referrer), `https://<PUBLIC_HOST>`, or, for a request made directly on
+ * this machine, `http://<its Host>`. A second layer behind a form's own token, never the only one.
+ */
+export function formFromOwnPage(req: IncomingMessage, publicHost: string): boolean {
+  // A browser says where a request came from, whatever the page's referrer policy; a page cannot change it.
+  const site = oneHeader(req, 'sec-fetch-site');
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
+  const origin = oneHeader(req, 'origin');
+  if (origin === undefined || origin === 'null') return true;
+  if (origin === `https://${publicHost}`) return true;
+  return isDirectLocalRequest(req, publicHost) && origin === `http://${oneHeader(req, 'host') ?? ''}`;
+}
+

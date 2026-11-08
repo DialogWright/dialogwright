@@ -114,7 +114,9 @@ export interface TextContext {
  * never a model in a test), within JEV_TIMEOUT_MS. Resolves to the answers by id (read them with `noulValue`,
  * `isChoice`), or null where the model gave none (an error, the time out): the app decides what it does
  * then. Each asking is recorded in the app's audit beside the message (`text_decision`: the questions by
- * id, each answer, the client, the time it took; never the words, and only the names of `about`).
+ * id, each answer, the client, the time it took, its tokens; never the words, and only the names of `about`).
+ * The engine puts no limit on how often a hook asks: an app that asks on every text that comes in lets anyone
+ * who can text the number run up model calls, so ask only where the app expects an answer.
  */
 export type TextDecide = (questions: QuestionMap, about?: Readonly<Record<string, string>>) => Promise<AnswerMap | null>;
 

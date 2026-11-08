@@ -34,7 +34,7 @@ describe('TextContext.decide', () => {
     const answers = await decide(QUESTIONS, { offer: 'Reply OK to book it.' });
     expect(noulValue(answers!, 'accepts')).toBe(0.93);
     expect(client.asked[0]).toEqual({ state: { message: { words: 'sounds good, go ahead', media: 0 }, about: { offer: 'Reply OK to book it.' } }, questions: QUESTIONS, timeoutMs: 4000 });
-    expect(rows).toEqual([{ type: 'text_decision', detail: { questions: ['accepts'], answers: ['accepts 0.93'], about: ['offer'], source: 'recorded', model: 'fake-model', latencyMs: 12, error: null } }]);
+    expect(rows).toEqual([{ type: 'text_decision', detail: { questions: ['accepts'], answers: ['accepts 0.93'], about: ['offer'], source: 'recorded', model: 'fake-model', latencyMs: 12, inputTokens: 1, outputTokens: 1, estimated: true, error: null } }]);
     expect(JSON.stringify(rows)).not.toContain('sounds good');
     expect(JSON.stringify(rows)).not.toContain('Reply OK');
   });
@@ -45,7 +45,7 @@ describe('TextContext.decide', () => {
     const failing: JevClient = { ask: async () => { t += 30; throw new TypeError('down'); } };
     const decide = textDecider(failing, 4000, MESSAGE, (r) => rows.push(r), () => t);
     expect(await decide(QUESTIONS)).toBeNull();
-    expect(rows[0]).toEqual({ type: 'text_decision', detail: { questions: ['accepts'], answers: [], about: [], source: null, model: null, latencyMs: 30, error: 'TypeError' } });
+    expect(rows[0]).toEqual({ type: 'text_decision', detail: { questions: ['accepts'], answers: [], about: [], source: null, model: null, latencyMs: 30, inputTokens: 0, outputTokens: 0, estimated: true, error: 'TypeError' } });
   });
 
   it('a choice and a score are recorded by their reading', async () => {

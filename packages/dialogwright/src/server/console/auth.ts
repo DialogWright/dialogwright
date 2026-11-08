@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename, dirname, join } from 'node:path';
 import type { AuditSink } from '../../run/turn';
 import type { Chained } from '../../audit/types';
-import { isDirectLocalRequest, isLoopbackHost } from '../localOnly';
+import { formFromOwnPage, isDirectLocalRequest, isLoopbackHost } from '../localOnly';
 import type { ClientAddressSource, ConsoleAuthSettings } from './settings';
 import { signInPage, type SignInNote } from './pages';
 
@@ -692,13 +692,7 @@ export class ConsoleAuth implements ConsoleGate {
    * Origin is absent, `null` (a page under no-referrer), or this server's own.
    */
   private originOk(req: IncomingMessage): boolean {
-    // A browser says where a request came from, whatever the page's referrer policy; a page cannot change it.
-    const site = header(req, 'sec-fetch-site');
-    if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
-    const origin = header(req, 'origin');
-    if (origin === undefined || origin === 'null') return true;
-    if (origin === `https://${this.o.publicHost}`) return true;
-    return isDirectLocalRequest(req, this.o.publicHost) && origin === `http://${header(req, 'host') ?? ''}`;
+    return formFromOwnPage(req, this.o.publicHost);
   }
 
   private cookieAttributes(req: IncomingMessage, path = '/dashboard'): string {

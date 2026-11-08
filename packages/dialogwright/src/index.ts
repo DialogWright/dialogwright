@@ -161,6 +161,8 @@ export type { CallDataKey } from './core/app/types';
 export type { TransferConfig, TransferRule, TransferSend } from './core/app/types';
 export type { TransferChoice } from './core/transfer';
 export type { Condition, ConditionFacts, ValueTest } from './core/conditions';
+// Whether two numbers are the same (E.164 against E.164 digit for digit; a ten-digit national number against the one ending in it).
+export { sameNumber } from './core/conditions';
 // Business hours (app.yaml's hours) and routes (routes.yaml): the schedule, whether it is open at a moment, and a route as the records name it.
 export type { HoursConfig, HoursSchedule, NamedHoursSchedule } from './core/hours';
 export { hoursOpen } from './core/hours';
@@ -189,6 +191,8 @@ export { RESULT_UNCHECKED } from './core/lifecycle';
 export type { IncomingMedia, IncomingText, OutgoingText, TextContext, TextDecide, TextReceipt, Texts } from './texts/types';
 // The only media URLs a text that comes in keeps (the provider's own); an app shows or forwards no other.
 export { TWILIO_MEDIA_PREFIX } from './texts/twilio';
+// Whether a form post comes from this server's own page (Sec-Fetch-Site and Origin): an app page's form checks it beside its token.
+export { formFromOwnPage } from './server/localOnly';
 
 // Decisions a completion or hook may return, and the lines it may say before them.
 export type { Ack } from './core/fia';

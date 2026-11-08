@@ -1,5 +1,5 @@
 import type { AuditDraft } from '../audit/types';
-import type { Answer, AnswerMap, JevClient, QuestionMap } from '../jev/types';
+import type { Answer, AnswerMap, JevClient, JevUsage, QuestionMap } from '../jev/types';
 import type { IncomingText, TextDecide } from './types';
 
 /**
@@ -7,7 +7,7 @@ import type { IncomingText, TextDecide } from './types';
  * same client its calls ask (JEV_CLIENT: the model, or the stubs; a test's own client), with the text's
  * words and what the app says it is about. It returns the answers, or null where the model could not answer
  * (an error, past JEV_TIMEOUT_MS), and records the asking in the app's audit beside the message
- * (`text_decision`): the questions by id, each answer, which client answered and how long it took. Never
+ * (`text_decision`): the questions by id, each answer, which client answered, how long it took and its tokens. Never
  * the words, and never what `about` holds (only its keys), as a turn's audit keeps no caller's words.
  */
 
@@ -27,7 +27,7 @@ export function answerWords(id: string, a: Answer | undefined): string {
 }
 
 /** The audit row of one asking (`text_decision`). */
-export function textDecisionRow(questions: QuestionMap, about: Readonly<Record<string, string>>, r: { answers: AnswerMap | null; source: string | null; model: string | null; latencyMs: number; error: string | null }): AuditDraft {
+export function textDecisionRow(questions: QuestionMap, about: Readonly<Record<string, string>>, r: { answers: AnswerMap | null; source: string | null; model: string | null; latencyMs: number; error: string | null; usage?: JevUsage }): AuditDraft {
   const ids = Object.keys(questions);
   return {
     type: 'text_decision',
@@ -38,6 +38,10 @@ export function textDecisionRow(questions: QuestionMap, about: Readonly<Record<s
       source: r.source,
       model: r.model,
       latencyMs: r.latencyMs,
+      // What the asking cost, in the model's tokens (estimated for a stub): never the words.
+      inputTokens: r.usage?.inputTokens ?? 0,
+      outputTokens: r.usage?.outputTokens ?? 0,
+      estimated: r.usage?.estimated ?? true,
       error: r.error,
     },
   };
@@ -53,7 +57,7 @@ export function textDecider(client: JevClient, timeoutMs: number, m: IncomingTex
     const started = now();
     try {
       const res = await client.ask({ state, questions, timeoutMs });
-      record(textDecisionRow(questions, about, { answers: res.answers, source: res.source, model: res.model, latencyMs: res.latencyMs, error: null }));
+      record(textDecisionRow(questions, about, { answers: res.answers, source: res.source, model: res.model, latencyMs: res.latencyMs, error: null, usage: res.usage }));
       return res.answers;
     } catch (err) {
       record(textDecisionRow(questions, about, { answers: null, source: null, model: null, latencyMs: now() - started, error: err instanceof Error ? err.name : 'error' }));

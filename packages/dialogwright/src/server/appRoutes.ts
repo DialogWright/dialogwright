@@ -124,9 +124,12 @@ export interface AppPageDeps extends AppRouteDeps {
    * The app's sender for what its pages send (TEXT_FROM: the same provider, number, keys and abuse limits its
    * tools text with), absent where the server has none: a page a person works (a shop's own page, behind the
    * console's sign-in) may text from it. Each text is recorded in the app's audit as a tool's is (`text_sent`,
-   * on the `sms` channel, under the text's `key`, or `page` with none). Whether a caller may be texted is the
-   * app's to decide, as in its incoming hook (AppCode.onText): nothing here goes through the gate, which holds
-   * a call's actions.
+   * on the `sms` channel, under the text's `key` as the audit id, or `page` with none: so a key carries no
+   * personal data, no number and no name). Whether a caller may be texted is the app's to decide, as in its
+   * incoming hook (AppCode.onText): nothing here goes through the gate, which holds a call's actions. Every
+   * page of the app is given it, a public one too: a public page that texts a number it is sent lets anyone
+   * make the line text any number (SMS pumping), so text only from a page behind a sign-in, and only to
+   * numbers the app's own records allow.
    */
   texts?: Texts;
 }

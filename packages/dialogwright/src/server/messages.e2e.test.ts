@@ -136,7 +136,8 @@ describe('POST /messages/twilio', () => {
     expect(noulValue(decided[0]!, 'confirmsYes')).toBeGreaterThan(0.5);
     await vi.waitFor(() => expect(auditRows(audit).map((x) => x.type)).toEqual(['text_received', 'text_decision', 'text_sent']));
     const row = auditRows(audit)[1]!;
-    expect(row).toMatchObject({ callId: PHOTO.MessageSid, channel: 'sms', detail: { questions: ['confirmsYes'], answers: ['confirmsYes 0.9'], about: ['offer'], source: 'stub:heuristic', error: null } });
+    expect(row).toMatchObject({ callId: PHOTO.MessageSid, channel: 'sms', detail: { questions: ['confirmsYes'], answers: ['confirmsYes 0.9'], about: ['offer'], source: 'stub:heuristic', estimated: true, error: null } });
+    expect(row.detail.inputTokens).toBeGreaterThan(0);
     expect(JSON.stringify(row)).not.toContain('go ahead');
     expect(JSON.stringify(row)).not.toContain('Reply to accept');
   });
