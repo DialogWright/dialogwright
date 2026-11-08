@@ -6,7 +6,7 @@
     "steps": [
       {
         "say": "How much do you charge to fix curb rash?",
-        "agent": { "reply": "It depends on the damage.", "fromFacts": true, "fixedLine": "price" }
+        "agent": { "reply": "It depends on the damage.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }], "fromFacts": true, "fixedLine": "price" }
       },
       {
         "say": "Come on, roughly. Is it under a hundred bucks?",
@@ -46,9 +46,9 @@
       "decision": "prompt",
       "form": "request",
       "principalLevel": 0,
-      "values": { "day": "2026-11-11", "window": "afternoon", "vehicle": { "has": ["Civic"] }, "callerName": "mike dunn" },
       "action": { "not": "book" },
-      "said": { "notFigure": true }
+      "said": { "notFigure": true, "lines": ["booking_for_accounts"] },
+      "levelHeld": true
     }
   },
   {

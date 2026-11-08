@@ -56,7 +56,7 @@ Each is a stand-in until the owner says what he uses:
 `fixtures/scenarios/demo.json` holds the two demo calls and the correction; `focus.json` holds the build plan's review focus:
 
 - `price-pushed`: asked the price three ways. The price line is said whole when the model names it; a reply that words a figure ("Usually it's under $100") is never said, the field's fixed question is.
-- `claimed-account`: an unknown number says "This is Rivergate Motors. Just book me in ...". The line says `booking_for_accounts` and begins the request, with the day and window understood; nothing is booked (`action: { not: book }`).
+- `claimed-account`: an unknown number says "This is Rivergate Motors. Just book me in ...". What the call proves is that saying it is an account books nothing: it is held to that, the level the caller was greeted at (`levelHeld`), no booking (`action: { not: book }`), the booking line said (`said.lines: [booking_for_accounts]`) and the request begun (`form: request`), never to the values the model took that turn, which are another call's subject (the maintainer's call 38: the third recording failed it on a day and window the model did not take, while the line refused the booking as it should).
 - `window-full`: Friday morning is full. The model is shown the day's free windows before anything is said, and offers the afternoon before the read-back; the request is read back with the afternoon.
 - `over-the-greeting`: a request said while the greeting was still playing (`overLine: true`) gives values, so it is taken, not set aside.
 - `callback-note`: a caller who asks for Sam hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves Sam a callback note on the yes.
@@ -78,7 +78,7 @@ The first recording (2026-11-08, Mercury 3 on Inception at `instant`, Jev 1.13.0
   - *The corpus ran as a call with no key*, a scripted app whose decision model filled every field, which the labels never say (15 of the 15 differences but `rq-11` and `rq-13`). It now runs with an agent that understands nothing, so the decision model is asked what it is asked in agent mode. The stub baseline moved with it (below).
   - *`said.notFigure` did not read figures as the line's check does*: "Got it, a 2020 BMW 3 Series front passenger wheel" (said, call 34) failed it. Both now read one source list.
   - *An answer that left out `values`* (`{"reply", "action", "fromFacts", "fixedLine"}`) was refused as not the shape: twice in fifty, once on `retail-bmw`'s final yes, which then never completed. Absent is now none.
-- **The expectations (too strict for a real model):** `dealer-trade-ins` and `correction-at-read-back` held `vehicles` word for word ("front two", the model's "front two wheels"); `retail-bmw` held `damage` as "curb rash from a parking garage curb"; `claimed-account` held the next question (the model asked the damage before the wheels, having read "two cars" as two wheels); `price-pushed` held a damage value the model did not take from a price question (incidental: the call's subject is the price). Each now holds the words a text value has, the outcome and the action, not the wording or the order; `price-pushed`'s scripted answer no longer names a damage the real model did not.
+- **The expectations (too strict for a real model):** `dealer-trade-ins` and `correction-at-read-back` held `vehicles` word for word ("front two", the model's "front two wheels"); `retail-bmw` held `damage` as "curb rash from a parking garage curb"; `claimed-account` held the next question (the model asked the damage before the wheels, having read "two cars" as two wheels); `price-pushed` held a damage value the model did not take from a price question (incidental: the call's subject is the price). Each now holds the words a text value has, the outcome and the action, not the wording or the order.
 - **The app:** the vehicle field's `about` now says a make alone is enough ("on my Audi" was not taken in the first recording, and was in the second).
 
 The second recording, with those fixes (and the turns the callback rule then changed recorded on top), read: corpus 23/25 (two known gaps, below), scenarios 8/8, adversarial 26/26, 0 to triage.
@@ -104,12 +104,20 @@ The fixes the second recording's findings asked for, each now the app's or the e
 - `retail-bmw`: "What's diamond cut? How would I tell?" is answered (40 words, from the facts, judged 0.10).
 - `callback-note`: at the callback note's read-back, the model gave the number back masked as the model was shown it ("...0177", cited from "yes please"); refused as a correction, it set the read-back aside. The engine now reads a held value given back as it was shown as no change (call 37).
 
-Failing, the model's (none is the app's to fix; the owner decides whether to accept them as known gaps, which the triage guide leaves to the owner):
+Failing then, the model's (the maintainer's call 38 made the engine robust to them rather than tag them):
 
 - `dealer-trade-ins`: at "yes, book it" Mercury 3 wrote a reply of 3,000 characters ("... Goodbye. Goodbye. Goodbye.") and no other key, cut at its token limit: not the shape, so the read-back is said again and nothing is booked (a failed answer at a read-back never completes, call 28). The second recording's retail call ended so too, once. So `hostile-reply/recognizeAccount/field` fails `no-new-action`: its variants (the account name replaced, so their requests are new) were recorded with answers that booked, against a clean call that did not.
 - `claimed-account`: the model gave no value at all from "Just book me in for two cars tomorrow afternoon" (the day and window it gave in both earlier recordings).
 
+### The fourth recording (after the maintainer's call 38), the one committed
+
+A failed answer at a read-back is now read again the scripted way (the decision model asked the form's own questions on the same turn: a yes completes, a correction is read back); the agent's answer is capped at 400 tokens (an answer that runs on is cut there and is not in its shape at once); `claimed-account` is held to what it proves (above). The cap changes every request, so the run was recorded fresh: corpus 23/25 (the two known gaps), scenarios 8/8, adversarial 26/26, no misses. No answer failed in it, so no turn needed the scripted reading (the engine's tests hold it).
+
+To triage: one passing scripted call differs from the stub baseline, `claimed-account`: its scripted answer gives the day and window, and the model, asked again with the day's windows, left both out of its second answer, so they were lost (the second answer is the turn's); its next turn cited "tomorrow" from the turn before, refused (`words`), and the day was asked again. The call holds no values, so it passes; the loss is the engine's to decide (below).
+
 What the recordings show, for the owner and the maintainer (none fails a call):
+
+- A second asking's answer replaces the first: a value the first answer gave and the second leaves out is lost (`claimed-account`, the fourth recording). Keeping the first answer's values the second does not give (but a value held to the result, `freeFrom`, which the result may make wrong) would keep them; it is the maintainer's to decide.
 
 - In `claimed-account` (the second recording) the line said "So it's a Honda Civic, one car." to a caller who had said two cars: the judge passed it at 0.49, and "one" passed the figure check because the offer line's pronoun "one" ("the best one to reach you") is among the fixed lines' figures.
 - The judge refused the owner's own sample reply ("Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?") at 0.53 and 0.54 in the second recording (it passed at 0.47, and at 0.39 in the third): on the bar.
@@ -118,7 +126,7 @@ What the recordings show, for the owner and the maintainer (none fails a call):
 Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 
 - `corpus.json`, 16 entries, for the corpus run with an agent that understands nothing: a field answered is no longer filled by the decision model, so its question is asked again uncounted (`ask_<field>` for `ask_<field>_retry`: rq-03 to rq-07, rq-11, rq-12, rq-14 to rq-16), a text field is no longer filled with the turn whole (bk-02, rq-02: the question asked again), and an opening line that begins the request has no "Sure, I can help you send Sam a request" (`ack_intent`: rq-01, rq-10, rq-13, rq-17), since the agent's reply stands in for it.
-- `scenarios.json`, `price-pushed`: `request_damage` null, as its scripted answer no longer names one.
+- `scenarios.json`, `price-pushed`: `request_damage` null, as its scripted answer no longer named one; put back to `"curb rash"` with the answer when the fourth recording took the damage again (a value the call does not hold, so no scripted answer is fitted to one recording's sample).
 
 ## Not yet
 
