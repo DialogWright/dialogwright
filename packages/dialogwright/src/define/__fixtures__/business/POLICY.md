@@ -68,7 +68,9 @@ Said in fixed words, never worded by a model:
 
 ### Recognized by the number calling
 
-A call from a number on file for one account (business.yaml's `accounts`) is recognized as that account at level 1 ('recognized by the number calling') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, book the study room (`bookRoom`), still only once the caller confirms its read-back; and read the study room's free windows near a day (`roomAvailability`). That risk is the business's to accept (the agent-mode design's call 14).
+A call from a number on file for one account (business.yaml's `accounts`) is recognized as that account at level 1 ('recognized by the number calling') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, book the study room (`bookRoom`), still only once the caller confirms its read-back; and read the study room's free windows near a day (`roomAvailability`). That risk is the business's to accept (the agent-mode design's call 14). A number the caller withheld still recognizes the account it is on file for (app.yaml's `callerNumber.withheld: use`, the default); `ignore` treats such a call as one with no number.
+
+`booking` is offered only to a caller recognized by the number calling, so in practice only on a phone call: a chat carries no number to recognize, and a caller on it who asks hears `booking_for_accounts`.
 
 ## Who is served and who acts for them
 

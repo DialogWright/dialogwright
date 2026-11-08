@@ -320,8 +320,15 @@ function agentSection(app: App, source: PolicySource): string[] {
       '',
       '### Recognized by the number calling',
       '',
-      `A call from a number on file for one account (business.yaml's \`accounts\`) is recognized as that account at level 1 ('${levelName(app, 1)}') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, ${booked.length > 0 ? booked.length === 1 ? booked[0] : `${booked.slice(0, -1).join('; ')}; and ${booked.at(-1)!}` : 'take no action above level 0'}. That risk is the business's to accept (the agent-mode design's call 14).`,
+      `A call from a number on file for one account (business.yaml's \`accounts\`) is recognized as that account at level 1 ('${levelName(app, 1)}') by the caller-ID match alone: nothing else is asked. Caller ID is the identifier, never a factor the caller says. **Caller ID can be forged:** a caller who forges an account's number could, as that account, ${booked.length > 0 ? booked.length === 1 ? booked[0] : `${booked.slice(0, -1).join('; ')}; and ${booked.at(-1)!}` : 'take no action above level 0'}. That risk is the business's to accept (the agent-mode design's call 14). ${(app.callerNumber?.withheld ?? 'use') === 'use' ? "A number the caller withheld still recognizes the account it is on file for (app.yaml's `callerNumber.withheld: use`, the default); `ignore` treats such a call as one with no number." : "A number the caller withheld recognizes no account (app.yaml's `callerNumber.withheld: ignore`)."}`,
     );
+    const only = Object.entries(app.forms).filter(([, f]) => f.recognizedOnly !== undefined).map(([id]) => code(id));
+    if (only.length > 0) {
+      out.push(
+        '',
+        `${andList(only)} ${only.length === 1 ? 'is' : 'are'} offered only to a caller recognized by the number calling, so in practice only on a phone call: a chat carries no number to recognize, and a caller on it who asks hears ${code(Object.values(app.forms).find((f) => f.recognizedOnly !== undefined)!.recognizedOnly!.say)}.`,
+      );
+    }
   }
   return out;
 }

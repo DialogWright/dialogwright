@@ -46,7 +46,7 @@ const field = z
     name: identifier().describe('The field\'s name: the read-back\'s and the done line\'s {placeholder}, the param of the same name in every call the form makes, and the name the agent model gives its value by (for example callerName, day).'),
     type: identifier().describe('The slot type from the library the value is checked by (docs/slots/README.md): choice, date, digits, name or text. birthdate is refused (an identity factor\'s type, and the conversation is sent to the agent model). A type that takes no value from outside its own fill (record, reference, topic) is refused, since in agent mode the model understands the value and the slot type checks it.'),
     question: text().describe('The field\'s question, said word for word when the line asks for it in fixed words (the agent\'s reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line.'),
-    about: text().optional().describe('What the value is, for the agent model ("The make and model, and the year if they know it."). Default: none, the field\'s name alone.'),
+    about: text().optional().describe('What the value is, for the agent model ("The title of the book, as the caller gave it."). Default: none, the field\'s name alone.'),
     options: z
       .union([z.literal(WINDOWS_OPTIONS), unique(text(), 'option').min(2, { error: 'must list at least two options' })])
       .optional()
@@ -102,7 +102,7 @@ const service = z
 const window = z
   .strictObject({
     name: identifier().describe('The window\'s name, as a choice field with options: windows takes it and the read-back says it ("morning").'),
-    says: text().describe('What the window is, in the business\'s words, which the line may say ("drop off by 8 in the morning, ready by about noon").'),
+    says: text().describe('What the window is, in the business\'s words, which the line may say ("from 9 to noon").'),
     capacity: z.int({ error: 'must be a whole number' }).min(1, { error: 'must be at least 1' }).optional().describe('How many requests or bookings the window takes, for the app\'s own calendar. Never said by the line.'),
   })
   .describe('One window of the day something is dropped off or collected in.');

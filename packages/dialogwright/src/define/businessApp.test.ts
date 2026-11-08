@@ -336,5 +336,7 @@ describe('the fixture\'s pages', () => {
     expect(card).toContain('callback number by its last four.');
     expect(card).toContain('**Caller ID can be forged:**');
     expect(card).toContain('book the study room (`bookRoom`), still only once the caller confirms its read-back');
+    expect(card).toContain('A number the caller withheld still recognizes the account it is on file for (app.yaml\'s `callerNumber.withheld: use`, the default)');
+    expect(card).toContain('`booking` is offered only to a caller recognized by the number calling, so in practice only on a phone call');
   });
 });

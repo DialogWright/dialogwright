@@ -170,7 +170,7 @@
           "says": {
             "type": "string",
             "minLength": 1,
-            "description": "What the window is, in the business's words, which the line may say (\"drop off by 8 in the morning, ready by about noon\")."
+            "description": "What the window is, in the business's words, which the line may say (\"from 9 to noon\")."
           },
           "capacity": {
             "description": "How many requests or bookings the window takes, for the app's own calendar. Never said by the line.",
@@ -252,7 +252,7 @@
                 "description": "The field's question, said word for word when the line asks for it in fixed words (the agent's reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line."
               },
               "about": {
-                "description": "What the value is, for the agent model (\"The make and model, and the year if they know it.\"). Default: none, the field's name alone.",
+                "description": "What the value is, for the agent model (\"The title of the book, as the caller gave it.\"). Default: none, the field's name alone.",
                 "type": "string",
                 "minLength": 1
               },
@@ -387,7 +387,7 @@
                 "description": "The field's question, said word for word when the line asks for it in fixed words (the agent's reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line."
               },
               "about": {
-                "description": "What the value is, for the agent model (\"The make and model, and the year if they know it.\"). Default: none, the field's name alone.",
+                "description": "What the value is, for the agent model (\"The title of the book, as the caller gave it.\"). Default: none, the field's name alone.",
                 "type": "string",
                 "minLength": 1
               },
@@ -520,7 +520,7 @@
                 "description": "The field's question, said word for word when the line asks for it in fixed words (the agent's reply was not said, or the field is next and nothing else is): its ask_<form>_<field> line."
               },
               "about": {
-                "description": "What the value is, for the agent model (\"The make and model, and the year if they know it.\"). Default: none, the field's name alone.",
+                "description": "What the value is, for the agent model (\"The title of the book, as the caller gave it.\"). Default: none, the field's name alone.",
                 "type": "string",
                 "minLength": 1
               },

@@ -237,6 +237,8 @@ function fieldProblems(b: BusinessYaml, f: BusinessFieldYaml, at: DataPath, allo
   if (type === undefined) {
     const near = closest(f.type, allowed);
     report([...at, 'type'], `"${f.type}" is not a slot type of the library`, near ? `write "${near}" if it is that type; a field takes ${allowed.join(', ')}` : `write one of ${allowed.join(', ')}`);
+  } else if (AGENT_REFUSED_TYPES.includes(f.type)) {
+    report([...at, 'type'], `the slot type "${f.type}" is an identity factor's type, and in agent mode the conversation is sent to the agent model, so it would carry the factor`, `write one of ${allowed.join(', ')}; an app that verifies callers by a factor is a scripted app`);
   } else if (!allowed.includes(f.type)) {
     report([...at, 'type'], `the slot type "${f.type}" takes no value from outside its own fill (it has no check of a value the model understood), so in agent mode it cannot hold a field`, `write one of ${allowed.join(', ')}; a field's value is understood by the agent model and checked by its slot type`);
   }

@@ -143,7 +143,7 @@ describe('business.yaml', () => {
 
   it('birthdate is refused in agent mode: it is an identity factor\'s type', () => {
     const dir = copy({ 'business.yaml': replacing('      type: name\n      question: What\'s your name?', '      type: birthdate\n      question: What\'s your name?') });
-    expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].type', fix: expect.not.stringContaining('birthdate') }]);
+    expect(problemsOf(dir)).toMatchObject([{ path: 'request.fields[0].type', message: expect.stringContaining('identity factor\'s type, and in agent mode the conversation is sent to the agent model'), fix: expect.not.stringContaining('birthdate') }]);
   });
 
   it('a read-back must say every required field, and a booking\'s its {account}', () => {
