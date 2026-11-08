@@ -123,24 +123,25 @@
       "additionalProperties": false
     },
     "model": {
-      "description": "The model that words the app's generated lines, the author's choice (measured with render:bakeoff): what the server words with and the regression's recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic's claude-haiku-5-5).",
+      "description": "The model that words the app's generated lines, the author's choice (measured with render:bakeoff): what the server words with and the regression's recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic's claude-haiku-5-5).",
       "type": "object",
       "properties": {
         "provider": {
           "type": "string",
           "enum": [
             "openrouter",
-            "anthropic"
+            "anthropic",
+            "inception"
           ],
-          "description": "Where the model is reached: openrouter (any model OpenRouter serves) or anthropic."
+          "description": "Where the model is reached: openrouter (any model OpenRouter serves), anthropic, or inception (Inception's own API, its Mercury models)."
         },
         "id": {
-          "description": "The model id, as the provider names it (\"google/gemini-3.5-flash-lite\" on OpenRouter, \"claude-haiku-5-5\" on Anthropic). Default: the provider's default model (RENDER_MODEL's default).",
+          "description": "The model id, as the provider names it (\"google/gemini-3.5-flash-lite\" on OpenRouter, \"claude-haiku-5-5\" on Anthropic, \"mercury-3\" on Inception). Default: the provider's default model (RENDER_MODEL's default).",
           "type": "string",
           "minLength": 1
         },
         "thinking": {
-          "description": "How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers \"Reasoning is mandatory\"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. Default: the model's own default (reasoning off on OpenRouter), as before.",
+          "description": "How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers \"Reasoning is mandatory\"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. On inception, disabled and the default send reasoning_effort instant, its fastest; an effort sends that effort, and omit none (Inception's own, medium). Default: the model's own default (reasoning off on OpenRouter, instant on Inception), as before.",
           "type": "string",
           "enum": [
             "disabled",
@@ -159,7 +160,7 @@
           ]
         },
         "temperature": {
-          "description": "How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app's generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. Default: none sent, the model's own.",
+          "description": "How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app's generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. On inception 0.5 to 1 only: Mercury resets any other to its default without an error. Default: none sent, the model's own.",
           "type": "number",
           "minimum": 0,
           "maximum": 2

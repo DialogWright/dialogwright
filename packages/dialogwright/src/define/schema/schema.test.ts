@@ -167,6 +167,13 @@ describe('mistakes get a precise error', () => {
     expect(issuesOf('style', 'model: { provider: openrouter, temperature: 3 }\n').map((i) => i.path)).toEqual(['model.temperature']);
     expect(issuesOf('style', 'model: { provider: anthropic, thinking: adaptive, retryTemperature: 0.2 }\n').map((i) => i.path)).toEqual(['model.retryTemperature']);
     expect(issuesOf('style', 'model: { provider: anthropic, thinking: disabled, temperature: 0.2 }\n')).toEqual([]);
+    // Inception: Mercury takes 0.5 to 1 and resets any other silently, so one outside is refused; its effort in the shared words.
+    expect(issuesOf('style', 'model: { provider: inception, id: mercury-3, temperature: 0.6, retryTemperature: 1 }\n')).toEqual([]);
+    expect(issuesOf('style', 'model: { provider: inception, effort: low }\n')).toEqual([]);
+    const refused = issuesOf('style', 'model: { provider: inception, temperature: 0.2, retryTemperature: 1.5 }\n');
+    expect(refused.map((i) => i.path)).toEqual(['model.temperature', 'model.retryTemperature']);
+    expect(refused[0]!.message).toContain('inception takes a temperature from 0.5 to 1');
+    expect(issuesOf('style', 'model: { provider: inception, thinking: between-tools }\n').map((i) => i.path)).toEqual(['model.thinking']);
   });
 
   it('policy levels, attempts and role access are bounded', () => {

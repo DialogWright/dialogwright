@@ -35,8 +35,9 @@ import { spawnSync } from 'node:child_process';
 export const BAKEOFF_USAGE = [
   'usage: dialogwright render:bakeoff [dir] --models <model>[,<model>...] [--replay | --fresh [--replace-app-cassette]] [--by-line] [--price <model>=<input>,<output>]... [--screen inline|separate] [--out <file.md>] [--json]',
   '  dir: the app folder (one with app.yaml); with none, the folder it is run in, or the nearest above it with an app.yaml',
-  '  --models: <provider>:<model>[:<thinking>][:<effort>], anthropic or openrouter, comma-separated or repeated',
-  '    (anthropic:claude-haiku-5-5, anthropic:claude-haiku-5-5:adaptive:low, openrouter:openai/gpt-oss-120b:low); thinking: disabled, between-tools, adaptive, omit; effort: low, medium, high',
+  '  --models: <provider>:<model>[:<thinking>][:<effort>], anthropic, openrouter or inception, comma-separated or repeated',
+  '    (anthropic:claude-haiku-5-5, anthropic:claude-haiku-5-5:adaptive:low, openrouter:openai/gpt-oss-120b:low, inception:mercury-3, inception:mercury-3:low); thinking: disabled, between-tools, adaptive, omit; effort: low, medium, high',
+  '    (on inception the default and thinking disabled send reasoning_effort instant; an effort sends that effort)',
   '  records each model into fixtures/recorded/render/<model>.jsonl with your own keys (refused in CI), then tables them; --replay: table the cassettes alone, asking no model',
   '  --fresh: ask every line again, recorded beside each model\'s cassette and put over it only when the run completes with no error or timeout;',
   '    a cassette that is the app\'s own (git tracks it, or its regression replays it) is kept, the fresh run recorded as <model>.bakeoff.jsonl, unless --replace-app-cassette',

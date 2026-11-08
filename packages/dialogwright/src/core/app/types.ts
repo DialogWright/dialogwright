@@ -1893,7 +1893,7 @@ export interface RenderStyle {
  * renderEnvOf); the key is read from the environment only.
  */
 export interface RenderModelChoice {
-  readonly provider: 'openrouter' | 'anthropic';
+  readonly provider: 'openrouter' | 'anthropic' | 'inception';
   readonly id?: string;
   /**
    * How the model thinks while it words a line, as RENDER_THINKING would say it, for this model only (a

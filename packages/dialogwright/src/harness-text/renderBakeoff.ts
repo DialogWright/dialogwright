@@ -24,6 +24,8 @@ import {
   refusedThinking,
   renderSettings,
   resolveRenderProvider,
+  providerSettingsLabel,
+  RENDER_KEY_VARS,
   thinkingLabel,
   type RenderEffort,
   type RenderProvider,
@@ -55,7 +57,7 @@ import type { RenderChannel } from '../core/app/types';
  * machine; the command refuses in CI, and no test records (tests use fakes).
  */
 
-/** A model to compare, as `--models` names it: `<provider>:<model>[:<thinking>][:<effort>]` (`anthropic:claude-haiku-5-5`, `openrouter:openai/gpt-oss-120b:low`). */
+/** A model to compare, as `--models` names it: `<provider>:<model>[:<thinking>][:<effort>]` (`anthropic:claude-haiku-5-5`, `openrouter:openai/gpt-oss-120b:low`, `inception:mercury-3:low`). */
 export interface ModelSpec {
   /** As given. */
   readonly entry: string;
@@ -75,21 +77,22 @@ export interface ModelSpec {
  */
 export function parseModelSpecs(list: readonly string[]): ModelSpec[] {
   const entries = list.flatMap((l) => l.split(',')).map((e) => e.trim()).filter((e) => e !== '');
-  if (entries.length === 0) throw new Error('--models names no model: give one or more, comma-separated, as anthropic:<model> or openrouter:<vendor/model>');
+  if (entries.length === 0) throw new Error('--models names no model: give one or more, comma-separated, as anthropic:<model>, openrouter:<vendor/model> or inception:<model>');
   const out: ModelSpec[] = [];
   const vocabulary = `its thinking (${RENDER_THINKING_MODES.join(', ')}) and its effort (${RENDER_EFFORTS.join(', ')})`;
   for (const entry of entries) {
     const at = entry.indexOf(':');
     const provider = at === -1 ? '' : entry.slice(0, at);
     const rest = at === -1 ? '' : entry.slice(at + 1);
-    if (!(RENDER_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${RENDER_PROVIDERS.map((p) => `${p}:`).join(' or ')} (anthropic:claude-haiku-5-5, openrouter:<vendor/model>)`);
+    if (!(RENDER_PROVIDERS as readonly string[]).includes(provider)) throw new Error(`"${entry}": start it with its provider, ${RENDER_PROVIDERS.map((p) => `${p}:`).join(' or ')} (anthropic:claude-haiku-5-5, openrouter:<vendor/model>, inception:mercury-3)`);
     const parts = rest.split(':');
     const effort = parts.length > 1 && (RENDER_EFFORTS as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderEffort) : undefined;
     const thinking = parts.length > 1 && (RENDER_THINKING_MODES as readonly string[]).includes(parts.at(-1)!) ? (parts.pop() as RenderThinkingMode) : undefined;
     const model = parts.join(':');
     if (model.trim() === '') throw new Error(`"${entry}": name the model after ${provider}:`);
-    // An Anthropic id has no colon: anything after the model is its thinking and its effort, or a slip.
-    if (provider === 'anthropic' && model.includes(':')) throw new Error(`"${entry}": after the model give ${vocabulary}, either or both, got "${model.slice(model.indexOf(':') + 1)}"`);
+    // An Anthropic or Inception id has no colon: anything after the model is its thinking and its effort, or a slip
+    // (Inception's fastest, reasoning_effort instant, is its default, and thinking disabled names it).
+    if ((provider === 'anthropic' || provider === 'inception') && model.includes(':')) throw new Error(`"${entry}": after the model give ${vocabulary}, either or both, got "${model.slice(model.indexOf(':') + 1)}"${provider === 'inception' ? ' (reasoning_effort instant is the default: leave it out, or say disabled)' : ''}`);
     out.push({ entry, provider: provider as RenderProviderName, model, ...(thinking !== undefined ? { thinking } : {}), ...(effort !== undefined ? { effort } : {}) });
   }
   const seen = new Set<string>();
@@ -114,7 +117,7 @@ export function envForModel(spec: ModelSpec, env: Env): Env {
 }
 
 /** The key variable each provider's recording needs (render/providers.ts). */
-export const RENDER_KEY_VARS: Readonly<Record<RenderProviderName, string>> = { anthropic: 'ANTHROPIC_API_KEY', openrouter: 'OPENROUTER_API_KEY' };
+export { RENDER_KEY_VARS };
 
 /** The models whose price is known without `--price`: the default model's, on either provider (DEFAULT_RENDER_PRICE). */
 export const PRICED_BY_DEFAULT: Readonly<Record<string, RenderPrice>> = { 'claude-haiku-5-5': DEFAULT_RENDER_PRICE, 'anthropic/claude-haiku-5.5': DEFAULT_RENDER_PRICE };
@@ -494,7 +497,7 @@ export async function runModel(spec: ModelSpec, run: BakeoffRun): Promise<ModelR
   const checksPath = checksCassettePath(run.recordedDir, renderCassetteModel(p), run.decision.provider.model);
   const label = `${spec.provider}:${spec.model}${p.thinking?.overridden ? ` (${thinkingLabel(p.thinking)})` : ''}`;
   const price = run.prices.get(p.model) ?? null;
-  const base = { entry: spec.entry, label, provider: p.provider, model: p.model, ...(p.thinking !== undefined ? { thinking: thinkingLabel(p.thinking) } : {}), cassette, checks: checksPath };
+  const base = { entry: spec.entry, label, provider: p.provider, model: p.model, ...(providerSettingsLabel(p) !== null ? { thinking: providerSettingsLabel(p)! } : {}), cassette, checks: checksPath };
   // A partial fresh recording an interrupted run left: said first, whatever this run does.
   const partial = `${cassette}${FRESH_SUFFIX}`;
   const leftover = existsSync(partial) ? { leftover: partial } : {};

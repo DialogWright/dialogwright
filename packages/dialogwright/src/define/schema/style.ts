@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { checkAlways, identifier, text, unique } from './common';
 import { ADDED_FIRE, DRIFT_ALONE_FIRE, DRIFT_FIRE } from '../../render/checks';
-import { RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
+import { INCEPTION_TEMPERATURE, RENDER_EFFORTS, RENDER_PROVIDERS, RENDER_THINKING_MODES } from '../../render/providers';
 
 /**
  * style.yaml (optional): how a generated line sounds (generated wording, design section 5). Read only
@@ -91,14 +91,14 @@ export const styleSchema = z
       .describe('The drift judge, the decision model asked whether each generated line or span means what it was given (its meaning is the judge\'s; the checks by code hold its data and shape).'),
     model: z
       .strictObject({
-        provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves) or anthropic.'),
+        provider: z.enum(RENDER_PROVIDERS).describe('Where the model is reached: openrouter (any model OpenRouter serves), anthropic, or inception (Inception\'s own API, its Mercury models).'),
         id: text()
           .optional()
-          .describe('The model id, as the provider names it ("google/gemini-3.5-flash-lite" on OpenRouter, "claude-haiku-5-5" on Anthropic). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
+          .describe('The model id, as the provider names it ("google/gemini-3.5-flash-lite" on OpenRouter, "claude-haiku-5-5" on Anthropic, "mercury-3" on Inception). Default: the provider\'s default model (RENDER_MODEL\'s default).'),
         thinking: z
           .enum(RENDER_THINKING_MODES)
           .optional()
-          .describe('How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers "Reasoning is mandatory"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. Default: the model\'s own default (reasoning off on OpenRouter), as before.'),
+          .describe('How the model thinks while it words a line, as RENDER_THINKING says it, for this model only: disabled, adaptive, omit, or between-tools (Claude Sonnet 5.5 on anthropic). For a model whose endpoint refuses reasoning off (OpenRouter answers "Reasoning is mandatory"), adaptive with an effort. Sent only where this model is in force; RENDER_THINKING or RENDER_EFFORT in the environment is taken over both. On inception, disabled and the default send reasoning_effort instant, its fastest; an effort sends that effort, and omit none (Inception\'s own, medium). Default: the model\'s own default (reasoning off on OpenRouter, instant on Inception), as before.'),
         effort: z
           .enum(RENDER_EFFORTS)
           .optional()
@@ -108,7 +108,7 @@ export const styleSchema = z
           .min(0)
           .max(2)
           .optional()
-          .describe('How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app\'s generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. Default: none sent, the model\'s own.'),
+          .describe(`How freely the model words a line, 0 to 2 (lower is closer to its likeliest wording), sent with every wording of the app\'s generated lines. Not on anthropic while the model thinks (thinking adaptive or omit): its API takes no temperature then. On inception ${INCEPTION_TEMPERATURE.min} to ${INCEPTION_TEMPERATURE.max} only: Mercury resets any other to its default without an error. Default: none sent, the model\'s own.`),
         retryTemperature: z
           .number()
           .min(0)
@@ -118,14 +118,17 @@ export const styleSchema = z
       })
       .superRefine((m, ctx) => {
         if (m.thinking === 'disabled' && m.effort !== undefined) ctx.addIssue({ code: 'custom', path: ['effort'], message: 'effort asks for reasoning, which thinking: disabled turns off', params: { fix: 'remove effort, or set thinking: adaptive' } });
-        if (m.thinking === 'between-tools' && m.provider !== 'anthropic') ctx.addIssue({ code: 'custom', path: ['thinking'], message: 'between-tools is Claude Sonnet 5.5\'s on anthropic', params: { fix: 'on openrouter use disabled, adaptive or omit' } });
+        if (m.thinking === 'between-tools' && m.provider !== 'anthropic') ctx.addIssue({ code: 'custom', path: ['thinking'], message: 'between-tools is Claude Sonnet 5.5\'s on anthropic', params: { fix: `on ${m.provider} use disabled, adaptive or omit` } });
         for (const key of ['temperature', 'retryTemperature'] as const) {
           if (m[key] !== undefined && m.provider === 'anthropic' && (m.thinking === 'adaptive' || m.thinking === 'omit')) ctx.addIssue({ code: 'custom', path: [key], message: `anthropic takes no ${key === 'temperature' ? 'temperature' : 'retryTemperature'} while the model thinks (thinking: ${m.thinking})`, params: { fix: `remove ${key}, or set thinking: disabled` } });
+          // Mercury resets a temperature outside its range to its default with no error: refused here rather than sent and ignored.
+          const t = m[key];
+          if (t !== undefined && m.provider === 'inception' && (t < INCEPTION_TEMPERATURE.min || t > INCEPTION_TEMPERATURE.max)) ctx.addIssue({ code: 'custom', path: [key], message: `inception takes a ${key} from ${INCEPTION_TEMPERATURE.min} to ${INCEPTION_TEMPERATURE.max} (Mercury resets any other to its default, 1, without an error), got ${t}`, params: { fix: `set ${key} from ${INCEPTION_TEMPERATURE.min} to ${INCEPTION_TEMPERATURE.max}, or remove it` } });
         }
       })
       .optional()
       .describe(
-        'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
+        'The model that words the app\'s generated lines, the author\'s choice (measured with render:bakeoff): what the server words with and the regression\'s recorded run replays, as RENDER_PROVIDER and RENDER_MODEL would name it. The environment overrides it: RENDER_PROVIDER naming another provider takes that one (with RENDER_MODEL or its default model), and RENDER_MODEL, read only with RENDER_PROVIDER set, names the model. The key is read from the environment only (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), never from here; with RENDER_PROVIDER unset and the key unset the server says every line fixed, with a warning, and pnpm diagnose says so. Default: none, as before (the server generates only with RENDER_PROVIDER set, and a recorded run replays Anthropic\'s claude-haiku-5-5).',
       ),
   })
   .describe('style.yaml: how a generated line sounds. Only read when the app generates a line.');

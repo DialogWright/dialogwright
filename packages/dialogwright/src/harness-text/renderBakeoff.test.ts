@@ -100,6 +100,12 @@ describe('the models named', () => {
     expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:thinking'])).toThrow('"anthropic:claude-haiku-5-5:thinking": after the model give its thinking (disabled, between-tools, adaptive, omit) and its effort (low, medium, high), either or both, got "thinking"');
     expect(() => parseModelSpecs(['anthropic:claude-haiku-5-5:adaptive:max'])).toThrow(/got "adaptive:max"/);
     expect(() => parseModelSpecs(['anthropic:a', 'anthropic:a'])).toThrow(/named twice/);
+    // Inception: its id has no colon; an effort after it, and instant is its default (thinking disabled), not a word of its own.
+    expect(parseModelSpecs(['inception:mercury-3,inception:mercury-3:low'])).toEqual([
+      { entry: 'inception:mercury-3', provider: 'inception', model: 'mercury-3' },
+      { entry: 'inception:mercury-3:low', provider: 'inception', model: 'mercury-3', effort: 'low' },
+    ]);
+    expect(() => parseModelSpecs(['inception:mercury-3:instant'])).toThrow('got "instant" (reasoning_effort instant is the default: leave it out, or say disabled)');
   });
 
   it('runs each model with its own provider, model and thinking, never another\'s from the environment', () => {

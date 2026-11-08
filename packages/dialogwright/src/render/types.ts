@@ -190,7 +190,7 @@ export interface RenderRequest {
 }
 
 /**
- * Words a line (render/providers.ts for OpenRouter and Anthropic; render/fake.ts for tests;
+ * Words a line (render/providers.ts for OpenRouter, Anthropic and Inception; render/fake.ts for tests;
  * render/cassette.ts recording and replaying either). A failure rejects; the line is then said fixed.
  */
 export interface RenderClient {
