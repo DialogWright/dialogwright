@@ -303,6 +303,13 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 
 39. **(2026-11-08, the fourth wheelshop recording) Decided by the maintainer: the second asking keeps the first answer's values.** On a turn asked again with a seen tool's result (call 30), a value the first answer gave and the turn accepted is kept where the second answer leaves it out: an omission is no retraction (`claimed-account`: shown the day's windows, the model gave neither the day nor the window again, and both were lost). A value the second answer gives replaces the first's. A `freeFrom` field's first value is kept only where the result still lists it, and is checked again with the rest; one the result no longer lists is left out, never refused, so its question is asked with no attempt counted (core/agentTurn.ts withFirstValues).
 
+40. **(2026-11-08, the whole-branch review) Decided by the maintainer:**
+    - **A text value carries nothing of its own.** The text slot's check refuses (`words`) a value with a figure (a number, an amount, a date word) or a web address that neither the words it is cited from (as said, and as the slot writes them) nor the value the slot held before have ("The Quiet Harbor, waived fee of $40 agreed" cited from "The Quiet Harbor"). And each text value accepted that is not the caller's words as cited is judged against them by the drift judge a framed summary is (`renderSpanDrift`), at the app's `refuseAt`; refused, failed or late, the value held is the cited words as said, the turn resolved again with them (`agent.textJudged`).
+    - **Every held `freeFrom` value is checked again** after the turn's values and its seen lookups, and before a read-back, in a form and at its read-back: one the latest result for its day no longer lists is cleared, no attempt counted, and its question asked (a window chosen before the day, the day then shown with it taken). The wheelshop's `book` also refuses a window without room for its cars, as a real calendar would (its reply then fails its check, and the call goes to a person); the gate is not the place for that.
+    - **After a `system-failure` handoff the rest of the call is scripted** (`Session.agent.scripted`), so the callback form is filled by the decision model, not the model that failed.
+    - **Optional fields are read back:** every field is sent by the form's `then`, so `pnpm check` refuses an optional field its read-back does not name; one named needs `says.unset`. A choice field's `says` gives each option's words in the read-back and the done line (and `unset`, for an optional field left empty), through the form's summary hook. The wheelshop's read-back says the diamond cut: "diamond cut", "not diamond cut", "not sure if diamond cut".
+    - **The bake-off reads the app's facts:** `agent:bakeoff --business <business.yaml>`, or the cases' `business:`, gives the facts, persona, sample replies, forms (their actions as the engine offers them) and fixed lines the app sends; the cases keep the calls and their labels.
+
 ## Left to the builder
 
 - each slot type's `check`, within the rule above;
@@ -375,7 +382,7 @@ prices:
     send one, and he'll get back to you with a price and confirm your drop-off.
 
 where:
-  shop: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership
+  shop: inside the detailing shop at 400 Commerce Drive, Rivergate
   mobile: false               # assumption: Sam works at the shop
 days: [monday, tuesday, wednesday, thursday, friday]               # assumption
 windows:                      # assumption: drop-off windows, each with room for some cars
@@ -486,7 +493,7 @@ The table is the last of three recordings: after the review's scoring fixes, and
 
 At `low`, the first recording had values right 99% but p50 2.5 s and p95 4.8 s, far over the bar for voice.
 
-**Chosen:** `instant`, realtime, with the owner's sample replies. They gave no reply with a figure the facts don't hold, against three without them. `AGENT_TIMEOUT_VOICE_MS` defaults to 1200 (p95 + 300, rounded) and `AGENT_TIMEOUT_CHAT_MS` to 3000.
+**Chosen:** `instant`, realtime, with the owner's sample replies. They gave no reply with a figure the facts don't hold, against three without them. `AGENT_TIMEOUT_VOICE_MS` defaulted to 1200 (p95 + 300, rounded) and `AGENT_TIMEOUT_CHAT_MS` to 3000; superseded by call 36: 1800 (the bar's p95) and 4000, since a turn that asks twice takes up to 1.75 s.
 
 What the measurement showed, for the tasks that follow:
 - **OpenRouter no longer serves `inception/mercury-3`** (HTTP 404), so the agent's provider is Inception's API. The apps' wording moved to Inception too, on a branch of its own (`render-inception`).
@@ -502,5 +509,13 @@ What the measurement showed, for the tasks that follow:
 - **Replies replaced.** Of 123 replies checked over one recorded run, 17 on the word budget (30 on a call) and 12 on two questions; none on a figure, so none on the number one alone.
 - **The judge on the bar.** It passed "So it's a Honda Civic, one car." at 0.49, said to a caller who had said two cars ("one" passed the figure check: the offer line's pronoun "one" is among the fixed lines' figures). It refused the owner's own sample reply at 0.53 and 0.54, and passed it at 0.47 and 0.39 on other calls.
 - **Answers not in the shape.** `values` left out (2 in about 50: now read as none, call 35); a reply that runs to the token limit ("Goodbye. Goodbye. ...", 3,000 characters, no other key), twice in about 60, both on a final yes at a read-back, which then never completes.
+- **The bake-off on the app's business.yaml** (call 40; 2026-11-08, `instant`, realtime, 3 repeats; the facts, persona and fixed lines the app sends, where the table above had a hand-written copy). The table above is kept as history.
+
+  | Mercury 3 on Inception's API, `instant`, realtime | valid JSON | values right | actions right | figure not in facts | ms p50 / p95 | with judge | bar |
+  |---|---|---|---|---|---|---|---|
+  | with the owner's sample replies | 98% | 94% | 96% | 0 | 541 / 1751 | 741 / 1951 | not met (p95) |
+  | without them | 98% | 83% | 98% | 0 | 511 / 1250 | 711 / 1450 | met but values right |
+
+  One answer of each was not valid: one cut off at the 400-token cap, one naming an action not offered. The longer prompt (the persona, the price line offered) raised the p95 with the sample replies past the bar: for the maintainer.
 - **The bake-off again, capped at 400 tokens** (call 38; 2026-11-08, `instant`, realtime, 3 repeats): with the owner's sample replies valid JSON 100%, values right 93%, actions right 91%, 2 replies with a figure not in the facts (none on "one" alone); without them 100%, 90%, 83% and 3. The cap cut no answer.
 - **Variance.** The same words read otherwise from one recording to the next on the opening turns: the dealer's day given or not, "on my Audi" taken once in three, the claimed account's day and window lost once live and once recorded. A scripted call's pass rests on one sample of each turn; the regression now replays one answer per request (call 35), so it is at least the same sample every time.
