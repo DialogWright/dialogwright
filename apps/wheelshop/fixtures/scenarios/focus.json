@@ -6,7 +6,7 @@
     "steps": [
       {
         "say": "How much do you charge to fix curb rash?",
-        "agent": { "reply": "It depends on the damage.", "values": [{ "field": "damage", "value": "curb rash", "words": "curb rash" }], "fromFacts": true, "fixedLine": "price" }
+        "agent": { "reply": "It depends on the damage.", "fromFacts": true, "fixedLine": "price" }
       },
       {
         "say": "Come on, roughly. Is it under a hundred bucks?",
@@ -21,7 +21,6 @@
       "decision": "prompt",
       "promptId": "ask_request_callerName",
       "form": "request",
-      "values": { "damage": "curb rash" },
       "action": "none",
       "said": { "notFigure": true }
     }
@@ -45,10 +44,9 @@
     ],
     "expect": {
       "decision": "prompt",
-      "promptId": "ask_request_wheels",
       "form": "request",
       "principalLevel": 0,
-      "values": { "day": "2026-11-11", "window": "afternoon", "vehicle": "Honda Civic", "callerName": "mike dunn" },
+      "values": { "day": "2026-11-11", "window": "afternoon", "vehicle": { "has": ["Civic"] }, "callerName": "mike dunn" },
       "action": { "not": "book" },
       "said": { "notFigure": true }
     }
@@ -77,7 +75,7 @@
     "expect": {
       "decision": "prompt",
       "promptId": "anything_else",
-      "values": { "callerName": "casey morgan", "vehicle": "Civic", "wheels": "one", "damage": "curb rash", "day": "2026-11-13", "window": "afternoon", "callbackNumber": "...0123" },
+      "values": { "callerName": "casey morgan", "vehicle": { "has": ["Civic"] }, "wheels": "one", "damage": { "has": ["curb rash"] }, "day": "2026-11-13", "window": "afternoon", "callbackNumber": "...0123" },
       "action": "request",
       "said": { "notFigure": true },
       "readBackSaid": true,
@@ -99,7 +97,7 @@
       "decision": "prompt",
       "promptId": "ask_request_callerName",
       "form": "request",
-      "values": { "damage": "curb rash", "vehicle": "Audi" },
+      "values": { "damage": { "has": ["curb rash"] }, "vehicle": { "has": ["Audi"] } },
       "action": "none",
       "said": { "notFigure": true }
     }

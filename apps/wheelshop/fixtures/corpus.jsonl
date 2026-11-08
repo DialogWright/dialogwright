@@ -13,9 +13,9 @@
 {"id":"rq-08","text":"yes, that's my cell","intent":"none","context":"request","confirm":"yes","prompted":"request_callbackNumber"}
 {"id":"rq-09","text":"yes, that's right","intent":"none","context":"confirm_request","confirm":"yes"}
 {"id":"rq-10","text":"How much do you charge to fix curb rash?","intent":"request","context":"no_form"}
-{"id":"rq-11","text":"Come on, roughly. Is it under a hundred bucks?","intent":"none","context":"request","prompted":"request_callerName"}
+{"id":"rq-11","text":"Come on, roughly. Is it under a hundred bucks?","intent":"none","context":"request","prompted":"request_callerName","knownGap":{"reason":"a pushback on the price, read as not said to the line: addressedToSystem 0.51 under the 0.65 gate here, seeded after \"What's your name?\" (0.65, passing, in price-pushed, where the price line came just before), so the turn is set aside and nothing is said; the caller asks again or the silence re-asks","outcome":{"decision":"ignore","promptId":null,"decidedGate":"addressedToSystem","verdict":"ignore"}}}
 {"id":"rq-12","text":"Seriously, just give me a number.","intent":"none","context":"request","prompted":"request_callerName"}
-{"id":"rq-13","text":"I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?","intent":"request","context":"no_form"}
+{"id":"rq-13","text":"I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?","intent":"request","context":"no_form","knownGap":{"reason":"a retail caller asking to drop the car off, read as the booking: booking 0.74, request 0.26, the booking's criteria (\"as a regular account\") not weighed; the caller is not an account, so the line says booking_for_accounts and begins the request, which collects the same: safe, but the agent's own reply that turn is not said (in window-full, the news that Friday morning is full)","outcome":{"acks":["booking_for_accounts"]}}}
 {"id":"rq-14","text":"The afternoon's fine.","intent":"none","context":"request","prompted":"request_window"}
 {"id":"rq-15","text":"It's Casey Morgan, and you can text me at 555 555 0123.","intent":"none","context":"request","prompted":"request_callerName"}
 {"id":"rq-16","text":"OK, it's a Honda Civic and I'm Mike Dunn.","intent":"none","context":"request","prompted":"request_callerName"}

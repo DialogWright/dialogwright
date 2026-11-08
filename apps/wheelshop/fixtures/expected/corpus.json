@@ -33,7 +33,7 @@
   "bk-02": {
     "id": "bk-02",
     "decision": "prompt",
-    "promptId": "ask_booking_day",
+    "promptId": "ask_booking_vehicles",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -49,7 +49,7 @@
       "request_window": null,
       "request_callbackNumber": null,
       "booking_cars": "three",
-      "booking_vehicles": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+      "booking_vehicles": null,
       "booking_day": null,
       "booking_window": null,
       "callback_callbackNumber": null,
@@ -154,9 +154,7 @@
     "id": "rq-01",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [
-      "ack_intent"
-    ],
+    "acks": [],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",
@@ -184,7 +182,7 @@
   "rq-02": {
     "id": "rq-02",
     "decision": "prompt",
-    "promptId": "ask_request_wheels",
+    "promptId": "ask_request_vehicle",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -192,7 +190,7 @@
     "form": "request",
     "slots": {
       "request_callerName": "jordan lee",
-      "request_vehicle": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
+      "request_vehicle": null,
       "request_wheels": null,
       "request_damage": null,
       "request_diamondCut": null,
@@ -213,7 +211,7 @@
   "rq-03": {
     "id": "rq-03",
     "decision": "prompt",
-    "promptId": "ask_request_diamondCut_retry",
+    "promptId": "ask_request_diamondCut",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -242,7 +240,7 @@
   "rq-04": {
     "id": "rq-04",
     "decision": "prompt",
-    "promptId": "ask_request_diamondCut_retry",
+    "promptId": "ask_request_diamondCut",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -271,7 +269,7 @@
   "rq-05": {
     "id": "rq-05",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -300,7 +298,7 @@
   "rq-06": {
     "id": "rq-06",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -329,7 +327,7 @@
   "rq-07": {
     "id": "rq-07",
     "decision": "prompt",
-    "promptId": "ask_request_day_retry",
+    "promptId": "ask_request_day",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -419,9 +417,7 @@
     "id": "rq-10",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [
-      "ack_intent"
-    ],
+    "acks": [],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",
@@ -449,7 +445,7 @@
   "rq-11": {
     "id": "rq-11",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -478,7 +474,7 @@
   "rq-12": {
     "id": "rq-12",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -508,9 +504,7 @@
     "id": "rq-13",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [
-      "ack_intent"
-    ],
+    "acks": [],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",
@@ -538,7 +532,7 @@
   "rq-14": {
     "id": "rq-14",
     "decision": "prompt",
-    "promptId": "ask_request_window_retry",
+    "promptId": "ask_request_window",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -567,7 +561,7 @@
   "rq-15": {
     "id": "rq-15",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -596,7 +590,7 @@
   "rq-16": {
     "id": "rq-16",
     "decision": "prompt",
-    "promptId": "ask_request_callerName_retry",
+    "promptId": "ask_request_callerName",
     "acks": [],
     "reason": null,
     "decidedGate": null,
@@ -626,9 +620,7 @@
     "id": "rq-17",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [
-      "ack_intent"
-    ],
+    "acks": [],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",

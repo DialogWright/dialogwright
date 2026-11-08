@@ -100,7 +100,7 @@ request:
       question: What's your name?
     - name: vehicle
       type: text
-      about: The make and model, and the year if they know it.
+      about: The car as the caller names it (a make alone is enough), with its model and year where they give them.
       question: What car is it?
     - name: wheels
       type: choice
