@@ -34,6 +34,19 @@
 - **Each task ends** with `pnpm --filter dialogwright typecheck` and the tests it names passing. Tasks 6, 10 and 12 end with the full gate: `pnpm -r typecheck`, `pnpm -r test`, `pnpm check`, the testkit's and every app's stub regression, and the recorded regressions of clinic, utility and harbor.
 - **Commit messages** end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
+## Prompting Mercury (Inception's prompt guide, read 2026-11-08)
+
+The agent's request follows [Inception's prompt guide](https://docs.inceptionlabs.ai/resources/prompt-guide) where it doesn't conflict with CLAUDE.md. Where they meet:
+
+- **Order, static first:** persona and voice (`business.voice`), then the facts (`<knowledge_base>`: what the model may say, then background), then the current task (`<current_state>`: the form, `<collected_so_far>`, `<still_needed>`, any `<seen>` results), then the conversation (`<conversation_history>`), and the critical rules last. Mercury weights recent context heavily, and a static prefix is cached. The system message is rebuilt every turn.
+- **The critical rules are goals and limits, not procedures for the words:** speak only about the business's services; say no figure, turnaround or promise the facts don't hold; one question at a time; no markdown or lists (it is read aloud on voice); give back the values understood in the JSON, never confirm them in the reply. CLAUDE.md forbids a procedure for the words, and the guide's self-checking list is left out for that reason. The engine's checks do that job.
+- **Examples:** the guide finds labelled examples better than descriptions for tone. `business.yaml` may hold the owner's own sample replies (`business.examples`), sent as examples of tone, not as rules. Task 2 measures the prompt with and without them, and they are kept only if they help.
+- **Structured output:** the answer is `response_format: json_schema` with `strict: true` and `additionalProperties: false`, which Mercury 3 supports. The model calls no tools. It names one action in its answer, and the read-back is the confirmation before anything irreversible, as the guide asks.
+- **Parameters:** temperature 0.6 (the guide's value for structured and tool work; Mercury accepts 0.5 to 1.0 and silently resets anything else); `reasoning_effort` `instant` or `low`, chosen in Task 2; `realtime: true` on Inception's own API.
+- **Pronunciation stays in the engine** (`sayAs`, `voice.pronounce`), not in the prompt: the values are said by the read-back, not by the model.
+
+**If Mercury 3 is not fast enough, the next step is Mercury Voice.** Mercury Voice is Inception's voice-tuned model, with tool calling and structured outputs. It is offered to enterprise customers only, through Inception's own OpenAI-compatible API (`https://api.inceptionlabs.ai/v1`), not OpenRouter, and access is by contacting Inception's sales. So the agent's provider speaks to Inception's API directly as well as through OpenRouter (Task 1), and Task 2 measures Mercury 3 on both.
+
 ## Review focus
 
 The inputs the spec implies but no single task obviously owns, most likely first. Each has a test in the task named.
@@ -66,10 +79,11 @@ The inputs the spec implies but no single task obviously owns, most likely first
   - `seen: { tool: string; result: unknown }[]`;
   - `locale: string`.
 - `function agentAnswerSchema(actions: readonly string[]): z.ZodType<AgentAnswer>` and `function agentJsonSchema(actions: readonly string[]): Record<string, unknown>`. The second is the `response_format` JSON Schema.
-- `function agentMessages(ctx: AgentContext): { system: string; user: string }`. Its content is the goal and the full context, never a procedure for the words (CLAUDE.md). Identity factors are never present; values the records hide arrive masked.
+- `function agentMessages(ctx: AgentContext): { system: string; user: string }`, in the order of "Prompting Mercury" above, with XML-tagged sections. Its content is the goal and the full context, never a procedure for the words (CLAUDE.md). Identity factors are never present; values the records hide arrive masked. `AgentContext` gains `examples: string[]` (the owner's sample replies, possibly empty).
 - `interface AgentClient { answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult> }`
 - `type AgentResult = { ok: true; answer: AgentAnswer; ms: number; usage?: RenderUsage } | { ok: false; reason: 'timeout' | 'invalid' | 'error'; detail: string; ms: number }`
-- `function openRouterAgent(p: RenderProvider, fetchFn?: typeof fetch): AgentClient` posts `response_format: { type: 'json_schema', ... }`. A body that fails `agentAnswerSchema` is `invalid`.
+- `function openRouterAgent(p: RenderProvider, fetchFn?: typeof fetch): AgentClient` posts `response_format: { type: 'json_schema', json_schema: { name: 'agent_answer', strict: true, schema } }`, `temperature: 0.6` and the reasoning effort. A body that fails `agentAnswerSchema` is `invalid`.
+- `function inceptionAgent(p: { model: string; apiKey: string | null; effort: 'instant' | 'low' | 'medium'; realtime: boolean }, fetchFn?: typeof fetch): AgentClient` does the same against `https://api.inceptionlabs.ai/v1/chat/completions` (key `INCEPTION_API_KEY`), with `reasoning_effort` and `realtime`. It is the way to Mercury Voice.
 - `function fakeAgent(script: (ctx: AgentContext) => AgentAnswer): AgentClient` and `function cassetteAgent(path: string): AgentClient`. The cassette key is a hash of `agentMessages(ctx)`; a miss is `{ ok: false, reason: 'error', detail: 'cassette miss' }`.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -80,11 +94,13 @@ The inputs the spec implies but no single task obviously owns, most likely first
     - `the system message carries the claims and the background apart`.
     - `a masked value is sent masked`: a field whose value is `'****'` appears as `****`.
     - `no procedure words`: the system text contains no "first", "then" or "step" instructions about how to word. Snapshot it, and the reviewer reads the snapshot.
+    - `static first`: the persona and the facts come before `<current_state>`, the conversation comes after it, and the critical rules come last; two turns of one call share the same prefix up to `<current_state>`.
   - `provider.test.ts`, with a fake fetch:
     - `a valid body is ok`;
     - `a body that is not the schema is invalid`;
     - `an abort at the budget is timeout`;
-    - `the request names json_schema and the model`.
+    - `the request names json_schema strict, temperature 0.6 and the model`;
+    - `inceptionAgent sends reasoning_effort and realtime, and reads INCEPTION_API_KEY`.
 - [ ] **Step 2:** Run `pnpm --filter dialogwright exec vitest run src/agent`. Expected: FAIL (modules missing).
 - [ ] **Step 3:** Implement the files above. `provider.ts` reuses `resolveRenderProvider`'s key handling and `RenderUsage`. It never logs the key.
 - [ ] **Step 4:** Run the same command. Expected: PASS.
@@ -108,10 +124,15 @@ The inputs the spec implies but no single task obviously owns, most likely first
   Recordings go to `packages/dialogwright/src/agent/recorded/<model>.jsonl`, refused in CI, as `render:bakeoff` does.
 
 - [ ] **Step 1:** Write the test `the table counts valid answers, labelled values right, and timings` (fake agent with set latencies). Run it: it fails. Implement, run: it passes. Commit.
-- [ ] **Step 2: Run the measurement.** With the author's key in the git-ignored `.env`: `pnpm agent:bakeoff --models openrouter:inception/mercury-3,openrouter:google/gemini-3.5-flash-lite --out agent-bakeoff.md`. Add the judge's time (`render:judge-eval`'s p50 on spans) to each turn to compare against the bar.
+- [ ] **Step 2: Run the measurement.** With the author's keys in the git-ignored `.env`, compare:
+  - Mercury 3 through OpenRouter and through Inception's API directly (`inception:mercury-3:instant:realtime`, `inception:mercury-3:low:realtime`);
+  - the prompt with and without the owner's sample replies;
+  - a baseline, `openrouter:google/gemini-3.5-flash-lite`.
+
+  Write the table to `agent-bakeoff.md`. Add the judge's time (`render:judge-eval`'s p50 on spans) to each turn to compare against the bar. Inception's direct API needs the maintainer's `INCEPTION_API_KEY`; ask for it if it isn't in the `.env`.
 - [ ] **Step 3: Checkpoint.** Report the table to the maintainer.
   - **If Mercury 3 meets the bar** (p50 ≤ 1.0 s and p95 ≤ 1.8 s with the judge, valid JSON ≥ 98%, values right ≥ 90%): set the defaults of `AGENT_TIMEOUT_VOICE_MS` (p95 + 300 ms, rounded to 100) and `AGENT_TIMEOUT_CHAT_MS` (2.5× that) and continue.
-  - **Otherwise stop** and report which model does, before Task 3.
+  - **Otherwise stop** and report before Task 3. The next step is Mercury Voice (enterprise access, through Inception's sales), measured with the same cases, then any other model the table shows meets the bar.
 
 ### Task 3: Each slot type checks a value
 
