@@ -255,4 +255,23 @@ texts:
   unknownForward: Text from ...{last4} (no request on file).
   # To the shop's phone: a callback note.
   callbackNote: "Call back {number} (callback note {ref})."
+  # Quote and confirm (DESIGN.md "Quote and confirm"): the shop quotes a request from its page, the customer replies to
+  # book. Sent only to a request whose caller said yes to texts. {wheels} is "wheel" or "two wheels", {price} "$180",
+  # {day} "Tuesday, Nov 10", {window} the window's own words (windows' says), {word} the reply word below.
+  quote: "Example Wheel Works: your quote for the {wheels} on your {vehicle} is {price}. We can take it {day}, {window}. Reply {word} to book it."
+  # The word the customer replies to book (assumption: the owner corrects these). Not YES, which Twilio takes as an
+  # opt-in keyword. Read by the decision model, not matched: "confirm", "yes confirm" or "sounds good, book it" count.
+  confirmWord: CONFIRM
+  # To the customer, once their reply has booked the window.
+  booked: "You're booked with Example Wheel Works for {day}, {window}. Thanks, see you then."
+  # To the shop's phone: a reply to a quote that does not book it, the customer's words after a colon; the hold stays.
+  quoteReply: "Reply from {name}, ...{last4}"
+  # To the shop's phone: a reply that booked the window ({window} the window's name, {booking} its reference).
+  quoteBooked: "Booked from quote {ref}: {name}, ...{last4}, {vehicle}, {day}, {window}, {price} ({booking})."
+  # To the shop's phone: a quote's hold that lapsed with no yes (24 hours after the quote, or 6 pm the day before).
+  quoteLapsed: "Quote {ref} for {name}, ...{last4} lapsed with no reply: {day}, {window} is free again."
+  # To the shop's phone: a yes that could not book (the window filled after the hold lapsed, or the drop-off's 6 pm the day before passed).
+  # The customer's words follow after a colon.
+  quoteFull: "{name}, ...{last4} replied to book quote {ref}, but {day}, {window} is full now, so call them. They wrote"
+  quoteLate: "{name}, ...{last4} replied to book quote {ref} after it lapsed, so call them. They wrote"
 

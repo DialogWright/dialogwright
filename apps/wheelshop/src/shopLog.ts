@@ -1,10 +1,11 @@
 import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Kept, Received, Text } from './app';
+import type { Kept, Quote, QuoteState, Received, Text } from './app';
 
 /**
  * The shop's records on file: an append-only log of JSON lines, one per thing the line took in or sent
- * (a request, a booking, a callback note, a text sent, a text received) and one per write's key, each
+ * (a request, a booking, a callback note, a text sent, a text received, a quote the shop sent from its page,
+ * a quote's hold lapsed) and one per write's key, each
  * with the time it was written. The app's own setting SHOP_DATA_DIR names its folder; unset, nothing is
  * written and the records are kept in memory, as before (the tests and the regressions run so).
  *
@@ -34,6 +35,10 @@ export type ShopEntry =
   | { kind: 'request' | 'booking' | 'callback'; record: Kept }
   | { kind: 'text'; record: Text }
   | { kind: 'received'; record: Received }
+  /** A quote sent from the shop page (src/quotes.ts): its hold, and any earlier waiting quote of its request superseded. */
+  | { kind: 'quote'; record: Quote }
+  /** A quote's hold lapsed (a booking from a quote carries the quote it books, so it needs no line of its own). */
+  | { kind: 'quote_state'; record: QuoteState }
   /** A write's key and the reference it was given (Systems.written), so a write repeated after a restart is done once. */
   | { kind: 'written'; name: string; ref: string };
 
@@ -67,6 +72,19 @@ function isReceived(r: unknown): r is Received {
   return isObject(r) && isString(r.ref) && isString(r.at) && isString(r.from) && isString(r.text) && isStrings(r.media) && (r.request === undefined || isString(r.request));
 }
 
+/** The fields every quote has, each a string. */
+const QUOTE_FIELDS = ['ref', 'at', 'request', 'version', 'price', 'day', 'window', 'to', 'holdUntil', 'cutoff'] as const;
+
+/** A quote sent: every field of its shape, each a string, and nothing else. */
+function isQuote(r: unknown): r is Quote {
+  return isObject(r) && QUOTE_FIELDS.every((f) => isString(r[f])) && Object.keys(r).every((k) => (QUOTE_FIELDS as readonly string[]).includes(k));
+}
+
+/** What became of a quote: its reference, time and state (a lapse is the only one with a line of its own). */
+function isQuoteState(r: unknown): r is QuoteState {
+  return isObject(r) && isString(r.ref) && isString(r.at) && r.state === 'lapsed' && r.booking === undefined;
+}
+
 /** Whether a parsed line has the shape this version writes, every field of the type it is read as. */
 function isLine(x: unknown): x is ShopLine {
   if (!isObject(x) || x.v !== V || !isString(x.at)) return false;
@@ -81,6 +99,10 @@ function isLine(x: unknown): x is ShopLine {
       return isReceived(x.record);
     case 'written':
       return isString(x.name) && isString(x.ref);
+    case 'quote':
+      return isQuote(x.record);
+    case 'quote_state':
+      return isQuoteState(x.record);
     default:
       return false;
   }

@@ -246,7 +246,8 @@ describe('a declined consent, end to end (call 46)', () => {
 describe('a text that comes in (onText)', () => {
   const PHOTO = 'https://api.twilio.com/2010-04-01/Accounts/AC1/Messages/MM1/Media/ME1';
   const message = (from: string, body: string, media: string[] = []): IncomingText => ({ id: 'SM1', from, to: '+15555550100', body, media: media.map((url) => ({ url, contentType: 'image/jpeg' })), provider: 'twilio' });
-  const ctx = (sys: Systems, texts: Texts | undefined, nowMs = 1000): TextContext => ({ ...(texts !== undefined ? { texts } : {}), env: (n) => (n === 'SHOP_PHONE' ? SHOP : undefined), sys, nowMs });
+  // No quote is on file in these, so the decision model is never asked: its fake answers nothing.
+  const ctx = (sys: Systems, texts: Texts | undefined, nowMs = 1000): TextContext => ({ ...(texts !== undefined ? { texts } : {}), env: (n) => (n === 'SHOP_PHONE' ? SHOP : undefined), sys, nowMs, decide: async () => null });
 
   it('a photo from a number with a recent request goes to the shop with a line naming the request, and the caller is thanked', async () => {
     const sys = new Systems();

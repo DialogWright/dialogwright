@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
-import type { ServerResponse } from 'node:http';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
-import { TWILIO_MEDIA_PREFIX, type AppBrand, type AppPageDeps, type AppRoute, type AppRoutes } from 'dialogwright';
-import { COUNTS, WINDOW_NAMES, accountOf, capacityOf, dayWords, nameWords, standingCars, type Kept, type Received, type Systems, type Text } from './app';
+import { TWILIO_MEDIA_PREFIX, type AppBrand, type AppPageDeps, type AppRoute, type AppRoutes, type Texts } from 'dialogwright';
+import { COUNTS, WINDOW_NAMES, accountOf, capacityOf, dayWords, nameWords, standingCars, type Kept, type Quote, type QuoteStatus, type Received, type RequestStatus, type Systems, type Text } from './app';
+import { confirmWord, lapseDue, markLapsed, offeredSlots, priceWords, sendQuote, shortDay, type Slot } from './quotes';
 import { SHOP_DATA_DIR } from './shopLog';
 
 /**
@@ -24,6 +25,13 @@ import { SHOP_DATA_DIR } from './shopLog';
  *
  * Photos are shown as thumbnails linking to the full image at the provider's URL (Twilio's, the only ones
  * the engine keeps): the browser fetches each from Twilio, with no referrer; the server downloads nothing.
+ *
+ * Each request card shows its state (new, photo in, quoted and waiting, booked, lapsed; the header counts them)
+ * and, until it is booked, a "Quote and book" form (src/quotes.ts): the price, a drop-off window with room (the
+ * caller's own choice picked where it has room), and Send, which posts to `/shop/quote`. The form is the page's
+ * only write: POST only, under the same sign-in as the page, with a token of its own (an HMAC of the request and
+ * its version under a key the server makes as it starts), and once for the request and version. A request whose
+ * caller said no to texts gets no form: the card says to call them, with the number.
  */
 
 /** The page's path, below the app's base. */
@@ -67,39 +75,74 @@ const NOT_GIVEN = 'not given';
 const given = (v: string | undefined): string => (v === undefined || v.trim() === '' ? NOT_GIVEN : v);
 const answer = (v: string | undefined): string => (v === undefined || v === '' ? NOT_GIVEN : (YES_NO[v] ?? v));
 
+/** A request as the page shows it: the record, its photos, its state, its latest quote, and what its form offers. */
+export interface RequestView {
+  request: Kept;
+  photos: Received[];
+  status: RequestStatus;
+  /** Its latest quote, what became of it, the text that carried it, and the booking it made. */
+  quote: { quote: Quote; status: QuoteStatus; text: Text | null; booking: Kept | null } | null;
+  /** The form's version: how many quotes the request has had. */
+  version: string;
+  /** The windows its form offers (none once it is booked). */
+  slots: Slot[];
+  /** The window the form picks: the latest quote's, else the caller's own, where offered. */
+  picked: string | null;
+}
+
 /** What the page shows, worked out from the systems: pure, so a test renders it from fixture data. */
 export interface ShopView {
-  requests: Array<{ request: Kept; photos: Received[] }>;
-  windows: Array<{ day: string; window: string; capacity: number; standing: number; booked: number; bookings: Kept[] }>;
+  requests: RequestView[];
+  windows: Array<{ day: string; window: string; capacity: number; standing: number; booked: number; held: number; bookings: Kept[]; holds: Quote[] }>;
   texts: Array<({ direction: 'sent' } & Text) | ({ direction: 'received' } & Received)>;
   callbacks: Kept[];
+  /** How many requests are in each state, for the header. */
+  states: Record<RequestStatus, number>;
 }
 
 /** Newest first, by when each was kept (ISO times sort as text). */
 const newestFirst = <T extends { at: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 
-/** The page's view of the systems. */
-export function shopView(sys: Systems): ShopView {
-  const requests = newestFirst(sys.requests).map((request) => ({ request, photos: sys.received.filter((r) => r.request === request.ref && r.media.length > 0) }));
-  const groups = new Map<string, Kept[]>();
-  for (const b of sys.bookings) {
-    const key = `${b.day ?? ''} ${b.window ?? ''}`;
-    groups.set(key, [...(groups.get(key) ?? []), b]);
-  }
+/** The page's view of the systems at `nowMs`, its form's windows by the day in `timeZone` (the server's TIMEZONE). */
+export function shopView(sys: Systems, at: { nowMs: number; timeZone: string } = { nowMs: Date.now(), timeZone: 'UTC' }): ShopView {
+  const states: Record<RequestStatus, number> = { new: 0, photo: 0, quoted: 0, booked: 0, lapsed: 0 };
+  const requests = newestFirst(sys.requests).map((request): RequestView => {
+    const status = sys.requestStatus(request);
+    states[status]++;
+    const quotes = sys.quotesOf(request.ref);
+    const latest = quotes.at(-1);
+    const quote = latest === undefined ? null : {
+      quote: latest,
+      status: sys.statusOf(latest),
+      text: sys.texts.find((t) => t.ref === latest.ref) ?? null,
+      booking: sys.bookings.find((b) => b.quote === latest.ref) ?? null,
+    };
+    const slots = status === 'booked' ? [] : offeredSlots(sys, request.ref, at.nowMs, at.timeZone);
+    const wanted = [latest === undefined ? null : `${latest.day} ${latest.window}`, `${request.day ?? ''} ${request.window ?? ''}`];
+    const picked = wanted.find((w) => w !== null && slots.some((x) => x.value === w)) ?? null;
+    return { request, photos: sys.received.filter((r) => r.request === request.ref && r.media.length > 0), status, quote, version: String(quotes.length), slots, picked };
+  });
+  const groups = new Map<string, { day: string; window: string; bookings: Kept[]; holds: Quote[] }>();
+  const group = (day: string, window: string) => {
+    const key = `${day} ${window}`;
+    const g = groups.get(key) ?? { day, window, bookings: [], holds: [] };
+    groups.set(key, g);
+    return g;
+  };
+  for (const b of sys.bookings) group(b.day ?? '', b.window ?? '').bookings.push(b);
+  for (const q of sys.quotes) if (sys.statusOf(q) === 'waiting') group(q.day, q.window).holds.push(q);
   const order = (w: string): number => (WINDOW_NAMES.includes(w) ? WINDOW_NAMES.indexOf(w) : WINDOW_NAMES.length);
   const windows = [...groups.values()]
-    .map((bookings) => {
-      const day = bookings[0]!.day ?? '';
-      const window = bookings[0]!.window ?? '';
+    .map(({ day, window, bookings, holds }) => {
       const standing = /^\d{4}-\d{2}-\d{2}$/.test(day) ? standingCars(day, window) : 0;
-      return { day, window, capacity: capacityOf(window), standing, booked: sys.booked.get(`${day} ${window}`) ?? 0, bookings };
+      return { day, window, capacity: capacityOf(window), standing, booked: sys.booked.get(`${day} ${window}`) ?? 0, held: holds.length, bookings, holds };
     })
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : order(a.window) - order(b.window)));
   const texts = newestFirst<ShopView['texts'][number]>([
     ...sys.texts.map((t) => ({ direction: 'sent' as const, ...t })),
     ...sys.received.map((r) => ({ direction: 'received' as const, ...r })),
   ]);
-  return { requests, windows, texts, callbacks: newestFirst(sys.callbacks) };
+  return { requests, windows, texts, callbacks: newestFirst(sys.callbacks), states };
 }
 
 /** How the page writes a time: in the server's time zone (TIMEZONE), as "Wed, Nov 11, 9:05 AM". */
@@ -123,7 +166,15 @@ export interface ShopPageOptions {
   logFile: string | null;
   /** The page is behind the console's sign-in (CONSOLE_AUTH=token): it offers Sign out. */
   signOut?: boolean;
+  /** The "Quote and book" forms: where they post, and each form's token by its request and version. Absent, no form is drawn. */
+  quoteForm?: { action: string; token(request: string, version: string): string };
 }
+
+/** Each state as the page names it. */
+export const STATE_WORDS: Readonly<Record<RequestStatus, string>> = { new: 'New', photo: 'Photo in', quoted: 'Quoted, waiting', booked: 'Booked', lapsed: 'Lapsed' };
+
+/** A window the form offers, as the shop reads it ("Tuesday, Nov 10 · morning"). */
+const slotWords = (x: Slot): string => `${shortDay(x.day)} · ${x.window}`;
 
 /** The page's HTML: every value escaped, no script. */
 export function shopPageHtml(v: ShopView, o: ShopPageOptions): string {
@@ -133,12 +184,42 @@ export function shopPageHtml(v: ShopView, o: ShopPageOptions): string {
   const row = (label: string, value: string): string => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`;
   const empty = (what: string): string => `<p class="empty">${esc(what)}</p>`;
 
+  /** A request's quote, as it stands, and its form (until it is booked). */
+  const quoteHtml = (rv: RequestView): string => {
+    const r = rv.request;
+    const q = rv.quote;
+    const where = (x: Quote): string => `${esc(shortDay(x.day))}, ${esc(x.window)}`;
+    const sent = q?.text === null || q?.text === undefined ? '' : ` Texted: ${esc(q.text.status === 'printed' ? 'printed, not sent' : q.text.status)}.`;
+    const said = q === null ? '' : q.status === 'waiting'
+      ? `<p class="quote-state">Quoted ${esc(priceWords(q.quote.price))} for ${where(q.quote)} (${esc(q.quote.ref)}): waiting for ${esc(confirmWord())}, held until ${time(q.quote.holdUntil)}.${sent}</p>`
+      : q.status === 'booked'
+        ? `<p class="quote-state">Booked ${where(q.quote)} at ${esc(priceWords(q.quote.price))} (${esc(q.booking?.ref ?? '')}, from ${esc(q.quote.ref)}).</p>`
+        : q.status === 'lapsed'
+          ? `<p class="quote-state warn">Lapsed: ${esc(q.quote.ref)}, ${esc(priceWords(q.quote.price))} for ${where(q.quote)}, had no yes by ${time(q.quote.holdUntil)}, so the window was released.</p>`
+          : '';
+    if (rv.status === 'booked') return said;
+    if (r.textOk !== 'yes') return `${said}<p class="quote-state">The caller asked not to be texted: call them to quote, at ${phoneHtml(r.callbackNumber ?? '')}.</p>`;
+    if (o.quoteForm === undefined) return said;
+    if (rv.slots.length === 0) return `${said}<p class="empty">No drop-off window has room in the next two weeks.</p>`;
+    const theirs = `${r.day ?? ''} ${r.window ?? ''}`;
+    const options = rv.slots.map((x) => `<option value="${esc(x.value)}"${x.value === rv.picked ? ' selected' : ''}>${esc(slotWords(x))}${x.value === theirs ? ' (their choice)' : ''}</option>`).join('');
+    return `${said}<form class="quote" method="post" action="${esc(o.quoteForm.action)}">
+<h4>${q === null ? 'Quote and book' : 'Send a new quote'}</h4>
+<input type="hidden" name="request" value="${esc(r.ref)}"><input type="hidden" name="version" value="${esc(rv.version)}"><input type="hidden" name="token" value="${esc(o.quoteForm.token(r.ref, rv.version))}">
+<label>Price <input name="price" inputmode="decimal" autocomplete="off" required placeholder="180" value="${q === null ? '' : esc(priceWords(q.quote.price).slice(1))}"></label>
+<label>Drop-off <select name="slot" required>${options}</select></label>
+<button type="submit">Send</button>
+</form>`;
+  };
+
   const requests = v.requests.length === 0
     ? empty('No requests yet.')
-    : v.requests.map(({ request: r, photos }) => {
+    : v.requests.map((rv) => {
+      const { request: r, photos } = rv;
       const pics = photos.map((p) => `<div class="photo-set">${photosHtml(p.media)}<p class="meta">${time(p.at)}${p.text.trim() === '' ? '' : ` · “${esc(p.text.trim())}”`}</p></div>`).join('');
-      return `<article class="card">
-<header><h3>${esc(nameWords(r.callerName ?? '') || 'No name given')}</h3><span class="meta">${time(r.at)} · ${esc(r.ref)}</span></header>
+      return `<article class="card" id="${esc(r.ref)}">
+<header><h3>${esc(nameWords(r.callerName ?? '') || 'No name given')}</h3><span class="badge state-${esc(rv.status)}">${esc(STATE_WORDS[rv.status])}</span></header>
+<p class="meta">${time(r.at)} · ${esc(r.ref)}</p>
 <p class="call">${phoneHtml(r.callbackNumber ?? '')}</p>
 <dl>${[
         row('Car', esc(given(r.vehicle))),
@@ -149,19 +230,25 @@ export function shopPageHtml(v: ShopView, o: ShopPageOptions): string {
         row('OK to text', esc(answer(r.textOk))),
       ].join('')}</dl>
 <div class="photos-block"><h4>Photos</h4>${pics === '' ? `<p class="empty">${r.textOk === 'yes' ? 'None texted back yet.' : 'None: the caller asked not to be texted.'}</p>` : pics}</div>
+${quoteHtml(rv)}
 </article>`;
     }).join('\n');
 
   const bookings = v.windows.length === 0
     ? empty('No bookings yet.')
     : v.windows.map((w) => {
-      const used = w.standing + w.booked;
+      const used = w.standing + w.booked + w.held;
       const cap = Number.isFinite(w.capacity) ? w.capacity : null;
-      const room = cap === null ? `${used} car${used === 1 ? '' : 's'}` : `${used} of ${cap} cars`;
+      const room = `${cap === null ? `${used} car${used === 1 ? '' : 's'}` : `${used} of ${cap} cars`}${w.held > 0 ? `, ${w.held} held` : ''}`;
       const full = cap !== null && used >= cap;
       const items = w.bookings.map((b) => {
         const cars = COUNTS[b.cars ?? ''];
-        return `<li><strong>${esc(accountOf(b.account ?? '').name)}</strong> · ${esc(cars === undefined ? (b.cars ?? '') : `${cars} car${cars === 1 ? '' : 's'}`)}: ${esc(b.vehicles ?? '')} <span class="meta">${esc(b.ref)}, booked ${time(b.at)}</span></li>`;
+        // A dealership's booking by its account; one a customer's yes made from a quote by their name.
+        const whose = b.quote !== undefined ? `${nameWords(b.callerName ?? '')} (quote ${b.quote}, ${priceWords(b.price ?? '0')})` : accountOf(b.account ?? '').name;
+        return `<li><strong>${esc(whose)}</strong> · ${esc(cars === undefined ? (b.cars ?? '') : `${cars} car${cars === 1 ? '' : 's'}`)}: ${esc(b.vehicles ?? '')} <span class="meta">${esc(b.ref)}, booked ${time(b.at)}</span></li>`;
+      }).join('') + w.holds.map((q) => {
+        const r = v.requests.find((x) => x.request.ref === q.request)?.request;
+        return `<li class="held"><strong>${esc(nameWords(r?.callerName ?? ''))}</strong> · held for ${esc(q.ref)} (${esc(priceWords(q.price))}): ${esc(r?.vehicle ?? '')} <span class="meta">until ${time(q.holdUntil)}</span></li>`;
       }).join('');
       return `<article class="card">
 <header><h3>${esc(dayWords(w.day))}, ${esc(w.window)}</h3><span class="badge${full ? ' full' : ''}">${esc(room)}${full ? ' · full' : ''}</span></header>
@@ -242,11 +329,24 @@ ${w.standing > 0 ? `<p class="meta">Includes the standing drop-off (${w.standing
   .notes .call { margin: 0; }
   .empty { color: var(--muted); }
   footer { color: var(--muted); font-size: .8rem; margin-top: 28px; }
+  .states { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
+  .badge.state-quoted { background: color-mix(in srgb, var(--accent) 24%, var(--card)); }
+  .badge.state-booked { background: color-mix(in srgb, #2e8b57 22%, var(--card)); }
+  .badge.state-lapsed { background: color-mix(in srgb, var(--warn) 20%, var(--card)); color: var(--warn); }
+  .quote-state { margin: 10px 0 0; }
+  .quote-state.warn { color: var(--warn); }
+  form.quote { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
+  form.quote h4 { margin: 0; }
+  form.quote label { display: grid; gap: 2px; font-size: .85rem; color: var(--muted); }
+  form.quote input, form.quote select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  form.quote button { font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 999px; padding: 10px 16px; cursor: pointer; justify-self: start; }
+  li.held { color: var(--muted); }
 </style>
 </head>
 <body>
 <div class="top">
 <div class="brand"><span class="mark" aria-hidden="true">${esc(o.brand.mark)}</span><div><h1>${name}</h1><div class="sub">What the line took in · ${time(new Date(o.nowMs).toISOString())}</div></div><a class="refresh" href="">Refresh</a>${o.signOut === true ? '<form class="out" method="post" action="/dashboard/logout"><button type="submit">Sign out</button></form>' : ''}</div>
+<p class="states">${(Object.keys(STATE_WORDS) as RequestStatus[]).map((k) => `<span class="state">${esc(STATE_WORDS[k])}${count(v.states[k])}</span>`).join(' · ')}</p>
 <nav aria-label="Sections"><a href="#requests">Requests${count(v.requests.length)}</a><a href="#bookings">Bookings${count(v.windows.reduce((n, w) => n + w.bookings.length, 0))}</a><a href="#texts">Texts${count(v.texts.length)}</a><a href="#callbacks">Callback notes${count(v.callbacks.length)}</a></nav>
 </div>
 <main>
@@ -281,38 +381,139 @@ function protect(res: ServerResponse, nonce: string): void {
   res.setHeader('x-content-type-options', 'nosniff');
 }
 
-/** The page's route: GET and HEAD of `/shop` (or `/shop/`); anything else under it is a 404, any other method a 405. */
-export function shopRoute(sys: Systems, o: { brand: ShopPageOptions['brand']; timeZone: string; now: () => number; signOut?: boolean }): AppRoute {
+/** The form's path, below the page's: its only write. */
+export const QUOTE_PATH = `${SHOP_PATH}/quote`;
+/** The most a form's body may be. */
+const FORM_MAX = 4096;
+
+/** A form's token: an HMAC of its request and version under the server's key, so only a page this server drew can send it. */
+export function formToken(key: Buffer, request: string, version: string): string {
+  return createHmac('sha256', key).update(`quote ${request} ${version}`).digest('base64url');
+}
+
+/** Whether a token is the form's, compared in constant time. */
+function tokenIs(key: Buffer, request: string, version: string, token: string): boolean {
+  const want = Buffer.from(formToken(key, request, version));
+  const got = Buffer.from(token);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+/** A form's body, at most FORM_MAX bytes; null where it is longer. */
+async function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > FORM_MAX) return null;
+    chunks.push(chunk as Buffer);
+  }
+  return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+}
+
+/** A short page saying why a form was not sent, with the way back. */
+function sorryHtml(why: string, back: string, nonce: string): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Not sent</title>
+<style nonce="${esc(nonce)}">body { font: 16px/1.45 system-ui, sans-serif; margin: 24px 16px; color-scheme: light dark; } a { font-weight: 600; }</style></head>
+<body><h1>Not sent</h1><p>${esc(why)}</p><p><a href="${esc(back)}">Back to the shop page</a></p></body></html>
+`;
+}
+
+/** What the route is given beside the systems. */
+export interface ShopRouteOptions {
+  brand: ShopPageOptions['brand'];
+  timeZone: string;
+  now: () => number;
+  signOut?: boolean;
+  /** Where the app's pages are mounted (`/wheelshop`), for the form's action and the way back to the page. */
+  base?: string;
+  /** The app's sender for the page's texts (AppPageDeps.texts); absent, they are printed. */
+  texts?: Texts;
+  /** One of the app's settings (SHOP_PHONE). */
+  env?: (name: string) => string | undefined;
+  /** The forms' key; a new one each start by default (a page drawn before a restart is refreshed to send). */
+  key?: Buffer;
+  /** The server's log, for a lapse check that failed. */
+  log?: (line: string) => void;
+}
+
+/**
+ * The page's route: GET and HEAD of `/shop` (or `/shop/`), POST of `/shop/quote` (the "Quote and book" form);
+ * anything else under it is a 404, any other method a 405. The holds whose time is up lapse as the page is
+ * drawn and on the server's sweep (every minute), the shop's phone told of each.
+ */
+export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
+  const base = o.base ?? '';
+  const key = o.key ?? randomBytes(32);
+  const env = o.env ?? (() => undefined);
+  const pending = new Set<Promise<void>>();
+  const track = (p: Promise<unknown>): void => {
+    const done: Promise<void> = p.then(() => {}, (err: unknown) => o.log?.(`shop page: the lapse check failed (${err instanceof Error ? err.message : String(err)})`)).finally(() => pending.delete(done));
+    pending.add(done);
+  };
+  const lapse = (): void => track(lapseDue(sys, o.texts, env, o.now()));
+  const plain = (res: ServerResponse, status: number, text: string, headers: Record<string, string> = {}): true => {
+    res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', ...headers });
+    res.end(`${text}\n`);
+    return true;
+  };
   return {
     label: 'shop page',
     path: SHOP_PATH,
     localOnly: true,
     auth: 'console',
     async handle(req, res, path) {
-      if (path !== SHOP_PATH && path !== `${SHOP_PATH}/`) {
-        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('not found\n');
+      if (path === QUOTE_PATH) {
+        if (req.method !== 'POST') return plain(res, 405, 'method not allowed', { allow: 'POST' });
+        if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded')) return plain(res, 415, 'a form is sent as application/x-www-form-urlencoded');
+        const form = await readForm(req);
+        if (form === null) return plain(res, 413, 'too long');
+        const field = (name: string): string => form.get(name) ?? '';
+        const request = field('request');
+        const version = field('version');
+        const back = `${base}${SHOP_PATH}`;
+        const nonce = randomBytes(16).toString('base64');
+        const sorry = (status: number, why: string): true => {
+          protect(res, nonce);
+          const body = sorryHtml(why, back, nonce);
+          res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(body) });
+          res.end(body);
+          return true;
+        };
+        if (!tokenIs(key, request, version, field('token'))) return sorry(403, 'This form is out of date or did not come from this page: refresh the page and send it again.');
+        markLapsed(sys, o.now());
+        const sent = await sendQuote(sys, o.texts, { request, version, price: field('price'), slot: field('slot') }, o.now(), o.timeZone);
+        if (!sent.ok) return sorry(sent.status, sent.why);
+        res.writeHead(303, { location: `${back}#${encodeURIComponent(sent.quote.request)}`, 'cache-control': 'no-store' });
+        res.end();
         return true;
       }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'GET, HEAD' });
-        res.end('method not allowed\n');
-        return true;
-      }
+      if (path !== SHOP_PATH && path !== `${SHOP_PATH}/`) return plain(res, 404, 'not found');
+      if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'method not allowed', { allow: 'GET, HEAD' });
+      // The holds whose time is up lapse before the page is drawn (the shop's phone told as they do).
+      lapse();
       const nonce = randomBytes(16).toString('base64');
       protect(res, nonce);
-      const body = shopPageHtml(shopView(sys), { brand: o.brand, timeZone: o.timeZone, nowMs: o.now(), nonce, logFile: sys.logFile, ...(o.signOut === true ? { signOut: true } : {}) });
+      const nowMs = o.now();
+      const body = shopPageHtml(shopView(sys, { nowMs, timeZone: o.timeZone }), {
+        brand: o.brand, timeZone: o.timeZone, nowMs, nonce, logFile: sys.logFile, ...(o.signOut === true ? { signOut: true } : {}),
+        quoteForm: { action: `${base}${QUOTE_PATH}`, token: (r, v) => formToken(key, r, v) },
+      });
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(body) });
       res.end(req.method === 'HEAD' ? undefined : body);
       return true;
     },
+    // The server's idle sweep, every minute: the holds whose time is up lapse, and the shop is told.
+    sweep: lapse,
+    tails: () => [...pending],
   };
 }
 
 /**
  * The app's pages (App.pages): the shop page. Built once as the server starts, with the app's systems: it
  * opens the shop's log (SHOP_DATA_DIR; a relative folder is from where the server runs, as TRACE_DIR is) and
- * reads it back, or, unset, says the records are in memory alone.
+ * reads it back, or, unset, says the records are in memory alone; then lapses the holds whose time is up. The
+ * lapse check is the page route's sweep from then on: one server's (DESIGN.md, "Quote and confirm").
  */
 export function shopPages(deps: AppPageDeps): AppRoutes {
   const sys = deps.tools.sys as Systems;
@@ -328,5 +529,11 @@ export function shopPages(deps: AppPageDeps): AppRoutes {
   }
   const brand = deps.app.brand ?? { name: deps.app.id, mark: deps.app.id.slice(0, 2).toUpperCase() };
   // Behind the console's sign-in where the server has one (a console page): then it offers Sign out.
-  return { routes: [shopRoute(sys, { brand, timeZone: deps.config.timezone, now: deps.now, signOut: deps.config.consoleAuth !== undefined })], warnings };
+  const route = shopRoute(sys, {
+    brand, timeZone: deps.config.timezone, now: deps.now, signOut: deps.config.consoleAuth !== undefined, base: deps.base, env: deps.env, log: deps.log,
+    ...(deps.texts !== undefined ? { texts: deps.texts } : {}),
+  });
+  // Holds whose time ran out while the server was stopped lapse now, as the records are read back.
+  route.sweep?.();
+  return { routes: [route], warnings };
 }

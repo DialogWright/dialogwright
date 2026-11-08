@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { ShopLog, type ShopEntry } from './shopLog';
 import { shopPages } from './shopPage';
+import { lapseDue, quoteFor, replyToQuote } from './quotes';
 import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, type AppCode, type BusinessYaml, type IncomingText, type TextContext, type Texts, type ToolDef } from 'dialogwright';
 
 /**
@@ -24,9 +25,11 @@ import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, 
  * - The shop's notices (`notify_owner_request`, `notify_owner_booking`, and the callback note's): texts to the
  *   shop's phone, the app's own setting SHOP_PHONE, the summary filled from business.yaml's fixed template.
  *   A text to the business, not to a caller, so no caller's consent applies.
- * - `onText`: a text that comes in. A photo from a number with a recent request is sent on to the shop's
- *   phone with a line naming the request, and the caller thanked; any other text is sent on as it came.
- *   Each is kept (whole, with its photos' URLs) for the shop page.
+ * - `onText`: a text that comes in. A reply to a quote the shop sent from its page is read by the decision
+ *   model (src/quotes.ts: a yes books the held window, anything else goes to the shop). A photo from a number
+ *   with a recent request is sent on to the shop's phone with a line naming the request, and the caller
+ *   thanked while the request is not yet quoted; any other text is sent on as it came. Each is kept (whole,
+ *   with its photos' URLs) for the shop page.
  *
  * Each text goes through the server's sender (ctx.texts, TEXT_FROM) and is printed where there is none (or
  * no SHOP_PHONE): the server and the text CLI print, the tests and the regression stay quiet. Each is shown
@@ -71,7 +74,7 @@ export function capacityOf(window: string): number {
 }
 
 /** Whether the shop works on a day (business.yaml's days). */
-function opensOn(day: string): boolean {
+export function opensOn(day: string): boolean {
   return (BUSINESS.days ?? []).includes(WEEKDAY_NAMES[new Date(parseIso(day)).getUTCDay()]! as never);
 }
 
@@ -115,6 +118,49 @@ export interface OnFile {
   textOk: string;
   atMs: number;
 }
+
+/**
+ * A quote the shop sent from its page ("Quote and book", src/quotes.ts): the price, the drop-off day and window
+ * it holds for the request, the number it was texted to, and when the hold ends. Every field a string, as the
+ * shop's log keeps it.
+ */
+export interface Quote {
+  /** Its reference ("Q101"), which its text and its states carry too. */
+  readonly ref: string;
+  /** When it was sent (ISO). */
+  readonly at: string;
+  /** The request it quotes, by its reference. */
+  readonly request: string;
+  /** How many quotes the request had before this one ("0" for the first): with the request, what makes a form's send once. */
+  readonly version: string;
+  /** The price in cents ("18000" is $180). */
+  readonly price: string;
+  /** The drop-off day (ISO date) and window it holds. */
+  readonly day: string;
+  readonly window: string;
+  /** The number it was texted to: the request's callback number, ten digits. */
+  readonly to: string;
+  /** When its hold lapses (ISO): 24 hours after it was sent or 6 pm the day before the drop-off, whichever is first. */
+  readonly holdUntil: string;
+  /** 6 pm the day before the drop-off (ISO), in the server's time zone (TIMEZONE): the last moment it may be booked. */
+  readonly cutoff: string;
+}
+
+/** What became of a quote: booked (by the customer's reply), lapsed (no reply by its hold's end) or superseded (a newer quote sent for the request). Waiting is a quote with none. */
+export type QuoteEnd = 'booked' | 'lapsed' | 'superseded';
+export interface QuoteState {
+  readonly ref: string;
+  readonly at: string;
+  readonly state: QuoteEnd;
+  /** The booking it made, by its reference (booked only). */
+  readonly booking?: string;
+}
+
+/** A quote's state now: waiting while it holds its window, else what became of it. */
+export type QuoteStatus = 'waiting' | QuoteEnd;
+
+/** A request's state on the shop page: new, a photo in, quoted (a quote waiting), booked, or lapsed (its latest quote lapsed). */
+export type RequestStatus = 'new' | 'photo' | 'quoted' | 'booked' | 'lapsed';
 
 /** The most characters a text forwarded to the shop carries: under a long SMS's 1,600, the caller's words cut to fit. */
 export const FORWARD_MAX = 1500;
@@ -165,6 +211,10 @@ export class Systems {
   readonly booked = new Map<string, number>();
   /** The reference each write's key was given. */
   readonly written = new Map<string, string>();
+  /** The quotes the shop sent from its page, in order (src/quotes.ts). */
+  readonly quotes: Quote[] = [];
+  /** What became of each quote that is no longer waiting, by its reference. */
+  readonly quoteEnds = new Map<string, QuoteState>();
 
   /** Where the records are kept: the log's file, or null for memory alone. */
   get logFile(): string | null {
@@ -188,7 +238,9 @@ export class Systems {
   keep(kind: 'request' | 'booking' | 'callback', record: Kept, atMs: number): void;
   keep(kind: 'text', record: Text, atMs: number): void;
   keep(kind: 'received', record: Received, atMs: number): void;
-  keep(kind: 'request' | 'booking' | 'callback' | 'text' | 'received', record: Kept | Text | Received, atMs: number): void {
+  keep(kind: 'quote', record: Quote, atMs: number): void;
+  keep(kind: 'quote_state', record: QuoteState, atMs: number): void;
+  keep(kind: Exclude<ShopEntry['kind'], 'written'>, record: Kept | Text | Received | Quote | QuoteState, atMs: number): void {
     const entry = { kind, record } as ShopEntry;
     this.replay(entry);
     this.log?.append(entry, atMs);
@@ -219,6 +271,8 @@ export class Systems {
         this.bookings.push(e.record);
         const at = `${e.record.day ?? ''} ${e.record.window ?? ''}`;
         this.booked.set(at, (this.booked.get(at) ?? 0) + (COUNTS[e.record.cars ?? ''] ?? 1));
+        // A booking a customer's reply made from a quote (src/quotes.ts): the quote is booked, its hold now this booking, in one line.
+        if (e.record.quote !== undefined) this.quoteEnds.set(e.record.quote, { ref: e.record.quote, at: e.record.at, state: 'booked', booking: e.record.ref });
         return;
       }
       case 'callback':
@@ -233,7 +287,44 @@ export class Systems {
       case 'written':
         this.written.set(e.name, e.ref);
         return;
+      case 'quote':
+        // A newer quote for the request supersedes one still waiting, its hold released, in the same line.
+        for (const q of this.quotes) {
+          if (q.request === e.record.request && this.statusOf(q) === 'waiting') this.quoteEnds.set(q.ref, { ref: q.ref, at: e.record.at, state: 'superseded' });
+        }
+        this.quotes.push(e.record);
+        return;
+      case 'quote_state':
+        this.quoteEnds.set(e.record.ref, e.record);
+        return;
     }
+  }
+
+  /** A quote's state now. */
+  statusOf(q: Quote): QuoteStatus {
+    return this.quoteEnds.get(q.ref)?.state ?? 'waiting';
+  }
+
+  /** A request's quotes, in order. */
+  quotesOf(request: string): Quote[] {
+    return this.quotes.filter((q) => q.request === request);
+  }
+
+  /** A request's state, as the shop page shows it. */
+  requestStatus(request: Kept): RequestStatus {
+    const latest = this.quotesOf(request.ref).at(-1);
+    if (latest !== undefined) {
+      const st = this.statusOf(latest);
+      if (st === 'booked') return 'booked';
+      if (st === 'waiting') return 'quoted';
+      if (st === 'lapsed') return 'lapsed';
+    }
+    return this.received.some((r) => r.request === request.ref && r.media.length > 0) ? 'photo' : 'new';
+  }
+
+  /** The cars held in a window for quotes waiting on a reply (a retail car each). */
+  held(day: string, window: string): number {
+    return this.quotes.filter((q) => q.day === day && q.window === window && this.statusOf(q) === 'waiting').length;
   }
 
   /** The windows with room left on a day: none on a day the shop is closed. */
@@ -242,15 +333,15 @@ export class Systems {
     return WINDOW_NAMES.filter((w) => this.roomIn(day, w) > 0);
   }
 
-  /** The cars a window has room for on a day: none on a day the shop is closed or in a window it does not have. */
+  /** The cars a window has room for on a day, after the standing drop-off, the bookings and the quotes holding it: none on a day the shop is closed or in a window it does not have. */
   roomIn(day: string, window: string): number {
     if (!opensOn(day) || !WINDOW_NAMES.includes(window)) return 0;
-    return capacityOf(window) - standingCars(day, window) - (this.booked.get(`${day} ${window}`) ?? 0);
+    return capacityOf(window) - standingCars(day, window) - (this.booked.get(`${day} ${window}`) ?? 0) - this.held(day, window);
   }
 }
 
 /** A number as it is recorded and printed: by its last four ("...0177"). */
-const last4 = (digits: string): string => `...${digits.slice(-4)}`;
+export const last4 = (digits: string): string => `...${digits.slice(-4)}`;
 
 /** The owner's summary (business.yaml's owner.summary), filled: a fixed template, never a generated line. */
 export function ownerSummary(vars: Readonly<Record<string, string>>): string {
@@ -276,7 +367,7 @@ export const dayWords = (iso: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(iso
  * A write done once for its key: `make` runs the first time and its reference is kept; a call repeated
  * with the same key returns the same reference and does nothing again.
  */
-function once(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => string): { value: { ref: string }; summary: string; ref: string } {
+export function once(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => string): { value: { ref: string }; summary: string; ref: string } {
   const seen = key === undefined ? undefined : sys.written.get(`${prefix} ${key}`);
   if (seen !== undefined) return { value: { ref: seen }, summary: `${seen} (already done)`, ref: seen };
   const ref = `${prefix}${101 + count}`;
@@ -286,7 +377,7 @@ function once(sys: Systems, key: string | undefined, prefix: string, count: numb
 }
 
 /** `once` for a write that waits on a system (a text): its key taken before it waits, so a repeat on the same turn does nothing again. */
-async function onceAsync(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => Promise<string>): Promise<{ value: { ref: string }; summary: string; ref: string }> {
+export async function onceAsync(sys: Systems, key: string | undefined, prefix: string, count: number, nowMs: number, make: (ref: string) => Promise<string>): Promise<{ value: { ref: string }; summary: string; ref: string }> {
   const seen = key === undefined ? undefined : sys.written.get(`${prefix} ${key}`);
   if (seen !== undefined) return { value: { ref: seen }, summary: `${seen} (already done)`, ref: seen };
   const ref = `${prefix}${101 + count}`;
@@ -299,10 +390,10 @@ async function onceAsync(sys: Systems, key: string | undefined, prefix: string, 
 }
 
 /** The ten digits of a number, as a callback number holds them ("+15555550177" is 5555550177). */
-const tenDigits = (n: string): string => n.replace(/\D/g, '').slice(-10);
+export const tenDigits = (n: string): string => n.replace(/\D/g, '').slice(-10);
 
 /** A time as the log and the page keep it (ISO). */
-const iso = (ms: number): string => new Date(ms).toISOString();
+export const iso = (ms: number): string => new Date(ms).toISOString();
 
 /**
  * A text: sent through the server's sender where there is one and a number to send to, else printed (the
@@ -310,7 +401,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
  * summary, which the trace and the audit show, has the number by its last four and `masked` for its words.
  * The key (the write's) is the sender's too, so a text repeated after a restart is not sent twice.
  */
-async function sendText(sys: Systems, texts: Texts | undefined, nowMs: number, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<string> {
+export async function sendText(sys: Systems, texts: Texts | undefined, nowMs: number, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<string> {
   const media = opts.media !== undefined && opts.media.length > 0 ? { media: opts.media } : {};
   const shown = to === '' ? 'no number' : last4(to);
   if (texts === undefined || to === '') {
@@ -443,30 +534,44 @@ export const TOOLS: Record<string, ToolDef> = {
 };
 
 /**
- * A text that came in to the shop's number (App.onText): sent on to the shop's phone as it came, its photos
+ * A text that came in to the shop's number (App.onText). First the holds whose time is up lapse; then a text
+ * with words from a number a quote is waiting on (or lapsed lately) is a reply to it, read by the decision
+ * model (src/quotes.ts replyToQuote). Otherwise it is sent on to the shop's phone as it came, its photos
  * attached by their URLs (the engine fetches none), the caller's words cut to FORWARD_MAX. From a number with
  * a request on file in the last week, with a line naming the request, and, where it brought a photo and the
- * request said yes to being texted, the caller thanked in the shop's words; from
+ * request said yes to being texted and is not yet quoted, the caller thanked in the shop's words; from
  * any other number, as a text with no request on file. A text with no photo is sent on too, and not answered,
  * so a word like STOP is never answered with a promise of a price (Twilio answers STOP and HELP itself). With no
  * sender, or no SHOP_PHONE, each is printed.
  */
 export async function onText(m: IncomingText, ctx: TextContext): Promise<void> {
   const s = ctx.sys as Systems;
+  // The holds whose time is up lapse first (src/quotes.ts), so a reply is read against the quote as it stands.
+  await lapseDue(s, ctx.texts, ctx.env, ctx.nowMs);
   const found = s.onFile.get(tenDigits(m.from));
   const recent = found !== undefined && ctx.nowMs - found.atMs <= ON_FILE_MS ? found : undefined;
+  // A reply to a quote the shop texted this number (waiting, or lapsed lately): read by the decision model.
+  const quote = quoteFor(s, m.from, ctx.nowMs);
   const media = m.media.map((x) => x.url);
   // Kept whole for the shop page, with the request it was matched to.
-  s.keep('received', { ref: `I${101 + s.received.length}`, at: iso(ctx.nowMs), from: m.from, text: m.body, media, ...(recent !== undefined ? { request: recent.ref } : {}) }, ctx.nowMs);
+  const request = quote?.request ?? recent?.ref;
+  s.keep('received', { ref: `I${101 + s.received.length}`, at: iso(ctx.nowMs), from: m.from, text: m.body, media, ...(request !== undefined ? { request } : {}) }, ctx.nowMs);
+  if (quote !== undefined && m.body.trim() !== '') {
+    await replyToQuote(s, quote, m, ctx);
+    return;
+  }
   const vars = { name: recent?.name ?? '', last4: m.from.replace(/\D/g, '').slice(-4), vehicle: recent?.vehicle ?? '' };
   const line = recent === undefined ? textLine('unknownForward', vars) : textLine(media.length > 0 ? 'photoForward' : 'textForward', vars);
-  // The caller's own words follow the shop's line, as they came; the record keeps the line alone.
-  const words = m.body.trim();
+  await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, ctx.env(SHOP_PHONE) ?? '', forwardBody(line, m.body), line, { media });
+  // The thank-you promises a price, so it goes only before the request is quoted.
+  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0 && s.quotesOf(recent.ref).length === 0) await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
+}
+
+/** A text forwarded to the shop: the shop's line, then the caller's own words as they came, cut to FORWARD_MAX. */
+export function forwardBody(line: string, said: string): string {
+  const words = said.trim();
   const room = FORWARD_MAX - line.length - 2;
-  const body = words === '' ? line : `${line}: ${words.length > room ? `${words.slice(0, room - 1)}…` : words}`;
-  const ref = `T${101 + s.texts.length}`;
-  await sendText(s, ctx.texts, ctx.nowMs, ref, ctx.env(SHOP_PHONE) ?? '', body, line, { media });
-  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0) await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
+  return words === '' ? line : `${line}: ${words.length > room ? `${words.slice(0, room - 1)}…` : words}`;
 }
 
 /** A request's values, as the gate grid sends them (its textOk given by each case). */

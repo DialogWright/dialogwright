@@ -41,7 +41,7 @@ const REQUEST = { callerName: 'jordan lee', vehicle: '2020 BMW 3 Series', wheels
 const LATER = { ...REQUEST, callerName: 'casey morgan', vehicle: '2018 Audi A4', wheels: 'two', diamondCut: 'not_sure', day: '2026-11-13', window: 'afternoon', callbackNumber: '5555550188', textOk: 'no' };
 const BOOKING = { account: 'rivergate_motors', cars: 'three', vehicles: '2019 Civic, Tacoma, 2021 Model 3', day: '2026-11-11', window: 'morning' };
 const message = (from: string, body: string, media: string[] = []): IncomingText => ({ id: 'SM0', from, to: '+15555550100', body, media: media.map((url) => ({ url, contentType: 'image/jpeg' })), provider: 'twilio' });
-const textCtx = (sys: Systems, nowMs: number): TextContext => ({ env: () => undefined, sys, nowMs });
+const textCtx = (sys: Systems, nowMs: number): TextContext => ({ env: () => undefined, sys, nowMs, decide: async () => null });
 
 /** A day of the line: two requests, a booking, a callback note, the texts each sends (printed: no sender), and a photo texted back. */
 async function aDay(sys: Systems): Promise<void> {
