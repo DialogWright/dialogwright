@@ -3539,8 +3539,13 @@ function resolveTurn(session: Session, event: SessionEvent, answers: AnswerMap |
  * a task, which the form in hand's request does not ask about (its topic slot is not one of the form's).
  */
 export interface FollowUp {
-  readonly reason: 'aside-topic';
-  /** The slot whose question it asks: the aside's topic slot. */
+  /**
+   * `aside-topic` (above); `agent-failed`, an app in agent mode whose agent answer failed at a form's
+   * read-back: the turn read again the scripted way, the decision model asked the form's own questions
+   * (run/turn.ts scriptedReading; the agent-mode design, call 38).
+   */
+  readonly reason: 'aside-topic' | 'agent-failed';
+  /** The slot whose question it asks: the aside's topic slot; for `agent-failed`, the form at its read-back. */
   readonly slot: SlotId;
 }
 

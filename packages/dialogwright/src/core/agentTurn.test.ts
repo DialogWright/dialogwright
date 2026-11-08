@@ -7,7 +7,7 @@ import { businessFixtureApp, type LibrarySystems } from '../define/__fixtures__/
 import { ANONYMOUS } from '../gate/principal';
 import { choiceAnswer, noulAnswer, sharp } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
-import type { JevClient, JevRequest, JevResponse } from '../jev/types';
+import { JevClientError, type JevClient, type JevRequest, type JevResponse } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import { runTurn, type TurnRun } from '../run/turn';
 import { registerApp, resetAppsForTest } from './app/registry';
@@ -486,17 +486,49 @@ describe('what the agent model is sent', () => {
 describe('the review of Task 6', () => {
   const toReadBack = { [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER };
 
-  it('a failed answer at a read-back never completes on the yes: the read-back again, uncounted, and nothing filed', async () => {
-    const c = await call({ ...toReadBack, 'yes, but make it three': { fail: 'timeout' } }, [HOLD, DETAILS, 'yes, but make it three']);
+  it('a failed answer at a read-back is read again the scripted way (call 38): a plain yes completes; a yes with a correction corrects, reads it back, and files nothing', async () => {
+    const yes = await call({ ...toReadBack, 'yes, place the hold': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, place the hold']);
+    expect(yes.sys.holds).toHaveLength(1);
+    expect(yes.last.record.agent).toMatchObject({ use: 'failed', fallback: 'invalid', scripted: 'read' });
+    expect(yes.last.record.followUp).toMatchObject({ reason: 'agent-failed', slot: 'request' });
+    // The call goes on in agent mode, the failure counted.
+    expect(yes.last.result.session.agent?.scripted).toBeUndefined();
+    expect(yes.last.result.session.agent?.failures).toBe(1);
+    // The decision model reads the copies said with the yes, where it is asked them (the scripted reading).
+    const stub = jev();
+    const reads: JevClient = {
+      async ask(req) {
+        const r = await stub.ask(req);
+        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '');
+        const copies = req.questions.request_copies;
+        if (!/three copies/.test(text) || copies === undefined || copies.type !== 'choice') return r;
+        return { ...r, answers: { ...r.answers, request_copies: choiceAnswer(sharp(Object.keys(copies.criteria), 'three', 0.9)) } };
+      },
+    };
+    const changed = await call({ ...toReadBack, 'yes, but make it three copies': { fail: 'timeout' } }, [HOLD, DETAILS, 'yes, but make it three copies'], { jev: reads });
+    expect(changed.sys.holds).toEqual([]);
+    expect(value(changed.last, 'request_copies')).toBe('three');
+    expect(promptOf(changed.last)).toBe('readback_request');
+    expect(heard(changed.last)).toContain('three of The Quiet Harbor');
+    // Nothing filed: the gate allows no write (the scripted completion it tried is blocked, unconfirmed as now read).
+    expect(toolCalls(changed, 'placeHold').filter((e) => e.decision.verdict === 'ALLOW')).toEqual([]);
+  });
+
+  it('a failed answer at a read-back with no scripted reading in time says the read-back again, nothing filed', async () => {
+    // The decision model answers the turn, then fails the scripted reading.
+    const stub = jev();
+    let asked = 0;
+    const once: JevClient = {
+      async ask(req) {
+        const text = ((req.state as { asr?: { text?: string } }).asr?.text ?? '');
+        if (text === 'yes, place the hold' && (asked += 1) > 1) throw new JevClientError('timeout', 'timed out');
+        return stub.ask(req);
+      },
+    };
+    const c = await call({ ...toReadBack, 'yes, place the hold': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, place the hold'], { jev: once });
     expect(promptOf(c.last)).toBe('readback_request');
-    expect(c.last.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 0 });
-    expect(toolCalls(c, 'placeHold')).toEqual([]);
     expect(c.sys.holds).toEqual([]);
-    expect(c.last.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout' });
-    // A second failure in a row there hands off; nothing is filed still.
-    const twice = await call({ ...toReadBack, 'yes, but make it three': { fail: 'timeout' }, 'yes': { fail: 'invalid' } }, [HOLD, DETAILS, 'yes, but make it three', 'yes']);
-    expect(handedToPerson(twice.last)).toBe('handoff_system_failure');
-    expect(twice.sys.holds).toEqual([]);
+    expect(c.last.record.agent).toMatchObject({ scripted: 'none' });
   });
 
   it('a refused value counts an attempt on its slot and walks its ladder to the slot\'s escape', async () => {

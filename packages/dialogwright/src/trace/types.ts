@@ -56,7 +56,8 @@ export interface RetrievalRecord {
  * includes. `answers` are not in the record's own `answers`, which are its first request's.
  */
 export interface FollowUpRecord {
-  reason: 'aside-topic';
+  /** Why it was made (core/turn.ts FollowUp): an aside's topic, or the scripted reading of a read-back an agent answer failed at. */
+  reason: 'aside-topic' | 'agent-failed';
   slot: SlotId;
   questions: QuestionMap;
   answers: AnswerMap | null;
