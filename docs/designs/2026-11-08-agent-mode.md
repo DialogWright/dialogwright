@@ -24,8 +24,8 @@ Success for the prototype: a demo call good enough that a real one-man wheel-rep
   - Every turn is traced and every decision audited.
 - **It works on the voice line and the chat page.**
 - **Two demo calls.**
-  - **A dealership regular**, recognized by the number they call from. They book three trade-ins for tomorrow, dropped off at the shop. The call is brief and efficient: they are booked straight in once they confirm the read-back.
-  - **A retail caller** with curb rash on a BMW. They get a warm welcome, reassurance that most wheels can be fixed and that they are in the right place, and help telling whether the wheel is diamond cut. They are told the owner quotes from a photo and sent a link to send one. Their request is read back, they confirm it, and it goes to the owner, who confirms a time when he sends the quote. The owner gets a summary of each request and booking at once.
+  - **A dealership regular**, recognized by the number they call from. They book three trade-ins into tomorrow morning's drop-off window. The call is brief and efficient: they are booked straight in once they confirm the read-back.
+  - **A retail caller** with curb rash on a BMW. They get a warm welcome, reassurance that most wheels can be fixed and that they are in the right place, and help telling whether the wheel is diamond cut. They are told the owner quotes from a photo and sent a link to send one. They pick a day and a drop-off window. Their request is read back, they confirm it, and it goes to the owner, who confirms the window when he sends the quote. The owner gets a summary of each request and booking at once.
 
 ## Non-goals (for this prototype)
 
@@ -176,19 +176,19 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 5. **The fixed lines are the core's,** not the model's: the read-backs' frames, the handoff and the closing come from `business.yaml`, with the values as understood.
 6. **The words a value came from must be in what the caller said.** The model cites them, and the engine checks they are there.
 7. **The prototype app is public and invented** (`apps/wheelshop`, "Example Wheel Works", invented dealerships, 555 numbers). A real business's line would be a private copy.
-8. **The stand-in calendar** is a small in-memory schedule in the app's code (two bays, hour slots, weekdays). Texts are printed until texting is registered.
+8. **The stand-in calendar** is a small in-memory schedule of drop-off windows in the app's code. It has a morning and an afternoon window each weekday, each with a number of cars (see the assumptions). Texts are printed until texting is registered.
 9. **Retail callers send a request, never a booking.** Regular accounts book. This is the app's policy, not the engine's.
 10. **The model understands the values; the engine checks their shape; the caller confirms them.** The maintainer decided on 2026-11-08 that Jev asks no field's questions in agent mode, which would only extract every value twice. Each library slot type gains a `check` (a value and its words in, a verdict out), part of its conformance kit. The read-back confirmed by the caller is the final check before anything is done. Jev keeps the turn-level readings it already makes, and the yes or no at the read-back, since that decides an action.
 11. **Fields map onto the library's slot types.**
     - The number of wheels is a `choice` (one to four).
     - The callback number is `digits`, offering the number the caller is calling from.
     - Diamond cut is a `choice` (yes, no, not sure).
-    - The preferred time is `text`, since the library has no time-of-day slot and the owner confirms the time anyway.
-    - The booking's day is `date`.
+    - A drop-off is a `date` (the day) and a `choice` (the window, morning or afternoon), so no time-of-day slot is needed.
+    - The number of cars a dealership drops off is a `choice`.
 
     No slot type is added.
 12. **No live transfer:** a caller who wants a person leaves a callback note. The owner's summary is a fixed template, not a generated line.
-13. **The service's `about` holds no turnaround figure.** A time per wheel would read as a promise. It belongs in `claims` once the owner approves one.
+13. **Turnaround is a claim, and the demo assumes one** ("curb rash on a diamond cut wheel is usually a same-day fix"). A claim is the only place a turnaround may come from, so the owner's real answer replaces it or removes it.
 14. **A regular account is recognized by caller ID** through the existing caller-ID match (identity.yaml level 1 `callerId`). Caller ID stays an identifier, never a factor. The risk that a spoofed dealership number books trade-ins is the business's to accept, and the policy card states it.
 
 ## Left to the builder
@@ -200,6 +200,22 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 - how the console shows proposals;
 - the fixed fallback for a reply that fails;
 - the measurement harness for Mercury 3.
+
+## The demo's assumptions, for the owner to correct
+
+The demo is a real, working example, so it needs answers only the owner can give. As with a real client, the facts file makes a reasonable assumption for each. The demo is up front that these are assumptions. When the owner hears something that isn't how he works, that is the prompt for him to tell us how he does, or to tell us to leave it out. Each assumption is one entry in `business.yaml`, so correcting it is an edit to the file, never to code.
+
+| Assumption | In the file |
+|---|---|
+| Curb rash on a diamond cut wheel is usually a same-day fix. | `claims` |
+| Cars are dropped off in a window: by 8 in the morning, ready by about noon; or by noon, ready by about 5. | `windows` |
+| Each window takes up to three cars. | `windows` |
+| He works Monday to Friday. | `days` |
+| He works at the shop; no mobile service. | `where.mobile` |
+| He doesn't do cracked wheels or straightening. | `notOffered` |
+| He quotes every retail job from a photo, and confirms the window with the quote. | `prices`, `request` |
+| Dealerships are booked straight into a window. | `booking` |
+| He wants a text summary of every request and booking. | `owner` |
 
 ## Appendix: the prototype's business facts
 
@@ -225,31 +241,38 @@ services:
     about: >
       For wheels whose face is bright bare metal with fine machined lines, often two-tone.
       Cut on a lathe in the shop, with the tyre left on.
-    shopOnly: true
   - name: refinishing worn or faded finishes
-notOffered:
+notOffered:                   # assumption: the owner corrects these
   - cracked wheels
-  - straightening bent wheels      # until the owner says otherwise
+  - straightening bent wheels
   - tyres, paint, headlights or anything that isn't a wheel
 
 claims:                       # the only reassurance the line may give (the judge holds it here)
   - Most curb rash and scratches can be fixed.
   - Sam sees this kind of damage every day.
   - Diamond cut wheels are what the shop's lathe is for.
+  - Curb rash on a diamond cut wheel is usually a same-day fix.     # assumption
   - Dealerships on Commerce Drive send their trade-ins here.
 background:                   # context for the model, never said as a claim
   - Sam works alone, so he often can't answer the phone while he's working on a wheel.
 
 prices:
   quote: from a photo         # no figures: the line never says a price
-  say: >                      # exact: said word for word when a caller asks about price
+  say: >                      # fixed: said in these words when a caller asks about price
     Sam quotes every job from a photo, because it depends on the damage. I'll text you a link to
-    send one, and he'll get back to you with a price and a time.
+    send one, and he'll get back to you with a price and confirm your drop-off.
 
 where:
   shop: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership
-  mobile: false               # Sam works at the shop; the line offers no mobile service
-hours: null                   # not stated; the line says Sam will confirm a time
+  mobile: false               # assumption: Sam works at the shop
+days: [monday, tuesday, wednesday, thursday, friday]               # assumption
+windows:                      # assumption: drop-off windows, each with room for some cars
+  - name: morning
+    says: drop off by 8 in the morning, ready by about noon
+    cars: 3
+  - name: afternoon
+    says: drop off by noon, ready by about 5
+    cars: 3
 
 accounts:                     # regulars, booked straight in
   - name: Rivergate Motors
@@ -259,7 +282,7 @@ accounts:                     # regulars, booked straight in
   - name: Lakeview Imports
     numbers: ["+15555550161"]
 
-request:                      # what a retail caller's request collects
+request:                      # what a retail caller's request collects; Sam confirms the window with the quote
   fields:
     - name: callerName
       type: name
@@ -274,7 +297,7 @@ request:                      # what a retail caller's request collects
       question: How many wheels need work?
     - name: damage
       type: text
-      about: What the damage is, in the caller's words.
+      about: What the damage is, as the line understood it.
       question: What happened to the wheel?
     - name: diamondCut
       type: choice
@@ -282,49 +305,58 @@ request:                      # what a retail caller's request collects
       about: Whether the wheel's face is bright machined metal with fine lines.
       question: Is the face of the wheel shiny bare metal with fine lines, or painted all over?
       optional: true
-    - name: preferredTime
-      type: text
-      question: When would you like to bring it in?
+    - name: day
+      type: date
+      question: What day would you like to drop it off?
+      sees: availability      # the windows free near that day reach the model (decision 2)
+    - name: window
+      type: choice
+      options: windows        # morning or afternoon, from `windows`
+      question: Morning or afternoon?
     - name: callbackNumber
       type: digits
       length: 10
       offer: callerNumber
       question: What's the best number for Sam to text you the quote?
   readBack: >
-    Here's what I'll send Sam: {callerName}, a {vehicle}, {wheels} wheels, {damage}, hoping to bring
-    it in {preferredTime}, and he'll text you at {callbackNumber}. Is that right?
+    Here's what I'll send Sam: {callerName}, a {vehicle}, {wheels} wheels, {damage}, hoping to drop
+    it off {day} in the {window}, and he'll text you at {callbackNumber}. Is that right?
   then: [send_photo_link, notify_owner]
   done: >
-    Thanks, {callerName}. Sam will text you a price and a time once he's seen the photo.
+    Thanks, {callerName}. Sam will text you a price and confirm your drop-off once he's seen the
+    photo.
 
 booking:                      # what a regular account's booking collects
   for: accounts
   fields:
-    - name: wheels
+    - name: cars
       type: choice
-      options: [one, two, three, four]
-      question: How many wheels?
+      options: [one, two, three, four, five, six]
+      question: How many cars?
     - name: vehicles
       type: text
-      about: The cars, by make and model or stock number.
-      question: Which cars are they?
+      about: The cars and which wheels, by make and model or stock number.
+      question: Which cars are they, and which wheels?
     - name: day
       type: date
       question: What day are you dropping them off?
-      sees: availability      # its free days near the one asked for reach the model (decision 2)
+      sees: availability
+    - name: window
+      type: choice
+      options: windows
+      question: Morning or afternoon?
   readBack: >
-    So that's {wheels} wheels on {vehicles} from {account}, dropped off at the shop {day}. Shall I
+    So that's {cars} cars from {account}, {vehicles}, dropped off {day} in the {window}. Shall I
     book it?
   then: [book, notify_owner]
-  done: You're booked for {day}. Thanks.
+  done: You're booked for {day}, {window}. Thanks.
 
 handoff: >                    # a callback note to the owner, not a transfer
   I'll have Sam call you back as soon as he's free. What's the best number to reach you?
 closing: Thanks for calling Example Wheel Works.
 owner:
-  notify: text                # printed until texting is registered
+  notify: text                # assumption; printed until texting is registered
   number: "+15555550100"
   summary: >                  # a fixed template, not a generated line
-    New {kind} from {callerName} ({callbackNumber}): {wheels} wheels, {vehicle}, {damage}.
-    Preferred time: {preferredTime}.
+    New {kind} from {who} ({callbackNumber}): {details}. Drop-off: {day}, {window}.
 ```
