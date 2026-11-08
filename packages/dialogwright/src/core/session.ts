@@ -329,10 +329,11 @@ export interface Session {
    * agent client (no key), so it runs as a scripted app for the whole call (core/agentTurn.ts). `seen`: the
    * checked results of the tools the app lets the model see (business.yaml's `sees`), the latest of each
    * tool, each with the field and value it was called with, and only the fields its check names
-   * (core/replyShape.ts namedPart); absent until the first. Absent for every other app, so every other
-   * session, and one saved before it, is as it was.
+   * (core/replyShape.ts namedPart); absent until the first. `judged`: the slots whose text value the drift
+   * judge refused once with no value held since (call 45), so a second refusal counts an attempt. Absent
+   * for every other app, so every other session, and one saved before it, is as it was.
    */
-  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[] };
+  agent?: { conversation: { who: 'caller' | 'line'; text: string }[]; failures: number; scripted?: true; seen?: SeenResult[]; judged?: SlotId[] };
   /** forms closed by a completion prompt on this call, reported in handoff data */
   completed: FormId[];
   history: HistoryEntry[];

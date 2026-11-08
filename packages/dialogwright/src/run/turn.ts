@@ -634,8 +634,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     waited = reread.waited ?? waited;
   }
   // The text values the agent gave that are not the caller's words as cited, each held to them by the drift
-  // judge a framed summary is (call 40): one it refuses, or does not read in time, is held as its cited
-  // words, and the turn is resolved again with them (the tools already called kept, none called twice).
+  // judge a framed summary is (call 40): one it refuses, or does not read in time, is not held (call 45: never
+  // as its cited words either), and the turn is resolved again without it, its field's question asked again
+  // (the tools already called kept, none called twice).
   let textUsage: JevUsage | null = null;
   if (reread === null && used !== null && used.agent?.ok === true && resolved.agent?.use === 'used' && resolved.agent.values.length > 0) {
     const app = appOf(session);
@@ -643,11 +644,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     const { judged, usage } = await judgeTextValues(app, resolved.agent.values, opts.renderer?.drift ?? opts.client, budget, app.agent?.style.refuseAt ?? DRIFT_FIRE, localeOf(session));
     textUsage = usage;
     if (judged.length > 0) {
-      const asWords = new Set(judged.filter((j) => j.held === 'words').map((j) => j.field));
-      if (asWords.size > 0) {
-        const answer = used.agent.answer;
-        const held: AgentResult = { ...used.agent, answer: { ...answer, values: answer.values.map((v) => (asWords.has(v.field) ? { ...v, value: v.words } : v)) } };
-        const next = await resolveWaiting(session, event, turnAnswers, { ...used, agent: held }, error, screen, channel, toolTimeout, first.memo);
+      const refusedText = [...new Set(judged.filter((j) => j.held === 'before').map((j) => j.field))];
+      if (refusedText.length > 0) {
+        const next = await resolveWaiting(session, event, turnAnswers, { ...used, agentTextRefused: refusedText }, error, screen, channel, toolTimeout, first.memo);
         resolved = next.result;
         waited = next.waited ?? waited;
       }

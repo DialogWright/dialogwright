@@ -209,16 +209,20 @@ export interface TextValueJudged {
   /** The judge's reading (its `noul`), and the cutoff it was held to; absent where the judge failed or was late. */
   score?: number;
   refuseAt: number;
-  /** `value`: held as the model gave it; `words`: the cited words held in its place (the judge refused it, failed or was late). */
-  held: 'value' | 'words';
+  /**
+   * `value`: held as the model gave it; `before`: not held (the judge refused it, failed or was late), so the
+   * field keeps what it held before, or none, and its question is asked again (call 45). The cited words are
+   * never held in its place.
+   */
+  held: 'value' | 'before';
 }
 
 /**
  * The text values accepted on a turn that are not the caller's words as cited (the model's short version),
  * each judged against those words by the drift judge a framed summary is (renderSpanDriftQuestion: a faithful
  * summary, nothing added, turned around or dropped), given the field's description as its goal; the
- * agent-mode design, call 40. A value it refuses, or that it does not read in time, is held as its cited words.
- * In parallel, each within `timeoutMs`. Empty where no such value was accepted.
+ * agent-mode design, call 40. A value it refuses, or that it does not read in time, is not held (call 45:
+ * the field keeps what it held before, or none, and its question is asked again). In parallel, each within `timeoutMs`. Empty where no such value was accepted.
  */
 export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
   const fields = Object.values(app.agent?.forms ?? {}).flatMap((f) => f.fields);
@@ -246,13 +250,13 @@ export async function judgeTextValues(app: App, values: readonly { field: string
     });
     try {
       const r = await Promise.race([judge.ask({ state: renderSpanDriftState(act, v.value) as unknown as JsonValue, questions: renderSpanDriftQuestion(), timeoutMs, signal: abort.signal }), late]);
-      if (r === 'late') return { field: v.field, refuseAt, held: 'words' };
+      if (r === 'late') return { field: v.field, refuseAt, held: 'before' };
       if (r.usage) add(r.usage);
       const a = r.answers[SPAN_DRIFT_QUESTION_ID];
-      if (!isNoul(a)) return { field: v.field, refuseAt, held: 'words' };
-      return { field: v.field, score: a.noul, refuseAt, held: a.noul >= refuseAt ? 'words' : 'value' };
+      if (!isNoul(a)) return { field: v.field, refuseAt, held: 'before' };
+      return { field: v.field, score: a.noul, refuseAt, held: a.noul >= refuseAt ? 'before' : 'value' };
     } catch {
-      return { field: v.field, refuseAt, held: 'words' };
+      return { field: v.field, refuseAt, held: 'before' };
     } finally {
       clearTimeout(timer);
       abort.abort();

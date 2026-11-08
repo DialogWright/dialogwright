@@ -175,14 +175,19 @@ export interface AgentTurnRecord {
   scripted?: 'read' | 'none';
   /**
    * The text values accepted that are not the caller's words as cited, each as the drift judge read it
-   * against them (run/turn.ts, render/agentLine.ts judgeTextValues; call 40): held as given, or as the cited
-   * words where it refused it, failed or was late. Absent where none was judged.
+   * against them (run/turn.ts, render/agentLine.ts judgeTextValues; calls 40 and 45): held as given
+   * (`value`), or not held (`before`: the judge refused it, failed or was late, so the field kept what it
+   * held before, or none, and its question was asked again). Absent where none was judged.
    */
-  textJudged?: { field: string; score?: number; refuseAt: number; held: 'value' | 'words' }[];
+  textJudged?: { field: string; score?: number; refuseAt: number; held: 'value' | 'before' }[];
 }
 
-/** What a value's check came to: accepted, refused by its slot type (ValueCheck's reason), or `field`, naming no field of the form it was given in. */
-export type AgentValueOutcome = 'accepted' | Extract<ValueCheck, { ok: false }>['reason'] | 'field';
+/**
+ * What a value's check came to: accepted, refused by its slot type (ValueCheck's reason), `field`, naming no
+ * field of the form it was given in, or `judged`, a text value the drift judge refused against the caller's
+ * words (or did not read in time), never held (call 45).
+ */
+export type AgentValueOutcome = 'accepted' | Extract<ValueCheck, { ok: false }>['reason'] | 'field' | 'judged';
 
 /**
  * The answer a turn reads when no agent client is set (a run with none, a server without the agent model's
@@ -507,6 +512,8 @@ interface Applied {
   events: FillEvent[];
   /** The slot of the first value refused, whose question is asked. */
   refused: SlotId | null;
+  /** The slot of the first text value the drift judge refused (TurnContext.agentTextRefused), whose question is asked again (call 45). */
+  judged: SlotId | null;
   /** Whether a value was stored that differs from the one held. */
   changed: boolean;
 }
@@ -522,7 +529,7 @@ function slotNamed(app: App, field: string): SlotId | undefined {
 
 /** The answer's values checked by their fields' slot types and the accepted ones stored (see the top). */
 function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
-  const out: Applied = { events: [], refused: null, changed: false };
+  const out: Applied = { events: [], refused: null, judged: null, changed: false };
   const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
   const locale = slotLocaleOf(s);
@@ -542,6 +549,13 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
       record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'accepted', shown: onFile.display ?? String(onFile.value) });
       continue;
     }
+    // A text value the drift judge refused against the caller's words, or did not read in time (call 45):
+    // never held, neither as given nor as the words it cited; the field keeps what it held before, or none.
+    if (tc.agentTextRefused?.includes(field.name) === true) {
+      record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'judged' });
+      out.judged ??= field.slot;
+      continue;
+    }
     const spec = app.slots[field.slot] as BuiltSlotSpec | undefined;
     const before = s.slots[field.slot]?.value;
     const check: ValueCheck = spec?.check !== undefined ? spec.check(v.value, v.words, said, { today: tc.todayIso, ...(locale !== undefined ? { locale } : {}), ...(before !== null && before !== undefined ? { held: String(before) } : {}) }) : { ok: false, reason: 'unsupported' };
@@ -558,6 +572,8 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: 'agent' as const });
     delete slot.declined;
     delete slot.missed;
+    // A value held: a later judge's refusal of this field is a first one again (judgedAgain).
+    if (s.agent?.judged?.includes(field.slot) === true) s.agent = { ...s.agent, judged: s.agent.judged.filter((x) => x !== field.slot) };
     record.values.push({ ...proposed, outcome: 'accepted', shown: check.shown });
     out.events.push({ slot: field.slot, outcome: { kind: 'filled', value: check.value, display: check.shown, confidence: 1, confirm: 'none' } });
   }
@@ -580,6 +596,21 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     out.refused ??= field.slot;
   }
   return out;
+}
+
+/**
+ * A text value the drift judge refused (call 45): its field's question asked again. The first such refusal
+ * of the field counts no attempt (the model's short version was unfaithful, not the caller's answer); one
+ * after it, with no value of the field held between, counts an attempt and walks the slot's own ladder, so
+ * a field the judge keeps refusing still reaches the keypad and a person.
+ */
+function judgedAgain(s: Session, slot: SlotId, io: TurnIO, steps: ScriptedSteps, acks: Ack[], events: FillEvent[]): Handled {
+  const before = s.agent?.judged ?? [];
+  if (before.includes(slot)) {
+    return { decision: steps.failAttempt(s, slot, io, acks), events: [...events, { slot, outcome: { kind: 'invalid', reason: 'agent-judged', raw: '' } }] };
+  }
+  s.agent = { ...(s.agent ?? { conversation: [], failures: 0 }), judged: [...before, slot] };
+  return { decision: askSlot(s, slot, null, acks), events };
 }
 
 /** Whether `value` is the held value as the field holds it, shows it, or was sent it masked (agent/prompt.ts fieldValueSent). */
@@ -881,7 +912,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const applied = applyValues(app, s, answer?.values ?? [], said, io.tc, record);
   // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new;
   // not where a value was refused, whose slot's own question is asked (no second asking for it).
-  const looked = applied.refused === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
+  const looked = applied.refused === null && applied.judged === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
   if (answer !== null && understoodNothing(answer, failed.fixed) && !opened) io.missed = true;
@@ -894,6 +925,11 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
     // A value its slot type refused: dropped, an attempt counted on its slot, and the slot's own ladder.
     actionDone('ignored');
     return { decision: steps.failAttempt(s, applied.refused, io, acks), events: applied.events };
+  }
+  if (applied.judged !== null) {
+    // A text value the drift judge refused: not held, and its field's question asked again (call 45).
+    actionDone('ignored');
+    return judgedAgain(s, applied.judged, io, steps, acks, applied.events);
   }
   // A value held to a seen result (`freeFrom`) that the latest result no longer lists (the day changed after
   // it was given): cleared, no attempt counted, and its question asked (the agent-mode design, call 40).
@@ -982,6 +1018,14 @@ function atReadBack(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotC
     s.pendingConfirmation = null;
     s.pendingHash = null;
     return { decision: steps.failAttempt(s, applied.refused, io, []), events: applied.events };
+  }
+  if (applied.judged !== null) {
+    // A text correction the drift judge refused: not held (the value read back stays), the read-back set
+    // aside, and the field's question asked again (call 45).
+    actionDone('ignored');
+    s.pendingConfirmation = null;
+    s.pendingHash = null;
+    return judgedAgain(s, applied.judged, io, steps, [], applied.events);
   }
   // A correction ("no, it's two"): stored, and the read-back said again with it. A correction of a field whose
   // tool the model sees runs it and asks the model again (step 3a); the second answer's reply, written with

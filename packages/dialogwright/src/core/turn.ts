@@ -132,6 +132,12 @@ export interface TurnContext {
    */
   agentSeen?: { seen: readonly SeenResult[]; changed?: true };
   /**
+   * The text values (by field) the drift judge refused against the caller's words this turn, or did not read
+   * in time (run/turn.ts, call 45): set only on the turn's resolution after the judge read them. Each is not
+   * held (the field keeps what it held before, or none) and its question is asked again.
+   */
+  agentTextRefused?: readonly string[];
+  /**
    * The run has no agent client for an app in agent mode (no key): set by the runner on every turn of
    * such a run. A call that begins so runs as a scripted app for the whole call (Session.agent.scripted).
    */

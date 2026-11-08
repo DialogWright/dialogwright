@@ -415,26 +415,11 @@ describe('the review of the branch (call 40)', () => {
     expect(c.sys.holds.every((h) => !String(h.title).includes('40'))).toBe(true);
   });
 
-  it('a text value the drift judge refuses against the caller\'s words is held as the words cited', async () => {
-    const stub = jev();
-    const judged: JevClient = {
-      async ask(req) {
-        const q = req.questions.renderSpanDrift;
-        if (q === undefined) return stub.ask(req);
-        const said = (req.state as { span?: { said?: string } }).span?.said ?? '';
-        return { answers: { renderSpanDrift: noulAnswer(/signed/.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 7000, outputTokens: 3, estimated: false }, source: 'model' } as unknown as JevResponse;
-      },
-    };
-    const c = await call({ [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, a signed copy', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
-    expect(value(c.last, 'request_title')).toBe('The Quiet Harbor');
-    expect(c.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.9, held: 'words' }]);
-    // The judge's tokens are the turn's (its usage counts them).
-    expect(c.last.record.usage.inputTokens).toBeGreaterThanOrEqual(7000);
-    const kept = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judged });
+  it('a text value the drift judge passes against the caller\'s words is held as the model gave it', async () => {
+    const kept = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judgedBy(/signed/) });
     expect(value(kept.last, 'request_title')).toBe('Quiet Harbor');
     expect(kept.last.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.1, held: 'value' }]);
   });
-
   it('after a system\'s failure the rest of the call is scripted: the decision model fills the callback note, and it is filed', async () => {
     const all = { [HOLD]: { fail: 'timeout' as const }, 'Avery Lane': { fail: 'timeout' as const }, '555 555 0144': { fail: 'timeout' as const }, yes: { fail: 'timeout' as const } };
     // The decision model reads the number where it is asked it (the scripted form's own questions).
@@ -986,5 +971,73 @@ describe('the agent turn: the price line needs the decision model (call 43)', ()
     expect(heard(second!).startsWith(PRICE)).toBe(true);
     expect(second!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
     expect(toolCalls(c, 'placeHold')).toEqual([]);
+  });
+});
+
+/** The decision model, with the text values' drift judge refusing a value its pattern finds (0.9), passing any other (0.1), or never answering in time. */
+function judgedBy(refuse: RegExp | 'late'): JevClient {
+  const stub = jev();
+  return {
+    async ask(req) {
+      const q = req.questions.renderSpanDrift;
+      if (q === undefined) return stub.ask(req);
+      if (refuse === 'late') return new Promise<JevResponse>(() => undefined);
+      const said = (req.state as { span?: { said?: string } }).span?.said ?? '';
+      return { answers: { renderSpanDrift: noulAnswer(refuse.test(said) ? 0.9 : 0.1) }, usage: { inputTokens: 7000, outputTokens: 3, estimated: false }, source: 'model' } as unknown as JevResponse;
+    },
+  };
+}
+
+describe('a text value the judge refuses is never held as raw words (call 45)', () => {
+  it('refused new: no value held (neither as given nor as the cited words), its question asked again, no attempt counted; the turn\'s other values stay', async () => {
+    const WITH_COPIES = `${HOLD}, two copies`;
+    const c = await call({ [WITH_COPIES]: said('Happy to help.', [['title', 'The Quiet Harbor, a signed copy', 'The Quiet Harbor'], ['copies', 'two', 'two copies']]) }, [WITH_COPIES], { jev: judgedBy(/signed/) });
+    const t = c.last;
+    expect(value(t, 'request_title')).toBeNull();
+    expect(value(t, 'request_copies')).toBe('two');
+    expect(promptOf(t)).toBe('ask_request_title');
+    expect(t.result.session.slots.request_title!.attempts).toBe(0);
+    expect(t.record.agent!.values.find((v) => v.field === 'title')).toMatchObject({ outcome: 'judged' });
+    expect(t.record.agent!.textJudged).toMatchObject([{ field: 'title', score: 0.9, held: 'before' }]);
+    // The reply, written with the value, is never said.
+    expect(heard(t)).not.toContain('Happy to help');
+    // The judge's tokens are the turn's (its usage counts them).
+    expect(t.record.usage.inputTokens).toBeGreaterThanOrEqual(7000);
+  });
+
+  it('refused again on the same field: the second counts an attempt and walks the slot\'s own ladder', async () => {
+    const SECOND = 'It is The Quiet Harbor';
+    const c = await call({
+      [HOLD]: said('Happy to help.', [['title', 'The Quiet Harbor, a signed copy', 'The Quiet Harbor']]),
+      [SECOND]: said('Got it.', [['title', 'The Quiet Harbor, signed', 'The Quiet Harbor']]),
+    }, [HOLD, SECOND], { jev: judgedBy(/signed/) });
+    expect(value(c.runs[1]!, 'request_title')).toBeNull();
+    expect(c.runs[1]!.result.session.slots.request_title!.attempts).toBe(0);
+    expect(value(c.last, 'request_title')).toBeNull();
+    expect(c.last.result.session.slots.request_title!.attempts).toBe(1);
+    expect(promptOf(c.last)).toBe('ask_request_title_retry');
+  });
+
+  it('a judge that does not answer in time holds nothing either: the question asked again', async () => {
+    const c = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judgedBy('late') });
+    expect(value(c.last, 'request_title')).toBeNull();
+    expect(promptOf(c.last)).toBe('ask_request_title');
+    expect(c.last.record.agent!.textJudged).toMatchObject([{ field: 'title', held: 'before' }]);
+    expect(c.last.record.agent!.textJudged![0]!.score).toBeUndefined();
+  });
+
+  it('a correction at the read-back the judge refuses: the value read back stays, the read-back set aside and the field asked again, uncounted', async () => {
+    const CORRECT = 'no, the title is The Quiet Harbour';
+    const c = await call({
+      [HOLD]: HOLD_ANSWER,
+      [DETAILS]: DETAILS_ANSWER,
+      [CORRECT]: said('', [['title', 'The Quiet Harbour, signed by the author', 'The Quiet Harbour']]),
+    }, [HOLD, DETAILS, CORRECT], { jev: judgedBy(/signed/) });
+    expect(promptOf(c.runs[2]!)).toBe('readback_request');
+    expect(value(c.last, 'request_title')).toBe('The Quiet Harbor');
+    expect(c.last.result.session.pendingConfirmation).toBeNull();
+    expect(promptOf(c.last)).toBe('ask_request_title');
+    expect(c.last.result.session.slots.request_title!.attempts).toBe(0);
+    expect(c.sys.holds).toEqual([]);
   });
 });
