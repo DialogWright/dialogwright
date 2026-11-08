@@ -74,6 +74,8 @@ export interface AgentView {
   actionOutcome?: string;
   /** Its reply: said, or not and why (replaced by its fixed line, the price line said whole), with the drift judge's reading where it was asked. */
   reply?: { text: string; said: boolean; why?: string; judge?: string };
+  /** The price line and the decision model's reading of a price asked, in words, where it bore on the turn (said, or named by the agent and not said). */
+  price?: string;
   /** How long the answer took, ms. */
   ms?: number;
 }

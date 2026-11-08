@@ -51,8 +51,9 @@ describe('sweep space', () => {
 
   it('covers every threshold exactly once, sweepable or deliberately fixed', () => {
     // KB_LINE_ANSWERS is read in the render step (onFail: lines), which a sweep of the turns' readings never reaches;
-    // KB_FOLLOW_UP only says whether the wording is given the earlier question, which no turn's outcome shows.
-    const FIXED = ['MAX_ATTEMPTS', 'STUB_SHARPNESS', 'JEV_TIMEOUT_MS', 'SCREEN_GRACE_MS', 'JEV_PRICE_PER_MTOK', 'KB_LINE_ANSWERS', 'KB_FOLLOW_UP'];
+    // KB_FOLLOW_UP only says whether the wording is given the earlier question, which no turn's outcome shows;
+    // AGENT_PRICE_ASKED is read only in agent mode, whose turns rest on the agent model's answers, not the corpus a sweep reads.
+    const FIXED = ['MAX_ATTEMPTS', 'STUB_SHARPNESS', 'JEV_TIMEOUT_MS', 'SCREEN_GRACE_MS', 'JEV_PRICE_PER_MTOK', 'KB_LINE_ANSWERS', 'KB_FOLLOW_UP', 'AGENT_PRICE_ASKED'];
     expect(new Set([...SWEEPABLE, ...FIXED])).toEqual(new Set(Object.keys(DEFAULT_THRESHOLDS)));
   });
 

@@ -217,9 +217,11 @@ describe('an agent line: the price line (review focus 1)', () => {
   });
 
   it('a reply that words a price itself without naming the price line falls back on its figure', async () => {
-    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), 'just ballpark it': said('Ballpark, maybe twenty dollars. What name is it under?', [], { fixedLine: 'none' }) }, [HOLD, 'just ballpark it']);
+    // Words the decision model does not read as a price asked (a price asked is answered by the price line, named or not: call 43).
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), 'sounds good to me': said('Lovely, that will be twenty dollars. What name is it under?', [], { fixedLine: 'none' }) }, [HOLD, 'sounds good to me']);
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
     expect(sayTexts(c.last).join(' ')).not.toMatch(/twenty|dollar/);
+    expect(sayTexts(c.last).join(' ')).not.toContain(PRICE_LINE);
   });
 });
 
@@ -311,21 +313,32 @@ describe('an agent line: what a fallback leaves', () => {
 
 describe('the review of Task 7', () => {
   const NAMED = 'Avery Lane';
+  /**
+   * The decision model reading no price asked: a caller's "is it under a hundred dollars?" is read as one, and
+   * the price line is said in place of the reply (call 43). Where the decision model misses it, the figure
+   * check is what holds the reply, and these hold that.
+   */
+  const noPriceRead = (j: JevClient): JevClient => ({
+    async ask(req: JevRequest): Promise<JevResponse> {
+      const r = await j.ask(req);
+      return Object.hasOwn(req.questions, 'asksPrice') ? { ...r, answers: { ...r.answers, asksPrice: noulAnswer(0.05) } } : r;
+    },
+  });
 
   it('a figure the caller proposes is not the line\'s: "is it under a hundred?" against "Yes, it\'s under a hundred"', async () => {
     const asked = 'is it under a hundred dollars?';
-    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said("Yes, it's under a hundred dollars. What name is it under?", [], { fromFacts: true }) }, [HOLD, asked]);
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [asked]: said("Yes, it's under a hundred dollars. What name is it under?", [], { fromFacts: true }) }, [HOLD, asked], { wrap: noPriceRead });
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign', refused: "Yes, it's under a hundred dollars. What name is it under?" });
     expect(heard(c.last)).toBe(NAME_Q);
   });
 
   it('a choice value\'s cited words are no source: "two copies, is it under a hundred" cited for copies=two does not let "under a hundred" pass (the review of Task 8)', async () => {
     const words = 'two copies, is it under a hundred dollars';
-    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, and yes, under a hundred dollars. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words]);
+    const c = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, and yes, under a hundred dollars. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words], { wrap: noPriceRead });
     expect(c.last.record.agent!.values).toMatchObject([{ field: 'copies', outcome: 'accepted' }]);
     expect(c.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
     // Its held value and display stay sources: "two copies" said back passes.
-    const ok = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, lovely. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words]);
+    const ok = await call({ [HOLD]: said('Happy to help. What name is it under?', TITLE), [words]: said('Two copies, lovely. What name is it under?', [['copies', 'two', words]]) }, [HOLD, words], { wrap: noPriceRead });
     expect(ok.last.record.agent!.line).toMatchObject({ mode: 'generated' });
   });
 
@@ -337,7 +350,7 @@ describe('the review of Task 7', () => {
     const other = await call({ [words]: said('The 2020 edition, lovely. What name is it under?', value) }, [words]);
     expect(other.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
     const outside = 'The Quiet Harbor, and is it under 5 dollars?';
-    const asked = await call({ [outside]: said('Yes, under 5 dollars. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]) }, [outside]);
+    const asked = await call({ [outside]: said('Yes, under 5 dollars. What name is it under?', [['title', 'The Quiet Harbor', 'The Quiet Harbor']]) }, [outside], { wrap: noPriceRead });
     expect(asked.last.record.agent!.line).toMatchObject({ mode: 'fixed', fallback: 'foreign' });
     expect(textValueFigures('2020 BMW 3 Series', "it's a 2020 BMW 3 Series")).toBe('2020 3');
     expect(textValueFigures('2020 BMW 3 Series', "it's a BMW, the 3 Series")).toBe('3');

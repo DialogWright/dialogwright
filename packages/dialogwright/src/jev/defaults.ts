@@ -18,6 +18,7 @@ export const QUIET_NOUL: Record<string, number> = {
   callerMatchDeclined: 0.05,
   intentTentative: 0.05,
   manipulation: 0.04,
+  asksPrice: 0.05,
 };
 
 export const QUIET_SCORE_WINNER: Record<string, string> = {

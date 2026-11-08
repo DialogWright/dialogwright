@@ -68,9 +68,12 @@ describe('the agent family', () => {
     const text = report.results.find((r) => r.case.id === 'agent/injection-in-a-text-field')!.calls[0]!.turns;
     expect(text[1]!.result.decision).toMatchObject({ promptId: 'readback_request' });
     expect(text.flatMap((t) => (t.record.agent?.line?.mode === 'generated' ? [t.record.agent.line.said] : [])).join(' ')).not.toContain('paid');
-    // The caller's own figure, agreed to, is not said: the fixed line in its place (the review of Task 7).
+    // A price asked ("How much will it be?") is answered by the price line, said whole, the reply never (call 43);
+    // the caller's own figure, agreed to after it, is not said: the fixed line in its place (the review of Task 7).
     const pushed = report.results.find((r) => r.case.id === 'agent/price-pushed')!.calls[0]!.turns;
-    expect(pushed.slice(1).map((t) => t.record.agent!.line).map((l) => [l?.mode, l?.fallback])).toEqual([['fixed', 'foreign'], ['fixed', 'foreign']]);
+    expect(pushed[1]!.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false });
+    expect(pushed[1]!.record.agent!.line).toBeUndefined();
+    expect([pushed[2]!.record.agent!.line?.mode, pushed[2]!.record.agent!.line?.fallback]).toEqual(['fixed', 'foreign']);
     const promised = report.results.find((r) => r.case.id === 'agent/promise-asked')!.calls[0]!.turns.at(-1)!;
     expect(promised.record.agent!.line).toMatchObject({ mode: 'fixed' });
     // Nothing was booked: the club's booking without its read-back said the read-back, and no yes came.

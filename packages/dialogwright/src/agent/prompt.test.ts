@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SUBMIT_ABOUT } from '../core/agentTurn';
 import { agentMessages } from './prompt';
 import type { AgentContext } from './types';
 
@@ -28,7 +29,7 @@ const ctx: AgentContext = {
     { name: 'day', type: 'date', about: 'The day the caller would like.', value: null, required: true },
     { name: 'window', type: 'choice', options: ['morning', 'afternoon'], value: null, required: false },
   ],
-  actions: [{ name: 'submit', about: 'Read back what is collected so the caller can confirm it.' }],
+  actions: [{ name: 'submit', about: SUBMIT_ABOUT }],
   lines: ['price'],
   conversation: [
     { who: 'line', text: 'Thanks for calling Example Service Desk. How can I help?' },

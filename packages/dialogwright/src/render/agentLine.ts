@@ -51,8 +51,9 @@ import { DEFAULT_RENDER_CHECK_TIMEOUT_MS, SPAN_GAP, type RenderFallback, type Re
  * should I change?"; for a reply said before the turn's own line, an aside, nothing), and the audit records
  * `render_fallback` with the check's name. The core's records of what was said (Session.lastPromptText, the
  * conversation kept for the agent model) and the decision traced are corrected to what was said.
- * A price is never worded at all: an answer that names the price line has it said whole by the core
- * (AgentAnswer.fixedLine, core/agentTurn.ts), and a reply with a figure the facts do not hold falls back here.
+ * A price is never worded at all: where the decision model reads a price asked, the price line is said whole
+ * by the core in place of the reply, named by the answer or not (AgentAnswer.fixedLine, core/agentTurn.ts
+ * lineDue), and a reply with a figure the facts do not hold falls back here.
  */
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;

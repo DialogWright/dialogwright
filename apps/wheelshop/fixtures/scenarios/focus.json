@@ -8,13 +8,6 @@
         "say": "How much do you charge to fix curb rash?",
         "agent": {
           "reply": "It depends on the damage.",
-          "values": [
-            {
-              "field": "damage",
-              "value": "curb rash",
-              "words": "curb rash"
-            }
-          ],
           "fromFacts": true,
           "fixedLine": "price"
         }

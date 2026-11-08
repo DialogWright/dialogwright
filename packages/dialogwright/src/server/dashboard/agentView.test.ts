@@ -102,6 +102,10 @@ describe('the console\'s call view of an agent turn', () => {
     expect(agentOf({ ms: 1200, use: 'failed', fallback: 'timeout', detail: 'no answer within 1200 ms', values: [], action: 'none', replySaid: false })).toMatchObject({ use: 'failed', why: 'no answer: timeout (no answer within 1200 ms), the fixed line said' });
     expect(agentOf({ ms: 300, use: 'dropped', dropped: 'ignore', values: [], action: 'none', reply: 'Sure.', replySaid: false })).toMatchObject({ why: 'answer set aside: side speech', reply: { said: false, why: 'the turn was decided without it' } });
     expect(agentOf({ ms: 300, use: 'used', values: [], action: 'none', reply: 'About forty.', replySaid: false, fixedLine: 'price' })!.reply).toEqual({ text: 'About forty.', said: false, why: 'the price line was said whole in its place' });
+    // The decision model's reading of a price asked (call 43): the line said, read alone, or named and not said.
+    expect(agentOf({ ms: 300, use: 'used', values: [], action: 'none', replySaid: false, fixedLine: 'price', priceAsked: { score: 0.91, at: 0.5, named: false } })!.price).toBe('the price line said, not named by the agent: the decision model read a price asked at 0.91 (bar 0.5)');
+    expect(agentOf({ ms: 300, use: 'used', values: [], action: 'none', replySaid: false, priceAsked: { score: 0.04, at: 0.5, named: true } })!.price).toBe('the price line named by the agent, not said: the decision model read a price asked at 0.04 (bar 0.5)');
+    expect(agentOf({ ms: 300, use: 'used', values: [], action: 'none', replySaid: false, priceAsked: { score: 0.04, at: 0.5, named: false } })!.price).toBeUndefined();
     // The action it proposed, and what the turn did with it.
     expect(agentOf({ ms: 300, use: 'used', values: [], action: 'submit', actionOutcome: 'ignored', replySaid: false })).toMatchObject({ action: 'submit', actionOutcome: 'ignored' });
     expect(agentOf(undefined)).toBeNull();

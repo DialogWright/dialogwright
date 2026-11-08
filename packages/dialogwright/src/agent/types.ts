@@ -27,6 +27,13 @@ export type AgentAction = string;
 /** The action an answer names when it proposes none. */
 export const NO_ACTION = 'none';
 
+/**
+ * The price line's name (business.yaml's `prices.say`: AgentFacts.fixed, AgentApp.lines), and the decision
+ * model's question it is said on (core/questions.ts): the caller asks what something costs.
+ */
+export const PRICE_LINE = 'price';
+export const PRICE_QUESTION = 'asksPrice';
+
 /** The agent model's answer to one turn, in the fixed shape it is asked for (agent/schema.ts). */
 export interface AgentAnswer {
   /** The reply to say: checked, judged, and replaced by a fixed line when it fails. */

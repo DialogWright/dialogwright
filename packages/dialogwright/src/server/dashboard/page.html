@@ -775,7 +775,8 @@
         ? `<span class="dnote k-generated"><span class="lbl-d">agent reply · said</span>${esc(a.reply.text)}${judged(a.reply)}</span>`
         : `<span class="dnote k-fixed"><span class="lbl-d">agent reply · not said</span>${esc(a.reply.why ?? '')}${judged(a.reply)}</span><span class="dnote k-refused"><span class="lbl-d">not said</span><q>${esc(a.reply.text)}</q></span>`;
     const why = a.why !== undefined && l.kind !== 'marker' ? `<span class="dnote k-fixed"><span class="lbl-d">agent</span>${esc(a.why)}</span>` : '';
-    return why + values + action + reply;
+    const price = a.price !== undefined ? `<span class="dnote k-fixed"><span class="lbl-d">price line</span>${esc(a.price)}</span>` : '';
+    return why + values + action + price + reply;
   }
 
   /** Generated wording under an agent line: each line the app generates, said generated with its fixed line beside it, or fixed and why (and the wording refused, not said), with the drift judge's score where it was asked. */

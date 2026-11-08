@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../channel/events';
 import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
-import { NO_ACTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
+import { NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
 import { isChoice, noulValue, type AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
@@ -84,6 +84,11 @@ import type { RenderLine } from '../render/types';
  *    reply is not said (a recording: the model read "I'll have the owner call you back to confirm" as a
  *    callback, mid-request, the decision model reading wantsHuman 0.02).
  *    A form's `then` tools are the engine's, called only by the yes at its read-back; the model never runs a tool.
+ * 6a. **The price line** (business.yaml's `prices.say`), said whole before the turn's own line in place of the
+ *    reply, where the decision model reads the caller asking what something costs (its `asksPrice` question,
+ *    at AGENT_PRICE_ASKED or above), whether or not the answer named it; named where it reads under that, the
+ *    line is not said and the turn goes on as one that named none (lineDue; the agent-mode design, call 43).
+ *    At a read-back it is an aside, under the same bound as any other.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
  *    says why (`fallback`); at a read-back the turn is read again the scripted way (run/turn.ts
  *    scriptedReading). The second such turn in a row hands off: the handoff line, then the person form,
@@ -129,8 +134,20 @@ export interface AgentTurnRecord {
   fromFacts?: boolean;
   /** Whether the reply was said, as an agent line in place of its fallback or before it. */
   replySaid: boolean;
-  /** The fixed line the answer named in place of its reply (AgentAnswer.fixedLine: the price line), said whole before the turn's line; the reply was not said. */
+  /**
+   * The fixed line said whole before the turn's line in place of the reply (the price line): the one the answer
+   * named (AgentAnswer.fixedLine), or the price line the decision model read the caller asking for where the
+   * answer named none (`priceAsked`). The reply was not said.
+   */
   fixedLine?: string;
+  /**
+   * The decision model's reading of whether the caller asks what something costs (its `asksPrice` question), on
+   * a turn of an app with a price line (the agent-mode design, call 43): `score`, the bar it was read against
+   * (AGENT_PRICE_ASKED), and whether the answer named the price line. The line is said where the score reaches
+   * the bar (and the form open allows it, `prices.forms`), named or not; under it, never, and a reply written
+   * beside it is held as any other.
+   */
+  priceAsked?: { score: number; at: number; named: boolean };
   /**
    * The reply held to the facts (render/agentLine.ts): the agent line as said (`mode: generated`, with the
    * judge's reading) or replaced by its fixed line (`mode: fixed`, with why, the reply refused, and the
@@ -249,8 +266,12 @@ function heldValue(app: App, session: Session, f: AgentAppField): string | null 
   return f.type === 'choice' ? (slot.display ?? slot.value) : slot.value;
 }
 
-/** What `submit` and `callback` are, as the model is told (actionsFor; the bake-off's turns, agent/bakeoffCases.ts, are told the same). */
-export const SUBMIT_ABOUT = 'every required field is filled: the line reads back what it understood for the caller to confirm';
+/**
+ * What `submit` and `callback` are, as the model is told (actionsFor; the bake-off's turns, agent/bakeoffCases.ts,
+ * are told the same). `submit` is for a form with nothing required left (the agent-mode design, call 43: a live
+ * chat's model proposed it with a required field still empty, which the core ignores).
+ */
+export const SUBMIT_ABOUT = 'only once nothing the form needs is still missing (no required field left in <still_needed>): the line reads back what it understood for the caller to confirm';
 export const CALLBACK_ABOUT = 'the caller asks to speak with a person rather than go on: the line takes a callback note in place of what it was doing. Never for a call or a text the business makes anyway (a quote, a confirmation)';
 
 /** What the model may propose on this turn: `submit` with a form open, `callback` where there is a person form not open, and always none. A form's `then` is the engine's, never offered. */
@@ -628,8 +649,8 @@ function freeOptions(app: App, s: Session, field: AgentAppField, tc: TurnContext
   return Array.isArray(list) && list.every((x) => typeof x === 'string') ? (list as string[]) : null;
 }
 
-/** Whether an answer understood nothing: no value, no action, nothing from the facts (a miss, which speech over a line sets aside). */
-const understoodNothing = (a: AgentAnswer): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts && (a.fixedLine === undefined || a.fixedLine === NO_ACTION);
+/** Whether an answer understood nothing: no value, no action, nothing from the facts, no fixed line said (a miss, which speech over a line sets aside). */
+const understoodNothing = (a: AgentAnswer, fixed: boolean): boolean => a.values.length === 0 && a.action === NO_ACTION && !a.fromFacts && !fixed;
 
 /** Whether a fixed line may be named with `form` open (AgentApp.lineForms: business.yaml's `prices.forms`): with no form open, or a line no form list limits, always. */
 function lineAllowed(app: App, line: string, form: FormId | null): boolean {
@@ -637,17 +658,35 @@ function lineAllowed(app: App, line: string, form: FormId | null): boolean {
   return form === null || forms === undefined || forms.includes(form);
 }
 
-/** The fixed line an answer names in place of its reply (AgentAnswer.fixedLine), with the prompt it is said through, where the app has it and allows it in the form open; else null. */
-function fixedLineOf(app: App, answer: AgentAnswer | null, form: FormId | null): { name: string; promptId: string } | null {
-  const name = answer?.fixedLine;
-  if (name === undefined || name === NO_ACTION || !lineAllowed(app, name, form)) return null;
+/** The fixed line `name` (one an answer names in place of its reply), with the prompt it is said through, where the app has it and allows it in the form open; else null. */
+function fixedLineOf(app: App, name: string | null, form: FormId | null): { name: string; promptId: string } | null {
+  if (name === null || name === NO_ACTION || !lineAllowed(app, name, form)) return null;
   const promptId = app.agent?.lines[name];
   return promptId !== undefined && Object.hasOwn(app.prompts.manifest, promptId) ? { name, promptId } : null;
 }
 
 /**
- * A turn whose answer named a fixed line (the price line): that line said whole, first, and the reply
- * never, so a price is never worded; the turn's own line (a field's question, the read-back) after it.
+ * The fixed line due on this turn (the agent-mode design, call 43), given the line the answer named (or null):
+ * the price line only where the decision model read the caller asking what something costs, at
+ * AGENT_PRICE_ASKED or above (its `asksPrice` question, asked on every turn of an app with a price line), so
+ * the line is the business's answer to a caller who asked, never a "what happens next" the agent model chose:
+ * named and so read, it is said; named and read under the bar, it is not, and the turn goes on as one that
+ * named none; read and not named, it is said all the same. The reading is kept on the record. A line with no
+ * question of its own is due as named.
+ */
+function lineDue(app: App, named: string | null, answers: AnswerMap, t: Thresholds, record: AgentTurnRecord): string | null {
+  if (app.agent?.lines[PRICE_LINE] === undefined) return named;
+  const answer = answers[PRICE_QUESTION];
+  const score = answer !== undefined ? noulValue(answers, PRICE_QUESTION) : null;
+  if (score !== null) record.priceAsked = { score, at: t.AGENT_PRICE_ASKED, named: named === PRICE_LINE };
+  const asked = score !== null && atLeast(score, t.AGENT_PRICE_ASKED);
+  if (named === PRICE_LINE) return asked ? PRICE_LINE : null;
+  return named ?? (asked ? PRICE_LINE : null);
+}
+
+/**
+ * A turn with a fixed line due (the price line, lineDue): that line said whole, first, and the reply never,
+ * so a price is never worded; the turn's own line (a field's question, the read-back) after it.
  */
 function withFixedLine(h: Handled, fixed: { name: string; promptId: string } | null, record: AgentTurnRecord): Handled {
   if (fixed === null || h.decision.kind !== 'prompt') return h;
@@ -775,13 +814,19 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
     if (action !== NO_ACTION) record.actionOutcome = outcome;
   };
 
-  // An answer that names a fixed line (the price line): that line said whole before the turn's own, never the reply.
-  const named = answer?.fixedLine !== undefined && answer.fixedLine !== NO_ACTION;
-  const fixed = fixedLineOf(app, answer, s.form);
+  // A fixed line due (the price line: named by the answer and read by the decision model, or read alone):
+  // that line said whole before the turn's own, never the reply. A line named that the decision model does
+  // not read as asked for is not due: the turn goes on as one that named none (lineDue).
+  const named = answer !== null && answer.fixedLine !== undefined && answer.fixedLine !== NO_ACTION ? answer.fixedLine : null;
+  const due = answer !== null ? lineDue(app, named, answers, io.tc.thresholds, record) : null;
+  const fixed = fixedLineOf(app, due, s.form);
   const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null });
-  // A line named where the business does not allow it (prices.forms), with the form open before the turn or
-  // the one it opened: not said, and nor is the reply written to stand beside it; the turn's own line is.
-  if (named && (fixed === null || !lineAllowed(app, fixed.name, s.form))) return withoutAgentReply(handled, record);
+  if (fixed === null || !lineAllowed(app, fixed.name, s.form)) {
+    // A line named and due where the business does not allow it (prices.forms), with the form open before the
+    // turn or the one it opened: not said, and nor is the reply written to stand beside it; the turn's own
+    // line is. A line read but not named, there: the turn as it stands.
+    return named !== null && due === named ? withoutAgentReply(handled, record) : handled;
+  }
   return withFixedLine(handled, fixed, record);
 }
 
@@ -832,7 +877,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   const looked = applied.refused === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
-  if (answer !== null && understoodNothing(answer) && !opened) io.missed = true;
+  if (answer !== null && understoodNothing(answer, failed.fixed) && !opened) io.missed = true;
 
   if (failedTwice) {
     // 7. A second failure in a row where the turn needed the answer: the handoff line.

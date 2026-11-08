@@ -338,9 +338,15 @@ describe('the agent turn: what the business limits (prices.forms, freeFrom)', ()
     expect(c.last.record.agent).toMatchObject({ replySaid: false });
     expect(c.last.record.agent?.fixedLine).toBeUndefined();
     // In the request it is offered.
-    const r = await call({ [HOLD]: { ...said(''), fixedLine: 'price' } as AgentAnswer }, [HOLD]);
+    const HOLD_FEE = `${HOLD}, and what does a hold cost`;
+    const r = await call({ [HOLD_FEE]: { ...said(''), fixedLine: 'price' } as AgentAnswer }, [HOLD_FEE]);
     expect(r.contexts[0]!.lines).toEqual(['price']);
     expect(heard(r.last)).toContain('Fees are explained at the desk');
+    // A cost asked in the booking, the price line not named: still not said there.
+    const unnamed = await call({ [BOOK]: said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday']]), [FEE]: { ...said('Which window would you like?'), fixedLine: 'none' } as AgentAnswer }, [BOOK, FEE], { number: CLUB });
+    expect(heard(unnamed.last)).not.toContain('Fees are explained');
+    expect(unnamed.last.record.agent).toMatchObject({ priceAsked: { score: 0.9, at: 0.5, named: false } });
+    expect(unnamed.last.record.agent?.fixedLine).toBeUndefined();
   });
 
   it('a window its day\'s result lists as taken is refused (freeFrom): the model asked again with it, and "the afternoon works" never said', async () => {
@@ -843,5 +849,94 @@ describe('the budget', () => {
     const s = (await runTurn(newSession('S-budget', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), STRANGER), o)).result.session;
     const r = await runTurn(s, speechEvent(HOLD), o);
     expect(r.record.agent).toMatchObject({ use: 'failed', fallback: 'timeout', detail: 'no answer within 300 ms' });
+  });
+});
+
+describe('the agent turn: the price line needs the decision model (call 43)', () => {
+  const PRICE = 'Fees are explained at the desk, by the person who looks at your account.';
+  const NAME_Q = "What's your name?";
+  const FIRST = 'Avery Lane, two copies in large print, Thursday morning';
+  const FIRST_ANSWER = said('Thanks, Avery.', [['patronName', 'Avery Lane', 'Avery Lane'], ['copies', 'two', 'two copies'], ['format', 'large print', 'large print'], ['day', '2026-11-12', 'Thursday'], ['window', 'morning', 'morning']]);
+  const NUMBER = 'you can text me at 555 555 0144';
+  const COST = 'how much does a hold cost';
+  /** The decision model with its price reading set: the heuristic stub's, with `asksPrice` at `score`. */
+  const pricedAt = (score: number): JevClient => {
+    const inner = jev();
+    return { async ask(req) {
+      const r = await inner.ask(req);
+      return Object.hasOwn(req.questions, 'asksPrice') ? { ...r, answers: { ...r.answers, asksPrice: noulAnswer(score) } } : r;
+    } };
+  };
+
+  it('the decision model is asked whether the caller asks what something costs, worded as a yes or no with its criteria', async () => {
+    const j = jev();
+    await call({ [HOLD]: HOLD_ANSWER }, [HOLD], { jev: j });
+    const q = j.asked.map((r) => r.questions.asksPrice).find((x) => x !== undefined);
+    expect(q).toMatchObject({ type: 'noul', instructions: 'Read asr.text. Does the caller ask what something costs, such as a price, a fee, a quote, or how much it is?' });
+    expect(Object.keys((q as { criteria: Record<string, string> }).criteria)).toEqual(['true', 'false']);
+  });
+
+  it('named on the turn that gives the last field (a callback number), with no price asked: the line is not said, and the read-back is', async () => {
+    const c = await call({
+      [HOLD]: HOLD_ANSWER,
+      [FIRST]: FIRST_ANSWER,
+      [NUMBER]: { ...said('Thanks. Once I send this, the desk will be in touch.', [['callbackNumber', '5555550144', '555 555 0144']]), fixedLine: 'price' } as AgentAnswer,
+    }, [HOLD, FIRST, NUMBER], { chat: true });
+    const t = c.last;
+    expect(promptOf(t)).toBe('readback_request');
+    expect(heard(t)).not.toContain(PRICE);
+    expect(heard(t).startsWith("Here's the hold:")).toBe(true);
+    expect(t.record.agent).toMatchObject({ replySaid: false, priceAsked: { score: 0.05, at: DEFAULT_THRESHOLDS.AGENT_PRICE_ASKED, named: true } });
+    expect(t.record.agent?.fixedLine).toBeUndefined();
+  });
+
+  it('named, with no price asked, mid-form: the turn goes on as one that named none, the reply held as any other', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'it is for Avery Lane': { ...said('Thanks, Avery. How many copies?', [['patronName', 'Avery Lane', 'Avery Lane']]), fixedLine: 'price' } as AgentAnswer }, [HOLD, 'it is for Avery Lane']);
+    expect(heard(c.last)).toBe('Thanks, Avery. How many copies?');
+    expect(c.last.record.agent).toMatchObject({ replySaid: true, priceAsked: { named: true } });
+    expect(c.last.record.agent?.fixedLine).toBeUndefined();
+  });
+
+  it('a price asked, the line named: the line is said whole, never the reply', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...said('Holds are free.', [], 'none', true), fixedLine: 'price' } as AgentAnswer }, [HOLD, COST]);
+    expect(heard(c.last)).toBe(`${PRICE} ${NAME_Q}`);
+    expect(c.last.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false, priceAsked: { score: 0.9, named: true } });
+  });
+
+  it('a price asked, the line not named: the line is said all the same, never the reply', async () => {
+    const c = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...said('Holds are free. What name is it under?', [], 'none', true), fixedLine: 'none' } as AgentAnswer }, [HOLD, COST]);
+    expect(heard(c.last)).toBe(`${PRICE} ${NAME_Q}`);
+    expect(heard(c.last)).not.toContain('free');
+    expect(c.last.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false, priceAsked: { score: 0.9, named: false } });
+    // Nor is the turn a miss over a line: the line answered something.
+    const over = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...said(''), fixedLine: 'none' } as AgentAnswer }, [HOLD, { text: COST, overLine: true }]);
+    expect(over.last.result.setAside).toBeUndefined();
+    expect(heard(over.last)).toBe(`${PRICE} ${NAME_Q}`);
+  });
+
+  it('the bar: read at AGENT_PRICE_ASKED the line is said, just under it it is not, named or not', async () => {
+    const named = { ...said('Thanks.'), fixedLine: 'price' } as AgentAnswer;
+    const at = await call({ [HOLD]: HOLD_ANSWER, [COST]: named }, [HOLD, COST], { jev: pricedAt(0.5) });
+    expect(heard(at.last)).toBe(`${PRICE} ${NAME_Q}`);
+    expect(at.last.record.agent).toMatchObject({ fixedLine: 'price', priceAsked: { score: 0.5, at: 0.5, named: true } });
+    const under = await call({ [HOLD]: HOLD_ANSWER, [COST]: named }, [HOLD, COST], { jev: pricedAt(0.49) });
+    expect(heard(under.last)).not.toContain(PRICE);
+    expect(under.last.record.agent).toMatchObject({ priceAsked: { score: 0.49, at: 0.5, named: true } });
+    expect(under.last.record.agent?.fixedLine).toBeUndefined();
+    const unnamedAt = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...named, fixedLine: 'none' } }, [HOLD, COST], { jev: pricedAt(0.5) });
+    expect(heard(unnamedAt.last)).toBe(`${PRICE} ${NAME_Q}`);
+    const unnamedUnder = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...named, fixedLine: 'none' } }, [HOLD, COST], { jev: pricedAt(0.49) });
+    expect(heard(unnamedUnder.last)).not.toContain(PRICE);
+  });
+
+  it('at the read-back, a price asked and not named is an aside under the same bound: the first in a row uncounted, the second counted', async () => {
+    const ASK = 'and what will that cost me';
+    const c = await call({ [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER, [ASK]: { ...said(''), fixedLine: 'none' } as AgentAnswer }, [HOLD, DETAILS, ASK, ASK]);
+    const [, , , first, second] = c.runs;
+    expect(heard(first!)).toBe(`${PRICE} ${READ_BACK}`);
+    expect(first!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 0, aside: true });
+    expect(heard(second!).startsWith(PRICE)).toBe(true);
+    expect(second!.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
+    expect(toolCalls(c, 'placeHold')).toEqual([]);
   });
 });

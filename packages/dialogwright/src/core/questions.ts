@@ -1,3 +1,4 @@
+import { PRICE_LINE, PRICE_QUESTION } from '../agent/types';
 import type { QuestionMap } from '../jev/types';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { formIntents, intentCriteria } from './app/intents';
@@ -277,11 +278,36 @@ function heldByCallerMatch(session: Session): SlotSpec[] {
 /**
  * What the decision model is asked on a turn of an app in agent mode (core/agentTurn.ts): only what it
  * reads on every turn (side speech, words made out, a person asked for, frustration, the language, the
- * request), and at a pending confirmation the yes or the no, since that decides what is done. No field's
- * question: the agent model understands the values, and each field's slot type checks them.
+ * request), and at a pending confirmation the yes or the no, since that decides what is done; where the
+ * app has a price line, whether the caller asks what something costs, since that decides whether it is
+ * said. No field's question: the agent model understands the values, and each field's slot type checks them.
  */
 function agentModeQuestions(app: App, session: Session): QuestionMap {
-  return { ...alwaysOn(app), ...(session.pendingConfirmation ? confirmation(app) : {}) };
+  return {
+    ...alwaysOn(app),
+    ...(app.agent?.lines[PRICE_LINE] !== undefined ? priceAsked() : {}),
+    ...(session.pendingConfirmation ? confirmation(app) : {}),
+  };
+}
+
+/**
+ * Whether the caller asks what something costs: asked on every turn of an app in agent mode that has a price
+ * line (business.yaml's `prices`), and nowhere else. The price line is said where this reads at
+ * AGENT_PRICE_ASKED or above, whether or not the agent model named it, and never where it reads under it
+ * (core/agentTurn.ts; the agent-mode design, call 43): a live chat's agent model named it on the turn the
+ * caller gave a callback number, as a "what happens next", and the whole line was said with no price asked.
+ */
+function priceAsked(): QuestionMap {
+  return {
+    [PRICE_QUESTION]: {
+      type: 'noul',
+      instructions: 'Read asr.text. Does the caller ask what something costs, such as a price, a fee, a quote, or how much it is?',
+      criteria: {
+        true: 'The caller asks what something costs or will cost: a price, a fee, a rate, an estimate or a quote, or how much it is, even roughly, as a range, or by proposing a figure',
+        false: 'The caller asks about something else, gives a detail such as a name, a day, a count or a phone number, answers the question just asked, or says nothing about what anything costs',
+      },
+    },
+  };
 }
 
 export function buildQuestions(session: Session, ctx: SlotContext): QuestionMap {

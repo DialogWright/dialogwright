@@ -81,6 +81,12 @@ export const DEFAULT_THRESHOLDS = {
   // on a booklet's 56 follow-ups and 53 questions that stand on their own after another, 0.2 kept the earlier
   // question for 49 follow-ups and left it off 49 of the others (0.5: 34 and 52), 2026-10-21
   KB_FOLLOW_UP: 0.2,
+  // agent mode: the price line (business.yaml's `prices.say`) is said only where the decision model reads, at
+  // this or above, that the caller asks what something costs (its `asksPrice` question), whether or not the
+  // agent model named it; under it, a price line the agent model named is not said and its reply is held as any
+  // other (core/agentTurn.ts; the agent-mode design, call 43). A plain yes or no, so the middle: a live chat's
+  // model named the line on the turn that gave a callback number, as a "what happens next", with no price asked
+  AGENT_PRICE_ASKED: 0.5,
   // confirmations and menus
   CONFIRM_YES: 0.7,
   CONFIRM_NO: 0.7,

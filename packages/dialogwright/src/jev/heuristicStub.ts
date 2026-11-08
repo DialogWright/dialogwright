@@ -284,6 +284,8 @@ export function answerHeuristically(id: string, q: Question, text: string, today
     case 'confirmsYes': return noulAnswer(has(text, /\b(yes|yeah|yep|correct|right|sure|that's it)\b/) ? 0.9 : 0.1);
     case 'confirmsNo': return noulAnswer(has(text, /\b(no|nope|wrong|not|incorrect)\b/) ? 0.9 : 0.1);
     case 'callerMatchDeclined': return noulAnswer(has(text, /\b(no|nope|different account|another account|not me|not mine|not my account)\b/) ? 0.9 : 0.05);
+    // Agent mode's price question (core/questions.ts priceAsked).
+    case 'asksPrice': return noulAnswer(has(text, /\b(cost|costs|price|prices|pricing|charge|charges|fee|fees|quote|ballpark|how much|bucks|dollars?)\b/) ? 0.9 : 0.05);
     case 'manipulation': return noulAnswer(manipulationPattern(app?.testing?.heuristics?.organization).test(text) ? 0.9 : 0.04);
     // Generated wording's drift check (render/checks.ts), whose state holds the line, not a caller's words.
     case 'renderDrift': return noulAnswer(0.04); // judged on the whole state: HeuristicStubClient.ask (stubDrift)

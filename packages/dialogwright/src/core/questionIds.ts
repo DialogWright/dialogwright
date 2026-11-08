@@ -16,13 +16,15 @@ export const ALWAYS_ON_IDS = [
 
 /**
  * Every question id the engine itself asks, in any state: the always-on ones, the confirmation's,
- * the in-form, opener, summary and menu ones, the injection screen's, and the caller-ID question's
- * (identity.yaml's `callerId`). An app's own question
+ * the in-form, opener, summary and menu ones, the injection screen's, the caller-ID question's
+ * (identity.yaml's `callerId`), and agent mode's price question. An app's own question
  * (App.questions) may not take one, even in a state where the engine would not ask it, since the
  * engine reads its answers by these names; nor may a slot's (SlotSpec.questions), for the same reason.
  */
 export const ENGINE_QUESTION_IDS: readonly string[] = [
   ...ALWAYS_ON_IDS, 'confirmsYes', 'confirmsNo', 'intentChange', 'secondIntent', 'changeSlot', 'menuNumberSaid', 'manipulation', 'callerMatchDeclined',
+  // Agent mode's, where the app has a price line (core/questions.ts priceAsked).
+  'asksPrice',
 ];
 
 /** A question id a slot declares (SlotSpec.questionIds), or asks, that it may not have, and what it collides with. */

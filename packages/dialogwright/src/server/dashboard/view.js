@@ -156,6 +156,15 @@ export function agentOf(a) {
     else if (a.replySaid === true) reply = { text, said: true };
     else reply = { text, said: false, why: a.use === 'dropped' ? 'the turn was decided without it' : 'the turn said its fixed line' };
   }
+  // The decision model's reading of a price asked (an app with a price line; the agent-mode design, call 43): shown
+  // where it bore on the turn, the line named by the agent or read as asked.
+  const p = a.priceAsked;
+  let price;
+  if (p !== null && typeof p === 'object' && typeof p.score === 'number' && typeof p.at === 'number') {
+    const reading = `the decision model read a price asked at ${judgeNumber(p.score)} (bar ${judgeNumber(p.at)})`;
+    if (typeof a.fixedLine === 'string') price = `the price line said${p.named === true ? ', named by the agent' : ', not named by the agent'}: ${reading}`;
+    else if (p.named === true) price = `the price line named by the agent, not said: ${reading}`;
+  }
   const why = a.use === 'dropped'
     ? `answer set aside: ${AGENT_DROPPED[a.dropped] ?? String(a.dropped ?? '')}`
     : a.use === 'failed' ? `no answer: ${String(a.fallback ?? 'none')}${typeof a.detail === 'string' && a.detail !== '' ? ` (${a.detail})` : ''}, the fixed line said` : null;
@@ -166,6 +175,7 @@ export function agentOf(a) {
     action: String(a.action ?? 'none'),
     ...(typeof a.actionOutcome === 'string' ? { actionOutcome: a.actionOutcome } : {}),
     ...(reply !== undefined ? { reply } : {}),
+    ...(price !== undefined ? { price } : {}),
     ...(typeof a.ms === 'number' && Number.isFinite(a.ms) ? { ms: Math.round(a.ms) } : {}),
   };
 }

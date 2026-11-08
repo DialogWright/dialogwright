@@ -131,7 +131,7 @@ Not at 0 to triage, the model's (shown to the maintainer, not tagged):
 - `window-full` fails: on "I've got curb rash on one wheel of my Civic. Can I drop it off Friday morning?" the model gave the vehicle, the wheels and the damage, and neither the day nor the window ("What day works for you to drop it off?"), where it gave both in every earlier recording. The scripted caller then answers questions it was not asked: its "yes, that's right" is read as the diamond cut, and the request is never read back.
 - `claimed-account` passes but differs from the stub baseline: the model held "two cars" as the vehicle and two wheels, and asked the damage before the wheels. The call holds no values, so it passes.
 
-### The sixth recording (call 41), the one committed
+### The sixth recording (call 41)
 
 The calls whose middle turns rested on the order the model asks in now answer what the line asks (`answers`, keyed by the question: the field's slot, `readback_*`, `offer_*`), after their opening: `dealer-trade-ins`, `correction-at-read-back` (the read-back answered in turn: the correction, then the yes), `retail-bmw` (the diamond cut and the name each answered in turn: the caller's question, then the answer), `window-full` and `claimed-account`. So a model that leaves the day out of the opening is asked the day, and the caller gives it. `claimed-account` now goes on to send its request: the booking refused, the request read back and sent, the caller at the level greeted, so its end no longer rests on which values the model took. One corpus line was added for it (`rq-18`, "It's two wheels, both with curb rash."). Only the turns whose requests changed were recorded on top: corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, 0 to triage.
 
@@ -141,6 +141,15 @@ Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 - `corpus.json`, `rq-18`, a new line: its entry the stub's own outcome (`regress --corpus rq-18 --json`), added, never an existing one changed.
 - `scenarios.json`, `claimed-account`: its end is now the request sent (`anything_else`, `done_request`, `notify_owner_request:ALLOW`), as the call keyed by question goes on to send it; the entry is the stub's own outcome (`regress --scenario claimed-account --json`).
 - `scenarios.json`, `price-pushed`: `request_damage` null, as its scripted answer no longer named one; put back to `"curb rash"` with the answer when the fourth recording took the damage again (a value the call does not hold, so no scripted answer is fitted to one recording's sample).
+
+### The seventh recording (call 43), the one committed
+
+The price line now needs the decision model to agree (the design's call 43): it is said where Jev reads the caller asking what something costs (`asksPrice`, at 0.5 or above), named by the model or not, and never on the model's naming alone; the prompt says what each fixed line is for, and `submit` is for a form with nothing required left. Every request changed (Jev's questions and the agent's prompt), so both cassettes were recorded fresh (emptied, then `--client record`): corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, 0 to triage.
+
+- `rq-05` and `rq-10` (a price asked) now say the price line, though the corpus runs with an agent that understands nothing: Jev read them 0.98 and 0.99. Each gives the stubs that reading (`"answers": { "asksPrice": { "noul": 0.9 } }`). `rq-11` gives none: its known gap sets the turn aside, so no line is said under the recording either.
+- `price-pushed`: Jev read the first two pushes 0.99 and 0.96, and the price line was said; the third, "Seriously, just give me a number.", its words alone, 0.02: the model named the line (its reply a copy of the price line, over the word budget), and the caller heard "What's your name?" alone. Its opening answer gave no damage this time (as in the second recording), so its scripted answer gives none.
+
+Baseline: `fixtures/expected/` is the stub's own outcome for the three entries the change moved (`regress --update`, its diff read entry by entry): `rq-05` and `rq-10` with the price line (`acks: ["price"]`), and `price-pushed` with no price line on the third push and no damage held.
 
 ## Not yet
 

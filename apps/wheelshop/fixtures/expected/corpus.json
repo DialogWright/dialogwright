@@ -270,7 +270,9 @@
     "id": "rq-05",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [],
+    "acks": [
+      "price"
+    ],
     "reason": null,
     "decidedGate": null,
     "verdict": "proceed",
@@ -417,7 +419,9 @@
     "id": "rq-10",
     "decision": "prompt",
     "promptId": "ask_request_callerName",
-    "acks": [],
+    "acks": [
+      "price"
+    ],
     "reason": null,
     "decidedGate": "intent",
     "verdict": "route",

@@ -78,7 +78,7 @@ export function agentJsonSchema(actions: readonly string[], fields?: readonly st
       },
       action: { type: 'string', enum: actionNames(actions) },
       fromFacts: { type: 'boolean', description: 'Whether the reply says something from the knowledge base.' },
-      ...(fixed !== null ? { fixedLine: { type: 'string', enum: fixed, description: 'A fixed line that answers the caller, said in its own words in place of the reply; none where no fixed line does.' } } : {}),
+      ...(fixed !== null ? { fixedLine: { type: 'string', enum: fixed, description: 'A fixed line that answers what the caller asked this turn, said in its own words in place of the reply; none where the caller asked nothing a fixed line answers.' } } : {}),
     },
   };
 }
