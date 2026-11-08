@@ -152,6 +152,19 @@ describe('pnpm check holds a condition to a choice field of the form and one of 
     expect(problems((b) => { b.request.then[1].when.is = 'maybe'; })).toEqual(['request.then.1.when.is: "maybe" is not an option of "textOk"']);
   });
 
+  it('an optional field, which the form may send never asked (call 46)', () => {
+    expect(problems((b) => { b.request.fields.find((f: { name: string }) => f.name === 'textOk').optional = true; b.request.fields.find((f: { name: string }) => f.name === 'textOk').says.unset = 'or call you at'; })).toContain('request.then.1.when.field: the field "textOk" is optional, so the form may be sent with it never asked, and "notifyDesk" refused for an answer the caller never gave');
+  });
+
+  it('a reason the gate gives of its own is refused by the schema (call 46)', () => {
+    const b = structuredClone(BASE) as Record<string, any>;
+    withConsent(b);
+    b.request.then[1].when.reason = 'confirmation';
+    const parsed = businessSchema.safeParse(b);
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error?.issues)).toContain('is a reason the gate gives of its own');
+  });
+
   it('the form\'s write, which a yes always makes', () => {
     expect(problems((b) => { b.request.then = [{ tool: 'placeHold', when: { field: 'textOk', is: 'yes' } }, 'notifyDesk']; })).toEqual(["request.then.0.when: \"placeHold\" is the request's write (its first tool), which a yes always makes, so it cannot be held to a condition"]);
   });

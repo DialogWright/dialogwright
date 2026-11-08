@@ -31,11 +31,22 @@ export function e164(number: string): string {
   return digits.length === 10 ? `+1${digits}` : `+${digits}`;
 }
 
+/**
+ * A provider's message made safe to record: each web address `[url]`, and each run of digits, with any
+ * spaces, dots, dashes or brackets between them, that holds seven digits or more `[number]` (a phone number
+ * however it is written).
+ */
+export function scrubbed(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/g, '[url]')
+    .replace(/\+?\(?\d[\d\s().-]*\d/g, (run) => ((run.match(/\d/g) ?? []).length >= 7 ? '[number]' : run));
+}
+
 /** A Twilio error's code and message, safe to record: never the body, the numbers or a key. */
 function errorOf(status: number, body: unknown): string {
   const b = typeof body === 'object' && body !== null ? (body as { code?: unknown; message?: unknown }) : {};
   const code = typeof b.code === 'number' || typeof b.code === 'string' ? ` ${String(b.code)}` : '';
-  const message = typeof b.message === 'string' ? `: ${b.message.replace(/\+?\d{7,}/g, '[number]').slice(0, 200)}` : '';
+  const message = typeof b.message === 'string' ? `: ${scrubbed(b.message).slice(0, 200)}` : '';
   return `HTTP ${status}${code}${message}`;
 }
 
@@ -77,22 +88,32 @@ export function twilioTextProvider(o: TwilioTextOptions): TextProvider {
 /** The most media Twilio attaches to one message. */
 const MAX_MEDIA = 10;
 
+/** Where Twilio keeps a message's media: a URL anywhere else is not handed on. */
+export const TWILIO_MEDIA_PREFIX = 'https://api.twilio.com/';
+
 /**
  * A Twilio incoming-message webhook's fields (From, To, Body, MessageSid, NumMedia, MediaUrlN,
- * MediaContentTypeN) as an IncomingText; null where it names no message or no sender.
+ * MediaContentTypeN) as an IncomingText, with how many media URLs were dropped for not being Twilio's own
+ * (TWILIO_MEDIA_PREFIX: a forward passes the URLs on, so only Twilio's are kept); null where it names no
+ * message or no sender.
  */
-export function parseTwilioMessage(fields: Readonly<Record<string, string>>): IncomingText | null {
+export function parseTwilioMessage(fields: Readonly<Record<string, string>>): { message: IncomingText; mediaDropped: number } | null {
   const id = fields.MessageSid ?? fields.SmsMessageSid ?? '';
   const from = fields.From ?? '';
   if (id === '' || from === '') return null;
   const count = Math.min(Math.max(Number.parseInt(fields.NumMedia ?? '0', 10) || 0, 0), MAX_MEDIA);
   const media: IncomingMedia[] = [];
+  let mediaDropped = 0;
   for (let i = 0; i < count; i++) {
     const url = fields[`MediaUrl${i}`];
     if (url === undefined || url === '') continue;
+    if (!url.startsWith(TWILIO_MEDIA_PREFIX)) {
+      mediaDropped += 1;
+      continue;
+    }
     media.push({ url, contentType: fields[`MediaContentType${i}`] ?? '' });
   }
-  return { id, from, to: fields.To ?? '', body: fields.Body ?? '', media, provider: 'twilio' };
+  return { message: { id, from, to: fields.To ?? '', body: fields.Body ?? '', media, provider: 'twilio' }, mediaDropped };
 }
 
 /** What the webhook is answered with: an empty TwiML response, so Twilio sends nothing back on its own. */

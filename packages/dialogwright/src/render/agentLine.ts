@@ -225,11 +225,12 @@ export interface TextValueJudged {
  * does not read in time, is not held (call 45: the field keeps what it held before, or none, and its
  * question is asked again). In parallel, each within `timeoutMs`. Empty where no such value was accepted.
  */
-export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string }[], judge: JevClient, timeoutMs: number, refuseAt: number, _language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
+export async function judgeTextValues(app: App, values: readonly { field: string; slot?: string; value: string; words: string; outcome: string; restated?: true }[], judge: JevClient, timeoutMs: number, refuseAt: number, _language: string): Promise<{ judged: TextValueJudged[]; usage: JevUsage | null }> {
   const forms = Object.values(app.agent?.forms ?? {});
   const fields = forms.flatMap((f) => f.fields);
   const same = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
-  const asked = values.filter((v) => v.outcome === 'accepted' && fields.find((f) => f.slot === v.slot)?.type === 'text' && !same(v.value, v.words));
+  // A value that restates the one held is no new value: it was judged, or confirmed, when it was first held.
+  const asked = values.filter((v) => v.outcome === 'accepted' && v.restated !== true && fields.find((f) => f.slot === v.slot)?.type === 'text' && !same(v.value, v.words));
   let usage: JevUsage | null = null;
   const add = (u: JevUsage): void => {
     usage = usage === null ? { ...u } : { inputTokens: usage.inputTokens + u.inputTokens, outputTokens: usage.outputTokens + u.outputTokens, estimated: usage.estimated || u.estimated };

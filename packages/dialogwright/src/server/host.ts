@@ -55,9 +55,10 @@ export interface HostApp {
  * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and its chat's sign-in: whom its tokens
  * are for (CHAT_AUDIENCE), who issues them (CHAT_ISSUER) and where that issuer's keys are
  * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own; and the number its texts are
- * sent from (TEXT_FROM: a business's own number, texts/settings.ts). Absent there, the server's.
+ * sent from (TEXT_FROM: a business's own number, texts/settings.ts) and its texts' abuse limits
+ * (TEXT_LIMIT_PER_NUMBER, TEXT_LIMIT_PER_HOUR, TEXT_LIMIT_EXEMPT). Absent there, the server's.
  */
-export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL', 'TEXT_FROM'];
+export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL', 'TEXT_FROM', 'TEXT_LIMIT_PER_NUMBER', 'TEXT_LIMIT_PER_HOUR', 'TEXT_LIMIT_EXEMPT'];
 
 /**
  * What an app's own settings file sets beyond what the server reads from it (`ignored`), in two: the
@@ -97,6 +98,8 @@ export interface HostRouting {
   readonly numbers: readonly HostNumber[];
   /** The app a call to `called` reaches: the one its number points at, else the default. */
   appFor(called: string | null | undefined): string;
+  /** The app host.yaml's `numbers` list `called` for, or null where none does (no default). */
+  listedFor(called: string | null | undefined): string | null;
   /**
    * What the server says as it starts about the numbers: a ten-digit national number that would match
    * two of them (a +1 number and another country's ending in the same ten digits) reaches the first.
@@ -118,16 +121,18 @@ export function hostRouting(o: { apps: readonly HostApp[]; numbers: readonly { v
   if (!byId.has(o.defaultApp)) throw new Error(`host: the default app "${o.defaultApp}" is not one of the apps (${[...byId.keys()].join(', ')})`);
   const numbers = hostNumbers(o.numbers, [...byId.keys()], o.env);
   const ordered = [byId.get(o.defaultApp)!, ...o.apps.filter((a) => a.id !== o.defaultApp)];
+  const listedFor = (called: string | null | undefined): string | null => {
+    if (called === null || called === undefined || called.trim() === '') return null;
+    // Digit for digit first; a ten-digit national number's match only when none is exact.
+    const digits = digitsOf(called);
+    return (numbers.find((n) => digitsOf(n.value) === digits) ?? numbers.find((n) => sameNumber(called, n.value)))?.app ?? null;
+  };
   return {
     apps: ordered,
     defaultApp: o.defaultApp,
     numbers,
-    appFor(called) {
-      if (called === null || called === undefined || called.trim() === '') return o.defaultApp;
-      // Digit for digit first; a ten-digit national number's match only when none is exact.
-      const digits = digitsOf(called);
-      return (numbers.find((n) => digitsOf(n.value) === digits) ?? numbers.find((n) => sameNumber(called, n.value)))?.app ?? o.defaultApp;
-    },
+    appFor: (called) => listedFor(called) ?? o.defaultApp,
+    listedFor,
     warnings: nationalTwins(numbers),
     has: (id) => byId.has(id),
     get(id) {

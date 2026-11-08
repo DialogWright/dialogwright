@@ -118,7 +118,7 @@ export interface AgentTurnRecord {
    * Each value the answer gave: the value proposed and the caller's words it cited, and what its check made
    * of it; an accepted one with its `shown`. Each masked in the trace as the records mask its field's slot.
    */
-  values: { field: string; slot?: SlotId; value: string; words: string; outcome: AgentValueOutcome; shown?: string }[];
+  values: { field: string; slot?: SlotId; value: string; words: string; outcome: AgentValueOutcome; shown?: string; restated?: true }[];
   /** The reply the answer gave, said or not (`replySaid`); masked in the trace as a line said is. */
   reply?: string;
   /** The action the answer proposed (`none` where it proposed none, or there was no answer). */
@@ -546,7 +546,8 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     // masked, was refused as a correction and the read-back set aside).
     const onFile = s.slots[field.slot];
     if (onFile !== undefined && onFile.value !== null && restatesHeld(app, field, onFile, v.value)) {
-      record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'accepted', shown: onFile.display ?? String(onFile.value) });
+      // `restated`: the value held, no new one, so its judge is not asked again (render/agentLine.ts judgeTextValues).
+      record.values.push({ field: field.name, slot: field.slot, value: v.value, words: v.words, outcome: 'accepted', shown: onFile.display ?? String(onFile.value), restated: true });
       continue;
     }
     // A text value the drift judge refused against the caller's words, or did not read in time (call 45):

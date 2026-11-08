@@ -410,7 +410,7 @@
                         "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
                       },
                       "reason": {
-                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"), none of the gate's own (confirmation, identity, scope, ...). Default \"<field>-not-<option>\".",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
                       }
@@ -633,7 +633,7 @@
                         "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
                       },
                       "reason": {
-                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"), none of the gate's own (confirmation, identity, scope, ...). Default \"<field>-not-<option>\".",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
                       }
@@ -854,7 +854,7 @@
                         "description": "The option the field must hold, by its words (\"yes\"): with any other, or none, the gate refuses the tool."
                       },
                       "reason": {
-                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"). Default \"<field>-not-<option>\".",
+                        "description": "The reason the gate records when it refuses the tool (\"no-consent\"), none of the gate's own (confirmation, identity, scope, ...). Default \"<field>-not-<option>\".",
                         "type": "string",
                         "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
                       }

@@ -112,7 +112,7 @@ export interface TurnContext {
    */
   settings?: (name: string) => string | undefined;
   /**
-   * The server's text sender for this turn (ToolContext.texts, AppContext.texts): runTurn makes it from
+   * The server's text sender for this turn (ToolContext.texts: a tool texts, and an app's hooks through a gated tool): runTurn makes it from
    * RunOptions.texts, each text it sends recorded in the turn's audit and trace. Absent where the run has
    * no sender, so no text is sent.
    */

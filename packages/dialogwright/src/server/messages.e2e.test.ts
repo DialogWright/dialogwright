@@ -95,6 +95,34 @@ describe('POST /messages/twilio', () => {
     for (const secret of ['5555550177', '5555550190', 'here it is', 'ME1']) expect(all).not.toContain(secret);
   });
 
+  it('a message Twilio sends again (the same MessageSid) gets the empty answer and is handed to the app once (call 46)', async () => {
+    const { base, audit, provider } = await start();
+    expect((await post(base, PHOTO)).status).toBe(200);
+    await vi.waitFor(() => expect(provider.sent).toHaveLength(1));
+    expect(await post(base, PHOTO)).toMatchObject({ status: 200, text: '<?xml version="1.0" encoding="UTF-8"?><Response/>' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(received).toHaveLength(1);
+    expect(provider.sent).toHaveLength(1);
+    expect(auditRows(audit).filter((x) => x.type === 'text_received')).toHaveLength(1);
+  });
+
+  it('media not at Twilio\'s URLs are dropped before the app sees them, and the drop recorded', async () => {
+    const { base, audit } = await start();
+    expect((await post(base, { ...PHOTO, MessageSid: 'SM00000000000000000000000000000009', MediaUrl1: 'https://example.com/x.jpg' })).status).toBe(200);
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    expect(received[0]!.m.media.map((x) => x.url)).toEqual([PHOTO.MediaUrl0]);
+    await vi.waitFor(() => expect(auditRows(audit).find((x) => x.type === 'text_received')?.detail).toMatchObject({ media: 1, mediaDropped: 1 }));
+  });
+
+  it('a send over the per-number limit is refused and recorded limited (TEXT_LIMIT_PER_NUMBER)', async () => {
+    const { base, audit, provider } = await start({ TEXT_LIMIT_PER_NUMBER: '1' });
+    await post(base, PHOTO);
+    await post(base, { ...PHOTO, MessageSid: 'SM00000000000000000000000000000002' });
+    await vi.waitFor(() => expect(auditRows(audit).filter((x) => x.type === 'text_sent')).toHaveLength(2));
+    expect(provider.sent).toHaveLength(1);
+    expect(auditRows(audit).filter((x) => x.type === 'text_sent').map((x) => x.detail.status)).toEqual(['queued', 'limited']);
+  });
+
   it('a bad signature is refused, and nothing reaches the app', async () => {
     const { base, provider } = await start();
     expect((await post(base, PHOTO, 'wrong')).status).toBe(403);

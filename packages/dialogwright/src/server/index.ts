@@ -68,7 +68,8 @@ import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
 import { textSettings } from '../texts/settings';
 import { twilioTextProvider } from '../texts/twilio';
-import { receivedRecord, recordingTexts, TextKeys, textAuditRow } from '../texts/record';
+import { receivedRecord, recordingTexts, TextKeys, TextLimits, textAuditRow } from '../texts/record';
+import { sameNumber } from '../core/conditions';
 import type { IncomingText, TextProvider, TextRecord } from '../texts/types';
 import { lastFour } from '../core/callerNumber';
 import type { TurnTexts } from '../run/turn';
@@ -503,7 +504,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     textSecret ??= t.authToken;
     const provider = overrides.textProvider ?? twilioTextProvider({ accountSid: t.accountSid, authToken: t.authToken });
-    textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys() });
+    textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys(), limits: new TextLimits(t.limits, now) });
     log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id}; texts that come in: ${MESSAGES_PATH}`);
   }
   const textsOf = (id: string): TurnTexts | null => textSenders.get(appRun(id).id) ?? null;
@@ -964,18 +965,50 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     sweepDisk();
   }
   /**
+   * The app a text that came in is for (the design's call 46): on a server of one, its one app; on a host,
+   * the app whose TEXT_FROM it was sent to, else the one host.yaml's `numbers` list it for; null for a number
+   * no app texts from or is reached by (no default: a text is not a call to the main line).
+   */
+  const textAppOf = (to: string): string | null => {
+    if (!host) return appsRun[0]!.id;
+    const byFrom = appsRun.find((a) => {
+      const t = textSenders.get(a.id);
+      return t !== undefined && sameNumber(to, t.from);
+    });
+    return byFrom?.id ?? host.listedFor(to);
+  };
+  /** The message ids each app was handed lately (the latest SEEN_TEXTS), so a webhook Twilio sends again is handed on once. */
+  const seenTexts = new Map<string, string[]>();
+  const SEEN_TEXTS = 1000;
+  /**
    * A text that came in (POST /messages/twilio), its app picked by the number texted: recorded in the app's
    * audit (text_received, under the provider's message id, channel sms), then handed to the app's onText
-   * with a sender whose texts are recorded beside it. Nothing is fetched of its media.
+   * with a sender whose texts are recorded beside it. Nothing is fetched of its media; media not at Twilio's
+   * own URLs were dropped and are counted. A text for no app is recorded in the server's own audit and
+   * handed to none; one handed on before (the same message id) is not handed on again.
    */
-  const receiveText = async (appId: string | null, m: IncomingText): Promise<void> => {
-    const a = appRun(appId ?? undefined);
+  const receiveText = async (m: IncomingText, mediaDropped: number): Promise<void> => {
+    const appId = textAppOf(m.to);
+    if (appId === null) {
+      log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)} to ...${lastFour(m.to)}: no app texts from or is reached by that number; recorded, handed to none`);
+      await audit.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped, unrouted: true })));
+      return;
+    }
+    const a = appRun(appId);
+    const seen = seenTexts.get(a.id) ?? [];
+    if (seen.includes(m.id)) {
+      log(`${MESSAGES_PATH} ${m.id}${host ? ` (app ${a.id})` : ''}: sent again by the provider; handed on once already`);
+      return;
+    }
+    seen.push(m.id);
+    if (seen.length > SEEN_TEXTS) seen.shift();
+    seenTexts.set(a.id, seen);
     const sink = auditOf(a.id);
     const records: TextRecord[] = [];
     const t = textsOf(a.id);
-    const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => records.push(r)) : null;
-    log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media`);
-    await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m)));
+    const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => records.push(r), t.limits) : null;
+    log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media${mediaDropped > 0 ? `, ${mediaDropped} not at Twilio's URLs dropped` : ''}`);
+    await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m, { mediaDropped })));
     try {
       if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys: toolsOf(a.id).sys, nowMs: now() });
     } catch (err) {
@@ -986,7 +1019,8 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   };
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
-    messages: { secret: textSecret, receive: receiveText },
+    // The incoming-message webhook, only where some app takes texts in or sends them.
+    ...(textSenders.size > 0 || appsRun.some((a) => a.app.onText !== undefined) ? { messages: { secret: textSecret, receive: receiveText } } : {}),
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
     ...(numbers.length > 0 ? { numbers } : {}),

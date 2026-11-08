@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fakeTextProvider, recordingTexts, TextKeys, textAuditRow, receivedRecord } from './record';
-import { textSettings } from './settings';
-import { e164, EMPTY_TWIML, parseTwilioMessage, twilioTextProvider } from './twilio';
+import { fakeTextProvider, recordingTexts, TextKeys, TextLimits, textAuditRow, receivedRecord } from './record';
+import { DEFAULT_TEXT_LIMITS, textSettings } from './settings';
+import { e164, EMPTY_TWIML, parseTwilioMessage, scrubbed, twilioTextProvider } from './twilio';
 import type { TextRecord } from './types';
 
 /**
@@ -44,6 +44,10 @@ describe('Twilio\'s sender', () => {
     expect(await p.send({ from: '+15555550100', to: '+15555550177', body: 'x' })).toEqual({ id: null, status: 'failed', error: "HTTP 400 21211: The 'To' number [number] is not a valid phone number." });
   });
 
+  it('a send error is scrubbed of web addresses and numbers however written (call 46)', () => {
+    expect(scrubbed('See https://www.twilio.com/docs/errors/21610 for +1 (555) 555-0177, 555.555.0177 or 5555550177; code 21610')).toBe('See [url] for [number], [number] or [number]; code 21610');
+  });
+
   it('a fetch that throws is a failed receipt', async () => {
     const p = twilioTextProvider({ accountSid: SID, authToken: 'tok', fetch: (async () => { throw new TypeError('network'); }) as unknown as typeof fetch });
     expect(await p.send({ from: '+15555550100', to: '+15555550177', body: 'x' })).toEqual({ id: null, status: 'failed', error: 'TypeError' });
@@ -58,13 +62,23 @@ describe('Twilio\'s sender', () => {
 describe('the incoming-message webhook\'s fields', () => {
   it('From, To, Body and each medium by its URL and content type, in order', () => {
     expect(parseTwilioMessage({ MessageSid: 'SM1', From: '+15555550177', To: '+15555550100', Body: 'here', NumMedia: '2', MediaUrl0: 'https://api.twilio.com/a', MediaContentType0: 'image/jpeg', MediaUrl1: 'https://api.twilio.com/b', MediaContentType1: 'image/png' })).toEqual({
-      id: 'SM1', from: '+15555550177', to: '+15555550100', body: 'here', provider: 'twilio',
-      media: [{ url: 'https://api.twilio.com/a', contentType: 'image/jpeg' }, { url: 'https://api.twilio.com/b', contentType: 'image/png' }],
+      message: {
+        id: 'SM1', from: '+15555550177', to: '+15555550100', body: 'here', provider: 'twilio',
+        media: [{ url: 'https://api.twilio.com/a', contentType: 'image/jpeg' }, { url: 'https://api.twilio.com/b', contentType: 'image/png' }],
+      },
+      mediaDropped: 0,
     });
   });
 
+  it('keeps only media at Twilio\'s own URLs, and counts what it dropped (call 46)', () => {
+    const parsed = parseTwilioMessage({ MessageSid: 'SM1', From: '+15555550177', To: '+15555550100', NumMedia: '3', MediaUrl0: 'https://api.twilio.com/a', MediaUrl1: 'https://example.com/evil.jpg', MediaUrl2: 'http://api.twilio.com/b' });
+    expect(parsed?.message.media.map((m) => m.url)).toEqual(['https://api.twilio.com/a']);
+    expect(parsed?.mediaDropped).toBe(2);
+    expect(textAuditRow(receivedRecord(parsed!.message, { mediaDropped: parsed!.mediaDropped })).detail).toMatchObject({ media: 1, mediaDropped: 2 });
+  });
+
   it('a photo alone has an empty body; no message id or sender is no message', () => {
-    expect(parseTwilioMessage({ MessageSid: 'SM2', From: '+15555550177', To: '+15555550100', NumMedia: '1', MediaUrl0: 'https://api.twilio.com/a', MediaContentType0: 'image/jpeg' })).toMatchObject({ body: '', media: [{ url: 'https://api.twilio.com/a' }] });
+    expect(parseTwilioMessage({ MessageSid: 'SM2', From: '+15555550177', To: '+15555550100', NumMedia: '1', MediaUrl0: 'https://api.twilio.com/a', MediaContentType0: 'image/jpeg' })?.message).toMatchObject({ body: '', media: [{ url: 'https://api.twilio.com/a' }] });
     expect(parseTwilioMessage({ From: '+15555550177' })).toBeNull();
     expect(parseTwilioMessage({ MessageSid: 'SM3' })).toBeNull();
   });
@@ -111,6 +125,46 @@ describe('a text as it is recorded', () => {
   });
 });
 
+describe('the sender\'s abuse limits (call 46)', () => {
+  const sender = (limits: TextLimits) => {
+    const records: TextRecord[] = [];
+    const fake = fakeTextProvider();
+    return { fake, records, texts: recordingTexts(fake, '+15555550100', new TextKeys(), (r) => records.push(r), limits) };
+  };
+
+  it('refuses a fourth text to one number in 24 hours, recorded limited, never sent, and lets one go the next day', async () => {
+    let now = 0;
+    const { fake, records, texts } = sender(new TextLimits(DEFAULT_TEXT_LIMITS, () => now));
+    for (let i = 0; i < 3; i++) expect((await texts.send({ to: '+15555550177', body: 'x' })).status).toBe('queued');
+    const refused = await texts.send({ to: '5555550177', body: 'x' });
+    expect(refused).toEqual({ id: null, status: 'limited', error: 'limit: 3 texts to one number in 24 hours (TEXT_LIMIT_PER_NUMBER)' });
+    expect(fake.sent).toHaveLength(3);
+    expect(records.at(-1)).toMatchObject({ status: 'limited', number: '...0177' });
+    expect((await texts.send({ to: '+15555550178', body: 'x' })).status).toBe('queued');
+    now = 24 * 60 * 60 * 1000 + 1;
+    expect((await texts.send({ to: '+15555550177', body: 'x' })).status).toBe('queued');
+  });
+
+  it('refuses past the hour\'s limit for the app, and holds an exempt number to the hour only', async () => {
+    const { fake, texts } = sender(new TextLimits({ perNumber: 1, perHour: 3, exempt: ['+15555550190'] }, () => 0));
+    for (let i = 0; i < 3; i++) expect((await texts.send({ to: '+15555550190', body: 'x' })).status).toBe('queued');
+    expect(await texts.send({ to: '+15555550177', body: 'x' })).toMatchObject({ status: 'limited', error: 'limit: 3 texts an hour (TEXT_LIMIT_PER_HOUR)' });
+    expect(fake.sent).toHaveLength(3);
+  });
+
+  it('a limited send keeps no key: sent again later with it, it is sent', async () => {
+    let now = 0;
+    const keys = new TextKeys();
+    const fake = fakeTextProvider();
+    const limits = new TextLimits({ perNumber: 1, perHour: 20, exempt: [] }, () => now);
+    const texts = recordingTexts(fake, '+15555550100', keys, () => undefined, limits);
+    await texts.send({ to: '+15555550177', body: 'x' });
+    expect((await texts.send({ to: '+15555550177', body: 'y', key: 'k' })).status).toBe('limited');
+    now = 24 * 60 * 60 * 1000 + 1;
+    expect((await texts.send({ to: '+15555550177', body: 'y', key: 'k' })).status).toBe('queued');
+  });
+});
+
 describe('the sender\'s settings', () => {
   it('TEXT_FROM unset is no sender', () => {
     expect(textSettings({})).toBeNull();
@@ -118,7 +172,15 @@ describe('the sender\'s settings', () => {
   });
 
   it('TEXT_FROM with the account and its token', () => {
-    expect(textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok' })).toEqual({ from: '+15555550100', provider: 'twilio', accountSid: SID, authToken: 'tok' });
+    expect(textSettings({ TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok' })).toEqual({ from: '+15555550100', provider: 'twilio', accountSid: SID, authToken: 'tok', limits: { perNumber: 3, perHour: 20, exempt: [] } });
+  });
+
+  it('the limits: their defaults, a setting of each, and one refused', () => {
+    const base = { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: 'tok' };
+    expect(textSettings({ ...base, TEXT_LIMIT_PER_NUMBER: '5', TEXT_LIMIT_PER_HOUR: '50', TEXT_LIMIT_EXEMPT: '+15555550190, +15555550191' })?.limits).toEqual({ perNumber: 5, perHour: 50, exempt: ['+15555550190', '+15555550191'] });
+    expect(() => textSettings({ ...base, TEXT_LIMIT_PER_NUMBER: '0' })).toThrow(/TEXT_LIMIT_PER_NUMBER is not a whole number/);
+    expect(() => textSettings({ ...base, TEXT_LIMIT_PER_HOUR: 'lots' })).toThrow(/TEXT_LIMIT_PER_HOUR is not a whole number/);
+    expect(() => textSettings({ ...base, TEXT_LIMIT_EXEMPT: '555-0190' })).toThrow(/TEXT_LIMIT_EXEMPT is not a comma list/);
   });
 
   it('refuses, naming the setting, a number not E.164, a missing or malformed account, a missing token', () => {

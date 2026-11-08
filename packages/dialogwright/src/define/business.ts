@@ -196,6 +196,8 @@ export function businessContentProblems(b: BusinessYaml, report: (path: DataPath
         report(at(['then', i, 'when', 'field']), `the field "${when.field}" is ${field.type}, but a condition reads a choice field's option`, `make "${when.field}" a choice field (options: [yes, no]), or hold "${stepTool(step)}" to a choice field`);
         return;
       }
+      // A consent is asked and answered: a field the form may leave empty would refuse the tool unasked.
+      if (field.optional === true) report(at(['then', i, 'when', 'field']), `the field "${when.field}" is optional, so the form may be sent with it never asked, and "${stepTool(step)}" refused for an answer the caller never gave`, `make "${when.field}" required (delete "optional: true"), so the caller is asked it and confirms it at the read-back`);
       const options = field.options === WINDOWS_OPTIONS ? (b.windows ?? []).map((w) => w.name) : (field.options ?? []);
       if (!options.some((o) => optionKey(o) === when.key)) report(at(['then', i, 'when', 'is']), `"${when.is}" is not an option of "${when.field}"`, `write one of ${options.map((o) => `"${o}"`).join(', ')}`);
     });

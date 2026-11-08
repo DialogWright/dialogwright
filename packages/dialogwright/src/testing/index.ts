@@ -31,6 +31,9 @@ export { isCassetteMiss } from '../jev/cassette';
 export { fakeTextProvider, TextKeys } from '../texts/record';
 export type { FakeSent } from '../texts/record';
 export type { TextProvider } from '../texts/types';
+// One scripted call run in an app's own test (its regression runs every one): with RunOptions such as a fake text sender.
+export { runScenario } from '../harness-text/runner';
+export type { ScenarioRun, ScenarioRunOptions } from '../harness-text/runner';
 // Retrievers for a test of a topic slot or a knowledge app: one that nominates exactly what it is
 // given, and one that nominates by plain keywords (retrievers.ts).
 export { fixedRetriever, keywordRetriever } from './retrievers';

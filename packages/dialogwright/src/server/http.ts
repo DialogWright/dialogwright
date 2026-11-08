@@ -145,10 +145,11 @@ export interface HttpDeps extends HttpApp {
   /**
    * Texts that come in (`POST /messages/twilio`; texts/types.ts, the guide's 13.17): the Twilio auth token
    * their signature is checked with (null where the server has none, so every one is refused while
-   * SIGNATURE_CHECK is on), and what is done with each once Twilio has been answered (index.ts: recorded,
-   * then handed to the app's onText). Absent, the route does not exist (404).
+   * SIGNATURE_CHECK is on), and what is done with each once Twilio has been answered (index.ts: routed to
+   * its app by the number texted, recorded, then handed to the app's onText). Absent (no app has onText
+   * or a sender), the route does not exist (404).
    */
-  messages?: { readonly secret: string | null; receive(appId: string | null, message: IncomingText): Promise<void> };
+  messages?: { readonly secret: string | null; receive(message: IncomingText, mediaDropped: number): Promise<void> };
 }
 
 /** The incoming-message webhook's path: `/messages/<provider>`, Twilio's the one today. */
@@ -767,15 +768,14 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
           reply(res, 403, 'text/plain', 'invalid signature');
           return;
         }
-        const message = parseTwilioMessage(formFields(raw));
-        if (message === null) {
+        const parsed = parseTwilioMessage(formFields(raw));
+        if (parsed === null) {
           deps.log(`${path}: missing MessageSid or From`);
           reply(res, 400, 'text/plain', 'missing MessageSid or From');
           return;
         }
-        const { id: appId } = servedOf(deps, undefined, message.to);
         reply(res, 200, 'text/xml', EMPTY_TWIML);
-        deps.messages.receive(appId, message).catch((e: unknown) => deps.log(`${path} ${message.id}: ${e instanceof Error ? e.message : String(e)}`));
+        deps.messages.receive(parsed.message, parsed.mediaDropped).catch((e: unknown) => deps.log(`${path} ${parsed.message.id}: ${e instanceof Error ? e.name : 'error'}`));
         return;
       }
       // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the

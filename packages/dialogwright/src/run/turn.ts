@@ -1,4 +1,4 @@
-import { recordingTexts, textAuditRow, type TextKeys } from '../texts/record';
+import { recordingTexts, textAuditRow, type TextKeys, type TextLimits } from '../texts/record';
 import type { TextProvider, TextRecord } from '../texts/types';
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
@@ -158,6 +158,8 @@ export interface TurnTexts {
   readonly provider: TextProvider;
   readonly from: string;
   readonly keys: TextKeys;
+  /** The sender's abuse limits (texts/record.ts TextLimits); absent, none (a test's). */
+  readonly limits?: TextLimits;
 }
 
 /**
@@ -516,7 +518,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const sensitive = digit.digitClass ?? null;
   // The texts this turn's tools send, recorded as they go (the audit's text_sent, the trace's texts).
   const sentTexts: TextRecord[] = [];
-  const texts = opts.texts != null ? recordingTexts(opts.texts.provider, opts.texts.from, opts.texts.keys, (r) => sentTexts.push(r)) : null;
+  const texts = opts.texts != null ? recordingTexts(opts.texts.provider, opts.texts.from, opts.texts.keys, (r) => sentTexts.push(r), opts.texts.limits ?? null) : null;
   const base: TurnContext = {
     nowMs: now(),
     todayIso: opts.todayIso,

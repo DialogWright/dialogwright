@@ -86,6 +86,16 @@ const field = z
   .describe('One field a form collects: its name, its slot type and its fixed question.');
 
 /**
+ * The reasons the gate and the engine give of their own: a `when` reason that were one of them would make a
+ * refusal on the condition look like another (a `confirmation` one reads the read-back again, say).
+ */
+export const RESERVED_REASONS: readonly string[] = [
+  'identity', 'scope', 'role', 'confirmed', 'confirmation', 'attempts', 'fields', 'dateInRange', 'limit', 'oneOf', 'noneOf', 'callerNumber',
+  'not-one-of', 'one-of', 'value-missing', 'unlisted', 'unknown-tool', 'unknown-rule', 'subject', 'delegate', 'minimization', 'branch',
+  'rule-error', 'rule-invalid', 'result-unchecked', 'after-unchecked',
+];
+
+/**
  * One tool a form's yes calls: its name, or `{ tool, when }`, a tool called only where a field of the form
  * holds one option (the caller's consent to a text: `{ tool: sendText, when: { field: textOk, is: "yes" } }`).
  * The condition is the gate's: compiled to a `oneOf` rule on the tool's param, so with any other value the
@@ -100,7 +110,10 @@ const thenStep = z.union([
         .strictObject({
           field: identifier().describe('A choice field of the form.'),
           is: text().describe('The option the field must hold, by its words ("yes"): with any other, or none, the gate refuses the tool.'),
-          reason: name().optional().describe('The reason the gate records when it refuses the tool ("no-consent"). Default "<field>-not-<option>".'),
+          reason: name()
+            .refine((r) => !RESERVED_REASONS.includes(r), { error: 'is a reason the gate gives of its own, so a refusal on this condition could not be told from it' })
+            .optional()
+            .describe('The reason the gate records when it refuses the tool ("no-consent"), none of the gate\'s own (confirmation, identity, scope, ...). Default "<field>-not-<option>".'),
         })
         .describe('The condition the gate holds the tool to: a oneOf rule on the field\'s param.'),
     })

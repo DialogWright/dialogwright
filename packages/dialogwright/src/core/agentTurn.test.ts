@@ -1035,6 +1035,24 @@ describe('a text value the judge refuses is never held as raw words (call 45)', 
     expect(st.quoted).toEqual([{ name: 'title', words: 'The Quiet Harbor' }]);
   });
 
+  it('a value that restates the one held is not judged again', async () => {
+    let asks = 0;
+    const stub = jev();
+    const counting: JevClient = {
+      async ask(req) {
+        if (req.questions.renderAgentValue !== undefined) asks += 1;
+        return stub.ask(req);
+      },
+    };
+    const c = await call({
+      [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]),
+      [DETAILS]: said('Thanks.', [['title', 'Quiet Harbor', 'Avery Lane'], ...DETAILS_ANSWER.values.map((v): [string, string, string] => [v.field, v.value, v.words])]),
+    }, [HOLD, DETAILS], { jev: counting });
+    expect(value(c.last, 'request_title')).toBe('Quiet Harbor');
+    expect(c.last.record.agent!.values.find((v) => v.field === 'title')).toMatchObject({ outcome: 'accepted', restated: true });
+    expect(asks).toBe(1);
+  });
+
   it('a judge that does not answer in time holds nothing either: the question asked again', async () => {
     const c = await call({ [HOLD]: said('Happy to help.', [['title', 'Quiet Harbor', 'The Quiet Harbor']]) }, [HOLD], { jev: judgedBy('late') });
     expect(value(c.last, 'request_title')).toBeNull();

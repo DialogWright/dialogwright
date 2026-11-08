@@ -41,7 +41,7 @@ export interface OutgoingText {
 export interface TextReceipt {
   /** The provider's message id ("SM..."), null where it took none (a failure before it answered). */
   readonly id: string | null;
-  /** The provider's status as it answered, or `failed`. */
+  /** The provider's status as it answered, `failed`, or `limited` (refused by the sender's abuse limits before it reached the provider). */
   readonly status: string;
   /** Why it failed, safe to record (the provider's error code and message, never a key or the body). */
   readonly error?: string;
@@ -83,7 +83,7 @@ export interface IncomingText {
   readonly provider: string;
 }
 
-/** What App.onText is given beside the message: the sender, the app's settings and its systems. */
+/** What App.onText is given beside the message: the sender, the app's settings and its systems. Only a tool (ToolContext.texts) and this hook text: an app's other hooks text through a gated tool. */
 export interface TextContext {
   /** The sender, from the app's number; absent where the server has none (TEXT_FROM unset). */
   readonly texts?: Texts;
@@ -116,5 +116,9 @@ export interface TextRecord {
   readonly error?: string;
   /** A send not made again for its key (OutgoingText.key). */
   readonly repeat?: true;
+  /** Media a text that came in carried at URLs that are not the provider's own, dropped, never handed on (twilio.ts parseTwilioMessage). */
+  readonly mediaDropped?: number;
+  /** A text that came in to a number no app texts from or is reached by: recorded in the server's own audit, handed to no app. */
+  readonly unrouted?: true;
   readonly provider: string;
 }

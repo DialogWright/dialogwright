@@ -399,8 +399,6 @@ export interface AppContext {
    * once, as the module is imported: read a setting here, as the call needs it.
    */
   env(name: string): string | undefined;
-  /** The server's text sender, from the app's number (ToolContext.texts); absent where the server has none. */
-  texts?: Texts;
 }
 
 /** How an app hook's call is made (AppContext.callTool). */

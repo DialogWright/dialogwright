@@ -977,7 +977,7 @@ export function takeSummaryHash(s: Session, form: FormId): void {
  * callTool bound to them. The only way an app's code reaches a tool.
  */
 export function appContext(s: Session, tc: TurnContext, out: TurnOut, base: CallOptions = {}): AppContext {
-  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { ...base, failSoft: true } : base), env: settingOf(tc), ...(tc.texts !== undefined ? { texts: tc.texts } : {}) };
+  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { ...base, failSoft: true } : base), env: settingOf(tc) };
 }
 
 /** The app's settings as its code reads them (AppContext.env): the turn's (TurnContext.settings), each unset where the turn has none. */
