@@ -12,6 +12,8 @@ import { declaredFacts, ROUTE_HANDOFF_REASON, routeFormEdges, writtenOutcome } f
 import type { RoutePoint } from '../core/app/types';
 import { slotOutcomeOf } from '../core/outcome';
 import { loadAppFolder, type LoadedConfig, type LoadResult } from './load';
+import { BUSINESS_FILE } from './business';
+import { businessCode, businessCodeProblems } from './businessApp';
 import { DEFAULT_ACTION_LEVEL, DEFAULT_ROLE_PERSON_REASON, personReasons, readRule } from './policyFile';
 import { WHOLE_FILE, closest, formatPath, type DataPath, type Problem } from './problems';
 import { FILE_NAMES, FOLDER_FILES, SLOTS_FILE } from './schema/index';
@@ -320,7 +322,13 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
     // own problems are among the ones above.
     if (found.code) code = codeWithLinkedSlots(config, found.code, loaded.document, codeFile);
   } else if (found.code) {
-    problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
+    // An app in agent mode: its code holds its tools, and the engine writes the rest from business.yaml
+    // (./businessApp.ts); every check below reads the code as the app runs it.
+    const business = config.business;
+    const businessProblems = business !== undefined ? businessCodeProblems(business, found.code, codeFile, (path) => locate(BUSINESS_FILE, path)) : [];
+    problems.push(...businessProblems);
+    if (business !== undefined && businessProblems.length === 0) found.code = businessCode(business, found.code);
+    if (businessProblems.length === 0) problems.push(...crossLink(config, found.code, locate, codeFile, loaded.locateKey, loaded.document));
     checkWarnings({
       config,
       report: (file, path, message, fix, atKey = false) => {
@@ -421,7 +429,8 @@ export async function checkAppFully(dir: string, options: CheckOptions = {}): Pr
   problems.push(...checkMenu(config, locate));
   problems.push(...checkDone(config, locate));
   problems.push(...checkLocaleLabels(config, loaded.locateKey ?? locate));
-  problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
+  // An app in agent mode has no corpus: the model reads the caller, and no intent is asked of the decision model.
+  if (config.business === undefined) problems.push(...checkCorpus(config, locate, dir, options.fixturesRoot));
   problems.push(...checkScenarioGaps(config, dir, options.fixturesRoot));
   if (config.knowledge) {
     if (!linked) problems.push(...kbLinkProblems(config.knowledge, { actions: new Set(Object.keys(config.policy.actions)), locales: Object.keys(config.prompts) }, locate));

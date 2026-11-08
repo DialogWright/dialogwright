@@ -508,12 +508,15 @@ export function validateApp(app: App): void {
     // app's facts.callerMatch.
     // With ways, its factors are all of one way, never all of that way's.
     const callerId = identity.callerId;
+    if (app.mode === 'agent' && app.agent === undefined) fail('the app is in agent mode but carries no agent (App.agent): build it from business.yaml with defineApp');
     if (callerId !== undefined) {
       for (const slot of callerId.identifies) if (!identity.factorSlots.includes(slot)) fail(`identity callerId identifies "${slot}", which is not a factor of level 1`);
       const ways = identity.ways ?? [{ factorSlots: identity.factorSlots, verifyTool: identity.verifyTool }];
       const way = ways.find((w) => callerId.identifies.every((slot) => w.factorSlots.includes(slot)));
       if (way === undefined) fail('identity callerId identifies factors of more than one way; name factors of one way only');
-      else if (way.factorSlots.every((slot) => callerId.identifies.includes(slot))) fail('identity callerId identifies every factor of its way, so the caller-ID match alone would verify; leave at least one factor to be asked');
+      // In agent mode (App.mode), the caller-ID match recognizes an account on its own: the business's
+      // accepted risk (the agent-mode design, call 14), which the policy card states. Never elsewhere.
+      else if (way.factorSlots.every((slot) => callerId.identifies.includes(slot)) && app.mode !== 'agent') fail('identity callerId identifies every factor of its way, so the caller-ID match alone would verify; leave at least one factor to be asked');
       if (callerId.ask !== 'on-need' && callerId.ask !== 'greeting') fail(`identity callerId ask "${String(callerId.ask)}" is not "on-need" or "greeting"`);
       if (app.callerNumber?.lookup === undefined) fail('identity callerId needs a call-start lookup (app.yaml callerNumber: { lookup })');
       if (typeof app.facts?.callerMatch !== 'function') fail('identity callerId needs facts.callerMatch, which reads the match from what the lookup kept');

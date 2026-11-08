@@ -136,3 +136,55 @@ export interface AgentClient {
   readonly request?: AgentRequest;
   answer(ctx: AgentContext, timeoutMs: number): Promise<AgentResult>;
 }
+
+/** A field of a form in an app in agent mode (App.agent), as the agent model is told of it and the core checks it. */
+export interface AgentAppField {
+  /** Its name in business.yaml: the name the model gives its value by. */
+  name: string;
+  /** The slot it is held in (`<form>_<field>`). */
+  slot: string;
+  /** Its slot type. */
+  type: string;
+  about?: string;
+  /** A choice field's options, by the words each is said by. */
+  options?: string[];
+  required: boolean;
+  /** The tool whose result the model sees once it is filled (`sees`). */
+  sees?: string;
+}
+
+/** A form of an app in agent mode (App.agent), as the agent model is told of it and the core runs it. */
+export interface AgentAppForm {
+  /** What it is for, as the model is told. */
+  about: string;
+  fields: AgentAppField[];
+  /** The tools a yes at its read-back calls, in order: the first is its write. */
+  then: string[];
+  /** Who may open it: `accounts`, a caller a caller-ID match recognized; absent, anyone. */
+  for?: 'accounts';
+}
+
+/** The model that leads the conversation of an app in agent mode (style.yaml's `agent`). */
+export interface AgentModelChoice {
+  provider: 'inception' | 'openrouter';
+  model: string;
+  effort: 'instant' | 'low' | 'medium' | 'high';
+}
+
+/**
+ * What an app in agent mode carries for its agent model (App.agent; define/businessApp.ts builds it
+ * from business.yaml): the facts it may use, the owner's sample replies, the forms, the tools whose
+ * checked results it sees, and the model.
+ */
+export interface AgentApp {
+  /** What the model may say, its background and the lines said in fixed words (define/business.ts factsOf). */
+  facts: AgentFacts;
+  /** The owner's sample replies (business.yaml's business.examples), sent as examples of tone (AgentContext.examples). */
+  examples: string[];
+  /** The forms by name (request, booking, callback), in order. */
+  forms: Readonly<Record<string, AgentAppForm>>;
+  /** The tool whose checked result the model sees once a field is filled, by the field's slot (the maintainer's decision 2). */
+  sees: Readonly<Record<string, string>>;
+  /** The model, from style.yaml's `agent` (Mercury 3 on Inception at instant by default). */
+  model: AgentModelChoice;
+}
