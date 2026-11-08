@@ -533,6 +533,27 @@ describe('a number said with a pause (waitForRestMs): the words held, before any
 });
 
 describe('words held over a line the caller could not interrupt (SPEECH_OVER_LINE=unless-miss)', () => {
+  it('the live call under the default: the nine-digit miss, said the moment the question went out, is set aside, and the number is taken', async () => {
+    const call = liveCall(accountApp(), 'telnyx', 'none', { speechOverLine: 'unless-miss' });
+    await toAccount(call, 1);
+    // No re-ask: the miss was over the question, by its estimate.
+    expect(call.wire().at(-1)).toBe(ASK);
+    expect(call.session().slots.account?.attempts).toBe(0);
+    const { held } = firstDigit(call);
+    await vi.advanceTimersByTimeAsync(235);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(600);
+    await call.say(REST);
+    await held;
+    expect(call.wire()).not.toContain(REASK);
+    expect(call.wire().at(-1)).toBe(READ_BACK_SAID);
+    expect(call.session().slots.account).toMatchObject({ value: '55520417', attempts: 0 });
+    await sameOnReplay(call);
+  });
+
+
   it('the start of the number said over the question is held, the rest joined, and the number taken', async () => {
     const call = liveCall(accountApp(), 'telnyx', 'none', { speechOverLine: 'unless-miss' });
     // The request, said at once over the greeting, is acted on.

@@ -12,7 +12,8 @@ import { parseFrameLog } from '../frameLog';
 import { summaryOfTrace } from './calls';
 import { dayDataFrom, dayDataOf, factsOfTrace, FIGURES_VERSION, insightsOf, minutesToRuns, sumHours, DAY_MINUTES, type CallSummary } from './figures';
 import { wordingRows } from './view.js';
-import { renderFiguresOf } from './wordingFigures';
+import { renderFactsOf, renderFiguresOf } from './wordingFigures';
+import type { TraceRecord } from '../../trace/types';
 
 /**
  * Insights for generated wording ("measured, not assumed"): calls of the message fixture served
@@ -89,5 +90,16 @@ describe('generated wording in Insights', () => {
     expect(insightsOf([], undefined, RANGE).wording).toBeUndefined();
     expect(renderFiguresOf({ groups: { generated: {}, fixed: {} }, prompts: {}, costUsd: 0 })).toBeNull();
     expect(renderFiguresOf({ groups: { generated: { calls: -1 } }, prompts: {}, costUsd: 0 })).toBeNull();
+  });
+});
+
+describe('a turn set aside as speech over a line (SPEECH_OVER_LINE)', () => {
+  it('is no frustrated turn in the figures, whatever its rows read', () => {
+    const frustration = { gate: 'frustration', value: 0.9, threshold: 0.7, passed: true, outcome: 'ack', decided: false };
+    const rendered = { group: 'generated', lines: [] } as unknown as TraceRecord['render'];
+    const taken = { gates: [frustration], render: rendered } as unknown as TraceRecord;
+    const aside = { gates: [frustration, { gate: 'speechOverLine', value: null, threshold: null, passed: false, outcome: 'set_aside', decided: true }], render: rendered } as unknown as TraceRecord;
+    expect(renderFactsOf([taken, aside], 0)?.frustrated).toBe(1);
+    expect(renderFactsOf([aside], 0)?.frustrated).toBe(0);
   });
 });

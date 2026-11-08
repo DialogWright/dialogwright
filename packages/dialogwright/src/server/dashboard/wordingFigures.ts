@@ -1,4 +1,5 @@
 import type { TraceRecord } from '../../trace/types';
+import { setAsideOverLine } from './view.js';
 
 /**
  * Insights' figures for generated wording (design section 5, "measured, not assumed"): what a call of an
@@ -69,7 +70,8 @@ export function renderFactsOf(records: readonly TraceRecord[], reasks: number): 
   const facts: RenderCallFacts = { group: first.render!.group, reasks, frustrated: 0, costUsd: 0, prompts: {} };
   for (const r of records) {
     if (r.outlivedHold === true) continue;
-    if ((r.gates ?? []).some((g) => g.gate === 'frustration' && FRUSTRATED.has(g.outcome))) facts.frustrated += 1;
+    // A turn set aside as speech over a line is words taken as not the caller's: no frustrated turn of theirs.
+    if (!setAsideOverLine(r) && (r.gates ?? []).some((g) => g.gate === 'frustration' && FRUSTRATED.has(g.outcome))) facts.frustrated += 1;
     if (r.render === undefined) continue;
     facts.costUsd += r.render.usage?.costUsd ?? 0;
     for (const l of r.render.lines) {

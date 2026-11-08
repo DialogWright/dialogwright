@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { forgetNoInput, handleSocketMessage, newConnectionContext, type AdapterDeps } from './adapter';
+import { forgetNoInput, handleSocketMessage, newConnectionContext, RESAY_SETTLE_MS, type AdapterDeps } from './adapter';
 import { SessionStore, type SocketLike } from './sessions';
 import { CallTokens } from './tokens';
 import { FrameLog } from './frameLog';
@@ -16,23 +16,30 @@ import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { registerTestkit, testkitApp } from '../testing/testkit';
 import { ANONYMOUS } from '../gate/principal';
 import { PLACE_APP_ID, placeApp, placeClient } from '../testing/placeApp';
-import type { BargeIn } from '../channel/voiceProviders';
+import type { BargeIn, SpeechOverLine } from '../channel/voiceProviders';
+import type { JevClient } from '../jev/types';
 
 /**
  * Speech over a line the caller could not interrupt (SPEECH_OVER_LINE, server/adapter.ts). The timeline is
- * a live Telnyx call's (2026-11-05, BARGE_IN=none, a speakerphone in a busy room): the greeting sent, the
+ * a live Telnyx call's (2026-11-05, BARGE_IN=none, a speakerphone in a noisy room): the greeting sent, the
  * carrier reporting the caller speaking 67 ms later, and 1.9 s in a final prompt of words said to someone
- * else. The words, the greeting and the app are the test app's; the greeting is estimated at 11.6 s.
+ * else. The words, the greeting and the app are the test app's (the words invented); the greeting is
+ * estimated at 11.6 s.
  */
 
 const CALL = 'CA9';
 /** The test app's greeting: 29 words, 11.6 s by the estimate (2.5 words a second). */
 const GREETING_MS = 11_600;
 const NO_INPUT_MS = 7_000;
-const ASIDE = "i'd like a custom scheduling system okay";
+const ASIDE = 'can you pass me the blue folder';
 const NOMATCH = testkitApp.prompts.manifest.nomatch_open!.text;
+/** The no-match line: 21 words, 8.4 s. */
+const NOMATCH_MS = 8_400;
 const KEYPAD = testkitApp.prompts.manifest.nomatch_dtmf_menu!.text;
 const NO_INPUT = testkitApp.prompts.manifest.no_input!.text;
+const GREETING = testkitApp.prompts.manifest.greeting!.text;
+const ASK_PLACE = 'Where is the problem?';
+const REASK = 'Sorry, where is the problem?';
 
 beforeEach(() => {
   resetAppsForTest();
@@ -45,9 +52,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps> = {}) {
+function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps> = {}, client: () => JevClient = () => placeClient()) {
   const dir = mkdtempSync(join(tmpdir(), 'speech-over-line-'));
-  const opts = { client: placeClient(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-11-05', now: () => 0 };
+  const opts = { client: client(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: '2026-11-05', now: () => 0 };
   const store = new SessionStore((callSid) => ({
     session: newSession(callSid, 0, VOICE_RELAY, ANONYMOUS, PLACE_APP_ID),
     opts: { ...opts, trace: new TraceWriter(join(dir, `${callSid}.jsonl`)) },
@@ -55,45 +62,60 @@ function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps>
     frames: new FrameLog(join(dir, `${callSid}.frames.jsonl`)),
   }), 60_000, () => 0);
   const tokens = new CallTokens(60_000, () => 0);
-  const deps: AdapterDeps = { store, tokens, log: () => {}, bargeIn, noInputMs: NO_INPUT_MS, ...more };
+  const log: string[] = [];
+  const deps: AdapterDeps = { store, tokens, log: (l) => log.push(l), bargeIn, noInputMs: NO_INPUT_MS, ...more };
   const sent: Record<string, unknown>[] = [];
-  const sock: SocketLike = { send: (d, cb) => { sent.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} };
+  const socket = (): SocketLike => ({ send: (d, cb) => { sent.push(JSON.parse(d) as Record<string, unknown>); cb?.(); }, close: () => {} });
+  const sock = socket();
   const ctx = newConnectionContext(tokens.mint(CALL, provider), sock, provider);
   const send = (m: object) => handleSocketMessage(deps, sock, ctx, JSON.stringify(m));
-  const caller = (on: boolean) => send({ type: 'info', name: 'clientSpeaking', value: on ? 'on' : 'off' });
+  const info = (name: string, value: string) => send({ type: 'info', name, value });
+  const setup = { type: 'setup', sessionId: 'VX9', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} };
   return {
-    sent, store, caller,
-    start: () => send({ type: 'setup', sessionId: 'VX9', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} }),
+    sent, store, log,
+    caller: (on: boolean) => info('clientSpeaking', on ? 'on' : 'off'),
+    agent: (on: boolean) => info('agentSpeaking', on ? 'on' : 'off'),
+    played: (value: string) => info('tokensPlayed', value),
+    start: () => send(setup),
     say: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: true }),
     partial: (t: string) => send({ type: 'prompt', voicePrompt: t, lang: 'en-US', last: false }),
     key: (digit: string) => send({ type: 'dtmf', digit }),
+    /** A reconnect: the carrier's new socket for the call, before the old one's close; its lines go to `sent` too. */
+    reconnect: () => {
+      const sock2 = socket();
+      return handleSocketMessage(deps, sock2, newConnectionContext(tokens.mint(CALL, provider), sock2, provider), JSON.stringify({ ...setup, sessionId: 'VX10' }));
+    },
     /** What went out as lines, in order. */
-    lines: () => sent.filter((f) => f.type === 'text').map((f) => f.token as string),
+    lines: () => sent.filter((f) => f.type === 'text').map((f) => (f.token as string).trimEnd()),
     session: () => store.get(CALL)!.session,
     records: () => readFileSync(join(dir, `${CALL}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as TraceRecord),
     logs: () => readFileSync(join(dir, `${CALL}.frames.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dir: string; msg: Record<string, unknown> }),
-    replay: () => replayFrameLog(join(dir, `${CALL}.frames.jsonl`), { ...opts, client: placeClient(), trace: null }, undefined, { todayIsoOverride: opts.todayIso }),
+    replay: () => replayFrameLog(join(dir, `${CALL}.frames.jsonl`), { ...opts, client: client(), trace: null }, undefined, { todayIsoOverride: opts.todayIso }),
   };
 }
 type Call = ReturnType<typeof liveCall>;
 
-/** The frame log's note just before the prompt with these words, or undefined when there is none. */
+/** The frame log's note just before the last final prompt with these words, or undefined when there is none. */
 function noteBefore(call: Call, words: string): Record<string, unknown> | undefined {
   const logs = call.logs();
-  const at = logs.findIndex((l) => l.dir === 'in' && l.msg.type === 'prompt' && l.msg.voicePrompt === words);
+  let at = -1;
+  for (const [i, l] of logs.entries()) if (l.dir === 'in' && l.msg.type === 'prompt' && l.msg.voicePrompt === words && l.msg.last === true) at = i;
   expect(at).toBeGreaterThan(0);
   const before = logs[at - 1]!;
   return before.dir === 'log' && before.msg.speechOverLine !== undefined ? before.msg.speechOverLine as Record<string, unknown> : undefined;
 }
 
-const shape = (r: TraceRecord) => [r.event.type, (r.event as { text?: string }).text ?? null, (r.event as { overLine?: true }).overLine ?? null, r.decision.kind, r.gates.find((g) => g.decided)?.gate ?? null];
+const notes = (call: Call) => call.logs().filter((l) => l.dir === 'log' && l.msg.speechOverLine !== undefined);
+
+const shape = (r: TraceRecord) => [r.event.type, (r.event as { text?: string }).text ?? null, (r.event as { overLine?: true }).overLine ?? null, r.decision.kind, r.gates.find((g) => g.decided)?.gate ?? null, r.joined?.fragments ?? null];
 
 /** Live, then replayed from the frame log: the same turns, set aside where the call set them aside. */
 async function sameOnReplay(call: Call): Promise<void> {
   const live = call.records();
   vi.useRealTimers();
   const replayed = await call.replay();
-  expect(replayed.skipped).toEqual([]);
+  // A partial prompt (Twilio's) is in the log, and no turn of replay's.
+  expect(replayed.skipped.filter((s) => !s.endsWith('non-final prompt'))).toEqual([]);
   expect(replayed.records.map(shape)).toEqual(live.map(shape));
 }
 
@@ -107,6 +129,25 @@ async function overTheGreeting(call: Call, words = ASIDE): Promise<void> {
   await call.caller(false);
   await vi.advanceTimersByTimeAsync(300);
   await call.say(words);
+}
+
+/** Past the greeting, a request said after its end; the place question asked at once. */
+async function toPlace(call: Call): Promise<void> {
+  await call.start();
+  await vi.advanceTimersByTimeAsync(GREETING_MS + 500);
+  await call.say('i want to report a problem');
+  expect(call.lines().at(-1)).toBe(ASK_PLACE);
+}
+
+/** The greeting, reported played 0.7 s in (Telnyx): cut short, and said again once the settle has passed. */
+async function greetingCutAndSaidAgain(call: Call): Promise<void> {
+  await call.start();
+  await vi.advanceTimersByTimeAsync(50);
+  await call.agent(true);
+  await vi.advanceTimersByTimeAsync(650);
+  await call.played(GREETING);
+  await vi.advanceTimersByTimeAsync(RESAY_SETTLE_MS);
+  expect(call.lines()).toEqual([GREETING, GREETING]);
 }
 
 describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN=none', () => {
@@ -124,23 +165,26 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
     expect(last.gates.filter((g) => g.decided)).toEqual([{ gate: 'speechOverLine', value: null, threshold: null, passed: false, outcome: 'set_aside', decided: true }]);
     // The speech's start is the carrier's report, 67 ms into the greeting.
     expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 67, expectedMs: GREETING_MS, start: 'speaking' });
+    // The server log says what became of it once the turn has run, not before.
+    expect(call.log.filter((l) => l.includes('speech'))).toEqual([`${CALL}: speech 0.07 s into lines it could not interrupt (~11.6 s)`, `${CALL}: speech over a line set aside as a miss`]);
     // The no-input wait asks again from the greeting's end, not from the words.
     await vi.advanceTimersByTimeAsync(GREETING_MS + NO_INPUT_MS - 1_900 - 1);
     expect(call.lines()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(call.lines()[1]?.trim()).toBe(NO_INPUT);
+    expect(call.lines()[1]).toBe(NO_INPUT);
     expect(call.records().at(-1)!.event.type).toBe('user.silence');
     await sameOnReplay(call);
   });
 
-  it('a request said over the greeting is acted on', async () => {
+  it('a request said over the greeting is acted on, and the log says so', async () => {
     const call = liveCall('telnyx', 'none');
     await overTheGreeting(call, 'i want to report a problem');
     expect(call.session().form).toBe('report');
-    expect(call.lines().at(-1)).toBe('Where is the problem?');
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
     expect(call.records().at(-1)!.gates.some((g) => g.gate === 'speechOverLine')).toBe(false);
     // Noted all the same: the speech was over the greeting.
     expect(noteBefore(call, 'i want to report a problem')).toMatchObject({ mode: 'unless-miss', afterMs: 67 });
+    expect(call.log.at(-1)).toBe(`${CALL}: speech over a line taken`);
     await sameOnReplay(call);
   });
 
@@ -178,18 +222,17 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
     await vi.advanceTimersByTimeAsync(GREETING_MS + 500);
     await call.say(ASIDE);
     expect(call.lines().at(-1)).toBe(NOMATCH);
-    // After the no-match line (21 words, 8.4 s).
-    await vi.advanceTimersByTimeAsync(9_000);
-    await call.say('oh sorry');
+    await vi.advanceTimersByTimeAsync(NOMATCH_MS + 600);
+    await call.say('no the other one');
     expect(call.lines().at(-1)).toBe(KEYPAD);
     expect(call.session().intentAttempts).toBe(2);
-    // "i see", heard 0.4 s into the keypad line.
+    // Heard 0.2 s into the keypad line.
     await vi.advanceTimersByTimeAsync(200);
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(400);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(300);
-    await call.say('i see');
+    await call.say('right over there');
     expect(call.lines().at(-1)).toBe(KEYPAD);
     expect(call.session().intentAttempts).toBe(2);
     expect(call.session().ended).toBe(false);
@@ -201,31 +244,27 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
     await sameOnReplay(call);
   });
 
-  it('a caller who began over the line and comes back in at once: the words joined, and acted on', async () => {
+  it('a fragment set aside over the question is not the caller\'s: the rest said after it is heard alone, never joined', async () => {
     const call = liveCall('telnyx', 'none');
-    await call.start();
-    await vi.advanceTimersByTimeAsync(GREETING_MS + 500);
-    await call.say('i want to report a problem');
+    await toPlace(call);
     // "Sure, I can help you report a problem. Where is the problem?": 12 words, 4.8 s.
-    expect(call.lines().at(-1)).toBe('Where is the problem?');
     await vi.advanceTimersByTimeAsync(1_000);
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(400);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(500);
     await call.say('at');
-    // A miss over the question: set aside, nothing said.
-    expect(call.lines().at(-1)).toBe('Where is the problem?');
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
     expect(call.records().at(-1)!.decision.kind).toBe('ignore');
-    // Back in 0.6 s after they stopped, with the rest.
+    // Back in 0.6 s after they stopped, with the rest: heard on its own.
     await vi.advanceTimersByTimeAsync(100);
     await call.caller(true);
     await vi.advanceTimersByTimeAsync(900);
     await call.caller(false);
     await vi.advanceTimersByTimeAsync(300);
     await call.say('22 Alder Street.');
-    expect(call.session().slots.place?.value).toBe('at 22 Alder Street.');
-    expect(call.records().at(-1)!.joined).toEqual({ fragments: ['at', '22 Alder Street.'] });
+    expect(call.session().slots.place?.value).toBe('22 Alder Street.');
+    expect(call.records().at(-1)!.joined).toBeUndefined();
     await sameOnReplay(call);
   });
 
@@ -234,7 +273,118 @@ describe('speech over a line, unless-miss (the default), on Telnyx with BARGE_IN
     await call.start();
     await vi.advanceTimersByTimeAsync(500);
     await call.partial('i would');
-    expect(call.logs().some((l) => l.msg.speechOverLine !== undefined)).toBe(false);
+    expect(notes(call)).toHaveLength(0);
+  });
+
+  it('a reconnect mid-line: the question said again is the line, from its own send', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.reconnect();
+    expect(call.lines()).toEqual([GREETING, GREETING]);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 1_500, expectedMs: GREETING_MS, start: 'arrival' });
+    expect(call.session().intentAttempts).toBe(0);
+  });
+
+  it('INCOMPLETE_WAIT_MS: a turn set aside holds no reply, so nothing is held for a caller not finished', async () => {
+    const call = liveCall('telnyx', 'none', { incompleteWait: { waitMs: 1_000 } }, () => placeClient({ utteranceComplete: () => 0.1 }));
+    await overTheGreeting(call);
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.logs().some((l) => l.dir === 'log' && l.msg.replyHeld !== undefined)).toBe(false);
+    expect(call.lines()).toHaveLength(1);
+  });
+
+  it('a prompt during a service\'s wait is not looked at: it is ignored there already', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    const entry = call.store.get(CALL)!;
+    entry.session = { ...entry.session, pendingService: 'records' };
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say(ASIDE);
+    expect(notes(call)).toHaveLength(0);
+    expect(call.records().at(-1)!.gates.some((g) => g.gate === 'speechOverLine')).toBe(false);
+  });
+});
+
+describe('the lines\' end the no-input wait reads', () => {
+  it('a reply of two lines on Twilio: speech over the second is placed against both, and the wait after it runs from their end', async () => {
+    const call = liveCall('twilio', 'none');
+    await toPlace(call);
+    // Two frames: 3.2 s, then 1.6 s behind it.
+    expect(call.lines().slice(-2)).toEqual(['Sure, I can help you report a problem.', ASK_PLACE]);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await call.say('mm hm');
+    expect(noteBefore(call, 'mm hm')).toEqual({ mode: 'unless-miss', afterMs: 4_000, expectedMs: 4_800, start: 'arrival' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    await vi.advanceTimersByTimeAsync(800 + NO_INPUT_MS - 1);
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(call.records().at(-1)!.event.type).toBe('user.silence');
+  });
+
+  it('a reply sent while the greeting is still to end starts the lines anew from its send, as the wait counts it', async () => {
+    const call = liveCall('twilio', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    // A request over the greeting: its reply goes out at once, and is the line from then.
+    await call.say('i want to report a problem');
+    const armed = call.logs().filter((l) => l.dir === 'log' && l.msg.noInputArmedMs !== undefined).at(-1)!.msg.noInputArmedMs;
+    expect(armed).toBe(4_800 + NO_INPUT_MS);
+    await vi.advanceTimersByTimeAsync(4_900);
+    await call.say('mm hm');
+    expect(noteBefore(call, 'mm hm')).toBeUndefined();
+  });
+});
+
+describe.each(['take', 'unless-miss', 'ignore'] as const)('noise just before a line ends, then the answer just after it (SPEECH_OVER_LINE=%s)', (mode: SpeechOverLine) => {
+  it('the answer is a turn of its own, as after any line: the run of speech ends at the line\'s end', async () => {
+    const call = liveCall('telnyx', 'none', { speechOverLine: mode });
+    await call.start();
+    // Noise over the last 2 s of the greeting, ending 0.2 s before its estimated end, with no prompt.
+    await vi.advanceTimersByTimeAsync(GREETING_MS - 2_000);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(1_800);
+    await call.caller(false);
+    // The answer, 0.5 s after the end: a pause of 0.7 s, under RESUME_AFTER_PAUSE_MS.
+    await vi.advanceTimersByTimeAsync(700);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(notes(call)).toHaveLength(0);
+    expect(call.lines().at(-1)).toBe(NOMATCH);
+    expect(call.session().intentAttempts).toBe(1);
+  });
+});
+
+describe('a line said again (RESAY_CUT_LINES)', () => {
+  it('the no-input wait runs from the resent line\'s own end, not behind the estimate of the send it replaces', async () => {
+    const call = liveCall('telnyx', 'none', { resay: { minFraction: 0.35 } });
+    await greetingCutAndSaidAgain(call);
+    await vi.advanceTimersByTimeAsync(GREETING_MS + NO_INPUT_MS - 1);
+    expect(call.lines()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(call.lines()[2]).toBe(NO_INPUT);
+  });
+
+  it('an answer just after the resent line\'s own end is a turn, not speech over it', async () => {
+    const call = liveCall('telnyx', 'none', { resay: { minFraction: 0.35 }, noInputMs: 0 });
+    await greetingCutAndSaidAgain(call);
+    await vi.advanceTimersByTimeAsync(GREETING_MS + 200);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toBeUndefined();
+    expect(call.lines().at(-1)).toBe(NOMATCH);
+  });
+
+  it('speech over the resent line is placed against it, from its own send', async () => {
+    const call = liveCall('telnyx', 'none', { resay: { minFraction: 0.35 }, noInputMs: 0 });
+    await greetingCutAndSaidAgain(call);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 2_000, expectedMs: GREETING_MS, start: 'arrival' });
   });
 });
 
@@ -250,7 +400,34 @@ describe('speech over a line on Twilio, which reports no caller speaking', () =>
     await sameOnReplay(call);
   });
 
-  it('after the greeting\'s end, a miss as before', async () => {
+  it('chatter that begins during the greeting, its partial prompts first, and whose final prompt comes after its end: over the greeting, from the first partial', async () => {
+    const call = liveCall('twilio', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(9_000);
+    for (const words of ['can you', 'can you pass me', 'can you pass me the blue']) {
+      await call.partial(words);
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    // The final prompt 0.4 s after the greeting's end.
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 9_000, expectedMs: GREETING_MS, start: 'partial' });
+    expect(call.session().intentAttempts).toBe(0);
+    expect(call.lines()).toHaveLength(1);
+    await sameOnReplay(call);
+  });
+
+  it('partials that began after the greeting\'s end: a miss as before', async () => {
+    const call = liveCall('twilio', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(GREETING_MS + 100);
+    await call.partial('can you');
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toBeUndefined();
+    expect(call.lines().at(-1)).toBe(NOMATCH);
+  });
+
+  it('after the greeting\'s end, with no partial before it, a miss as before', async () => {
     const call = liveCall('twilio', 'none');
     await call.start();
     await vi.advanceTimersByTimeAsync(GREETING_MS + 1);
@@ -279,10 +456,11 @@ describe('SPEECH_OVER_LINE=ignore', () => {
     // The greeting's record only.
     expect(call.records()).toHaveLength(1);
     expect(noteBefore(call, ASIDE)).toEqual({ mode: 'ignore', afterMs: 67, expectedMs: GREETING_MS, start: 'speaking' });
+    expect(call.log.filter((l) => l.includes('speech'))).toEqual([`${CALL}: speech 0.07 s into lines it could not interrupt (~11.6 s): no turn`]);
     await vi.advanceTimersByTimeAsync(GREETING_MS + NO_INPUT_MS - 1_900 - 1);
     expect(call.lines()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(call.lines()[1]?.trim()).toBe(NO_INPUT);
+    expect(call.lines()[1]).toBe(NO_INPUT);
     await sameOnReplay(call);
   });
 
@@ -295,6 +473,34 @@ describe('SPEECH_OVER_LINE=ignore', () => {
     await vi.advanceTimersByTimeAsync(GREETING_MS);
     await call.say('i want to report a problem');
     expect(call.session().form).toBe('report');
+    await sameOnReplay(call);
+  });
+
+  it('a caller who came back in over the re-ask is not dropped: the rest is joined to what they began (the 2026-10-05 timings)', async () => {
+    const call = liveCall('telnyx', 'none', { speechOverLine: 'ignore' });
+    await toPlace(call);
+    await vi.advanceTimersByTimeAsync(4_800 + 500);
+    // "...for one two" said after the question's end: a fragment, a miss, the re-ask out 0.52 s after they stopped.
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(517);
+    await call.say('at');
+    expect(call.lines().at(-1)).toBe(REASK);
+    // "...three four": back in 24 ms after the re-ask went out, over it, with the rest.
+    await vi.advanceTimersByTimeAsync(24);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(343);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(130);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(410);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(496);
+    await call.say('22 Alder Street.');
+    expect(call.session().slots.place?.value).toBe('at 22 Alder Street.');
+    expect(call.records().at(-1)!.joined).toEqual({ fragments: ['at', '22 Alder Street.'] });
+    expect(notes(call)).toHaveLength(0);
     await sameOnReplay(call);
   });
 });

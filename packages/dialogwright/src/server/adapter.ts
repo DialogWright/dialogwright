@@ -289,14 +289,18 @@ function armNoInput(deps: AdapterDeps, entry: CallEntry, frames: readonly Outbou
   if (wait <= 0) return;
   clearNoInput(entry.callSid);
   const nowMs = Date.now();
+  // The lines' end as the adapter placed them as they went out (LineSpan: each behind the line still to end
+  // before it), so the wait and speech over a line read one end; the frames' own estimate where nothing was
+  // placed (a call this server did not send lines on).
+  const placed = linesEndOf(entry.callSid);
   let remainingMs: number;
   if (frames.length > 0) {
-    const estimateMs = playbackEstimateMs(frames, deps.clipDurations ?? new Map());
+    const estimateMs = placed !== null ? Math.max(0, placed - nowMs) : playbackEstimateMs(frames, deps.clipDurations ?? new Map());
     lastPlayback.set(entry.callSid, { sentAtMs: nowMs, estimateMs });
     remainingMs = estimateMs;
   } else {
     const last = lastPlayback.get(entry.callSid);
-    remainingMs = last ? Math.max(0, last.sentAtMs + last.estimateMs - nowMs) : 0;
+    remainingMs = placed !== null ? Math.max(0, placed - nowMs) : last ? Math.max(0, last.sentAtMs + last.estimateMs - nowMs) : 0;
   }
   const delay = wait + remainingMs;
   if (callerSpeaking.has(entry.callSid)) {
@@ -594,7 +598,8 @@ function takeResumed(deps: AdapterDeps, entry: CallEntry): void {
   const callSid = entry.callSid;
   const r = afterPrompts.get(callSid);
   afterPrompts.delete(callSid);
-  if (!r || r.resumedAtMs === null || continuationOf(entry).withinMs === 0) return;
+  // Nor when there is nothing to continue (the last turn did more than speak, or was set aside as speech over a line).
+  if (!r || r.resumedAtMs === null || continuationOf(entry).withinMs === 0 || !continuationOf(entry).continuing) return;
   if (!callerSpeaking.has(callSid)) {
     const stop = lastStop.get(callSid);
     const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
@@ -758,6 +763,8 @@ async function recoverSpurious(deps: AdapterDeps, e: CallEntry, w: Watched | und
   w.done = true;
   deps.log(`${callSid}: interrupted ${seconds(afterMs, 2)} into the lines with no caller heard, lines said again`);
   logDelivery(deps, e, { resaid: { reason: 'spurious-interrupt', afterMs, expectedMs: w.expectedMs } });
+  // Said again from the start, now: not behind what was still to play of them (speech over a line, the no-input wait).
+  clipLines(callSid);
   const sent = await sendFrames(deps, e, w.frames, w.decision);
   watchPlayback(deps, e, w.frames, w.decision, sent, true);
   // As the turn that said them armed it.
@@ -1003,7 +1010,7 @@ function joinHeldWords(callSid: string, text: string): boolean {
  * Speech over a line the caller could not interrupt (SPEECH_OVER_LINE: `take`, `unless-miss`, the default,
  * or `ignore`). With the relay's barge-in off, noise no longer cuts a line short, but a carrier still
  * transcribes what it hears while the line plays, and the engine took each transcript as an answer. Seen
- * on a live Telnyx call (BARGE_IN=none, a speakerphone in a busy room, 2026-11-05): the greeting, about
+ * on a live Telnyx call (BARGE_IN=none, a speakerphone in a noisy room, 2026-11-05): the greeting, about
  * 8 s, went out; the carrier reported the caller speaking 67 ms later; 1.9 s in, a final prompt came of
  * words said to someone else, its turn a miss and its no-match line queued behind the greeting. Speech
  * during that line was the second miss (the keypad menu), and speech during the keypad line the third (a
@@ -1014,16 +1021,20 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   the call's barge-in is `none` or `dtmf` (every line is sent so, bargeInFrame), or the line was sent
  *   `interruptible: false`. Under `any` or `speech` an interruptible line the caller cuts gives an
  *   interrupt, a barge-in, and nothing here changes it.
- * - **The lines' end** is the estimate the no-input wait is armed from (playbackEstimateMs, from their
- *   send), each line queued behind the one before it while that one is still to end (LineSpan). A
- *   carrier's reports of its playback never shorten it: Telnyx's agentSpeaking and tokensPlayed follow its
- *   speech synthesis, not the audio (on that call agentSpeaking went off 2.1 s into the 8 s greeting, as
- *   the no-match line was sent).
+ * - **The lines' end** is the estimate the no-input wait is armed from, and the wait reads it from the same
+ *   place (LineSpan, armNoInput): the lines' send and their estimated length (playbackEstimateMs, a clip by
+ *   its measured length, an mp3 at UNKNOWN_CLIP_MS), the lines of one send one behind the other, a new send
+ *   starting the lines anew. A line said again (a cut line, a spurious interrupt) starts from its own send,
+ *   never behind the estimate of what it replaces. A carrier's reports of its playback never shorten it:
+ *   Telnyx's agentSpeaking and tokensPlayed follow its speech synthesis, not the audio (on that call
+ *   agentSpeaking went off 2.1 s into the 8 s greeting, as the no-match line was sent).
  * - **The speech's start** is when the carrier reported the caller starting the run of speech the prompt
  *   carries (Telnyx with TELNYX_EVENTS speaker-events: followSpeechRun, across pauses no longer than
  *   RESUME_AFTER_PAUSE_MS, the prompt arriving while they speak or no later than NO_INPUT_AFTER_SPEECH_MS
- *   after they stop), else the prompt's arrival (Twilio, which reports nothing; a report for no speech of
- *   this prompt's). Approximate: a "yes" said just before a question ends may count as over it. Only a
+ *   after they stop); else, on a carrier that sends partial prompts (Twilio), the first of the run of
+ *   partials before it (followPartials, the same pauses); else the prompt's arrival. A pause across the end
+ *   of the lines a run began over ends the run (pauseAcrossEnd): noise near a line's end does not carry the
+ *   answer after it into the line. Approximate: a "yes" said just before a question ends may count as over it. Only a
  *   miss is ever set aside, so the cost is the question asked again after the no-input wait, never an
  *   answer lost.
  * - **`unless-miss`.** The turn runs on the event marked so (UserSpeech.overLine): what it understands is
@@ -1031,15 +1042,17 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   be a miss is set aside in the core as side speech is (core/turn.ts overLineMiss: decision `ignore`,
  *   the session as it was, nothing said and no attempt counted; the trace's gate row `speechOverLine`).
  *   The line plays on, and the no-input wait asks again from its end, as the turn arms it. Background
- *   speech that happens to fit is acted on, as before; the side-speech reading still applies to it.
+ *   speech that happens to fit is acted on, as before; the side-speech reading still applies to it. A turn
+ *   set aside is words taken as not the caller's: never continued by the next prompt (run/continuation.ts).
+ *   The server log says, after the turn, what became of it: set aside, taken, or joined to the words before.
  * - **`ignore`.** No turn runs: nothing reaches the core, the no-input wait armed from the line's end
  *   stands, a reply held is not let go and the caller is not followed as coming back in (the prompt is as
  *   if it never came, but for the frame log and the caller heard, so the line is not said again).
  * - **`take`.** As before: an answer like any other.
  * - **Never** a key, a partial prompt, a final prompt joined to held words (the speech they are the rest
  *   of began before), one during a service's wait (ignored there already), or a chat, which has no lines
- *   playing. A prompt that continues the caller's last (run/continuation.ts) is read as its first fragment
- *   was.
+ *   playing. Under `ignore`, never a prompt the caller came back in with (resumesPrompt), which the
+ *   Continuation joins to the words they began before: a caller who had not finished is not dropped.
  * - **For replay.** The frame log has `{ speechOverLine: { mode, afterMs, expectedMs, start } }` just
  *   before the prompt's own line: how far into the lines the speech began and their estimated length,
  *   from their first send, and whether the start was the carrier's report (`speaking`) or the prompt's
@@ -1047,10 +1060,10 @@ function joinHeldWords(callSid: string, text: string): boolean {
  *   the log says, whatever SPEECH_OVER_LINE is now; the console notes it under the line spoken over.
  */
 interface LineSpan {
-  /** When the line is estimated to start and to end playing: behind the line before it while that one plays. */
+  /** When the line is estimated to start and to end playing: from its send, behind the lines of the same send before it. */
   fromMs: number;
   toMs: number;
-  /** When the first of the lines it plays on from went out: where the lines start, for the log. */
+  /** When the first line of its send went out: where the lines start, for the log. */
   sentAtMs: number;
   /** Speech cannot interrupt it: the call's barge-in `none` or `dtmf`, or the line sent `interruptible: false`. */
   held: boolean;
@@ -1065,54 +1078,119 @@ const LINE_SPANS_KEPT_MS = 60_000;
 /** When the carrier reported the caller starting the run of speech the next final prompt carries. */
 const speechRuns = new Map<string, number>();
 
+/**
+ * The partial prompts since the last final one (Twilio's; a carrier that reports the caller speaking sends
+ * none): when the first and the last of the run came. What a carrier that reports nothing says of a
+ * caller's speech before its transcript is done.
+ */
+const partialRuns = new Map<string, { firstMs: number; lastMs: number }>();
+
 /** Drop what is known of a call's lines and its caller's speech (a reconnect, a close, a call gone). */
 function forgetLines(callSid: string): void {
   linesOut.delete(callSid);
   speechRuns.delete(callSid);
+  partialRuns.delete(callSid);
 }
 
-/** A line or clip that went out (sendFrames), placed behind the lines still to play, with whether speech can cut it. */
-function noteLineSent(callSid: string, frame: OutboundFrame, bargeIn: BargeIn, durations: ReadonlyMap<string, number>): void {
+/**
+ * A line or clip that went out (sendFrames), with whether speech can cut it. The lines of one send are
+ * placed one behind the other from the first's send, the estimate the no-input wait is armed from (the
+ * lines' send and their estimated length, armNoInput); the first line of a send starts the lines anew, from
+ * now, and what was still to play of the send before it is taken as ended there (clipLines), as the
+ * no-input wait takes it.
+ */
+function noteLineSent(callSid: string, frame: OutboundFrame, bargeIn: BargeIn, durations: ReadonlyMap<string, number>, first: boolean): void {
   if (frame.type !== 'text' && frame.type !== 'play') return;
+  if (first) clipLines(callSid);
   const now = Date.now();
   const spans = (linesOut.get(callSid) ?? []).filter((l) => l.toMs > now - LINE_SPANS_KEPT_MS);
-  const last = spans.at(-1);
-  const queued = last !== undefined && last.toMs > now;
-  const fromMs = queued ? last.toMs : now;
+  const last = first ? undefined : spans.at(-1);
+  const fromMs = last !== undefined ? last.toMs : now;
   const held = (bargeIn !== 'any' && bargeIn !== 'speech') || !frame.interruptible;
-  spans.push({ fromMs, toMs: fromMs + playbackEstimateMs([frame], durations), sentAtMs: queued ? last.sentAtMs : now, held });
+  spans.push({ fromMs, toMs: fromMs + playbackEstimateMs([frame], durations), sentAtMs: last !== undefined ? last.sentAtMs : now, held });
   linesOut.set(callSid, spans.slice(-LINE_SPANS_KEPT));
 }
 
 /**
+ * The lines stopped playing now: the carrier cut them (its interrupt), or they are about to be said again
+ * from the start (a line cut short, a spurious interrupt). What was still to play of them is not: each span
+ * ends now, and one still to start is gone, so what is sent next starts now and is not queued behind the
+ * estimate of what it replaces.
+ */
+function clipLines(callSid: string): void {
+  const spans = linesOut.get(callSid);
+  if (spans === undefined) return;
+  const now = Date.now();
+  linesOut.set(callSid, spans.filter((l) => l.fromMs < now).map((l) => (l.toMs > now ? { ...l, toMs: now } : l)));
+}
+
+/** The estimated end of the lines a moment `atMs` falls in (all of them sent with the one playing then); null when none was playing. */
+function linesEndAt(callSid: string, atMs: number): number | null {
+  const spans = linesOut.get(callSid) ?? [];
+  const at = spans.find((l) => l.fromMs <= atMs && atMs < l.toMs);
+  return at === undefined ? null : Math.max(...spans.filter((l) => l.sentAtMs === at.sentAtMs).map((l) => l.toMs));
+}
+
+/** When the call's lines, as sent, are estimated to end: the last span's end; null when none was sent here (a call taken over). */
+function linesEndOf(callSid: string): number | null {
+  return linesOut.get(callSid)?.at(-1)?.toMs ?? null;
+}
+
+/**
+ * Whether a pause in the caller's speech from `stoppedMs` to now spans the end of the lines the speech had
+ * begun over (at `begunMs`): what follows answers those lines, a run of its own, though the pause was short.
+ */
+function pauseAcrossEnd(callSid: string, begunMs: number, stoppedMs: number, now: number): boolean {
+  const end = linesEndAt(callSid, begunMs);
+  return end !== null && stoppedMs <= end && now > end;
+}
+
+/**
  * The carrier reported the caller starting to speak: the start of a run of speech, unless they are speaking
- * already, or stopped no longer than RESUME_AFTER_PAUSE_MS ago since the run began (the same run, a breath).
+ * already, or stopped no longer than RESUME_AFTER_PAUSE_MS ago since the run began (the same run, a breath),
+ * and not across the end of the lines the run began over (pauseAcrossEnd).
  */
 function followSpeechRun(deps: AdapterDeps, callSid: string): void {
   const begun = speechRuns.get(callSid);
   if (begun !== undefined && callerSpeaking.has(callSid)) return;
   const stop = lastStop.get(callSid);
   const now = Date.now();
-  const same = begun !== undefined && stop !== undefined && stop >= begun && now - stop <= resumeAfterPauseOf(deps);
+  const same = begun !== undefined && stop !== undefined && stop >= begun && now - stop <= resumeAfterPauseOf(deps) && !pauseAcrossEnd(callSid, begun, stop, now);
   if (!same) speechRuns.set(callSid, now);
+}
+
+/** A partial prompt came: the start of a run of them, or more of the one going on (as followSpeechRun). */
+function followPartials(deps: AdapterDeps, callSid: string): void {
+  const now = Date.now();
+  const run = partialRuns.get(callSid);
+  const same = run !== undefined && now - run.lastMs <= resumeAfterPauseOf(deps) && !pauseAcrossEnd(callSid, run.firstMs, run.lastMs, now);
+  partialRuns.set(callSid, same ? { firstMs: run.firstMs, lastMs: now } : { firstMs: now, lastMs: now });
 }
 
 /**
  * When the speech a final prompt arriving now carries began: the run of speech the carrier reported, the
  * caller speaking as it comes or stopped no longer than NO_INPUT_AFTER_SPEECH_MS ago (the transcript's
- * time); else the prompt's arrival. The run is the prompt's: what a caller still speaking says next is a
+ * time); else, where partial prompts came for it (Twilio's), the first of their run, the last no longer than
+ * that ago; else the prompt's arrival. The run is the prompt's: what a caller still speaking says next is a
  * run of its own, from now.
  */
-function speechStartOf(deps: AdapterDeps, callSid: string, now: number): { atMs: number; start: 'speaking' | 'arrival' } {
+function speechStartOf(deps: AdapterDeps, callSid: string, now: number): { atMs: number; start: SpeechStart } {
   const begun = speechRuns.get(callSid);
   const speaking = callerSpeaking.has(callSid);
   const stop = lastStop.get(callSid);
+  const partials = partialRuns.get(callSid);
   const settle = deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS;
   const reported = begun !== undefined && (speaking || (stop !== undefined && stop >= begun && now - stop <= settle));
   if (speaking) speechRuns.set(callSid, now);
   else speechRuns.delete(callSid);
-  return reported ? { atMs: begun!, start: 'speaking' } : { atMs: now, start: 'arrival' };
+  partialRuns.delete(callSid);
+  if (reported) return { atMs: begun!, start: 'speaking' };
+  if (partials !== undefined && now - partials.lastMs <= settle) return { atMs: partials.firstMs, start: 'partial' };
+  return { atMs: now, start: 'arrival' };
 }
+
+/** Where a prompt's speech's start was read from: the carrier's report, the first partial prompt, or the prompt's arrival. */
+type SpeechStart = 'speaking' | 'partial' | 'arrival';
 
 /** A final prompt over a line the caller could not interrupt, as the frame log notes it (speech over a line, above). */
 interface OverLine {
@@ -1120,10 +1198,13 @@ interface OverLine {
   /** How far into the lines the speech began, and their estimated length, both from the first line's send. */
   afterMs: number;
   expectedMs: number;
-  start: 'speaking' | 'arrival';
+  start: SpeechStart;
 }
 
-/** Whether the final prompt arriving now is speech over a line the caller could not interrupt; null when it is not, or under `take`. */
+/**
+ * Whether the final prompt arriving now is speech over a line the caller could not interrupt; null when it is
+ * not, or under `take`. The speech's start is read (and its run ended) whatever the answer.
+ */
 function overLineOf(deps: AdapterDeps, entry: CallEntry): OverLine | null {
   const mode = deps.speechOverLine ?? DEFAULT_SPEECH_OVER_LINE;
   if (mode === 'take') return null;
@@ -1132,8 +1213,23 @@ function overLineOf(deps: AdapterDeps, entry: CallEntry): OverLine | null {
   const spans = linesOut.get(entry.callSid) ?? [];
   const at = spans.find((l) => l.fromMs <= atMs && atMs < l.toMs);
   if (at === undefined || !at.held) return null;
-  const endMs = Math.max(...spans.filter((l) => l.sentAtMs === at.sentAtMs).map((l) => l.toMs));
+  const endMs = linesEndAt(entry.callSid, atMs)!;
   return { mode, afterMs: Math.round(atMs - at.sentAtMs), expectedMs: Math.round(endMs - at.sentAtMs), start };
+}
+
+/**
+ * Whether a final prompt arriving now is one the caller came back in with, which the Continuation would
+ * join to the words before it (takeResumed's test, with nothing changed): never speech over a line under
+ * `ignore`, as a prompt joined to held words is not, so a caller who had not finished is not dropped.
+ */
+function resumesPrompt(deps: AdapterDeps, entry: CallEntry): boolean {
+  const callSid = entry.callSid;
+  const r = afterPrompts.get(callSid);
+  const continuation = continuationOf(entry);
+  if (!r || r.resumedAtMs === null || continuation.withinMs === 0 || !continuation.continuing) return false;
+  if (callerSpeaking.has(callSid)) return true;
+  const stop = lastStop.get(callSid);
+  return stop !== undefined && Date.now() - stop <= (deps.noInputAfterSpeechMs ?? DEFAULT_NO_INPUT_AFTER_SPEECH_MS);
 }
 
 /**
@@ -1430,6 +1526,8 @@ function resay(deps: AdapterDeps, callSid: string, w: Watched): void {
     const { heardMs } = w.finished;
     deps.log(`${callSid}: playback cut short (${seconds(heardMs, 2)} of ~${seconds(w.expectedMs, 1)}), lines said again`);
     logDelivery(deps, e, { resaid: { heardMs, expectedMs: w.expectedMs } });
+    // Said again from the start, now: not behind the estimate of the lines it replaces.
+    clipLines(callSid);
     const sent = await sendFrames(deps, e, w.frames, w.decision);
     watchPlayback(deps, e, w.frames, w.decision, sent, true);
     if (noInputTimers.has(callSid)) armNoInput(deps, e, sent);
@@ -1814,6 +1912,8 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
   const digitsSaid = digitsSaidOf(appOf(entry.session), entry.session, decision);
   // The call's carrier's own barge-in (BARGE_IN_<CARRIER>), else the server's (BARGE_IN), else any.
   const bargeIn = bargeInOfCarrier(entry.provider, deps.bargeIn, deps.bargeInByCarrier);
+  // Whether a line of this send has gone out yet: the first starts the call's lines anew (noteLineSent).
+  let linesSent = false;
   for (const [i, original] of frames.entries()) {
     // Digits spelled out first, by the app's rules written against the lines as written (a respelled
     // lead word still leads its digits), then any value of a slot said digit by digit that they left
@@ -1839,8 +1939,9 @@ async function sendFrames(deps: AdapterDeps, entry: CallEntry, frames: OutboundF
       await sendOne(socket, frame, timeoutMs);
       entry.frames.write('out', logged);
       sent.push(frame);
-      // When it should play, behind the lines still to play, and whether speech can cut it (speech over a line).
-      noteLineSent(entry.callSid, frame, bargeIn, deps.clipDurations ?? new Map());
+      // When it should play, behind this send's lines before it, and whether speech can cut it (speech over a line).
+      noteLineSent(entry.callSid, frame, bargeIn, deps.clipDurations ?? new Map(), !linesSent);
+      if (frame.type === 'text' || frame.type === 'play') linesSent = true;
     } catch (err) {
       const info = describe(err);
       log(`${entry.callSid}: send failed for ${frame.type}: ${info.name}: ${info.message}`);
@@ -1995,6 +2096,11 @@ async function turn(deps: AdapterDeps, entry: CallEntry, event: SessionEvent, ar
     const playMs = (lines: readonly Action[]): number => playbackEstimateMs(actionsToFrames([...lines]), deps.clipDurations ?? new Map());
     const run = await continuationOf(entry).run(entry.session, event, { ...entry.opts, early, playMs }, arrival, words);
     if (run.joined) logDelivery(deps, entry, { joined: run.joined.length });
+    // Speech over a line (SPEECH_OVER_LINE=unless-miss): what became of it, as it happened.
+    if (event.type === 'user.speech' && event.overLine === true) {
+      const what = run.result.setAside === 'speech-over-line' ? 'set aside as a miss' : run.joined && words === undefined ? 'joined to the words before it, and taken' : 'taken';
+      deps.log(`${entry.callSid}: speech over a line ${what}`);
+    }
     turnFailures.delete(entry.callSid);
     entry.session = run.result.session;
     // The app's start hook threw (App.onStart): said by its kind, never its message; the call went on.
@@ -2323,6 +2429,8 @@ async function setupVerified(deps: AdapterDeps, socket: SocketLike, ctx: Connect
     ? deps.store.create(callId, socket, ctx.provider, deps.host.appOfSetup(parsed.customParameters?.[HOST_APP_PARAMETER], setupCalledOf(ctx.provider, parsed)))
     : deps.store.create(callId, socket, ctx.provider);
   ctx.setupReady?.();
+  // A new call has sent no lines, and its caller has said nothing yet (speech over a line).
+  forgetLines(callId);
   // The language a call starts in is the start document's (`locale`, from voice.numbers): a setup without
   // it, for an app whose documents name their languages, came without the document's parameters (a carrier
   // that dropped them), so the call starts in the default. Said once, as the call starts; no number in it.
@@ -2467,7 +2575,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // A final prompt that comes while words are held is joined to them (holdWords): it continues nothing else.
   const joinsHeld = frame.type === 'prompt' && frame.last && heldWords.has(ctx.callSid);
   // Speech over a line the caller could not interrupt (SPEECH_OVER_LINE), decided as the prompt comes.
-  const over = frame.type === 'prompt' && frame.last && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry) : null;
+  // A prompt the caller came back in with is the rest of what they began before: never dropped under `ignore`.
+  const read0 = frame.type === 'prompt' && frame.last && !entry.ended && !joinsHeld && entry.session.pendingService === null ? overLineOf(deps, entry) : null;
+  const over = read0?.mode === 'ignore' && resumesPrompt(deps, entry) ? null : read0;
   // The core's event for it: everything below that is not about the wire itself reads this. Under
   // `unless-miss`, speech over a line is marked so, and a turn on it that would be a miss is set aside.
   const read = frameToEvent(frame);
@@ -2496,8 +2606,9 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
     : frame.type === 'interrupt' ? { ...frame, utteranceUntilInterrupt: interruptHeard(entry, frame.utteranceUntilInterrupt, 'length') }
     : frame;
   // Speech over a line, noted ahead of the prompt's own line, where replay reads it.
+  // What became of it under `unless-miss` is the turn's, and logged after it (turn).
   if (over) {
-    deps.log(`${ctx.callSid}: speech ${seconds(over.afterMs, 2)} into lines it could not interrupt (~${seconds(over.expectedMs, 1)}): ${over.mode === 'ignore' ? 'no turn' : 'a miss is set aside'}`);
+    deps.log(`${ctx.callSid}: speech ${seconds(over.afterMs, 2)} into lines it could not interrupt (~${seconds(over.expectedMs, 1)})${over.mode === 'ignore' ? ': no turn' : ''}`);
     logDelivery(deps, entry, { speechOverLine: over });
   }
   // Under `ignore` no turn runs for it, and it is as if it never came: nothing else is told of it.
@@ -2569,6 +2680,8 @@ export async function handleSocketMessage(deps: AdapterDeps, socket: SocketLike,
   // whole of it. Record it, restart the wait (not during a service wait, as above), and hold out
   // for the final.
   if (frame.type === 'prompt' && !frame.last) {
+    // When the caller's speech began, where a carrier says it only by its partial prompts (speech over a line).
+    followPartials(deps, ctx.callSid);
     entry.frames.write('log', { droppedPartial: frame.voicePrompt.slice(0, 80) });
     if (!ctx.partialLogged) {
       ctx.partialLogged = true;

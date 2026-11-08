@@ -101,6 +101,9 @@ describe('Insights, Knowledge and Health over a host of two apps', () => {
       PUBLIC_HOST: 'localhost', TWILIO_AUTH_TOKEN: 't', HANDOFF_NUMBER: '+15551234567', PORT: '0', SIGNATURE_CHECK: 'off',
       TRACE_DIR: join(dir, 'traces'), AUDIT_DIR: join(dir, 'audit'), AUDIO_DIR: dir, NO_INPUT_MS: '0', JEV_CLIENT: 'stub',
       CARRIER_RATE_PER_MIN_TWILIO: '0.02',
+      // Each line is said the moment the last reply went out, over its acknowledgement (interruptible: false):
+      // taken as answers (SPEECH_OVER_LINE=take), as the figures here count them.
+      SPEECH_OVER_LINE: 'take',
     });
     running = await startServer(config, { host: '127.0.0.1', apps: await host(), log: () => {} });
     const base = `http://127.0.0.1:${running.port}`;

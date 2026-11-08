@@ -421,3 +421,6 @@ export function bytesText(n: number | null | undefined): string;
 
 /** Insights' generated wording, as the rows the page draws (wordingRows). */
 export function wordingRows(w: import('./wordingFigures').WordingInsights): { compare: [string, string, string][]; prompts: { app: string | null; cells: string[] }[] };
+
+/** Whether a record is a turn set aside as speech over a line (SPEECH_OVER_LINE): words taken as not the caller's. */
+export function setAsideOverLine(record: { gates?: readonly { gate: string; outcome: string; decided: boolean }[] } | null | undefined): boolean;

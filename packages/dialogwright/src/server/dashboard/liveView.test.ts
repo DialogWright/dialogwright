@@ -51,6 +51,17 @@ describe('callRow: one call as the Live list shows it', () => {
     expect(callRow(later)).toMatchObject({ status: 'frustrated', frustrated: true });
   });
 
+  it('a turn set aside as speech over a line is no frustrated turn, whatever its rows read (SPEECH_OVER_LINE)', async () => {
+    const { events } = await scripted([OPENER, 'this is ridiculous, I already told you']);
+    const asideOf = (e: DashboardEvent): DashboardEvent => (e.type === 'turn' && e.record.gates.some((g) => g.gate === 'frustration')
+      ? { ...e, record: { ...e.record, decision: { kind: 'ignore' }, actions: [], gates: [...e.record.gates.map((g) => ({ ...g, decided: false })), { gate: 'speechOverLine', value: null, threshold: null, passed: false, outcome: 'set_aside', decided: true }] } }
+      : e);
+    const aside = events.map(asideOf);
+    expect(aside.some((e) => e.type === 'turn' && e.record.gates.some((g) => g.gate === 'frustration' && g.outcome === 'ack'))).toBe(true);
+    expect(callRow(aside)).toMatchObject({ frustrated: false });
+    expect(callRow(aside).status).not.toBe('frustrated');
+  });
+
   it('transferring once a handoff is decided, then with a person once it ended so, and how it ended', async () => {
     const { events } = await scripted([OPENER, 'let me talk to a person']);
     expect(callRow(events)).toMatchObject({ status: 'transferring', handoffReason: 'live-agent', ending: null });

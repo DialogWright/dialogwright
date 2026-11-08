@@ -120,6 +120,31 @@ function resumedLine(call: ReturnType<typeof liveCall>, prompt = '22 Alder Stree
   return logs[at]!.msg;
 }
 
+describe('the first live call under the default (SPEECH_OVER_LINE=unless-miss)', () => {
+  it('"at", said 3 s into a reply estimated at 4.8 s, is a miss over the line, set aside: the rest is taken alone, and nothing is joined', async () => {
+    const call = liveCall('telnyx', 'none', { speechOverLine: 'unless-miss' });
+    await call.start();
+    await call.speak(900);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say('i want to report a problem');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.speak(400);
+    await vi.advanceTimersByTimeAsync(517);
+    await call.say('at');
+    // No re-ask: the question plays on.
+    expect(call.sent.filter((f) => f.type === 'text').at(-1)?.token).toBe('Where is the problem?');
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    await vi.advanceTimersByTimeAsync(24);
+    await call.speak(343, 130, 410);
+    await vi.advanceTimersByTimeAsync(496);
+    await call.say('22 Alder Street.');
+    expect(call.place()).toBe('22 Alder Street.');
+    expect(call.records().at(-1)!.joined).toBeUndefined();
+    expect(call.logs().some((l) => l.msg.callerResumed !== undefined)).toBe(false);
+    await sameOnReplay(call);
+  });
+});
+
 describe.each(['none', 'any'] as const)('a caller who came back in, BARGE_IN=%s on Telnyx', (mode) => {
   it('the first live call: back in 24 ms after the reply went out, 0.54 s after they stopped', async () => {
     const call = liveCall('telnyx', mode);

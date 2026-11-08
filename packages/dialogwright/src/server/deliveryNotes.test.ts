@@ -117,6 +117,36 @@ describe('delivery notes, as the adapter publishes them', () => {
     ]);
   });
 
+  it('the same timeline under the default (SPEECH_OVER_LINE=unless-miss): what the notes say of it', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    await call.speak(900);
+    await vi.advanceTimersByTimeAsync(800);
+    await call.say('i want to report a problem');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await call.speak(400);
+    await vi.advanceTimersByTimeAsync(517);
+    await call.say('at');
+    await vi.advanceTimersByTimeAsync(24);
+    await call.speak(343, 130, 410);
+    await vi.advanceTimersByTimeAsync(496);
+    await call.say('22 Alder Street.');
+    // Every prompt began over a line by the estimate: the request over the greeting (taken), "at" 3.0 s into
+    // the 4.8 s reply (a miss, set aside: no re-ask said), and the rest 3.9 s into it (taken, alone). Nothing
+    // is joined, so no join is noted, and no caller is noted coming back in.
+    expect(call.published()).toEqual([
+      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 0, expectedMs: 11_600, start: 'speaking' },
+      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 3_000, expectedMs: 4_800, start: 'speaking' },
+      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 3_941, expectedMs: 4_800, start: 'speaking' },
+    ]);
+    expect(call.reloaded()).toEqual(call.published());
+    expect(call.texts()).not.toContain(REASK);
+    expect(noted(call.events).map(([kind, , , notes]) => [kind, notes])).toEqual([
+      ['system', ['speech heard 0.0 s into this, which it could not interrupt']],
+      ['system', ['speech heard 3.0 s into this, which it could not interrupt', 'speech heard 3.9 s into this, which it could not interrupt']],
+    ]);
+  });
+
   /** The agent lines with notes, as the console shows them: the line, whether it was said, and its notes. */
   const noted = (events: DashboardEvent[]) => reduce(events).lines.filter((l) => l.notes)
     .map((l) => [l.kind, l.text, l.unsaid === true ? 'not said' : 'said', l.notes!.map((n) => n.text)]);

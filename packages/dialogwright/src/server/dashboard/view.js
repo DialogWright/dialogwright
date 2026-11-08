@@ -189,7 +189,7 @@ export const DELIVERY_NOTES = {
   })[f.value] ?? `call end held ${secs(f.endHeldMs)}` },
   // Speech that began over a line the caller could not interrupt (SPEECH_OVER_LINE): under unless-miss a
   // turn on it that would be a miss is set aside (its gate row says so); under ignore no turn runs.
-  speechOverLine: { on: 'agent', text: (f) => `speech heard ${secs(f.afterMs)} into this, which it could not interrupt: ${f.mode === 'ignore' ? 'no turn run' : 'a miss is set aside'}` },
+  speechOverLine: { on: 'agent', text: (f) => `speech heard ${secs(f.afterMs)} into this, which it could not interrupt${f.mode === 'ignore' ? ': no turn run' : ''}` },
   // The caller came back in over the reply to their last answer: `joined` reads its pause.
   callerResumed: { on: null },
   // The caller's words held for the rest of a value (a digits slot's waitForRestMs): `joined` reads it.
@@ -1565,8 +1565,18 @@ function stepOf(r) {
   return id ? slotWords(id) : null;
 }
 
-/** Whether a record's frustration gate fired (its first two rungs, the handoff it ends in, or the acknowledgement alone where the ladder does not run). */
+/** Whether a record is a turn set aside as speech over a line (SPEECH_OVER_LINE): words taken as not the caller's. */
+export function setAsideOverLine(r) {
+  return (r?.gates ?? []).some((g) => g && g.gate === 'speechOverLine' && g.outcome === 'set_aside' && g.decided);
+}
+
+/**
+ * Whether a record's frustration gate fired (its first two rungs, the handoff it ends in, or the acknowledgement
+ * alone where the ladder does not run). Never on a turn set aside as speech over a line: its rows say what the
+ * model read of words taken as not the caller's, and nothing was acknowledged or counted.
+ */
 function frustratedOn(r) {
+  if (setAsideOverLine(r)) return false;
   if ((r.gates ?? []).some((g) => g && g.gate === 'frustration' && (g.outcome === 'ack' || g.outcome === 'offer' || g.outcome === 'handoff' || g.outcome === 'ack_only'))) return true;
   return r.decision?.kind === 'handoff' && r.decision.reason === 'frustrated';
 }
