@@ -16,8 +16,9 @@ avoid:
 # reasoning (render:bakeoff, 43 lines): p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around
 # 2 of 144 for both, a third of the cost. (gemini-3.1-flash-lite-preview, the model before, was shut
 # down by Google on 2026-05-25.) No temperature is set: Mercury takes only 0.5 to 1.
-# On this app's own spans through Inception (render:bakeoff, 2026-11-08): 39 tried, 17 worded, 19 the
-# message's own words, 3 fell back; wording p50 280 ms, p95 568 ms, none of 18 over the 900 ms call budget.
+# On this app's own spans through Inception (2026-11-08, the recorded replay): 39 tried, 18 worded, 19 the
+# message's own words, 2 fell back; wording p50 280 ms, p95 568 ms (render:bakeoff), none of 18 over the
+# 900 ms call budget. DESIGN.md, "The render model moved to Inception's own API", has the detail.
 model:
   provider: inception
   id: mercury-3
