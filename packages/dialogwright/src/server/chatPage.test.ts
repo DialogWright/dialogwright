@@ -23,6 +23,15 @@ describe('the chat page\'s parts', () => {
     for (const l of labels) expect(starters).not.toContain(l[0]!.toUpperCase() + l.slice(1));
   });
 
+  it('never starts with a form only a caller recognized by the number calling may open: a chat carries no number', () => {
+    const booking = { ...callbackApp.forms[Object.keys(callbackApp.forms)[0]!]!, recognizedOnly: { say: 'x' } };
+    const id = Object.keys(callbackApp.forms)[0]!;
+    const app = { ...callbackApp, forms: { ...callbackApp.forms, [id]: booking } } as App;
+    const label = callbackApp.intents[id]!.label.trim();
+    expect(defaultStarters(callbackApp)).toContain(label[0]!.toUpperCase() + label.slice(1));
+    expect(defaultStarters(app)).not.toContain(label[0]!.toUpperCase() + label.slice(1));
+  });
+
   it('shows a number to call from E.164 only', () => {
     expect(phoneOf('+15555550123')).toEqual({ tel: '+15555550123', shown: '(555) 555-0123' });
     expect(phoneOf('+445550123456')).toEqual({ tel: '+445550123456', shown: '+445550123456' });

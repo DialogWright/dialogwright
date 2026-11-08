@@ -36,10 +36,15 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 /** "book a detail" -> "Book a detail". */
 const capitalized = (words: string): string => (words === '' ? words : words[0]!.toUpperCase() + words.slice(1));
 
-/** The app's ways to start by default: the labels of its forms and of its informational intents that say something, at most six. */
+/**
+ * The app's ways to start by default: the labels of its forms and of its informational intents that say
+ * something, at most six. Not a form only a caller recognized by the number calling may open
+ * (FormDef.recognizedOnly): a chat carries no number, so such a form never opens there.
+ */
 export function defaultStarters(app: App): string[] {
-  return Object.values(app.intents)
-    .filter((i) => i.kind === 'form' || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
+  return Object.entries(app.intents)
+    .filter(([id, i]) => (i.kind === 'form' && app.forms[id]?.recognizedOnly === undefined) || (i.kind === 'informational' && (i.promptId !== undefined || i.passage !== undefined)))
+    .map(([, i]) => i)
     .map((i) => capitalized(i.label.trim()))
     .filter((w) => w !== '' && w.length <= 60)
     .slice(0, DEFAULT_STARTERS_MAX);
