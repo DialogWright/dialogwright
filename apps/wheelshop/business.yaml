@@ -114,15 +114,21 @@ request:
       question: How many wheels need work?
     - name: damage
       type: text
-      # A short phrase: the read-back says it after "a {vehicle} with" (a recording held "scraped my wheel on a curb
-      # pulling into a parking garage", read back as "a 2020 BMW 3 Series with scraped my wheel on a curb ..."). No
+      # A short noun phrase: the read-back says it after "a {vehicle} with" (a recording held "scraped my wheel on a
+      # curb pulling into a parking garage", read back as "a 2020 BMW 3 Series with scraped my wheel on a curb ...";
+      # a live call, "a ... Kia Sorento with curbed and scraped up", an adjective where a noun goes, call 51). No
       # example phrase here: one the caller never said ("on the rim") was copied into a value, and refused.
-      about: What the damage is, as the line understood it, a short phrase in the caller's own terms that the read-back says after "with".
+      about: What the damage is, as the line understood it, a short noun phrase in the caller's own terms (a name for the damage, not a clause or a sentence), since the read-back says it after "with".
       question: What happened to the wheel?
     - name: diamondCut
       type: choice
       options: ["yes", "no", not sure]
-      about: Whether the wheel's face is bright machined metal with fine lines.
+      # By the shop's own facts a two-tone face (bright machined metal with painted sections) is diamond cut: a live
+      # call took "shiny, but it also has painted sections too" as not sure (call 51).
+      about: >-
+        Whether the wheel's face is diamond cut: bright bare machined metal with fine lines. A face that is
+        bright machined metal with painted sections between, two-tone, is diamond cut too; only a face
+        painted all over is not.
       question: Is the face of the wheel shiny bare metal with fine lines, or painted all over?
       optional: true
       # Said in the read-back in these words (the request sends it to the shop, so the caller confirms it), and

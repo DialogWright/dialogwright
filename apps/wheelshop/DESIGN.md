@@ -112,6 +112,7 @@ Set on the host: `SHOP_DATA_DIR` (a folder on the server's own disk, outside the
 - `over-the-greeting`: a request said while the greeting was still playing (`overLine: true`) gives values, so it is taken, not set aside.
 - `consent-declined`: a retail caller who answers "No, please just call me." when asked if the shop may text them. The read-back says "and we'll call you at ...", the request is sent and the shop told, and the gate refuses `send_photo_link` (`no-consent`): held to `action: { not: send_photo_link }` and the request's values, `textOk: "no"` among them.
 - `callback-note`: a caller who asks for the owner hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves the shop a callback note on the yes.
+- `live-call-sorento`: the turns of a live call on Twilio (calls 47 to 51). The car said with its year in pairs ("It's a twenty twenty three Kia Sorento.", taken as "2023 Kia Sorento"); "Uh, it has both." heard over the diamond cut question, then a silence (on the stubs set aside, and the question said again without "I didn't hear anything."), then "It is shiny, but it also has painted sections too." (diamond cut); and "Yeah. That's fine." at the consent question, which the decision model's yes fills where the agent gives no value. Held to the values (`vehicle` with 2023, `diamondCut: yes`, `textOk: yes`), the photo request sent, the read-back said and nothing done before it.
 
 Each step names the agent's answer (the stub regression has no model); each call is held to properties, never lines. Two findings shaped the scripted answers:
 
@@ -239,6 +240,17 @@ What the recording shows, for the owner and the maintainer (none fails a call):
 
 - `retail-bmw`'s read-back says "a 2020 BMW 3 Series with scraped wheel on a curb": the model's own short version, judged faithful, a phrase the frame reads stiffly. And `consent-declined`'s "a Audi": the frame's "a" before a vowel. Both are the read-back's fixed words around a value; the owner may reword the frame.
 - No turn held a refused value as the cited words (the engine no longer does): each refused value was asked again, and every value read back is the model's own short version, judged against the words it came from.
+
+### The tenth recording (calls 47 to 51, a live call), the one committed
+
+A live call on Twilio found five things (the design's calls 47 to 51), each fixed in the engine or here: the text check now compares figures as numbers, a year said in pairs being the year (the car "twenty twenty three Kia Sorento" was refused twice as "2023 Kia Sorento"); a silence after words set aside says the question without "I didn't hear anything."; a choice of yes and no the line has just asked is read by the decision model's yes or no ("Yeah. That's fine." at the consent question had given no value); the `diamondCut` field's `about` says that a bright machined face with painted sections, two-tone, is diamond cut ("shiny, but it also has painted sections too" had been taken as not sure); and the `damage` field's `about` asks for a short noun phrase, not a clause (the read-back had said "a ... Kia Sorento with curbed and scraped up"). Every agent request changed (the field descriptions) and the consent question's decision-model request too, so both cassettes were recorded fresh: corpus 36/38 (the two known gaps), scenarios 10/10, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. The bake-off's turns were recorded again on top of its cassette (54 askings: values right 92%, 0 wrong, p50 526 ms, p95 818 ms, within the bar).
+
+On the way there (measured with `--client jev`, each sample a few cents, none committed):
+
+- **The damage's wording.** A first `about` that named the frame's `{vehicle}` and said the value "names the damage" made the model leave the damage out of "curb rash on my Audi" (`over-the-greeting`) on about half the askings (3 of 6, against 6 of 6 with the old wording). The wording kept, "a short noun phrase in the caller's own terms (a name for the damage, not a clause or a sentence)", took it on 6 of 6, and held "curb rash" from "I hit a curb and now there's curb rash, it's all scraped up." on 4 of 4. Without the parenthesis, one recording held "curb rash, it's all scraped up", read back as "a 2023 Kia Sorento with curb rash, it's all scraped up".
+- **Diamond cut.** With the new `about` the model read "Uh, it has both." as diamond cut on 4 of 5 askings, and the fifth, set aside, then "It is shiny, but it also has painted sections too." as diamond cut.
+
+Baseline edits (`fixtures/expected/`, `regress --update`, each diff read): corpus `rq-19` and `rq-20` now label the decision model's yes and no at the consent question (`confirm`), so the field fills and the read-back is said, where the question was asked again; `rq-21` ("No, just the request, thanks.", the same question) is labelled a no, as the decision model read it in the recording; new entries `rq-22` to `rq-29` and the scripted call `live-call-sorento`.
 
 ## Not yet
 

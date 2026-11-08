@@ -767,5 +767,196 @@
         }
       }
     }
+  },
+  {
+    "id": "live-call-sorento",
+    "callerNumber": "+15555550178",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "Hi, I need to get one of my wheels fixed.",
+        "agent": {
+          "reply": "You're in the right place. What's your name?",
+          "values": []
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "sam rivera",
+        "vehicle": {
+          "has": [
+            "2023",
+            "Kia",
+            "Sorento"
+          ]
+        },
+        "diamondCut": "yes",
+        "day": "2026-11-12",
+        "window": "morning",
+        "callbackNumber": "...0178",
+        "textOk": "yes"
+      },
+      "action": "send_photo_link",
+      "said": {
+        "notFigure": true
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "It's Sam Rivera.",
+        "agent": {
+          "reply": "Thanks, Sam.",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Sam Rivera",
+              "words": "Sam Rivera"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "It's a twenty twenty three Kia Sorento.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "2023 Kia Sorento",
+              "words": "twenty twenty three Kia Sorento"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "Just the one, the front left.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "Just the one"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "I hit a curb and now there's curb rash, it's all scraped up.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ]
+        }
+      },
+      "request_diamondCut": [
+        {
+          "say": "Uh, it has both.",
+          "overLine": true,
+          "agent": {
+            "reply": "",
+            "values": []
+          }
+        },
+        {
+          "silence": true
+        },
+        {
+          "say": "It is shiny, but it also has painted sections too.",
+          "agent": {
+            "reply": "",
+            "values": [
+              {
+                "field": "diamondCut",
+                "value": "yes",
+                "words": "shiny, but it also has painted sections"
+              }
+            ]
+          }
+        }
+      ],
+      "request_day": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "Morning"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "Yeah. That's fine.",
+        "agent": {
+          "reply": "Great, let me read that back.",
+          "values": [],
+          "action": "submit"
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      },
+      "confirm_intent_explicit": {
+        "say": "No, just the request, thanks.",
+        "agent": {
+          "reply": ""
+        }
+      }
+    }
   }
 ]
