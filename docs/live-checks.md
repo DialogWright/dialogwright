@@ -295,6 +295,23 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and barge-in in the results log; write what was heard into the guide's 13.3, in place of "documented rather than yet confirmed".
 
+## 18. Speech over a line the caller cannot interrupt, on Telnyx and on Twilio
+
+**Why.** `SPEECH_OVER_LINE` ([the guide's 13.16](guide/13-channels.md#1316-speech-over-a-line-the-caller-cannot-interrupt)) was built from one live Telnyx call with `BARGE_IN=none`, where background speech over the greeting and the re-asks put the caller through to a person. The tests hold it on captured frame shapes and timings; whether the start and the end it works out match what a caller hears is a call's to say.
+
+**Set.** The utility example, `BARGE_IN=none`, `SPEECH_OVER_LINE` unset (the startup line says `speech over a line unless-miss`), `NO_INPUT_MS` as it is. On Telnyx, `TELNYX_EVENTS="speaker-events tokens-played"`. A speakerphone and a second person, or a radio, near the phone.
+
+**Do and look for.** On each carrier:
+
+1. **Noise over the greeting.** Call, and have the other person (or the radio) talk while the greeting plays, saying nothing the app does. The greeting plays to its end, nothing is said over it, and the question is asked again after the no-input wait from the greeting's end. The frame log has `{ "speechOverLine": { "mode": "unless-miss", "afterMs": ..., "expectedMs": ..., "start": ... } }` before each such prompt (`start: "speaking"` on Telnyx where it reported the speech, `arrival` on Twilio), the turn's record a `speechOverLine` gate row `set_aside`, and the console the note under the greeting. Note `expectedMs` against how long the greeting really played.
+2. **A request over the greeting.** Say what you want (the app's own words for a request) over the greeting: it is acted on at once, as before.
+3. **After the line.** Wait for a question to finish, then say something the app does not do: the no-match line, as before, with no `speechOverLine` line.
+4. **Three in a row.** Keep the noise going over the greeting and each line after it: the call is never put through to a person for `max-attempts` on noise alone.
+5. **Just before the end.** Answer a yes-or-no question with a "yes" a moment before it finishes: note whether it was taken (it should be, a yes is no miss) and, for a miss said just before the end, how long until the question came again.
+6. **`take` and `ignore`.** With `SPEECH_OVER_LINE=take`, step 1 is the old behaviour (each miss said over the line, counted); with `ignore`, step 2's request over the greeting is not taken, and the question comes after the no-input wait.
+
+**Record.** One row per carrier and step in the results log; any gap between `expectedMs` and the playback heard, and anything that differed, in the design's As built ([2026-11-08](designs/2026-11-08-speech-over-a-line.md)).
+
 ## Results log
 
 One row per check run. Keep earlier rows.
