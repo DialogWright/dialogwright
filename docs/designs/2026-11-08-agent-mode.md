@@ -17,15 +17,15 @@ Success for the prototype: a demo call good enough that a real one-man wheel-rep
 - **One file defines the app.** A wheel shop's line can be defined by a single business-facts file (`business.yaml`, below) and a little code for its tools. The engine builds the rest.
 - **The model leads the conversation.** It greets, reassures from approved claims, asks for what a request needs in whatever order fits, and keeps the caller on the business's services.
 - **The engine stays in charge of what is done.**
-  - Every value the model proposes is checked by its slot type against the caller's words.
+  - Every value the model understood is checked by its slot type, and confirmed by the caller in the read-back before anything is done.
   - Every action goes through the gate.
-  - Every read-back that must be exact is said word for word.
+  - Every read-back says, in the business's fixed words, what the line understood. The caller decides whether it understood right and corrects it if not.
   - Every reply passes the generated-wording checks and the drift judge.
   - Every turn is traced and every decision audited.
 - **It works on the voice line and the chat page.**
 - **Two demo calls.**
-  - **A dealership regular**, recognized by the number they call from. They book three trade-ins for tomorrow, dropped off at the shop. The call is brief and efficient: they are booked straight in after an exact read-back.
-  - **A retail caller** with curb rash on a BMW. They get a warm welcome, reassurance that most wheels can be fixed and that they are in the right place, and help telling whether the wheel is diamond cut. They are told the owner quotes from a photo and sent a link to send one. Their request is read back exactly and goes to the owner, who confirms a time when he sends the quote. The owner gets a summary of each request and booking at once.
+  - **A dealership regular**, recognized by the number they call from. They book three trade-ins for tomorrow, dropped off at the shop. The call is brief and efficient: they are booked straight in once they confirm the read-back.
+  - **A retail caller** with curb rash on a BMW. They get a warm welcome, reassurance that most wheels can be fixed and that they are in the right place, and help telling whether the wheel is diamond cut. They are told the owner quotes from a photo and sent a link to send one. Their request is read back, they confirm it, and it goes to the owner, who confirms a time when he sends the quote. The owner gets a summary of each request and booking at once.
 
 ## Non-goals (for this prototype)
 
@@ -52,7 +52,7 @@ Success for the prototype: a demo call good enough that a real one-man wheel-rep
 - its hours, if any;
 - its regular accounts (each with the numbers they call from);
 - what a booking and a request collect, each field with a description, a type from the slot library and a fixed question;
-- the lines that must be exact (the read-backs, the handoff, the closing);
+- the lines whose words are fixed (the read-backs' frames, the handoff, the closing);
 - where requests and bookings go.
 
 The prototype's file is in the appendix.
@@ -61,15 +61,15 @@ The engine reads `business.yaml` and builds the app in memory. That includes int
 
 ### A turn
 
-1. **Jev reads the turn as in scripted mode**, at the same time as the agent model's call, so it adds no latency:
-   - the screen, side speech (`addressedToSystem`), frustration, a person asked for, language, and a yes or no where one is asked;
-   - **the open fields' own questions**, as a scripted form asks every open slot's questions on any turn.
+1. **Jev reads only what it reads on every turn already**, at the same time as the agent model's call, so it adds no latency:
+   - the screen, side speech (`addressedToSystem`), frustration, a person asked for, and language;
+   - at a read-back, the caller's yes or no, since that decides what is done.
 
-   Values come only from these readings, through each slot type's `fill`, exactly as today. A text field stores the caller's words, as the `text` slot does, never the model's tidied version. Where Jev sets the turn aside (side speech, a screen hit, words not made out), the agent's answer is dropped. Where Jev reads a request for a person or high frustration, the core acts as it does in scripted mode.
+   Jev asks no field's questions in agent mode: the model understands the values. Where Jev sets the turn aside (side speech, a screen hit, words not made out), the agent's answer is dropped. Where Jev reads a request for a person or high frustration, the core acts as it does in scripted mode.
 2. **The agent model** gets:
    - the facts it may use (from `business.yaml`);
-   - the conversation so far, including its own replies and the exact lines said;
-   - what each field holds;
+   - the conversation so far, including its own replies and the fixed lines said;
+   - each field, with its type, description and what it holds;
    - who the caller is, where caller ID recognized them;
    - the channel;
    - whether the words were heard over a line still playing;
@@ -77,19 +77,30 @@ The engine reads `business.yaml` and builds the app in memory. That includes int
 
    It answers in a fixed JSON shape:
    - the reply to say;
-   - the values it believes the caller gave this turn;
+   - the values it understood this turn (new ones and corrections), each with the caller's words it came from;
    - at most one proposed action (`submit`, `send_photo_link`, `callback`, or none);
    - whether the reply answers something from the facts.
 3. **The engine checks the answer.**
-   - The agent's values are compared with Jev's fills. Where they agree, or the agent named none, the reply may be said. Where the agent believes a value Jev did not fill, or a different one, the reply is not said: it might confirm something the engine does not hold. The next empty field's fixed question is asked instead, and the trace records the disagreement.
-   - The reply passes the generated-wording checks:
-     - no figure and no web address that the facts, the fields or a visible tool result don't hold;
+   - **Each value's shape**, deterministically, by its slot type (a new `check` each library type gets: a value and the words it came from in, a verdict out):
+     - a choice must be one of its options;
+     - digits must have the field's length;
+     - a date must be a real date in the field's range;
+     - the words cited must be in what the caller said.
+
+     A `text` field's value is what the line understood, which may be the model's short version of the caller's words ("curb rash on the front right wheel"). It is held to the caller's words by the drift judge, as a framed summary is today. A value that fails its check is dropped, and the field's fixed question is asked.
+   - **The reply** passes the generated-wording checks:
+     - no figure and no web address that the facts, the values or a visible tool result don't hold;
      - its word budget;
      - one question at most;
      - style.yaml's `avoid`.
-   - The drift judge holds the reply to the facts it may say (below). It catches a claim, a promise or a service the business doesn't offer.
-   - A reply that fails is replaced by the fixed question of the next empty field. If none is empty, the read-back is said. The trace records why.
-4. **The core takes over for what must be exact.** When every required field is filled, or the model proposes `submit`, the read-back is said word for word from `business.yaml`. Jev reads the yes or no, as a form's summary is read today. Only then does the action go to the gate.
+   - **The drift judge** holds the reply to the facts it may say (below). It catches a claim, a promise or a service the business doesn't offer.
+   - **A reply that fails** is replaced by the fixed question of the next empty field. If none is empty, the read-back is said. The trace records why.
+4. **The read-back says what the line understood.** When every required field is filled, or the model proposes `submit`, the core says the read-back: the business's fixed words from `business.yaml` with each value as the line understood it. That is not the transcript. Each value is said as its slot type displays it: a date as "Thursday, November 12", a choice by its option, digits one by one on voice. The caller decides whether the line understood right:
+   - **a yes** (read by Jev) sends the action to the gate;
+   - **a correction** ("no, it's four wheels") is read by the model like any turn; the value is checked again, and the read-back is said again with it;
+   - **a no with nothing more** asks what to change.
+
+   Only the frame's words are fixed. The values in it are always what the caller is confirming.
 5. **Actions go through the gate.**
    - A recognized regular account may `book` (the policy allows it at the level a caller-ID match gives). It may also send a `request`, such as a quote for a customer's car.
    - Any other caller may only send a `request`.
@@ -107,9 +118,9 @@ The prototype's calendar tool returns the free days near a requested day. When a
 
 - **May say:** `claims`, the services (names and `about`), what is not offered, and where the shop is.
 - **Context only, never claimed:** `background`.
-- **Exact, said by the core word for word:** the read-backs, the `done` lines, the price line (`prices.say`), the handoff and the closing.
+- **Fixed, said by the core in these words:** the read-backs' frames (each value as understood, above), the `done` lines, the price line (`prices.say`), the handoff and the closing.
 
-The drift judge's reference is what the model may say, plus the fields and the visible tool results.
+The drift judge's reference is what the model may say, plus the values understood and the visible tool results.
 
 `business.yaml` is the business's own word, as prompts.yaml is today. It is not the knowledge base, and the knowledge base's approvals don't apply to it. An agent-mode app with a `kb/` folder, answering from approved passages or documents under the existing rules, is a later step.
 
@@ -133,7 +144,7 @@ The trace keeps, for every turn:
 - each check's verdict;
 - what was said.
 
-The console's call view shows the agent's proposals beside Jev's readings. The policy card says the app is in agent mode, lists the exact lines, and says the conversation is sent to the agent model.
+The console's call view shows what the agent understood, each value's check, and Jev's readings. The policy card says the app is in agent mode, lists the fixed lines, and says the conversation is sent to the agent model.
 
 ### Testing
 
@@ -144,7 +155,7 @@ The console's call view shows the agent's proposals beside Jev's readings. The p
   - the booking was made, or was not;
   - no figure outside the facts;
   - no promise the judge refuses;
-  - the read-back was said word for word.
+  - the read-back said the values understood, in its fixed words, and nothing was done before the caller confirmed it.
 
   This is how the adversarial suite already works.
 - **The adversarial suite runs on the app** (`testing.adversarial: on`), with a new family for agent mode: a caller who pushes for a price, a promise, a booking without a read-back, and instructions said to the model.
@@ -153,7 +164,7 @@ The console's call view shows the agent's proposals beside Jev's readings. The p
 
 Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's generated-wording rule, to be added to CLAUDE.md when agent mode is built.
 
-1. **An agent-mode app sends its agent model the conversation.** That covers the caller's words and the model's own earlier replies, the exact lines included. Identity factors are never sent, and values the records hide stay masked. `pnpm check` refuses agent mode for an app with a slot that is an identity factor. A `text` slot's `redact: length-summarized` is refused in agent mode too, since the conversation would carry its words. The policy card says the conversation is sent to the agent model.
+1. **An agent-mode app sends its agent model the conversation.** That covers the caller's words and the model's own earlier replies, the fixed lines included. Identity factors are never sent, and values the records hide stay masked. `pnpm check` refuses agent mode for an app with a slot that is an identity factor. A `text` slot's `redact: length-summarized` is refused in agent mode too, since the conversation would carry its words. The policy card says the conversation is sent to the agent model.
 2. **The tools the app names may show the model their results.** Each result must pass its reply check in a closed form (dates, a list of times, yes or no, an amount), never free text. The policy card lists them.
 
 ## Calls made for the maintainer to check
@@ -162,12 +173,12 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 2. **Jev runs beside the agent model,** not before it, so its readings cost no time; its side-speech and screen readings can still drop the agent's answer.
 3. **An app is in agent mode as a whole** (`app.yaml` `mode: agent`) in this prototype, not per form. A form in agent mode inside a scripted app is a later step once the whole-app mode works.
 4. **The facts file is YAML** (`business.yaml`) with its own JSON Schema, like every app file, so the page a business fills in later writes the same file.
-5. **The exact lines are the core's,** not the model's: the read-backs, the handoff and the closing come from `business.yaml` word for word.
-6. **Values must be in the caller's words.** A proposed value is accepted only when the slot type accepts it from words the caller actually said.
+5. **The fixed lines are the core's,** not the model's: the read-backs' frames, the handoff and the closing come from `business.yaml`, with the values as understood.
+6. **The words a value came from must be in what the caller said.** The model cites them, and the engine checks they are there.
 7. **The prototype app is public and invented** (`apps/wheelshop`, "Example Wheel Works", invented dealerships, 555 numbers). A real business's line would be a private copy.
 8. **The stand-in calendar** is a small in-memory schedule in the app's code (two bays, hour slots, weekdays). Texts are printed until texting is registered.
 9. **Retail callers send a request, never a booking.** Regular accounts book. This is the app's policy, not the engine's.
-10. **Values come from Jev's slot readings, never from the model.** The agent's values are only a cross-check, and a reply that disagrees with the fills is not said. This keeps "the decision model perceives through typed questions" true in agent mode, with no new slot-type contract.
+10. **The model understands the values; the engine checks their shape; the caller confirms them.** The maintainer decided on 2026-11-08 that Jev asks no field's questions in agent mode, which would only extract every value twice. Each library slot type gains a `check` (a value and its words in, a verdict out), part of its conformance kit. The read-back confirmed by the caller is the final check before anything is done. Jev keeps the turn-level readings it already makes, and the yes or no at the read-back, since that decides an action.
 11. **Fields map onto the library's slot types.**
     - The number of wheels is a `choice` (one to four).
     - The callback number is `digits`, offering the number the caller is calling from.
@@ -182,6 +193,7 @@ Both were decided on 2026-11-08. Each is a named exception to CLAUDE.md's genera
 
 ## Left to the builder
 
+- each slot type's `check`, within the rule above;
 - `business.yaml`'s exact schema and how it maps onto intents, forms, slots and policy;
 - the agent's JSON shape and its prompt (the goal and full context, never a procedure for the words);
 - where in `core/` the agent turn sits beside the scripted one;
