@@ -28,7 +28,16 @@ import { signInPage, type SignInNote } from './pages';
  * each session id with its expiry), so a restart does not let a signed-out cookie back in.
  *
  * Without a session, the console's page answers 302 to the sign-in page and everything else under
- * /dashboard (the live feed, the traces, the boot id, the view module) answers 401. The sign-in page
+ * /dashboard (the live feed, the traces, the boot id, the view module) answers 401.
+ *
+ * An app's console pages (AppRoute `auth: 'console'`, server/appRoutes.ts) are served behind the same
+ * sign-in. The cookie is set on each of their paths beside /dashboard (so it is sent to those pages and to
+ * no other path the server has), and cleared from each on sign-out. Without a session, such a page's GET
+ * answers 302 to `/dashboard/login?next=<its path>`, and anything else under it 401. `next` is honoured
+ * only when it is one of those pages' paths exactly: after a sign-in the browser goes there rather than
+ * to the console, and a browser already signed in (a session from before the page existed) has the
+ * cookie set on the page's path and goes on to it. Each session's first visit to a page is recorded
+ * (`page`, with its path). The sign-in page
  * carries nothing of the app's or of any call. Every answer under /dashboard carries a
  * Content-Security-Policy, X-Frame-Options DENY, Referrer-Policy no-referrer, Cache-Control no-store and
  * nosniff.
@@ -132,6 +141,9 @@ export interface CallsSearch {
   toMs?: number;
   app?: string | null;
 }
+
+/** A page of the app's served behind the console's sign-in: its mounted path ("/wheelshop/shop"). */
+export type ConsolePagePath = string;
 
 export interface ConsoleAuthOptions {
   settings: ConsoleAuthSettings;
@@ -273,6 +285,10 @@ export class ConsoleAuth implements ConsoleGate {
   private port = 0;
   private pending: { digest: Buffer; expiresAt: number; hash: string } | null = null;
   private retired: Array<{ digest: Buffer; reason: 'used' | 'expired' | 'replaced' }> = [];
+  /** The paths of the app pages served behind this sign-in (servePages): the cookie is set on each, and only these may be a sign-in's `next`. */
+  private pages: readonly ConsolePagePath[] = [];
+  /** The pages each session has opened (session id and path), until it expires: recorded the first time. */
+  private readonly pagesSeen = new Map<string, number>();
   /** Signed-out sessions by the SHA-256 of their id, refused until they would have expired. */
   private readonly revoked = new Map<string, number>();
   /** Where the sign-outs are kept across a restart: only with CONSOLE_SESSION_KEY (else a restart signs everyone out). */
@@ -295,6 +311,16 @@ export class ConsoleAuth implements ConsoleGate {
     this.audit = o.audit ?? null;
     this.signedOutFile = o.settings.sessionKey ? join(dirname(o.settings.linkFile), SIGNED_OUT_FILE) : null;
     this.loadSignedOut();
+  }
+
+  /** The app pages served behind this sign-in (AppRoute `auth: 'console'`), by their mounted paths: the server says so as it mounts them. */
+  servePages(paths: readonly ConsolePagePath[]): void {
+    this.pages = [...paths];
+  }
+
+  /** Whether `path` is one of the pages served behind this sign-in, exactly (a sign-in's `next` is nothing else). */
+  isPage(path: string): boolean {
+    return this.pages.includes(path);
   }
 
   /** Where the link file is. */
@@ -370,8 +396,16 @@ export class ConsoleAuth implements ConsoleGate {
   }
 
   refuse(req: IncomingMessage, res: ServerResponse, path: string): void {
-    if ((path === '/dashboard' || path === '/dashboard/') && (req.method === 'GET' || req.method === 'HEAD')) {
+    const get = req.method === 'GET' || req.method === 'HEAD';
+    if ((path === '/dashboard' || path === '/dashboard/') && get) {
       res.writeHead(302, { location: LOGIN_PATH, 'content-length': 0 });
+      res.end();
+      return;
+    }
+    // An app's console page: to the sign-in, which comes back to the page.
+    const page = this.pages.find((p) => path === p || path === `${p}/`);
+    if (page !== undefined && get) {
+      res.writeHead(302, { location: `${LOGIN_PATH}?next=${encodeURIComponent(page)}`, 'content-length': 0, 'cache-control': 'no-store' });
       res.end();
       return;
     }
@@ -431,6 +465,20 @@ export class ConsoleAuth implements ConsoleGate {
     return noted;
   }
 
+  /** Records the first visit in a session to one of the app's console pages (AppRoute `auth: 'console'`), by its path, as noteLive. */
+  notePage(session: ConsoleSession, path: ConsolePagePath): Chained<void> {
+    const key = `${session.id}|${path}`;
+    if (this.pagesSeen.has(key)) return;
+    const noted = this.note('console', { event: 'page', path, session: session.hash });
+    const seen = (): void => {
+      this.pagesSeen.set(key, session.expiresAt);
+      prune(this.pagesSeen, (exp) => exp <= this.now());
+    };
+    if (noted instanceof Promise) return noted.then(seen);
+    seen();
+    return noted;
+  }
+
   noteAuditCheck(session: ConsoleSession): Chained<void> {
     return this.note('console', { event: 'audit_verify', session: session.hash });
   }
@@ -451,11 +499,17 @@ export class ConsoleAuth implements ConsoleGate {
   private async login(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? 'GET';
     if (method === 'GET' || method === 'HEAD') {
-      if (this.sessionOf(req)) return this.redirect(res, '/dashboard');
       const url = new URL(req.url ?? LOGIN_PATH, 'http://console.invalid');
+      const next = this.nextOf(url.searchParams.get('next'));
+      const signedIn = this.sessionOf(req);
+      if (signedIn) {
+        // Signed in already: on to the page, its cookie set on the page's path (a session from before the page was served has none there).
+        if (next !== null) this.setCookies(req, res, signedIn.id, Math.floor(signedIn.expiresAt / 1000), [next]);
+        return this.redirect(res, next ?? '/dashboard');
+      }
       const code = url.searchParams.get('code') ?? '';
       const note: SignInNote | undefined = url.searchParams.get('out') === '1' ? 'signed-out' : undefined;
-      return this.page(req, res, 200, CODE.test(code) ? { code, ...(note ? { note } : {}) } : note ? { note } : {});
+      return this.page(req, res, 200, { ...(CODE.test(code) ? { code } : {}), ...(note ? { note } : {}), ...(next !== null ? { next } : {}) });
     }
     if (method !== 'POST') return this.text(res, 405, 'method not allowed', { allow: 'GET, HEAD, POST' });
     if (!this.originOk(req)) return this.text(res, 403, 'a sign-in must come from the sign-in page');
@@ -500,8 +554,21 @@ export class ConsoleAuth implements ConsoleGate {
     if (noted) await noted;
     this.log(`console: signed in (session ${session}, from ${from})`);
     this.writeLinkFile(null, null);
-    res.setHeader('set-cookie', `${CONSOLE_COOKIE}=${payload}.${this.sign(payload).toString('base64url')}; ${this.cookieAttributes(req)}; Max-Age=${hours * 3600}`);
-    this.redirect(res, '/dashboard');
+    this.setCookies(req, res, id, expSec, ['/dashboard', ...this.pages]);
+    this.redirect(res, this.nextOf(form.get('next')) ?? '/dashboard');
+  }
+
+  /** The session cookie, on /dashboard and each console page's path given: one cookie each, so it is sent to those paths alone. */
+  private setCookies(req: IncomingMessage, res: ServerResponse, id: string, expSec: number, paths: readonly string[]): void {
+    const payload = `v1.${id}.${expSec}`;
+    const value = `${payload}.${this.sign(payload).toString('base64url')}`;
+    const maxAge = Math.max(0, expSec - Math.floor(this.now() / 1000));
+    res.setHeader('set-cookie', paths.map((p) => `${CONSOLE_COOKIE}=${value}; ${this.cookieAttributes(req, p)}; Max-Age=${maxAge}`));
+  }
+
+  /** A sign-in's `next`: one of the console pages' paths exactly, else null (never anywhere else: no open redirect). */
+  private nextOf(next: string | null | undefined): string | null {
+    return next !== null && next !== undefined && this.isPage(next) ? next : null;
   }
 
   private async logout(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -515,7 +582,7 @@ export class ConsoleAuth implements ConsoleGate {
       prune(this.revoked, (exp) => exp <= this.now());
       this.saveSignedOut();
     }
-    res.setHeader('set-cookie', `${CONSOLE_COOKIE}=; ${this.cookieAttributes(req)}; Max-Age=0`);
+    res.setHeader('set-cookie', ['/dashboard', ...this.pages].map((p) => `${CONSOLE_COOKIE}=; ${this.cookieAttributes(req, p)}; Max-Age=0`));
     this.redirect(res, `${LOGIN_PATH}?out=1`);
   }
 
@@ -626,13 +693,13 @@ export class ConsoleAuth implements ConsoleGate {
     return isDirectLocalRequest(req, this.o.publicHost) && origin === `http://${header(req, 'host') ?? ''}`;
   }
 
-  private cookieAttributes(req: IncomingMessage): string {
+  private cookieAttributes(req: IncomingMessage, path = '/dashboard'): string {
     // A laptop's own plain http is the one place a Secure cookie would never be sent back.
     const plainLaptop = isLoopbackHost(this.o.publicHost) && isDirectLocalRequest(req, this.o.publicHost);
-    return `Path=/dashboard; HttpOnly; SameSite=Strict${plainLaptop ? '' : '; Secure'}`;
+    return `Path=${path}; HttpOnly; SameSite=Strict${plainLaptop ? '' : '; Secure'}`;
   }
 
-  private page(req: IncomingMessage, res: ServerResponse, status: number, o: { code?: string; note?: SignInNote }): void {
+  private page(req: IncomingMessage, res: ServerResponse, status: number, o: { code?: string; note?: SignInNote; next?: string }): void {
     const nonce = randomBytes(16).toString('base64');
     this.protect(res, nonce);
     const body = signInPage({ nonce, hours: this.o.settings.sessionHours, ...o });

@@ -532,6 +532,92 @@ describe('CONSOLE_AUTH=token: an app\'s local-only pages', () => {
   });
 });
 
+describe('CONSOLE_AUTH=token: an app\'s console pages (auth: \'console\')', () => {
+  const PAGE_TEXT = 'records: +15555550177';
+  const page = (): AppRoute => ({ label: 'records', path: '/shop', localOnly: true, auth: 'console', handle: async (_req, res) => { res.writeHead(200); res.end(PAGE_TEXT); return true; } });
+  /** Every cookie the answer sets, as `<value>; Path=<path>` for each. */
+  const cookies = (res: Answer): string[] => (res.headers['set-cookie'] ?? []).map((c) => `${c.split(';')[0]!}; ${/Path=[^;]+/.exec(c)?.[0] ?? ''}`);
+
+  it('without a session, sends the page to sign in and back (302), answers anything else 401, through the tunnel and on this machine alike, and shows nothing of it', async () => {
+    const r = await rig({}, [page()]);
+    for (const headers of [TUNNEL, {}]) {
+      for (const path of ['/shop', '/shop/']) {
+        const res = await raw(r.base, 'GET', path, headers);
+        expect(res.status, path).toBe(302);
+        expect(res.headers.location).toBe('/dashboard/login?next=%2Fshop');
+        expect(res.body).not.toContain(PAGE_TEXT);
+      }
+      for (const [method, path] of [['POST', '/shop'], ['GET', '/shop/data.json']] as const) {
+        const res = await raw(r.base, method, path, headers);
+        expect(res.status, `${method} ${path}`).toBe(401);
+        expect(res.body).not.toContain(PAGE_TEXT);
+      }
+    }
+    expect(r.audit.filter((e) => e.detail.event === 'page')).toEqual([]);
+  });
+
+  it('a sign-in that came from the page goes back to it, the cookie set on its path beside /dashboard, and the first visit in the session recorded', async () => {
+    const r = await rig({}, [page()]);
+    const signInPage = await raw(r.base, 'GET', '/dashboard/login?next=%2Fshop', TUNNEL);
+    expect(signInPage.body).toContain('<a href="/shop">Open the page</a>');
+    const { code } = r.auth.mint();
+    const withCode = await raw(r.base, 'GET', `/dashboard/login?code=${code}&next=%2Fshop`, TUNNEL);
+    expect(withCode.body).toContain('<input type="hidden" name="next" value="/shop">');
+    const res = await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM, origin: 'https://demo.example.net' }, `code=${code}&next=%2Fshop`);
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe('/shop');
+    const set = cookies(res);
+    expect(set.map((c) => c.split('; ')[1])).toEqual(['Path=/dashboard', 'Path=/shop']);
+    expect(set[0]!.split('; ')[0]).toBe(set[1]!.split('; ')[0]);
+    for (const c of res.headers['set-cookie']!) expect(c).toMatch(/HttpOnly; SameSite=Strict; Secure; Max-Age=\d+$/);
+    const cookie = set[1]!.split('; ')[0]!;
+    for (let i = 0; i < 2; i++) {
+      const shop = await raw(r.base, 'GET', '/shop', { ...TUNNEL, cookie });
+      expect(shop.status).toBe(200);
+      expect(shop.body).toBe(PAGE_TEXT);
+    }
+    expect(r.audit.filter((e) => e.detail.event === 'page').map((e) => e.detail.path)).toEqual(['/shop']);
+  });
+
+  it('a sign-in goes only to a console page: any other next goes to the console, and the sign-in page links to none', async () => {
+    const r = await rig({}, [page()]);
+    for (const next of ['https://evil.example/', '//evil.example', '/dashboard/traces', '/shopx', '/shop/../dashboard']) {
+      const plain = await raw(r.base, 'GET', `/dashboard/login?next=${encodeURIComponent(next)}`, TUNNEL);
+      expect(plain.body, next).not.toContain('Open the page');
+      const { code } = r.auth.mint();
+      const res = await raw(r.base, 'POST', '/dashboard/login', { ...TUNNEL, ...FORM, origin: 'https://demo.example.net' }, `code=${code}&next=${encodeURIComponent(next)}`);
+      expect(res.headers.location, next).toBe('/dashboard');
+    }
+  });
+
+  it('a browser signed in before the page was served gets the page\'s cookie from the sign-in page, and goes on to it', async () => {
+    const r = await rig({}, [page()]);
+    const cookie = await signIn(r);
+    expect((await raw(r.base, 'GET', '/dashboard/login', { ...TUNNEL, cookie })).headers.location).toBe('/dashboard');
+    const res = await raw(r.base, 'GET', '/dashboard/login?next=%2Fshop', { ...TUNNEL, cookie });
+    expect(res.status).toBe(303);
+    expect(res.headers.location).toBe('/shop');
+    expect(cookies(res)).toEqual([`${cookie}; Path=/shop`]);
+  });
+
+  it('signing out clears the cookie from the page\'s path too, and the session no longer opens it', async () => {
+    const r = await rig({}, [page()]);
+    const cookie = await signIn(r);
+    expect((await raw(r.base, 'GET', '/shop', { ...TUNNEL, cookie })).status).toBe(200);
+    const out = await raw(r.base, 'POST', '/dashboard/logout', { ...TUNNEL, cookie, origin: 'https://demo.example.net' });
+    expect(cookies(out)).toEqual([`${CONSOLE_COOKIE}=; Path=/dashboard`, `${CONSOLE_COOKIE}=; Path=/shop`]);
+    expect((await raw(r.base, 'GET', '/shop', { ...TUNNEL, cookie })).status).toBe(302);
+  });
+
+  it('an app\'s other local-only pages stay local only beside it', async () => {
+    const chat: AppRoute = { label: 'chat', path: '/chat', localOnly: true, handle: async (_req, res) => { res.writeHead(200); res.end('chat'); return true; } };
+    const r = await rig({}, [page(), chat]);
+    const cookie = await signIn(r);
+    expect((await raw(r.base, 'GET', '/chat', { ...TUNNEL, cookie })).status).toBe(404);
+    expect((await raw(r.base, 'GET', '/shop', { ...TUNNEL, cookie })).status).toBe(200);
+  });
+});
+
 /** An event stream read until the server ends it, or `ms` pass (then the test's own end). */
 function stream(base: string, path: string, headers: Record<string, string>): { text: () => string; ended: Promise<boolean>; opened: Promise<void>; stop: () => void } {
   const url = new URL(base + path);

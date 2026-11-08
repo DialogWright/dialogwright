@@ -223,6 +223,7 @@ export type { AppPageDeps, AppPagesFactory, AppRoute, AppRoutes, AppRouteDeps, A
 // day files and with a promise with AUDIT_STORE=postgres: whenChained takes either.
 export { whenChained, type AuditSink } from './run/turn';
 export type { Chained } from './audit/types';
+export { loadConfig } from './server/config';
 export type { ServerConfig } from './server/config';
 
 // The harness: the text CLI, the regression run, the threshold sweep and the cassette trim. An app's

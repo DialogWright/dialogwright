@@ -779,7 +779,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
   });
   const routes = [...mounted.routes, ...pages];
   validateRoutes(routes);
-  if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes)));
+  if (bus || routes.some((r) => r.localOnly)) log(consoleExposure(config, localOnlyPaths(routes), routes.filter((r) => r.auth === 'console').map((r) => r.path)));
   for (const warning of [...(mounted.warnings ?? []), ...pageWarnings]) log(`WARNING: ${warning}`);
   // Each app's part of the webhooks: its hints, and app.yaml's startParameters and transfer targets read
   // from its environment now: an unset one, or a target neither a number nor a sip: URI, stops the server
@@ -1513,7 +1513,11 @@ export async function main(start?: (config: ServerConfig) => Promise<Sidecars>):
     console.log(config.voiceProviders.length === 0 ? `[server] listening on ${running.port}; no phone line (VOICE_PROVIDERS=none): the web chat alone` : `[server] listening on ${running.port}; voice webhook ${webhooks}${legacy}`);
     const consoleBase = config.consoleLocalOnly ? localBase(running.port) : base;
     if (running.bus) console.log(config.consoleAuth ? `[server] console ${base}/dashboard (sign in: pnpm console:link prints a link)` : `[server] console ${consoleBase}/dashboard`);
-    for (const r of running.routes) console.log(`[server] ${r.label} ${(r.localOnly ? consoleBase : base)}${r.path}`);
+    for (const r of running.routes) {
+      // A console page goes where the console goes: behind its sign-in on the public address with CONSOLE_AUTH=token.
+      const signedIn = r.auth === 'console' && config.consoleAuth !== undefined && running.bus !== undefined;
+      console.log(`[server] ${r.label} ${(signedIn ? base : r.localOnly ? consoleBase : base)}${r.path}${signedIn ? ' (behind the console\'s sign-in)' : ''}`);
+    }
   } catch (e) {
     console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);

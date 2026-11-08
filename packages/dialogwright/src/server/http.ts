@@ -671,9 +671,12 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
   validateRoutes(routes);
   const settings = deps.config.consoleAuth;
   const auth = settings ? (deps.consoleAuth ?? new ConsoleAuth({ settings, publicHost: deps.config.publicHost, audit: deps.audit ?? null, log: deps.log })) : undefined;
-  // With CONSOLE_AUTH=token the console is served through the tunnel behind its sign-in; an app's
-  // local-only pages keep CONSOLE_LOCAL_ONLY's rule either way.
-  const localOnly = auth ? localOnlyPaths(routes).filter((p) => !CONSOLE_PATHS.includes(p)) : localOnlyPaths(routes);
+  // With CONSOLE_AUTH=token the console is served through the tunnel behind its sign-in, and so are an
+  // app's console pages (AppRoute auth: 'console'); an app's other local-only pages keep CONSOLE_LOCAL_ONLY's
+  // rule either way, as every one does with CONSOLE_AUTH=local.
+  const consolePages = routes.filter((r) => r.auth === 'console').map((r) => r.path);
+  auth?.servePages(consolePages);
+  const localOnly = auth ? localOnlyPaths(routes).filter((p) => !CONSOLE_PATHS.includes(p) && !consolePages.includes(p)) : localOnlyPaths(routes);
   const enabled = voiceProviders(deps.config.voiceProviders);
   /** `/health`'s numbers, which the console's Health page shows too. */
   const healthNumbers = (): HealthNumbers => {
@@ -713,7 +716,18 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
       // Before the webhooks: an app's page authenticates its own way (a portal token), not with Twilio's signature.
       // A route is handed only the paths that are its own, by the matcher the local-only guard used above.
       for (const route of routes) {
-        if (routeOwns(route, path) && (await route.handle(req, res, path))) return;
+        if (!routeOwns(route, path)) continue;
+        // A console page, with the console's sign-in: only for a signed-in browser, its first visit in a session recorded before it is served.
+        if (route.auth === 'console' && auth) {
+          const session = auth.sessionOf(req);
+          if (session === null) {
+            auth.refuse(req, res, path);
+            return;
+          }
+          const noted = auth.notePage(session, route.path);
+          if (noted) await noted;
+        }
+        if (await route.handle(req, res, path)) return;
       }
       if (deps.config.widget && (req.method === 'GET' || req.method === 'HEAD') && path === WIDGET_PATH) {
         serveWidget(req, res, deps.config.widget.file, deps.log);

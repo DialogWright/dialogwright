@@ -52,6 +52,14 @@ describe('pnpm console:link', () => {
     expect((JSON.parse(readFileSync(s.linkFile, 'utf8')) as LinkFile).url).toBe(printed);
   });
 
+  it('with --next, prints the link with the page to go to once signed in, and refuses a path that is not one', async () => {
+    const s = await setup();
+    expect(await s.run(['--next', '/wheelshop/shop'])).toBe(0);
+    expect(s.out.find((l) => l.startsWith('https://'))).toMatch(/^https:\/\/demo\.example\.net\/dashboard\/login\?code=[0-9a-f]{64}&next=%2Fwheelshop%2Fshop$/);
+    expect(s.out.join('\n')).toContain('to sign in to the console and go to /wheelshop/shop:');
+    for (const bad of ['https://evil.example/', '//evil.example', '/shop/../dashboard', 'shop']) expect(await s.run(['--next', bad]), bad).toBe(2);
+  });
+
   it('reads several settings files in ENV_FILE, comma-separated, a later one winning, and refuses one that names no file', async () => {
     const s = await setup('');
     writeFileSync(join(s.dir, 'token.env'), 'CONSOLE_AUTH=token\n', { mode: 0o600 });

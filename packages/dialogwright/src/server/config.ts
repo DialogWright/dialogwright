@@ -1048,15 +1048,18 @@ function listed(items: readonly string[]): string {
 
 /**
  * The startup line that says where the console, and the app's local-only pages, can be reached
- * from. `paths` are the ones CONSOLE_LOCAL_ONLY guards (localOnly.ts localOnlyPaths).
+ * from. `paths` are the ones CONSOLE_LOCAL_ONLY guards (localOnly.ts localOnlyPaths); `consolePages`, those
+ * of them served behind the console's sign-in where it has one (AppRoute auth: 'console').
  */
-export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard']): string {
+export function consoleExposure(c: ServerConfig, paths: readonly string[] = ['/dashboard'], consolePages: readonly string[] = []): string {
   const laptop = isLoopbackHost(c.publicHost);
   if (c.consoleAuth) {
-    // The console signs in; an app's local-only pages keep CONSOLE_LOCAL_ONLY's rule.
-    const own = paths.filter((p) => p !== '/dashboard');
+    // The console signs in, and so do the app's console pages (AppRoute auth: 'console'); its other local-only pages keep CONSOLE_LOCAL_ONLY's rule.
+    const signed = paths.filter((p) => p !== '/dashboard' && consolePages.includes(p));
+    const own = paths.filter((p) => p !== '/dashboard' && !consolePages.includes(p));
     const pages = own.length === 0 ? '' : c.consoleLocalOnly ? `; ${listed(own)} local only, 404 through ${laptop ? 'any tunnel' : 'the tunnel'}` : `; ${listed(own)} PUBLIC (CONSOLE_LOCAL_ONLY=off)`;
-    return `console: /dashboard behind sign-in on ${publicBase(c, c.port)}/dashboard (CONSOLE_AUTH=token); pnpm console:link prints a sign-in link${pages}`;
+    const behind = signed.length === 0 ? '/dashboard' : `/dashboard and ${listed(signed)}`;
+    return `console: ${behind} behind sign-in on ${publicBase(c, c.port)}/dashboard (CONSOLE_AUTH=token); pnpm console:link prints a sign-in link${pages}`;
   }
   if (c.consoleLocalOnly) {
     return `console: ${listed(paths)} local only (${localBase(c.port)}); 404 through ${laptop ? 'any tunnel' : `the tunnel on ${c.publicHost}`}`;

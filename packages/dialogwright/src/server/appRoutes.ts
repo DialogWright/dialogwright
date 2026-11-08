@@ -23,6 +23,17 @@ export interface AppRoute {
    * screen in front of the operator rather than for the internet (src/server/localOnly.ts).
    */
   readonly localOnly: boolean;
+  /**
+   * `console`: a page for the console's owner (a page of records with whole numbers on it, say), served
+   * as the console is. Where the server's console signs in (CONSOLE_AUTH=token), it is served through the
+   * tunnel too, but only to a browser signed in to the console: without a session its page goes to the
+   * sign-in page (302, which comes back to it once signed in) and anything else under it answers 401, and
+   * each session's first visit is recorded in the audit (`console_access`, `page`). Otherwise
+   * (CONSOLE_AUTH=local, the default) it is local only, as `localOnly` keeps it. Such a route must say
+   * `localOnly: true` (validateRoutes), so it is never public for want of a sign-in. Absent: the route
+   * authenticates its own way, or not at all.
+   */
+  readonly auth?: 'console';
   /** True when the request was this route's, and has been (or is being) answered. */
   handle(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean>;
   /** One pass of the server's idle sweep (every minute): drop what has gone idle. */
@@ -55,6 +66,7 @@ export function validateRoutes(routes: readonly AppRoute[]): void {
   const seen: AppRoute[] = [];
   for (const r of routes) {
     if (!ROUTE_PATH.test(r.path)) throw new Error(`app route "${r.label}": path ${JSON.stringify(r.path)} must be "/" then lowercase letters, digits, hyphens and underscores, in segments ("/chat", "/portal/help")`);
+    if (r.auth === 'console' && !r.localOnly) throw new Error(`app route "${r.label}": auth: 'console' needs localOnly: true, so the page is local only where the console has no sign-in (CONSOLE_AUTH=local)`);
     const engine = ENGINE_PATHS.find((e) => routeOwns({ path: e }, r.path) || routeOwns(r, e));
     if (engine) throw new Error(`app route "${r.label}": path ${r.path} overlaps ${engine}, which the engine serves`);
     const clash = seen.find((o) => routeOwns(o, r.path) || routeOwns(r, o.path));
@@ -125,7 +137,7 @@ export function appPagesBase(appId: string): string {
  * An app's routes as the server mounts them: each route's path put under `base` (`/<app id>`), and
  * its handler given the path below it ("/portal/jwks.json" for a request to "/harbor/portal/jwks.json"),
  * so an app's pages never name where they are mounted. Each route keeps its label, its `localOnly`, its
- * sweep and its tails; the mounted paths are validated with every other route (validateRoutes), so two
+ * `auth`, its sweep and its tails; the mounted paths are validated with every other route (validateRoutes), so two
  * apps' pages, or an app's and a launcher's, can never sit on one path.
  */
 export function mountAppPages(base: string, routes: readonly AppRoute[]): AppRoute[] {
@@ -135,6 +147,7 @@ export function mountAppPages(base: string, routes: readonly AppRoute[]): AppRou
       label: r.label,
       path: `${base}${r.path}`,
       localOnly: r.localOnly,
+      ...(r.auth !== undefined ? { auth: r.auth } : {}),
       handle: (req, res, path) => r.handle(req, res, path.slice(base.length)),
       ...(r.sweep ? { sweep: () => r.sweep!() } : {}),
       ...(r.tails ? { tails: () => r.tails!() } : {}),

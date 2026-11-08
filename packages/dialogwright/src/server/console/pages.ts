@@ -13,6 +13,13 @@ export interface SignInPageOptions {
   /** The link's code, already checked to be 64 hex digits: the page then posts it. */
   code?: string;
   note?: SignInNote;
+  /**
+   * Where a sign-in goes: one of the app's console pages (AppRoute `auth: 'console'`), already checked
+   * to be one exactly (ConsoleAuth.isPage). The form carries it; without a code, the page links to it,
+   * for a browser that is signed in but was sent here from another site (its cookie, SameSite=Strict,
+   * was not sent on that first request).
+   */
+  next?: string;
 }
 
 const NOTES: Record<SignInNote, string> = {
@@ -23,12 +30,16 @@ const NOTES: Record<SignInNote, string> = {
 
 const NEW_LINK = 'On the machine the server runs on, <code>pnpm console:link</code> prints a new sign-in link.';
 
+const ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (ch) => ESCAPES[ch]!);
+
 export function signInPage(o: SignInPageOptions): string {
   const note = o.note ? `<p class="note" role="alert">${NOTES[o.note]}</p>` : '';
+  const next = o.next === undefined ? '' : escapeHtml(o.next);
   const body = o.code
     ? `<p>This signs this browser in to the console for ${o.hours} ${o.hours === 1 ? 'hour' : 'hours'}. The link works once, for ten minutes from when it was made.</p>
-<form method="post" action="/dashboard/login"><input type="hidden" name="code" value="${o.code}"><button type="submit">Sign in</button></form>`
-    : `<p>${NEW_LINK}</p>`;
+<form method="post" action="/dashboard/login"><input type="hidden" name="code" value="${o.code}">${next === '' ? '' : `<input type="hidden" name="next" value="${next}">`}<button type="submit">Sign in</button></form>`
+    : `<p>${NEW_LINK}</p>${next === '' ? '' : `<p>Signed in on this browser already? <a href="${next}">Open the page</a>.</p>`}`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -43,6 +54,7 @@ export function signInPage(o: SignInPageOptions): string {
   h1 { font-size:1.3rem; margin:0 0 12px; }
   .note { color:#f0c36d; }
   code { font-family:ui-monospace, Menlo, monospace; }
+  a { color:#8fb3ff; }
   button { font:inherit; padding:10px 22px; border-radius:8px; border:1px solid #323b4b; background:#2f5fb8; color:#fff; cursor:pointer; }
 </style>
 </head>

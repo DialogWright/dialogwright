@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { startServer, type RunningServer, type ServerOverrides } from './index';
 import { loadConfig, type Env } from './config';
 import { hostRouting, loadHost, type HostRouting } from './host';
-import { mountAppPages, type AppPagesFactory, type AppRoute } from './appRoutes';
+import { mountAppPages, validateRoutes, type AppPagesFactory, type AppRoute } from './appRoutes';
 import { registerApp, resetAppsForTest } from '../core/app/registry';
 import { callbackApp } from '../testing/callback/app';
 import type { App } from '../core/app/types';
@@ -25,10 +25,11 @@ const TARGETS = { MAIN_LINE: '+15555550101', PRIORITY_LINE: '+15555550102', CALL
 /** A page that says what it was given, and a local-only one, both behind the app's own DEMO_PAGES switch. */
 const demoPages: AppPagesFactory = (deps) => {
   if (deps.env('DEMO_PAGES') !== 'on') return { routes: [], warnings: ['demo pages: off (DEMO_PAGES=on turns them on)'] };
-  const page = (path: string, localOnly: boolean): AppRoute => ({
+  const page = (path: string, localOnly: boolean, auth?: 'console'): AppRoute => ({
     label: `demo ${path.slice(1)}`,
     path,
     localOnly,
+    ...(auth !== undefined ? { auth } : {}),
     async handle(req, res, below) {
       if (req.method !== 'GET') return false;
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -36,7 +37,7 @@ const demoPages: AppPagesFactory = (deps) => {
       return true;
     },
   });
-  return { routes: [page('/hello', false), page('/private', true)] };
+  return { routes: [page('/hello', false), page('/private', true), page('/records', true, 'console')] };
 };
 
 const withPages = (app: App): App => ({ ...app, pages: demoPages });
@@ -79,7 +80,7 @@ describe('an app\'s own pages on a server of one app', () => {
     // Only under its base: the bare path is no page.
     expect((await fetch(`${base}/hello`)).status).toBe(404);
     expect((await fetch(`${base}/callback/other`)).status).toBe(404);
-    expect(running!.routes.map((r) => r.path)).toEqual(['/callback/hello', '/callback/private']);
+    expect(running!.routes.map((r) => r.path)).toEqual(['/callback/hello', '/callback/private', '/callback/records']);
     expect(logs.join('\n')).not.toContain('WARNING: demo pages');
   });
 
@@ -88,6 +89,26 @@ describe('an app\'s own pages on a server of one app', () => {
     expect((await fetch(`${base}/callback/private`)).status).toBe(200);
     expect((await fetch(`${base}/callback/private`, { headers: TUNNEL })).status).toBe(404);
     expect((await fetch(`${base}/callback/hello`, { headers: TUNNEL })).status).toBe(200);
+  });
+
+  it('serves a console page as the console is: with CONSOLE_AUTH=local, on this machine and never through the tunnel', async () => {
+    const { base, logs } = await start({ DEMO_PAGES: 'on' });
+    expect((await fetch(`${base}/callback/records`)).status).toBe(200);
+    expect((await fetch(`${base}/callback/records`, { headers: TUNNEL })).status).toBe(404);
+    expect(running!.routes.find((r) => r.path === '/callback/records')?.auth).toBe('console');
+    expect(logs.join('\n')).toContain('console: /dashboard, /callback/private and /callback/records local only');
+  });
+
+  it('serves a console page behind the console\'s sign-in with CONSOLE_AUTH=token: through the tunnel, and on this machine, only signed in', async () => {
+    const { base, logs } = await start({ DEMO_PAGES: 'on', DASHBOARD: 'on', CONSOLE_AUTH: 'token', CONSOLE_LINK_FILE: join(dirs.at(-1) ?? tmpdir(), 'link', 'link.json') });
+    for (const headers of [TUNNEL, {}]) {
+      const res = await fetch(`${base}/callback/records`, { headers, redirect: 'manual' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/dashboard/login?next=%2Fcallback%2Frecords');
+    }
+    // The app's other local-only page is still local only.
+    expect((await fetch(`${base}/callback/private`, { headers: TUNNEL })).status).toBe(404);
+    expect(logs.join('\n')).toContain('console: /dashboard and /callback/records behind sign-in on https://demo.example.com/dashboard (CONSOLE_AUTH=token); pnpm console:link prints a sign-in link; /callback/private local only');
   });
 
   it('serves nothing when the app\'s own switch is off, and says so', async () => {
@@ -154,6 +175,12 @@ describe('mountAppPages', () => {
     expect(m!.path).toBe('/my_app/portal/help');
     expect(m!.localOnly).toBe(true);
     expect(m!.sweep).toBeTypeOf('function');
+  });
+
+  it('keeps a console page\'s auth, and refuses one that is not local only (it would be public where the console has no sign-in)', () => {
+    expect(mountAppPages('/app', [{ ...route('/records'), auth: 'console' }])[0]!.auth).toBe('console');
+    expect(mountAppPages('/app', [route('/records')])[0]).not.toHaveProperty('auth');
+    expect(() => validateRoutes(mountAppPages('/app', [{ ...route('/records'), localOnly: false, auth: 'console' }]))).toThrow(/app route "r": auth: 'console' needs localOnly: true/);
   });
 
   it('refuses a path that is not one, naming the route', () => {

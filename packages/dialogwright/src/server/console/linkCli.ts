@@ -8,9 +8,11 @@ import { CODE_TTL_MS, LINK_KEY_HEADER, LINK_PATH, type LinkFile } from './auth';
 import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
 
 /**
- * `[ENV_FILE=<path>] pnpm console:link [--app <name>]`: a new one-time sign-in link for the console of a
- * server running with CONSOLE_AUTH=token, printed here, on the machine the server runs on. The link the
- * server made before it stops working.
+ * `[ENV_FILE=<path>] pnpm console:link [--app <name>] [--next <path>]`: a new one-time sign-in link for the
+ * console of a server running with CONSOLE_AUTH=token, printed here, on the machine the server runs on. The
+ * link the server made before it stops working. `--next` names one of the app's console pages (AppRoute
+ * `auth: 'console'`, by its path on the server, "/wheelshop/shop"): the link then goes there once signed in
+ * rather than to the console. The server goes there only if it is one; any other path signs in to the console.
  *
  * It reads the settings the server reads (the app's `.env`, or the files ENV_FILE or `--env-file` names,
  * comma-separated, a later one winning, a variable in the environment winning over them all), finds the link file the server wrote (CONSOLE_LINK_FILE, by
@@ -20,7 +22,7 @@ import { consoleAuthMethodOf, consoleLinkFileOf } from './settings';
  * all through the tunnel. Exit 0 with a link, 1 without one, 2 for a command line it does not understand.
  */
 
-export const LINK_USAGE = 'usage: [ENV_FILE=<path>[,<path>...]] pnpm console:link [--app <name>]   (ENV_FILE names a settings file other than <app>/.env; several, comma-separated, are read in turn, a later one winning)';
+export const LINK_USAGE = 'usage: [ENV_FILE=<path>[,<path>...]] pnpm console:link [--app <name>] [--next <path>]   (--next: one of the app\'s console pages, such as /wheelshop/shop, to go to once signed in; ENV_FILE names a settings file other than <app>/.env; several, comma-separated, are read in turn, a later one winning)';
 const ASK_MS = 5_000;
 
 export interface LinkIo {
@@ -83,15 +85,22 @@ function messageOf(err: unknown): string {
 export async function main(argv: readonly string[], io: LinkIo): Promise<number> {
   let appName: string | undefined;
   let envFileArg: string | undefined;
+  let next: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if ((a === '--app' || a === '--env-file') && argv[i + 1] !== undefined) {
+    if ((a === '--app' || a === '--env-file' || a === '--next') && argv[i + 1] !== undefined) {
       if (a === '--app') appName = argv[++i];
+      else if (a === '--next') next = argv[++i];
       else envFileArg = argv[++i];
     } else {
       io.out(LINK_USAGE);
       return 2;
     }
+  }
+  // A page's path on the server, as validateRoutes holds every route's: nothing a decoder could read otherwise.
+  if (next !== undefined && !/^\/[a-z0-9_-]+(\/[a-z0-9_-]+)*$/.test(next)) {
+    io.out(`--next must be a page's path on the server, such as /wheelshop/shop, got "${next}"`);
+    return 2;
   }
   const found = settingsOf(appName, envFileArg, io);
   if ('error' in found) {
@@ -154,8 +163,8 @@ export async function main(argv: readonly string[], io: LinkIo): Promise<number>
     return 1;
   }
   const made = (await res.json()) as { url: string; expiresAt: string };
-  io.out('Open this on your phone (or anywhere) to sign in to the console:');
-  io.out(made.url);
+  io.out(next === undefined ? 'Open this on your phone (or anywhere) to sign in to the console:' : `Open this on your phone (or anywhere) to sign in to the console and go to ${next}:`);
+  io.out(next === undefined ? made.url : `${made.url}&next=${encodeURIComponent(next)}`);
   io.out(`It works once, for ${CODE_TTL_MS / 60_000} minutes (until ${made.expiresAt.slice(11, 16)} UTC). The link before it no longer works.`);
   return 0;
 }
