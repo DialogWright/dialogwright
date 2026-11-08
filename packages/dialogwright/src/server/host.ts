@@ -54,9 +54,10 @@ export interface HostApp {
  * The server settings an app may give its own value under a host, in its own settings file: where its
  * handoffs go when it has no transfer targets (HANDOFF_NUMBER), and its chat's sign-in: whom its tokens
  * are for (CHAT_AUDIENCE), who issues them (CHAT_ISSUER) and where that issuer's keys are
- * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own. Absent there, the server's.
+ * (CHAT_JWKS_URL), so each app's portal may use an identity provider of its own; and the number its texts are
+ * sent from (TEXT_FROM: a business's own number, texts/settings.ts). Absent there, the server's.
  */
-export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL'];
+export const APP_OWN_SETTINGS: readonly string[] = ['HANDOFF_NUMBER', 'CHAT_AUDIENCE', 'CHAT_ISSUER', 'CHAT_JWKS_URL', 'TEXT_FROM'];
 
 /**
  * What an app's own settings file sets beyond what the server reads from it (`ignored`), in two: the

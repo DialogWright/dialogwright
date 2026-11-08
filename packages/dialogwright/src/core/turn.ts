@@ -1,3 +1,4 @@
+import type { Texts } from '../texts/types';
 import { nextWording } from './wordings';
 import { withQuestionVars } from './questionVars';
 import { formConfirmedFields } from './confirmedFields';
@@ -110,6 +111,12 @@ export interface TurnContext {
    * code: no condition, no gate rule and no record reads it. Absent, every setting is unset.
    */
   settings?: (name: string) => string | undefined;
+  /**
+   * The server's text sender for this turn (ToolContext.texts, AppContext.texts): runTurn makes it from
+   * RunOptions.texts, each text it sends recorded in the turn's audit and trace. Absent where the run has
+   * no sender, so no text is sent.
+   */
+  texts?: Texts;
   /**
    * The session a turn set aside as speech over a line returns (TurnResult.setAside), when it is not the one
    * the turn ran on: a Continuation's joined turn runs on the session before its first fragment, and is set

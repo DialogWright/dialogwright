@@ -16,6 +16,7 @@ import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
 import { agentKeyVar } from '../agent/provider';
+import { textSettings } from '../texts/settings';
 import { DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
@@ -70,7 +71,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'agent' | 'languages' | 'records';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'agent' | 'texts' | 'languages' | 'records';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -318,6 +319,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
   // Agent mode: the agent model's key and budgets, from the settings alone.
   if (o.appDir !== undefined) results.push(...agentChecks(o.appDir, o.env));
+  // Texts: the number they are sent from and the Twilio account, from the settings alone (nothing is sent).
+  results.push(...textChecks(o.env));
   if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config));
   // The app's languages as the carriers listed are sent them: a tag with no region, a recognizer that hears English only.
   if (o.appDir !== undefined) results.push(...languageChecks(o.appDir, config));
@@ -418,6 +421,21 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
     return line === null ? [] : [{ id: 'records', status: 'ok', message: line }];
   } catch (e) {
     return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token (or DASHBOARD=off) in the settings file, or let app.yaml\'s records keep the defaults' }];
+  }
+}
+
+/**
+ * Texts (the guide's 13.17): with TEXT_FROM set, the number texts are sent from (by its last four) and the
+ * Twilio account they go through, or the setting the server would refuse. Nothing with TEXT_FROM unset (no
+ * texts, the default). No text is sent and Twilio is not asked.
+ */
+export function textChecks(env: Env): CheckResult[] {
+  try {
+    const t = textSettings(env);
+    if (t === null) return [];
+    return [{ id: 'texts', status: 'ok', message: `texts sent from ...${t.from.slice(-4)} through Twilio's Messages API (TWILIO_ACCOUNT_SID set); texts that come in: POST /messages/twilio` }];
+  } catch (e) {
+    return [{ id: 'texts', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file, or unset TEXT_FROM to send no texts' }];
   }
 }
 
@@ -907,6 +925,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     out.push(...variableChecks(app.dir, read.env).map(tag));
     out.push(...wordingChecks(app.dir, read.env).map(tag));
     out.push(...agentChecks(app.dir, read.env).map(tag));
+    out.push(...textChecks(read.env).map(tag));
     const server = serverConfigOf(env);
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.

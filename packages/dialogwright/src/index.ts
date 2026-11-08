@@ -184,6 +184,10 @@ export { replyShape } from './core/replyShape';
 export type { ReplyCheck } from './core/replyShape';
 export { RESULT_UNCHECKED } from './core/lifecycle';
 
+// Texts (SMS and MMS) an app's code sends (ToolContext.texts, TextContext.texts) and receives (AppCode.onText):
+// the guide's 13.17. The sender is the server's; whether a caller is texted is the app's policy.
+export type { IncomingMedia, IncomingText, OutgoingText, TextContext, TextReceipt, Texts } from './texts/types';
+
 // Decisions a completion or hook may return, and the lines it may say before them.
 export type { Ack } from './core/fia';
 export type { Decision, PromptDecision, CompleteDecision, HandoffDecision } from './core/decision';

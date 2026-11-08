@@ -23,6 +23,8 @@ import { defaultTarget, describeDropped, dialPlan, parseHandoff, recordedPlan, t
 import { providerForPath, voiceProviders } from './voice/registry';
 import { twilioCallbackParams, twilioProvider } from './voice/twilio';
 import { formFields } from './voice/xml';
+import { EMPTY_TWIML, parseTwilioMessage } from '../texts/twilio';
+import type { IncomingText } from '../texts/types';
 import type { App } from '../core/app/types';
 import type { VoiceProviderId } from '../channel/voiceProviders';
 import { buildHintsFrom } from './hints';
@@ -140,7 +142,17 @@ export interface HttpDeps extends HttpApp {
    * something mints one. With CONSOLE_AUTH=local it is never used.
    */
   consoleAuth?: ConsoleAuth;
+  /**
+   * Texts that come in (`POST /messages/twilio`; texts/types.ts, the guide's 13.17): the Twilio auth token
+   * their signature is checked with (null where the server has none, so every one is refused while
+   * SIGNATURE_CHECK is on), and what is done with each once Twilio has been answered (index.ts: recorded,
+   * then handed to the app's onText). Absent, the route does not exist (404).
+   */
+  messages?: { readonly secret: string | null; receive(appId: string | null, message: IncomingText): Promise<void> };
 }
+
+/** The incoming-message webhook's path: `/messages/<provider>`, Twilio's the one today. */
+export const MESSAGES_PATH = '/messages/twilio';
 
 /** What the server gives the console's Health page beside `/health`'s numbers (index.ts makes it). */
 export interface ServerHealth {
@@ -737,6 +749,33 @@ export function createRequestHandler(deps: HttpDeps): (req: IncomingMessage, res
         const draining = deps.draining?.() ?? false;
         const stopping = !draining && (deps.unready?.() ?? false);
         answerJson(req, res, draining || stopping ? 503 : 200, JSON.stringify(draining ? { ready: false, draining: true } : stopping ? { ready: false, stopping: true } : { ready: true }));
+        return;
+      }
+      // Texts that come in: Twilio's signature checked as the voice webhook's is, the number texted picking the
+      // app, the message recorded and handed to the app's onText once Twilio has its empty answer.
+      if (path === MESSAGES_PATH && deps.messages !== undefined) {
+        if (req.method !== 'POST') {
+          reply(res, 404, 'text/plain', 'not found');
+          return;
+        }
+        const raw = await readBody(req, res);
+        if (raw === null) return;
+        const posted: WebhookRequest = { url: req.url ?? path, headers: lowerHeaders(req.headers), rawBody: raw, nowSec: Math.floor(Date.now() / 1000) };
+        const secret = deps.messages.secret;
+        if (deps.config.signatureCheck && (!secret || !twilioProvider.verify(posted, secret, deps.config.publicHost))) {
+          deps.log(`${path}: signature rejected`);
+          reply(res, 403, 'text/plain', 'invalid signature');
+          return;
+        }
+        const message = parseTwilioMessage(formFields(raw));
+        if (message === null) {
+          deps.log(`${path}: missing MessageSid or From`);
+          reply(res, 400, 'text/plain', 'missing MessageSid or From');
+          return;
+        }
+        const { id: appId } = servedOf(deps, undefined, message.to);
+        reply(res, 200, 'text/xml', EMPTY_TWIML);
+        deps.messages.receive(appId, message).catch((e: unknown) => deps.log(`${path} ${message.id}: ${e instanceof Error ? e.message : String(e)}`));
         return;
       }
       // A carrier's webhooks: `/voice/<id>` and `/cr-action/<id>` for an enabled provider, and the

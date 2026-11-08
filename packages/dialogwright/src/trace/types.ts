@@ -1,3 +1,4 @@
+import type { TextRecord } from '../texts/types';
 import type { SessionEvent } from '../channel/events';
 import type { Action } from '../channel/actions';
 import type { AnsweredBy, AnswerMap, AnswerSource, QuestionMap } from '../jev/types';
@@ -233,6 +234,11 @@ export interface TraceRecord {
    * turn that asked the agent; absent on every other record and for every other app.
    */
   agent?: AgentTurnRecord & { sent?: AgentSentRecord };
+  /**
+   * The texts the turn's tools sent (texts/types.ts TextRecord): each number by its last four, the body by
+   * its length, the media by their count, the provider's id and status. Only on a turn that sent one.
+   */
+  texts?: TextRecord[];
 }
 
 /** What a turn waited on (TraceRecord.waited). */

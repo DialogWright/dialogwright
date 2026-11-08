@@ -303,7 +303,8 @@ function runTool(s: Session, call: ToolCall, tc: TurnContext, out: TurnOut, code
   const def = toolOf(appOf(s), call.tool);
   // A tool that writes is given its write's key (core/idempotency.ts); any other is called as it always was.
   const env = settingOf(tc);
-  const start = (into: TurnOut) => def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out: into, code, idempotencyKey: idempotencyKey(s, call), env } : { s, tc, out: into, code, env });
+  const texts = tc.texts !== undefined ? { texts: tc.texts } : {};
+  const start = (into: TurnOut) => def.run(call, tc.tools.sys, def.idempotent === true ? { s, tc, out: into, code, idempotencyKey: idempotencyKey(s, call), env, ...texts } : { s, tc, out: into, code, env, ...texts });
   // A test's stand-in for the systems' answer (Tools.answers); never set on a call.
   const answer = (ran: ToolRun): ToolRun => (tc.tools.answers ? tc.tools.answers(call, ran, s.principal) : ran);
   const memo = tc.toolMemo;
@@ -976,7 +977,7 @@ export function takeSummaryHash(s: Session, form: FormId): void {
  * callTool bound to them. The only way an app's code reaches a tool.
  */
 export function appContext(s: Session, tc: TurnContext, out: TurnOut, base: CallOptions = {}): AppContext {
-  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { ...base, failSoft: true } : base), env: settingOf(tc) };
+  return { s, tc, out, callTool: (call, opts) => callTool(s, call, tc, out, undefined, opts?.failSoft === true ? { ...base, failSoft: true } : base), env: settingOf(tc), ...(tc.texts !== undefined ? { texts: tc.texts } : {}) };
 }
 
 /** The app's settings as its code reads them (AppContext.env): the turn's (TurnContext.settings), each unset where the turn has none. */

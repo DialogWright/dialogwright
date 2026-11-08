@@ -1,6 +1,7 @@
 import { agentSettings, loadConfig } from './config';
 import { resolveJevProvider } from '../jev/provider';
 import { renderSettings, resolveRenderProvider } from '../render/providers';
+import { textSettings } from '../texts/settings';
 
 /**
  * The names of the server's own settings: what its readers read (loadConfig, the decision model's and
@@ -31,6 +32,7 @@ const PARTS: readonly Readonly<Record<string, string>>[] = [
   { RENDER_PROVIDER: 'inception' },
   { CONSOLE_AUTH: 'token' },
   { WIDGET: 'on' },
+  { TEXT_FROM: '+15555550100', TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}` },
 ];
 
 /** What every environment starts with: the settings a server cannot start without. */
@@ -42,6 +44,7 @@ const READERS: readonly ((env: Record<string, string | undefined>) => unknown)[]
   (env) => resolveRenderProvider(env, { needKey: true }),
   (env) => renderSettings(env),
   (env) => agentSettings(env),
+  (env) => textSettings(env),
 ];
 
 /** A setting's name, as a message from a reader names one. */

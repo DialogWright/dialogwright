@@ -1,3 +1,4 @@
+import type { IncomingText, TextContext, Texts } from '../../texts/types';
 import type { AgentApp } from '../../agent/types';
 import type { SlotCandidate, SlotContext, SlotSpec } from '../slots/types';
 import type { Ack } from '../fia';
@@ -398,6 +399,8 @@ export interface AppContext {
    * once, as the module is imported: read a setting here, as the call needs it.
    */
   env(name: string): string | undefined;
+  /** The server's text sender, from the app's number (ToolContext.texts); absent where the server has none. */
+  texts?: Texts;
 }
 
 /** How an app hook's call is made (AppContext.callTool). */
@@ -669,6 +672,13 @@ export interface ToolContext {
   idempotencyKey?: string;
   /** One of the app's own settings, by name, at call time: AppContext.env. */
   env(name: string): string | undefined;
+  /**
+   * The server's text sender, from the app's number (texts/types.ts; the guide's 13.17): absent where the
+   * server has none (TEXT_FROM unset), so a tool that texts prints, or skips, as the app decides. A tool
+   * that texts a caller is gated like any other: whether it may run, and to whom, is the policy's. Await
+   * it in an `async run`: each text is recorded in the turn's audit and trace once it is sent.
+   */
+  texts?: Texts;
 }
 
 export interface ToolDef {
@@ -1653,6 +1663,14 @@ export interface App {
    * goes on. Without it, nothing runs, as before.
    */
   onStart?(ctx: AppContext): void;
+  /**
+   * A text that came in to one of the app's numbers (`POST /messages/<provider>`, the number texted
+   * picking the app; texts/types.ts, the guide's 13.17): the app's own code decides what is done with it,
+   * forwarding it or answering it with `ctx.texts`. Called after the provider was answered (with nothing
+   * to send, so no reply goes but the app's own), and after the message was recorded in the audit. One
+   * that throws is logged. Without it, a text that comes in is recorded and nothing else is done.
+   */
+  onText?(message: IncomingText, ctx: TextContext): void | Promise<void>;
   /** The actions the start hook calls (app.yaml's `onStart.calls`), so they are reached. Without it, none. */
   startCalls?: readonly ToolName[];
   /**

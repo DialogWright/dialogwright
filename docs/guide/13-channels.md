@@ -11,6 +11,7 @@ The same app answers on the phone, through Twilio, Telnyx or both, and on the we
 | Which carriers answer | `VOICE_PROVIDERS` (env), a comma list of `twilio`, `telnyx`, or `none` | `twilio` | Add `telnyx` to answer Telnyx numbers too, or name it alone. `none` is a server of the web chat alone: no phone line, no carrier's secret, `HANDOFF_NUMBER` optional (a chat's handoff goes to the page), and `CHAT=on` required. `pnpm configure` writes it for this computer. |
 | A carrier's secret | `TWILIO_AUTH_TOKEN`, `TELNYX_PUBLIC_KEY` (env) | none; required for a listed carrier only | Always, for each carrier listed. The Telnyx key is the account's base64 Ed25519 public key. |
 | Webhook signatures | `SIGNATURE_CHECK` (env), `on` or `off` | `on` | `off` only to post webhooks by hand on a laptop. |
+| Texts sent | `TEXT_FROM` (env: the number texts are sent from, E.164; on a host, an app's own settings file may give its own), with `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` | unset: no sender, so no text is sent and an app's code has none (`ctx.texts` absent) | To let an app's code text: through Twilio's Messages API, each text recorded ([13.17](#1317-texts-sending-and-receiving)). |
 | Twilio's voice | `TTS_PROVIDER` and `TTS_VOICE` (env), set together | Twilio's default voice | To choose the voice of the app's default locale on Twilio (`Google`, `en-US-Neural2-F`). |
 | Telnyx's voice | `TELNYX_VOICE` (env), a Telnyx voice name | Telnyx's default voice | To choose the voice of the default locale on Telnyx (`Telnyx.NaturalHD.astra`; Telnyx's Ultra voices are named by an id, `Telnyx.Ultra.<id>`, as Mission Control lists them). |
 | Twilio's recognizer | `TWILIO_TRANSCRIPTION_PROVIDER`, `TWILIO_SPEECH_MODEL` (env) | `Deepgram`, and `flux` with Deepgram (no model with another provider) | When the app's default locale is not English (flux hears English), or to try another model. |
@@ -544,3 +545,41 @@ transfer:
 **A caller who had not finished** ([13.8](#138-a-caller-who-had-not-finished-and-how-a-word-is-said)). A turn set aside is never continued: a caller who said a fragment over the line and the rest after it is heard on the rest alone, and that prompt is judged over a line on its own. The trade-off: an answer split in two over a line, each half a miss on its own, loses both halves, and the caller is asked again after the no-input wait. A `digits` slot with `waitForRestMs` is covered: its held words join the halves before any turn runs. A caller who comes back in with the rest of words that were taken is joined as always, while the turn on the first part is still running too. A prompt that continues a turn that was taken is read over a line where it itself was; set aside, it leaves the session as the taken turn left it (its re-ask was heard). Words held for the rest of a value are held as always, read where the first of them began, and set aside only if, joined, they are still a miss.
 
 **Records and replay.** The frame log has `{ speechOverLine: { mode, afterMs, expectedMs, start } }` just before the prompt's own line: how far into the lines the speech began and their estimated length, both from the first line's send, and whether the start was the carrier's report (`speaking`), the first partial (`partial`) or the prompt's arrival (`arrival`). Replay marks the prompt there, or runs no turn for it, as the log says, so a replayed call sets aside, or skips, where the call did. The turn's trace record has the event marked (`overLine: true`) and, where it was set aside, the gate row `speechOverLine` with the outcome `set_aside`, which decided it; the rows before it show what the model read. The server log says `speech 0.07 s into lines it could not interrupt (~8.0 s)` as the prompt comes, and after its turn what became of it (`speech over a line set aside as a miss`, `taken`, or `joined to the words before it, and taken`; under `ignore`, `: no turn` at once); the console notes it under the line spoken over ([13.12](#1312-what-happened-on-the-line-in-the-console)), and the startup line says `speech over a line unless-miss`. A value other than the three is refused at startup, as a `BARGE_IN` one is. To check it on a live call: [live checks, 18](../live-checks.md#18-speech-over-a-line-the-caller-cannot-interrupt-on-telnyx-and-on-twilio).
+
+### 13.17 Texts: sending and receiving
+
+The server can send texts (SMS and MMS) for an app's code and hand it the texts that come in. It is a capability, the same for any app: whether a caller is texted, and in what words, is the app's, held to its policy by the gate.
+
+**Sending.** With `TEXT_FROM` set (the number texts are sent from, E.164; on a host, an app's own settings file may give its own), the server gives a tool a sender, `ctx.texts`, and the incoming hook the same (below). With it unset, the default, there is none: `ctx.texts` is absent, and a tool decides what it does then (the wheelshop prints the text). Texts go through Twilio's Messages API by fetch, with the account's `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` (the voice webhook's token); the server refuses to start, naming the setting, with `TEXT_FROM` set and either missing or malformed, and `pnpm diagnose` says so.
+
+```ts
+send_photo_link: {
+  params: REQUEST,
+  idempotent: true,
+  async run(call, sys, ctx) {
+    const r = await ctx.texts?.send({ to: call.params.callbackNumber!, body: 'Reply to this text with a photo.', key: ctx.idempotencyKey });
+    return { value: { ref: 'P101' }, summary: r === undefined ? 'printed, not sent' : `texted (${r.status})` };
+  },
+  check: replyShape.object({ ref: replyShape.code() }),
+},
+```
+
+- `to` is E.164, or ten digits read as a North American number; `media` attaches each URL (an MMS), which the provider fetches.
+- `send` never throws: it returns the provider's message id and status, or `status: failed` with the provider's code and message (numbers masked).
+- `key` (the write's `ctx.idempotencyKey`): a text sent again with the same key on the same server is not sent twice; the first receipt comes back, marked `repeat`.
+- Await it in an `async run`: each text is recorded once it is sent, in the turn's audit (`text_sent`: the number by its last four, the body by its length, the media by their count, the provider's message id and status, never the words) and its trace (`texts`).
+- A text to a caller is an action like any other: its tool is gated. In an agent-mode app, business.yaml's `when` holds it to the caller's consent ([18.3](18-agent-mode.md#183-businessyaml-key-by-key)).
+
+**Receiving.** `POST /messages/twilio` is the incoming-message webhook: in the Twilio console, the number's "A message comes in" webhook is `https://<PUBLIC_HOST>/messages/twilio`, HTTP POST. Its signature is checked exactly as the voice webhook's is (`SIGNATURE_CHECK`), and a request that fails it is refused with a 403. The number texted (`To`) picks the app, as a call's number does under a host ([14.15](14-running-it.md#1415-several-apps-on-one-server-hostyaml)). Twilio is answered at once with an empty `<Response/>`, so the engine sends no reply of its own; the message is recorded in the app's audit (`text_received`, under its message id on the `sms` channel: the sender by their last four, the body by its length, the media by their count) and handed to the app's hook:
+
+```ts
+async onText(message, ctx) {
+  // message: { id, from, to, body, media: [{ url, contentType }], provider }
+  // ctx: { texts?, env(name), sys, nowMs }
+  await ctx.texts?.send({ to: ctx.env('SHOP_PHONE')!, body: `Text from ...${message.from.slice(-4)}`, media: message.media.map((m) => m.url) });
+},
+```
+
+The engine fetches no media: the URLs are Twilio's, and forwarding passes them as the outgoing text's `media`. A text the hook sends is recorded beside the message (`text_sent`). A hook that throws is logged; what it sent before is still recorded. Without `onText`, a text that comes in is recorded and nothing more is done. The hook is given the app's systems (`ctx.sys`), the same the server's calls use, so a request a call made can be found by the number it texts from; nothing it does goes through the gate, as nothing here is done on a call for a caller.
+
+Telnyx's sender and webhook are a second adapter of the same shape (`TextProvider`, `texts/types.ts`), still to come; nothing an app writes changes when it is added. Tests use a fake sender (`fakeTextProvider` in `dialogwright/testing`, `ServerOverrides.textProvider` on a server): no test sends a text.

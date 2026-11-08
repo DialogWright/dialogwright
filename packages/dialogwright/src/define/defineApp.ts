@@ -123,6 +123,8 @@ export interface AppCode {
   predicates?: App['predicates'];
   blockPromptId?: App['blockPromptId'];
   onServiceResult?: App['onServiceResult'];
+  /** What is done with a text that comes in to one of the app's numbers (App.onText). */
+  onText?: App['onText'];
   testing?: App['testing'];
   /** identity.yaml's code: the one-time code call's params (IdentityConfig.sendCodeParams). Only with an identity.yaml. */
   identity?: { sendCodeParams?: IdentityConfig['sendCodeParams'] };
@@ -1157,6 +1159,7 @@ function buildApp(config: LoadedConfig, code: AppCode, slots: Record<SlotId, Slo
   app.systems = code.systems;
   put(app, 'services', code.services);
   put(app, 'onServiceResult', code.onServiceResult);
+  put(app, 'onText', code.onText);
   put(app, 'blockPromptId', code.blockPromptId);
   put(app, 'wording', a.wording as ModelWording | undefined);
   put(app, 'carrySlots', a.carrySlots);

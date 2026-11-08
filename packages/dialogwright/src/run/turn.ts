@@ -1,3 +1,5 @@
+import { recordingTexts, textAuditRow, type TextKeys } from '../texts/record';
+import type { TextProvider, TextRecord } from '../texts/types';
 import { performance } from 'node:perf_hooks';
 import { wordsOf, type SessionEvent } from '../channel/events';
 import { followUpOf, followUpQuestions, plan, sensitiveDigit, slotContext, type ArrivalDigit, type DigitArrivalContext, type FollowUp, type TurnContext, type TurnError, type TurnResult } from '../core/turn';
@@ -142,6 +144,20 @@ export interface RunOptions {
    * scriptedFromNow); every other app never asks it.
    */
   agent?: AgentRunner | null;
+  /**
+   * The server's text sender for the app (texts/types.ts; the guide's 13.17): its provider, the number it
+   * sends from and the keys it has sent with. Each turn gives the app's code a sender (ToolContext.texts)
+   * that records every text in the turn's audit and trace. Unset (no TEXT_FROM, the harness, the CLI), the
+   * app's code has none and no text is sent.
+   */
+  texts?: TurnTexts | null;
+}
+
+/** What a run sends texts with (RunOptions.texts). */
+export interface TurnTexts {
+  readonly provider: TextProvider;
+  readonly from: string;
+  readonly keys: TextKeys;
 }
 
 /**
@@ -498,6 +514,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const now = nowOf(opts);
   const digit = arrivalContext(session, event, arrival);
   const sensitive = digit.digitClass ?? null;
+  // The texts this turn's tools send, recorded as they go (the audit's text_sent, the trace's texts).
+  const sentTexts: TextRecord[] = [];
+  const texts = opts.texts != null ? recordingTexts(opts.texts.provider, opts.texts.from, opts.texts.keys, (r) => sentTexts.push(r)) : null;
   const base: TurnContext = {
     nowMs: now(),
     todayIso: opts.todayIso,
@@ -506,6 +525,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     render: opts.render ?? null,
     ...conditionEnv(session, opts.env),
     ...settingsOf(opts),
+    ...(texts !== null ? { texts } : {}),
     ...digit,
     // A joined turn set aside as speech over a line returns the session it was given (TurnContext.setAsideAs).
     ...(setAsideAs !== undefined ? { setAsideAs } : {}),
@@ -672,7 +692,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
   const rendered = opts.renderer ? await renderTurn({ before: session, result: decided, event, renderer: opts.renderer, client: opts.client, thresholds: opts.thresholds, clips: opts.render ?? null, ...(opts.early !== undefined ? { early: opts.early } : {}) }) : null;
   // A turn whose answer line words its answer: its knowledge record says whether the passage or a wording of it was said.
   const kb = rendered?.kbSaid !== undefined && decided.kb !== null ? { ...decided.kb, said: rendered.kbSaid } : decided.kb;
-  const result = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
+  const worded = rendered ? { ...decided, actions: rendered.actions, audit: withRenderAudit(decided.audit, rendered.audit), kb } : decided;
+  // The texts the turn's tools sent, each a row of its audit (text_sent), after what the turn did.
+  const result = sentTexts.length > 0 ? { ...worded, audit: [...worded.audit, ...sentTexts.map(textAuditRow)] } : worded;
   // The decision model's checks this turn: the agent line's judge and generated wording's, together.
   // The text values' judge (call 40) is the decision model's too.
   const driftUsage = sumUsage(sumUsage(held?.usage ?? null, rendered?.driftUsage ?? null), textUsage);
@@ -720,6 +742,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     ts: new Date(now()).toISOString(),
     pricePerMtok: opts.thresholds.JEV_PRICE_PER_MTOK,
   });
+  if (sentTexts.length > 0) record.texts = [...sentTexts];
   opts.trace?.write(record);
   try {
     opts.observe?.turn(record, now());

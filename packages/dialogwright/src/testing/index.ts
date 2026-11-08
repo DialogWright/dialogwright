@@ -27,6 +27,10 @@ export {
 } from './shadowSlot';
 export type { ShadowMethod, ShadowMismatch, ShadowMode, ShadowOptions, ShadowReport } from './shadowSlot';
 export { isCassetteMiss } from '../jev/cassette';
+// A text sender for tests: takes every text, answers queued, keeps each whole; never a real provider.
+export { fakeTextProvider, TextKeys } from '../texts/record';
+export type { FakeSent } from '../texts/record';
+export type { TextProvider } from '../texts/types';
 // Retrievers for a test of a topic slot or a knowledge app: one that nominates exactly what it is
 // given, and one that nominates by plain keywords (retrievers.ts).
 export { fixedRetriever, keywordRetriever } from './retrievers';

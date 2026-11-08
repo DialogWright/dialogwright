@@ -14,7 +14,7 @@ import type { AgentRunner } from '../agent/types';
 import { agentSettings, type ChatSettings, consoleExposure, gb, DEFAULT_DRAIN_MS, DEFAULT_RESUMED_AFTER_MS, DEFAULT_RESAY_MIN_FRACTION, describeConfig, loadConfig, localBase, publicBase, recognitionFor, recordsSettingFor, reportsCallerVoice, startParametersFrom, type Env, type ServerConfig } from './config';
 import { DEFAULT_INCOMPLETE_WAIT_MS, DEFAULT_SPEECH_OVER_LINE, DEFAULT_SPURIOUS_INTERRUPT_WINDOW_MS, VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, speechLocalesOfApp } from '../channel/speechLanguages';
-import { createRequestHandler, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
+import { createRequestHandler, MESSAGES_PATH, telnyxUnvoicedLocales, type HttpApp, type HttpDeps } from './http';
 import { attachWebSocketServer } from './ws';
 import { forgetNoInput, heldEndsOf, type AdapterDeps } from './adapter';
 import { randomBytes } from 'node:crypto';
@@ -66,6 +66,12 @@ import { diskUsageCache, sweepRetention, type RetentionSettings } from './retent
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
+import { textSettings } from '../texts/settings';
+import { twilioTextProvider } from '../texts/twilio';
+import { receivedRecord, recordingTexts, TextKeys, textAuditRow } from '../texts/record';
+import type { IncomingText, TextProvider, TextRecord } from '../texts/types';
+import { lastFour } from '../core/callerNumber';
+import type { TurnTexts } from '../run/turn';
 import { appModelKeyMissing, appModelLabel, defaultRenderPrice, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import type { Renderer } from '../render/types';
 
@@ -172,6 +178,11 @@ export interface ServerOverrides {
   sessionSql?: SqlClient;
   /** With AUDIT_STORE=postgres://..., the connection to use, as sessionSql is for SESSION_STORE: a test seam, not a setting. */
   auditSql?: SqlClient;
+  /**
+   * How texts are sent (texts/types.ts TextProvider) for every app with TEXT_FROM set, in place of Twilio's
+   * Messages API: a test's fake (dialogwright/testing fakeTextProvider), so no test sends a text. A test seam, not a setting.
+   */
+  textProvider?: TextProvider;
   /** With TRACE_STORE=s3://..., how the store is reached in place of the global fetch: a test seam, not a setting. */
   traceFetch?: typeof fetch;
   /**
@@ -293,6 +304,9 @@ function corpusOf(app: App, dir: string | undefined): string | null {
  * sign-ins and replays, which are no app's. An app id starts with a letter, so none is this.
  */
 export const SERVER_RECORDS = '_server';
+
+/** The channel a text's audit rows are recorded under (texts/record.ts textAuditRow), beside calls' `voice` and chats' `chat`. */
+export const TEXT_CHANNEL = 'sms';
 
 /** An app's audit chain on a host: `sink`, each entry naming the app (AuditDraft.app), hashed with it. */
 function appAudit(sink: AuditSink, app: string): AuditSink {
@@ -475,6 +489,24 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its judge ${checkTimeoutMs.voice} and ${checkTimeoutMs.chat} ms`);
   }
   const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;
+
+  // Texts: each app's sender, from TEXT_FROM (on a host, the app's own settings file's), through Twilio's
+  // Messages API with TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (texts/settings.ts). TEXT_FROM unset is no
+  // sender: the app's code has none (ToolContext.texts), and no text is sent, as before.
+  const textSenders = new Map<string, TurnTexts>();
+  let textSecret: string | null = config.providerSecrets.twilio ?? null;
+  for (const a of appsRun) {
+    const t = forApp(a.id, () => textSettings(a.env));
+    if (t === null) {
+      if (a.app.onText !== undefined) log(`${tag(a.id)}texts: TEXT_FROM unset: a text that comes in (${MESSAGES_PATH}) is recorded and handed to the app, which can send none`);
+      continue;
+    }
+    textSecret ??= t.authToken;
+    const provider = overrides.textProvider ?? twilioTextProvider({ accountSid: t.accountSid, authToken: t.authToken });
+    textSenders.set(a.id, { provider, from: t.from, keys: new TextKeys() });
+    log(`${tag(a.id)}texts: sent from ...${lastFour(t.from)} through ${provider.id === 'twilio' ? 'Twilio\'s Messages API' : provider.id}; texts that come in: ${MESSAGES_PATH}`);
+  }
+  const textsOf = (id: string): TurnTexts | null => textSenders.get(appRun(id).id) ?? null;
 
   const serviceUrls = overrides.serviceUrls ?? {};
   // Each app's services' URLs: a server of one's from its launcher (ServerOverrides.serviceUrls); on a host,
@@ -685,7 +717,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, store, callSid) : null;
       return {
         session: host ? newSession(callSid, now(), VOICE_RELAY, ANONYMOUS, a.id) : newSession(callSid, now(), VOICE_RELAY),
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: renderOf(a.id), renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
         trace,
         frames,
       };
@@ -839,7 +871,7 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       const observe: TurnObserver | null = bus ? makeObserver(bus, sessions, id) : null;
       // No render context: a chat shows a line's words, never a recorded clip.
       return {
-        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings },
+        opts: { client: clientOf(a.id), thresholds, todayIso: todayIso(), trace, now, render: null, renderer: rendererOf(a.id), agent: agentOf(a.id), observe, tools: toolsOf(a.id), audit: auditOf(a.id), screen: config.screen, env: calledOf(a.id), settings: a.settings, texts: textsOf(a.id) },
         frames,
       };
     },
@@ -931,8 +963,30 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     }
     sweepDisk();
   }
+  /**
+   * A text that came in (POST /messages/twilio), its app picked by the number texted: recorded in the app's
+   * audit (text_received, under the provider's message id, channel sms), then handed to the app's onText
+   * with a sender whose texts are recorded beside it. Nothing is fetched of its media.
+   */
+  const receiveText = async (appId: string | null, m: IncomingText): Promise<void> => {
+    const a = appRun(appId ?? undefined);
+    const sink = auditOf(a.id);
+    const records: TextRecord[] = [];
+    const t = textsOf(a.id);
+    const texts = t !== null ? recordingTexts(t.provider, t.from, t.keys, (r) => records.push(r)) : null;
+    log(`${MESSAGES_PATH} ${m.id} from ...${lastFour(m.from)}${host ? ` (app ${a.id})` : ''}: ${m.body.length} characters, ${m.media.length} media`);
+    await sink.append(m.id, TEXT_CHANNEL, textAuditRow(receivedRecord(m)));
+    try {
+      if (a.app.onText !== undefined) await a.app.onText(m, { ...(texts !== null ? { texts } : {}), env: (name) => (Object.hasOwn(a.settings, name) ? a.settings[name] : undefined), sys: toolsOf(a.id).sys, nowMs: now() });
+    } catch (err) {
+      log(`${MESSAGES_PATH} ${m.id}: the app's onText failed (${err instanceof Error ? err.name : 'error'})`);
+    } finally {
+      for (const r of records) await sink.append(m.id, TEXT_CHANNEL, textAuditRow(r));
+    }
+  };
   const deps: HttpDeps = {
     config, store, tokens, hints: buildHints(app), log, bus, audit, routes, app,
+    messages: { secret: textSecret, receive: receiveText },
     ...(Object.keys(startParameters).length > 0 ? { startParameters } : {}),
     ...(transfer ? { transfer } : {}),
     ...(numbers.length > 0 ? { numbers } : {}),
