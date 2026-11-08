@@ -72,7 +72,7 @@ function liveCall(provider: string, bargeIn: BargeIn, more: Partial<AdapterDeps>
   const info = (name: string, value: string) => send({ type: 'info', name, value });
   const setup = { type: 'setup', sessionId: 'VX9', callSid: CALL, from: '+15555550100', to: '+15555550199', customParameters: {} };
   return {
-    sent, store, log,
+    sent, store, log, send,
     caller: (on: boolean) => info('clientSpeaking', on ? 'on' : 'off'),
     agent: (on: boolean) => info('agentSpeaking', on ? 'on' : 'off'),
     played: (value: string) => info('tokensPlayed', value),
@@ -101,8 +101,11 @@ function noteBefore(call: Call, words: string): Record<string, unknown> | undefi
   let at = -1;
   for (const [i, l] of logs.entries()) if (l.dir === 'in' && l.msg.type === 'prompt' && l.msg.voicePrompt === words && l.msg.last === true) at = i;
   expect(at).toBeGreaterThan(0);
-  const before = logs[at - 1]!;
-  return before.dir === 'log' && before.msg.speechOverLine !== undefined ? before.msg.speechOverLine as Record<string, unknown> : undefined;
+  // The log lines written as the prompt came, just before its own (a caller back in is noted after it).
+  for (let i = at - 1; i >= 0 && logs[i]!.dir === 'log'; i--) {
+    if (logs[i]!.msg.speechOverLine !== undefined) return logs[i]!.msg.speechOverLine as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 const notes = (call: Call) => call.logs().filter((l) => l.dir === 'log' && l.msg.speechOverLine !== undefined);
@@ -324,17 +327,62 @@ describe('the lines\' end the no-input wait reads', () => {
     expect(call.records().at(-1)!.event.type).toBe('user.silence');
   });
 
-  it('a reply sent while the greeting is still to end starts the lines anew from its send, as the wait counts it', async () => {
+  it('a reply sent while the greeting is still playing is queued behind it: speech over the greeting\'s tail is over a line', async () => {
     const call = liveCall('twilio', 'none');
     await call.start();
     await vi.advanceTimersByTimeAsync(1_000);
-    // A request over the greeting: its reply goes out at once, and is the line from then.
+    // A request over the greeting: taken, its reply queued behind the greeting (11.6 s, then 4.8 s).
     await call.say('i want to report a problem');
+    // The no-input wait after it is counted as it always was, from the reply's own estimate.
     const armed = call.logs().filter((l) => l.dir === 'log' && l.msg.noInputArmedMs !== undefined).at(-1)!.msg.noInputArmedMs;
     expect(armed).toBe(4_800 + NO_INPUT_MS);
     await vi.advanceTimersByTimeAsync(4_900);
     await call.say('mm hm');
-    expect(noteBefore(call, 'mm hm')).toBeUndefined();
+    expect(noteBefore(call, 'mm hm')).toEqual({ mode: 'unless-miss', afterMs: 5_900, expectedMs: GREETING_MS + 4_800, start: 'arrival' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+  });
+
+  it('background speech over a reply queued behind the greeting is set aside, and the wait after it runs from the queued end', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say('i want to report a problem');
+    expect(call.session().form).toBe('report');
+    // At 12 s the reply plays (11.6 s to 16.4 s); someone in the room talks over it.
+    await vi.advanceTimersByTimeAsync(10_700);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 11_700, expectedMs: GREETING_MS + 4_800, start: 'speaking' });
+    expect(call.records().at(-1)!.decision.kind).toBe('ignore');
+    expect(call.session().slots.place?.attempts).toBe(0);
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+    // The wait: from the queued end, 16.4 s, then NO_INPUT_MS.
+    const now = 12_300;
+    await vi.advanceTimersByTimeAsync(GREETING_MS + 4_800 + NO_INPUT_MS - now - 1);
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(call.records().at(-1)!.event.type).toBe('user.silence');
+    await sameOnReplay(call);
+  });
+
+  it("the caller's interrupt ends the lines as it comes: what is sent after it is not queued behind them", async () => {
+    // Under BARGE_IN=speech the greeting can be cut; the acknowledgement after a request cannot (interruptible: false).
+    resetAppsForTest();
+    const app = placeApp();
+    registerApp({ ...app, prompts: { ...app.prompts, manifest: { ...app.prompts.manifest, ack_intent: { ...app.prompts.manifest.ack_intent!, interruptible: false } } } });
+    registerTestkit();
+    const call = liveCall('twilio', 'speech');
+    await call.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.send({ type: 'interrupt', utteranceUntilInterrupt: 'Thanks for calling', durationUntilInterruptMs: 1_000 });
+    await call.say('i want to report a problem');
+    // The reply plays from its send, at 1 s: its acknowledgement (3.2 s) and the question (1.6 s).
+    await vi.advanceTimersByTimeAsync(1_000);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toEqual({ mode: 'unless-miss', afterMs: 1_000, expectedMs: 4_800, start: 'arrival' });
   });
 });
 
@@ -526,5 +574,79 @@ describe('speech over a line the caller can interrupt', () => {
     await call.say(ASIDE);
     expect(call.lines()).toHaveLength(1);
     expect(noteBefore(call, ASIDE)).toMatchObject({ mode: 'unless-miss', start: 'arrival' });
+  });
+});
+
+/** The place model, answering after `ms(text)` of the turn's words: a slow model. */
+function slowClient(ms: (text: string) => number): JevClient {
+  const inner = placeClient();
+  return {
+    ask: async (req) => {
+      const text = (req.state as { asr?: { text?: string } } | null)?.asr?.text ?? '';
+      await new Promise((r) => setTimeout(r, ms(text)));
+      return inner.ask(req);
+    },
+  };
+}
+
+describe.each(['unless-miss', 'ignore'] as const)('a caller who comes back in while the turn before is still running (SPEECH_OVER_LINE=%s)', (mode: SpeechOverLine) => {
+  it('is joined to the words before, and not dropped', async () => {
+    const call = liveCall('telnyx', 'none', { speechOverLine: mode }, () => slowClient((t) => (t === 'at' ? 1_500 : 200)));
+    await call.start();
+    await vi.advanceTimersByTimeAsync(GREETING_MS + 500);
+    // The request; its turn takes 0.2 s, and the caller starts "at" 0.1 s in, before the question goes out.
+    const request = call.say('i want to report a problem');
+    await vi.advanceTimersByTimeAsync(100);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(100);
+    await request;
+    expect(call.lines().at(-1)).toBe(ASK_PLACE);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    // "at", begun before the question went out: not over it, taken; its turn takes 1.5 s.
+    const at = call.say('at');
+    expect(noteBefore(call, 'at')).toBeUndefined();
+    // Back in 0.7 s after they stopped, over the question, while that turn runs; the rest comes before it ends.
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    const rest = call.say('22 Alder Street.');
+    // Over the question, under either value: noted; under `ignore` not dropped, for the caller came back in.
+    if (mode === 'unless-miss') expect(noteBefore(call, '22 Alder Street.')).toMatchObject({ mode, start: 'speaking' });
+    else expect(noteBefore(call, '22 Alder Street.')).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await at;
+    await rest;
+    expect(call.session().slots.place?.value).toBe('at 22 Alder Street.');
+    expect(call.records().at(-1)!.joined).toEqual({ fragments: ['at', '22 Alder Street.'] });
+  });
+});
+
+describe('every final prompt ends the run of speech it carries', () => {
+  it('a prompt during a service\'s wait: the next utterance, within RESUME_AFTER_PAUSE_MS of it, starts a run of its own', async () => {
+    const call = liveCall('telnyx', 'none');
+    await call.start();
+    const entry = call.store.get(CALL)!;
+    const waiting = entry.session;
+    entry.session = { ...waiting, pendingService: 'records' };
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say('one moment');
+    expect(notes(call)).toHaveLength(0);
+    // The answer is in; 0.7 s after the last stop, more speech.
+    call.store.get(CALL)!.session = { ...call.store.get(CALL)!.session, pendingService: null };
+    await vi.advanceTimersByTimeAsync(400);
+    await call.caller(true);
+    await vi.advanceTimersByTimeAsync(500);
+    await call.caller(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await call.say(ASIDE);
+    expect(noteBefore(call, ASIDE)).toMatchObject({ afterMs: 1_700, start: 'speaking' });
   });
 });

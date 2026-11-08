@@ -121,7 +121,7 @@ function resumedLine(call: ReturnType<typeof liveCall>, prompt = '22 Alder Stree
 }
 
 describe('the first live call under the default (SPEECH_OVER_LINE=unless-miss)', () => {
-  it('"at", said 3 s into a reply estimated at 4.8 s, is a miss over the line, set aside: the rest is taken alone, and nothing is joined', async () => {
+  it('"at", said 4.7 s into the lines (the reply queued behind the greeting), is a miss over the line, set aside: the rest is taken alone, and nothing is joined', async () => {
     const call = liveCall('telnyx', 'none', { speechOverLine: 'unless-miss' });
     await call.start();
     await call.speak(900);

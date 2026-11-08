@@ -131,19 +131,20 @@ describe('delivery notes, as the adapter publishes them', () => {
     await call.speak(343, 130, 410);
     await vi.advanceTimersByTimeAsync(496);
     await call.say('22 Alder Street.');
-    // Every prompt began over a line by the estimate: the request over the greeting (taken), "at" 3.0 s into
-    // the 4.8 s reply (a miss, set aside: no re-ask said), and the rest 3.9 s into it (taken, alone). Nothing
-    // is joined, so no join is noted, and no caller is noted coming back in.
+    // Every prompt began over a line by the estimate: the request over the greeting (taken), its reply queued
+    // behind the greeting (11.6 s, then 4.8 s); "at" 4.7 s into the lines (a miss, set aside: no re-ask said),
+    // and the rest 5.6 s in (taken, alone). Nothing is joined, so no join is noted, and no caller is noted
+    // coming back in.
     expect(call.published()).toEqual([
       { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 0, expectedMs: 11_600, start: 'speaking' },
-      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 3_000, expectedMs: 4_800, start: 'speaking' },
-      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 3_941, expectedMs: 4_800, start: 'speaking' },
+      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 4_700, expectedMs: 16_400, start: 'speaking' },
+      { kind: 'speechOverLine', mode: 'unless-miss', afterMs: 5_641, expectedMs: 16_400, start: 'speaking' },
     ]);
     expect(call.reloaded()).toEqual(call.published());
     expect(call.texts()).not.toContain(REASK);
     expect(noted(call.events).map(([kind, , , notes]) => [kind, notes])).toEqual([
       ['system', ['speech heard 0.0 s into this, which it could not interrupt']],
-      ['system', ['speech heard 3.0 s into this, which it could not interrupt', 'speech heard 3.9 s into this, which it could not interrupt']],
+      ['system', ['speech heard 4.7 s into this, which it could not interrupt', 'speech heard 5.6 s into this, which it could not interrupt']],
     ]);
   });
 
