@@ -37,7 +37,7 @@ export type ShopEntry =
   | { kind: 'received'; record: Received }
   /** A quote sent from the shop page (src/quotes.ts): its hold, and any earlier waiting quote of its request superseded. */
   | { kind: 'quote'; record: Quote }
-  /** A quote's hold lapsed (a booking from a quote carries the quote it books, so it needs no line of its own). */
+  /** A quote's hold lapsed, or the shop withdrew it (a booking from a quote carries the quote it books, so it needs no line of its own). */
   | { kind: 'quote_state'; record: QuoteState }
   /** A write's key and the reference it was given (Systems.written), so a write repeated after a restart is done once. */
   | { kind: 'written'; name: string; ref: string };
@@ -80,9 +80,9 @@ function isQuote(r: unknown): r is Quote {
   return isObject(r) && QUOTE_FIELDS.every((f) => isString(r[f])) && Object.keys(r).every((k) => (QUOTE_FIELDS as readonly string[]).includes(k));
 }
 
-/** What became of a quote: its reference, time and state (a lapse is the only one with a line of its own). */
+/** What became of a quote: its reference, time and state (a lapse and a withdrawal are the ones with a line of their own). */
 function isQuoteState(r: unknown): r is QuoteState {
-  return isObject(r) && isString(r.ref) && isString(r.at) && r.state === 'lapsed' && r.booking === undefined;
+  return isObject(r) && isString(r.ref) && isString(r.at) && (r.state === 'lapsed' || r.state === 'withdrawn') && r.booking === undefined;
 }
 
 /** Whether a parsed line has the shape this version writes, every field of the type it is read as. */

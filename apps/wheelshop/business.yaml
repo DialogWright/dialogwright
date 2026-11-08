@@ -268,10 +268,14 @@ texts:
   quoteReply: "Reply from {name}, ...{last4}"
   # To the shop's phone: a reply that booked the window ({window} the window's name, {booking} its reference).
   quoteBooked: "Booked from quote {ref}: {name}, ...{last4}, {vehicle}, {day}, {window}, {price} ({booking})."
+  # Added to quoteBooked where the customer's booked text did not go ({status}: limited, failed, refused or printed).
+  customerNotTexted: "Customer not texted ({status}): call them."
   # To the shop's phone: a quote's hold that lapsed with no yes (24 hours after the quote, or 6 pm the day before).
   quoteLapsed: "Quote {ref} for {name}, ...{last4} lapsed with no reply: {day}, {window} is free again."
-  # To the shop's phone: a yes that could not book (the window filled after the hold lapsed, or the drop-off's 6 pm the day before passed).
-  # The customer's words follow after a colon.
+  # To the shop's phone, the customer's words after a colon: a reply to a quote whose hold lapsed (never read, never
+  # booked: the shop calls); and a yes the calendar refuses (a window with no room left under the hold).
+  quoteLate: "{name}, ...{last4} replied to quote {ref} after it lapsed, so call them. They wrote"
   quoteFull: "{name}, ...{last4} replied to book quote {ref}, but {day}, {window} is full now, so call them. They wrote"
-  quoteLate: "{name}, ...{last4} replied to book quote {ref} after it lapsed, so call them. They wrote"
+  # To the customer, only where the shop ticks "text them" as it withdraws a quote from its page (by default it does not).
+  quoteWithdrawn: "Example Wheel Works: we've withdrawn your quote for the {wheels} on your {vehicle}. We'll be in touch."
 

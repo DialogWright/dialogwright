@@ -1,9 +1,9 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
-import { TWILIO_MEDIA_PREFIX, type AppBrand, type AppPageDeps, type AppRoute, type AppRoutes, type Texts } from 'dialogwright';
-import { COUNTS, WINDOW_NAMES, accountOf, capacityOf, dayWords, nameWords, standingCars, type Kept, type Quote, type QuoteStatus, type Received, type RequestStatus, type Systems, type Text } from './app';
-import { confirmWord, lapseDue, markLapsed, offeredSlots, priceWords, sendQuote, shortDay, type Slot } from './quotes';
+import { TWILIO_MEDIA_PREFIX, formFromOwnPage, sameNumber, type AppBrand, type AppPageDeps, type AppRoute, type AppRoutes, type Texts } from 'dialogwright';
+import { COUNTS, NOT_SENT, SHOP_PHONE, WINDOW_NAMES, tenDigits, accountOf, capacityOf, dayWords, nameWords, standingCars, type Kept, type Quote, type QuoteStatus, type Received, type RequestStatus, type Systems, type Text } from './app';
+import { confirmWord, lapseDue, markLapsed, offeredSlots, priceWords, sendQuote, shortDay, withdrawQuote, type Slot } from './quotes';
 import { SHOP_DATA_DIR } from './shopLog';
 
 /**
@@ -105,7 +105,7 @@ const newestFirst = <T extends { at: string }>(xs: readonly T[]): T[] => [...xs]
 
 /** The page's view of the systems at `nowMs`, its form's windows by the day in `timeZone` (the server's TIMEZONE). */
 export function shopView(sys: Systems, at: { nowMs: number; timeZone: string } = { nowMs: Date.now(), timeZone: 'UTC' }): ShopView {
-  const states: Record<RequestStatus, number> = { new: 0, photo: 0, quoted: 0, booked: 0, lapsed: 0 };
+  const states: Record<RequestStatus, number> = { new: 0, photo: 0, quoted: 0, booked: 0, lapsed: 0, withdrawn: 0 };
   const requests = newestFirst(sys.requests).map((request): RequestView => {
     const status = sys.requestStatus(request);
     states[status]++;
@@ -166,12 +166,12 @@ export interface ShopPageOptions {
   logFile: string | null;
   /** The page is behind the console's sign-in (CONSOLE_AUTH=token): it offers Sign out. */
   signOut?: boolean;
-  /** The "Quote and book" forms: where they post, and each form's token by its request and version. Absent, no form is drawn. */
-  quoteForm?: { action: string; token(request: string, version: string): string };
+  /** The "Quote and book" and "Withdraw" forms: where each posts, and each form's token by what it does, its request and its version. Absent, no form is drawn. */
+  quoteForm?: { action: string; withdraw: string; token(does: FormAction, request: string, version: string): string };
 }
 
 /** Each state as the page names it. */
-export const STATE_WORDS: Readonly<Record<RequestStatus, string>> = { new: 'New', photo: 'Photo in', quoted: 'Quoted, waiting', booked: 'Booked', lapsed: 'Lapsed' };
+export const STATE_WORDS: Readonly<Record<RequestStatus, string>> = { new: 'New', photo: 'Photo in', quoted: 'Quoted, waiting', booked: 'Booked', lapsed: 'Lapsed', withdrawn: 'Withdrawn' };
 
 /** A window the form offers, as the shop reads it ("Tuesday, Nov 10 · morning"). */
 const slotWords = (x: Slot): string => `${shortDay(x.day)} · ${x.window}`;
@@ -189,9 +189,20 @@ export function shopPageHtml(v: ShopView, o: ShopPageOptions): string {
     const r = rv.request;
     const q = rv.quote;
     const where = (x: Quote): string => `${esc(shortDay(x.day))}, ${esc(x.window)}`;
-    const sent = q?.text === null || q?.text === undefined ? '' : ` Texted: ${esc(q.text.status === 'printed' ? 'printed, not sent' : q.text.status)}.`;
+    // Whether the quote's text went (call 53): one refused, failed or only printed is said, with why, and the number to call.
+    const notSent = q?.text !== null && q?.text !== undefined && NOT_SENT.includes(q.text.status);
+    const sent = q?.text === null || q?.text === undefined ? '' : notSent
+      ? ` <strong class="warn">Not texted (${esc(q.text.status === 'printed' ? 'printed, not sent' : q.text.status)}): call them at ${phoneHtml(r.callbackNumber ?? '')}.</strong>`
+      : ` Texted: ${esc(q.text.status)}.`;
+    const withdraw = q === null || q.status !== 'waiting' || o.quoteForm === undefined ? '' : `<form class="withdraw" method="post" action="${esc(o.quoteForm.withdraw)}">
+<input type="hidden" name="request" value="${esc(r.ref)}"><input type="hidden" name="version" value="${esc(rv.version)}"><input type="hidden" name="quote" value="${esc(q.quote.ref)}"><input type="hidden" name="token" value="${esc(o.quoteForm.token('withdraw', r.ref, rv.version))}">
+<label class="tell"><input type="checkbox" name="tell" value="yes"> Text them that it is withdrawn</label>
+<button type="submit">Withdraw</button>
+</form>`;
     const said = q === null ? '' : q.status === 'waiting'
-      ? `<p class="quote-state">Quoted ${esc(priceWords(q.quote.price))} for ${where(q.quote)} (${esc(q.quote.ref)}): waiting for ${esc(confirmWord())}, held until ${time(q.quote.holdUntil)}.${sent}</p>`
+      ? `<p class="quote-state">Quoted ${esc(priceWords(q.quote.price))} for ${where(q.quote)} (${esc(q.quote.ref)}): waiting for ${esc(confirmWord())}, held until ${time(q.quote.holdUntil)}.${sent}</p>${withdraw}`
+      : q.status === 'withdrawn'
+        ? `<p class="quote-state">Withdrawn: ${esc(q.quote.ref)}, ${esc(priceWords(q.quote.price))} for ${where(q.quote)}; the window was released.</p>`
       : q.status === 'booked'
         ? `<p class="quote-state">Booked ${where(q.quote)} at ${esc(priceWords(q.quote.price))} (${esc(q.booking?.ref ?? '')}, from ${esc(q.quote.ref)}).</p>`
         : q.status === 'lapsed'
@@ -205,7 +216,7 @@ export function shopPageHtml(v: ShopView, o: ShopPageOptions): string {
     const options = rv.slots.map((x) => `<option value="${esc(x.value)}"${x.value === rv.picked ? ' selected' : ''}>${esc(slotWords(x))}${x.value === theirs ? ' (their choice)' : ''}</option>`).join('');
     return `${said}<form class="quote" method="post" action="${esc(o.quoteForm.action)}">
 <h4>${q === null ? 'Quote and book' : 'Send a new quote'}</h4>
-<input type="hidden" name="request" value="${esc(r.ref)}"><input type="hidden" name="version" value="${esc(rv.version)}"><input type="hidden" name="token" value="${esc(o.quoteForm.token(r.ref, rv.version))}">
+<input type="hidden" name="request" value="${esc(r.ref)}"><input type="hidden" name="version" value="${esc(rv.version)}"><input type="hidden" name="token" value="${esc(o.quoteForm.token('quote', r.ref, rv.version))}">
 <label>Price <input name="price" inputmode="decimal" autocomplete="off" required placeholder="180" value="${q === null ? '' : esc(priceWords(q.quote.price).slice(1))}"></label>
 <label>Drop-off <select name="slot" required>${options}</select></label>
 <button type="submit">Send</button>
@@ -334,7 +345,11 @@ ${w.standing > 0 ? `<p class="meta">Includes the standing drop-off (${w.standing
   .badge.state-booked { background: color-mix(in srgb, #2e8b57 22%, var(--card)); }
   .badge.state-lapsed { background: color-mix(in srgb, var(--warn) 20%, var(--card)); color: var(--warn); }
   .quote-state { margin: 10px 0 0; }
-  .quote-state.warn { color: var(--warn); }
+  .quote-state.warn, .quote-state .warn { color: var(--warn); }
+  .badge.state-withdrawn { background: var(--line); }
+  form.withdraw { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  form.withdraw .tell { font-size: .85rem; color: var(--muted); }
+  form.withdraw button { font: inherit; font-size: .9rem; color: var(--warn); background: none; border: 1px solid var(--warn); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
   form.quote { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
   form.quote h4 { margin: 0; }
   form.quote label { display: grid; gap: 2px; font-size: .85rem; color: var(--muted); }
@@ -381,19 +396,22 @@ function protect(res: ServerResponse, nonce: string): void {
   res.setHeader('x-content-type-options', 'nosniff');
 }
 
-/** The form's path, below the page's: its only write. */
+/** The forms' paths, below the page's: its only writes. */
 export const QUOTE_PATH = `${SHOP_PATH}/quote`;
+export const WITHDRAW_PATH = `${SHOP_PATH}/withdraw`;
+/** What a form does: send a quote, or withdraw one. */
+export type FormAction = 'quote' | 'withdraw';
 /** The most a form's body may be. */
 const FORM_MAX = 4096;
 
-/** A form's token: an HMAC of its request and version under the server's key, so only a page this server drew can send it. */
-export function formToken(key: Buffer, request: string, version: string): string {
-  return createHmac('sha256', key).update(`quote ${request} ${version}`).digest('base64url');
+/** A form's token: an HMAC of what it does, its request and its version under the server's key, so only a page this server drew can send it. */
+export function formToken(key: Buffer, does: FormAction, request: string, version: string): string {
+  return createHmac('sha256', key).update(`${does} ${request} ${version}`).digest('base64url');
 }
 
 /** Whether a token is the form's, compared in constant time. */
-function tokenIs(key: Buffer, request: string, version: string, token: string): boolean {
-  const want = Buffer.from(formToken(key, request, version));
+function tokenIs(key: Buffer, does: FormAction, request: string, version: string, token: string): boolean {
+  const want = Buffer.from(formToken(key, does, request, version));
   const got = Buffer.from(token);
   return got.length === want.length && timingSafeEqual(got, want);
 }
@@ -435,11 +453,14 @@ export interface ShopRouteOptions {
   key?: Buffer;
   /** The server's log, for a lapse check that failed. */
   log?: (line: string) => void;
+  /** The server's public name (PUBLIC_HOST), for the forms' Origin check (formFromOwnPage). */
+  publicHost?: string;
 }
 
 /**
- * The page's route: GET and HEAD of `/shop` (or `/shop/`), POST of `/shop/quote` (the "Quote and book" form);
- * anything else under it is a 404, any other method a 405. The holds whose time is up lapse as the page is
+ * The page's route: GET and HEAD of `/shop` (or `/shop/`), POST of `/shop/quote` (the "Quote and book" form) and
+ * `/shop/withdraw` (a waiting quote's Withdraw), each checked by its token and its Origin; anything else under it
+ * is a 404, any other method a 405. The holds whose time is up lapse as the page is
  * drawn and on the server's sweep (every minute), the shop's phone told of each.
  */
 export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
@@ -463,14 +484,10 @@ export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
     localOnly: true,
     auth: 'console',
     async handle(req, res, path) {
-      if (path === QUOTE_PATH) {
+      if (path === QUOTE_PATH || path === WITHDRAW_PATH) {
+        const does: FormAction = path === QUOTE_PATH ? 'quote' : 'withdraw';
         if (req.method !== 'POST') return plain(res, 405, 'method not allowed', { allow: 'POST' });
         if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded')) return plain(res, 415, 'a form is sent as application/x-www-form-urlencoded');
-        const form = await readForm(req);
-        if (form === null) return plain(res, 413, 'too long');
-        const field = (name: string): string => form.get(name) ?? '';
-        const request = field('request');
-        const version = field('version');
         const back = `${base}${SHOP_PATH}`;
         const nonce = randomBytes(16).toString('base64');
         const sorry = (status: number, why: string): true => {
@@ -480,11 +497,20 @@ export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
           res.end(body);
           return true;
         };
-        if (!tokenIs(key, request, version, field('token'))) return sorry(403, 'This form is out of date or did not come from this page: refresh the page and send it again.');
+        // A second layer behind the token: the browser's own word that the post came from this page.
+        if (!formFromOwnPage(req, o.publicHost ?? '')) return sorry(403, 'This form did not come from the shop page.');
+        const form = await readForm(req);
+        if (form === null) return plain(res, 413, 'too long');
+        const field = (name: string): string => form.get(name) ?? '';
+        const request = field('request');
+        const version = field('version');
+        if (!tokenIs(key, does, request, version, field('token'))) return sorry(403, 'This form is out of date or did not come from this page: refresh the page and send it again.');
         markLapsed(sys, o.now());
-        const sent = await sendQuote(sys, o.texts, { request, version, price: field('price'), slot: field('slot') }, o.now(), o.timeZone);
-        if (!sent.ok) return sorry(sent.status, sent.why);
-        res.writeHead(303, { location: `${back}#${encodeURIComponent(sent.quote.request)}`, 'cache-control': 'no-store' });
+        const done = does === 'quote'
+          ? await sendQuote(sys, o.texts, { request, version, price: field('price'), slot: field('slot') }, o.now(), o.timeZone)
+          : await withdrawQuote(sys, o.texts, { request, quote: field('quote'), tell: field('tell') === 'yes' }, o.now());
+        if (!done.ok) return sorry(done.status, done.why);
+        res.writeHead(303, { location: `${back}#${encodeURIComponent(done.quote.request)}`, 'cache-control': 'no-store' });
         res.end();
         return true;
       }
@@ -497,7 +523,7 @@ export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
       const nowMs = o.now();
       const body = shopPageHtml(shopView(sys, { nowMs, timeZone: o.timeZone }), {
         brand: o.brand, timeZone: o.timeZone, nowMs, nonce, logFile: sys.logFile, ...(o.signOut === true ? { signOut: true } : {}),
-        quoteForm: { action: `${base}${QUOTE_PATH}`, token: (r, v) => formToken(key, r, v) },
+        quoteForm: { action: `${base}${QUOTE_PATH}`, withdraw: `${base}${WITHDRAW_PATH}`, token: (d, r, v) => formToken(key, d, r, v) },
       });
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(body) });
       res.end(req.method === 'HEAD' ? undefined : body);
@@ -506,6 +532,28 @@ export function shopRoute(sys: Systems, o: ShopRouteOptions): AppRoute {
     // The server's idle sweep, every minute: the holds whose time is up lapse, and the shop is told.
     sweep: lapse,
     tails: () => [...pending],
+  };
+}
+
+/** The engine's setting for texts to one number in 24 hours, its default, and what this app suggests. */
+const TEXT_LIMIT_SETTING = 'TEXT_LIMIT_PER_NUMBER';
+const ENGINE_TEXT_LIMIT = 3;
+export const SUGGESTED_TEXT_LIMIT = 5;
+
+/**
+ * The page's sender (call 53): the app's own (AppPageDeps.texts), held to the numbers this page may text, the
+ * shop's phone (SHOP_PHONE) and a request's callback number whose caller said yes to texts. Any other is refused
+ * (`refused`, never sent) and logged by its last four.
+ */
+export function allowListTexts(texts: Texts, sys: Systems, env: (name: string) => string | undefined, log: (line: string) => void): Texts {
+  return {
+    async send(t) {
+      const shop = env(SHOP_PHONE)?.trim() ?? '';
+      const allowed = (shop !== '' && sameNumber(t.to, shop)) || sys.requests.some((r) => r.textOk === 'yes' && (r.callbackNumber ?? '') !== '' && sameNumber(t.to, `+1${tenDigits(r.callbackNumber ?? '')}`));
+      if (allowed) return texts.send(t);
+      log(`shop page: a text to ...${t.to.replace(/\D/g, '').slice(-4)} refused: not the shop's phone, nor a request's number that said yes to texts`);
+      return { id: null, status: 'refused', error: 'not a number this page may text' };
+    },
   };
 }
 
@@ -528,10 +576,19 @@ export function shopPages(deps: AppPageDeps): AppRoutes {
     if (skipped > 0) warnings.push(`shop page: ${skipped} line${skipped === 1 ? '' : 's'} of ${sys.logFile} could not be read and ${skipped === 1 ? 'was' : 'were'} skipped`);
   }
   const brand = deps.app.brand ?? { name: deps.app.id, mark: deps.app.id.slice(0, 2).toUpperCase() };
+  if (deps.texts !== undefined) {
+    // A customer may be texted four times in a day (more with each new quote): under 5, the booking's text may be refused.
+    const raw = deps.env(TEXT_LIMIT_SETTING)?.trim() ?? '';
+    const limit = raw === '' ? ENGINE_TEXT_LIMIT : Number(raw);
+    if (Number.isFinite(limit) && limit < SUGGESTED_TEXT_LIMIT) {
+      deps.log(`shop page: ${TEXT_LIMIT_SETTING} is ${limit}${raw === '' ? ' (the default)' : ''}: a customer may be texted four times in a day (the photo request, the thank-you, the quote and the booking; one more for each new quote), so the booking's text may be refused (limited); ${SUGGESTED_TEXT_LIMIT} is suggested (DESIGN.md "Quote and confirm")`);
+    }
+  }
   // Behind the console's sign-in where the server has one (a console page): then it offers Sign out.
   const route = shopRoute(sys, {
     brand, timeZone: deps.config.timezone, now: deps.now, signOut: deps.config.consoleAuth !== undefined, base: deps.base, env: deps.env, log: deps.log,
-    ...(deps.texts !== undefined ? { texts: deps.texts } : {}),
+    publicHost: deps.config.publicHost,
+    ...(deps.texts !== undefined ? { texts: allowListTexts(deps.texts, sys, deps.env, deps.log) } : {}),
   });
   // Holds whose time ran out while the server was stopped lapse now, as the records are read back.
   route.sweep?.();

@@ -1,25 +1,24 @@
-import { atLeast, DEFAULT_THRESHOLDS, noulValue, type AnswerMap, type IncomingText, type QuestionMap, type TextContext, type Texts } from 'dialogwright';
+import { atLeast, DEFAULT_THRESHOLDS, noulValue, sameNumber, type AnswerMap, type IncomingText, type QuestionMap, type TextContext, type Texts } from 'dialogwright';
 import {
-  BUSINESS, ON_FILE_MS, SHOP_PHONE, WINDOW_NAMES, forwardBody, iso, nameWords, once, onceAsync, opensOn, sendText, tenDigits, textLine,
+  BUSINESS, NOT_SENT, ON_FILE_MS, SHOP_PHONE, WINDOW_NAMES, deliver, forwardBody, iso, nameWords, once, onceAsync, opensOn, sendText, tenDigits, textLine,
   type Kept, type Quote, type Systems,
 } from './app';
 
 /**
- * Quote and confirm (the maintainer's decisions, 2026-11-08; DESIGN.md "Quote and confirm"): a retail request
- * becomes a booking only once the customer accepts the shop's quote.
+ * Quote and confirm (the maintainer's decisions, 2026-11-08, calls 52 and 53; DESIGN.md "Quote and confirm"): a
+ * retail request becomes a booking only once the customer accepts the shop's quote.
  *
  * - **The quote.** On the shop page (src/shopPage.ts) the shop sends a request a price and a drop-off day and
  *   window, offered only where the calendar the dealerships book into has room (sendQuote). Sending holds the
  *   window for the request and texts the customer business.yaml's `texts.quote`, only where the request said yes
- *   to texts; the page says to call any other.
- * - **The reply** (replyToQuote, from onText): read by the decision model (ctx.decide), never by matching the
- *   word: a reply that accepts the quote as offered books the held window and texts `texts.booked`; anything else
- *   is forwarded to the shop's phone, and the hold stays.
+ *   to texts; the page says to call any other. The shop may withdraw a waiting quote (withdrawQuote).
+ * - **The reply** (replyToQuote, from onText): to a waiting quote only, read by the decision model (ctx.decide),
+ *   never by matching the word: a reply that accepts the quote as offered books the held window and texts
+ *   `texts.booked` to the number that consented; anything else is forwarded to the shop's phone, and the hold
+ *   stays. A reply to a lapsed quote is never read and never books: it goes to the shop to call (call 53).
  * - **The hold lapses** at 6 pm the day before the drop-off, or 24 hours after the quote, whichever comes first
  *   (lapseDue): the window is released, the shop's phone told. Checked every minute (the server's sweep, which the
  *   shop page's route takes), as the page is drawn, and before a reply is read; each lapse is in the shop's log.
- *   A reply that accepts a lapsed quote still books it while the window has room and the drop-off's 6 pm the day
- *   before has not passed; otherwise the shop is told to call.
  *
  * Every write is once for its key: a quote for the request and its version (the form's), a booking for its quote.
  */
@@ -46,7 +45,7 @@ export function confirmWord(): string {
 export const QUOTE_QUESTIONS: QuestionMap = {
   acceptsQuote: {
     type: 'noul',
-    instructions: 'The business texted the customer the quote in about.quote, asking them to reply with the word in about.replyWord to book it. Is the customer\'s reply (message.words) an acceptance of that quote as offered, asking the business to book it? True where the reply says that word, in any case or with other words around it, or plainly agrees to book it as offered. False where it asks for any change (another day, time or price), asks a question, declines, or says anything else.',
+    instructions: 'The business texted the customer the quote in about.quote, which asks them to reply about.replyWord to book it. Does the customer\'s reply (message.words) accept the quote as offered and ask the business to book it?',
   },
   asksChange: {
     type: 'noul',
@@ -54,11 +53,15 @@ export const QUOTE_QUESTIONS: QuestionMap = {
   },
 };
 
-/** Whether the answers accept the quote: a yes at the read-back's bar (CONFIRM_YES), above the reading that it asks for a change. */
+/** The most `asksChange` may read for a reply to book (call 53). */
+export const CHANGE_BELOW = 0.5;
+
+/** Whether the answers accept the quote: `acceptsQuote` at the read-back's bar (CONFIRM_YES), above `asksChange`, and `asksChange` under CHANGE_BELOW. */
 export function accepts(answers: AnswerMap | null): boolean {
   if (answers === null) return false;
   const yes = noulValue(answers, 'acceptsQuote');
-  return atLeast(yes, DEFAULT_THRESHOLDS.CONFIRM_YES) && yes > noulValue(answers, 'asksChange');
+  const change = noulValue(answers, 'asksChange');
+  return atLeast(yes, DEFAULT_THRESHOLDS.CONFIRM_YES) && yes > change && change < CHANGE_BELOW;
 }
 
 /** A day before an ISO date ("2026-11-10" is "2026-11-09"). */
@@ -212,7 +215,7 @@ export async function sendQuote(sys: Systems, texts: Texts | undefined, form: Qu
     sys.keep('quote', quote, nowMs);
     made = quote;
     const body = quoteText(quote, request);
-    return sendText(sys, texts, nowMs, ref, to, body, body, { key: `quote ${request.ref} ${form.version}` });
+    return sendText(sys, texts, nowMs, ref, `+1${to}`, body, body, { key: `quote ${request.ref} ${form.version}` });
   });
   const quote = made ?? sys.quotes.find((q) => q.ref === r.ref)!;
   return { ok: true, quote, repeat: made === undefined };
@@ -231,23 +234,45 @@ const requestOf = (sys: Systems, q: Quote): Kept => sys.requests.find((r) => r.r
 /** What the shop's texts say of a quote's customer: their name and their number's last four. */
 const who = (sys: Systems, q: Quote): { name: string; last4: string } => ({ name: nameWords(requestOf(sys, q).callerName ?? ''), last4: q.to.slice(-4) });
 
-/** The holds lapsed by now, each marked and the shop's phone told (texts.quoteLapsed). */
+/** The holds lapsed by now, each marked and the shop's phone told (texts.quoteLapsed): the lapse on file before the text. */
 export async function lapseDue(sys: Systems, texts: Texts | undefined, env: (name: string) => string | undefined, nowMs: number): Promise<Quote[]> {
   const lapsed = markLapsed(sys, nowMs);
   for (const q of lapsed) {
     const body = textLine('quoteLapsed', { ref: q.ref, ...who(sys, q), day: shortDay(q.day), window: q.window });
-    await sendText(sys, texts, nowMs, `T${101 + sys.texts.length}`, env(SHOP_PHONE) ?? '', body, body, { key: `lapsed ${q.ref}` });
+    await sendText(sys, texts, nowMs, sys.nextRef('T', sys.texts.length), env(SHOP_PHONE) ?? '', body, body, { key: `lapsed ${q.ref}` });
   }
   return lapsed;
 }
 
+/** What withdrawing a quote came to: the quote withdrawn, or why not. */
+export type QuoteWithdrawn = { ok: true; quote: Quote; texted: boolean } | { ok: false; status: number; why: string };
+
 /**
- * The quote a text from `from` answers: the latest quote texted to that number, where it is its request's latest
- * and is waiting, or lapsed within the last week (ON_FILE_MS), so a late yes is still read as one; none otherwise.
+ * The shop withdraws a waiting quote from its page: the hold released and the quote withdrawn (on file), the card
+ * "Withdrawn". The customer is texted (`texts.quoteWithdrawn`) only where the shop ticks the form's box: by
+ * default not, and the shop calls if it wants (call 53). Once: a quote no longer waiting is not withdrawn again.
+ */
+export async function withdrawQuote(sys: Systems, texts: Texts | undefined, form: { request: string; quote: string; tell: boolean }, nowMs: number): Promise<QuoteWithdrawn> {
+  const q = sys.quotes.find((x) => x.ref === form.quote && x.request === form.request);
+  if (q === undefined) return { ok: false, status: 404, why: 'No such quote.' };
+  if (sys.statusOf(q) !== 'waiting') return { ok: true, quote: q, texted: false };
+  sys.keep('quote_state', { ref: q.ref, at: iso(nowMs), state: 'withdrawn' }, nowMs);
+  if (!form.tell) return { ok: true, quote: q, texted: false };
+  const body = textLine('quoteWithdrawn', { wheels: wheelsWords(requestOf(sys, q).wheels), vehicle: requestOf(sys, q).vehicle ?? '' });
+  const { text } = await deliver(sys, texts, nowMs, sys.nextRef('T', sys.texts.length), `+1${q.to}`, body, body, { key: `withdrawn ${q.ref}` });
+  return { ok: true, quote: q, texted: !NOT_SENT.includes(text.status) };
+}
+
+/** Whether a text came from the number a quote went to: exactly, a North American number in E.164 (call 53). */
+export const fromQuoted = (from: string, q: Quote): boolean => from.startsWith('+1') && sameNumber(from, `+1${q.to}`);
+
+/**
+ * The quote a text from `from` answers: the latest quote texted to that number exactly (fromQuoted), where it is
+ * its request's latest and is waiting, or lapsed within the last week (ON_FILE_MS), whose reply goes to the shop
+ * to call (replyToLapsed); none otherwise.
  */
 export function quoteFor(sys: Systems, from: string, nowMs: number): Quote | undefined {
-  const number = tenDigits(from);
-  const q = sys.quotes.filter((x) => x.to === number).at(-1);
+  const q = sys.quotes.filter((x) => fromQuoted(from, x)).at(-1);
   if (q === undefined || sys.quotesOf(q.request).at(-1) !== q) return undefined;
   const st = sys.statusOf(q);
   if (st === 'waiting') return q;
@@ -255,14 +280,16 @@ export function quoteFor(sys: Systems, from: string, nowMs: number): Quote | und
   return undefined;
 }
 
-/** Books a quote's window from the customer's yes: once for the quote; refused where it lapsed past its cutoff, or the window has no room now. */
-export function bookQuote(sys: Systems, q: Quote, nowMs: number): { booking: string } | { refused: 'late' | 'full' } {
-  const done = sys.written.get(`B quote ${q.ref}`);
-  if (done !== undefined) return { booking: done };
-  const waiting = sys.statusOf(q) === 'waiting';
-  if (!waiting && nowMs >= Date.parse(q.cutoff)) return { refused: 'late' };
-  // The quote's own hold is its room while it waits; a lapsed one takes what the window has left.
-  if (sys.roomIn(q.day, q.window) + (waiting ? 1 : 0) < 1) return { refused: 'full' };
+/** Why a yes did not book: the quote is no longer the one to book (superseded, withdrawn, booked, or its request booked), its hold has lapsed, or (a calendar that changed under the hold) its window has no room. */
+export type NotBooked = 'stale' | 'late' | 'full';
+
+/** Books a quote's window from the customer's yes: only a waiting quote, the request's latest, whose request has no booking, inside its hold; once for the quote. */
+export function bookQuote(sys: Systems, q: Quote, nowMs: number): { booking: string } | { refused: NotBooked } {
+  const st = sys.statusOf(q);
+  if (st === 'lapsed' || (st === 'waiting' && nowMs >= Date.parse(q.holdUntil))) return { refused: 'late' };
+  if (st !== 'waiting' || sys.quotesOf(q.request).at(-1) !== q || sys.bookedRequest(q.request)) return { refused: 'stale' };
+  // The quote's own hold is its room.
+  if (sys.roomIn(q.day, q.window) + 1 < 1) return { refused: 'full' };
   const request = requestOf(sys, q);
   const r = once(sys, `quote ${q.ref}`, 'B', sys.bookings.length, nowMs, (ref) => {
     sys.keep('booking', {
@@ -274,32 +301,47 @@ export function bookQuote(sys: Systems, q: Quote, nowMs: number): { booking: str
   return { booking: r.ref };
 }
 
+/** The shop's texts' placeholders for a quote. */
+function shopVars(sys: Systems, q: Quote): Record<string, string> {
+  return { ref: q.ref, ...who(sys, q), day: shortDay(q.day), window: q.window, vehicle: requestOf(sys, q).vehicle ?? '', price: priceWords(q.price) };
+}
+
+/** A customer's reply sent on to the shop's phone with one of the shop's lines, their words after it, their photos with it. */
+async function toShop(sys: Systems, ctx: TextContext, line: string, m: IncomingText, nowMs: number): Promise<void> {
+  await sendText(sys, ctx.texts, nowMs, sys.nextRef('T', sys.texts.length), ctx.env(SHOP_PHONE) ?? '', forwardBody(line, m.body), line, { media: m.media.map((x) => x.url) });
+}
+
+/** A reply to a quote whose hold lapsed: never read, never booked (call 53); the shop is told to call (texts.quoteLate), and the customer gets no text. */
+export async function replyToLapsed(sys: Systems, q: Quote, m: IncomingText, ctx: TextContext): Promise<void> {
+  await toShop(sys, ctx, textLine('quoteLate', shopVars(sys, q)), m, ctx.nowMs);
+}
+
 /**
- * A customer's text that answers a quote (onText): the decision model asked whether it accepts the quote as
- * offered. A yes books the window (texts.booked to the customer, texts.quoteBooked to the shop), or, where it
- * cannot, tells the shop to call (texts.quoteFull, texts.quoteLate). Anything else, or no reading, goes to the
- * shop's phone as the customer wrote it (texts.quoteReply), and the hold stays.
+ * A customer's text that answers a waiting quote (onText): the decision model asked whether it accepts the quote
+ * as offered. The quote is looked at again once the model has answered (the shop may have sent a new quote, or
+ * withdrawn it, meanwhile), on the clock of that moment. A yes books the window (texts.booked to the number that
+ * consented; texts.quoteBooked to the shop, saying so where the customer's text did not go). Anything else, no
+ * reading, or a quote no longer the one to book, goes to the shop's phone as the customer wrote it
+ * (texts.quoteReply), and the hold stays; a yes the hold's end or the calendar refuses tells the shop to call
+ * (texts.quoteLate, texts.quoteFull).
  */
 export async function replyToQuote(sys: Systems, q: Quote, m: IncomingText, ctx: TextContext): Promise<void> {
   const request = requestOf(sys, q);
-  const shop = ctx.env(SHOP_PHONE) ?? '';
-  const media = m.media.map((x) => x.url);
-  const vars = { ref: q.ref, ...who(sys, q), day: shortDay(q.day), window: q.window, vehicle: request.vehicle ?? '', price: priceWords(q.price) };
-  const next = (): string => `T${101 + sys.texts.length}`;
+  const started = Date.now();
   const answers = await ctx.decide(QUOTE_QUESTIONS, { quote: quoteText(q, request), replyWord: confirmWord() });
-  if (!accepts(answers)) {
-    const line = textLine('quoteReply', vars);
-    await sendText(sys, ctx.texts, ctx.nowMs, next(), shop, forwardBody(line, m.body), line, { media });
-    return;
-  }
-  const booked = bookQuote(sys, q, ctx.nowMs);
+  // The clock after the model's answer: the context's time, and the time the asking took.
+  const nowMs = ctx.nowMs + Math.max(0, Date.now() - started);
+  const vars = shopVars(sys, q);
+  if (!accepts(answers)) return toShop(sys, ctx, textLine('quoteReply', vars), m, nowMs);
+  const booked = bookQuote(sys, q, nowMs);
   if ('refused' in booked) {
-    const line = textLine(booked.refused === 'late' ? 'quoteLate' : 'quoteFull', vars);
-    await sendText(sys, ctx.texts, ctx.nowMs, next(), shop, forwardBody(line, m.body), line, { media });
-    return;
+    const line = booked.refused === 'stale' ? 'quoteReply' : booked.refused === 'late' ? 'quoteLate' : 'quoteFull';
+    return toShop(sys, ctx, textLine(line, vars), m, nowMs);
   }
   const toCustomer = textLine('booked', { day: shortDay(q.day), window: windowSays(q.window) });
-  await sendText(sys, ctx.texts, ctx.nowMs, next(), m.from, toCustomer, toCustomer, { key: `booked ${q.ref}` });
-  const toShop = textLine('quoteBooked', { ...vars, booking: booked.booking });
-  await sendText(sys, ctx.texts, ctx.nowMs, next(), shop, toShop, toShop, { key: `booked shop ${q.ref}` });
+  // To the number that consented (the request's callback number), never the number the text came from.
+  const { text } = await deliver(sys, ctx.texts, nowMs, sys.nextRef('T', sys.texts.length), `+1${q.to}`, toCustomer, toCustomer, { key: `booked ${q.ref}` });
+  const told = textLine('quoteBooked', { ...vars, booking: booked.booking });
+  const shopLine = NOT_SENT.includes(text.status) ? `${told} ${textLine('customerNotTexted', { status: text.status })}` : told;
+  await sendText(sys, ctx.texts, nowMs, sys.nextRef('T', sys.texts.length), ctx.env(SHOP_PHONE) ?? '', shopLine, shopLine, { key: `booked shop ${q.ref}` });
 }

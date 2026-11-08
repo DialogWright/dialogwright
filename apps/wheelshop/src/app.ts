@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { ShopLog, type ShopEntry } from './shopLog';
 import { shopPages } from './shopPage';
-import { lapseDue, quoteFor, replyToQuote } from './quotes';
-import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, type AppCode, type BusinessYaml, type IncomingText, type TextContext, type Texts, type ToolDef } from 'dialogwright';
+import { lapseDue, quoteFor, replyToLapsed, replyToQuote } from './quotes';
+import { defineApp, describeDay, loadBusiness, optionKey, parseIso, replyShape, sameNumber, type AppCode, type BusinessYaml, type IncomingText, type TextContext, type Texts, type ToolDef } from 'dialogwright';
 
 /**
  * Example Wheel Works, in agent mode: a fictional wheel repair shop's line, speaking as the shop. Everything about the
@@ -146,8 +146,8 @@ export interface Quote {
   readonly cutoff: string;
 }
 
-/** What became of a quote: booked (by the customer's reply), lapsed (no reply by its hold's end) or superseded (a newer quote sent for the request). Waiting is a quote with none. */
-export type QuoteEnd = 'booked' | 'lapsed' | 'superseded';
+/** What became of a quote: booked (by the customer's reply), lapsed (no yes by its hold's end), withdrawn (by the shop, from its page) or superseded (a newer quote sent for the request). Waiting is a quote with none. */
+export type QuoteEnd = 'booked' | 'lapsed' | 'withdrawn' | 'superseded';
 export interface QuoteState {
   readonly ref: string;
   readonly at: string;
@@ -159,8 +159,8 @@ export interface QuoteState {
 /** A quote's state now: waiting while it holds its window, else what became of it. */
 export type QuoteStatus = 'waiting' | QuoteEnd;
 
-/** A request's state on the shop page: new, a photo in, quoted (a quote waiting), booked, or lapsed (its latest quote lapsed). */
-export type RequestStatus = 'new' | 'photo' | 'quoted' | 'booked' | 'lapsed';
+/** A request's state on the shop page: new, a photo in, quoted (a quote waiting), booked, lapsed or withdrawn (its latest quote's end). */
+export type RequestStatus = 'new' | 'photo' | 'quoted' | 'booked' | 'lapsed' | 'withdrawn';
 
 /** The most characters a text forwarded to the shop carries: under a long SMS's 1,600, the caller's words cut to fit. */
 export const FORWARD_MAX = 1500;
@@ -305,6 +305,21 @@ export class Systems {
     return this.quoteEnds.get(q.ref)?.state ?? 'waiting';
   }
 
+  /** The refs handed out ahead of their records, by prefix, so two texts in flight never take one reference. */
+  private readonly taken = new Map<string, number>();
+
+  /** The next reference for `prefix` ("T104"), taken now: past the `count` records kept and every reference already taken. */
+  nextRef(prefix: string, count: number): string {
+    const n = Math.max(count, this.taken.get(prefix) ?? 0);
+    this.taken.set(prefix, n + 1);
+    return `${prefix}${101 + n}`;
+  }
+
+  /** Whether a request has a booking already (one made from any of its quotes). */
+  bookedRequest(request: string): boolean {
+    return this.bookings.some((b) => b.request === request);
+  }
+
   /** A request's quotes, in order. */
   quotesOf(request: string): Quote[] {
     return this.quotes.filter((q) => q.request === request);
@@ -318,6 +333,7 @@ export class Systems {
       if (st === 'booked') return 'booked';
       if (st === 'waiting') return 'quoted';
       if (st === 'lapsed') return 'lapsed';
+      if (st === 'withdrawn') return 'withdrawn';
     }
     return this.received.some((r) => r.request === request.ref && r.media.length > 0) ? 'photo' : 'new';
   }
@@ -389,6 +405,15 @@ export async function onceAsync(sys: Systems, key: string | undefined, prefix: s
   return { value: { ref }, summary, ref };
 }
 
+/**
+ * The ten digits a request on file holds for a number a text came from: only a North American number in E.164
+ * ("+15555550177" is 5555550177), matched exactly (the engine's sameNumber); null for any other ("+445555550177").
+ */
+export function usNumber(from: string): string | null {
+  const ten = from.replace(/\D/g, '').slice(-10);
+  return from.startsWith('+1') && ten.length === 10 && sameNumber(from, `+1${ten}`) ? ten : null;
+}
+
 /** The ten digits of a number, as a callback number holds them ("+15555550177" is 5555550177). */
 export const tenDigits = (n: string): string => n.replace(/\D/g, '').slice(-10);
 
@@ -402,17 +427,27 @@ export const iso = (ms: number): string => new Date(ms).toISOString();
  * The key (the write's) is the sender's too, so a text repeated after a restart is not sent twice.
  */
 export async function sendText(sys: Systems, texts: Texts | undefined, nowMs: number, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<string> {
+  return (await deliver(sys, texts, nowMs, ref, to, body, masked, opts)).line;
+}
+
+/** A text's statuses that mean it did not go: refused by a limit or the page's allow-list, failed, or only printed. */
+export const NOT_SENT: readonly string[] = ['failed', 'limited', 'refused', 'printed'];
+
+/** sendText, with the text as kept (its status: whether it went, NOT_SENT). */
+export async function deliver(sys: Systems, texts: Texts | undefined, nowMs: number, ref: string, to: string, body: string, masked: string, opts: { media?: string[]; key?: string } = {}): Promise<{ text: Text; line: string }> {
   const media = opts.media !== undefined && opts.media.length > 0 ? { media: opts.media } : {};
   const shown = to === '' ? 'no number' : last4(to);
   if (texts === undefined || to === '') {
-    sys.keep('text', { ref, at: iso(nowMs), to, text: body, ...media, status: 'printed' }, nowMs);
+    const text: Text = { ref, at: iso(nowMs), to, text: body, ...media, status: 'printed' };
+    sys.keep('text', text, nowMs);
     const line = `text to ${shown} (printed, not sent${to === '' ? `: ${SHOP_PHONE} unset` : ''}): ${masked}${opts.media !== undefined && opts.media.length > 0 ? ` [${opts.media.length} photo${opts.media.length === 1 ? '' : 's'}]` : ''}`;
     if (printing) console.log(`[wheelshop] ${line}`);
-    return line;
+    return { text, line };
   }
   const r = await texts.send({ to, body, ...media, ...(opts.key !== undefined ? { key: opts.key } : {}) });
-  sys.keep('text', { ref, at: iso(nowMs), to, text: body, ...media, status: r.status }, nowMs);
-  return `text to ${shown}: ${r.status}${r.error !== undefined ? ` (${r.error})` : ''}`;
+  const text: Text = { ref, at: iso(nowMs), to, text: body, ...media, status: r.status };
+  sys.keep('text', text, nowMs);
+  return { text, line: `text to ${shown}: ${r.status}${r.error !== undefined ? ` (${r.error})` : ''}` };
 }
 
 /** The params every call a form makes carries: its fields by name (and a booking's account first). */
@@ -535,8 +570,8 @@ export const TOOLS: Record<string, ToolDef> = {
 
 /**
  * A text that came in to the shop's number (App.onText). First the holds whose time is up lapse; then a text
- * with words from a number a quote is waiting on (or lapsed lately) is a reply to it, read by the decision
- * model (src/quotes.ts replyToQuote). Otherwise it is sent on to the shop's phone as it came, its photos
+ * with words from the number a quote is waiting on is a reply to it, read by the decision model (src/quotes.ts
+ * replyToQuote), and one to a quote lapsed lately goes to the shop to call (replyToLapsed). Otherwise it is sent on to the shop's phone as it came, its photos
  * attached by their URLs (the engine fetches none), the caller's words cut to FORWARD_MAX. From a number with
  * a request on file in the last week, with a line naming the request, and, where it brought a photo and the
  * request said yes to being texted and is not yet quoted, the caller thanked in the shop's words; from
@@ -548,23 +583,27 @@ export async function onText(m: IncomingText, ctx: TextContext): Promise<void> {
   const s = ctx.sys as Systems;
   // The holds whose time is up lapse first (src/quotes.ts), so a reply is read against the quote as it stands.
   await lapseDue(s, ctx.texts, ctx.env, ctx.nowMs);
-  const found = s.onFile.get(tenDigits(m.from));
+  // A request on file only for the number exactly, a North American one in E.164 (usNumber).
+  const number = usNumber(m.from);
+  const found = number === null ? undefined : s.onFile.get(number);
   const recent = found !== undefined && ctx.nowMs - found.atMs <= ON_FILE_MS ? found : undefined;
-  // A reply to a quote the shop texted this number (waiting, or lapsed lately): read by the decision model.
+  // A reply to a quote the shop texted this number (waiting, or lapsed lately).
   const quote = quoteFor(s, m.from, ctx.nowMs);
   const media = m.media.map((x) => x.url);
   // Kept whole for the shop page, with the request it was matched to.
   const request = quote?.request ?? recent?.ref;
   s.keep('received', { ref: `I${101 + s.received.length}`, at: iso(ctx.nowMs), from: m.from, text: m.body, media, ...(request !== undefined ? { request } : {}) }, ctx.nowMs);
   if (quote !== undefined && m.body.trim() !== '') {
-    await replyToQuote(s, quote, m, ctx);
+    // Only a quote that is waiting is read by the decision model; a reply to a lapsed one goes to the shop to call.
+    if (s.statusOf(quote) === 'waiting') await replyToQuote(s, quote, m, ctx);
+    else await replyToLapsed(s, quote, m, ctx);
     return;
   }
   const vars = { name: recent?.name ?? '', last4: m.from.replace(/\D/g, '').slice(-4), vehicle: recent?.vehicle ?? '' };
   const line = recent === undefined ? textLine('unknownForward', vars) : textLine(media.length > 0 ? 'photoForward' : 'textForward', vars);
-  await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, ctx.env(SHOP_PHONE) ?? '', forwardBody(line, m.body), line, { media });
-  // The thank-you promises a price, so it goes only before the request is quoted.
-  if (recent !== undefined && recent.textOk === 'yes' && media.length > 0 && s.quotesOf(recent.ref).length === 0) await sendText(s, ctx.texts, ctx.nowMs, `T${101 + s.texts.length}`, m.from, textLine('photoThanks'), textLine('photoThanks'));
+  await sendText(s, ctx.texts, ctx.nowMs, s.nextRef('T', s.texts.length), ctx.env(SHOP_PHONE) ?? '', forwardBody(line, m.body), line, { media });
+  // The thank-you promises a price, so it goes only before the request is quoted, and to the number on file.
+  if (recent !== undefined && number !== null && recent.textOk === 'yes' && media.length > 0 && s.quotesOf(recent.ref).length === 0) await sendText(s, ctx.texts, ctx.nowMs, s.nextRef('T', s.texts.length), `+1${number}`, textLine('photoThanks'), textLine('photoThanks'));
 }
 
 /** A text forwarded to the shop: the shop's line, then the caller's own words as they came, cut to FORWARD_MAX. */
