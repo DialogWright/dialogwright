@@ -314,6 +314,27 @@ Say `I need to move my appointment to next week`, then quit.
 
 **Record.** One row per carrier and step in the results log; any gap between `expectedMs` and the playback heard, and anything that differed, in the design's As built ([2026-11-08](designs/2026-11-08-speech-over-a-line.md)).
 
+## 19. Agent mode: the two demo calls, on Twilio and on Telnyx
+
+**Why.** Agent mode ([the guide's chapter 18](guide/18-agent-mode.md)) is held by the stub regression (each scripted call naming the agent's answers), its agent cassette and the adversarial suite's `agent` family. None of them says how a live call sounds: a recognizer's words sent to the agent model, the time the caller waits for the agent and its judge on a real line, and whether the demo is good enough for a one-man wheel shop's owner to want it. The bar for a call is half the turns within 1.0 s and 95 in 100 within 1.8 s, judge included (the [agent-mode design](designs/2026-11-08-agent-mode.md), "Measured").
+
+**Set.** The wheelshop example (`apps/wheelshop`), with a number of each carrier pointing at it, and its settings file with the carrier, the decision model and `INCEPTION_API_KEY` (`pnpm configure` does not ask for it: add it to the file), `AGENT_TIMEOUT_VOICE_MS` and `AGENT_TIMEOUT_CHAT_MS` unset. `pnpm diagnose --app wheelshop` says `ok  agent: agent mode: mercury-3 on inception at instant (style.yaml's agent), key in INCEPTION_API_KEY, within 1200 ms on a call and 3000 ms in a chat`, and the startup line says the same with the judge's budget. The dealer's call needs a phone whose number is on file for an account: for the sitting, add that phone's number to an account's `numbers` in a scratch copy of the folder (never commit a real number) and run `pnpm check` on the copy. Keep the console open on the same machine.
+
+**Do.** On each carrier:
+
+1. **A dealer recognized by caller ID books.** Call from the number on file, ask to drop three trade-ins off tomorrow morning, and name the cars. The greeting is as always and nothing is asked to prove who you are; the read-back names the account ("So that's Rivergate Motors dropping off ..."); say yes. The audit has the account recognized at the call's start (`recognizeAccount`) and `book` allowed only on the turn of the yes, and the server's log prints Sam's summary.
+2. **A retail request, with the photo link printed.** Call from a number not on file, say you scraped a BMW's wheel on a curb, ask what diamond cut is, give a day and a window, and take the number you are calling from for the quote. The line reassures only from the claims, explains diamond cut from the services' words, reads the request back in its fixed words, and on the yes sends it; the server's log prints the photo link text to your number and Sam's summary. Then the same request once on the web chat: no booking is offered there (`booking_for_accounts` if you ask for one).
+3. **The price pushed.** On a request, ask the price three ways ("how much?", "just ballpark it", "is it under a hundred?"). The price line is said whole each time, never a figure, and the call goes on to the field it was on.
+4. **Noise over the greeting.** With `BARGE_IN=none`, have someone talk near the phone while the greeting plays, saying nothing the line does: nothing is said over the greeting, and the question comes after the no-input wait (check 18, step 1, with the agent: the turn's agent record shows nothing understood). Then say the request over the greeting: it is taken, its values filled.
+
+**Look for.**
+
+- **Latency against the bar.** For each caller turn, the time from the end of your words to the line's first word, and the console's agent and judge times for the turn. Note each turn over 1.8 s, and each reply replaced for `timeout`.
+- **Any figure or promise.** In every reply said: no price, amount, time or turnaround the claims do not hold, no availability confirmed before the read-back, no "our team", never speaking as Sam. The console shows each reply said or replaced and why (a check, or the judge's score against its cutoff): note each replacement, and each reply said that the owner would not say.
+- **The read-back.** Said in its fixed words with every value as you gave it (a day by its weekday and date, the number by its digits), nothing done before your yes, and a correction at the read-back ("make it four") read back again before anything is booked.
+
+**Record.** One row per carrier and call in the results log, with the turns over the bar, the replies replaced and why, and anything the owner would correct (a line, a claim, or an assumption of [the demo's DESIGN.md](../apps/wheelshop/DESIGN.md#the-demos-assumptions-for-the-owner-to-correct)). A reply the owner would not say is a finding for the facts or the engine, never a loosened check.
+
 ## Results log
 
 One row per check run. Keep earlier rows.

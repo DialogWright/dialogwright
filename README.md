@@ -11,6 +11,8 @@
 
 DialogWright is an open-source TypeScript framework for voice and chat agents. A fast decision model reads what the caller said and answers typed questions (judgments, never generated text), so callers talk naturally. Every line the agent says is written and approved, deterministic code decides what happens next, and every action goes through a policy gate that enforces identity levels, scope, confirmation and attempt limits, with each decision recorded in a hash-chained audit log. Replies are fast, because a decision is a short typed question and not a composed answer. An app is a folder: YAML for what is data (intents, forms, prompts, policy, identity, locales, a knowledge base of approved answers) and TypeScript for what runs (tools, hooks, rules of its own), so the same engine runs a clinic's appointment line, a utility's outage line or yours.
 
+For a line that should sound like a person at the counter, an app can instead run in agent mode: a model leads the conversation from one file of the business's facts, and the engine still checks every value it understands, holds every reply to the facts, reads each request back in fixed words and gates every action ([chapter 18 of the guide](docs/guide/18-agent-mode.md)).
+
 ## Try it, with no keys
 
 You need git, Node 22.19 or later and pnpm 9 (`corepack enable` gives the version this repository pins). Nothing here needs an account or a key: a stub stands in for the decision model.

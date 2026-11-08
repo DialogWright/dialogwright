@@ -1,6 +1,6 @@
 # 17. Tuning with live calls
 
-[Contents](README.md) · Previous: [16. Generated wording](16-generated-wording.md)
+[Contents](README.md) · Previous: [16. Generated wording](16-generated-wording.md) · Next: [18. Agent mode](18-agent-mode.md)
 
 An app green on the stub and on its recording has been tried on its own words: the corpus and the scripted calls, read by the real model once. A live call adds a carrier, a recognizer, a room and a person who does not know the script. This chapter is the working method for what comes next, in the order an author meets it: a call is made, read in the console, a question is found to be the problem, the fix is measured, and the recording is redone. Its examples are from a day of live calls to the secretary demo (`apps/secretary`, Example Front Desk, a message line for a design studio) on 2026-10-14; the names and numbers in them are invented. What the calls found, and what the engine changed for each, is in [the live findings, items 22 to 29](../designs/2026-10-13-live-findings.md#as-built-22), and the app's own record of each recording is its [DESIGN.md, "Recordings"](../../apps/secretary/DESIGN.md#recordings).
 
