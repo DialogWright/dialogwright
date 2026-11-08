@@ -3,7 +3,7 @@ import { maskedConversation } from '../agent/history';
 import { fieldValueSent } from '../agent/prompt';
 import { NO_ACTION, PRICE_LINE, PRICE_QUESTION, type AgentActionChoice, type AgentAnswer, type AgentAppField, type AgentContext, type AgentFailure, type AgentField, type AgentResult, type AgentUtterance, type SeenResult } from '../agent/types';
 import { isAnonymous } from '../gate/types';
-import { isChoice, noulValue, type AnswerMap } from '../jev/types';
+import { isChoice, isNoul, noulValue, type AnswerMap } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import type { BuiltSlotSpec, ValueCheck } from '../slots/types';
 import { isFormIntent } from './app/intents';
@@ -86,8 +86,9 @@ import type { RenderLine } from '../render/types';
  *    A form's `then` tools are the engine's, called only by the yes at its read-back; the model never runs a tool.
  * 6a. **The price line** (business.yaml's `prices.say`), said whole before the turn's own line in place of the
  *    reply, where the decision model reads the caller asking what something costs (its `asksPrice` question,
- *    at AGENT_PRICE_ASKED or above), whether or not the answer named it; named where it reads under that, the
- *    line is not said and the turn goes on as one that named none (lineDue; the agent-mode design, call 43).
+ *    at AGENT_PRICE_ASKED or above), whether or not the answer named it; named where it reads under that,
+ *    neither the line nor the reply is said, only the turn's own fixed step; named with no reading, the line
+ *    is said (lineDue; the agent-mode design, call 43 and its amendment).
  *    At a read-back it is an aside, under the same bound as any other.
  * 7. **A failed answer** (a timeout, an answer not in its shape, an error) says the fallback, and the trace
  *    says why (`fallback`); at a read-back the turn is read again the scripted way (run/turn.ts
@@ -144,8 +145,9 @@ export interface AgentTurnRecord {
    * The decision model's reading of whether the caller asks what something costs (its `asksPrice` question), on
    * a turn of an app with a price line (the agent-mode design, call 43): `score`, the bar it was read against
    * (AGENT_PRICE_ASKED), and whether the answer named the price line. The line is said where the score reaches
-   * the bar (and the form open allows it, `prices.forms`), named or not; under it, never, and a reply written
-   * beside it is held as any other.
+   * the bar (and the form open allows it, `prices.forms`), named or not; under it, never, and where the answer
+   * named it, nor is the reply (call 43's amendment). Absent where the decision model gave no reading: then a
+   * line named is said (the safe outcome) and none named is not.
    */
   priceAsked?: { score: number; at: number; named: boolean };
   /**
@@ -666,22 +668,25 @@ function fixedLineOf(app: App, name: string | null, form: FormId | null): { name
 }
 
 /**
- * The fixed line due on this turn (the agent-mode design, call 43), given the line the answer named (or null):
- * the price line only where the decision model read the caller asking what something costs, at
- * AGENT_PRICE_ASKED or above (its `asksPrice` question, asked on every turn of an app with a price line), so
- * the line is the business's answer to a caller who asked, never a "what happens next" the agent model chose:
- * named and so read, it is said; named and read under the bar, it is not, and the turn goes on as one that
- * named none; read and not named, it is said all the same. The reading is kept on the record. A line with no
- * question of its own is due as named.
+ * The fixed line due on this turn (the agent-mode design, call 43 and its amendment), given the line the
+ * answer named (or null): the price line only where the decision model read the caller asking what something
+ * costs, at AGENT_PRICE_ASKED or above (its `asksPrice` question, asked on every turn of an app with a price
+ * line), so the line is the business's answer to a caller who asked, never a "what happens next" the agent
+ * model chose: named and so read, it is said; read and not named, it is said all the same. Named and read under
+ * the bar, it is not, and nor is the reply (`refused`): the model wrote that reply as a price answer, so it is
+ * never trusted on its own, and the turn says its own fixed step. With no reading (the question missing from
+ * the decision model's answers, or not a reading), the safe outcome: a line named is said, and none named is
+ * not. The reading is kept on the record. A line with no question of its own is due as named.
  */
-function lineDue(app: App, named: string | null, answers: AnswerMap, t: Thresholds, record: AgentTurnRecord): string | null {
-  if (app.agent?.lines[PRICE_LINE] === undefined) return named;
+function lineDue(app: App, named: string | null, answers: AnswerMap, t: Thresholds, record: AgentTurnRecord): { due: string | null; refused: boolean } {
+  if (app.agent?.lines[PRICE_LINE] === undefined) return { due: named, refused: false };
   const answer = answers[PRICE_QUESTION];
-  const score = answer !== undefined ? noulValue(answers, PRICE_QUESTION) : null;
-  if (score !== null) record.priceAsked = { score, at: t.AGENT_PRICE_ASKED, named: named === PRICE_LINE };
-  const asked = score !== null && atLeast(score, t.AGENT_PRICE_ASKED);
-  if (named === PRICE_LINE) return asked ? PRICE_LINE : null;
-  return named ?? (asked ? PRICE_LINE : null);
+  if (!isNoul(answer)) return { due: named, refused: false };
+  const score = answer.noul;
+  record.priceAsked = { score, at: t.AGENT_PRICE_ASKED, named: named === PRICE_LINE };
+  const asked = atLeast(score, t.AGENT_PRICE_ASKED);
+  if (named === PRICE_LINE) return asked ? { due: PRICE_LINE, refused: false } : { due: null, refused: true };
+  return { due: named ?? (asked ? PRICE_LINE : null), refused: false };
 }
 
 /**
@@ -815,12 +820,14 @@ export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx
   };
 
   // A fixed line due (the price line: named by the answer and read by the decision model, or read alone):
-  // that line said whole before the turn's own, never the reply. A line named that the decision model does
-  // not read as asked for is not due: the turn goes on as one that named none (lineDue).
+  // that line said whole before the turn's own, never the reply. The price line named where the decision
+  // model reads no price asked is not due, and nor is the reply written as a price answer beside it: the
+  // turn's own fixed step alone (lineDue; call 43's amendment).
   const named = answer !== null && answer.fixedLine !== undefined && answer.fixedLine !== NO_ACTION ? answer.fixedLine : null;
-  const due = answer !== null ? lineDue(app, named, answers, io.tc.thresholds, record) : null;
+  const { due, refused } = answer !== null ? lineDue(app, named, answers, io.tc.thresholds, record) : { due: null, refused: false };
   const fixed = fixedLineOf(app, due, s.form);
   const handled = answered(s, verdict, answers, ctx, io, steps, said, record, actionDone, { none, failedTwice, fixed: fixed !== null });
+  if (refused) return withoutAgentReply(handled, record);
   if (fixed === null || !lineAllowed(app, fixed.name, s.form)) {
     // A line named and due where the business does not allow it (prices.forms), with the form open before the
     // turn or the one it opened: not said, and nor is the reply written to stand beside it; the turn's own

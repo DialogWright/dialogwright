@@ -7,7 +7,7 @@ import { businessFixtureApp, type LibrarySystems } from '../define/__fixtures__/
 import { ANONYMOUS } from '../gate/principal';
 import { choiceAnswer, noulAnswer, sharp } from '../jev/distributions';
 import { HeuristicStubClient } from '../jev/heuristicStub';
-import { JevClientError, type JevClient, type JevRequest, type JevResponse } from '../jev/types';
+import { JevClientError, type Answer, type JevClient, type JevRequest, type JevResponse } from '../jev/types';
 import { spokenText } from '../prompts/render';
 import { runTurn, type TurnRun } from '../run/turn';
 import { registerApp, resetAppsForTest } from './app/registry';
@@ -890,11 +890,59 @@ describe('the agent turn: the price line needs the decision model (call 43)', ()
     expect(t.record.agent?.fixedLine).toBeUndefined();
   });
 
-  it('named, with no price asked, mid-form: the turn goes on as one that named none, the reply held as any other', async () => {
-    const c = await call({ [HOLD]: HOLD_ANSWER, 'it is for Avery Lane': { ...said('Thanks, Avery. How many copies?', [['patronName', 'Avery Lane', 'Avery Lane']]), fixedLine: 'price' } as AgentAnswer }, [HOLD, 'it is for Avery Lane']);
-    expect(heard(c.last)).toBe('Thanks, Avery. How many copies?');
-    expect(c.last.record.agent).toMatchObject({ replySaid: true, priceAsked: { named: true } });
-    expect(c.last.record.agent?.fixedLine).toBeUndefined();
+  it('named, with no price asked, mid-form: neither the line nor the reply is said, only the fixed question (the amendment)', async () => {
+    const reply = 'Thanks, Avery. Once I send this, the desk will be in touch. How many copies?';
+    const c = await call({ [HOLD]: HOLD_ANSWER, 'it is for Avery Lane': { ...said(reply, [['patronName', 'Avery Lane', 'Avery Lane']]), fixedLine: 'price' } as AgentAnswer }, [HOLD, 'it is for Avery Lane']);
+    const t = c.last;
+    expect(heard(t)).toBe('How many copies?');
+    expect(promptOf(t)).toBe('ask_request_copies');
+    expect(t.result.decision).not.toHaveProperty('agent');
+    // The values the answer gave still stand: only the reply, written as a price answer, is not trusted.
+    expect(value(t, 'request_patronName')).toBe('avery lane');
+    expect(t.record.agent).toMatchObject({ replySaid: false, reply, priceAsked: { score: 0.05, named: true } });
+    expect(t.record.agent?.fixedLine).toBeUndefined();
+  });
+
+  it('named, with no price asked, at the read-back: neither the line nor the reply, the read-back asked again', async () => {
+    const ASK = 'hmm, let me think about the day';
+    const c = await call({ [HOLD]: HOLD_ANSWER, [DETAILS]: DETAILS_ANSWER, [ASK]: { ...said('Great, the desk will be in touch soon.'), fixedLine: 'price' } as AgentAnswer }, [HOLD, DETAILS, ASK], { jev: pricedAt(0.05) });
+    const t = c.last;
+    expect(heard(t)).toBe(READ_BACK);
+    expect(t.result.session.pendingConfirmation).toMatchObject({ target: 'form', attempts: 1 });
+    expect(t.record.agent).toMatchObject({ replySaid: false, priceAsked: { score: 0.05, named: true } });
+    expect(toolCalls(c, 'placeHold')).toEqual([]);
+  });
+
+  describe('with no reading of a price asked (missing from the decision model\'s answers, or not a reading): the safe outcome', () => {
+    /** The decision model with `asksPrice` answered by `make` (undefined: left out). */
+    const priceReadAs = (make: () => Answer | undefined): JevClient => {
+      const inner = jev();
+      return { async ask(req) {
+        const r = await inner.ask(req);
+        if (!Object.hasOwn(req.questions, 'asksPrice')) return r;
+        const { asksPrice: _dropped, ...rest } = r.answers;
+        const a = make();
+        return { ...r, answers: a === undefined ? rest : { ...rest, asksPrice: a } };
+      } };
+    };
+    const missing = (): undefined => undefined;
+    const notANoul = (): Answer => choiceAnswer({ yes: 0.9, no: 0.1 });
+
+    it.each([['missing from the answers', missing], ['of the wrong type', notANoul]] as const)('named, the reading %s: the line is said, never the reply', async (_why, make) => {
+      const c = await call({ [HOLD]: HOLD_ANSWER, [COST]: { ...said('Holds are free.', [], 'none', true), fixedLine: 'price' } as AgentAnswer }, [HOLD, COST], { jev: priceReadAs(make) });
+      expect(heard(c.last)).toBe(`${PRICE} ${NAME_Q}`);
+      expect(heard(c.last)).not.toContain('free');
+      expect(c.last.record.agent).toMatchObject({ fixedLine: 'price', replySaid: false });
+      expect(c.last.record.agent?.priceAsked).toBeUndefined();
+    });
+
+    it('not named, the reading missing: nothing about price is said, the turn as before', async () => {
+      const c = await call({ [HOLD]: HOLD_ANSWER, 'it is for Avery Lane': { ...said('Thanks, Avery. How many copies?', [['patronName', 'Avery Lane', 'Avery Lane']]), fixedLine: 'none' } as AgentAnswer }, [HOLD, 'it is for Avery Lane'], { jev: priceReadAs(missing) });
+      expect(heard(c.last)).toBe('Thanks, Avery. How many copies?');
+      expect(c.last.record.agent).toMatchObject({ replySaid: true });
+      expect(c.last.record.agent?.fixedLine).toBeUndefined();
+      expect(c.last.record.agent?.priceAsked).toBeUndefined();
+    });
   });
 
   it('a price asked, the line named: the line is said whole, never the reply', async () => {
