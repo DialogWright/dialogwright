@@ -28,7 +28,7 @@ import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
 import { resolveWaiting } from './waiting';
-import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
+import { agentAsks, agentContextOf, agentSentRecord, NO_AGENT_CLIENT, withFirstValues, type AgentSentRecord, type AgentTurnRecord } from '../core/agentTurn';
 import { DEFAULT_AGENT_TIMEOUT_MS, type AgentContext, type AgentResult, type AgentRunner, type SeenResult } from '../agent/types';
 
 export interface TurnObserver {
@@ -609,7 +609,9 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
     const asked = await askAgain(opts.agent, agentCtx, seen, session.caps.speech, agentAskedAt);
     again = { result: asked.result, tools: [...new Set(seen.map((x) => x.tool))] };
     if (asked.result.ok) {
-      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: asked.result, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } }, error, screen, channel, toolTimeout, first.memo);
+      // The first answer's accepted values the second leaves out are kept (call 39), a free-from field's only while the result lists it.
+      const carried: AgentResult = resolved.agent !== undefined ? { ...asked.result, answer: withFirstValues(appOf(session), resolved.agent, resolved.session.form, asked.result.answer, seen) } : asked.result;
+      const next = await resolveWaiting(session, event, turnAnswers, { ...turnTc, agent: carried, agentSeen: { seen, ...(resolved.agentAgain.changed === true ? { changed: true as const } : {}) } }, error, screen, channel, toolTimeout, first.memo);
       resolved = next.result;
       waited = next.waited ?? waited;
       agentShown = asked.ctx;

@@ -364,6 +364,43 @@ describe('the agent turn: what the business limits (prices.forms, freeFrom)', ()
   });
 });
 
+describe('the agent turn: the second asking keeps the first answer\'s values (call 39)', () => {
+  const BOOK = 'I would like the study room for four people on Saturday';
+  const SATURDAY = '2026-11-14'; // its afternoon is taken
+  const asked = (window: string) => {
+    const first = said('Lovely.', [['people', 'four', 'four people'], ['day', SATURDAY, 'Saturday'], ['window', window, window]]);
+    let n = 0;
+    // The first asking gives the day and the window; the second, shown the day's windows, gives neither.
+    return fakeAgent(() => ((n += 1) === 1 ? first : said('')));
+  };
+  const run = async (window: string): Promise<TurnRun> => {
+    const tools = { ...app.systems(), codes: mockCodeVerifier };
+    const o = { client: jev(), thresholds: { ...DEFAULT_THRESHOLDS }, todayIso: TODAY, now: () => 0, tools, agent: { client: asked(window) } };
+    let s = (await runTurn(newSession('S-two', 0, VOICE_RELAY, ANONYMOUS, app.id), withCallerNumber(startEvent(), CLUB), o)).result.session;
+    const r = await runTurn(s, speechEvent(`${BOOK} ${window}`), o);
+    s = r.result.session;
+    return r;
+  };
+
+  it('a value the second answer leaves out is kept: the day, and a window the result still lists', async () => {
+    const r = await run('morning');
+    expect(r.record.agent?.again).toMatchObject({ tools: ['roomAvailability'] });
+    expect(value(r, 'booking_day')).toBe(SATURDAY);
+    expect(value(r, 'booking_people')).toBe('four');
+    expect(value(r, 'booking_window')).toBe('morning');
+    expect(promptOf(r)).toBe('readback_booking');
+  });
+
+  it('a window the result no longer lists is not kept, and not refused: its question is asked, no attempt counted', async () => {
+    const r = await run('afternoon');
+    expect(value(r, 'booking_day')).toBe(SATURDAY);
+    expect(value(r, 'booking_window')).toBeNull();
+    expect(r.record.agent!.values.some((v) => v.field === 'window')).toBe(false);
+    expect(promptOf(r)).toBe('ask_booking_window');
+    expect(r.result.session.slots.booking_window!.attempts).toBe(0);
+  });
+});
+
 describe('the agent turn: what the decision model decides alone', () => {
   it('side speech drops the agent\'s answer', async () => {
     const c = await call({ [HOLD]: HOLD_ANSWER, 'honey, the book is called The Quiet Harbor': said('Thanks.', [['patronName', 'Honey', 'honey']]) }, [HOLD, 'honey, the book is called The Quiet Harbor']);

@@ -554,6 +554,31 @@ function restatesHeld(app: App, field: AgentAppField, held: { value: unknown; di
 }
 
 /**
+ * The second answer of a turn asked again with a seen tool's result (TurnResult.agentAgain), with the values
+ * the first answer gave and the turn accepted kept where the second leaves them out (the agent-mode design,
+ * call 39): the model, shown the day's free windows, need not say the day again, and an omission is no
+ * retraction. A value the second gives replaces the first's. A `freeFrom` field's first value is kept only
+ * where the result it was held to still lists it (it is checked again with the rest); otherwise it is left
+ * out, never refused, since the result is what made it wrong.
+ */
+export function withFirstValues(app: App, first: Pick<AgentTurnRecord, 'values'>, form: FormId | null, second: AgentAnswer, seen: readonly SeenResult[]): AgentAnswer {
+  if (form === null) return second;
+  const fields = app.agent?.forms[form]?.fields ?? [];
+  const given = new Set(second.values.map((v) => v.field));
+  const kept = first.values.filter((v) => v.outcome === 'accepted' && !given.has(v.field)).filter((v) => {
+    const field = fields.find((f) => f.name === v.field);
+    if (field === undefined) return false;
+    if (field.freeFrom === undefined) return true;
+    const seer = fields.find((f) => f.sees === field.freeFrom!.tool);
+    const day = first.values.find((x) => x.field === seer?.name && x.outcome === 'accepted')?.value;
+    const result = seen.find((x) => x.tool === field.freeFrom!.tool && x.value === day)?.result;
+    const list = typeof result === 'object' && result !== null ? (result as Record<string, unknown>)[field.freeFrom.list] : undefined;
+    return Array.isArray(list) && list.includes(v.value);
+  });
+  return kept.length === 0 ? second : { ...second, values: [...second.values, ...kept.map(({ field, value, words }) => ({ field, value, words }))] };
+}
+
+/**
  * The options free for a `freeFrom` field (AgentAppField.freeFrom), by their keys: the list in the latest
  * result kept on the call (Session.agent.seen, or on a second resolution the results it was asked again with) of its tool for the value the form's seeing field holds now
  * (the day); null where there is none yet (the model has not been shown it: its value stands, and the
