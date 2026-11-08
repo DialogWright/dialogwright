@@ -3,6 +3,7 @@
 {"id":"bk-03","text":"yes, book it","intent":"none","context":"confirm_booking","confirm":"yes"}
 {"id":"bk-04","text":"Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.","intent":"none","context":"confirm_booking","confirm":"no"}
 {"id":"bk-05","text":"This is Rivergate Motors. Just book me in for two cars tomorrow afternoon, same as always.","intent":"booking","context":"no_form"}
+{"id":"bk-06","text":"Just the 2019 Civic, the front two, and the 2021 Model 3, the rear left.","intent":"none","context":"booking","prompted":"booking_vehicles"}
 {"id":"rq-01","text":"Hi, um, I scraped my wheel on a curb pulling into a parking garage and it looks awful. Can you guys fix that?","intent":"request","context":"no_form"}
 {"id":"rq-02","text":"It's a 2020 BMW 3 Series. Just the front passenger wheel.","intent":"none","context":"request","prompted":"request_vehicle"}
 {"id":"rq-03","text":"I'm not sure. What's diamond cut? How would I tell?","intent":"none","context":"request","prompted":"request_diamondCut"}
@@ -21,6 +22,9 @@
 {"id":"rq-16","text":"OK, it's a Honda Civic and I'm Mike Dunn.","intent":"none","context":"request","prompted":"request_callerName"}
 {"id":"rq-17","text":"yeah hi I need a wheel fixed, curb rash on my Audi","intent":"request","context":"no_form"}
 {"id":"rq-18","text":"It's two wheels, both with curb rash.","intent":"none","context":"request","prompted":"request_wheels"}
+{"id":"rq-19","text":"Yes, texting is fine.","intent":"none","context":"request","prompted":"request_textOk"}
+{"id":"rq-20","text":"No, please just call me.","intent":"none","context":"request","prompted":"request_textOk"}
+{"id":"rq-21","text":"No, just the request, thanks.","intent":"none","context":"request","prompted":"request_textOk"}
 {"id":"cb-01","text":"Can I just talk to the owner?","intent":"agent","context":"no_form"}
 {"id":"cb-02","text":"yes, call me on this one","intent":"none","context":"callback","prompted":"callback_callbackNumber","confirm":"yes"}
 {"id":"cb-03","text":"yes please","intent":"none","context":"confirm_callback","confirm":"yes"}

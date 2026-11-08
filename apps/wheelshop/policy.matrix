@@ -26,17 +26,18 @@
 
 purposes: none
 
-request · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber)
+request · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber, textOk)
   every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
                  fields exact, confirmed match          ALLOW
                  fields extra|missing                   BLOCK confirmation
 
-send_photo_link · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber)
-  every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
-                 fields exact, confirmed match          ALLOW
-                 fields extra|missing                   BLOCK confirmation
+send_photo_link · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber, textOk), oneOf(textOk: yes)
+  every caller   fields exact, confirmed none|mismatch            BLOCK confirmation
+                 fields exact, confirmed match, params consented  ALLOW
+                 fields exact, confirmed match, params declined   BLOCK no-consent
+                 fields extra|missing                             BLOCK confirmation
 
-notify_owner_request · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber)
+notify_owner_request · level 0 · identity, confirmed(callerName, vehicle, wheels, damage, diamondCut, day, window, callbackNumber, textOk)
   every caller   fields exact, confirmed none|mismatch  BLOCK confirmation
                  fields exact, confirmed match          ALLOW
                  fields extra|missing                   BLOCK confirmation

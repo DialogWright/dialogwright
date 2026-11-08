@@ -1,5 +1,5 @@
 // Launcher for `pnpm cli`: registers the app, then runs the engine's text harness. The texts the line
-// would send are printed until texting is registered.
+// sends are printed: the text harness has no sender.
 import { cliMain } from 'dialogwright';
 import { printTexts } from './app';
 import { registerThisApp } from './index';

@@ -237,6 +237,19 @@
         "agent": {
           "reply": ""
         }
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
       }
     }
   },
@@ -323,7 +336,8 @@
         },
         "day": "2026-11-13",
         "window": "afternoon",
-        "callbackNumber": "...0123"
+        "callbackNumber": "...0123",
+        "textOk": "yes"
       },
       "action": "request",
       "said": {
@@ -464,6 +478,19 @@
         "agent": {
           "reply": ""
         }
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
       }
     }
   },
@@ -545,6 +572,200 @@
       "action": "callback",
       "readBackSaid": true,
       "nothingDoneBefore": "confirm"
+    }
+  },
+  {
+    "id": "consent-declined",
+    "callerNumber": "+15555550166",
+    "todayIso": "2026-11-09",
+    "steps": [
+      {
+        "say": "yeah hi I need a wheel fixed, curb rash on my Audi",
+        "agent": {
+          "reply": "Curb rash is something we see every day. What's your name?",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "Audi",
+              "words": "Audi"
+            },
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ],
+          "fromFacts": true
+        }
+      }
+    ],
+    "expect": {
+      "decision": "prompt",
+      "promptId": "anything_else",
+      "principalLevel": 0,
+      "values": {
+        "callerName": "jordan lee",
+        "day": "2026-11-12",
+        "window": "morning",
+        "callbackNumber": "...0166",
+        "textOk": "no"
+      },
+      "action": {
+        "not": "send_photo_link"
+      },
+      "said": {
+        "notFigure": true
+      },
+      "readBackSaid": true,
+      "nothingDoneBefore": "confirm"
+    },
+    "answers": {
+      "request_callerName": {
+        "say": "Fine. It's Jordan Lee.",
+        "agent": {
+          "reply": "Thanks, Jordan.",
+          "values": [
+            {
+              "field": "callerName",
+              "value": "Jordan Lee",
+              "words": "Jordan Lee"
+            }
+          ]
+        }
+      },
+      "request_vehicle": {
+        "say": "It's a 2020 BMW 3 Series. Just the front passenger wheel.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "vehicle",
+              "value": "2020 BMW 3 Series",
+              "words": "2020 BMW 3 Series"
+            },
+            {
+              "field": "wheels",
+              "value": "one",
+              "words": "Just the front passenger wheel"
+            }
+          ]
+        }
+      },
+      "request_wheels": {
+        "say": "It's two wheels, both with curb rash.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "wheels",
+              "value": "two",
+              "words": "two wheels"
+            }
+          ]
+        }
+      },
+      "request_damage": {
+        "say": "It's two wheels, both with curb rash.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "damage",
+              "value": "curb rash",
+              "words": "curb rash"
+            }
+          ]
+        }
+      },
+      "request_diamondCut": {
+        "say": "Oh, yeah. It's two-tone, black with shiny silver lines.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "diamondCut",
+              "value": "yes",
+              "words": "yeah"
+            }
+          ]
+        }
+      },
+      "request_day": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": [
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          },
+          {
+            "reply": "",
+            "values": [
+              {
+                "field": "day",
+                "value": "2026-11-12",
+                "words": "Thursday"
+              },
+              {
+                "field": "window",
+                "value": "morning",
+                "words": "Morning"
+              }
+            ]
+          }
+        ]
+      },
+      "request_window": {
+        "say": "Could I bring it Thursday? Morning would be best, before work.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "window",
+              "value": "morning",
+              "words": "Morning"
+            }
+          ]
+        }
+      },
+      "offer_request_callbackNumber": {
+        "say": "yes, that's my cell"
+      },
+      "request_textOk": {
+        "say": "No, please just call me.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "no",
+              "words": "No"
+            }
+          ]
+        }
+      },
+      "readback_request": {
+        "say": "yes, that's right",
+        "agent": {
+          "reply": ""
+        }
+      },
+      "confirm_intent_explicit": {
+        "say": "No, just the request, thanks.",
+        "agent": {
+          "reply": ""
+        }
+      }
     }
   }
 ]

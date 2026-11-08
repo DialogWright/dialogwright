@@ -50,13 +50,14 @@ claims: # the only reassurance the line may give (the drift judge holds it here)
 
 prices: # assumption: the owner corrects these (the shop quotes every retail job from a photo)
   quote: from a photo # no figures: the line never says a price
-  # Said in these words when a caller asks about price. It promises no link before the request is
-  # confirmed: the photo link is texted by the request's read-back's yes (send_photo_link), so the line
-  # says what happens once the request is sent, never that a link is on its way.
+  # Said in these words when a caller asks about price. It promises no text before the request is
+  # confirmed: the text asking for a photo is sent by the request's read-back's yes (send_photo_link), and
+  # only to a caller who said yes to being texted, so the line says what happens once the request is in,
+  # never that a text is on its way.
   say: >-
     We quote every job from a photo, because the price depends on the damage. Once your request is
-    in, you'll get a text with a link to send one, and we'll get back to you with a price and confirm
-    your drop-off.
+    in, we can text you, and you just reply to our text with a photo. Then we'll get back to you with
+    a price and confirm your drop-off.
   # The price line is for a retail caller's request only: a dealership's booking is billed at the rates
   # agreed with the shop (a claim), so in the booking the model may not name it (assumption: the owner corrects these).
   forms: [request]
@@ -84,7 +85,7 @@ accounts: # regular dealership accounts, booked straight in, recognized by the n
 # What each tool does, in a few words: the action's description on the policy card, the console and the audit.
 tools:
   request: send the shop the request
-  send_photo_link: text the caller a link to send a photo of the damage
+  send_photo_link: text the caller asking for a photo of the damage, only with their consent
   notify_owner_request: text the shop a summary of the request
   book: book the cars into the drop-off window
   notify_owner_booking: text the shop a summary of the booking
@@ -111,7 +112,10 @@ request:
       question: How many wheels need work?
     - name: damage
       type: text
-      about: What the damage is, as the line understood it.
+      # A short phrase: the read-back says it after "a {vehicle} with" (a recording held "scraped my wheel on a curb
+      # pulling into a parking garage", read back as "a 2020 BMW 3 Series with scraped my wheel on a curb ..."). No
+      # example phrase here: one the caller never said ("on the rim") was copied into a value, and refused.
+      about: What the damage is, as the line understood it, a short phrase in the caller's own terms that the read-back says after "with".
       question: What happened to the wheel?
     - name: diamondCut
       type: choice
@@ -139,18 +143,30 @@ request:
       length: 10
       offer: callerNumber
       countryCode: "1"
-      question: What's the best number to text you the quote?
+      question: What's the best number to reach you?
+    # The caller's consent to be texted at that number (the maintainer's decision, 2026-11-08): the text asking
+    # for a photo goes only with a yes (the `when` below, a rule of the gate). Read back in the shop's words.
+    - name: textOk
+      type: choice
+      options: ["yes", "no"]
+      about: Whether the caller agrees to be texted at their callback number, as they answered when asked if we may text them.
+      question: Is it OK if we text you at that number?
+      says:
+        "yes": { readBack: "and we'll text you at", done: "Reply to our text with a photo of the damage, and we'll text you a price and confirm your drop-off." }
+        "no": { readBack: "and we'll call you at", done: "We'll call you about a price and to confirm your drop-off." }
   # Every field is said, the optional diamondCut by its own words (says), since every field is sent to the shop:
-  # the caller confirms nothing they never heard.
+  # the caller confirms nothing they never heard. The consent is said by its own words too.
   readBack: >-
     Here's your request: {callerName}, a {vehicle} with {damage}, on {wheels} of its wheels,
-    {diamondCut}, hoping to drop it off {day} in the {window}, and we'll text you at {callbackNumber}.
+    {diamondCut}, hoping to drop it off {day} in the {window}, {textOk} {callbackNumber}.
     Is that right?
-  # The request first (the form's write), then the photo link and the shop's summary.
-  then: [request, send_photo_link, notify_owner_request]
-  done: >-
-    Thanks, {callerName}. We're texting you a link to send us a photo. We'll text you a price and
-    confirm your drop-off once we've seen it.
+  # The request first (the form's write), then the text asking for a photo (only with the caller's yes to
+  # being texted: with a no the gate refuses it, and the request goes on without it) and the shop's summary.
+  then:
+    - request
+    - { tool: send_photo_link, when: { field: textOk, is: "yes", reason: no-consent } }
+    - notify_owner_request
+  done: Thanks, {callerName}. {textOk}
 
 # What a regular account's booking collects: dealerships are booked straight into a window (assumption:
 # the owner corrects these). Only a caller the number they call from recognizes as an account may book.
@@ -209,7 +225,25 @@ lines:
   identity_not_recognized: That's for our dealership accounts, recognized by the number they call from.
 
 owner: # assumption: the owner corrects these (a text summary of every request and booking)
-  notify: text # printed until texting is registered (10DLC)
-  number: "+15555550100"
+  # Texted to the shop's phone, the app's own setting SHOP_PHONE (never in this file); printed while it is
+  # unset or the server has no sender (TEXT_FROM).
+  notify: text
   summary: >- # a fixed template, filled by the app's own tools: never a generated line
     New {kind} from {who} ({callbackNumber}): {details}. Drop-off: {day}, {window}.
+
+# The texts the app's own code sends, in the shop's fixed words (never a generated line, never said on a call),
+# with the placeholders the code fills. A caller's own text forwarded to the shop follows its line after a colon.
+texts:
+  # To the caller, once the request is confirmed and only with their yes to being texted.
+  photoRequest: Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price.
+  # To the caller, when their photo has come in.
+  photoThanks: Got it, thanks. We'll text you a price soon.
+  # To the shop's phone (SHOP_PHONE), with the caller's photos attached.
+  photoForward: Photo from {name}, ...{last4}, for their {vehicle} request.
+  # To the shop's phone: a text with no photo from a caller with a request on file.
+  textForward: Text from {name}, ...{last4}, about their {vehicle} request.
+  # To the shop's phone: a text from a number with no request on file, photos attached.
+  unknownForward: Text from ...{last4} (no request on file).
+  # To the shop's phone: a callback note.
+  callbackNote: "Call back {number} (callback note {ref})."
+

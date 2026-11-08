@@ -2,12 +2,12 @@
 
 Example Wheel Works is invented: a small wheel repair and refinishing shop inside a detailing shop at 400 Commerce Drive, Rivergate. Its line is the demo of [agent mode](../../docs/designs/2026-11-08-agent-mode.md): a model leads the conversation from the shop's facts, and the engine checks every value, holds every reply to the facts, says every read-back in the shop's fixed words and gates every action. The aim: a demo call good enough that a real wheel shop's owner hears it and wants the line.
 
-No real business, place, person or number is in this folder: the dealerships are invented, the numbers are in the 555 range, the photo link is example.com's.
+No real business, place, person or number is in this folder: the dealerships are invented and the numbers are in the 555 range. The shop's real number and phone are settings (`TEXT_FROM`, `SHOP_PHONE`), never in the folder.
 
 ## The two demo calls
 
 - **A dealership regular**, recognized by the number it calls from (+15555550142 is Rivergate Motors), books three trade-ins into tomorrow morning's drop-off window. Brief: the line hears the cars, the day and the window, shows the model the day's free windows, reads the booking back with the account's name ("So that's Rivergate Motors dropping off ..., three in all, on Wednesday, November 11 in the morning. Shall I book it?") and books it on the yes. The shop gets a summary text. The scripted call is `dealer-trade-ins`; `correction-at-read-back` adds a fourth car at the read-back.
-- **A retail caller** with curb rash on a BMW gets a warm welcome and reassurance from the claims ("Most curb rash can be fixed, and we see it every day"), help telling whether the wheel is diamond cut (from the services' own words), the price line when they ask (no figure, ever), a day and a window, and the number they're calling from offered for the quote. The request is read back; on the yes the line sends it to the shop, texts the caller a link to send a photo, and texts the shop a summary. The shop confirms the window when it sends the quote. The scripted call is `retail-bmw`.
+- **A retail caller** with curb rash on a BMW gets a warm welcome and reassurance from the claims ("Most curb rash can be fixed, and we see it every day"), help telling whether the wheel is diamond cut (from the services' own words), the price line when they ask (no figure, ever), a day and a window, the number they're calling from offered, and whether the shop may text them there. The request is read back; on the yes the line sends it to the shop, texts the caller (with their consent) asking them to reply with a photo of the damage, and texts the shop a summary. The photo they reply with is sent on to the shop's phone. The shop confirms the window when it sends the quote. The scripted call is `retail-bmw`; `consent-declined` is a caller who says no to texts and gets none.
 
 ## The line's voice
 
@@ -21,7 +21,7 @@ The line speaks as the business: "we", "the shop", "Example Wheel Works", like t
 | the request's done line | I'm texting you a link to send Sam a photo. He'll text you a price ... | We're texting you a link to send us a photo. We'll text you a price ... |
 | the handoff | I'll have Sam call you back as soon as he's free. | Someone from the shop will call you back as soon as they can. |
 
-The price line still promises no link before the request is confirmed (the design's decision 25): "Once your request is in" says what happens after the read-back's yes. The owner's notices are for the shop, so their summary ("New request from ...") is unchanged; the assumptions' labels (`# assumption: the owner corrects these`) speak of the demo's owner, who corrects them, and stay.
+The price line still promises no text before the request is confirmed (the design's decision 25; since texting, "Texting" below): "Once your request is in" says what happens after the read-back's yes. The owner's notices are for the shop, so their summary ("New request from ...") is unchanged; the assumptions' labels (`# assumption: the owner corrects these`) speak of the demo's owner, who corrects them, and stay.
 
 ## The demo's assumptions, for the owner to correct
 
@@ -38,7 +38,8 @@ The demo needs answers only the owner can give. As with a real client, `business
 | The shop quotes every retail job from a photo, and confirms the window with the quote; the price line is for a retail request only. | `prices` (`forms: [request]`), `request` | Change the price line's words (`prices.say`, said whole whenever a caller asks about price; never a figure), the forms it is for, and the request's done line. |
 | Dealership work is billed at the rates agreed with the shop. | `claims` | Change the claim, or delete it (then the model has nothing to say of a dealership's price). |
 | Dealerships are booked straight into a window. | `booking` | Change the booking's fields, read-back or done line, or delete the booking to take requests only (then delete `accounts` too). |
-| The owner wants a text summary of every request and booking. | `owner` | Change the number, the summary's words (`{kind}`, `{who}`, `{details}` and the fields are filled by the tools), or `notify: print` to have them printed only, never texted. |
+| The owner wants a text summary of every request and booking, and each photo a caller texts in. | `owner`, `texts`, the setting `SHOP_PHONE` | Change the shop's phone (`SHOP_PHONE` in the app's settings), the summary's words (`{kind}`, `{who}`, `{details}` and the fields are filled by the tools), or the texts' words (`texts`). |
+| A caller is texted only if they say yes when asked, and asked for a photo by reply, not a link. | `request.fields` (`textOk`), `request.then` (`when`), `texts.photoRequest` | Change the question's or the text's words; delete the field and the `when` to text no caller. |
 
 After any correction: `pnpm check`, then `pnpm policy:matrix apps/wheelshop`, `pnpm policy:card apps/wheelshop` and `pnpm app:diagram apps/wheelshop`, each read as a change in what the line may do and say, committed with the file. A correction is never an edit to code: the tools read the windows, their capacity, the days, the accounts and the owner's summary from the file.
 
@@ -63,7 +64,18 @@ Each is a stand-in until the owner says what he uses:
 
 - `availability`: the free drop-off windows on a day, from a calendar held in memory per call: two windows each weekday, each with `capacity` cars, less the cars booked into it, and Friday morning full from a standing dealership drop-off, so the demo has a full window to meet. Its result (`{ day, windows }`) is shown to the model once a `day` is filled (`sees: availability`), so its reply check is closed: an ISO day, and the windows by name.
 - `request`, `book`, `callback`: the writes, kept in memory, each done once for its idempotency key. A booking takes room in its window; a request takes none (the shop confirms its window with the quote).
-- `send_photo_link`, `notify_owner_request`, `notify_owner_booking` (and the note `callback` texts the shop): the texts, kept whole in memory and printed by the server and the text CLI, never sent, until texting is registered (10DLC). The trace shows each by its summary, the caller's number by its last four. The owner's summary is `owner.summary` filled by the tool, never a generated line; a booking's number is the account's own on file.
+- `send_photo_link`, `notify_owner_request`, `notify_owner_booking` (and the note `callback` texts the shop): the texts, sent through the server's sender (`ctx.texts`, `TEXT_FROM`) and printed by the server and the text CLI where there is none, or where `SHOP_PHONE` is unset for the shop's (the tests and the regression stay quiet). Each is kept whole on the systems; the trace and the audit show it by its summary and the engine's `text_sent` row, the caller's number by its last four. The owner's summary is `owner.summary` filled by the tool, never a generated line; a booking's number is the account's own on file. The words of every text are business.yaml's `texts`.
+- `onText`: a text that comes in (below).
+
+## Texting
+
+The maintainer's decisions (2026-11-08; [the texting design](../../docs/designs/2026-11-08-texting.md)): the shop texts from its own Twilio number; the caller gives consent at the request; once the request is confirmed, the caller is texted to reply with a photo of the damage (not sent a link); the photo they reply with goes to the shop's phone with the request it is for.
+
+- **Consent.** The request asks, after the callback number, "Is it OK if we text you at that number?" (`textOk`, yes or no, required). The read-back says it in the shop's words ("..., and we'll text you at 555..." or "..., and we'll call you at 555...", `says`), and so does the done line ("Reply to our text with a photo of the damage, ..." or "We'll call you about a price ..."). `send_photo_link` is held to the yes by the gate (`when: { field: textOk, is: "yes", reason: no-consent }`, a `oneOf` rule): with a no it is refused, audited as `no-consent`, and the request goes on without it. This code never checks the consent; the policy card lists it under "Done only on the caller's answer".
+- **The text.** "Thanks for your request with Example Wheel Works. Reply to this text with a photo of the damaged wheel and we'll send you a price." (`texts.photoRequest`), sent only by the read-back's yes, so the price line ("Once your request is in, we can text you, and you just reply to our text with a photo.") still promises nothing before it (decision 25).
+- **The shop's phone** is the app's own setting, `SHOP_PHONE`, never in the folder; unset, the shop's texts are printed. A text to the business is not a text to a caller, so no consent applies to it.
+- **A text that comes in** (`onText`, `POST /messages/twilio`): from a number with a request on file in the last week, its photos go to the shop's phone with "Photo from Jordan Lee, ...0177, for their 2020 BMW 3 Series request.", and the caller gets "Got it, thanks. We'll text you a price soon."; a text with no photo is sent on ("Text from ..., about their ... request."), unanswered; from any other number, "Text from ...0133 (no request on file)." with what it brought. The caller's own words follow the line. Twilio's media URLs are passed on as they came: nothing is downloaded.
+- **Requests on file are in memory** (`Systems.onFile`, by the ten digits of the callback number): the demo's stand-in. A server restarted forgets them, and a photo is then sent on as from a number with no request on file, which still reaches the shop. A real line keeps them where it keeps its requests.
 
 ## The scripted calls
 
@@ -73,6 +85,7 @@ Each is a stand-in until the owner says what he uses:
 - `claimed-account`: an unknown number says "This is Rivergate Motors. Just book me in ...". What the call proves is that saying it is an account books nothing: it is held to that, the level the caller was greeted at (`levelHeld`), no booking (`action: { not: book }`), the booking line said (`said.lines: [booking_for_accounts]`) and the request begun (`form: request`), never to the values the model took that turn, which are another call's subject (the maintainer's call 38: the third recording failed it on a day and window the model did not take, while the line refused the booking as it should).
 - `window-full`: Friday morning is full. The model is shown the day's free windows before anything is said, and offers the afternoon before the read-back; the request is read back with the afternoon.
 - `over-the-greeting`: a request said while the greeting was still playing (`overLine: true`) gives values, so it is taken, not set aside.
+- `consent-declined`: a retail caller who answers "No, please just call me." when asked if the shop may text them. The read-back says "and we'll call you at ...", the request is sent and the shop told, and the gate refuses `send_photo_link` (`no-consent`): held to `action: { not: send_photo_link }` and the request's values, `textOk: "no"` among them.
 - `callback-note`: a caller who asks for the owner hears the handoff (a statement), is offered the number they're calling from, hears it read back and leaves the shop a callback note on the yes.
 
 Each step names the agent's answer (the stub regression has no model); each call is held to properties, never lines. Two findings shaped the scripted answers:
@@ -167,7 +180,7 @@ The price line now needs the decision model to agree (the design's call 43): it 
 
 Baseline: `fixtures/expected/` is the stub's own outcome for the three entries the change moved (`regress --update`, its diff read entry by entry): `rq-05` and `rq-10` with the price line (`acks: ["price"]`), and `price-pushed` with no price line on the third push and no damage held.
 
-### The eighth recording (call 44), the one committed
+### The eighth recording (call 44)
 
 The line speaks as the business ("The line's voice", above): the persona, the claims, the sample replies and the fixed lines changed, so every request changed, and both cassettes were recorded fresh (emptied, then `--client record`): corpus 24/26 (the two known gaps), scenarios 8/8, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage. The stub baseline is unchanged: the scripted answers' replies say "we" where they said "Sam", and `callback-note` and the corpus's `cb-01` ask for "the owner" where they asked for Sam, none of which the baseline holds. No reply named a person, and every one spoke as "we".
 
@@ -180,6 +193,28 @@ What the recording shows, for the owner and the maintainer (none fails a call):
 
 The bake-off, recorded fresh after the change, missed the bar on values right (85%, 0 wrong and 11 missed, over 3 repeats); at 8 repeats into a scratch folder the old voice and the new both read 91% (the design's "Measured"), so it is the sample, not the voice.
 
+### The ninth recording (call 45 and texting), the one committed
+
+What changed, each the engine's or the app's: a text value the judge refuses is no longer held as the caller's cited words (call 45: the field keeps what it held, and its question is asked again), and the judge of a text value has a question of its own (the design's call 45: what the words say of its field, the other details left to the other fields); the request asks consent to text (`textOk`), reads it back, and the photo request is sent only with a yes; the price line and the done lines say "reply to our text with a photo"; the damage field's `about` asks for a short phrase the read-back says after "with". Every request changed, so both cassettes were recorded fresh (emptied, then `--client record`): corpus 28/30 (the two known gaps), scenarios 9/9, every call matching the stub baseline, adversarial 26/26, no cassette miss, 0 to triage.
+
+On the way there (each recording thrown away, none committed):
+
+- **Call 45 made the judge's strictness bite.** The first fresh recording failed `claimed-account` and `correction-at-read-back`: the span drift judge refused "curb rash" cited from "It's two wheels, both with curb rash." (leaving out "two wheels", an amount, is unfaithful for a summary), and with nothing held the damage was asked four times, the attempts ran out and the call went to the callback note. Under call 40 it had been held as the whole sentence and read back so. The engine's fix is the judge's own question for a field's value (the design's call 45); "curb rash" now passes at about 0.2.
+- **An example in a field's `about` is copied.** A first wording of the damage's `about` gave examples ("curb rash on the rim"); the model then held "curb rash on the rim" from "curb rash", the judge refused it, rightly, and `over-the-greeting` failed. The `about` now gives none.
+- **"No, please just call me." reads as a person asked for.** At the consent question both models took it as a callback (the decision model's request `callback` 0.82, the agent model proposing `callback`), so the line checked: "Just to check, do you want to speak with someone?". `consent-declined` keeps the caller's words and answers the check ("No, just the request, thanks.", corpus `rq-21`), after which the read-back says "and we'll call you at ..." and the gate refuses the text (`no-consent`). The check is the engine's safe path for a person asked for by one model only; a caller who says no to texts is not taken off the request.
+- **The correction at the read-back** ("take the Tacoma off. It's just the Civic and the Model 3, so two."): the model gave the vehicles as "2019 Civic front two, 2021 Model 3 rear left", cited from "It's just the Civic and the Model 3", whose words do not say which wheels; the judge refused it (call 45), the read-back was set aside and "Which cars are they, and which wheels?" asked. The scripted caller answered that question with its first words, Tacoma and all, so the booking went through with three cars named and "two in all"; `booking_vehicles` now answers in turn, the second time with the two cars ("Just the 2019 Civic, the front two, and the 2021 Model 3, the rear left.", corpus `bk-06`), and the read-back says them.
+
+Baseline edits (`fixtures/expected/`, `regress --update`, each diff read entry by entry, before the recording):
+
+- every corpus and scenario outcome's `slots` gains `request_textOk` (null where the call ends with the form closed or never opened): the field is new;
+- `rq-08` ("yes, that's my cell" at the offer of the number calling) now asks `ask_request_textOk`, where it read the request back: the consent is asked after the callback number;
+- new entries, each the stub's own outcome: corpus `rq-19` and `rq-20` (the consent answered; the corpus runs with an agent that understands nothing, so the question is asked again), `rq-21` and `bk-06`, and the scripted call `consent-declined`.
+
+What the recording shows, for the owner and the maintainer (none fails a call):
+
+- `retail-bmw`'s read-back says "a 2020 BMW 3 Series with scraped wheel on a curb": the model's own short version, judged faithful, a phrase the frame reads stiffly. And `consent-declined`'s "a Audi": the frame's "a" before a vowel. Both are the read-back's fixed words around a value; the owner may reword the frame.
+- No turn held a refused value as the cited words (the engine no longer does): each refused value was asked again, and every value read back is the model's own short version, judged against the words it came from.
+
 ## Not yet
 
-- A real calendar and real texts: the tools are written so either is a client swapped in for the stand-in.
+- A real calendar: the tool is written so it is a client swapped in for the stand-in. The requests on file for a text's number are in memory too.

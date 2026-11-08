@@ -8,7 +8,7 @@
 
 | Intent | Kind | Said as | What happens |
 | --- | --- | --- | --- |
-| `request` | form | send a request | opens the form, which asks for caller name, vehicle, wheels, damage, diamond cut, day, window, callback number |
+| `request` | form | send a request | opens the form, which asks for caller name, vehicle, wheels, damage, diamond cut, day, window, callback number, text ok |
 | `booking` | form | book cars in | opens the form, which asks for cars, vehicles, day, window |
 | `callback` | form | leave a callback note | opens the form, which asks for callback number |
 | `agent` | control | speak with someone | handled by the engine |
@@ -39,6 +39,7 @@ flowchart LR
     s_request_day["request_day<br/>type: date"]
     s_request_window["request_window<br/>type: choice"]
     s_request_callbackNumber["request_callbackNumber<br/>type: digits"]
+    s_request_textOk["request_textOk<br/>type: choice"]
   end
   x_request_diamondCut>"When it runs out<br/>skip"]
   s_request_diamondCut -.->|"runs out"| x_request_diamondCut
@@ -49,9 +50,9 @@ flowchart LR
   summary -->|"calls"| a_request
   r_request(["Rules, in order<br/>1. identity<br/>2. confirmed"])
   a_request --> r_request
-  a_send_photo_link["Text the caller a link to send a photo of the damage<br/>level 0: anonymous"]
+  a_send_photo_link["Text the caller asking for a photo of the damage, only with their consent<br/>level 0: anonymous"]
   summary -->|"calls"| a_send_photo_link
-  r_send_photo_link(["Rules, in order<br/>1. identity<br/>2. confirmed"])
+  r_send_photo_link(["Rules, in order<br/>1. identity<br/>2. confirmed<br/>3. oneOf textOk"])
   a_send_photo_link --> r_send_photo_link
   a_notify_owner_request["Text the shop a summary of the request<br/>level 0: anonymous"]
   summary -->|"calls"| a_notify_owner_request

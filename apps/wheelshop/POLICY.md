@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `fe33fb5b0e2f5aca82cb1a4947216818916eeb69b9ec2aedf71c17c33dca8c59` |
+| `business.yaml` | `45a0d0832aa2a8b3d789b4d97c5c9aa2db5dde813fb72823a50386899a973517` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -50,6 +50,14 @@ The tools whose results the model sees (business.yaml's `sees`), each called thr
 | day (`request_day`) | read the free drop-off windows on a day (`availability`) | closed form; the model is shown `day` and `windows` |
 | day (`booking_day`) | read the free drop-off windows on a day (`availability`) | closed form; the model is shown `day` and `windows` |
 
+### Done only on the caller's answer
+
+Each of these is called after its form's read-back only where the field holds the option named, as the caller answered it and confirmed it in the read-back (business.yaml's `when`, a `oneOf` rule on the action). With any other answer the gate refuses the action, the refusal is audited under the reason named, and the form goes on without it: a caller who did not consent is not, for example, texted.
+
+| Action | Only where | Refused as |
+| --- | --- | --- |
+| text the caller asking for a photo of the damage, only with their consent (`send_photo_link`), after the request's read-back | text ok (`textOk`) is `yes` | `no-consent` |
+
 Said in fixed words, never worded by a model:
 
 | Line | Said |
@@ -61,9 +69,9 @@ Said in fixed words, never worded by a model:
 | `goodbye_chat` | Thanks for chatting with Example Wheel Works. Goodbye. |
 | `booking_for_accounts` | Bookings are for our dealership accounts, but we can take a request instead. |
 | `identity_not_recognized` | That's for our dealership accounts, recognized by the number they call from. |
-| `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, you'll get a text with a link to send one, and we'll get back to you with a price and confirm your drop-off. |
-| `readback_request` | Here's your request: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, and we'll text you at {request_callbackNumber}. Is that right? |
-| `done_request` | Thanks, {request_callerName}. We're texting you a link to send us a photo. We'll text you a price and confirm your drop-off once we've seen it. |
+| `price` | We quote every job from a photo, because the price depends on the damage. Once your request is in, we can text you, and you just reply to our text with a photo. Then we'll get back to you with a price and confirm your drop-off. |
+| `readback_request` | Here's your request: {request_callerName}, a {request_vehicle} with {request_damage}, on {request_wheels} of its wheels, {request_diamondCut}, hoping to drop it off {request_day} in the {request_window}, {request_textOk} {request_callbackNumber}. Is that right? |
+| `done_request` | Thanks, {request_callerName}. {request_textOk} |
 | `readback_booking` | So that's {account} dropping off {booking_vehicles}, {booking_cars} in all, on {booking_day} in the {booking_window}. Shall I book it? |
 | `done_booking` | You're booked for {booking_day}, in the {booking_window}. Thanks. |
 | `readback_callback` | We'll call you back at {callback_callbackNumber}. Is that right? |
@@ -94,14 +102,16 @@ What the record of a call keeps of each value the action is sent, where the acti
 | Send the shop the request (`request`) | day (`day`) | as it is |
 | Send the shop the request (`request`) | window (`window`) | as it is |
 | Send the shop the request (`request`) | callback number (`callbackNumber`) | by its last four characters |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | caller name (`callerName`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | vehicle (`vehicle`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | wheels (`wheels`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | damage (`damage`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | diamond cut (`diamondCut`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | day (`day`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | window (`window`) | as it is |
-| Text the caller a link to send a photo of the damage (`send_photo_link`) | callback number (`callbackNumber`) | by its last four characters |
+| Send the shop the request (`request`) | text ok (`textOk`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | caller name (`callerName`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | vehicle (`vehicle`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | wheels (`wheels`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | damage (`damage`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | diamond cut (`diamondCut`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | day (`day`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | window (`window`) | as it is |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | callback number (`callbackNumber`) | by its last four characters |
+| Text the caller asking for a photo of the damage, only with their consent (`send_photo_link`) | text ok (`textOk`) | as it is |
 | Text the shop a summary of the request (`notify_owner_request`) | caller name (`callerName`) | as it is |
 | Text the shop a summary of the request (`notify_owner_request`) | vehicle (`vehicle`) | as it is |
 | Text the shop a summary of the request (`notify_owner_request`) | wheels (`wheels`) | as it is |
@@ -110,6 +120,7 @@ What the record of a call keeps of each value the action is sent, where the acti
 | Text the shop a summary of the request (`notify_owner_request`) | day (`day`) | as it is |
 | Text the shop a summary of the request (`notify_owner_request`) | window (`window`) | as it is |
 | Text the shop a summary of the request (`notify_owner_request`) | callback number (`callbackNumber`) | by its last four characters |
+| Text the shop a summary of the request (`notify_owner_request`) | text ok (`textOk`) | as it is |
 | Book the cars into the drop-off window (`book`) | account (`account`) | as it is |
 | Book the cars into the drop-off window (`book`) | cars (`cars`) | as it is |
 | Book the cars into the drop-off window (`book`) | vehicles (`vehicles`) | as it is |
@@ -131,9 +142,9 @@ One row per action the agent may take. Anything else is refused.
 
 | Action | Level | The gate checks, in order |
 | --- | --- | --- |
-| **Send the shop the request**<br/>`request` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window and callback number |
-| **Text the caller a link to send a photo of the damage**<br/>`send_photo_link` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window and callback number |
-| **Text the shop a summary of the request**<br/>`notify_owner_request` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window and callback number |
+| **Send the shop the request**<br/>`request` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window, callback number and text ok |
+| **Text the caller asking for a photo of the damage, only with their consent**<br/>`send_photo_link` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window, callback number and text ok<br/>3. text ok must be `yes`: anything else is refused (`no-consent`), and a missing value is refused |
+| **Text the shop a summary of the request**<br/>`notify_owner_request` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: caller name, vehicle, wheels, damage, diamond cut, day, window, callback number and text ok |
 | **Book the cars into the drop-off window**<br/>`book` | 1 recognized by the number calling | 1. the caller must be at 'recognized by the number calling' or above<br/>2. the account must be the caller's own, or one they act for<br/>3. the caller must confirm exactly these values at the read-back, and nothing else is sent: account, cars, vehicles, day and window |
 | **Text the shop a summary of the booking**<br/>`notify_owner_booking` | 1 recognized by the number calling | 1. the caller must be at 'recognized by the number calling' or above<br/>2. the account must be the caller's own, or one they act for<br/>3. the caller must confirm exactly these values at the read-back, and nothing else is sent: account, cars, vehicles, day and window |
 | **Leave the shop a callback note**<br/>`callback` | 0 anonymous | 1. any caller may ask, verified or not<br/>2. the caller must confirm exactly these values at the read-back, and nothing else is sent: callback number |
@@ -147,7 +158,7 @@ One row per action the agent may take. Anything else is refused.
 flowchart LR
   subgraph lv0["Level 0: anonymous"]
     a_request["Send the shop the request<br/>identity · confirmed"]
-    a_send_photo_link["Text the caller a link to send a photo of the damage<br/>identity · confirmed"]
+    a_send_photo_link["Text the caller asking for a photo of the damage, only with their consent<br/>identity · confirmed · oneOf textOk"]
     a_notify_owner_request["Text the shop a summary of the request<br/>identity · confirmed"]
     a_callback["Leave the shop a callback note<br/>identity · confirmed"]
     a_availability["Read the free drop-off windows on a day<br/>identity"]

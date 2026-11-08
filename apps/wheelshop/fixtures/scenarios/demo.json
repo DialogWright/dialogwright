@@ -203,7 +203,8 @@
         "diamondCut": "yes",
         "day": "2026-11-12",
         "window": "morning",
-        "callbackNumber": "...0177"
+        "callbackNumber": "...0177",
+        "textOk": "yes"
       },
       "action": "send_photo_link",
       "said": {
@@ -365,6 +366,19 @@
         "agent": {
           "reply": ""
         }
+      },
+      "request_textOk": {
+        "say": "Yes, texting is fine.",
+        "agent": {
+          "reply": "",
+          "values": [
+            {
+              "field": "textOk",
+              "value": "yes",
+              "words": "Yes"
+            }
+          ]
+        }
       }
     }
   },
@@ -504,20 +518,35 @@
           ]
         }
       },
-      "booking_vehicles": {
-        "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
-        "agent": {
-          "reply": "Got it.",
-          "values": [
-            {
-              "field": "vehicles",
-              "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left",
-              "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left."
-            }
-          ],
-          "action": "submit"
+      "booking_vehicles": [
+        {
+          "say": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left.",
+          "agent": {
+            "reply": "Got it.",
+            "values": [
+              {
+                "field": "vehicles",
+                "value": "2019 Civic front two, Tacoma all four, 2021 Model 3 rear left",
+                "words": "A 2019 Civic, the front two. A Tacoma, all four. And a 2021 Model 3, just the rear left."
+              }
+            ],
+            "action": "submit"
+          }
+        },
+        {
+          "say": "Just the 2019 Civic, the front two, and the 2021 Model 3, the rear left.",
+          "agent": {
+            "reply": "",
+            "values": [
+              {
+                "field": "vehicles",
+                "value": "2019 Civic front two, 2021 Model 3 rear left",
+                "words": "2019 Civic, the front two, and the 2021 Model 3, the rear left"
+              }
+            ]
+          }
         }
-      },
+      ],
       "readback_booking": [
         {
           "say": "Oh wait, take the Tacoma off. It's just the Civic and the Model 3, so two.",
