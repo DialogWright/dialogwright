@@ -46,6 +46,7 @@ claims: # the only reassurance the line may give (the drift judge holds it here)
   - Diamond cut wheels are what the shop's lathe is for.
   - Curb rash on a diamond cut wheel is usually a same-day fix. # assumption: the owner corrects these
   - Dealerships on Commerce Drive send their trade-ins here.
+  - Dealership work is billed at the rates agreed with Sam. # assumption: the owner corrects these
 background: # context for the model, never said as a claim
   - Sam works alone, so he often can't answer the phone while he's working on a wheel.
 
@@ -58,6 +59,9 @@ prices: # assumption: the owner corrects these (he quotes every retail job from 
     Sam quotes every job from a photo, because the price depends on the damage. Once I've sent him
     your request, you'll get a text with a link to send one, and he'll get back to you with a price
     and confirm your drop-off.
+  # The price line is for a retail caller's request only: a dealership's booking is billed at the rates
+  # agreed with Sam (a claim), so in the booking the model may not name it (assumption: the owner corrects these).
+  forms: [request]
 
 where:
   place: inside the detailing shop at 400 Commerce Drive, Rivergate, across from the car dealership
@@ -119,11 +123,15 @@ request:
       optional: true
     - name: day
       type: date
+      about: The day the car is dropped off ("tomorrow" or a weekday names one).
       question: What day would you like to drop it off?
       sees: availability # the windows free on that day reach the model (the maintainer's decision 2)
     - name: window
       type: choice
       options: windows # morning or afternoon, from windows
+      # A window the day's free windows do not list is refused, and the model asked again with them, so the
+      # line never takes, or promises, a window that is full.
+      freeFrom: availability.windows
       question: Morning or afternoon?
     - name: callbackNumber
       type: digits
@@ -159,11 +167,13 @@ booking:
       question: Which cars are they, and which wheels?
     - name: day
       type: date
+      about: The day the cars are dropped off ("tomorrow" or a weekday names one).
       question: What day are you dropping them off?
       sees: availability
     - name: window
       type: choice
       options: windows
+      freeFrom: availability.windows # a full window is refused: the booking takes room in it
       question: Morning or afternoon?
   readBack: >-
     So that's {account} dropping off {vehicles}, {cars} in all, on {day} in the {window}. Shall I

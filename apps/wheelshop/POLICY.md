@@ -4,7 +4,7 @@
 
 | File | Config hash |
 | --- | --- |
-| `business.yaml` | `88e128f9abaeca59fdad14b5b082f77d76b9a2f2f3f7cccaba91db699bec6569` |
+| `business.yaml` | `a6113e5afd3e1a2986040f379e2d82418820647aedd83826c8d90d280e6af0bf` |
 
 The hash is a SHA-256 of the file's content (comments and layout do not change it); every call's audit record carries the hashes it ran under.
 
@@ -41,7 +41,7 @@ This app is in agent mode (app.yaml's `mode: agent`): a model, `mercury-3` on in
 
 - **The conversation is sent to the agent model:** the caller's words as they said them (a number they say included), the line's own replies and the fixed lines said, with what the business may say. No identity factor is sent: the app takes none a caller says. A value the records hide (the callback number by its last four) is sent masked where it is listed as collected, and in the conversation history once the line has understood it.
 - **The model proposes; the engine decides.** It never calls a tool. Each value it understands is checked by its field's slot type, and the caller confirms every value at the read-back, said in fixed words, before any action. Every action is decided by the gate, as below.
-- **What it may say** is the business's: 16 statements (its claims, services, what it does not offer, where it is, its days and windows), and 1 line of background it is told never to claim. Its sample replies (4) are sent as examples of tone.
+- **What it may say** is the business's: 17 statements (its claims, services, what it does not offer, where it is, its days and windows), and 1 line of background it is told never to claim. Its sample replies (4) are sent as examples of tone.
 
 The tools whose results the model sees (business.yaml's `sees`), each called through the gate once its field is filled, its result shown only once the tool's reply check passes, and only the fields that check names, each in a closed form (never free text):
 

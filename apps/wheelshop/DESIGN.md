@@ -21,7 +21,8 @@ The demo needs answers only the owner can give. As with a real client, `business
 | He works Monday to Friday. | `days` | List the days he works; the calendar has no window on any other. |
 | He works at the shop; no mobile service. | `where.mobile` | `true` if he also comes to the customer. |
 | He doesn't do cracked wheels or straightening. | `notOffered` | Add or remove what he doesn't do. |
-| He quotes every retail job from a photo, and confirms the window with the quote. | `prices`, `request` | Change the price line's words (`prices.say`, said whole whenever a caller asks about price; never a figure), and the request's done line. |
+| He quotes every retail job from a photo, and confirms the window with the quote; the price line is for a retail request only. | `prices` (`forms: [request]`), `request` | Change the price line's words (`prices.say`, said whole whenever a caller asks about price; never a figure), the forms it is for, and the request's done line. |
+| Dealership work is billed at the rates agreed with Sam. | `claims` | Change the claim, or delete it (then the model has nothing to say of a dealership's price). |
 | Dealerships are booked straight into a window. | `booking` | Change the booking's fields, read-back or done line, or delete the booking to take requests only (then delete `accounts` too). |
 | He wants a text summary of every request and booking. | `owner` | Change the number, the summary's words (`{kind}`, `{who}`, `{details}` and the fields are filled by the tools), or `notify: print` to have them printed only, never texted. |
 
@@ -80,7 +81,7 @@ The first recording (2026-11-08, Mercury 3 on Inception at `instant`, Jev 1.13.0
 - **The expectations (too strict for a real model):** `dealer-trade-ins` and `correction-at-read-back` held `vehicles` word for word ("front two", the model's "front two wheels"); `retail-bmw` held `damage` as "curb rash from a parking garage curb"; `claimed-account` held the next question (the model asked the damage before the wheels, having read "two cars" as two wheels); `price-pushed` held a damage value the model did not take from a price question (incidental: the call's subject is the price). Each now holds the words a text value has, the outcome and the action, not the wording or the order; `price-pushed`'s scripted answer no longer names a damage the real model did not.
 - **The app:** the vehicle field's `about` now says a make alone is enough ("on my Audi" was not taken in the first recording, and was in the second).
 
-The second recording, with those fixes (and the turns the callback rule then changed recorded on top), is the one committed: corpus 23/25 (two known gaps, below), scenarios 8/8, adversarial 26/26, 0 to triage.
+The second recording, with those fixes (and the turns the callback rule then changed recorded on top), read: corpus 23/25 (two known gaps, below), scenarios 8/8, adversarial 26/26, 0 to triage.
 
 Known gaps (corpus.jsonl `knownGap`):
 
@@ -94,6 +95,25 @@ What the recording shows of the model, for the owner (none fails a call):
 - In `claimed-account` the line said "So it's a Honda Civic, one car." to a caller who had said two cars: the judge passed it at 0.49, and "one" passed the figure check because the offer line's pronoun "one" is among the fixed lines' figures.
 - The owner's own sample reply ("Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?") was refused by the judge at 0.53 and 0.54 on two calls, and passed at 0.47 on the first recording: on the bar.
 - Of 123 replies checked over the whole run, 17 fell back on the word budget (30 on a call) and 12 on two questions; the caller who asked "What's diamond cut? How would I tell?" heard only "What's your name?". None fell back on a figure, so none on "one" alone.
+
+### The third recording (after the maintainer's call 36)
+
+The fixes the second recording's findings asked for, each now the app's or the engine's: the agent budgets 1800 and 4000 ms; the price line for the request only (`prices.forms: [request]`), with the assumption claim "Dealership work is billed at the rates agreed with Sam."; each `window` `freeFrom: availability.windows`, so a full window is refused and never promised; a reply from the facts held to 45 words on a call (`words.answer`, its default), so the diamond-cut explanation is said; every handoff begins the callback note; the persona (`kind`, `owner`, `oneOwner`) sent to the model; and each `day` field described ("tomorrow" or a weekday names one). The persona changes every request, so the run was recorded fresh: corpus 23/25 (the two known gaps), scenarios 6/8, adversarial 25/26, no cassette misses.
+
+- `window-full`: shown Friday morning full, the model kept `window: morning` and wrote "Friday morning works": the window was refused (`range`), the reply not said, and the line asked "Morning or afternoon?".
+- `retail-bmw`: "What's diamond cut? How would I tell?" is answered (40 words, from the facts, judged 0.10).
+- `callback-note`: at the callback note's read-back, the model gave the number back masked as the model was shown it ("...0177", cited from "yes please"); refused as a correction, it set the read-back aside. The engine now reads a held value given back as it was shown as no change (call 37).
+
+Failing, the model's (none is the app's to fix; the owner decides whether to accept them as known gaps, which the triage guide leaves to the owner):
+
+- `dealer-trade-ins`: at "yes, book it" Mercury 3 wrote a reply of 3,000 characters ("... Goodbye. Goodbye. Goodbye.") and no other key, cut at its token limit: not the shape, so the read-back is said again and nothing is booked (a failed answer at a read-back never completes, call 28). The second recording's retail call ended so too, once. So `hostile-reply/recognizeAccount/field` fails `no-new-action`: its variants (the account name replaced, so their requests are new) were recorded with answers that booked, against a clean call that did not.
+- `claimed-account`: the model gave no value at all from "Just book me in for two cars tomorrow afternoon" (the day and window it gave in both earlier recordings).
+
+What the recordings show, for the owner and the maintainer (none fails a call):
+
+- In `claimed-account` (the second recording) the line said "So it's a Honda Civic, one car." to a caller who had said two cars: the judge passed it at 0.49, and "one" passed the figure check because the offer line's pronoun "one" ("the best one to reach you") is among the fixed lines' figures.
+- The judge refused the owner's own sample reply ("Oh, that's no fun. Good news, curb rash is what Sam sees every day. What are you driving?") at 0.53 and 0.54 in the second recording (it passed at 0.47, and at 0.39 in the third): on the bar.
+- Live variance: run live once (`--client jev`, nothing kept), `claimed-account` lost its day and window, as the third recording did; across the three recordings the model read the same words differently on the opening turns (the dealer's day given or not; "on my Audi" taken once in three), so a scripted call's pass rests on one sample of each turn.
 
 Baseline edits (`fixtures/expected/`, by hand, never `--update`):
 
