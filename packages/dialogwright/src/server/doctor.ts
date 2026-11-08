@@ -7,7 +7,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, type Env, type ServerConfig } from './config';
+import { agentSettings, gb as gbOf, loadConfig, recognitionFor, recordsSettingFor, type Env, type ServerConfig } from './config';
 import { bareSpeechTags, bareTagFinding, englishOnlyFinding, englishOnlyHearings, namesSpeechLanguages, speechLocalesOfFolder, speechTagsOf } from '../channel/speechLanguages';
 import { VOICE_PROVIDER_IDS } from '../channel/voiceProviders';
 import { readEnvFile, readEnvFiles, resolveEnvFiles } from './envFile';
@@ -15,6 +15,8 @@ import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
+import { agentKeyVar } from '../agent/provider';
+import { DEFAULT_AGENT_MODEL } from '../define/schema/style';
 import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
@@ -68,7 +70,7 @@ import type { App } from '../core/app/types';
  * --offline (what `pnpm configure` runs). Exit 0 when nothing fails.
  */
 
-export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'languages' | 'records';
+export type CheckId = 'settings' | 'host' | 'config' | 'reach' | 'console' | 'carrier' | 'model' | 'handoff' | 'variables' | 'folders' | 'store' | 'audit' | 'traces' | 'space' | 'retention' | 'clock' | 'wording' | 'agent' | 'languages' | 'records';
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
 
 export interface CheckResult {
@@ -314,6 +316,8 @@ export async function runDoctor(o: DoctorOptions, deps: DoctorDeps = defaultDoct
   if (o.appDir !== undefined) results.push(...variableChecks(o.appDir, o.env));
   // Generated wording, for an app that generates a line: who words it, from the settings alone (no model is asked).
   if (o.appDir !== undefined) results.push(...wordingChecks(o.appDir, o.env));
+  // Agent mode: the agent model's key and budgets, from the settings alone.
+  if (o.appDir !== undefined) results.push(...agentChecks(o.appDir, o.env));
   if (o.appDir !== undefined) results.push(...recordsChecks(o.appDir, config));
   // The app's languages as the carriers listed are sent them: a tag with no region, a recognizer that hears English only.
   if (o.appDir !== undefined) results.push(...languageChecks(o.appDir, config));
@@ -415,6 +419,31 @@ export function recordsChecks(appDir: string, console: { readonly dashboard: boo
   } catch (e) {
     return [{ id: 'records', status: 'fail', message: `${messageOf(e)}: the server will not start`, fix: 'set CONSOLE_AUTH=token (or DASHBOARD=off) in the settings file, or let app.yaml\'s records keep the defaults' }];
   }
+}
+
+/**
+ * Agent mode (app.yaml's mode: agent): the agent model style.yaml's `agent` names, with its key's variable
+ * (never the key) and its budgets (AGENT_TIMEOUT_VOICE_MS, AGENT_TIMEOUT_CHAT_MS). With the key unset it
+ * fails: the server starts, but no turn is understood, and every one says its field's fixed question.
+ * Nothing for any other app, or a folder that cannot be read. No model is asked.
+ */
+export function agentChecks(appDir: string, env: Env): CheckResult[] {
+  const loaded = loadAppFolder(appDir).config;
+  if (loaded === null || loaded.app.mode !== 'agent') return [];
+  const chosen = loaded.style?.agent;
+  const model = { provider: chosen?.provider ?? DEFAULT_AGENT_MODEL.provider, model: chosen?.model ?? DEFAULT_AGENT_MODEL.model, effort: chosen?.effort ?? DEFAULT_AGENT_MODEL.effort };
+  const keyVar = agentKeyVar(model);
+  const said = `agent mode: ${model.model} on ${model.provider} at ${model.effort} (style.yaml's agent)`;
+  let settings: ReturnType<typeof agentSettings>;
+  try {
+    settings = agentSettings(env);
+  } catch (e) {
+    return [{ id: 'agent', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
+  }
+  if (!env[keyVar]?.trim()) {
+    return [{ id: 'agent', status: 'fail', message: `${said}, but ${keyVar} is unset: no caller's words are understood, and every turn says its field's fixed question`, fix: `set ${keyVar} in the settings file (the agent model's key)` }];
+  }
+  return [{ id: 'agent', status: 'ok', message: `${said}, key in ${keyVar}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat` }];
 }
 
 /**
@@ -876,6 +905,7 @@ export function hostChecks(host: ResolvedHost, env: Env, platform: NodeJS.Platfo
     const read = appEnvironment(env, own, ownVariablesOf(app));
     out.push(...variableChecks(app.dir, read.env).map(tag));
     out.push(...wordingChecks(app.dir, read.env).map(tag));
+    out.push(...agentChecks(app.dir, read.env).map(tag));
     const server = serverConfigOf(env);
     if (server !== null) out.push(...languageChecks(app.dir, server).map(tag));
     // Its services' URLs, as host.yaml names them: each set to an http(s) URL, said by its host only.

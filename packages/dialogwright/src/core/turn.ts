@@ -3217,6 +3217,7 @@ const SCRIPTED_STEPS: ScriptedSteps = {
   askChange,
   reaskConfirmation,
   continueForm,
+  failAttempt: (s, slot, io, acks) => failAttempt(s, slot, io, acks),
 };
 
 /**

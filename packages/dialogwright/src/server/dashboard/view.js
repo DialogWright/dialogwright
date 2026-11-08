@@ -1010,8 +1010,8 @@ export function reduce(events, opts) {
         // A turn's second request on the same words (TraceRecord.followUp) is time the caller waited on the model too.
         v.totals.askMs += (r.timing?.askMs ?? 0) + (r.timing?.followUpMs ?? 0);
         v.totals.tokens += tokensOf(r.usage);
-        // Every model's cost: the decision model's, and a generated line's (generated wording).
-        v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0);
+        // Every model's cost: the decision model's, a generated line's (generated wording) and the agent model's (agent mode).
+        v.totals.usd += (r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0) + (r.agent?.costUsd ?? 0);
         const decision = decisionLine(r, changed);
         if (consulted) {
           // Both the tick the intent row draws and the groups belong to the batch, so they read
@@ -1025,7 +1025,7 @@ export function reduce(events, opts) {
             `${Object.keys(r.questions).length} questions`,
             `${Math.round(r.timing?.askMs ?? 0)} ms`,
             `${tokensOf(r.usage).toLocaleString('en-US')} tokens`,
-            money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0)),
+            money((r.usage?.costUsd ?? 0) + (r.render?.usage?.costUsd ?? 0) + (r.agent?.costUsd ?? 0)),
           ].join(' · ') + (r.error ? ` · error: ${r.error.name}` : '') + followUpNote(r);
           // A record with a `turnState` answers this outright, including with a null: falling back
           // to the post-turn state when it says "nothing was pending" would put the group back on

@@ -22,6 +22,7 @@ import { localeOf } from '../core/locale';
 import { retrieve, type Retrieved } from './retrieve';
 import { calledVariables } from '../core/routes';
 import { renderTurn, withRenderAudit, type EarlyLines } from '../render/turn';
+import { defaultRenderPrice } from '../render/providers';
 import type { Renderer } from '../render/types';
 import type { Action } from '../channel/actions';
 import { TOOL_TIMEOUT_MS, waitingOf } from '../core/toolWait';
@@ -290,11 +291,26 @@ async function askAgent(runner: AgentRunner | null, ctx: Parameters<AgentRunner[
   if (runner === null) return NO_AGENT_CLIENT;
   const budget = (runner.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)[speech ? 'voice' : 'chat'];
   const t0 = performance.now();
+  // The budget is held here too, so a client that does not keep to it cannot hold the turn.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<AgentResult>((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, reason: 'timeout', detail: `no answer within ${budget} ms`, ms: budget }), budget);
+  });
   try {
-    return await runner.client.answer(ctx, budget);
+    return await Promise.race([runner.client.answer(ctx, budget), late]);
   } catch (err) {
     return { ok: false, reason: 'error', detail: `the agent client threw (${err instanceof Error ? err.name : 'error'})`, ms: Math.round(performance.now() - t0) };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** An answer's tokens and cost: the provider's own cost where it gives one, else the tokens at the model's price. */
+function agentSpent(r: AgentResult, runner: AgentRunner | null | undefined): { usage?: { inputTokens: number; outputTokens: number }; costUsd?: number } {
+  if (r.usage === undefined) return r.costUsd !== undefined ? { costUsd: r.costUsd } : {};
+  const price = runner?.price ?? defaultRenderPrice(runner?.client.model);
+  const costUsd = r.costUsd ?? (r.usage.inputTokens * price.input + r.usage.outputTokens * price.output) / 1_000_000;
+  return { usage: { inputTokens: r.usage.inputTokens, outputTokens: r.usage.outputTokens }, costUsd };
 }
 
 /** The separate screen's error when it had not answered SCREEN_GRACE_MS after perception did. */
@@ -519,7 +535,7 @@ export async function runTurn(session: Session, heard: SessionEvent, opts: RunOp
       ...(rendered?.record.ms !== undefined ? { renderMs: rendered.record.ms, totalMs: performance.now() - (retrieved?.ms != null ? tr : t0) } : {}),
     },
     render: rendered?.record ?? null,
-    ...(result.agent !== undefined ? { agent: { ...result.agent, ...(agentSent !== null ? { sent: agentSent } : {}) } } : {}),
+    ...(result.agent !== undefined ? { agent: { ...result.agent, ...(agentResult !== null ? agentSpent(agentResult, opts.agent) : {}), ...(agentSent !== null ? { sent: agentSent } : {}) } } : {}),
     driftUsage: rendered?.driftUsage ?? null,
     retrieval: retrievedAny?.record ?? null,
     followUp: second?.run ? followUpRecord(second.run) : null,

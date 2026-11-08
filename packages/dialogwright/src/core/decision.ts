@@ -44,9 +44,15 @@ export interface PromptDecision {
   agent?: AgentLine;
 }
 
-/** The agent model's reply as a turn says it (PromptDecision.agent): the words, as the model gave them. */
+/**
+ * The agent model's reply as a turn says it (PromptDecision.agent): the words, as the model gave them.
+ * `aside`: said before the prompt's acks and its own line, which are said too (a question answered at a
+ * read-back, which is said again; a reply that asks nothing before the field's question); its fallback is
+ * nothing. Absent, the reply takes the prompt's own line's place, and that line is its fallback.
+ */
 export interface AgentLine {
   readonly reply: string;
+  readonly aside?: true;
 }
 
 export interface CompleteDecision {

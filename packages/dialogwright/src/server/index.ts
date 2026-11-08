@@ -66,7 +66,7 @@ import { diskUsageCache, sweepRetention, type RetentionSettings } from './retent
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
-import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, defaultRenderPrice, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import type { Renderer } from '../render/types';
 
 export interface RunningServer {
@@ -465,10 +465,10 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
     const model = a.app.agent.model;
     const keyVar = agentKeyVar(model);
     if (!a.env[keyVar]?.trim()) {
-      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: every turn says its fixed question`);
+      log(`WARNING: ${tag(a.id)}agent mode: ${model.model} on ${model.provider} (style.yaml's agent), but ${keyVar} is unset: no caller's words are understood, and every turn says its field's fixed question (pnpm diagnose fails)`);
       continue;
     }
-    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs });
+    agents.set(a.id, { client: forApp(a.id, () => appAgentClient(a.env, model)), timeoutMs: settings.timeoutMs, price: defaultRenderPrice(model.model) });
     log(`${tag(a.id)}agent mode: ${model.model} on ${model.provider} at ${model.effort}, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat`);
   }
   const agentOf = (id: string): AgentRunner | null => agents.get(appRun(id).id) ?? null;

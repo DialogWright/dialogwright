@@ -539,13 +539,17 @@ function scrubVars(d: TraceRecord['decision'], scrub: Scrub | null): TraceRecord
  */
 function redactAgent(app: Slots, agent: TraceRecord['agent'], scrub: Scrub | null, mode: StatementMode): TraceRecord['agent'] {
   if (!isObject(agent)) return agent;
+  // Each value's proposed value, its cited words and its shown, masked as its slot's records mask it.
+  const masked = (slot: unknown, v: unknown): unknown => (typeof slot === 'string' && typeof v === 'string' ? maskValue(app, slot, v, mode) ?? v : v);
   const values = Array.isArray(agent.values)
-    ? agent.values.map((v) => (isObject(v) && typeof v.shown === 'string' && typeof v.slot === 'string' ? { ...v, shown: maskValue(app, v.slot, v.shown, mode) ?? v.shown } : v))
+    ? agent.values.map((v) => (isObject(v) ? { ...v, value: masked(v.slot, v.value), words: masked(v.slot, v.words), ...(v.shown !== undefined ? { shown: masked(v.slot, v.shown) } : {}) } : v))
     : agent.values;
+  // The reply, said or not, is our line: scrubbed as one.
+  const reply = typeof agent.reply === 'string' && scrub !== null ? scrub(agent.reply) : agent.reply;
   const sent = isObject(agent.sent) && scrub !== null && Array.isArray(agent.sent.conversation)
     ? { ...agent.sent, conversation: agent.sent.conversation.map((u) => (isObject(u) && typeof u.text === 'string' ? { ...u, text: scrub(u.text) } : u)) }
     : agent.sent;
-  return { ...agent, values, ...(sent !== undefined ? { sent } : {}) };
+  return { ...agent, values, ...(reply !== undefined ? { reply } : {}), ...(sent !== undefined ? { sent } : {}) } as TraceRecord['agent'];
 }
 
 /** A say action's text parts, scrubbed. */

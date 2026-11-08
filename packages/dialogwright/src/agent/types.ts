@@ -198,6 +198,8 @@ export interface AgentRunner {
   client: AgentClient;
   /** Absent: DEFAULT_AGENT_TIMEOUT_MS. */
   timeoutMs?: { voice: number; chat: number };
+  /** The model's price, US dollars a million tokens, for an answer's cost where the provider gives none (render/providers.ts RENDER_PRICE_BY_MODEL); absent, the model's own where known. */
+  price?: { input: number; output: number };
 }
 
 /**

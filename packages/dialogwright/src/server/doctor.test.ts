@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { formatResult, languageChecks, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { agentChecks, formatResult, languageChecks, main, runDoctor, settingsFileCheck, wordingChecks, type CheckId, type CheckResult, type DoctorDeps } from './doctor';
+import { BUSINESS_FIXTURE_DIR } from '../define/__fixtures__/business/app';
 import { pgliteSql } from './stores/pgliteSql';
 import { ensureSchema } from './stores/postgres';
 import { openPostgresAudit } from '../audit/postgres';
@@ -928,5 +929,20 @@ describe('pnpm diagnose: the languages a carrier is sent (live findings, 2026-10
       { id: 'languages', status: 'ok', message: 'languages: en-US as en-US; es as es-US, each with its region, and none heard by a recognizer that hears English only' },
     ]);
     expect(languageChecks(fileURLToPath(new URL('../testing/callback', import.meta.url)), server(['twilio']))).toEqual([]);
+  });
+});
+
+describe('agent mode (pnpm diagnose)', () => {
+  it('fails for an app in agent mode without its agent model\'s key, with the fix', () => {
+    expect(agentChecks(BUSINESS_FIXTURE_DIR, {})).toEqual([{ id: 'agent', status: 'fail', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), but INCEPTION_API_KEY is unset: no caller's words are understood, and every turn says its field's fixed question", fix: "set INCEPTION_API_KEY in the settings file (the agent model's key)" }]);
+  });
+
+  it('is ok with the key, and says the budgets; a budget out of range fails', () => {
+    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x' })).toEqual([{ id: 'agent', status: 'ok', message: "agent mode: mercury-3 on inception at instant (style.yaml's agent), key in INCEPTION_API_KEY, within 1200 ms on a call and 3000 ms in a chat" }]);
+    expect(agentChecks(BUSINESS_FIXTURE_DIR, { INCEPTION_API_KEY: 'x', AGENT_TIMEOUT_VOICE_MS: '100' })[0]).toMatchObject({ id: 'agent', status: 'fail' });
+  });
+
+  it('says nothing for a scripted app', () => {
+    expect(agentChecks(fileURLToPath(new URL('../testing/message', import.meta.url)), {})).toEqual([]);
   });
 });

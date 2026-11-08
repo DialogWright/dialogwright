@@ -229,7 +229,7 @@ export interface SaidLine {
    * The line said is the agent model's reply in place of this prompt's own (PromptDecision.agent): the
    * prompt is its fixed fallback. Absent on every other line.
    */
-  readonly agent?: { readonly reply: string };
+  readonly agent?: { readonly reply: string; readonly aside?: true };
 }
 
 const SAID_LINES = new WeakMap<Say, SaidLine>();
@@ -258,9 +258,16 @@ export function decisionToActions(app: App, decision: Decision, ctx?: RenderCont
     case 'replay':
       return [sayAction([{ text: decision.text }], true, lineLang(app, locale))];
     case 'prompt': {
-      const actions: Action[] = decision.acks.map((a) => ack(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible));
+      const actions: Action[] = [];
       const interruptible = promptEntry(app, decision.promptId, locale).interruptible;
-      if (decision.agent !== undefined) {
+      if (decision.agent?.aside === true) {
+        // An agent line said before the prompt (AgentLine.aside): its fallback is nothing.
+        const line = sayAction([{ text: decision.agent.reply }], true, lineLang(app, locale));
+        SAID_LINES.set(line, { promptId: decision.promptId, vars: decision.vars, role: 'acknowledge', agent: { reply: decision.agent.reply, aside: true } });
+        actions.push(line);
+      }
+      actions.push(...decision.acks.map((a) => ack(a.promptId, a.vars, promptEntry(app, a.promptId, locale).interruptible)));
+      if (decision.agent !== undefined && decision.agent.aside !== true) {
         // An agent line: the model's reply, said in place of its fallback (the prompt), as TTS text.
         const line = sayAction([{ text: decision.agent.reply }], interruptible, lineLang(app, locale));
         SAID_LINES.set(line, { promptId: decision.promptId, vars: decision.vars, role: 'ask', agent: { reply: decision.agent.reply } });
@@ -319,7 +326,11 @@ export function spokenText(app: App, decision: Decision, locale?: string, channe
     case 'replay':
       return decision.text;
     case 'prompt':
-      return [...decision.acks.map((a) => text(a.promptId, a.vars)), decision.agent !== undefined ? decision.agent.reply : text(decision.promptId, decision.vars)].join(' ');
+      return [
+        ...(decision.agent?.aside === true ? [decision.agent.reply] : []),
+        ...decision.acks.map((a) => text(a.promptId, a.vars)),
+        decision.agent !== undefined && decision.agent.aside !== true ? decision.agent.reply : text(decision.promptId, decision.vars),
+      ].join(' ');
     case 'complete':
       return [
         ...decision.acks.map((a) => text(a.promptId, a.vars)),

@@ -36,6 +36,9 @@ function shownValue(f: AgentField): string {
   return escapeText(fieldValueSent(f));
 }
 
+/** An utterance on one line: whitespace and line breaks collapsed, so no words of it pass for another line of the history. */
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
 const tag = (name: string, body: string): string => `<${name}>\n${body.trim()}\n</${name}>`;
 const bullets = (lines: readonly string[]): string => lines.map((l) => `- ${l.trim()}`).join('\n');
 
@@ -103,7 +106,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   ].join('\n'));
 
   const { earlier, latest } = split(ctx.conversation);
-  const history = tag('conversation_history', earlier.length > 0 ? earlier.map((u) => `${speaker(u)}: ${escapeText(u.text.trim())}`).join('\n') : '(the call has just begun)');
+  const history = tag('conversation_history', earlier.length > 0 ? earlier.map((u) => `${speaker(u)}: ${escapeText(oneLine(u.text))}`).join('\n') : '(the call has just begun)');
 
   const rules = tag('critical_rules', bullets([
     `Speak only about ${f.name}, its services and what <knowledge_base> holds.`,
@@ -119,7 +122,7 @@ export function agentMessages(ctx: AgentContext): { system: string; user: string
   const system = [persona, knowledge, ...examples, call, state, history, rules].join('\n\n');
   const user = latest === null
     ? '(The caller has not said anything yet.)'
-    : `${ctx.overLine ? '(Heard while the line was still speaking.)\n' : ''}Caller: ${escapeText(latest.trim())}`;
+    : `${ctx.overLine ? '(Heard while the line was still speaking.)\n' : ''}Caller: ${escapeText(oneLine(latest))}`;
   return { system: `${system}\n`, user };
 }
 
