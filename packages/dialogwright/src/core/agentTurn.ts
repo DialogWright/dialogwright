@@ -14,6 +14,7 @@ import { askSlot, handoff, prompt, type Decision, type PromptDecision } from './
 import type { Ack, FillEvent } from './fia';
 import type { Verdict } from './gates';
 import { atLeast, type Thresholds } from './thresholds';
+import { yesNoFieldAsked } from './questions';
 import { localeOf, slotLocaleOf } from './locale';
 import { emptySlot, setForm, type PendingConfirmation, type Session } from './session';
 import { callTool } from './lifecycle';
@@ -118,7 +119,13 @@ export interface AgentTurnRecord {
    * Each value the answer gave: the value proposed and the caller's words it cited, and what its check made
    * of it; an accepted one with its `shown`. Each masked in the trace as the records mask its field's slot.
    */
-  values: { field: string; slot?: SlotId; value: string; words: string; outcome: AgentValueOutcome; shown?: string; restated?: true }[];
+  values: { field: string; slot?: SlotId; value: string; words: string; outcome: AgentValueOutcome; shown?: string; restated?: true; by?: 'decision-model' }[];
+  /**
+   * A choice of yes and no the line had just asked, read by the decision model's yes or no (yesNoRead): the
+   * field, the option it filled, and the readings with their bar. Its value is on `values` with `by:
+   * 'decision-model'`, in place of any the answer gave the field. Absent on every other turn.
+   */
+  yesNo?: { field: string; option: string; yes: number; no: number; at: number };
   /** The reply the answer gave, said or not (`replySaid`); masked in the trace as a line said is. */
   reply?: string;
   /** The action the answer proposed (`none` where it proposed none, or there was no answer). */
@@ -528,7 +535,7 @@ function slotNamed(app: App, field: string): SlotId | undefined {
 }
 
 /** The answer's values checked by their fields' slot types and the accepted ones stored (see the top). */
-function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
+function applyValues(app: App, s: Session, values: readonly { field: string; value: string; words: string; by?: 'decision-model' }[], said: string, tc: TurnContext, record: AgentTurnRecord): Applied {
   const out: Applied = { events: [], refused: null, judged: null, changed: false };
   const held: { field: AgentAppField; proposed: { field: string; slot: string; value: string; words: string }; before: Session['slots'][string] }[] = [];
   const fields = s.form !== null ? (app.agent!.forms[s.form]?.fields ?? []) : [];
@@ -560,7 +567,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     const spec = app.slots[field.slot] as BuiltSlotSpec | undefined;
     const before = s.slots[field.slot]?.value;
     const check: ValueCheck = spec?.check !== undefined ? spec.check(v.value, v.words, said, { today: tc.todayIso, ...(locale !== undefined ? { locale } : {}), ...(before !== null && before !== undefined ? { held: String(before) } : {}) }) : { ok: false, reason: 'unsupported' };
-    const proposed = { field: field.name, slot: field.slot, value: v.value, words: v.words };
+    const proposed = { field: field.name, slot: field.slot, value: v.value, words: v.words, ...(v.by !== undefined ? { by: v.by } : {}) };
     if (!check.ok) {
       record.values.push({ ...proposed, outcome: check.reason });
       out.events.push({ slot: field.slot, outcome: { kind: 'invalid', reason: `agent-${check.reason}`, raw: '' } });
@@ -570,7 +577,7 @@ function applyValues(app: App, s: Session, values: readonly { field: string; val
     const slot = s.slots[field.slot]!;
     if (field.freeFrom !== undefined) held.push({ field, proposed, before: { ...slot } });
     if (slot.value !== check.value) out.changed = true;
-    Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: 'agent' as const });
+    Object.assign(slot, { value: check.value, display: check.shown, confirmed: false, window: null, by: v.by ?? ('agent' as const) });
     delete slot.declined;
     delete slot.missed;
     // A value held: a later judge's refusal of this field is a first one again (judgedAgain).
@@ -816,6 +823,25 @@ function lookUpSeen(app: App, s: Session, io: TurnIO, record: AgentTurnRecord): 
  * The words turn of an app in agent mode, once the gates have read the turn (core/turn.ts): see the top.
  * `said` is the turn's words, which every value's words are held to.
  */
+/**
+ * The decision model's yes or no to a choice of yes and no the line had just asked (questions.ts
+ * yesNoFieldAsked: "Is it OK if we text you at that number?"), read as at a read-back: a yes at CONFIRM_YES
+ * and at least the no; else a no at CONFIRM_NO. The field and the option it fills, with the readings; null
+ * where the line asked no such field, or the reading is unclear (the agent's answer then decides, as on any
+ * turn). A live call: "Yeah. That's fine." at the consent question, the agent proposing `submit` and giving
+ * no value, and the question asked again (the agent-mode design's call 49).
+ */
+function yesNoRead(app: App, s: Session, answers: AnswerMap, t: Thresholds): { field: AgentAppField; option: string; yes: number; no: number; at: number } | null {
+  const field = yesNoFieldAsked(app, s);
+  if (field === null || !isNoul(answers.confirmsYes) || !isNoul(answers.confirmsNo)) return null;
+  const yes = noulValue(answers, 'confirmsYes');
+  const no = noulValue(answers, 'confirmsNo');
+  const option = (said: 'yes' | 'no'): string => (field.options ?? []).find((o) => o.trim().toLowerCase() === said)!;
+  if (atLeast(yes, t.CONFIRM_YES) && yes >= no) return { field, option: option('yes'), yes, no, at: t.CONFIRM_YES };
+  if (atLeast(no, t.CONFIRM_NO)) return { field, option: option('no'), yes, no, at: t.CONFIRM_NO };
+  return null;
+}
+
 export function agentWords(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotContext, io: TurnIO, steps: ScriptedSteps, said: string): Handled {
   const app = io.app;
   // Not asked (agentAsks: a question of the core's own pending): the scripted turn, with nothing to record.
@@ -909,14 +935,21 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   }
   const lineSaid = acks.length > 0;
 
-  // 3. Values.
-  const applied = applyValues(app, s, answer?.values ?? [], said, io.tc, record);
+  // 3. Values. A choice of yes and no the line had just asked is the decision model's to read where it reads
+  // a clear yes or no, as at a read-back, in place of any value the answer gave it (yesNoRead).
+  const read = yesNoRead(app, s, answers, io.tc.thresholds);
+  const given = answer?.values ?? [];
+  const values = read === null ? given : [...given.filter((v) => v.field !== read.field.name), { field: read.field.name, value: read.option, words: said, by: 'decision-model' as const }];
+  // The answer's own value for the field, where it differs: its reply was written with it, so it is not said.
+  const overruled = read !== null && given.some((v) => v.field === read.field.name && v.value.trim().toLowerCase() !== read.option.trim().toLowerCase());
+  if (read !== null) record.yesNo = { field: read.field.name, option: read.option, yes: read.yes, no: read.no, at: read.at };
+  const applied = applyValues(app, s, values, said, io.tc, record);
   // 3a. The tools the model sees, for the values it gave: asked again with their results where any is new;
   // not where a value was refused, whose slot's own question is asked (no second asking for it).
   const looked = applied.refused === null && applied.judged === null ? lookUpSeen(app, s, io, record) : LOOKED_NOTHING;
   if (looked.again !== null) io.agentAgain = { seen: looked.again };
   const form = s.form;
-  if (answer !== null && understoodNothing(answer, failed.fixed) && !opened) io.missed = true;
+  if (answer !== null && understoodNothing(answer, failed.fixed) && !opened && read === null) io.missed = true;
 
   if (failedTwice) {
     // 7. A second failure in a row where the turn needed the answer: the handoff line.
@@ -957,7 +990,7 @@ function answered(s: Session, verdict: Verdict, answers: AnswerMap, ctx: SlotCon
   // a form only a recognized caller may open turned down, or a form open it was not written for.
   const forFormOpen = formBefore === form || (formBefore === null && form !== null && openable(app, s).includes(form));
   // Nor a reply written without a result the model sees: one it is to be asked again with, or a value's whose result it was not shown.
-  const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen;
+  const contradicts = record.values.some((v) => v.outcome !== 'accepted') || record.actionOutcome === 'ignored' || lineSaid || !forFormOpen || looked.again !== null || looked.unseen || overruled;
   const reply = contradicts ? null : (answer?.reply ?? null);
   if (form !== null) {
     // The reply in place of the core's own next question; any other next step of the core's is said instead.

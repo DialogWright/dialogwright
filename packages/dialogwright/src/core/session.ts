@@ -45,8 +45,10 @@ export interface SlotState {
    * match just before the check rather than said, with a value and no display. Absent on every other
    * slot, and gone when the slot is emptied. `agent`: understood by the agent model of an app in agent
    * mode (core/agentTurn.ts) and checked by the slot type's `check`, never filled by the slot itself.
+   * `decision-model`: in agent mode, a choice of yes and no the line had just asked, filled from the
+   * decision model's yes or no reading of the answer (core/agentTurn.ts yesNoRead), as at a read-back.
    */
-  by?: 'caller-id' | 'agent';
+  by?: 'caller-id' | 'agent' | 'decision-model';
   /**
    * The caller's words the value was heard in: kept only for a topic slot whose form's answer line words
    * its answer for the caller's question (App.generated.answerSlots), and never from words said at a

@@ -1,4 +1,4 @@
-import { PRICE_LINE, PRICE_QUESTION } from '../agent/types';
+import { PRICE_LINE, PRICE_QUESTION, type AgentAppField } from '../agent/types';
 import type { QuestionMap } from '../jev/types';
 import type { SlotContext, SlotSpec } from './slots/types';
 import { formIntents, intentCriteria } from './app/intents';
@@ -286,8 +286,22 @@ function agentModeQuestions(app: App, session: Session): QuestionMap {
   return {
     ...alwaysOn(app),
     ...(app.agent?.lines[PRICE_LINE] !== undefined ? priceAsked() : {}),
-    ...(session.pendingConfirmation ? confirmation(app) : {}),
+    ...(session.pendingConfirmation || yesNoFieldAsked(app, session) !== null ? confirmation(app) : {}),
   };
+}
+
+/**
+ * In agent mode, the field of the form open whose question the line has just asked (Session.promptedFor),
+ * where it is a choice whose options are exactly yes and no (a consent: "Is it OK if we text you at that
+ * number?"): the decision model is asked its yes or no that turn, as at a read-back, and a clear reading
+ * fills the field (core/agentTurn.ts yesNoRead; the agent-mode design's call 49). Null on every other turn.
+ */
+export function yesNoFieldAsked(app: App, session: Session): AgentAppField | null {
+  if (session.form === null || session.pendingConfirmation !== null || session.promptedFor === null) return null;
+  const field = app.agent?.forms[session.form]?.fields.find((f) => f.slot === session.promptedFor);
+  if (field === undefined || field.type !== 'choice') return null;
+  const options = (field.options ?? []).map((o) => o.trim().toLowerCase()).sort();
+  return options.length === 2 && options[0] === 'no' && options[1] === 'yes' ? field : null;
 }
 
 /**
