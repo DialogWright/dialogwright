@@ -1,4 +1,4 @@
-import { hasWords } from '../../agent/words';
+import { hasWords } from '../../core/extract/words';
 import { parseIso, toIso } from '../../core/extract/date';
 import type { SlotCheckContext, ValueCheck } from '../types';
 

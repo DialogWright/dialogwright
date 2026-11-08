@@ -259,7 +259,7 @@ reference:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: only digits that fit the slot's `length` and `mask` exactly as a spoken number does, and the words cited must be in what the caller said (a number of nine digits for a `length` of ten is refused). It is shown as the display says it, grouped by `group`.
+In agent mode the slot checks a value the model understood: only digits that fit the slot's `length` and `mask` exactly as a spoken number does, the words cited must be in this turn's words, and they must read to a number that holds the value, read as the fill reads a span ("five five five" and "555-555-0142" both hold the digits; in the call's language). A number of nine digits for a `length` of ten is refused. It is shown as the display says it, grouped by `group`.
 
 ## Notes
 

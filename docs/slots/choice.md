@@ -349,7 +349,7 @@ pickup:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: an option's key or its `say` text (or how the call's locale says it), matched without regard to case, and the words cited must be in what the caller said. The value stored is the key, shown as the display says it. Anything else is refused as the wrong shape.
+In agent mode the slot checks a value the model understood: an option's key or its `say` text (or how the call's locale says it), matched without regard to case and punctuation, and the words cited must be in this turn's words. A value that matches more than one option is refused. The value stored is the key, shown as the display says it. The value is not tied to the words cited (they may be a synonym for the option): the read-back is its confirmation. Anything else is refused as the wrong shape.
 
 ## Notes
 

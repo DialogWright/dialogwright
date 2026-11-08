@@ -43,7 +43,7 @@ export const nameType: SlotType<NameOptions> = defineSlotType<NameOptions>({
       questions: nameQuestions(id, o),
       fill: nameFill(ids, excludedWordsOf(o), display, bare),
       display,
-      check: nameCheck(display),
+      check: nameCheck(display, excludedWordsOf(o)),
     };
   },
   get examples() {

@@ -43,7 +43,7 @@ export const CHECK_ABOUT: Readonly<Record<CheckId, string>> = {
   prompts: 'every line an outcome can lead to is in the slot\'s prompts, with the variables it is given',
   'prompt-vars': 'every line the slot declares uses only variables the engine gives it, and an acknowledged value has its ack line declared',
   values: 'a date-valued slot gives ISO dates, and every confidence is a number from 0 to 1',
-  'value-check': 'a slot that checks a value it did not fill accepts each value its example utterances fill, shown as its display says it, refuses it when the words cited were never said, or says it is unsupported',
+  'value-check': 'a slot that checks a value it did not fill accepts each value its example utterances fill as it is, shown as its display says it, refuses it when the words cited were never said and refuses the raw value of each invalid outcome the examples expect, or says it is unsupported',
   utterances: 'each example utterance gives the outcome it expects',
 };
 
@@ -669,10 +669,17 @@ const RUNS: Readonly<Record<CheckId, (r: Run) => void>> = {
     const spec = attempt(r, 'defineSlot', () => build(r));
     if (!spec || spec.check === undefined) return;
     for (const u of r.example.utterances) {
-      if (u.expect.kind !== 'filled' || u.expect.value === undefined) continue;
       const locale = u.context?.locale;
       const today = u.context?.todayIso ?? KIT_TODAY;
       const ctx = { ...(locale !== undefined ? { locale } : {}), today };
+      // What the fill refused as invalid (its raw value), the check refuses too, unless the fill refused it for
+      // the model's doubt or a pending partial, not for the value (a low_confidence or outside_window raw is a fine value).
+      if (u.expect.kind === 'invalid' && u.expect.raw !== undefined && u.expect.raw !== '' && !['low_confidence', 'outside_window'].includes(u.expect.reason ?? '')) {
+        const refused = attempt(r, `check(${JSON.stringify(u.expect.raw)}) on utterance ${said(u)}`, () => spec.check!(u.expect.raw!, u.text, u.text, ctx));
+        if (refused?.ok === true) r.fail(`check accepted ${JSON.stringify(u.expect.raw)}, the raw value its fill refused as invalid on utterance ${said(u)}`);
+        continue;
+      }
+      if (u.expect.kind !== 'filled' || u.expect.value === undefined) continue;
       const accepted = attempt(r, `check(${JSON.stringify(u.expect.value)}) on utterance ${said(u)}`, () => spec.check!(u.expect.value!, u.text, u.text, ctx));
       if (accepted === undefined) continue;
       if (!accepted.ok) {

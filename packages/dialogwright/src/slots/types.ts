@@ -12,7 +12,10 @@ import type { CatalogTopic, Nomination, SectionNomination, TopicCatalog } from '
 /** What a slot's value is: the string a fill carries (a key, digits, an ISO date, words). */
 export type SlotValue = string;
 
-/** What a check of a value is given beside it: the call's locale (absent: none) and today's date (ISO). */
+/**
+ * What a check of a value is given beside it: the call's locale (absent: none) and today's date
+ * (ISO): the session's `todayIso`, the day in the app's time zone, never a UTC date.
+ */
 export interface SlotCheckContext {
   readonly locale?: string;
   readonly today: string;
@@ -22,7 +25,11 @@ export interface SlotCheckContext {
  * A value checked: accepted, with the value as the slot stores it and `shown`, the text the type's
  * display says for it (the same text the read-back says), or refused for one reason. `shape`: not
  * the form the type holds; `range`: the form, but outside what the slot takes; `words`: the words
- * cited for it were not said; `unsupported`: the type cannot take a value from outside its fill.
+ * cited for it were not said (or, for a type that can tie the value to its words, do not hold it);
+ * `unsupported`: the type cannot take a value from outside its fill.
+ *
+ * `shown` is unmasked: it is what the read-back says, whatever the slot's `redact`. Whoever records
+ * it (the trace, the console, the audit) masks it as the records' redaction says.
  */
 export type ValueCheck =
   | { ok: true; value: SlotValue; shown: string }
@@ -30,7 +37,9 @@ export type ValueCheck =
 
 /**
  * Checks a value the slot did not fill: `words` are the caller's words the value is cited from, and
- * `said` is everything the caller said on the call. See ./parts/check.ts.
+ * `said` is this turn's words, what the caller said on the turn the value is given (not the call so
+ * far). `words` must be in `said`. A type ties the value to `words` only where that is
+ * deterministic (digits, a name); a choice or a date is confirmed by the read-back. See ./parts/check.ts.
  */
 export type SlotValueCheck = (value: string, words: string, said: string, ctx: SlotCheckContext) => ValueCheck;
 

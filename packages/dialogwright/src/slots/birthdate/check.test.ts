@@ -19,6 +19,10 @@ describe('birthdate check', () => {
     expect(dob('1899-12-31', 'then', 'then', ctx)).toEqual({ ok: false, reason: 'range' });
     expect(defineSlot('dob', { type: 'birthdate', minYear: 1950 }).check!('1949-01-01', 'then', 'then', ctx)).toEqual({ ok: false, reason: 'range' });
   });
+  it('accepts a day in minYear itself', () => {
+    expect(dob('1900-01-01', 'then', 'then', ctx).ok).toBe(true);
+    expect(defineSlot('dob', { type: 'birthdate', minYear: 1950 }).check!('1950-01-01', 'then', 'then', ctx).ok).toBe(true);
+  });
   it('refuses words the caller never said', () => {
     expect(dob('1975-06-14', 'June fourteenth', 'my birthday is in July', ctx)).toEqual({ ok: false, reason: 'words' });
   });

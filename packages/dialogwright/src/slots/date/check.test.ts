@@ -21,6 +21,14 @@ describe('date check (ahead)', () => {
     expect(ahead('2026-02-30', 'the thirtieth', 'the thirtieth', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(ahead('Thursday', 'Thursday', 'Thursday', ctx)).toEqual({ ok: false, reason: 'shape' });
   });
+  it('refuses a day beyond the fill\'s horizon: October 2nd said now is this year\'s', () => {
+    expect(ahead('2026-10-02', 'October 2nd', 'October 2nd', ctx).ok).toBe(true);
+    expect(ahead('2027-10-02', 'October 2nd', 'October 2nd', ctx)).toEqual({ ok: false, reason: 'range' });
+    expect(ahead('2027-02-10', 'February 10th', 'February 10th', ctx).ok).toBe(true);
+  });
+  it('is not tied to the words cited: Thursday names a day it does not spell', () => {
+    expect(ahead('2026-09-24', 'Thursday', 'Thursday', ctx).ok).toBe(true);
+  });
   it('refuses a day gone by', () => {
     expect(ahead('2026-09-17', 'yesterday', 'yesterday', ctx)).toEqual({ ok: false, reason: 'range' });
   });

@@ -417,7 +417,7 @@ place:
 
 ## Checked values
 
-In agent mode the slot checks a value the model understood: not empty and, once written as the slot writes its words (`numbers`, `case`), at most `maxLength` characters. The value need not be a part of the words cited (a short version is allowed), but the words cited must be in what the caller said. It is shown as the display says it (the stand-in, or the words with `say: null`).
+In agent mode the slot checks a value the model understood: not empty and at most `maxLength` characters as given, before the slot writes it (`numbers`, `case`). The value need not be a part of the words cited (a short version is allowed), but the words cited must be in this turn's words. It is stored as the slot writes its words, and shown as the display says it (the stand-in, or the words with `say: null`).
 
 ## Notes
 

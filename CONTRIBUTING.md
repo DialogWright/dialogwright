@@ -41,6 +41,7 @@ Slot types are where most contributions will arrive. A slot type turns validated
 | `index.ts` | `defineSlotType({ type, options, build, examples, describe })` |
 | `options.ts` | The options schema, the type's text parts and question parts, the defaults |
 | `questions.ts`, `fill.ts`, `display.ts` | The questions asked, how answers become an outcome, how a value is said |
+| `check.ts` | The type's `check` of a value it did not fill (agent mode): the value in the form the type holds, `shown` by the one `display`, `words` in this turn's words; `unsupported` when a value cannot come from outside the fill (`parts/check.ts`) |
 | `examples.yaml` | Example configurations with starter utterances (and keypad keys) |
 | `<type>.test.ts` | `runSlotConformance` over the examples, then tests of what the kit cannot know |
 | `README.md` | The hand-written part of the docs page: what it is for, outcomes, question wording, notes |
@@ -75,6 +76,7 @@ Add the type to `BUILT_IN_SLOT_TYPES` in `slots/registry.ts`, and export its opt
 | `prompts` | Every line an outcome can lead to is declared with the variables it is given |
 | `prompt-vars` | Every declared line uses only variables the engine gives it (`ack_<slot>` gets `{<slot>}`; the keypad ask, a retry and a help line get none), and a `by-confidence` slot that acknowledges a value declares `ack_<slot>` |
 | `values` | A `date`-valued slot gives ISO dates; every confidence is from 0 to 1 |
+| `value-check` | A slot with a `check` accepts each value its examples fill, as it is and shown as its display says it; refuses it when the words cited were never said, and the raw value of each invalid outcome an example expects (a low-confidence or out-of-window one aside); or answers `unsupported`. Every built-in type has a `check` |
 | `utterances` | Each example utterance gives the outcome it expects, and at least one fills the slot |
 
 The kit checks en-US and es unless it is given `locales`. The kit proves the contract, not that the parsing is right. Write tests for each outcome and each `invalid` reason, and for the edges of the type.

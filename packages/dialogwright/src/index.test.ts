@@ -66,7 +66,7 @@ describe('the package entry', () => {
   it('keeps what an app author needs: the helpers a slot type is written with are in dialogwright/slot-kit, and the engine\'s own tables stay inside', () => {
     for (const name of [
       // dialogwright/slot-kit
-      'defineSlotType', 'textParts', 'questionParts', 'questionText', 'renderTemplate', 'TemplateError', 'meetsThreshold', 'examplesFrom', 'parseSlotExamples', 'wordingFor',
+      'defineSlotType', 'textParts', 'questionParts', 'questionText', 'renderTemplate', 'TemplateError', 'meetsThreshold', 'examplesFrom', 'parseSlotExamples', 'wordingFor', 'wordsRefusal', 'isRealIso',
       // internal
       'applySlotWording', 'isLibrarySlot', 'localeSlotsFile', 'slotTypeJsonSchema', 'slotLocaleOf', 'ENGLISH', 'SPANISH', 'foldAccents', 'lexiconOf', 'MONTHS_ES', 'WEEKDAYS_ES',
       'birthdateType', 'choiceType', 'dateType', 'digitsType', 'nameType', 'recordType', 'textType',
@@ -96,7 +96,7 @@ describe('the slot type author\'s entry', () => {
   it('"dialogwright/slot-kit" has the helpers a slot type is written with, which the root entry leaves out', async () => {
     const kit = await import('./slots/kit');
     expect(Object.keys(kit).sort()).toEqual([
-      'TemplateError', 'defineSlotType', 'examplesFrom', 'meetsThreshold', 'parseSlotExamples', 'questionParts', 'questionText', 'renderTemplate', 'textParts', 'wordingFor',
+      'TemplateError', 'defineSlotType', 'examplesFrom', 'isRealIso', 'meetsThreshold', 'parseSlotExamples', 'questionParts', 'questionText', 'renderTemplate', 'textParts', 'wordingFor', 'wordsRefusal',
     ]);
     for (const name of Object.keys(kit)) expect((entry as Record<string, unknown>)[name], name).toBeUndefined();
     expect(kit.defineSlotType).toBe((await import('./slots/slotType')).defineSlotType);

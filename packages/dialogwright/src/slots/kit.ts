@@ -14,6 +14,7 @@ export { renderTemplate, TemplateError } from './parts/template';
 export { meetsThreshold } from './parts/thresholds';
 export { examplesFrom, parseSlotExamples } from './parts/examples';
 export { wordingFor } from './parts/locale';
+export { wordsRefusal, isRealIso } from './parts/check';
 export type {
   BuiltSlotSpec, SlotCheckContext, SlotValue, SlotValueCheck, ValueCheck, SlotBuildEnv, SlotTypeDocs, SlotWording, SlotExample, SlotUtterance, ExampleAnswer, ExampleContext, ExpectedOutcome, SlotKeypadExample,
 } from './types';

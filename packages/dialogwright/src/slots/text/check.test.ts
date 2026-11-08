@@ -19,6 +19,13 @@ describe('text check', () => {
     const address = defineSlot('where', { type: 'text', what: 'an address', say: null, redact: 'none', numbers: 'digits' }).check!;
     expect(address('seventy six twenty five oak hollow lane', 'seventy six twenty five oak hollow lane', 'seventy six twenty five oak hollow lane', ctx)).toEqual({ ok: true, value: '7625 oak hollow lane', shown: 'seventy six twenty five oak hollow lane' });
   });
+  it('measures maxLength on the value as given, before writing', () => {
+    const digits = defineSlot('where', { type: 'text', what: 'an address', say: null, redact: 'none', numbers: 'digits', maxLength: 22 }).check!;
+    // 29 characters as given, 20 once written: refused. 21 as given: accepted, written shorter.
+    expect(digits('seventy six twenty five oak', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
+    expect(digits('one hundred twenty three', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
+    expect(digits('one two three four', 'x', 'x', ctx)).toEqual({ ok: true, value: '1234', shown: 'one two three four' });
+  });
   it('refuses more than maxLength, and nothing', () => {
     expect(note('x'.repeat(21), 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });
     expect(note('   ', 'x', 'x', ctx)).toEqual({ ok: false, reason: 'shape' });

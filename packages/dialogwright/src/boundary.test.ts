@@ -250,6 +250,11 @@ describe('layering', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('slots never import agent: what both read lives below them (core/extract/words.ts)', () => {
+    const offenders = files(join('src', 'slots')).flatMap((f) => importsOf(readFileSync(f, 'utf8')).map((spec) => ({ f, t: normalize(join(dirname(f), spec)) }))).filter(({ t }) => t === 'src/agent' || t.startsWith('src/agent/'));
+    expect(offenders).toEqual([]);
+  });
+
   it('the detector resolves relative paths into the outer layers', () => {
     expect(importsOuter('src/core/x.ts', `import { a } from '../server/chat';`)).toEqual(['src/server/chat']);
     expect(importsOuter('src/run/x.ts', `import '../testing/fakeRelay';`)).toEqual(['src/testing/fakeRelay']);

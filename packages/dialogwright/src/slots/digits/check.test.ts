@@ -19,6 +19,14 @@ describe('digits check', () => {
   it('refuses a value that is not digits', () => {
     expect(phone('555-555-0142', '555 555 0142', '555 555 0142', { today })).toEqual({ ok: false, reason: 'shape' });
   });
+  it('ties the value to the words cited: number words, or digits said in parts', () => {
+    expect(phone('5555550142', '555-555-0142', 'it is 555-555-0142', { today }).ok).toBe(true);
+    expect(phone('5555550142', 'five five five five five five zero one four two', 'five five five five five five zero one four two', { today }).ok).toBe(true);
+    expect(phone('5555550199', 'five five five five five five zero one four two', 'five five five five five five zero one four two', { today })).toEqual({ ok: false, reason: 'words' });
+  });
+  it('reads number words in the call\'s language', () => {
+    expect(phone('5555550142', 'cinco cinco cinco cinco cinco cinco cero uno cuatro dos', 'cinco cinco cinco cinco cinco cinco cero uno cuatro dos', { today, locale: 'es' }).ok).toBe(true);
+  });
   it('refuses words the caller never said', () => {
     expect(phone('5555550142', '5555550142', 'my number is 5555550199', { today })).toEqual({ ok: false, reason: 'words' });
   });

@@ -12,7 +12,7 @@ export interface AgentValue {
   field: string;
   /** An option, digits, an ISO date (YYYY-MM-DD) or text, as the field's type takes it. */
   value: string;
-  /** The caller's own words the value came from, as said: the engine checks they are in what the caller said. */
+  /** The caller's own words the value came from, as said: the engine checks they are in this turn's words (what the caller said on the turn the value is given). */
   words: string;
 }
 
