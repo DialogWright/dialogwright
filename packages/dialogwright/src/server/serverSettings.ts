@@ -28,6 +28,7 @@ const PARTS: readonly Readonly<Record<string, string>>[] = [
   { JEV_CLIENT: 'jev', JEV_PROVIDER: 'custom', JEV_BASE_URL: 'https://jev.example.com' },
   { RENDER_PROVIDER: 'openrouter' },
   { RENDER_PROVIDER: 'anthropic' },
+  { RENDER_PROVIDER: 'inception' },
   { CONSOLE_AUTH: 'token' },
   { WIDGET: 'on' },
 ];

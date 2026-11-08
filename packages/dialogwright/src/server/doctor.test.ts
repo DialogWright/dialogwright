@@ -847,6 +847,12 @@ describe('pnpm diagnose: generated wording', () => {
       // RENDER_MODEL with RENDER_PROVIDER names the model, and the line says the environment named it.
       expect(wordingChecks(dir, { RENDER_PROVIDER: 'openrouter', RENDER_MODEL: 'vendor/other', OPENROUTER_API_KEY: 'k' })[0]!.message).toContain('worded by vendor/other from openrouter (named by the environment; key in OPENROUTER_API_KEY)');
       expect(wordingChecks(dir, { RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real' })[0]!.message).toContain('worded by claude-haiku-5-5 from anthropic (named by the environment; key in ANTHROPIC_API_KEY; thinking disabled)');
+      // Inception: its key by its variable, what it sends; a temperature of another provider's held to Mercury's range, and said so.
+      writeFileSync(join(dir, 'style.yaml'), `${readFileSync(join(MESSAGE, 'style.yaml'), 'utf8').trimEnd()}\nmodel:\n  provider: inception\n  id: mercury-3\n`);
+      expect(wordingChecks(dir, {})[0]).toMatchObject({ status: 'warn', fix: 'set INCEPTION_API_KEY in the settings file to have them generated' });
+      expect(wordingChecks(dir, { INCEPTION_API_KEY: 'in-test-not-real' })[0]).toMatchObject({ status: 'ok', message: '9 generated lines, worded by mercury-3 from inception (named in style.yaml; key in INCEPTION_API_KEY; reasoning_effort instant, realtime), 100% of calls, within 900 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms' });
+      writeFileSync(join(dir, 'style.yaml'), `${readFileSync(join(MESSAGE, 'style.yaml'), 'utf8').trimEnd()}\nmodel:\n  provider: openrouter\n  temperature: 0.2\n`);
+      expect(wordingChecks(dir, { RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: 'in-test-not-real' })[0]).toMatchObject({ status: 'warn', message: expect.stringContaining("style.yaml's temperature 0.2 is sent as 0.5, as Inception takes 0.5 to 1") });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

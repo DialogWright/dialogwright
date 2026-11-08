@@ -84,7 +84,15 @@ describe('generated wording on the phone line', () => {
       await stop();
       // The environment over it: RENDER_PROVIDER naming another provider takes that one.
       const other = await start({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real' }, undefined, named);
-      expect(other.logs.some((l) => l.startsWith('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic (named by the environment)'))).toBe(true);
+      // The start line names the provider's settings, as regress, the bake-off and pnpm diagnose do.
+      expect(other.logs.some((l) => l.startsWith('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic (named by the environment; thinking disabled)'))).toBe(true);
+      await stop();
+      // Inception: what it sends, and a temperature of another provider's held to Mercury's range, with a warning.
+      const hot = variants.variant({ 'style.yaml': (text) => `${text.trimEnd()}\nmodel:\n  provider: openrouter\n  id: google/gemini-3.1-flash-lite-preview\n  temperature: 0.2\n` });
+      const inception = await start({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: 'in-test-not-real' }, undefined, hot);
+      expect(inception.logs.some((l) => l.startsWith('generated wording: 9 lines worded by mercury-3 from inception (named by the environment; reasoning_effort instant, realtime)'))).toBe(true);
+      expect(inception.logs).toContain("WARNING: generated wording: style.yaml's temperature 0.2 is sent as 0.5, as Inception takes 0.5 to 1");
+      expect(inception.logs.join('\n')).not.toContain('in-test-not-real');
     } finally {
       await stop();
       variants.remove();
@@ -124,7 +132,7 @@ describe('generated wording on the phone line', () => {
 
   it('with a provider, the server names the model, the share and the budget, never the key', async () => {
     const { logs } = await start({ RENDER_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real', RENDER_SHARE: '50' });
-    expect(logs).toContain('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic (named by the environment), 50% of calls, within 900 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms');
+    expect(logs).toContain('generated wording: 9 lines worded by claude-haiku-5-5 from anthropic (named by the environment; thinking disabled), 50% of calls, within 900 ms on a call and 1500 ms in a chat, its checks 500 and 1000 ms');
     expect(logs.join('\n')).not.toContain('sk-test-not-real');
   });
 

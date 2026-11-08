@@ -8,10 +8,17 @@ persona: a warm, brief receptionist at a small design studio
 avoid:
   - unfortunately
   - I apologize for the inconvenience
-# The model that words the answers: inception/mercury-3 (a diffusion model; no reasoning setting). Measured
-# 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low reasoning (render:bakeoff, 43 lines):
-# p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around 2 of 144 for both, a third of the cost.
-# (gemini-3.1-flash-lite-preview, the model before, was shut down by Google on 2026-05-25.)
+# The model that words the summary: Inception's Mercury 3 (a diffusion model), on Inception's own API
+# (provider: inception, key INCEPTION_API_KEY), at its fastest reasoning (reasoning_effort instant, the
+# default) with realtime on. It was reached through OpenRouter (inception/mercury-3) until OpenRouter
+# dropped it, on or before 2026-11-09 (HTTP 404: no provider serves this model anymore), so every line
+# fell back on a call. Measured 2026-10-19 on the booklet demo against gemini-3.5-flash-lite at low
+# reasoning (render:bakeoff, 43 lines): p50 367 vs 715 ms, 43 of 43 worded vs 41, who pays turned around
+# 2 of 144 for both, a third of the cost. (gemini-3.1-flash-lite-preview, the model before, was shut
+# down by Google on 2026-05-25.) No temperature is set: Mercury takes only 0.5 to 1.
+# On this app's own spans through Inception (2026-11-08, the recorded replay): 39 tried, 18 worded, 19 the
+# message's own words, 2 fell back; wording p50 280 ms, p95 568 ms (render:bakeoff), none of 18 over the
+# 900 ms call budget. DESIGN.md, "The render model moved to Inception's own API", has the detail.
 model:
-  provider: openrouter
-  id: inception/mercury-3
+  provider: inception
+  id: mercury-3

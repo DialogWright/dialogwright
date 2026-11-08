@@ -15,7 +15,7 @@ import { appYamlEnvReferences } from '../define/envReferences';
 import { loadAppFolder } from '../define/load';
 import { generatedWordingOf, identifierVarsFrom } from '../render/config';
 import { buildSlot } from '../slots/defineSlot';
-import { appModelKeyMissing, appModelLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider, thinkingLabel } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import { CALL_DATA_VALUE_MAX, writableValue } from '../channel/callData';
 import { isLoopbackHost } from './localOnly';
 import { chooseApp, findApp, projectRoot, workspaceApps, type WorkspaceApp } from './workspace';
@@ -447,11 +447,18 @@ export function wordingChecks(appDir: string, env: Env): CheckResult[] {
   if (missing !== null) return [{ id: 'wording', status: 'warn', message: `${said}, worded by ${appModelLabel(model!)}, but ${missing} is unset: every line is said fixed`, fix: `set ${missing} in the settings file to have them generated` }];
   try {
     const p = resolveAppRenderProvider(env, model);
-    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter or anthropic, and its key (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), to have them generated, or name the model in style.yaml (model: { provider, id })' }];
-    const r = renderSettings(env);
+    if (p === null) return [{ id: 'wording', status: 'warn', message: `${said}, but RENDER_PROVIDER is unset: every line is said fixed`, fix: 'set RENDER_PROVIDER to openrouter, anthropic or inception, and its key (OPENROUTER_API_KEY, ANTHROPIC_API_KEY or INCEPTION_API_KEY), to have them generated, or name the model in style.yaml (model: { provider, id })' }];
+    const r = renderSettings(env, p.model);
     // Where the model came from: style.yaml, or the environment (over it, or alone).
     const source = renderModelSourceLabel(renderModelSource(env, model));
-    return [{ id: 'wording', status: 'ok', message: `${said}, worded by ${p.model} from ${p.provider} (${source}; key in ${p.keyVar}${p.thinking !== undefined ? `; ${thinkingLabel(p.thinking)}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms` }];
+    const settings = providerSettingsLabel(p);
+    const message = `${said}, worded by ${p.model} from ${p.provider} (${source}; key in ${p.keyVar}${settings !== null ? `; ${settings}` : ''}), ${r.share}% of calls, within ${r.timeoutMs.voice} ms on a call and ${r.timeoutMs.chat} ms in a chat, its checks ${r.checkTimeoutMs.voice} and ${r.checkTimeoutMs.chat} ms`;
+    // Inception resets a temperature outside its range silently, so one is held to it (render/providers.ts
+    // clampInceptionTemperature); pnpm check refuses it in style.yaml for provider inception, so this is an
+    // app the environment moved to Inception with another provider's temperature.
+    const clamped = inceptionTemperatureNotes(p, model);
+    if (clamped.length > 0) return [{ id: 'wording', status: 'warn', message: `${message}; ${clamped.join(', ')}, as Inception takes 0.5 to 1`, fix: "set style.yaml's model temperatures from 0.5 to 1, or name the model there (provider: inception)" }];
+    return [{ id: 'wording', status: 'ok', message }];
   } catch (e) {
     return [{ id: 'wording', status: 'fail', message: `${said}: ${messageOf(e)}: the server will not start`, fix: 'fix the setting in the settings file' }];
   }

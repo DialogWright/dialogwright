@@ -254,7 +254,7 @@ export { buildClient, buildThresholds, CLIENT_KINDS } from './run/client';
 export type { ClientKind } from './run/client';
 export { resolveJevProvider, JEV_PROVIDERS } from './jev/provider';
 // Generated wording (opt-in, design section 5): how a run words the lines an app generates (RunOptions.renderer),
-// the OpenRouter and Anthropic adapters and their settings, the render cassette, the checks, and what a turn records.
+// the OpenRouter, Anthropic and Inception adapters and their settings, the render cassette, the checks, and what a turn records.
 export { ModelRenderClient, resolveRenderProvider, renderSettings, RENDER_PROVIDERS } from './render/providers';
 export { RenderCassette, renderCassettePath } from './render/cassette';
 export { checkGenerated, checkSpan, renderDriftQuestion, renderSpanDriftQuestion, DRIFT_FIRE } from './render/checks';

@@ -7,7 +7,7 @@ import { FakeRenderClient } from './fake';
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../jev/cassette';
 import { instructionsOf, RENDER_INSTRUCTIONS, RENDER_INSTRUCTIONS_NO_ACKNOWLEDGEMENT, renderKey, SPAN_INSTRUCTIONS, spanKey } from './prompt';
-import { appModelKeyMissing, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderModelSource, renderSettings, resolveAppRenderProvider, resolveRenderProvider } from './providers';
+import { appModelKeyMissing, defaultRenderPrice, ModelRenderClient, renderCassetteModel, renderEnvOf, renderLines, renderModelSource, renderSettings, resolveAppRenderProvider, resolveRenderProvider } from './providers';
 import { RenderClientError, type RenderRequest, type SpanAct, type SpeechAct } from './types';
 
 /** A span's sentence, as a call sends one (SpanAct.sentence): the frame's own words, the span a gap. */
@@ -40,7 +40,97 @@ describe('resolveRenderProvider', () => {
   it('names the variable a missing key is read from, never a key; a replay needs none', () => {
     expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' })).toThrow('missing required environment variable ANTHROPIC_API_KEY (RENDER_PROVIDER=anthropic)');
     expect(resolveRenderProvider({ RENDER_PROVIDER: 'anthropic' }, { needKey: false })!.apiKey).toBeNull();
-    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openai' })).toThrow('RENDER_PROVIDER must be openrouter or anthropic, got "openai"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'openai' })).toThrow('RENDER_PROVIDER must be openrouter, anthropic or inception, got "openai"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'inception' })).toThrow('missing required environment variable INCEPTION_API_KEY (RENDER_PROVIDER=inception)');
+  });
+});
+
+describe('Inception (its own API, Mercury)', () => {
+  const bodyOf = async (env: Record<string, string>, request: RenderRequest = req, answer: unknown = { model: 'mercury-3', choices: [{ message: { content: 'Who is it from?' }, finish_reason: 'stop' }], usage: { prompt_tokens: 290, completion_tokens: 6 } }) => {
+    const sent: { url: string; init: RequestInit }[] = [];
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, ...env })!;
+    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({ url: String(url), init: init! });
+      return new Response(JSON.stringify(answer), { status: 200 });
+    }) as typeof fetch;
+    const g = await new ModelRenderClient(p, f).generate(request, signal);
+    return { g, sent: sent[0]!, body: JSON.parse(String(sent[0]!.init.body)) as Record<string, unknown>, p };
+  };
+
+  it('chat completions at its own address, the key as a bearer token from INCEPTION_API_KEY, mercury-3 by default, its fastest reasoning and realtime', async () => {
+    const { g, sent, body, p } = await bodyOf({});
+    expect(p).toMatchObject({ provider: 'inception', model: 'mercury-3', keyVar: 'INCEPTION_API_KEY', realtime: true });
+    expect(sent.url).toBe('https://api.inceptionlabs.ai/v1/chat/completions');
+    expect((sent.init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
+    const { messages, ...rest } = body;
+    expect(rest).toEqual({ model: 'mercury-3', max_completion_tokens: 200, reasoning_effort: 'instant', realtime: true });
+    expect((messages as unknown[])[0]).toEqual({ role: 'system', content: RENDER_INSTRUCTIONS });
+    expect(g).toMatchObject({ text: 'Who is it from?', model: 'mercury-3', usage: { inputTokens: 290, outputTokens: 6 }, source: 'model' });
+    // The default is the model's own cassette, and the run names what it sends.
+    expect(renderCassetteModel(p)).toBe('mercury-3');
+    expect(renderLines(p)).toEqual(['generated lines worded by mercury-3 from inception (reasoning_effort instant, realtime)']);
+  });
+
+  it('RENDER_THINKING and RENDER_EFFORT in the shared vocabulary as reasoning_effort, with room for the reasoning; RENDER_REALTIME=off drops realtime', async () => {
+    expect((await bodyOf({ RENDER_THINKING: 'disabled' })).body).toMatchObject({ reasoning_effort: 'instant', max_completion_tokens: 200 });
+    expect((await bodyOf({ RENDER_EFFORT: 'low' })).body).toMatchObject({ reasoning_effort: 'low', max_completion_tokens: 4000 });
+    expect((await bodyOf({ RENDER_THINKING: 'adaptive' })).body).toMatchObject({ reasoning_effort: 'medium' });
+    const omitted = (await bodyOf({ RENDER_THINKING: 'omit' })).body;
+    expect(omitted).not.toHaveProperty('reasoning_effort');
+    expect(omitted.max_completion_tokens).toBe(4000);
+    const off = await bodyOf({ RENDER_REALTIME: 'off' });
+    expect(off.body).not.toHaveProperty('realtime');
+    expect(renderLines(off.p)).toEqual(['generated lines worded by mercury-3 from inception (reasoning_effort instant)']);
+    expect(renderLines((await bodyOf({ RENDER_THINKING: 'omit' })).p)).toEqual(["generated lines worded by mercury-3 from inception (no reasoning_effort (Inception's default), realtime)"]);
+    expect(renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, RENDER_EFFORT: 'low' })!)).toBe('mercury-3.thinking-adaptive.effort-low');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, RENDER_REALTIME: 'yes' })).toThrow('RENDER_REALTIME must be on or off, got "yes"');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, RENDER_THINKING: 'between-tools' })).toThrow('on Inception use disabled, adaptive or omit');
+    expect(() => resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, RENDER_THINKING: 'disabled', RENDER_EFFORT: 'low' })).toThrow('RENDER_EFFORT asks for reasoning');
+  });
+
+  it('a run with realtime off is recorded in a cassette of its own, never the realtime one; the default keeps the model\'s name', () => {
+    const name = (env: Record<string, string>) => renderCassetteModel(resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY, ...env })!);
+    expect(name({})).toBe('mercury-3');
+    expect(name({ RENDER_REALTIME: 'on' })).toBe('mercury-3');
+    expect(name({ RENDER_REALTIME: 'off' })).toBe('mercury-3.realtime-off');
+    expect(name({ RENDER_REALTIME: 'off', RENDER_EFFORT: 'low' })).toBe('mercury-3.thinking-adaptive.effort-low.realtime-off');
+    expect(renderCassettePath('/r', name({ RENDER_REALTIME: 'off' }))).toBe(join('/r', 'render', 'mercury-3.realtime-off.jsonl'));
+  });
+
+  it('Mercury 3 is costed at its own price (Inception\'s regular one), not the default model\'s; RENDER_PRICE_* over it', () => {
+    expect(defaultRenderPrice('mercury-3')).toEqual({ input: 0.2, output: 0.7 });
+    expect(renderSettings({}, 'mercury-3').price).toEqual({ input: 0.2, output: 0.7 });
+    expect(renderSettings({}, 'vendor/unknown').price).toEqual({ input: 0.1, output: 0.5 });
+    expect(renderSettings({}).price).toEqual({ input: 0.1, output: 0.5 });
+    expect(renderSettings({ RENDER_PRICE_OUTPUT_PER_MTOK: '0.35' }, 'mercury-3').price).toEqual({ input: 0.2, output: 0.35 });
+  });
+
+  it('an error body that is not OpenAI\'s shape says why by its detail, made safe the same way', async () => {
+    const p = resolveRenderProvider({ RENDER_PROVIDER: 'inception', INCEPTION_API_KEY: KEY })!;
+    const failing = (status: number, body: unknown): typeof fetch => (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
+    const e = await new ModelRenderClient(p, failing(401, { detail: `Invalid API key ${KEY}\n  for this account` })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([e.message, e.detail]).toEqual(['inception: HTTP 401', 'Invalid API key • for this account']);
+    // A validation error's list: each item's msg alone, never the input it quotes.
+    const v = await new ModelRenderClient(p, failing(422, { detail: [{ loc: ['body', 'temperature'], msg: 'Input should be less than or equal to 1', input: 'the caller said this' }] })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([v.message, v.detail]).toEqual(['inception: HTTP 422', 'Input should be less than or equal to 1']);
+    // OpenAI's shape is read as before; neither: the status alone.
+    const o = await new ModelRenderClient(p, failing(400, { error: { type: 'invalid_request_error', message: 'Bad model' } })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([o.message, o.detail]).toEqual(['inception: HTTP 400 invalid_request_error', 'Bad model']);
+    const n = await new ModelRenderClient(p, failing(500, { other: 1 })).generate(req, signal).catch((x: unknown) => x) as RenderClientError;
+    expect([n.message, n.detail]).toEqual(['inception: HTTP 500', undefined]);
+  });
+
+  it('a temperature held to what Mercury takes, 0.5 to 1, since it resets any other silently; none sent where the request has none', async () => {
+    expect((await bodyOf({})).body).not.toHaveProperty('temperature');
+    expect((await bodyOf({}, { ...req, temperature: 0.7 })).body.temperature).toBe(0.7);
+    expect((await bodyOf({}, { ...req, temperature: 0.2 })).body.temperature).toBe(0.5);
+    expect((await bodyOf({}, { ...req, temperature: 1.4 })).body.temperature).toBe(1);
+  });
+
+  it('a line cut off or stopped by its content filter is no line', async () => {
+    for (const finish of ['length', 'content_filter']) {
+      await expect(bodyOf({}, req, { choices: [{ message: { content: 'Who' }, finish_reason: finish }] })).rejects.toThrow(`inception: the answer had no line (${finish})`);
+    }
   });
 });
 

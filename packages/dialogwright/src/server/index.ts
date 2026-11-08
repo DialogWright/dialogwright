@@ -64,7 +64,7 @@ import { diskUsageCache, sweepRetention, type RetentionSettings } from './retent
 import { ConsoleAuth } from './console/auth';
 import { logFileSettingOf, RollingLog, teeProcessOutput } from './logFile';
 import { generatesLines } from '../render/config';
-import { appModelKeyMissing, appModelLabel, ModelRenderClient, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
+import { appModelKeyMissing, appModelLabel, inceptionTemperatureNotes, ModelRenderClient, providerSettingsLabel, renderModelSource, renderModelSourceLabel, renderSettings, resolveAppRenderProvider } from '../render/providers';
 import type { Renderer } from '../render/types';
 
 export interface RunningServer {
@@ -435,9 +435,14 @@ export async function startServer(config: ServerConfig, overrides: ServerOverrid
       log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} generated, RENDER_PROVIDER unset: every line said fixed`);
       continue;
     }
-    const settings = forApp(a.id, () => renderSettings(a.env));
+    // The price's default is the model's own where the engine knows it (Mercury 3's, say), so the trace and Insights cost it right.
+    const settings = forApp(a.id, () => renderSettings(a.env, provider.model));
     renderers.set(a.id, { client: new ModelRenderClient(provider), share: settings.share, timeoutMs: settings.timeoutMs, checkTimeoutMs: settings.checkTimeoutMs, answerTimeoutMs: settings.answerTimeoutMs, documentsTimeoutMs: settings.documentsTimeoutMs, price: settings.price });
-    log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider} (${renderModelSourceLabel(renderModelSource(a.env, model))}), ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its checks ${settings.checkTimeoutMs.voice} and ${settings.checkTimeoutMs.chat} ms`);
+    const how = providerSettingsLabel(provider);
+    log(`${tag(a.id)}generated wording: ${lines} line${lines === 1 ? '' : 's'} worded by ${provider.model} from ${provider.provider} (${renderModelSourceLabel(renderModelSource(a.env, model))}${how !== null ? `; ${how}` : ''}), ${settings.share}% of calls, within ${settings.timeoutMs.voice} ms on a call and ${settings.timeoutMs.chat} ms in a chat, its checks ${settings.checkTimeoutMs.voice} and ${settings.checkTimeoutMs.chat} ms`);
+    // A temperature Inception would reset silently is held to its range (render/providers.ts), and said so here.
+    const clamped = inceptionTemperatureNotes(provider, model);
+    if (clamped.length > 0) log(`WARNING: ${tag(a.id)}generated wording: ${clamped.join(', ')}, as Inception takes 0.5 to 1`);
   }
   const rendererOf = (id: string): Renderer | null => renderers.get(appRun(id).id) ?? null;
 
